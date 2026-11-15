@@ -907,10 +907,10 @@ fn expand_loop_phase_claim(
             ))
         })?
         .to_vec();
-    // A phase with nothing to prove is checked by `assumption();`, as its
+    // A phase with nothing to prove is checked by `known();`, as its
     // expansion by location writes it: a `by` block holds at least one tactic.
     let tactics = if tactics.is_empty() {
-        vec![ProofTactic::Assumption]
+        vec![ProofTactic::Known]
     } else {
         tactics
     };
@@ -1392,7 +1392,7 @@ fn checked_expanded_source(
 /// touched.
 ///
 /// A grouped closure proves each open claim in a `have` and then closes
-/// every goal with its own `assumption();`. Where some of those `have`s are
+/// every goal with its own `known();`. Where some of those `have`s are
 /// proved by `normalize();` alone and the run of closers ends its block,
 /// those `have`s are dropped and their claims' closers become
 /// `normalize();`. A closer acts on the first open goal, so the closers stay
@@ -1447,7 +1447,7 @@ pub fn tidy_expansion_closers(original: &str, expanded: &str) -> Option<String> 
             haves.push((next..next + length + 2, normalized));
             next += length + 2;
         }
-        let closer = format!("{indent}assumption();");
+        let closer = format!("{indent}known();");
         let closers = lines[next..]
             .iter()
             .take_while(|line| **line == closer)
@@ -1627,13 +1627,13 @@ fn expand_c_tactic_source_at_context(
     let (span, replacement) = selected.replacement(click_source, &replacement_tactics)?;
     // A tactic that contributed no step is removed, but a `by { ... }` block
     // must hold at least one tactic. When it is the only tactic of its
-    // block, the block keeps `assumption();`, the step a phase with nothing
+    // block, the block keeps `known();`, the step a phase with nothing
     // to prove is checked by.
     let replacement = if replacement.is_empty()
         && click_source[..span.start].trim_end().ends_with('{')
         && click_source[span.end..].trim_start().starts_with('}')
     {
-        "assumption();".to_string()
+        "known();".to_string()
     } else {
         replacement
     };
@@ -2034,7 +2034,7 @@ fn claim_expansion_source(theorem: &VerifiedProgramTheorem) -> Result<String, Cl
         ));
     }
     // A tactic's proof is checked with a fixed ending on every live path: one
-    // step over the empty procedure's `return`, then an `assumption` per
+    // step over the empty procedure's `return`, then an `known` per
     // claim, followed by the ordinary contract-closing proofs. The ending is
     // supplied by the checker and cannot be written in
     // a tactic's proof, which runs no code, so the expansion leaves it out.
@@ -2044,7 +2044,7 @@ fn claim_expansion_source(theorem: &VerifiedProgramTheorem) -> Result<String, Cl
         + crate::kernel::proof::ContractClosingGoal::COUNT;
     remove_tactic_procedure_ending(&mut tactics, ending).map_err(|()| {
         ClickError::new(format!(
-            "the expanded proof of tactic `{}` does not end in the step and {} closing assumption(s) its check supplies",
+            "the expanded proof of tactic `{}` does not end in the step and {} closing known step(s) its check supplies",
             theorem.function_block.signature().name(),
             ending - 1
         ))
@@ -2231,7 +2231,7 @@ fn remove_tactic_procedure_ending(tactics: &mut Vec<ProofTactic>, ending: usize)
     let supplied = matches!(tactics[kept], ProofTactic::Step)
         && tactics[kept + 1..]
             .iter()
-            .all(|tactic| matches!(tactic, ProofTactic::Assumption));
+            .all(|tactic| matches!(tactic, ProofTactic::Known));
     if !supplied {
         return Err(());
     }
@@ -3701,7 +3701,7 @@ fn expand_selected_tactics_context(
             ),
             TacticSourceEdit::Append(at) => (at..at, appended_tail(&tactics)),
             TacticSourceEdit::PartialProofClause(span) if tactics.is_empty() => {
-                (span, "by { assumption(); }".to_string())
+                (span, "by { known(); }".to_string())
             }
             TacticSourceEdit::PartialProofClause(span) => (
                 span,
@@ -3736,7 +3736,7 @@ fn expand_selected_tactics_context(
             && source[..span.start].trim_end().ends_with('{')
             && source[span.end..].trim_start().starts_with('}')
         {
-            "assumption();".to_string()
+            "known();".to_string()
         } else {
             replacement
         };
@@ -3796,7 +3796,7 @@ fn expand_selected_tactics_context(
         }
     }
     for offset in empty_blocks.into_iter().rev() {
-        let filler = " assumption(); ";
+        let filler = " known(); ";
         rewritten.insert_str(offset, filler);
         for span in &mut replacement_spans {
             if span.start >= offset {
@@ -3846,7 +3846,7 @@ impl LocatedSourceTactic {
             // A whole phase can contribute no steps, but its written block
             // must still contain a checked tactic.
             TacticSourceEdit::PartialProofClause(span) if replacement_tactics.is_empty() => {
-                (span, "by { assumption(); }".to_string())
+                (span, "by { known(); }".to_string())
             }
             TacticSourceEdit::PartialProofClause(span) => (span, certificate()?),
             TacticSourceEdit::WholeProof(edit) => {

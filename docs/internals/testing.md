@@ -1505,7 +1505,7 @@ click verify examples
 A bare sidecar path verifies the proof units owned by that file. A
 `:LINE:COLUMN` suffix verifies only the proof unit containing that one-based
 source location. Imported theorem statements and unselected called-function
-contracts are assumptions, not recursively selected proofs. This is the same
+contracts are knowns, not recursively selected proofs. This is the same
 location scheme `click profile`, `click expand`, and `click audit` use, and the
 targeted entry point the audit's cold reverification runs.
 

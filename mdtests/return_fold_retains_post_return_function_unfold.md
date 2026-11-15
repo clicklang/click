@@ -32,7 +32,7 @@ int32 pick(int32* p, int32 x) {
 } by {
     step_until(function.exit);
     unfold(first(Shape::Pair(x, 3)));
-    have first(Shape::Pair(x, 3)) == x by { assumption(); }
+    have first(Shape::Pair(x, 3)) == x by { known(); }
     let c = fold(Cell(p), { model: x });
     solve();
 }

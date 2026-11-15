@@ -117,7 +117,7 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                         rewrite(Node::Inner(gid, gp) == n.model);
                         rewrite(xid == up_identity(Up::Frame(xid, xc)));
                         rewrite(Up::Frame(xid, xc) == u.model);
-                        assumption();
+                        known();
                     }
                     unfold(n);
                     unfold(u);

@@ -32,7 +32,7 @@ fn loop_return_closer_routing_scales_with_certificate_size() {
                     batch_captures: imbl::OrdMap::new(),
                 }),
                 Vec::new(),
-                vec![ProofTactic::Assumption],
+                vec![ProofTactic::Known],
                 Vec::new(),
             ));
         }
@@ -47,7 +47,7 @@ fn loop_return_closer_routing_scales_with_certificate_size() {
             };
             assert!(matches!(
                 clause.preserve_proof.unwrap().steps(),
-                [ProofStep::Step, ProofStep::Assumption]
+                [ProofStep::Step, ProofStep::Known]
             ));
         }
     }

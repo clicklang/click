@@ -83,9 +83,9 @@ void rotate(struct node* parent) {
                                     have tmp2 == iid;
                                     mark inner_inputs;
                                     mark before_link_0;
-                                    have separate(memory(sibling->left), memory(sid->right)) by assumption();
-                                    have separate(memory(sibling->left), memory(iid->left)) by assumption();
-                                    have separate(memory(sibling->left), memory(parent->left)) by assumption();
+                                    have separate(memory(sibling->left), memory(sid->right)) by known();
+                                    have separate(memory(sibling->left), memory(iid->left)) by known();
+                                    have separate(memory(sibling->left), memory(parent->left)) by known();
                                     step();
                                     have separate(loop(0).statement(3).footprint, memory(sid->right)) by {
                                         normalize() using { separate(memory(sibling->left), memory(sid->right)); };
@@ -122,10 +122,10 @@ void rotate(struct node* parent) {
                                     }
                                     have sid->left == tmp1;
                                     mark before_link_1;
-                                    have separate(memory(tmp2->right), memory(sid->right)) by assumption();
-                                    have separate(memory(tmp2->right), memory(iid->left)) by assumption();
-                                    have separate(memory(tmp2->right), memory(parent->left)) by assumption();
-                                    have separate(memory(tmp2->right), memory(sid->left)) by assumption();
+                                    have separate(memory(tmp2->right), memory(sid->right)) by known();
+                                    have separate(memory(tmp2->right), memory(iid->left)) by known();
+                                    have separate(memory(tmp2->right), memory(parent->left)) by known();
+                                    have separate(memory(tmp2->right), memory(sid->left)) by known();
                                     step();
                                     have separate(loop(0).statement(4).footprint, memory(sid->right)) by {
                                         normalize() using { separate(memory(tmp2->right), memory(sid->right)); };
@@ -197,11 +197,11 @@ void rotate(struct node* parent) {
                                     }
                                     have iid->right == sid;
                                     mark before_parent_store;
-                                    have separate(memory(parent->right), memory(sid->right)) by assumption();
-                                    have separate(memory(parent->right), memory(iid->left)) by assumption();
-                                    have separate(memory(parent->right), memory(parent->left)) by assumption();
-                                    have separate(memory(parent->right), memory(sid->left)) by assumption();
-                                    have separate(memory(parent->right), memory(iid->right)) by assumption();
+                                    have separate(memory(parent->right), memory(sid->right)) by known();
+                                    have separate(memory(parent->right), memory(iid->left)) by known();
+                                    have separate(memory(parent->right), memory(parent->left)) by known();
+                                    have separate(memory(parent->right), memory(sid->left)) by known();
+                                    have separate(memory(parent->right), memory(iid->right)) by known();
                                     step();
                                     have separate(loop(0).statement(5).footprint, memory(sid->right)) by {
                                         normalize() using { separate(memory(parent->right), memory(sid->right)); };
@@ -295,9 +295,9 @@ void rotate(struct node* parent) {
                                     have sid->left == tmp1;
                                     // Only the parent's store lies between the snapshot and
                                     // this read of a different node's field.
-                                    have sid->right == at(inner_inputs, sid->right) by assumption();
+                                    have sid->right == at(inner_inputs, sid->right) by known();
                                     let s = fold(tree(iid->right), { model: Tree::Node(sid, irm, srm) }, { left: ir, right: sr });
-                                    have iid->left == at(inner_inputs, iid->left) by assumption();
+                                    have iid->left == at(inner_inputs, iid->left) by known();
                                     let i = fold(tree(parent->right), { model: Tree::Node(iid, ilm, Tree::Node(sid, irm, srm)) }, { left: il, right: s });
                                     let t = fold(tree(parent), { model: Tree::Node(id, lm, Tree::Node(iid, ilm, Tree::Node(sid, irm, srm))) }, { left: l, right: i });
                                     step(); // Leave the loop.

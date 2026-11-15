@@ -13,12 +13,12 @@ theorem derived_lower_correction_bound(n: Integer, d: Integer, q: Integer, r: In
     requires r < 0;
     ensures lower + 1 <= q by {
         if lower + 1 <= q {
-            assumption();
+            known();
         } else {
             have q == lower by { solve() using { lower <= q; not (lower + 1 <= q); }; }
             have n == lower * d + r by {
                 rewrite(lower == q);
-                assumption();
+                known();
             }
             have not (r < 0) by { solve() using { lower * d <= n; n == lower * d + r; }; }
             contradiction(r < 0);
@@ -33,12 +33,12 @@ theorem derived_upper_correction_bound(n: Integer, d: Integer, q: Integer, r: In
     requires 0 < r;
     ensures q <= upper + -1 by {
         if q <= upper + -1 {
-            assumption();
+            known();
         } else {
             have q == upper by { solve() using { q <= upper; not (q <= upper + -1); }; }
             have n == upper * d + r by {
                 rewrite(upper == q);
-                assumption();
+                known();
             }
             have not (0 < r) by { solve() using { n <= upper * d; n == upper * d + r; }; }
             contradiction(0 < r);

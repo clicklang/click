@@ -42,8 +42,8 @@ void dispose_beside(int32* data, int32 n, int32* r) {
         }
     }
     step();
-    assumption();
-    assumption(); assumption(); assumption();
+    known();
+    known(); known(); known();
 }
 ```
 

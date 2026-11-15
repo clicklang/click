@@ -2909,12 +2909,12 @@ mod tests {
         let no_trailing_newline = markdown.trim_end();
         let mdtest = parse_mdtest(Path::new("container.md"), no_trailing_newline).unwrap();
         let replaced = mdtest
-            .replace_click_source(no_trailing_newline, "assumption();")
+            .replace_click_source(no_trailing_newline, "known();")
             .unwrap();
         assert!(!replaced.ends_with('\n'));
         assert!(
             mdtest
-                .replace_click_source(&markdown.replace("step();", "solve();"), "assumption();")
+                .replace_click_source(&markdown.replace("step();", "solve();"), "known();")
                 .is_err()
         );
     }

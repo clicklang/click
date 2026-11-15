@@ -53,7 +53,7 @@ int32 walk(const uint8* p, int32 n) {
    have to_integer(old(n) - n) <= 14 by solve() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    have 255 * (old(n) - n) <= 3570 by solve() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    have total <= 3570 by solve() using { total <= 255 * (old(n) - n); 255 * (old(n) - n) <= 3570; };
-   have at(before_pointer, p[0] as int32) <= 255 by assumption();
+   have at(before_pointer, p[0] as int32) <= 255 by known();
    have to_integer(total) <= to_integer(2147483647 - at(before_pointer, p[0] as int32)) by solve() using { total <= 3570; 0 <= at(before_pointer, p[0] as int32); at(before_pointer, p[0] as int32) <= 255; };
    have defined(total + (at(before_pointer, p[0] as int32)));
    have defined(total + at(before_pointer, p[0] as int32)) by solve();

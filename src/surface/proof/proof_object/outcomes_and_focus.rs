@@ -482,7 +482,7 @@ impl<'a> Proof<'a> {
             }
             #[cfg(test)]
             Refusal::Pending(kind) => format!(
-                "contract closing for `{label}` path {index}: unproved {} obligation; prove it explicitly with `assumption()` or supply the facts and resources needed by the implicit solver",
+                "contract closing for `{label}` path {index}: unproved {} obligation; prove it explicitly with `known()` or supply the facts and resources needed by the implicit solver",
                 kind.description()
             ),
             Refusal::Resource(reason) => {

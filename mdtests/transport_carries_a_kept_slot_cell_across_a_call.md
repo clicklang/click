@@ -56,11 +56,11 @@ void put(struct pool* pool, struct slot* s, int32 value) {
     let { at: a, end: e } = unfold(r);
     have to_integer(a + 1) <= to_integer(e);
     have s->at == a by {
-        assumption();
+        known();
     }
     have to_integer(s->at + 1) <= to_integer(e) by {
         rewrite(s->at == a);
-        assumption();
+        known();
     }
     step_until(function.exit);
     let r = fold(pool_slot(s, pool), { at: a, end: e });

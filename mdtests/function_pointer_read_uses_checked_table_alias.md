@@ -15,9 +15,9 @@ void copy(const struct callbacks* cb, struct callbacks* out) {
     owns out->call;
     ensures out->call == (&table)->call;
 } by {
-    have separate(memory(out->call), memory(cb->call)) by assumption();
+    have separate(memory(out->call), memory(cb->call)) by known();
     mark write;
-    have cb->call == (&table)->call by { assumption(); }
+    have cb->call == (&table)->call by { known(); }
     step();
     have at(write, cb->call) == table.call by {
         normalize() using {

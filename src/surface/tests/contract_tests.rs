@@ -706,7 +706,7 @@ fn contradiction_closes_an_impossible_concrete_outcome() {
                     intro();
                     contradiction(result == 1);
                 }
-                assumption();
+                known();
             }
         "#;
 
@@ -1530,7 +1530,7 @@ fn outcome_solve_spells_a_call_postcondition_across_two_snapshots() {
         .nth(1)
         .expect("the expanded source should retain the caller");
     // The checked frame equation connects the snapshots in the shared graph.
-    assert!(caller_expansion.contains("assumption();"), "{expanded}");
+    assert!(caller_expansion.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, sources)
         .expect("the rewritten caller proof should verify normally");
 }
@@ -2040,10 +2040,10 @@ fn grouped_leading_resource_relations_stay_on_one_proof() {
                 ensures result == 0;
             } by {
                 have contains(pair(left, right), memory(left[0..1])) by {
-                    assumption();
+                    known();
                 }
                 have separate(memory(left[0..1]), memory(right[0..1])) by {
-                    assumption();
+                    known();
                 }
                 step_until(function.exit);
                 solve();
@@ -2123,10 +2123,10 @@ fn grouped_unfolded_resource_relations_stay_on_one_proof() {
                 observe(pair(left, right));
                 unfold(pair(left, right));
                 have contains(pair(left, right), memory(left[0..1])) by {
-                    assumption();
+                    known();
                 }
                 have separate(memory(left[0..1]), memory(right[0..1])) by {
-                    assumption();
+                    known();
                 }
                 fold(pair(left, right));
                 step_until(function.exit);
@@ -2622,15 +2622,9 @@ fn source_have_failures_keep_the_written_operation_in_each_execution_phase() {
         ("step_until(function.exit);", ""),
     ] {
         for (body, diagnostic) in [
-            (
-                "apply(missing()); assumption();",
-                "unknown theorem `missing`",
-            ),
-            ("unfold(missing); assumption();", "missing"),
-            (
-                "step(); assumption();",
-                "unsupported proof operation `step`",
-            ),
+            ("apply(missing()); known();", "unknown theorem `missing`"),
+            ("unfold(missing); known();", "missing"),
+            ("step(); known();", "unsupported proof operation `step`"),
         ] {
             let source = format!(
                 r#"
@@ -2880,7 +2874,7 @@ uint64 nested(uint64 total) {
      solve();
     }
     preserve by {
-     have remaining <= total - 16u64 by assumption();
+     have remaining <= total - 16u64 by known();
      have 1u32 <= n by solve() using { n > 0u32; n <= 2u32; };
      have to_integer(n - 1u32) == to_integer(n) - 1;
      mark before_inner;

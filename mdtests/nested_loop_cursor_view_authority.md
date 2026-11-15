@@ -63,7 +63,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
     rewrite(at(after_inner, outer) == 1); solve();
    }
   }
-  have cursor == bytes + (4 * outer) by { assumption(); }
+  have cursor == bytes + (4 * outer) by { known(); }
   have at(after_inner, outer) == at(outer_head, outer);
   have 0 <= 2 - to_integer(outer) by { solve() using { outer <= 2; }; }
   have 2 - to_integer(outer) < 2 - to_integer(at(outer_head, outer)) by {

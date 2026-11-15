@@ -87,4 +87,4 @@ fn conditional_divide(value: u32, divisor: u32, skip: bool) -> u32 {
     requires skip == true or divisor != 0u32;
     ensures skip == true implies result == 0u32;
     ensures skip == false implies result == value / divisor;
-} by { if skip == true { step_until(function.exit); solve(); } else { have divisor != 0u32 by { cases { skip == true => { contradiction(skip == true); } divisor != 0u32 => { assumption(); } } } step_until(function.exit); solve(); } }
+} by { if skip == true { step_until(function.exit); solve(); } else { have divisor != 0u32 by { cases { skip == true => { contradiction(skip == true); } divisor != 0u32 => { known(); } } } step_until(function.exit); solve(); } }

@@ -71,7 +71,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             have 0 <= m;
             have 0 <= i by {
                 rewrite(i == m);
-                assumption();
+                known();
             }
             have i < capacity;
             mark opened;
@@ -94,7 +94,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                             start <= k;
                             k < m;
                         };
-                        assumption();
+                        known();
                     }
                     have 0 <= k by solve();
                     transport(at(opened, occupied[k]) == 1, occupied[k] == 1) using {
@@ -113,7 +113,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             }
             have start <= at(opened, i) by {
                 rewrite(at(opened, i) == m);
-                assumption();
+                known();
             }
             have to_integer(start) <= to_integer(at(opened, i) + 1);
             have to_integer(at(opened, i) + 1) <= to_integer(end);
@@ -150,12 +150,12 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
     have n <= end by solve();
     have not (n < end) by {
         rewrite(n == i);
-        assumption();
+        known();
     }
     have n == end;
     have start < n by {
         rewrite(n == end);
-        assumption();
+        known();
     }
     have start <= start by normalize();
     have occupied[start] == 1 by {
@@ -165,12 +165,12 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             start <= start;
             start < n;
         };
-        assumption();
+        known();
     }
     have at(pre, occupied[start]) == 0 by solve();
     have occupied[start] == 0 by {
         rewrite(occupied[start] == at(pre, occupied[start]));
-        assumption();
+        known();
     }
     have start < 0 by {
         contradiction(occupied[start] == 1);

@@ -49,10 +49,10 @@ theorem walk_in_range(next: int32[], n: int32, from: int32, fuel: Nat) {
                         0 <= walk(next, from, previous);
                         walk(next, from, previous) < n;
                     };
-                    assumption();
+                    known();
                 }
                 unfold(walk(next, from, Nat::Succ(previous)));
-                assumption();
+                known();
             }
         }
     }

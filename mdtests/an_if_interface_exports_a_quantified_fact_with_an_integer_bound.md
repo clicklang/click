@@ -34,7 +34,7 @@ int32 q(int32 j) {
             intro();
             have k < 1u64 by { solve(); }
             instantiate(forall (k: uint64) { 0u64 <= k and k < 1u64 implies tmp[k] != 0u8 }, k);
-            assumption();
+            known();
         }
     } else {
         have 1 <= j by { solve() using { 0 <= j; j != 0; }; }
@@ -45,7 +45,7 @@ int32 q(int32 j) {
             intro();
             have k < 2u64 by { solve(); }
             instantiate(forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 }, k);
-            assumption();
+            known();
         }
     }
 }

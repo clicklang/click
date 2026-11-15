@@ -101,7 +101,7 @@ pub enum ProofStep {
     Witness(ProofWitness),
     LetSatisfy(ProofLetSatisfy),
     Choose(ProofChoice),
-    Assumption,
+    Known,
     Extract(ClickProposition),
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
@@ -355,14 +355,14 @@ impl ProofCertificate {
                     let ProofStep::Have { proof, .. } = step else {
                         unreachable!()
                     };
-                    if !matches!(proof.steps(), [ProofStep::Assumption]) {
+                    if !matches!(proof.steps(), [ProofStep::Known]) {
                         members.push(step.to_proof_tactic());
                     }
                 }
                 continue;
             }
             match steps {
-                [ProofStep::Assumption] => {}
+                [ProofStep::Known] => {}
                 [
                     ProofStep::Both {
                         left_proof,
@@ -753,7 +753,7 @@ impl ProofStep {
             ProofTactic::Witness(witness) => Self::Witness(witness.clone()),
             ProofTactic::LetSatisfy(binding) => Self::LetSatisfy(binding.clone()),
             ProofTactic::Choose(choice) => Self::Choose(choice.clone()),
-            ProofTactic::Assumption => Self::Assumption,
+            ProofTactic::Known => Self::Known,
             ProofTactic::Extract(proposition) => Self::Extract(proposition.clone()),
             ProofTactic::Normalize => Self::Normalize,
             ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
@@ -906,7 +906,7 @@ impl ProofStep {
             Self::Witness(witness) => ProofTactic::Witness(witness.clone()),
             Self::LetSatisfy(binding) => ProofTactic::LetSatisfy(binding.clone()),
             Self::Choose(choice) => ProofTactic::Choose(choice.clone()),
-            Self::Assumption => ProofTactic::Assumption,
+            Self::Known => ProofTactic::Known,
             Self::Extract(proposition) => ProofTactic::Extract(proposition.clone()),
             Self::Normalize => ProofTactic::Normalize,
             Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
@@ -1130,7 +1130,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
         ProofStep::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
         ProofStep::Choose(_) => TacticClass::Simple(SimpleTactic::Choose),
-        ProofStep::Assumption => TacticClass::Simple(SimpleTactic::Assumption),
+        ProofStep::Known => TacticClass::Simple(SimpleTactic::Known),
         ProofStep::Extract(_) => TacticClass::Simple(SimpleTactic::Extract),
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => {
             TacticClass::Simple(SimpleTactic::Normalize)

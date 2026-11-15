@@ -52,7 +52,7 @@ int32 chase(int32 *next, int32 n) {
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies 0 <= next[k] and next[k] < n
                 }, cur) using { 0 <= cur; cur < n; };
-                assumption();
+                known();
             }
             step();
             step();

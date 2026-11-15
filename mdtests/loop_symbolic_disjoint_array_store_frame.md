@@ -59,7 +59,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies 0 <= next[k] and next[k] < n
                 }, cur) using { 0 <= cur; cur < n; };
-                assumption();
+                known();
             }
             if cur == to {
                 step();
@@ -88,7 +88,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
                     cur < n;
                     separate(memory(next[0..n]), memory(visited[0..n]));
                 };
-                assumption();
+                known();
             }
             have forall (k: int32) {
                 0 <= k and k < n implies 0 <= next[k] and next[k] < n
@@ -108,7 +108,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
                     cur < n;
                     separate(memory(next[0..n]), memory(visited[0..n]));
                 };
-                assumption();
+                known();
             }
             step();
         }

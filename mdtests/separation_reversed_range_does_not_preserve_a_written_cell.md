@@ -25,7 +25,7 @@ void overwrite(int32 *p) {
     }
     step();
     rewrite(*p == old(*p));
-    assumption();
+    known();
 }
 ```
 

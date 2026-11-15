@@ -56,7 +56,7 @@ int32 choose_explicit(int32 x, int32 y) {
     step_until(function.exit);
     have x == 0 or x == 1 by {
         extract(x == 0 or x == 1);
-        assumption();
+        known();
     }
     cases {
         x == 0 => { solve(); }

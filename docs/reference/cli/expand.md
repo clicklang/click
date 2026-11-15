@@ -229,7 +229,7 @@ The written certificate is kept short where verification allows. An
 `arithmetic_certificate` writes each repeated derivation once and leaves out
 derivations its conclusion does not use; premises and a refutation's
 `negated_goal` stay. A grouped closure proves each open claim in a `have` and
-then closes every goal with its own `assumption();`. When some of those
+then closes every goal with its own `known();`. When some of those
 `have`s are proved by `normalize();` alone and their run of closers ends the
 block, the command drops those `have`s and closes their claims with
 `normalize();` instead. A closer acts on the first open goal, so the closers

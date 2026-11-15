@@ -54,7 +54,7 @@ int32 read_back(int32 u, int32 c) {
     have loc[0] == 3 or loc[0] == 7 by {
         if u == 0 {
             have loc[0] == 7 by { normalize() using { loc[u] == 7; u == 0; }; }
-            assumption();
+            known();
         } else {
             have separate(memory(loc[u]), memory(loc[0])) by {
                 apply(separation::separate_elements(loc, u, 0)) using { u != 0; };
@@ -71,7 +71,7 @@ int32 read_back(int32 u, int32 c) {
                 }
             }
             have loc[0] == 3 by { normalize() using { loc[0] == at(before_store, loc[0]); at(before_store, loc[0]) == 3; }; }
-            assumption();
+            known();
         }
     }
     mark stored;

@@ -22,11 +22,11 @@ int32 two_haves(int32 x) {
     requires x > 0;
     ensures result == x by {
         have x > 0 by {
-            assumption();
+            known();
         }
         have x >= 0 by {
             have x > 0 by {
-                assumption();
+                known();
             }
             normalize();
         }

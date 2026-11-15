@@ -318,7 +318,7 @@ Each milestone is one PR, green and useful on its own.
    one arm of `rbtree_erase_color_flips_red_all.click` and record its size
    and time. The first step, landed, is a bounded search for a chain of
    checked `rewrite` steps over the connected equalities, closed by
-   `assumption`, `normalize` or a budgeted `solve`; the numbers are under
+   `known`, `normalize` or a budgeted `solve`; the numbers are under
    Results. Congruence closure, injectivity and
    disjointness, and the combination with the simplex remain.
 5. **`auto` integration.** Make the solver the first closer in `auto`.

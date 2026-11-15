@@ -42,10 +42,10 @@ struct node *caller(struct node *p, struct node *q, struct node *parent) {
     }
     have ((p->word & ~3) as (struct node *)) == parent by {
         rewrite(p->word == at(before, p->word));
-        assumption();
+        known();
     }
     step();
-    assumption();
+    known();
 }
 ```
 

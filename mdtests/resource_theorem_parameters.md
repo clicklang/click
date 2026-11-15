@@ -47,10 +47,10 @@ void copy_pos(struct cursor *target, struct cursor *source) {
             contains(memory(*source), memory(*source));
         };
     }
-    step() by { assumption(); }
+    step() by { known(); }
     step();
-    assumption();
-    assumption(); assumption(); assumption();
+    known();
+    known(); known(); known();
 }
 ```
 

@@ -24,7 +24,7 @@ theorem head_nonnegative(a: int32[], n: int32) {
             0 <= 0;
             0 < n;
         };
-        assumption();
+        known();
     }
 }
 

@@ -49,7 +49,7 @@ int use_copy() {
                     contradiction(copied == 18);
                 }
                 copied == -1 => {
-                    assumption();
+                    known();
                 }
             }
         }

@@ -37,11 +37,11 @@ theorem lift(callback: int32 (*)(int32*, int32))
         unfold(Cell(cell));
         step(Raw);
         if result != 0 {
-            have cell[0] == item by { extract(cell[0] == item); assumption(); }
+            have cell[0] == item by { extract(cell[0] == item); known(); }
             fold(Cell(cell)); solve();
         } else {
             have cell[0] == old(cell[0]) by {
-                extract(cell[0] == old(cell[0])); assumption();
+                extract(cell[0] == old(cell[0])); known();
             }
             fold(Cell(cell)); solve();
         }
@@ -60,7 +60,7 @@ int32 check_update(int32 (*callback)(int32*, int32), int32* cell, int32 value) {
     step(Buffered);
     unfold(Cell(cell));
     if c(status) != 0 {
-        have cell[0] == value by { extract(cell[0] == value); assumption(); }
+        have cell[0] == value by { extract(cell[0] == value); known(); }
         step_until(function.exit); fold(Cell(cell)); solve();
     } else {
         have cell[0] == c(before);

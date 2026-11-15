@@ -1393,7 +1393,7 @@ fn one_write_with_a_loan_does_not_walk_unrelated_aliases() {
             let proof = if viewed {
                 proof.replace(
                     "by { step(); }",
-                    "by { have separate(memory(*p), memory(*q)) by { assumption(); } step(); }",
+                    "by { have separate(memory(*p), memory(*q)) by { known(); } step(); }",
                 )
             } else {
                 proof

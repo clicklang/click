@@ -48,13 +48,13 @@ impl adler2::algo::U32X4 {
         apply(adler_helper_byte_observation(bytes[3]));
         step_until(function.exit);
         have result.0[0] == old((bytes[0] as u32));
-        have to_integer(result.0[0]) == old(to_integer((bytes[0] as i32))) by { rewrite(result.0[0] == old((bytes[0] as u32))); assumption(); }
+        have to_integer(result.0[0]) == old(to_integer((bytes[0] as i32))) by { rewrite(result.0[0] == old((bytes[0] as u32))); known(); }
         have result.0[1] == old((bytes[1] as u32));
-        have to_integer(result.0[1]) == old(to_integer((bytes[1] as i32))) by { rewrite(result.0[1] == old((bytes[1] as u32))); assumption(); }
+        have to_integer(result.0[1]) == old(to_integer((bytes[1] as i32))) by { rewrite(result.0[1] == old((bytes[1] as u32))); known(); }
         have result.0[2] == old((bytes[2] as u32));
-        have to_integer(result.0[2]) == old(to_integer((bytes[2] as i32))) by { rewrite(result.0[2] == old((bytes[2] as u32))); assumption(); }
+        have to_integer(result.0[2]) == old(to_integer((bytes[2] as i32))) by { rewrite(result.0[2] == old((bytes[2] as u32))); known(); }
         have result.0[3] == old((bytes[3] as u32));
-        have to_integer(result.0[3]) == old(to_integer((bytes[3] as i32))) by { rewrite(result.0[3] == old((bytes[3] as u32))); assumption(); }
+        have to_integer(result.0[3]) == old(to_integer((bytes[3] as i32))) by { rewrite(result.0[3] == old((bytes[3] as u32))); known(); }
         // Establish the byte ranges independently of the ensures clauses, then
         // close from those checked witnesses so false bounds fail without search.
         have 255u32 >= result.0[0];
@@ -158,22 +158,22 @@ impl RemAssign<u32> for adler2::algo::U32X4 {
         have self.0[0] == old(self.0[0]) % quotient;
         have to_integer(self.0[0]) == truncating_remainder(to_integer(old(self.0[0])), to_integer(quotient)) by {
             rewrite(self.0[0] == old(self.0[0]) % quotient);
-            assumption();
+            known();
         }
         have self.0[1] == old(self.0[1]) % quotient;
         have to_integer(self.0[1]) == truncating_remainder(to_integer(old(self.0[1])), to_integer(quotient)) by {
             rewrite(self.0[1] == old(self.0[1]) % quotient);
-            assumption();
+            known();
         }
         have self.0[2] == old(self.0[2]) % quotient;
         have to_integer(self.0[2]) == truncating_remainder(to_integer(old(self.0[2])), to_integer(quotient)) by {
             rewrite(self.0[2] == old(self.0[2]) % quotient);
-            assumption();
+            known();
         }
         have self.0[3] == old(self.0[3]) % quotient;
         have to_integer(self.0[3]) == truncating_remainder(to_integer(old(self.0[3])), to_integer(quotient)) by {
             rewrite(self.0[3] == old(self.0[3]) % quotient);
-            assumption();
+            known();
         }
         apply(integer::uint32_remainder_less_than_divisor(old(self.0[0]), quotient));
         have self.0[0] < quotient;

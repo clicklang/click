@@ -35,16 +35,16 @@ void fill_t(uint8* dst) {
         have defined(dst[k]) by {
             preserve(separate(statement(1).footprint, memory(dst[k])));
         }
-        have dst[k] == 7u8 by { assumption(); }
-        assumption();
+        have dst[k] == 7u8 by { known(); }
+        known();
     }
     have bytes::all_equal(dst, 0u64, 4u64, 7u8) by {
         unfold(bytes::all_equal);
         intro(); intro();
         instantiate((0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 }), k) using { k < 4u64; };
-        assumption();
+        known();
     }
-    assumption();
+    known();
 }
 ```
 

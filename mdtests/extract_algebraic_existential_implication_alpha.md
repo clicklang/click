@@ -16,7 +16,7 @@ theorem extract_algebraic_existential_alpha(flag: int32) {
         extract(exists (caller_path: Nat) {
             caller_path == Nat::Zero
         });
-        assumption();
+        known();
     }
 }
 ```

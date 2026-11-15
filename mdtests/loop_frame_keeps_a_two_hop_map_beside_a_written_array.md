@@ -62,7 +62,7 @@ void clear_data(struct region* region) {
                 intro();
                 have at(opened, region->arena->occupied[k]) == old(region->arena->occupied[k]) by {
                     instantiate(forall (j: int32) { at(opened, 0) <= at(opened, j) and at(opened, j) < at(opened, arena->capacity) implies at(opened, region->arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
-                    assumption();
+                    known();
                 }
                 transport(at(opened, region->arena->occupied[k]) == old(region->arena->occupied[k]), region->arena->occupied[k] == old(region->arena->occupied[k])) using {
                     at(opened, region->arena->occupied[k]) == old(region->arena->occupied[k]);

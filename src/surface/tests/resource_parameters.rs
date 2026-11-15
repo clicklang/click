@@ -79,7 +79,7 @@ fn resource_parameters_accept_declared_descriptors() {
     resource cell(p: int32*) { owns *p; }
     theorem transport(A: Resource, B: Resource) {
         requires separate(A, B);
-        ensures separate(A, B) by { assumption(); }
+        ensures separate(A, B) by { known(); }
     }
     theorem declared(p: int32*, id: int32) {
         requires separate(cell(p), ticket(id));

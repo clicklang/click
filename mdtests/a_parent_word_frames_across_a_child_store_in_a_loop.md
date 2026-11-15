@@ -54,7 +54,7 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
             have gparent->rb_left == parent by { solve() using { parent == gparent->rb_left; }; }
             have separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right)) by {
                 rewrite(gparent->rb_left == parent);
-                assumption();
+                known();
             }
             mark before_store;
             step();
@@ -69,10 +69,10 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
                     conclusion 2;
                 }
             }
-            have parent == at(before_store, gparent->rb_left) by { assumption(); }
+            have parent == at(before_store, gparent->rb_left) by { known(); }
             have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {
                 rewrite(parent == at(before_store, gparent->rb_left));
-                assumption();
+                known();
             }
             have defined(gparent->rb_left) by {
                 have defined(gparent->rb_left) by {
@@ -80,7 +80,7 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
                         defined(at(before_store, gparent->rb_left));
                     };
                 }
-                assumption();
+                known();
             }
             let c = fold(node_at(gparent->rb_left), { v: 0 });
             let s = fold(left_child(gparent), { v: 0 }, { child: c });

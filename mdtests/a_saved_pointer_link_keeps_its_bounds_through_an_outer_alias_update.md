@@ -38,7 +38,7 @@ void caller(struct node *root, struct node *p, struct node *q) {
     fold(right_link(p, q));
     unfold(s);
     unfold(right_link(p, q));
-    have p->left == old(root->left->left) by assumption();
+    have p->left == old(root->left->left) by known();
 }
 ```
 

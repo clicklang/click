@@ -27,7 +27,7 @@ int32 keep_again(int32 x) {
     have forall (k: int32) { k < x implies k < x } by {
         intro() as below;
         intro();
-        assumption();
+        known();
     }
 }
 ```

@@ -29,7 +29,7 @@ maintainability, not a known wrong verdict.
 - After execution, claims are goals on the outcome `Proof`
   (`OutcomeClaimGoals`), and an opened claim proof is refreshed from it
   before each closer.
-- `assumption` and the normalizing closers (`normalize`, `normalize using`,
+- `known` and the normalizing closers (`normalize`, `normalize using`,
   an arithmetic certificate, `both`) close the main claim
   through one arm of `finish_ordered_proof`, and `solve` and `solve() using`
   through `close_post_execution_claims_with_solve`
@@ -38,7 +38,7 @@ maintainability, not a known wrong verdict.
 - Expansion records the `certificate_since` delta of each checked step
   after execution. The records that keep a written spelling have no checked
   step to print:
-  - an `assumption` that closes a resource claim is an exact resource check;
+  - an `known` that closes a resource claim is an exact resource check;
   - a closer on a divergent path closes its claims vacuously;
   - `apply using` keeps its written spelling;
   - an `open` scope's deferred close proof is rebuilt from that close's

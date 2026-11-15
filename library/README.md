@@ -67,7 +67,7 @@ theorems use ordinary Click declarations. Ordinary library theorems have checked
 proofs. Kernel standard theorems (13 machine-integer laws including `integer::uint32_from_le_bytes`, 5 Integer truncation laws, 6 `Nat`
 laws and 15 separation laws including `separation::separate_restrict`) are backed by
 trusted kernel constructors. Their declarations must match the corresponding kernel
-axioms exactly. The `extern` contracts are assumptions, listed in
+axioms exactly. The `extern` contracts are knowns, listed in
 [trust](../docs/concepts/trust.md).
 
 A module is named by a `click::` path that mirrors its file:

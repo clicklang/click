@@ -199,11 +199,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 }
                 have p[0] <= p[2] by {
                     instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 0);
-                    assumption();
+                    known();
                 }
                 have p[1] <= p[2] by {
                     instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 1);
-                    assumption();
+                    known();
                 }
                 mark before_swap;
                 unfold(all_le_range);
@@ -252,11 +252,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 }
                 have p[0] <= p[2] by {
                     instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 0);
-                    assumption();
+                    known();
                 }
                 have p[1] <= p[2] by {
                     instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 1);
-                    assumption();
+                    known();
                 }
                 mark before_swap;
                 unfold(all_le_range);
@@ -312,16 +312,16 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
         have p[1] <= p[2] by {
             instantiate(all_le_range(at(loop(1).exit, p), at(loop(1).exit, 0), at(loop(1).exit, 2), at(loop(1).exit, p[2])), 1) using {
             };
-            assumption();
+            known();
         }
         have p[0] <= p[2] by {
             instantiate(all_le_range(at(loop(1).exit, p), at(loop(1).exit, 0), at(loop(1).exit, 2), at(loop(1).exit, p[2])), 0) using {
             };
-            assumption();
+            known();
         }
         enumerate();
     }
-    assumption();
+    known();
 }
 ```
 

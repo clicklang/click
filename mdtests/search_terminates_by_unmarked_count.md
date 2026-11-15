@@ -62,10 +62,10 @@ theorem walk_in_range(next: int32[], n: int32, from: int32, fuel: Nat) {
                         0 <= walk(next, from, previous);
                         walk(next, from, previous) < n;
                     };
-                    assumption();
+                    known();
                 }
                 unfold(walk(next, from, Nat::Succ(previous)));
-                assumption();
+                known();
             }
         }
     }
@@ -100,7 +100,7 @@ theorem walk_frame(a: int32[], b: int32[], n: int32, from: int32, fuel: Nat) {
                         0 <= walk(a, from, previous);
                         walk(a, from, previous) < n;
                     };
-                    assumption();
+                    known();
                 }
                 unfold(walk(a, from, Nat::Succ(previous)));
                 unfold(walk(b, from, Nat::Succ(previous)));
@@ -151,12 +151,12 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             obtain (previous: Nat) { walk(next, from, previous) == cur }
             have at(iter, forall (k: int32) {
                 0 <= k and k < n implies 0 <= next[k] and next[k] < n
-            }) by { assumption(); }
+            }) by { known(); }
             have 0 <= next[cur] and next[cur] < n by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies 0 <= next[k] and next[k] < n
                 }, cur) using { 0 <= cur; cur < n; };
-                assumption();
+                known();
             }
             if cur == to {
                 step();
@@ -183,7 +183,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                     });
                     0 <= cur; cur < n;
                 };
-                assumption();
+                known();
             }
             transport(
                 forall (k: int32) { 0 <= k and k < n implies at(iter, next[k]) == at(iter, next[k]) },

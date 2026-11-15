@@ -14,9 +14,9 @@ uint8 local() { ensures result == 3 by {
     step();
     step();
     have result == 3 by {
-        assumption();
+        known();
     }
-    assumption();
+    known();
 } }
 ```
 

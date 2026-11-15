@@ -81,7 +81,7 @@ theorem sized_plug_preserves_shape(ctx: SizedContext, sub: SizedTree) {
                 unfold(sized_context_shape(SizedContext::Left(node, parent, color, value, sibling, up)));
                 unfold(plug(Context::Left(node, parent, color, sized_shape(sibling), sized_context_shape(up)), sized_shape(sub)));
                 unfold(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling)));
-                assumption();
+                known();
             },
             SizedContext::Right(node, parent, color, value, sibling, up) => {
                 apply(ih(up, SizedTree::Node(node, parent, color, value, sibling, sub)));
@@ -89,7 +89,7 @@ theorem sized_plug_preserves_shape(ctx: SizedContext, sub: SizedTree) {
                 unfold(sized_context_shape(SizedContext::Right(node, parent, color, value, sibling, up)));
                 unfold(plug(Context::Right(node, parent, color, sized_shape(sibling), sized_context_shape(up)), sized_shape(sub)));
                 unfold(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub)));
-                assumption();
+                known();
             },
         }
     }
@@ -123,7 +123,7 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
         induct(ctx) as ih {
             SizedContext::Top => {
                 unfold(sized_plug(SizedContext::Top, sub));
-                assumption();
+                known();
             },
             SizedContext::Left(node, parent, color, value, sibling, up) => {
                 unfold(sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)));
@@ -140,7 +140,7 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
                 }
                 apply(ih(up, SizedTree::Node(node, parent, color, value, sub, sibling), value));
                 unfold(sized_plug(SizedContext::Left(node, parent, color, value, sibling, up), sub));
-                assumption();
+                known();
             },
             SizedContext::Right(node, parent, color, value, sibling, up) => {
                 unfold(sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)));
@@ -157,7 +157,7 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
                 }
                 apply(ih(up, SizedTree::Node(node, parent, color, value, sibling, sub), value));
                 unfold(sized_plug(SizedContext::Right(node, parent, color, value, sibling, up), sub));
-                assumption();
+                known();
             },
         }
     }
@@ -187,7 +187,7 @@ theorem sized_plug_contains_focus(ctx: SizedContext, sub: SizedTree) {
                     };
                 }
                 unfold(sized_plug(SizedContext::Left(node, parent, color, value, sibling, up), sub));
-                assumption();
+                known();
             },
             SizedContext::Right(node, parent, color, value, sibling, up) => {
                 apply(rb_subtree_size_nonnegative(sized_shape(sibling)));
@@ -204,7 +204,7 @@ theorem sized_plug_contains_focus(ctx: SizedContext, sub: SizedTree) {
                     };
                 }
                 unfold(sized_plug(SizedContext::Right(node, parent, color, value, sibling, up), sub));
-                assumption();
+                known();
             },
         }
     }
@@ -218,6 +218,6 @@ theorem sized_plug_same_shape(ctx: SizedContext, before: SizedTree, after: Sized
         apply(sized_plug_preserves_shape(ctx, after));
         rewrite(sized_shape(sized_plug(ctx, before)) == plug(sized_context_shape(ctx), sized_shape(before)));
         rewrite(sized_shape(sized_plug(ctx, after)) == plug(sized_context_shape(ctx), sized_shape(after)));
-        rewrite(sized_shape(before) == sized_shape(after)); assumption();
+        rewrite(sized_shape(before) == sized_shape(after)); known();
     }
 }

@@ -22,7 +22,7 @@ int32 viewable_segment_forms(int32 p[], int32 n) {
     ensures returns_first: result == p[0];
 } by {
     have at(region(0).entry, viewable(p[0..n])) by {
-        assumption();
+        known();
     }
 }
 ```

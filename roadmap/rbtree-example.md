@@ -1679,7 +1679,7 @@ callback and whole-context restoration.
 the outer parent from separated owned words in either ancestor orientation,
 while preserving the incoming-link model. The sized parent-update helper now
 calls it internally and no longer requires callers to supply this disequality.
-C comparisons and `assumption()` share the indexed nonempty separation rule;
+C comparisons and `known()` share the indexed nonempty separation rule;
 full non-root insertion still needs callback composition and context restoration.
 
 
@@ -1730,7 +1730,7 @@ and context-depth termination are preserved without changing the Linux C.
 Both sidecars now also accept an arbitrary owned other child of the parent and
 arbitrary owned children of the red uncle. Parent and grandparent cache values
 remain symbolic. The three count obligations in each orientation close with
-`assumption()` through the shared Integer/model equality classes, without
+`known()` through the shared Integer/model equality classes, without
 explicit alias rewrites. Each sidecar verifies all three insertion claims.
 Repeated color-flip propagation through a red outer ancestor and writable erase
 integration remain unfinished.

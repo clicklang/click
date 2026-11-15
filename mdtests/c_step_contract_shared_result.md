@@ -30,7 +30,7 @@ int32 invoke(int32 (*callback)(int32*, int32), int32* cell, int32 x) {
 } by {
     step(Buffered);
     step_until(function.exit);
-    have result <= x by assumption();
+    have result <= x by known();
     have x <= result;
     apply(int32_le_antisymmetric(result, x));
     solve();

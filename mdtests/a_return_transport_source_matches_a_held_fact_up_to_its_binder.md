@@ -1,7 +1,7 @@
 # A return transport's source matches a held fact up to its binder's name
 
 At a completed return outcome, the proof names `memset`'s historical
-quantified postcondition with another binder and selects it by `assumption`.
+quantified postcondition with another binder and selects it by `known`.
 It then preserves each read and its definedness explicitly using the separated
 statement footprint.
 
@@ -22,7 +22,7 @@ void fill_t(uint8* dst) {
     step_until(function.exit);
     have at(statement(1).entry,
         (0u64..4u64).all(|renamed| { defined(dst[renamed]) and dst[renamed] == 7 })) by {
-        assumption();
+        known();
     }
     have (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }) by {
         intro(); intro();
@@ -40,10 +40,10 @@ void fill_t(uint8* dst) {
         have defined(dst[k]) by {
             preserve(separate(statement(1).footprint, memory(dst[k])));
         }
-        have dst[k] == 7u8 by { assumption(); }
-        assumption();
+        have dst[k] == 7u8 by { known(); }
+        known();
     }
-    assumption();
+    known();
 }
 ```
 

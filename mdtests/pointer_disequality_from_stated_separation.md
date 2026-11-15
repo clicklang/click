@@ -17,12 +17,12 @@ int32 apart_c(struct node* a, struct node* b) {
 
 theorem apart(a: struct node*, b: struct node*) {
     requires separate(memory(a->word), memory(b->word));
-    ensures a != b by { assumption(); }
+    ensures a != b by { known(); }
 }
 
 theorem apart_reversed(a: struct node*, b: struct node*) {
     requires separate(memory(a->word), memory(b->word));
-    ensures b != a by { assumption(); }
+    ensures b != a by { known(); }
 }
 ```
 

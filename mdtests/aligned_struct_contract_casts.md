@@ -26,7 +26,7 @@ int32 element_is_aligned(struct pair* p, int32 i) {
 } by {
     step_until(function.exit);
     have aligned(p + i, 8) by { solve(); }
-    have ((p + i) as uint64 & 7) == 0 by { assumption(); }
+    have ((p + i) as uint64 & 7) == 0 by { known(); }
     solve();
 }
 ```

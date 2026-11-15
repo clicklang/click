@@ -34,7 +34,7 @@ int32 tree_root(struct node* node) {
 } by {
     observe(tree(node));
     step();
-    assumption();
+    known();
 }
 
 int32 tree_make_root(
@@ -59,11 +59,11 @@ int32 tree_make_root(
     step();
     step();
     fold(tree(node));
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
+    known();
 }
 
 int32 tree_swap_children(struct node* node) {
@@ -101,11 +101,11 @@ int32 tree_leaf_pipeline(struct node* node, int32 value) {
     fold(tree(node));
     step();
     step();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
+    known();
 }
 
 int32 tree_is_leaf(struct node* node) {
@@ -142,12 +142,12 @@ int32 tree_is_leaf(struct node* node) {
         have node->left == 0 implies node->right != 0 implies result == 0;
         have node->left == 0 implies node->right == 0 implies result == 1;
         have result == 0 or result == 1;
- assumption();
-        assumption();
-        assumption();
-        assumption();
-        assumption();
-        assumption();
+ known();
+        known();
+        known();
+        known();
+        known();
+        known();
     } else {
         if at(function.entry, node->right) != at(function.entry, 0) {
             have result == 1 implies node->left == 0;
@@ -156,12 +156,12 @@ int32 tree_is_leaf(struct node* node) {
             have node->left == 0 implies node->right != 0 implies result == 0;
             have node->left == 0 implies node->right == 0 implies result == 1;
             have result == 0 or result == 1;
-     assumption();
-            assumption();
-            assumption();
-            assumption();
-            assumption();
-            assumption();
+     known();
+            known();
+            known();
+            known();
+            known();
+            known();
         } else {
             have result == 1 implies node->left == 0;
             have result == 1 implies node->right == 0;
@@ -169,12 +169,12 @@ int32 tree_is_leaf(struct node* node) {
             have node->left == 0 implies node->right != 0 implies result == 0;
             have node->left == 0 implies node->right == 0 implies result == 1;
             have result == 0 or result == 1;
-     assumption();
-            assumption();
-            assumption();
-            assumption();
-            assumption();
-            assumption();
+     known();
+            known();
+            known();
+            known();
+            known();
+            known();
         }
     }
 }
@@ -223,9 +223,9 @@ struct node* tree_rotate_left(struct node* node) {
     have node->right == old(node->right->left);
     fold(tree(node));
     fold(tree(result));
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
 }
 
 int32 tree_walk(struct node* node) {
@@ -250,7 +250,7 @@ int32 tree_walk(struct node* node) {
             step();
             step();
             step();
-            assumption();
+            known();
         } else {
             step();
             step();
@@ -264,7 +264,7 @@ int32 tree_walk(struct node* node) {
             step();
             step();
             step();
-            assumption();
+            known();
         }
     } else {
         if node->right == 0 {
@@ -280,7 +280,7 @@ int32 tree_walk(struct node* node) {
             step();
             step();
             step();
-            assumption();
+            known();
         } else {
             step();
             step();
@@ -294,7 +294,7 @@ int32 tree_walk(struct node* node) {
             step();
             step();
             step();
-            assumption();
+            known();
         }
     }
 }

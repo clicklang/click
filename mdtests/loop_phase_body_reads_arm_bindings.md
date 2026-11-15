@@ -26,7 +26,7 @@ which phase bodies name the arm's bindings, `spin` from `initialize` and
 the same definitional equation by `unfold` and `normalize`.
 
 `spin`'s `initialize` is written in the shape the entry planner checks: one
-`have` per invariant, then `assumption()`. The helper `have` that needs the
+`have` per invariant, then `known()`. The helper `have` that needs the
 arm's bindings is nested inside the invariant's own body, which is where a
 phase body of any depth now resolves them.
 
@@ -109,9 +109,9 @@ int spin(struct node* p, int n) {
                             unfold(head_value(Tree::Node(id, value, left_model)));
                             normalize();
                         }
-                        assumption();
+                        known();
                     }
-                    assumption();
+                    known();
                 }
                 preserve by {
                     have head_value(Tree::Node(id, value, left_model)) == value by {

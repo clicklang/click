@@ -44,7 +44,7 @@ void roundtrip(struct node* p, struct node* q) {
         Tree::Node(id, lm, rm) => {
             let { left: l, right: r } = unfold(t);
             have separate(memory(q->right), memory(p->left)) by {
-                assumption();
+                known();
             }
             mark before;
             step();

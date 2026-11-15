@@ -66,7 +66,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             step();
         }
     }
-    have node == old(node) by { assumption(); }
+    have node == old(node) by { known(); }
 }
 
 theorem sized_insert_root()

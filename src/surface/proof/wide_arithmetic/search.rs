@@ -142,7 +142,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     forward,
                     vec![ProofStep::ArithmeticUsing(surface_premises.to_vec())],
                 ))
-                .and_then(|proof| proof.driver().apply_step(ProofStep::Assumption))
+                .and_then(|proof| proof.driver().apply_step(ProofStep::Known))
                 .map_err(|error| Some(error.raw_summary().to_string()));
         }
 
@@ -228,7 +228,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let upper = carrier.typed_literals(&upper);
             // An order written the other way round, `i > 0` or `not (i <
             // n)`, is carried below by first restating it the bridge's way
-            // round, which `assumption` closes from the listed fact.
+            // round, which `known` closes from the listed fact.
             collect_operations(&lower, &mut operations);
             collect_operations(&upper, &mut operations);
             collect_atoms(&lower, &mut atoms);
@@ -282,7 +282,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             for item in pending {
                 let attempt = match &item {
                     Pending::Premise(premise, lower, upper, relation) => {
-                        // The carry below is `assumption()`, whose refusal
+                        // The carry below is `known()`, whose refusal
                         // would name the observed reading rather than the
                         // listed premise the proof lacks.
                         let available = search_input
@@ -309,14 +309,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         let restated = if premise != &stated && !compares_observations(premise) {
                             proof
                                 .driver()
-                                .apply_step(have(stated.clone(), vec![ProofStep::Assumption]))
+                                .apply_step(have(stated.clone(), vec![ProofStep::Known]))
                         } else {
                             Ok(proof.clone())
                         };
                         // A comparison of exact observations is the native
                         // comparison of their carriers, so the Integer
                         // order is the stated premise itself.
-                        let carried = vec![ProofStep::Assumption];
+                        let carried = vec![ProofStep::Known];
                         restated
                             .and_then(|proof| {
                                 proof.driver().apply_step(have(observed.clone(), carried))
@@ -381,7 +381,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         // are its definedness, which they now file as a
                         // fact. Where an operand is itself a sum, being
                         // defined also says that sum is, which is a fact by
-                        // now, and `assumption` joins the two.
+                        // now, and `known` joins the two.
                         let bounded = match carrier {
                             Carrier::UInt64 | Carrier::UInt32 => bounded,
                             Carrier::Int64 => bounded.and_then(|proof| {
@@ -390,7 +390,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 };
                                 proof
                                     .driver()
-                                    .apply_step(have(defined, vec![ProofStep::Assumption]))
+                                    .apply_step(have(defined, vec![ProofStep::Known]))
                                     .map_err(|error| {
                                         format!("{}: {}", out_of_range(&upper), error.raw_summary())
                                     })
@@ -503,7 +503,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let _ = (goal_lower, goal_upper);
         let applied = proof
             .driver()
-            .apply_step(ProofStep::Assumption)
+            .apply_step(ProofStep::Known)
             .map_err(|error| {
                 Some(format!(
                     "the Integer claim could not be carried back: {}",

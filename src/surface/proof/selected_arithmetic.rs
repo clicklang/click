@@ -5,13 +5,13 @@
 //! two `uint64` values says `to_integer(i) < to_integer(n)`, and a `uint64`
 //! is never negative. Those facts reach that arithmetic as the steps a proof would
 //! write by hand: each connected machine order fact is carried to `Integer`
-//! by `assumption` (a comparison of observations is the native comparison),
+//! by `known` (a comparison of observations is the native comparison),
 //! and each unsigned value's observation gets its type range by an explicit
 //! `type_range` certificate.
 //! It then runs over the original and the carried facts, and only
 //! the carried facts its certificate cites are kept, so the expansion holds
 //! the bridges the proof needs and no others. Every step is an explicit
-//! arithmetic certificate or `assumption`; nothing here is trusted.
+//! arithmetic certificate or `known`; nothing here is trusted.
 
 use super::wide_arithmetic::{
     Carrier, Relation, have, operation_identity, relate, relation_parts, to_integer, type_range,
@@ -64,7 +64,7 @@ const REWRITE_ATTEMPTS: usize = 256;
 const REWRITE_SOLVE_CLOSURES: usize = 8;
 
 /// How many rewrites `solve`'s single-rewrite strategy tries, each followed
-/// by `assumption`: a goal that restates a fact through one equation.
+/// by `known`: a goal that restates a fact through one equation.
 const SINGLE_REWRITES: usize = 16;
 
 /// How many connected constructor equations `solve` pairs.
@@ -268,7 +268,7 @@ struct RewriteBudget {
 /// How the rewrite search closes each goal it reaches.
 #[derive(Clone, Copy)]
 pub(in crate::surface::proof) enum RewriteClosers<'p> {
-    /// `assumption`, `normalize`, the direct logical closer, then a
+    /// `known`, `normalize`, the direct logical closer, then a
     /// bounded nested `solve`: the context's facts.
     Ambient,
     /// The early goal-local route: direct/typed closure and optional
@@ -781,7 +781,7 @@ theorem product_identity(a: uint16, b: uint16) {
     let r: uint16 = a * b;
     ensures to_integer(r) == to_integer(a) * to_integer(b) by {
         have to_integer(r) == to_integer(a) * to_integer(b) by solve();
-        assumption();
+        known();
     }
 }
 "#;
@@ -817,7 +817,7 @@ theorem strict(a: {ty}, b: {ty}) {{
     requires a != b;
     ensures a < b by {{
         have a < b by solve();
-        assumption();
+        known();
     }}
 }}
 "#
@@ -854,7 +854,7 @@ theorem successor_identity(x: int32) {
     requires x < 2147483647;
     ensures to_integer(x + 1) == to_integer(x) + 1 by {
         have to_integer(x + 1) == to_integer(x) + 1 by solve();
-        assumption();
+        known();
     }
 }
 "#;
@@ -886,7 +886,7 @@ theorem low_bit_is_the_color_bit(bits: uint64, color: Color) {
     requires (bits & 1u64) == color_bit(color) as uint64;
     ensures (bits & 1u64) == color_bit(color) as uint64 by {
         have (bits & 1u64) == color_bit(color) as uint64 by solve();
-        assumption();
+        known();
     }
 }
 "#;
@@ -990,7 +990,7 @@ theorem black_color_is_black(color: Color) {
                         rewrite(used == 0);
                         normalize();
                     }}
-                    assumption();
+                    known();
                 }}
             }}
         "#

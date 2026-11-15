@@ -2,7 +2,7 @@
 
 `peek` takes `const struct node* p`. Unfolding `x` publishes the body fact
 `same(p, p) == 1`, and after a C step the proof still finds it by
-`assumption`.
+`known`.
 
 It used to be lost. Whether a pointer's pointee is `const` was part of the
 pointer value's identity, so the fact built from the instance's argument and
@@ -46,7 +46,7 @@ int32 peek(const struct node* p) {
 } by {
     unfold(x);
     step();
-    have same(p, p) == 1 by assumption();
+    have same(p, p) == 1 by known();
     let x = fold(here(p), { tag: 0 });
     step();
     step();

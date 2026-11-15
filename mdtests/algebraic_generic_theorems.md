@@ -50,28 +50,28 @@ theorem reflexive<T>(value: T) {
 theorem reflexive_via_generic<T>(value: T) {
     ensures value == value by {
         apply(reflexive(value));
-        assumption();
+        known();
     }
 }
 
 theorem retain<T>(left: T, right: T) {
     requires left == right;
     ensures left == right by {
-        assumption();
+        known();
     }
 }
 
 theorem int32_instance(xs: TestList<int32>) {
     ensures append(xs, TestList<int32>::Nil) == xs by {
         apply(append_right_identity(xs));
-        assumption();
+        known();
     }
 }
 
 theorem pointer_instance(xs: TestList<int32*>) {
     ensures append(xs, TestList<int32*>::Nil) == xs by {
         apply(append_right_identity(xs));
-        assumption();
+        known();
     }
 }
 
@@ -80,7 +80,7 @@ theorem scalar_parameter_instance(value: int32) {
     ensures value == value by {
         apply(retain(value, value)) using { value == value; };
         apply(reflexive_via_generic(value));
-        assumption();
+        known();
     }
 }
 
@@ -88,21 +88,21 @@ theorem generic_requirement_instance(left: int32, right: int32) {
     requires left == right;
     ensures left == right by {
         apply(retain(left, right));
-        assumption();
+        known();
     }
 }
 
 theorem pointer_parameter_instance(value: int32*) {
     ensures value == value by {
         apply(reflexive_via_generic(value));
-        assumption();
+        known();
     }
 }
 
 theorem algebraic_parameter_instance(value: Maybe<int32>) {
     ensures value == value by {
         apply(reflexive_via_generic(value));
-        assumption();
+        known();
     }
 }
 ```

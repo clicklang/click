@@ -51,7 +51,7 @@ int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
                 at(m0, b->v) == old(b->v);
             };
         }
-        assumption();
+        known();
     }
 }
 ```

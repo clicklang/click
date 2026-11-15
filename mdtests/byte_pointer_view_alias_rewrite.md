@@ -22,7 +22,7 @@ int32 shifted(const uint8* bytes, const uint8* cursor) {
 } by {
  have viewable(bytes[2..6]) by { have viewable(bytes[2..6]) by {
      have viewable(bytes[0..8]) by {
-         assumption();
+         known();
      }
      have viewable(bytes[2..6]) by {
          have contains(memory(bytes[0..8]), memory(bytes[2..6])) by {
@@ -41,11 +41,11 @@ int32 shifted(const uint8* bytes, const uint8* cursor) {
              contains(memory(bytes[0..8]), memory(bytes[2..6]));
          };
      }
-     assumption();
+     known();
  }
-     assumption();
+     known();
  }
- have viewable(cursor[0..4]) by { rewrite(cursor == bytes + 2); assumption(); }
+ have viewable(cursor[0..4]) by { rewrite(cursor == bytes + 2); known(); }
 }
 ```
 

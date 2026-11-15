@@ -137,7 +137,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     }; }
     have to_integer(quot + 0i64) == truncating_quotient(to_integer(n), to_integer(d)) by {
         rewrite(to_integer(quot + 0i64) == to_integer(quot) + 0);
-        assumption();
+        known();
     }
     if 0 < mod {
         apply(integer::upper_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), 9223372036854775807));
@@ -179,7 +179,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1;
         have 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
             intro();
-            assumption();
+            known();
         }
         have truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
             intro();
@@ -216,7 +216,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             }
             have truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                 intro();
-                assumption();
+                known();
             }
             apply(integer::ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
             solve();
@@ -247,7 +247,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             }
             have truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                 intro();
-                assumption();
+                known();
             }
             apply(integer::ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
             solve();

@@ -20,10 +20,10 @@ void check(struct Node* p, struct Node* q) {
 } by {
     step(); step();
     have r == q;
-    have (r->tag & 1) == 0 by assumption();
+    have (r->tag & 1) == 0 by known();
 }
 ```
 
 ```expect
-fail: assumption
+fail: known
 ```

@@ -27,7 +27,7 @@ void put(int32* p, int32* q) {
                 old(p[0]) == 9;
             };
         }
-        assumption();
+        known();
     }
 }
 ```

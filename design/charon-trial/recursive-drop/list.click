@@ -370,8 +370,8 @@ impl recursive_drop::Stack {
                         conclusion 1;
                     }
                 }
-                have at(region(90).exit, self.head) == old(self.head.next) by { assumption(); }
-                have self.head == old(self.head.next) by { assumption(); }
+                have at(region(90).exit, self.head) == old(self.head.next) by { known(); }
+                have self.head == old(self.head.next) by { known(); }
                 unfold(first(List::Cons(v, tail_values)));
                 unfold(rest(List::Cons(v, tail_values)));
                 match tail_values {
@@ -386,11 +386,11 @@ impl recursive_drop::Stack {
                         }
                         have self.head.next == old(self.head.next).next by {
                             rewrite(self.head == old(self.head.next));
-                            assumption();
+                            known();
                         }
                         have self.head.value == w by {
                             rewrite(self.head == old(self.head.next));
-                            assumption();
+                            known();
                         }
                         let after = fold(nodes(self.head), { values: List::Cons(w, more) }, { tail: next });
                     }

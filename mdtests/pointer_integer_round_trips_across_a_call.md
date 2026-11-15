@@ -30,10 +30,10 @@ int32 exact(struct Pair* pair, struct Holder* h, int32* other) {
     have (h->word as (int32*)) == &pair->first by { normalize(); }
     mark saved;
     step();
-    have (h->word as (int32*)) == at(saved, (h->word as (int32*))) by { assumption(); }
+    have (h->word as (int32*)) == at(saved, (h->word as (int32*))) by { known(); }
     have (h->word as (int32*)) == &pair->first by {
         rewrite((h->word as (int32*)) == at(saved, (h->word as (int32*))));
-        assumption();
+        known();
     }
     step();
 }
@@ -49,10 +49,10 @@ int32 tagged(struct Pair* pair, struct Holder* h, int32* other) {
     have ((h->word & ~1u64) as (int32*)) == &pair->first by { normalize(); }
     mark saved;
     step();
-    have ((h->word & ~1u64) as (int32*)) == at(saved, ((h->word & ~1u64) as (int32*))) by { assumption(); }
+    have ((h->word & ~1u64) as (int32*)) == at(saved, ((h->word & ~1u64) as (int32*))) by { known(); }
     have ((h->word & ~1u64) as (int32*)) == &pair->first by {
         rewrite(((h->word & ~1u64) as (int32*)) == at(saved, ((h->word & ~1u64) as (int32*))));
-        assumption();
+        known();
     }
     step();
 }

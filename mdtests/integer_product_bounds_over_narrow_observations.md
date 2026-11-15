@@ -54,7 +54,7 @@ theorem short_product_identity(a: int16, b: int16) {
                 conclusion 0;
             }
         }
-        assumption();
+        known();
     }
 }
 ```

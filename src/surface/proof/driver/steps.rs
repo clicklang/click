@@ -248,7 +248,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     .assumptions()
                     .contains_known(&target_fact)
             {
-                return self.apply_ordinary_transport_steps(target, vec![ProofStep::Assumption]);
+                return self.apply_ordinary_transport_steps(target, vec![ProofStep::Known]);
             }
         }
 
@@ -371,7 +371,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         if self.proof.surface_goal() == Some(target) {
             let mut current = self.proof.clone();
             for step in steps {
-                if current.focused_discharged() && matches!(step, ProofStep::Assumption) {
+                if current.focused_discharged() && matches!(step, ProofStep::Known) {
                     continue;
                 }
                 current = current.driver().apply_step(step)?;
@@ -419,7 +419,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
 
         let mut provenance_step = step.clone();
         let checked_proposition_successor = match &step {
-            ProofStep::Assumption => Some(driver_proof.apply_assumption()),
+            ProofStep::Known => Some(driver_proof.apply_known()),
             ProofStep::Normalize => Some(driver_proof.apply_normalize()),
             ProofStep::NormalizeUsing(premises) => {
                 Some(driver_proof.apply_normalize_using(premises))
@@ -654,7 +654,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// An `apply` that leaves its goal open adds its theorem's conclusions
     /// as facts with no source spelling, so a later rewrite or `solve` could
     /// not cite them. Spell each conclusion the way the caller would write it
-    /// and record it as a checked `have` closed by `assumption`, which finds
+    /// and record it as a checked `have` closed by `known`, which finds
     /// the fact the application just added. The `apply` keeps its own proof
     /// node: the spelling is an index entry for later premise lookups, not a
     /// step of the proof, and an expansion writes the `apply` alone. A
@@ -686,7 +686,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let Ok(next) = spelled.driver().apply_step(ProofStep::Have {
                 proposition: conclusion,
                 proof: Box::new(ProofCertificate::from_validated_steps(vec![
-                    ProofStep::Assumption,
+                    ProofStep::Known,
                 ])),
             }) else {
                 continue;

@@ -20,15 +20,15 @@ tactic sized_link_replacement_distinct(child: struct rb_node*, replacement: stru
                 unfold(sized_context_parent(SizedContext::Top, 0)); normalize();
             }
             have sized_context_parent(link.model, 0) == 0 or replacement != sized_context_parent(link.model, 0) by {
-                assumption();
+                known();
             }
         },
         SizedContext::Left(a, above, shade, value, sibling_model, up_model) => {
             let { frames: frames } = unfold(link);
             let { metadata: metadata, sibling: sibling, up: up } = unfold(frames);
-            have separate(memory(replacement->__rb_parent_color), memory(a->__rb_parent_color)) by { assumption(); }
+            have separate(memory(replacement->__rb_parent_color), memory(a->__rb_parent_color)) by { known(); }
             have replacement != a by {
-                assumption();
+                known();
             }
             let frames = fold(sized_context_at(child, root->rb_node, 0, previous), {
                 model: SizedContext::Left(a, above, shade, value, sibling_model, up_model)
@@ -41,18 +41,18 @@ tactic sized_link_replacement_distinct(child: struct rb_node*, replacement: stru
                 unfold(sized_context_parent(SizedContext::Left(a, above, shade, value, sibling_model, up_model), 0)); normalize();
             }
             have replacement != sized_context_parent(link.model, 0) by {
-                rewrite(sized_context_parent(link.model, 0) == a); assumption();
+                rewrite(sized_context_parent(link.model, 0) == a); known();
             }
             have sized_context_parent(link.model, 0) == 0 or replacement != sized_context_parent(link.model, 0) by {
-                assumption();
+                known();
             }
         },
         SizedContext::Right(a, above, shade, value, sibling_model, up_model) => {
             let { frames: frames } = unfold(link);
             let { metadata: metadata, sibling: sibling, up: up } = unfold(frames);
-            have separate(memory(replacement->__rb_parent_color), memory(a->__rb_parent_color)) by { assumption(); }
+            have separate(memory(replacement->__rb_parent_color), memory(a->__rb_parent_color)) by { known(); }
             have replacement != a by {
-                assumption();
+                known();
             }
             let frames = fold(sized_context_at(child, root->rb_node, 0, previous), {
                 model: SizedContext::Right(a, above, shade, value, sibling_model, up_model)
@@ -65,10 +65,10 @@ tactic sized_link_replacement_distinct(child: struct rb_node*, replacement: stru
                 unfold(sized_context_parent(SizedContext::Right(a, above, shade, value, sibling_model, up_model), 0)); normalize();
             }
             have replacement != sized_context_parent(link.model, 0) by {
-                rewrite(sized_context_parent(link.model, 0) == a); assumption();
+                rewrite(sized_context_parent(link.model, 0) == a); known();
             }
             have sized_context_parent(link.model, 0) == 0 or replacement != sized_context_parent(link.model, 0) by {
-                assumption();
+                known();
             }
         },
     }

@@ -2026,7 +2026,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 // everywhere else as the equality of its offsets. Rebuild
                 // through the canonicalizing constructor so the rewritten
                 // goal is the term an ordinary lowering would produce and a
-                // later `assumption` or `normalize() using` can see it.
+                // later `known` or `normalize() using` can see it.
                 ConditionTerm::pointer_equal(
                     rewrite_pointer(goal_left),
                     rewrite_pointer(goal_right),

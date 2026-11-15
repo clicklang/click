@@ -65,7 +65,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 apply(pointer_association(bytes, bytes.len() - at(iteration, iter.len()), 1u64));
                 have iter.as_slice().as_ptr() == bytes + ((bytes.len() - at(iteration, iter.len())) + 1u64) by {
                     rewrite(bytes + ((bytes.len() - at(iteration, iter.len())) + 1u64) == (bytes + (bytes.len() - at(iteration, iter.len()))) + 1u64);
-                    assumption();
+                    known();
                 }
                 step();
                 have byte == bytes + (bytes.len() - at(iteration, iter.len()));
@@ -86,7 +86,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 have iter.len() <= bytes.len();
                 have iter.as_slice().as_ptr() == bytes + (bytes.len() - iter.len()) by {
                     rewrite((bytes.len() - iter.len()) == (bytes.len() - at(iteration, iter.len())) + 1u64);
-                    assumption();
+                    known();
                 }
                 have iter.len() < at(iteration, iter.len());
             } else {

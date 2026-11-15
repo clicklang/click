@@ -6,7 +6,7 @@ theorem choice_is_not_universal() {
     ensures forall (arbitrary: Integer) { arbitrary == 0 } by {
         intro();
         obtain (chosen: Integer) { chosen == 0 }
-        assumption();
+        known();
     }
 }
 ```

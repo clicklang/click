@@ -35,7 +35,7 @@ int32 write_box(int32 box[1]) {
         apply(head_is_three_is_small(old(box))) using {
             old(box[0]) == 3;
         };
-        assumption();
+        known();
     }
 }
 ```

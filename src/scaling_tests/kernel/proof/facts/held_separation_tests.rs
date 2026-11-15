@@ -98,7 +98,7 @@ fn held_separation_transitive_alias_uses_the_shared_resource_index() {
 }
 
 #[test]
-fn exact_partition_assumption_ignores_unselected_members_and_refuses_two_views() {
+fn exact_partition_known_ignores_unselected_members_and_refuses_two_views() {
     let mut work = Vec::new();
     for count in [4, 16, 64, 256] {
         let owned = cell(0);
@@ -110,8 +110,7 @@ fn exact_partition_assumption_ignores_unselected_members_and_refuses_two_views()
         );
         let goal = separation(owned.clone(), viewed.clone());
         let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
-            let _guard =
-                crate::kernel::search::FastOperationScope::enter("exact partition assumption");
+            let _guard = crate::kernel::search::FastOperationScope::enter("exact partition known");
             let facts = ProofFacts::default().with_exact_partition_separation(&goal, &resources);
             assert!(facts.contains(&goal));
             assert!(resources.proves_exact_partition_separation(&viewed, &owned));
@@ -128,7 +127,7 @@ fn exact_partition_assumption_ignores_unselected_members_and_refuses_two_views()
 }
 
 #[test]
-fn exact_partition_assumption_does_not_treat_supported_views_as_independent() {
+fn exact_partition_known_does_not_treat_supported_views_as_independent() {
     let owner = ResourceFact::own(range(0, 0, 2, 4));
     let projected = range(0, 0, 1, 4);
     let resources = ResourceContext::new()

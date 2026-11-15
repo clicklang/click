@@ -1,6 +1,6 @@
 # simple proof tactics
 
-These proofs use only deterministic, bounded simple tactics. `assumption` reuses
+These proofs use only deterministic, bounded simple tactics. `known` reuses
 an available semantic fact without deriving a new one, `normalize` computes a
 proposition without consulting the proof context, and `rewrite` performs one
 explicitly named equality substitution.
@@ -14,11 +14,11 @@ int32 identity(int32 x) {
 ```click
 verifying "simple_tactics.c";
 
-theorem exact_assumption(x: int32) {
+theorem exact_known(x: int32) {
     requires x >= 0;
 
     ensures x >= 0 by {
-        assumption();
+        known();
     }
 }
 

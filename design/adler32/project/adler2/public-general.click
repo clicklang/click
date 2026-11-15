@@ -38,12 +38,12 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
  have forall (k: uint64) { k < data.len() implies data[k] == old(data[k]) } by solve();
  have to_integer(h.a) == old(adler_spec_a_u64(data, data.len(), 1)) by {
   rewrite(1 == at(canonical_seed, to_integer((h.a as u32))));
-  assumption();
+  known();
  }
  have to_integer(h.b) == old(adler_spec_b_u64(data, data.len(), 1, 0)) by {
   rewrite(1 == at(canonical_seed, to_integer((h.a as u32))));
   rewrite(0 == at(canonical_seed, to_integer((h.b as u32))));
-  assumption();
+  known();
  }
  have 65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum_u64(data, data.len(), 1, 0)) by {
   unfold(adler_spec_checksum_u64(data, data.len(), 1, 0));

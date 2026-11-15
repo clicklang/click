@@ -22,7 +22,7 @@ theorem lift(cell: int32 (*)()) executes cell() {
     requires Exact(cell);
     ensures Progress(cell) as { cell: cell } by {
         step(Exact, { cell: cell });
-        have cell.revision == old(cell.revision) + 1 by assumption();
+        have cell.revision == old(cell.revision) + 1 by known();
         solve();
     }
 }

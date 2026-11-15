@@ -42,9 +42,9 @@ int32 parent_value(struct node* node, struct node* next) {
             conclusion 1;
         }
     }
-    have ((node->word & ~3) as (struct node *)) == next by { assumption(); }
+    have ((node->word & ~3) as (struct node *)) == next by { known(); }
     step();
-    have parent == next by { assumption(); }
+    have parent == next by { known(); }
     step();
 }
 ```

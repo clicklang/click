@@ -29,7 +29,7 @@ theorem same_weighted(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
         if hi <= lo {
             peel(weighted(p, lo, hi)) using { hi <= lo; };
             peel(weighted(q, lo, hi)) using { hi <= lo; };
-            assumption();
+            known();
         } else {
             have lo < hi;
             have 0 <= to_integer(hi - 1) by { solve(); }
@@ -55,7 +55,7 @@ theorem same_weighted(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
             peel(weighted(p, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
             peel(weighted(q, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
             rewrite(p[hi - 1] == q[hi - 1]);
-            assumption();
+            known();
         }
     }
 }
@@ -70,9 +70,9 @@ void set_end(int32 *v, int32 i, int32 n) {
     mark entry;
     have weighted(at(entry, v), 0, i) == weighted(at(entry, v), 0, i) by normalize();
     have 0 <= 0 by { normalize(); }
-    have 0 <= i by { assumption(); }
+    have 0 <= i by { known(); }
     have i <= n by { solve(); }
-    have viewable(v[0..n]) by { observe(v[0..n]); assumption(); }
+    have viewable(v[0..n]) by { observe(v[0..n]); known(); }
     have contains(memory(v[0..n]), memory(v[0..i])) by {
         apply(click::separation::contains_subrange(v, 0, n, 0, i)) using { 0 <= 0; 0 <= i; i <= n; };
     }
@@ -94,7 +94,7 @@ void set_end(int32 *v, int32 i, int32 n) {
             }
             preserve(separate(statement(0).footprint, memory(v[k])));
         }
-        have viewable(v[0..n]) by { observe(v[0..n]); assumption(); }
+        have viewable(v[0..n]) by { observe(v[0..n]); known(); }
         have viewable(v[0..i]) by {
             apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..i]))) using {
                 viewable(v[0..n]); contains(memory(v[0..n]), memory(v[0..i]));
@@ -106,7 +106,7 @@ void set_end(int32 *v, int32 i, int32 n) {
             viewable(v[0..i]); at(entry, viewable(v[0..i]));
             forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) };
         };
-        assumption();
+        known();
     }
 }
 ```

@@ -35,7 +35,7 @@ int32 keep(int32* p) {
         Tag::T(x) => {
             unfold(b);
             have defined(x + 2) by {
-                assumption();
+                known();
             }
             step_until(function.exit);
             let b = fold(box(p), { tag: Tag::T(x) });

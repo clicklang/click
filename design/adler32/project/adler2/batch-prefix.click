@@ -19,16 +19,16 @@ theorem adler_native_deferred_b_step(pos: int32, a: uint32, b: uint32, a0: uint3
   have defined(pos + 4) by solve() using { 0 <= pos; pos <= 22204; };
   have to_integer(pos + 4) == to_integer(pos) + to_integer(4);
   have to_integer(a0 + v0) == to_integer(a0) + to_integer(v0);
-  have to_integer(b0) + to_integer(a0 + v0) <= 4294967295 by { rewrite(to_integer(a0 + v0) == to_integer(a0) + to_integer(v0)); assumption(); }
+  have to_integer(b0) + to_integer(a0 + v0) <= 4294967295 by { rewrite(to_integer(a0 + v0) == to_integer(a0) + to_integer(v0)); known(); }
   have to_integer(b0 + (a0 + v0)) == to_integer(b0) + to_integer((a0 + v0));
   have to_integer(a1 + v1) == to_integer(a1) + to_integer(v1);
-  have to_integer(b1) + to_integer(a1 + v1) <= 4294967295 by { rewrite(to_integer(a1 + v1) == to_integer(a1) + to_integer(v1)); assumption(); }
+  have to_integer(b1) + to_integer(a1 + v1) <= 4294967295 by { rewrite(to_integer(a1 + v1) == to_integer(a1) + to_integer(v1)); known(); }
   have to_integer(b1 + (a1 + v1)) == to_integer(b1) + to_integer((a1 + v1));
   have to_integer(a2 + v2) == to_integer(a2) + to_integer(v2);
-  have to_integer(b2) + to_integer(a2 + v2) <= 4294967295 by { rewrite(to_integer(a2 + v2) == to_integer(a2) + to_integer(v2)); assumption(); }
+  have to_integer(b2) + to_integer(a2 + v2) <= 4294967295 by { rewrite(to_integer(a2 + v2) == to_integer(a2) + to_integer(v2)); known(); }
   have to_integer(b2 + (a2 + v2)) == to_integer(b2) + to_integer((a2 + v2));
   have to_integer(a3 + v3) == to_integer(a3) + to_integer(v3);
-  have to_integer(b3) + to_integer(a3 + v3) <= 4294967295 by { rewrite(to_integer(a3 + v3) == to_integer(a3) + to_integer(v3)); assumption(); }
+  have to_integer(b3) + to_integer(a3 + v3) <= 4294967295 by { rewrite(to_integer(a3 + v3) == to_integer(a3) + to_integer(v3)); known(); }
   have to_integer(b3 + (a3 + v3)) == to_integer(b3) + to_integer((a3 + v3));
   apply(adler_four_lane_state_step(to_integer(a), to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3), to_integer(v0), to_integer(v1), to_integer(v2), to_integer(v3))) using {};
   rewrite(to_integer(a1 + v1) == to_integer(a1) + to_integer(v1));
@@ -53,7 +53,7 @@ theorem adler_native_deferred_b_step(pos: int32, a: uint32, b: uint32, a0: uint3
   rewrite(to_integer(b2) + (to_integer(a2) + to_integer(v2)) == to_integer(b2) + to_integer(a2) + to_integer(v2));
   have to_integer(b3) + (to_integer(a3) + to_integer(v3)) == to_integer(b3) + to_integer(a3) + to_integer(v3) by solve() using {};
   rewrite(to_integer(b3) + (to_integer(a3) + to_integer(v3)) == to_integer(b3) + to_integer(a3) + to_integer(v3));
-  assumption();
+  known();
  }
 }
 
@@ -216,7 +216,7 @@ theorem adler_native_deferred_b_prefix_step(bytes: uint8[], n: int32, pos: int32
    }
   }
   rewrite(to_integer(b) + (to_integer(pos) + 4) * to_integer(a) == (to_integer(b) + to_integer(pos) * to_integer(a)) + 4 * to_integer(a));
-  assumption();
+  known();
  }
 }
 
@@ -230,6 +230,6 @@ theorem adler_zero_lane_b_residue(b: Integer) {
   unfold(adler_lane_b(b, 0, 0, 0, 0, 0, 0, 0));
   have b + 4 * (0 + 0 + 0 + 0) + 393126 - 0 - 2 * 0 - 3 * 0 == b + 393126 by solve() using {};
   rewrite(b + 4 * (0 + 0 + 0 + 0) + 393126 - 0 - 2 * 0 - 3 * 0 == b + 393126);
-  assumption();
+  known();
  }
 }

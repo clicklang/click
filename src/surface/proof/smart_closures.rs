@@ -2565,7 +2565,7 @@ impl<'a> Proof<'a> {
     }
 
     /// Name the leaves of a wide logical conjunction before closing it.
-    /// Sequential checked `have` steps and `assumption` keep the certificate
+    /// Sequential checked `have` steps and `known` keep the certificate
     /// shallow without changing the kernel goal or its grouping. Reification
     /// is presentation only: every leaf must lower back to the exact goal.
     pub(in crate::surface::proof) fn wide_conjunction_surfaces(
@@ -3863,7 +3863,7 @@ fn entry_anchored_constructor_equality(
 }
 
 /// The direct logical closing steps, in their fixed order, whose kernel rule
-/// can match the goal's outer connective. `assumption` closes a conjunction
+/// can match the goal's outer connective. `known` closes a conjunction
 /// or disjunction from facts as well as a goal that is itself a fact, and
 /// `enumerate` closes only a universal; on any other goal it is refused
 /// before it reads a fact, so omitting it changes no outcome and saves
@@ -3882,7 +3882,7 @@ fn normalization_refutes(proposition: &Proposition) -> bool {
 }
 
 fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
-    let mut steps = vec![ProofStep::Normalize, ProofStep::Assumption];
+    let mut steps = vec![ProofStep::Normalize, ProofStep::Known];
     // Without a proposition goal every candidate is refused alike; keep the
     // complete list so the recorded refusals are unchanged.
     if matches!(goal, Some(Proposition::ForAll { .. }) | None) {
@@ -5014,7 +5014,7 @@ fn swapped_bitvector_equality(fact: &Proposition) -> Option<Proposition> {
 
 /// Whether a goal is explicitly named by a restricted premise, either as
 /// the premise itself or as one of its conjunction leaves. Checked fact
-/// indexing makes those leaves available to `assumption`; this predicate
+/// indexing makes those leaves available to `known`; this predicate
 /// keeps that closure tied to the user's finite `using` list.
 fn selected_premise_contains_goal(premise: &Proposition, goal: &Proposition) -> bool {
     if premise == goal || condition_polarity_equivalent(premise, goal) {

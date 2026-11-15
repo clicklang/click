@@ -13,7 +13,7 @@ theorem far_index(a: uint8[], n: uint64) {
             0u64 <= 4294967296u64;
             4294967296u64 < n;
         };
-        assumption();
+        known();
     }
 }
 

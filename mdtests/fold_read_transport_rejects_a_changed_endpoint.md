@@ -28,7 +28,7 @@ void set_end(int32 *v, int32 i, int32 n) {
     step();
     have zeros(at(entry, v), 0, i) == zeros(v, 0, i + 1) by {
         solve();
-        assumption();
+        known();
     }
 }
 ```

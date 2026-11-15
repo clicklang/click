@@ -1555,11 +1555,7 @@ fn charon_adler2_small_batch_compute_rejects_stale_scalar_a() {
         "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144)) by",
         "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) by",
     );
-    assert!(
-        error.message().contains("`assumption`"),
-        "{}",
-        error.message()
-    );
+    assert!(error.message().contains("`known`"), "{}", error.message());
 }
 
 #[test]
@@ -1747,7 +1743,7 @@ fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() 
             // The chunk iterator's initial length comes from the library
             // contract; the false count claims one chunk more.
             "have loop(2).iter.len() == (bytes.len() - bytes.len() % 4u64) / 4u64 by {\n      apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len() - bytes.len() % 4u64), 4u64));\n      solve();\n     }",
-            "have loop(2).iter.len() == (bytes.len() - bytes.len() % 4u64) / 4u64 + 1u64 by assumption();",
+            "have loop(2).iter.len() == (bytes.len() - bytes.len() % 4u64) / 4u64 + 1u64 by known();",
         ),
         ("ensures self.a < 65521;", "ensures self.a < 1;"),
         ("ensures self.b < 65521;", "ensures self.b < 1;"),
@@ -1762,11 +1758,11 @@ fn charon_adler2_small_batch_compute_rejects_false_tail_state_and_ranking() {
     for (before, after) in [
         (
             "have __rust_mir_138_base == remainder by normalize();",
-            "have __rust_mir_138_base == remainder + 1 by assumption();",
+            "have __rust_mir_138_base == remainder + 1 by known();",
         ),
         (
             "have __rust_mir_138_remaining < at(tail_head, __rust_mir_138_remaining) by solve() using { to_integer(__rust_mir_138_remaining) == to_integer(at(tail_head, __rust_mir_138_remaining) - 1u64); 1u64 <= at(tail_head, __rust_mir_138_remaining); };",
-            "have at(tail_head, __rust_mir_138_remaining) < __rust_mir_138_remaining by assumption();",
+            "have at(tail_head, __rust_mir_138_remaining) < __rust_mir_138_remaining by known();",
         ),
     ] {
         reject_compute(SMALL_BATCH_COMPUTE, before, after);
@@ -2226,9 +2222,9 @@ theorem adler_outer_remaining_step_divisible(remaining: int32) {
   have to_integer((remaining - 22208) % 22208) == 0 by {
    rewrite(to_integer((remaining - 22208) % 22208) == truncating_remainder(to_integer(remaining - 22208), to_integer(22208)));
    rewrite(to_integer(remaining - 22208) == (truncating_quotient(to_integer(remaining), 22208) - 1) * 22208);
-   assumption();
+   known();
   }
-  assumption();
+  known();
  }
 }
 
@@ -2247,7 +2243,7 @@ theorem adler_outer_exhausted_remaining(remaining: int32, size: uint64) {
     if 0 < remaining {
      apply(adler_outer_nonempty_remaining(remaining)) using { 0 < remaining; remaining % 22208 == 0; };
      have size as uint32 as int32 == 22208 by { rewrite(size == 22208u64); normalize(); }
-     have size as uint32 as int32 <= remaining by { rewrite(size as uint32 as int32 == 22208); assumption(); }
+     have size as uint32 as int32 <= remaining by { rewrite(size as uint32 as int32 == 22208); known(); }
      contradiction(size as uint32 as int32 <= remaining);
     } else {
      have remaining <= 0;
@@ -2278,12 +2274,12 @@ const STORED_GUARD_PROOF: &str = r#"int adler_stored_guard(int remaining, uint64
    apply(adler_outer_remaining_step_divisible(at(head, remaining))) using { 22208 <= at(head, remaining); at(head, remaining) % 22208 == 0; }
    step();
    have remaining == at(head, remaining) - 22208;
-   have 0 <= remaining by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
-   have remaining % 22208 == 0 by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
-   have remaining < at(head, remaining) by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
+   have 0 <= remaining by { rewrite(remaining == at(head, remaining) - 22208); known(); }
+   have remaining % 22208 == 0 by { rewrite(remaining == at(head, remaining) - 22208); known(); }
+   have remaining < at(head, remaining) by { rewrite(remaining == at(head, remaining) - 22208); known(); }
   }
  }
- have not (0 < remaining) or not (size as uint32 as int32 <= remaining) by assumption();
+ have not (0 < remaining) or not (size as uint32 as int32 <= remaining) by known();
  apply(adler_outer_exhausted_remaining(remaining, size)) using { 0 <= remaining; remaining % 22208 == 0; size == 22208u64; not (0 < remaining) or not (size as uint32 as int32 <= remaining); }
  step_until(function.exit); solve();
 }

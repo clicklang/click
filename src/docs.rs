@@ -289,6 +289,7 @@ pub fn lookup(name: &str) -> Result<String, String> {
     // The parser refuses these older spellings; their docs are the
     // replacement's.
     let name = match name {
+        "assumption" => "known",
         "arithmetic" => "solve",
         "execute_until" => "step_until",
         "auto" | "execute" => "implicit",

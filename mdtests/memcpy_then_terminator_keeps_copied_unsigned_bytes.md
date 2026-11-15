@@ -34,7 +34,7 @@ void copy_u(uint8* dst, const uint8* src) {
         intro();
         intro();
         have separate(memory(dst[4]), memory(dst[0u64 + k])) by {
-            assumption();
+            known();
         }
         have separate(statement(1).footprint, memory(dst[0u64 + k])) by {
             normalize() using { separate(memory(dst[4]), memory(dst[0u64 + k])); };

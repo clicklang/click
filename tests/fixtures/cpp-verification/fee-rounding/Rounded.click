@@ -140,7 +140,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
     }; }
     have to_integer(quot + 0i64) == truncating_quotient(to_integer(n), to_integer(d)) by {
         rewrite(to_integer(quot + 0i64) == to_integer(quot) + 0);
-        assumption();
+        known();
     }
     if 0 < mod {
         apply(integer::upper_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), 9223372036854775807));
@@ -191,7 +191,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
             }
             have round_down == false and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
                 intro();
-                assumption();
+                known();
             }
             have round_down == false and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                 intro();
@@ -199,7 +199,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
             }
             have 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
                 intro();
-                assumption();
+                known();
             }
             have truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                 intro();
@@ -216,11 +216,11 @@ int64 rounded(int128 n, int32 d, bool round_down) {
             }
             have round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d) by {
                 intro();
-                assumption();
+                known();
             }
             have round_down == false implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
                 intro();
-                assumption();
+                known();
             }
             solve();
         } else {
@@ -234,7 +234,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
             }
             have round_down == true and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                 intro();
-                assumption();
+                known();
             }
             have round_down == false and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
                 intro();
@@ -250,16 +250,16 @@ int64 rounded(int128 n, int32 d, bool round_down) {
             }
             have 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                 intro();
-                assumption();
+                known();
             }
             apply(integer::floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
             have round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n) by {
                 intro();
-                assumption();
+                known();
             }
             have round_down == true implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
                 intro();
-                assumption();
+                known();
             }
             have round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d) by {
                 intro();
@@ -325,7 +325,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 }
                 have round_down == false and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
                     intro();
@@ -333,7 +333,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 }
                 have truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 apply(integer::ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
                 have round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n) by {
@@ -346,11 +346,11 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 }
                 have round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have round_down == false implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 solve();
             } else {
@@ -360,7 +360,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by solve();
                 have round_down == true and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have round_down == true and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                     intro();
@@ -376,7 +376,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 }
                 have truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                     intro();
@@ -385,11 +385,11 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 apply(integer::floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
                 have round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have round_down == true implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d) by {
                     intro();
@@ -437,7 +437,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 }
                 have round_down == false and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
                     intro();
@@ -445,7 +445,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 }
                 have truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 apply(integer::ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
                 have round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n) by {
@@ -458,11 +458,11 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 }
                 have round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have round_down == false implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 solve();
             } else {
@@ -476,7 +476,7 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 }
                 have round_down == true and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have round_down == false and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
                     intro();
@@ -492,16 +492,16 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 }
                 have 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 apply(integer::floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
                 have round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have round_down == true implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
                     intro();
-                    assumption();
+                    known();
                 }
                 have round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d) by {
                     intro();

@@ -154,7 +154,7 @@ int32 caller(struct node* p) {
                 at(before, p->other) == at(before, p->other);
             };
         }
-        assumption();
+        known();
     }
     let { tag: rt1, child: rc0 } = unfold(o);
     let { tag: rt0 } = unfold(rc0);

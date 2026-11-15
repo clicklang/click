@@ -26,12 +26,12 @@ int32 r(int32 i) {
     have i + 1 == 1 implies i == 0 by {
         intro();
         have i == 0;
-        assumption();
+        known();
     }
     have i + 1 == 2 implies i == 1 by {
         intro();
         have i == 1;
-        assumption();
+        known();
     }
 }
 ```

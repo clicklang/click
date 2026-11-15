@@ -31,18 +31,18 @@ int32 walk(int32 m, int32 n) {
     } by {
         intro();
         intro();
-        assumption();
+        known();
     }
     have forall (k: int32) {
         0 <= k and k < n implies k == 5
     } by {
         intro();
         intro();
-        assumption();
+        known();
     }
 }
 ```
 
 ```expect
-fail: `assumption` requires the current goal as an available semantic fact
+fail: `known` requires the current goal as an available semantic fact
 ```

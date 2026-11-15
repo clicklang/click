@@ -18,7 +18,7 @@ void check(struct node* p, struct node* q) {
     requires p == q;
     ensures p->next == q->next;
 } by {
-    have p == q by assumption();
+    have p == q by known();
     have &p->next == &q->next;
     have p->next == q->next;
 }

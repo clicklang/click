@@ -253,7 +253,7 @@ fn refusing_a_false_literal_result_after_calls_scales_with_the_true_result() {
             "int32 read(int32* p) {{ return p[0]; }}\nint32 many({parameters}, int32* p) {{ {locals} {calls} return p[0]; }}"
         );
         let mut pair = Vec::new();
-        for (value, closer) in [(7, "solve"), (8, "assumption")] {
+        for (value, closer) in [(7, "solve"), (8, "known")] {
             let source = format!(
                 r#"
                 verifying "calls.c";
@@ -726,7 +726,7 @@ fn shared_imported_proof_bodies_stay_unselected_across_entry_scaling() {
                         ClickModuleSource::new(
                             format!("entry_{index}.click"),
                             format!(
-                                "import \"shared.click\"; theorem local_{index}(x: int32) {{ ensures x == x + 1 by {{ apply(shared_false(x)); assumption(); }} }}"
+                                "import \"shared.click\"; theorem local_{index}(x: int32) {{ ensures x == x + 1 by {{ apply(shared_false(x)); known(); }} }}"
                             ),
                             ["shared.click".to_string()],
                         ),
@@ -1118,7 +1118,7 @@ fn target_with_unrelated_theorems(theorem_count: usize) -> String {
     let mut click_source = String::from("verifying \"target.c\";\n\n");
     for index in 0..theorem_count {
         click_source.push_str(&format!(
-            "theorem unrelated_{index}(x: int32) {{\n    requires x == x;\n    ensures x == x by {{ assumption(); }}\n}}\n\n"
+            "theorem unrelated_{index}(x: int32) {{\n    requires x == x;\n    ensures x == x by {{ known(); }}\n}}\n\n"
         ));
     }
     click_source.push_str(
@@ -1213,7 +1213,7 @@ fn theorem_with_unrelated_exact_facts(fact_count: usize) -> String {
         ));
     }
     format!(
-        "theorem exact_fact_scaling({parameters}) {{\n{requirements}    ensures target == 7 by {{ assumption(); }}\n}}\n"
+        "theorem exact_fact_scaling({parameters}) {{\n{requirements}    ensures target == 7 by {{ known(); }}\n}}\n"
     )
 }
 
@@ -1272,7 +1272,7 @@ fn call_with_unrelated_facts(fact_count: usize) -> (String, String) {
         have 1 == 1 by {
             normalize();
         }
-        assumption();
+        known();
     }
 }
 ",
@@ -1300,7 +1300,7 @@ fn theorem_with_many_forms(form_count: usize) -> String {
         requirements.push_str(&format!("    requires {expression} == 7;\n"));
     }
     format!(
-        "theorem surface_form_scaling(target: int32) {{\n{requirements}    ensures target == 7 by {{ assumption(); }}\n}}\n"
+        "theorem surface_form_scaling(target: int32) {{\n{requirements}    ensures target == 7 by {{ known(); }}\n}}\n"
     )
 }
 
@@ -1337,7 +1337,7 @@ pub(super) fn theorem_with_parenthesized_requirement(depth: usize) -> String {
     let opening = "(".repeat(depth);
     let closing = ")".repeat(depth);
     format!(
-        "theorem nested_requirement(x: int32) {{\n    requires {opening}x + 1{closing} == x + 1;\n    ensures x == x by {{ assumption(); }}\n}}\n"
+        "theorem nested_requirement(x: int32) {{\n    requires {opening}x + 1{closing} == x + 1;\n    ensures x == x by {{ known(); }}\n}}\n"
     )
 }
 
@@ -1500,7 +1500,7 @@ fn targeted_certification_keeps_an_explicit_theorem_dependency() {
         } by {
             step();
             apply(equality_symmetric(result, x));
-            assumption();
+            known();
         }
     "#;
     verify_c_sources_functions(
@@ -1581,7 +1581,7 @@ fn load_variable_construction_scales_near_linearly_with_statements() {
 }
 
 #[test]
-fn exact_assumption_scales_near_linearly_with_unrelated_ambient_facts() {
+fn exact_known_scales_near_linearly_with_unrelated_ambient_facts() {
     let samples = [16, 32, 64, 128]
         .into_iter()
         .map(|size| {
@@ -1598,7 +1598,7 @@ fn exact_assumption_scales_near_linearly_with_unrelated_ambient_facts() {
         })
         .collect::<Vec<_>>();
 
-    assert_near_linear_scaling("exact assumption with unrelated facts", &samples);
+    assert_near_linear_scaling("exact known with unrelated facts", &samples);
 }
 
 #[test]
@@ -1628,7 +1628,7 @@ fn explicit_step_scales_near_linearly_with_unrelated_ambient_facts() {
         .into_iter()
         .map(|size| {
             let (c_source, click_source) =
-                function_with_unrelated_facts(size, "    step();\n    assumption();\n");
+                function_with_unrelated_facts(size, "    step();\n    known();\n");
             let (verified, sample) = scaling_sample(size, || {
                 verify_c_sources(&click_source, &[("exact_fact_target.c", c_source.as_str())])
             });
@@ -1681,7 +1681,7 @@ fn explicit_transport_scales_near_linearly_with_unrelated_ambient_facts() {
         .map(|size| {
             let (c_source, click_source) = function_with_unrelated_facts(
                 size,
-                "    step();\n    transport(target == 7, result == 7) using {\n        target == 7;\n    }\n    assumption();\n",
+                "    step();\n    transport(target == 7, result == 7) using {\n        target == 7;\n    }\n    known();\n",
             );
             let (verified, sample) = scaling_sample(size, || {
                 verify_c_sources(
@@ -2650,7 +2650,7 @@ fn guarded_member_bundle(conjuncts: usize) -> (String, String) {
         .collect::<Vec<_>>()
         .join(" and\n            ");
     let facts = (1..=conjuncts)
-        .map(|k| format!("            have i <= n or {k} + i == 0 by {{ assumption(); }}\n"))
+        .map(|k| format!("            have i <= n or {k} + i == 0 by {{ known(); }}\n"))
         .collect::<String>();
     let click_source = format!(
         "verifying \"guarded_bundle.c\";\n\n\
@@ -2671,7 +2671,7 @@ fn guarded_member_bundle(conjuncts: usize) -> (String, String) {
          \x20           step();\n\
          \x20           have 0 <= i by {{ solve(); }}\n\
          \x20           have i <= n by {{ solve(); }}\n\
-         \x20           have 0 <= i and i <= n by {{ assumption(); }}\n\
+         \x20           have 0 <= i and i <= n by {{ known(); }}\n\
          {facts}\
          \x20           have 0 <= n - at(iteration, i) - 1 by {{\n\
          \x20               solve() using {{\n\
@@ -4059,19 +4059,19 @@ resource holder_state(h: struct holder*) {
         }
     }
     have h->start == s by {
-        assumption();
+        known();
     }
     have defined(h->start + i) by {
         rewrite(h->start == s);
-        assumption();
+        known();
     }
     have h->start <= h->start + i by {
         rewrite(h->start == s);
-        assumption();
+        known();
     }
     have h->start + i + 1 <= l by {
         rewrite(h->start == s);
-        assumption();
+        known();
     }
     have 0 <= h->start + i by {
         rewrite(h->start == s);
@@ -4079,7 +4079,7 @@ resource holder_state(h: struct holder*) {
     }
     have h->start + i < l by {
         rewrite(h->start == s);
-        assumption();
+        known();
     }
     step_until(function.exit);
     let r = fold(holder_state(h), { start: s });
@@ -5000,7 +5000,7 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
                  owns dst[0..length];\n        \
                  initialize by {{\n            \
                      have 0 <= i by {{\n                normalize();\n            }}\n            \
-                     have i <= length by {{\n                assumption();\n            }}\n            \
+                     have i <= length by {{\n                known();\n            }}\n            \
                      have forall (k: int32) {{ 0 <= k and k < i implies dst[k] == old(src[k]) }} by {{\n                \
                          intro();\n                \
                          intro();\n                \
@@ -5022,7 +5022,7 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
                          not at(loop(0).exit, i) < at(loop(0).exit, length);\n            \
                      }}\n        \
                  }}\n        \
-                 assumption();\n    \
+                 known();\n    \
              }}\n    \
              step();\n    \
              solve();\n\
@@ -5126,7 +5126,7 @@ fn explicit_fold_read_transport_along_a_store_sequence_is_near_linear() {
         let steps = (0..size)
             .map(|index| {
                 format!(
-                    "    mark m{index};\n    step();\n    have zeros(v, 0, i) == 0 by {{\n        transport(\n            at(m{index}, zeros(v, 0, i)) == 0,\n            zeros(v, 0, i) == 0\n        ) using {{\n            at(m{index}, zeros(v, 0, i)) == 0;\n        }}\n        assumption();\n    }}\n"
+                    "    mark m{index};\n    step();\n    have zeros(v, 0, i) == 0 by {{\n        transport(\n            at(m{index}, zeros(v, 0, i)) == 0,\n            zeros(v, 0, i) == 0\n        ) using {{\n            at(m{index}, zeros(v, 0, i)) == 0;\n        }}\n        known();\n    }}\n"
                 )
             })
             .collect::<String>();
@@ -7413,7 +7413,7 @@ fn failing_solve_work_is_flat_along_a_variable_chain() {
 /// The `step_until(function.exit); solve();` proof of [`early_return_fan_out`] written with
 /// simple tactics only, as `click expand` writes it: the steps and C
 /// branches the execution takes, then one closer per path under the same nested conditions. A returned constant
-/// closes by `assumption`; the two `-1` returns transport the postcondition
+/// closes by `known`; the two `-1` returns transport the postcondition
 /// from `function.exit`, since `result` cannot be named in an earlier
 /// snapshot.
 fn early_return_fan_out_explicit_proof(returns: usize) -> String {
@@ -7424,7 +7424,7 @@ fn early_return_fan_out_explicit_proof(returns: usize) -> String {
         let statement = 7 + 3 * index;
         format!("at(region({statement}).entry, a) == at(region({statement}).entry, {index})")
     };
-    let transported = "have result == a or result == -1 by {\n{i}    transport(at(function.exit, result == a or result == -1), result == a or result == -1) using {\n{i}    }\n{i}}\n{i}assumption();\n";
+    let transported = "have result == a or result == -1 by {\n{i}    transport(at(function.exit, result == a or result == -1), result == a or result == -1) using {\n{i}    }\n{i}}\n{i}known();\n";
     let mut proof = String::from(
         "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    step();\n    step();\n    if at(region(2).entry, p) == at(region(2).entry, 0) {\n        step();\n        step();\n    } else {\n        step();\n        step();\n        step();\n        step();\n",
     );
@@ -7448,7 +7448,7 @@ fn early_return_fan_out_explicit_proof(returns: usize) -> String {
     for index in 0..returns {
         let i = indent(index + 1);
         proof.push_str(&format!(
-            "{i}if {} {{\n{i}    have result == a or result == -1 by {{\n{i}        assumption();\n{i}    }}\n{i}    assumption();\n{i}}} else {{\n",
+            "{i}if {} {{\n{i}    have result == a or result == -1 by {{\n{i}        known();\n{i}    }}\n{i}    known();\n{i}}} else {{\n",
             condition(index)
         ));
     }
@@ -8200,7 +8200,7 @@ void narrow(const uint8* bytes, int32 index) {
  ensures 0 == 0;
 } by {
  step_until(assignment(unrelated, 0)); step();
- have 0 <= index by { assumption(); }
+ have 0 <= index by { known(); }
  have to_integer(index + 4) <= 22208 by { solve() using { 0 <= index; index <= 22204; } }
  have to_integer(index) <= to_integer(index + 4) by { solve() using { 0 <= index; index <= 22204; to_integer(index + 4) <= 22208; } }
  have viewable(bytes[0..22208]) by { transport(at(function.entry, viewable(bytes[0..22208])), viewable(bytes[0..22208])) using { at(function.entry, viewable(bytes[0..22208])); 0 <= 22208; } }
@@ -8336,7 +8336,7 @@ fn explicit_frame_refusal_scales_with_unrelated_facts() {
     }
 }
 
-/// Expanding a closer into one assumption per returned field used to retry
+/// Expanding a closer into one `known` per returned field used to retry
 /// an unchanged failed whole-contract transition for every field. Count that
 /// operation across increasing output frontiers, independently of its cost.
 #[test]
@@ -8370,7 +8370,7 @@ fn consecutive_resource_closers_attempt_one_transition() {
             + "    unfold(c);".len();
         source.insert_str(
             tail,
-            &format!("\n    step(); {}", "assumption(); ".repeat(8 + 2 * size)),
+            &format!("\n    step(); {}", "known(); ".repeat(8 + 2 * size)),
         );
         let (verified, events) = crate::instrumentation::collect(|| {
             verify_c_sources(&source, &[(c_name.as_str(), c_source.as_str())])
@@ -8688,7 +8688,7 @@ void inspect(struct node* parent, struct node* child{parameters}) {{
 }} by {{
  {unfolds}
  unfold(c);
- have separate(memory(parent->word), memory(child->word)) by assumption();
+ have separate(memory(parent->word), memory(child->word)) by known();
  step_until(function.exit); solve();
 }}"
         );
@@ -9159,7 +9159,7 @@ fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
     for size in sizes {
         let (_, mut source) = function_with_unrelated_facts(
             size,
-            "    step();\n    transport(target == 7, target == 7);\n    step_until(function.exit);\n    assumption();\n",
+            "    step();\n    transport(target == 7, target == 7);\n    step_until(function.exit);\n    known();\n",
         );
         // Keep transport at a live statement frontier. A return would enter
         // the distinct post-execution premise-search path.
@@ -9319,8 +9319,8 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
         // Arms that each close the iteration have no continuation to rejoin,
         // so the split is taken rather than tried as a straight-line join.
         let close = if split {
-            "            if flag == i {\n                have flag == i by assumption();\n            \
-             } else {\n                have not (flag == i) by assumption();\n            \
+            "            if flag == i {\n                have flag == i by known();\n            \
+             } else {\n                have not (flag == i) by known();\n            \
              }\n"
         } else {
             ""
@@ -9687,7 +9687,7 @@ fn one_hundred_twenty_eight_early_returns_expand_and_reverify() {
 }
 
 /// The proof `click expand` writes for [`early_return_project`]'s implicit
-/// proof: each return in its own proof `if`, closed by `assumption` and
+/// proof: each return in its own proof `if`, closed by `known` and
 /// `normalize`, with the next case after it.
 fn early_return_expanded_closers(returns: usize) -> String {
     let mut proof = format!(
@@ -9696,12 +9696,12 @@ fn early_return_expanded_closers(returns: usize) -> String {
     for index in 0..returns {
         let statement = 1 + 4 * index;
         let last = if index + 1 == returns {
-            "        assumption();\n        normalize();\n        assumption();\n        assumption();\n        assumption();\n"
+            "        known();\n        normalize();\n        known();\n        known();\n        known();\n"
         } else {
             ""
         };
         proof.push_str(&format!(
-            "    if at(region({statement}).entry, x) == at(region({statement}).entry, {index}) {{\n        step();\n        step();\n        assumption();\n        normalize();\n        assumption();\n        assumption();\n        assumption();\n    }} else {{\n        step();\n        step();\n        step();\n{last}    }}\n"
+            "    if at(region({statement}).entry, x) == at(region({statement}).entry, {index}) {{\n        step();\n        step();\n        known();\n        normalize();\n        known();\n        known();\n        known();\n    }} else {{\n        step();\n        step();\n        step();\n{last}    }}\n"
         ));
     }
     proof.push_str("}\n");
@@ -10843,7 +10843,7 @@ fn entry_separation_samples() {
             "verifying \"owned.c\";\n\
              resource plain(p: struct node*) {{ owns p->next; }}\n\
              void caller({click_parameters}int32* slot) {{\n{owned}    owns *slot;\n}} by {{\n\
-             have separate(plain(p0), memory(*slot)) by {{ assumption(); }}\n}}\n"
+             have separate(plain(p0), memory(*slot)) by {{ known(); }}\n}}\n"
         );
         let sources = [("owned.c", c.as_str())];
         let (result, sample) = scaling_sample(size, || verify_c_sources(&source, &sources));
@@ -10896,7 +10896,7 @@ fn instance_separation_samples() {
              resource box(p: struct node*) {{ field tag: int32; if p != 0 {{ owns p->next; }} }}\n\
              void caller({click_parameters}int32* slot) {{\n{owned}    owns *slot;\n}} by {{\n\
              {stepped}\n\
-             have separate(b0, memory(*slot)) by {{ assumption(); }}\n}}\n"
+             have separate(b0, memory(*slot)) by {{ known(); }}\n}}\n"
         );
         (c, source)
     };
@@ -10965,7 +10965,7 @@ fn folded_instance_separation_samples() {
              resource box(p: struct node*) {{ field tag: int32; owns p->next; }}\n\
              void caller({click_parameters}int32* slot) {{\n{owned}    owns *slot;\n}} by {{\n\
              {refolded}\
-             have separate(d0, memory(*slot)) by {{ assumption(); }}\n}}\n"
+             have separate(d0, memory(*slot)) by {{ known(); }}\n}}\n"
         );
         (c, source)
     };

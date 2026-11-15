@@ -204,7 +204,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
             }
             have ctx_up_is_framed(c.model) == 0 by {
                 rewrite(c.model == Context::Top);
-                assumption();
+                known();
             }
             have ctx_up_is_framed(c.model) != 0 by {
                 rewrite(ctx_up_is_framed(c.model) == 1);
@@ -226,12 +226,12 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                                                       sibling_model, up_model)));
                 rewrite(Context::Left(identity, grandparent, color,
                                       sibling_model, up_model) == c.model);
-                assumption();
+                known();
             }
             let { sibling: s, up: u } = unfold(c);
             have ctx_is_framed(u.model) == 1 by {
                 rewrite(u.model == up_model);
-                assumption();
+                known();
             }
             match u.model {
                 Context::Top => {
@@ -241,7 +241,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                     }
                     have ctx_is_framed(u.model) == 0 by {
                         rewrite(u.model == Context::Top);
-                        assumption();
+                        known();
                     }
                     have ctx_is_framed(u.model) != 0 by {
                         rewrite(ctx_is_framed(u.model) == 1);
@@ -273,12 +273,12 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                                                        sibling_model, up_model)));
                 rewrite(Context::Right(identity, grandparent, color,
                                        sibling_model, up_model) == c.model);
-                assumption();
+                known();
             }
             let { sibling: s, up: u } = unfold(c);
             have ctx_is_framed(u.model) == 1 by {
                 rewrite(u.model == up_model);
-                assumption();
+                known();
             }
             match u.model {
                 Context::Top => {
@@ -288,7 +288,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                     }
                     have ctx_is_framed(u.model) == 0 by {
                         rewrite(u.model == Context::Top);
-                        assumption();
+                        known();
                     }
                     have ctx_is_framed(u.model) != 0 by {
                         rewrite(ctx_is_framed(u.model) == 1);

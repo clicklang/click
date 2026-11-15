@@ -47,7 +47,7 @@ theorem immediate_successor_child(successor: struct rb_node*, child: struct rb_n
             RbTree::Empty, RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty)),
             Context::Top, successor, Color::Black, RbTree::Node(child, successor, Color::Red, RbTree::Empty,
             RbTree::Empty), above));
-        assumption();
+        known();
     }
 }
 
@@ -123,6 +123,6 @@ theorem deep_successor_child(successor: struct rb_node*, child: struct rb_node*,
             Color::Red, RbTree::Empty, RbTree::Empty)), RbTree::Node(far, r, Color::Black, RbTree::Empty,
             RbTree::Empty)), Context::Top, successor, Color::Black, RbTree::Node(child, successor,
             Color::Red, RbTree::Empty, RbTree::Empty), r));
-        assumption();
+        known();
     }
 }

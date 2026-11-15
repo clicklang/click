@@ -42,7 +42,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
                     to_integer(0) <= to_integer(if v[hi - 1] == 0 { 1 } else { 0 });
                 };
             }
-            assumption();
+            known();
         }
     }
 }
@@ -93,7 +93,7 @@ theorem unmarked_frame(
                 instantiate(forall (k: int32) {
                     lo <= k and k < m implies a[k] == b[k]
                 }, hi - 1) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < to_integer(m); };
-                assumption();
+                known();
             }
             peel(unmarked(a, lo, hi)) using {
                 to_integer(lo) <= to_integer(hi - 1);
@@ -117,7 +117,7 @@ theorem unmarked_frame(
                         == to_integer(if b[hi - 1] == 0 { 1 } else { 0 });
                 };
             }
-            assumption();
+            known();
         }
     }
 }
@@ -207,7 +207,7 @@ theorem unmarked_point_update(
                         to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) == 0;
                     };
                 }
-                assumption();
+                known();
             } else {
                 have to_integer(j) < to_integer(hi - 1) by {
                     apply(integer::int32_less_equal_and_not_equal_implies_less_than(j, hi - 1)) using {
@@ -215,7 +215,7 @@ theorem unmarked_point_update(
                         to_integer(j) <= to_integer(hi - 1);
                         to_integer(j) != to_integer(hi - 1);
                     };
-                    assumption();
+                    known();
                 }
                 apply(ih(hi - 1)) using {
                     0 <= hi;
@@ -237,7 +237,7 @@ theorem unmarked_point_update(
                     instantiate(forall (k: int32) {
                         j < k and k < n implies a[k] == b[k]
                     }, hi - 1) using { to_integer(j) < to_integer(hi - 1); to_integer(hi - 1) < to_integer(n); };
-                    assumption();
+                    known();
                 }
                 peel(unmarked(a, lo, hi)) using {
                     to_integer(lo) <= to_integer(hi - 1);
@@ -261,7 +261,7 @@ theorem unmarked_point_update(
                             == to_integer(if b[hi - 1] == 0 { 1 } else { 0 });
                     };
                 }
-                assumption();
+                known();
             }
         }
     }

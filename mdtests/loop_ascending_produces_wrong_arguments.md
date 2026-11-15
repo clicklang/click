@@ -146,7 +146,7 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
                                                   sibling_model, up_model), t.model));
                         rewrite(Context::Left(identity, grandparent, value,
                                               sibling_model, up_model) == c.model);
-                        assumption();
+                        known();
                     }
                     let { sibling: s, up: u } = unfold(c);
                     step();
@@ -167,7 +167,7 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
                                                    sibling_model, up_model), t.model));
                         rewrite(Context::Right(identity, grandparent, value,
                                                sibling_model, up_model) == c.model);
-                        assumption();
+                        known();
                     }
                     let { sibling: s, up: u } = unfold(c);
                     step();
@@ -186,7 +186,7 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
     }
     have t.model == plug(old(c.model), old(t.model)) by {
         rewrite(t.model == plug(c.model, t.model));
-        assumption();
+        known();
     }
     unfold(c);
     let ctx = fold(pctx_at(node, parent), { model: Context::Top });
@@ -196,7 +196,7 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
             have HeapTree::Node(identity, value, left_model, right_model)
                 == plug(old(c.model), old(t.model)) by {
                 rewrite(HeapTree::Node(identity, value, left_model, right_model) == t.model);
-                assumption();
+                known();
             }
             let { left: l, right: r } = unfold(t);
             let sub = fold(ptree_at(node, parent), {
@@ -205,7 +205,7 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
             have sub.model == plug(old(c.model), old(t.model)) by {
                 rewrite(sub.model
                     == HeapTree::Node(identity, value, left_model, right_model));
-                assumption();
+                known();
             }
             step();
             solve();

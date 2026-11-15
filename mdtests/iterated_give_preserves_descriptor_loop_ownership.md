@@ -127,7 +127,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             have end <= arena->capacity;
             have i < arena->capacity;
             have 0 < arena->capacity by { solve(); }
-            have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data)) by { assumption(); }
+            have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data)) by { known(); }
             have separate(memory(arena->occupied[i]), memory(arena->data)) by {
                 apply(separation::separate_symm(memory(arena->occupied[0..arena->capacity]), memory(arena->data))) using {
                     separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data));
@@ -193,7 +193,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->capacity))) by {
                 normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->capacity))); };
             }
-            have arena->capacity == at(opened, arena->capacity) by { assumption(); }
+            have arena->capacity == at(opened, arena->capacity) by { known(); }
             give(at(opened, arena->data)[i..i + 1]);
             step();
             have to_integer(start) <= to_integer(at(opened, i) + 1);
@@ -215,7 +215,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                             start <= k;
                             k < m;
                         };
-                        assumption();
+                        known();
                     }
                     have 0 <= k;
                     transport(at(opened, arena->occupied[k]) == 0, arena->occupied[k] == 0) using {
@@ -251,7 +251,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         0 <= k;
                         k < start;
                     };
-                    assumption();
+                    known();
                 }
                 have k < at(opened, i);
                 transport(
@@ -286,7 +286,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         end <= k;
                         k < arena->capacity;
                     };
-                    assumption();
+                    known();
                 }
                 have at(opened, i) < k;
                 have at(opened, i) <= k;
@@ -312,7 +312,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 rewrite(arena->data == old(arena->data));
                 rewrite(arena->occupied == old(arena->occupied));
                 rewrite(arena->capacity == old(arena->capacity));
-                assumption();
+                known();
             }
             let w = fold(arena_clear_window(old(arena->data), old(arena->occupied), old(arena->capacity), start, end), {
                 next: at(opened, i) + 1
@@ -323,7 +323,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     let { next: n } = unfold(w);
     have n <= end;
     have n == i;
-    have not (n < end) by { rewrite(n == i); assumption(); }
+    have not (n < end) by { rewrite(n == i); known(); }
     have n == end;
     step_until(function.exit);
     have arena->data == old(arena->data);

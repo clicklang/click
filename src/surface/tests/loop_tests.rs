@@ -253,7 +253,7 @@ fn natural_goto_mixed_return_retains_paths_and_expands() {
 /// second component decreases on the `j > 0` path and only the first on the
 /// other, so the expansion proves the descent member in a `have` at the back
 /// edge, proving the arm that holds and closing the disjunction by
-/// `assumption()`, and reverifies through the ordinary entry point.
+/// `known()`, and reverifies through the ordinary entry point.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
 fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
@@ -266,8 +266,8 @@ fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
         "the back edge closes as a function's exit does, from `have`s: {expanded}"
     );
     assert!(
-        expanded.contains("assumption();"),
-        "each pivot is proved in a `have` and closed by `assumption`: {expanded}"
+        expanded.contains("known();"),
+        "each pivot is proved in a `have` and closed by `known`: {expanded}"
     );
     verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!(
@@ -394,7 +394,7 @@ fn smart_ranking_closure_expands_its_pivot_arm() {
     let expanded = expand_function_proof_source(&click, &sources, "nested_count")
         .unwrap_or_else(|error| panic!("nested-loop expansion failed: {}", error.message()));
     assert!(
-        expanded.contains("assumption();"),
+        expanded.contains("known();"),
         "the chosen pivot arm must be printed: {expanded}"
     );
     verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
@@ -673,7 +673,7 @@ fn explicit_straight_line_swap_transports_an_entry_bound() {
                 have p[0] <= p[2] by {
                     rewrite(p[0] == old(p[1]));
                     rewrite(p[2] == old(p[2]));
-                    assumption();
+                    known();
                 }
                 step(); solve();
             }
@@ -707,12 +707,12 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
         have p[0] <= p[2] by {
             rewrite(p[0] == at(before_swap, p[1]));
             rewrite(p[2] == at(before_swap, p[2]));
-            assumption();
+            known();
         }
         have p[1] <= p[2] by {
             rewrite(p[1] == at(before_swap, p[0]));
             rewrite(p[2] == at(before_swap, p[2]));
-            assumption();
+            known();
         }
     "#;
     let transport = if include_transports { transport } else { "" };
@@ -795,7 +795,7 @@ fn observed_member_closure_expands_to_direct_assumptions() {
     let expanded = expand_function_proof_source(click, &sources, "count_run")
         .unwrap_or_else(|error| panic!("{}", error.message()));
     assert!(!expanded.contains("solve();"), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .unwrap_or_else(|error| panic!("{}", error.message()));
 }
@@ -1082,7 +1082,7 @@ fn loop_initialization_solve_retains_checked_fixed_state_proof() {
     )
     .expect("the retained initialization closer should expand");
     assert!(!expanded.contains("initialize by solve()"), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
     verify_c_sources(&expanded, &[("initialize_by_solve.c", c_source)])
         .expect("expanded initialization closer should independently verify");
 }
@@ -2243,12 +2243,12 @@ fn changed_break_exit_does_not_label_head_invariants_as_exit_facts() {
     for fact in ["r == 0", "at(loop(0).exit, r) == at(loop(0).exit, 0)"] {
         let false_have = source.replace(
             "    step();\n    solve();",
-            &format!("    have {fact} by {{ assumption(); }}\n    step();\n    solve();"),
+            &format!("    have {fact} by {{ known(); }}\n    step();\n    solve();"),
         );
         assert_ne!(source, false_have);
         let error = verify_c_sources(&false_have, &sources).unwrap_err();
         assert!(
-            error.message().contains("`assumption` requires"),
+            error.message().contains("`known` requires"),
             "{}",
             error.message()
         );

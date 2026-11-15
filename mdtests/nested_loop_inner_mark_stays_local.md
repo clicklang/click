@@ -33,7 +33,7 @@ int32 count() {
                 invariant i >= 0 and i <= 3;
                 preserve by {
                     mark inner_head;
-                    have at(outer_head, i) < 3 by { assumption(); }
+                    have at(outer_head, i) < 3 by { known(); }
                     step_until(back_edge());
                 }
             }

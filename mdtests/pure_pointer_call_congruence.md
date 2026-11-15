@@ -11,7 +11,7 @@ function handle_pointer(handle: Handle) -> int32* {
 theorem pointer_alias(left: Handle, right: Handle, held: int32*) {
     requires left == right;
     requires held == handle_pointer(left);
-    ensures held == handle_pointer(right) by { assumption(); }
+    ensures held == handle_pointer(right) by { known(); }
 }
 ```
 

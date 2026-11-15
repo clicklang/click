@@ -61,7 +61,7 @@ void with_fresh_map(int32* data, int32 capacity) {
         0 <= k and k < capacity implies occupied[k] == 0
     } by {
         rewrite(capacity == i);
-        assumption();
+        known();
     }
     gather(arena_cells(data, occupied, capacity));
     scatter(arena_cells(data, occupied, capacity));

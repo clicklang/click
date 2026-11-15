@@ -47,7 +47,7 @@ impl SourceContext {
                     | ProofTactic::Witness(_)
                     | ProofTactic::LetSatisfy(_)
                     | ProofTactic::Choose(_)
-                    | ProofTactic::Assumption
+                    | ProofTactic::Known
                     | ProofTactic::Extract(_)
                     | ProofTactic::Normalize
                     | ProofTactic::ArithmeticUsing(_)
@@ -96,7 +96,7 @@ impl SourceContext {
                     | ProofTactic::Witness(_)
                     | ProofTactic::Intro
                     | ProofTactic::IntroAs(_)
-                    | ProofTactic::Assumption
+                    | ProofTactic::Known
                     | ProofTactic::Normalize
                     | ProofTactic::NormalizeUsing(_)
                     | ProofTactic::ArithmeticUsing(_)

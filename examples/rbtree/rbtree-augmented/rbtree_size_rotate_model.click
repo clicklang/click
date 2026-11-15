@@ -15,9 +15,9 @@ tactic rotation_target_separation(node: struct sized_node*, promoted: struct rb_
     ensures separate(memory(node->rb.rb_right), memory((promoted as (void *) as (struct sized_node *))->size));
 } by {
     unfold(metadata);
-    have separate(memory(node->rb.__rb_parent_color), memory((promoted as (void *) as (struct sized_node *))->size)) by { assumption(); }
-    have separate(memory(node->rb.rb_left), memory((promoted as (void *) as (struct sized_node *))->size)) by { assumption(); }
-    have separate(memory(node->rb.rb_right), memory((promoted as (void *) as (struct sized_node *))->size)) by { assumption(); }
+    have separate(memory(node->rb.__rb_parent_color), memory((promoted as (void *) as (struct sized_node *))->size)) by { known(); }
+    have separate(memory(node->rb.rb_left), memory((promoted as (void *) as (struct sized_node *))->size)) by { known(); }
+    have separate(memory(node->rb.rb_right), memory((promoted as (void *) as (struct sized_node *))->size)) by { known(); }
     fold(metadata);
 }
 
@@ -75,16 +75,16 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
             SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right) => {
                 let { metadata: promoted_metadata, demoted: demoted, other: other } = unfold(tree);
                 let { checked: other } = certify_size(rb_new->rb_right, { tree: other });
-                have to_integer(sized_value(promoted_right)) == rb_subtree_size(sized_shape(promoted_right)) by { rewrite(promoted_right == other.model); assumption(); }
+                have to_integer(sized_value(promoted_right)) == rb_subtree_size(sized_shape(promoted_right)) by { rewrite(promoted_right == other.model); known(); }
                 unfold(sized_left(SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right)));
                 match demoted.model {
                     SizedTree::Empty => {
                         unfold(demoted);
-                        have rb_old == 0 by { assumption(); }
+                        have rb_old == 0 by { known(); }
                         contradiction(rb_old == 0);
                     },
                     SizedTree::Node(identity, parent, color, value, left_model, right_model) => {
-                        have promoted_left == SizedTree::Node(identity, parent, color, value, left_model, right_model) by { assumption(); }
+                        have promoted_left == SizedTree::Node(identity, parent, color, value, left_model, right_model) by { known(); }
                         unfold(sized_value(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
                         have sized_value(promoted_left) == value by {
                             rewrite(promoted_left == SizedTree::Node(identity, parent, color, value, left_model, right_model));
@@ -105,7 +105,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                             rewrite(value == sized_value(promoted_left));
                             rewrite(left_model == sized_left(promoted_left));
                             rewrite(right_model == sized_right(promoted_left));
-                            assumption();
+                            known();
                         }
                         let { metadata: metadata, left: left, right: right } = unfold(demoted);
                         rotation_target_separation(rb_old as (void *) as (struct sized_node *), rb_new, { metadata: promoted_metadata });
@@ -119,29 +119,29 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                         have 0 <= sized_value(left_model) by {
                             rewrite(left_model == sized_left(promoted_left));
                             rewrite(promoted_left == sized_left(old(tree.model)));
-                            assumption();
+                            known();
                         }
                         have 0 <= sized_value(right_model) by {
                             rewrite(right_model == sized_right(promoted_left));
                             rewrite(promoted_left == sized_left(old(tree.model)));
-                            assumption();
+                            known();
                         }
                         have sized_value(right_model) <= 2147483646 by {
                             rewrite(right_model == sized_right(promoted_left));
                             rewrite(promoted_left == sized_left(old(tree.model)));
-                            assumption();
+                            known();
                         }
                         have defined(2147483646 - sized_value(right_model));
                         have sized_value(left_model) <= 2147483646 - sized_value(right_model) by {
                             rewrite(left_model == sized_left(promoted_left));
                             rewrite(right_model == sized_right(promoted_left));
                             rewrite(promoted_left == sized_left(old(tree.model)));
-                            assumption();
+                            known();
                         }
                         let { checked: left } = certify_size((rb_old as (void *) as (struct sized_node *))->rb.rb_left, { tree: left });
                         let { checked: right } = certify_size((rb_old as (void *) as (struct sized_node *))->rb.rb_right, { tree: right });
-                        have to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model)) by { rewrite(left_model == left.model); assumption(); }
-                        have to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model)) by { rewrite(right_model == right.model); assumption(); }
+                        have to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model)) by { rewrite(left_model == left.model); known(); }
+                        have to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model)) by { rewrite(right_model == right.model); known(); }
                         have to_integer(value) == rb_subtree_size(sized_shape(SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right))) by {
                             unfold(sized_shape(SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right)));
                             unfold(rb_subtree_size(RbTree::Node(promoted, above, promoted_color, sized_shape(promoted_left), sized_shape(promoted_right))));
@@ -161,7 +161,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                             SizedTree::Empty => {
                                 unfold(left);
                                 unfold(sized_value(SizedTree::Empty));
-                                have (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 by { assumption(); }
+                                have (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 by { known(); }
                                 let l = fold(optional_size((rb_old as (void *) as (struct sized_node *))->rb.rb_left), { value: 0 });
                                 match right.model {
                                     SizedTree::Empty => {
@@ -170,19 +170,19 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         let r = fold(optional_size((rb_old as (void *) as (struct sized_node *))->rb.rb_right), { value: 0 });
                                         apply(size_sum_defined(l.value, r.value));
                                         apply(size_sum_as_integer(l.value, r.value));
-                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_left); assumption(); }
+                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_left); known(); }
                                         mark before_rotate;
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
-                                        have l.value == at(before_rotate, l.value) by { assumption(); }
-                                        have r.value == at(before_rotate, r.value) by { assumption(); }
-                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { assumption(); }
+                                        have l.value == at(before_rotate, l.value) by { known(); }
+                                        have r.value == at(before_rotate, r.value) by { known(); }
+                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { known(); }
                                         have metadata.value == 1 + l.value + r.value by {
                                             rewrite(l.value == at(before_rotate, l.value));
                                             rewrite(r.value == at(before_rotate, r.value));
-                                            assumption();
+                                            known();
                                         }
-                                        have l.value == 0 by { assumption(); }
-                                        have r.value == 0 by { assumption(); }
+                                        have l.value == 0 by { known(); }
+                                        have r.value == 0 by { known(); }
                                         have metadata.value == 1 by {
                                             rewrite(metadata.value == 1 + l.value + r.value);
                                             rewrite(l.value == 0);
@@ -206,10 +206,10 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             unfold(sized_value(SizedTree::Empty));
                                             normalize();
                                         }
-                                        have rb_old == rb_new->rb_left by { assumption(); }
+                                        have rb_old == rb_new->rb_left by { known(); }
                                         have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
-                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
-                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
+                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { known(); }
+                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { known(); }
                                         transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
                                             at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent;
                                             rb_old == at(before_rotate, rb_new->rb_left);
@@ -238,12 +238,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
 
                                         have to_integer(sized_value(SizedTree::Node(identity, parent, color, 1, left_model, right_model))) == rb_subtree_size(sized_shape(SizedTree::Node(identity, parent, color, 1, left_model, right_model))) by {
                                             rewrite(SizedTree::Node(identity, parent, color, 1, left_model, right_model) == demoted_checked.model);
-                                            assumption();
+                                            known();
                                         }
                                         have sized_parent_is(SizedTree::Node(identity, parent, color, 1, left_model, right_model), rb_new) == 1 by {
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, 1, left_model, right_model), rb_new));
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), rb_new));
-                                            assumption();
+                                            known();
                                         }
 
                                         have sized_shape(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1, left_model, right_model), promoted_right)) == sized_shape(old(tree.model)) by {
@@ -264,14 +264,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have to_integer(value) == rb_subtree_size(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1, left_model, right_model), promoted_right))) by {
                                             rewrite(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1, left_model, right_model), promoted_right)) == sized_shape(old(tree.model)));
                                             rewrite(old(tree.model) == SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right));
-                                            assumption();
+                                            known();
                                         }
                                         let checked = fold(sized_at(rb_new), { model: SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1, left_model, right_model), promoted_right) }, { metadata: promoted_metadata, left: demoted_checked, right: other });
-                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { assumption(); }
+                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { known(); }
                                         have to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)) by {
                                             rewrite(checked.model == SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1, left_model, right_model), promoted_right));
                                             unfold(sized_value(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1, left_model, right_model), promoted_right)));
-                                            assumption();
+                                            known();
                                         }
                                         solve();
                                     },
@@ -284,18 +284,18 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         apply(size_sum_as_integer(l.value, r.value));
                                         child_size_separation(rb_old as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_right, { metadata: r });
                                         child_size_separation(rb_new as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_right, { metadata: r });
-                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_left); assumption(); }
+                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_left); known(); }
                                         mark before_rotate;
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
-                                        have l.value == 0 by { assumption(); }
-                                        have r.value == rv by { assumption(); }
-                                        have l.value == at(before_rotate, l.value) by { assumption(); }
-                                        have r.value == at(before_rotate, r.value) by { assumption(); }
-                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { assumption(); }
+                                        have l.value == 0 by { known(); }
+                                        have r.value == rv by { known(); }
+                                        have l.value == at(before_rotate, l.value) by { known(); }
+                                        have r.value == at(before_rotate, r.value) by { known(); }
+                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { known(); }
                                         have metadata.value == 1 + l.value + r.value by {
                                             rewrite(l.value == at(before_rotate, l.value));
                                             rewrite(r.value == at(before_rotate, r.value));
-                                            assumption();
+                                            known();
                                         }
                                         have metadata.value == 1 + rv by {
                                             rewrite(metadata.value == 1 + l.value + r.value);
@@ -307,7 +307,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             rewrite(left_model == SizedTree::Empty);
                                             unfold(sized_value(SizedTree::Empty));
                                             rewrite(sized_value(right_model) == rv);
-                                            assumption();
+                                            known();
                                         }
                                         unfold(l);
                                         let left = fold(sized_at((rb_old as (void *) as (struct sized_node *))->rb.rb_left), { model: SizedTree::Empty });
@@ -316,12 +316,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         let right = fold(sized_at((rb_old as (void *) as (struct sized_node *))->rb.rb_right), { model: SizedTree::Node(rid, rp, rc, rv, rl, rr) }, { metadata: rm, left: rleft, right: rright });
                                         have to_integer(metadata.value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) by {
                                             rewrite(metadata.value == 1 + rv);
-                                            assumption();
+                                            known();
                                         }
-                                        have rb_old == rb_new->rb_left by { assumption(); }
+                                        have rb_old == rb_new->rb_left by { known(); }
                                         have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
-                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
-                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
+                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { known(); }
+                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { known(); }
                                         transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
                                             at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent;
                                             rb_old == at(before_rotate, rb_new->rb_left);
@@ -350,12 +350,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
 
                                         have to_integer(sized_value(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model))) == rb_subtree_size(sized_shape(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model))) by {
                                             rewrite(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model) == demoted_checked.model);
-                                            assumption();
+                                            known();
                                         }
                                         have sized_parent_is(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), rb_new) == 1 by {
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), rb_new));
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), rb_new));
-                                            assumption();
+                                            known();
                                         }
 
                                         have sized_shape(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), promoted_right)) == sized_shape(old(tree.model)) by {
@@ -376,14 +376,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have to_integer(value) == rb_subtree_size(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), promoted_right))) by {
                                             rewrite(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), promoted_right)) == sized_shape(old(tree.model)));
                                             rewrite(old(tree.model) == SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right));
-                                            assumption();
+                                            known();
                                         }
                                         let checked = fold(sized_at(rb_new), { model: SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), promoted_right) }, { metadata: promoted_metadata, left: demoted_checked, right: other });
-                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { assumption(); }
+                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { known(); }
                                         have to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)) by {
                                             rewrite(checked.model == SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), promoted_right));
                                             unfold(sized_value(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), promoted_right)));
-                                            assumption();
+                                            known();
                                         }
                                         solve();
                                     },
@@ -404,13 +404,13 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                     SizedTree::Empty => {
                                         unfold(right);
                                         unfold(sized_value(SizedTree::Empty));
-                                        have (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 by { assumption(); }
+                                        have (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 by { known(); }
                                         let r = fold(optional_size((rb_old as (void *) as (struct sized_node *))->rb.rb_right), { value: 0 });
                                         have 0 <= l.value by { solve(); }
                                         have 0 <= r.value by { solve(); }
                                         have r.value <= 2147483646 by { solve(); }
-                                        have sized_value(right_model) == r.value by { assumption(); }
-                                        have sized_value(left_model) == l.value by { assumption(); }
+                                        have sized_value(right_model) == r.value by { known(); }
+                                        have sized_value(left_model) == l.value by { known(); }
                                         have 2147483646 - sized_value(right_model) == 2147483646 - r.value by {
                                             rewrite(sized_value(right_model) == r.value);
                                             normalize();
@@ -419,12 +419,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         apply(size_sum_as_integer(l.value, r.value));
                                         child_size_separation(rb_old as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_left, { metadata: l });
                                         child_size_separation(rb_new as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_left, { metadata: l });
-                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_left); assumption(); }
+                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_left); known(); }
                                         mark before_rotate;
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
-                                        have l.value == lv by { assumption(); }
-                                        have r.value == 0 by { assumption(); }
-                                        have metadata.value == 1 + lv by { assumption(); }
+                                        have l.value == lv by { known(); }
+                                        have r.value == 0 by { known(); }
+                                        have metadata.value == 1 + lv by { known(); }
                                         unfold(l);
                                         let lm = fold(size_metadata((rb_old as (void *) as (struct sized_node *))->rb.rb_left), { value: lv });
                                         let left = fold(sized_at((rb_old as (void *) as (struct sized_node *))->rb.rb_left), { model: SizedTree::Node(lid, lp, lc, lv, ll, lr) }, { metadata: lm, left: lleft, right: lright });
@@ -436,16 +436,16 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             rewrite(right_model == SizedTree::Empty);
                                             unfold(sized_value(SizedTree::Empty));
                                             normalize();
-                                            assumption();
+                                            known();
                                         }
                                         have to_integer(metadata.value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) by {
                                             rewrite(metadata.value == 1 + lv);
-                                            assumption();
+                                            known();
                                         }
-                                        have rb_old == rb_new->rb_left by { assumption(); }
+                                        have rb_old == rb_new->rb_left by { known(); }
                                         have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
-                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
-                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
+                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { known(); }
+                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { known(); }
                                         transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
                                             at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent;
                                             rb_old == at(before_rotate, rb_new->rb_left);
@@ -474,12 +474,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
 
                                         have to_integer(sized_value(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model))) == rb_subtree_size(sized_shape(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model))) by {
                                             rewrite(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model) == demoted_checked.model);
-                                            assumption();
+                                            known();
                                         }
                                         have sized_parent_is(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), rb_new) == 1 by {
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), rb_new));
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), rb_new));
-                                            assumption();
+                                            known();
                                         }
 
                                         have sized_shape(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), promoted_right)) == sized_shape(old(tree.model)) by {
@@ -500,14 +500,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have to_integer(value) == rb_subtree_size(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), promoted_right))) by {
                                             rewrite(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), promoted_right)) == sized_shape(old(tree.model)));
                                             rewrite(old(tree.model) == SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right));
-                                            assumption();
+                                            known();
                                         }
                                         let checked = fold(sized_at(rb_new), { model: SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), promoted_right) }, { metadata: promoted_metadata, left: demoted_checked, right: other });
-                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { assumption(); }
+                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { known(); }
                                         have to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)) by {
                                             rewrite(checked.model == SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), promoted_right));
                                             unfold(sized_value(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), promoted_right)));
-                                            assumption();
+                                            known();
                                         }
                                         solve();
                                     },
@@ -528,18 +528,18 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         child_size_separation(rb_new as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_left, { metadata: l });
                                         child_size_separation(rb_old as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_right, { metadata: r });
                                         child_size_separation(rb_new as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_right, { metadata: r });
-                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_left); assumption(); }
+                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_left); known(); }
                                         mark before_rotate;
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
-                                        have l.value == lv by { assumption(); }
-                                        have r.value == rv by { assumption(); }
-                                        have l.value == at(before_rotate, l.value) by { assumption(); }
-                                        have r.value == at(before_rotate, r.value) by { assumption(); }
-                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { assumption(); }
+                                        have l.value == lv by { known(); }
+                                        have r.value == rv by { known(); }
+                                        have l.value == at(before_rotate, l.value) by { known(); }
+                                        have r.value == at(before_rotate, r.value) by { known(); }
+                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { known(); }
                                         have metadata.value == 1 + l.value + r.value by {
                                             rewrite(l.value == at(before_rotate, l.value));
                                             rewrite(r.value == at(before_rotate, r.value));
-                                            assumption();
+                                            known();
                                         }
                                         have metadata.value == 1 + lv + rv by {
                                             rewrite(metadata.value == 1 + l.value + r.value);
@@ -559,16 +559,16 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             rewrite(right_model == SizedTree::Node(rid, rp, rc, rv, rl, rr));
                                             unfold(sized_value(SizedTree::Node(rid, rp, rc, rv, rl, rr)));
                                             normalize();
-                                            assumption();
+                                            known();
                                         }
                                         have to_integer(metadata.value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) by {
                                             rewrite(metadata.value == 1 + lv + rv);
-                                            assumption();
+                                            known();
                                         }
-                                        have rb_old == rb_new->rb_left by { assumption(); }
+                                        have rb_old == rb_new->rb_left by { known(); }
                                         have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
-                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
-                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
+                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { known(); }
+                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { known(); }
                                         transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
                                             at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent;
                                             rb_old == at(before_rotate, rb_new->rb_left);
@@ -597,12 +597,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
 
                                         have to_integer(sized_value(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model))) == rb_subtree_size(sized_shape(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model))) by {
                                             rewrite(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model) == demoted_checked.model);
-                                            assumption();
+                                            known();
                                         }
                                         have sized_parent_is(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), rb_new) == 1 by {
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), rb_new));
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), rb_new));
-                                            assumption();
+                                            known();
                                         }
 
                                         have sized_shape(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), promoted_right)) == sized_shape(old(tree.model)) by {
@@ -623,14 +623,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have to_integer(value) == rb_subtree_size(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), promoted_right))) by {
                                             rewrite(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), promoted_right)) == sized_shape(old(tree.model)));
                                             rewrite(old(tree.model) == SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right));
-                                            assumption();
+                                            known();
                                         }
                                         let checked = fold(sized_at(rb_new), { model: SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), promoted_right) }, { metadata: promoted_metadata, left: demoted_checked, right: other });
-                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { assumption(); }
+                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { known(); }
                                         have to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)) by {
                                             rewrite(checked.model == SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), promoted_right));
                                             unfold(sized_value(SizedTree::Node(promoted, above, promoted_color, value, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), promoted_right)));
-                                            assumption();
+                                            known();
                                         }
                                         solve();
                                     },
@@ -699,16 +699,16 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
             SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right) => {
                 let { metadata: promoted_metadata, demoted: demoted, other: other } = unfold(tree);
                 let { checked: other } = certify_size(rb_new->rb_left, { tree: other });
-                have to_integer(sized_value(promoted_left)) == rb_subtree_size(sized_shape(promoted_left)) by { rewrite(promoted_left == other.model); assumption(); }
+                have to_integer(sized_value(promoted_left)) == rb_subtree_size(sized_shape(promoted_left)) by { rewrite(promoted_left == other.model); known(); }
                 unfold(sized_right(SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right)));
                 match demoted.model {
                     SizedTree::Empty => {
                         unfold(demoted);
-                        have rb_old == 0 by { assumption(); }
+                        have rb_old == 0 by { known(); }
                         contradiction(rb_old == 0);
                     },
                     SizedTree::Node(identity, parent, color, value, left_model, right_model) => {
-                        have promoted_right == SizedTree::Node(identity, parent, color, value, left_model, right_model) by { assumption(); }
+                        have promoted_right == SizedTree::Node(identity, parent, color, value, left_model, right_model) by { known(); }
                         unfold(sized_value(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
                         have sized_value(promoted_right) == value by {
                             rewrite(promoted_right == SizedTree::Node(identity, parent, color, value, left_model, right_model));
@@ -729,7 +729,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                             rewrite(value == sized_value(promoted_right));
                             rewrite(left_model == sized_left(promoted_right));
                             rewrite(right_model == sized_right(promoted_right));
-                            assumption();
+                            known();
                         }
                         let { metadata: metadata, left: left, right: right } = unfold(demoted);
                         rotation_target_separation(rb_old as (void *) as (struct sized_node *), rb_new, { metadata: promoted_metadata });
@@ -743,29 +743,29 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                         have 0 <= sized_value(left_model) by {
                             rewrite(left_model == sized_left(promoted_right));
                             rewrite(promoted_right == sized_right(old(tree.model)));
-                            assumption();
+                            known();
                         }
                         have 0 <= sized_value(right_model) by {
                             rewrite(right_model == sized_right(promoted_right));
                             rewrite(promoted_right == sized_right(old(tree.model)));
-                            assumption();
+                            known();
                         }
                         have sized_value(right_model) <= 2147483646 by {
                             rewrite(right_model == sized_right(promoted_right));
                             rewrite(promoted_right == sized_right(old(tree.model)));
-                            assumption();
+                            known();
                         }
                         have defined(2147483646 - sized_value(right_model));
                         have sized_value(left_model) <= 2147483646 - sized_value(right_model) by {
                             rewrite(left_model == sized_left(promoted_right));
                             rewrite(right_model == sized_right(promoted_right));
                             rewrite(promoted_right == sized_right(old(tree.model)));
-                            assumption();
+                            known();
                         }
                         let { checked: left } = certify_size((rb_old as (void *) as (struct sized_node *))->rb.rb_left, { tree: left });
                         let { checked: right } = certify_size((rb_old as (void *) as (struct sized_node *))->rb.rb_right, { tree: right });
-                        have to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model)) by { rewrite(left_model == left.model); assumption(); }
-                        have to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model)) by { rewrite(right_model == right.model); assumption(); }
+                        have to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model)) by { rewrite(left_model == left.model); known(); }
+                        have to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model)) by { rewrite(right_model == right.model); known(); }
                         have to_integer(value) == rb_subtree_size(sized_shape(SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right))) by {
                             unfold(sized_shape(SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right)));
                             unfold(rb_subtree_size(RbTree::Node(promoted, above, promoted_color, sized_shape(promoted_left), sized_shape(promoted_right))));
@@ -785,7 +785,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                             SizedTree::Empty => {
                                 unfold(left);
                                 unfold(sized_value(SizedTree::Empty));
-                                have (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 by { assumption(); }
+                                have (rb_old as (void *) as (struct sized_node *))->rb.rb_left == 0 by { known(); }
                                 let l = fold(optional_size((rb_old as (void *) as (struct sized_node *))->rb.rb_left), { value: 0 });
                                 match right.model {
                                     SizedTree::Empty => {
@@ -794,19 +794,19 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         let r = fold(optional_size((rb_old as (void *) as (struct sized_node *))->rb.rb_right), { value: 0 });
                                         apply(size_sum_defined(l.value, r.value));
                                         apply(size_sum_as_integer(l.value, r.value));
-                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_right); assumption(); }
+                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_right); known(); }
                                         mark before_rotate;
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
-                                        have l.value == at(before_rotate, l.value) by { assumption(); }
-                                        have r.value == at(before_rotate, r.value) by { assumption(); }
-                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { assumption(); }
+                                        have l.value == at(before_rotate, l.value) by { known(); }
+                                        have r.value == at(before_rotate, r.value) by { known(); }
+                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { known(); }
                                         have metadata.value == 1 + l.value + r.value by {
                                             rewrite(l.value == at(before_rotate, l.value));
                                             rewrite(r.value == at(before_rotate, r.value));
-                                            assumption();
+                                            known();
                                         }
-                                        have l.value == 0 by { assumption(); }
-                                        have r.value == 0 by { assumption(); }
+                                        have l.value == 0 by { known(); }
+                                        have r.value == 0 by { known(); }
                                         have metadata.value == 1 by {
                                             rewrite(metadata.value == 1 + l.value + r.value);
                                             rewrite(l.value == 0);
@@ -830,10 +830,10 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             unfold(sized_value(SizedTree::Empty));
                                             normalize();
                                         }
-                                        have rb_old == rb_new->rb_right by { assumption(); }
+                                        have rb_old == rb_new->rb_right by { known(); }
                                         have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
-                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
-                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
+                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { known(); }
+                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { known(); }
                                         transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
                                             at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent;
                                             rb_old == at(before_rotate, rb_new->rb_right);
@@ -862,12 +862,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
 
                                         have to_integer(sized_value(SizedTree::Node(identity, parent, color, 1, left_model, right_model))) == rb_subtree_size(sized_shape(SizedTree::Node(identity, parent, color, 1, left_model, right_model))) by {
                                             rewrite(SizedTree::Node(identity, parent, color, 1, left_model, right_model) == demoted_checked.model);
-                                            assumption();
+                                            known();
                                         }
                                         have sized_parent_is(SizedTree::Node(identity, parent, color, 1, left_model, right_model), rb_new) == 1 by {
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, 1, left_model, right_model), rb_new));
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), rb_new));
-                                            assumption();
+                                            known();
                                         }
 
                                         have sized_shape(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1, left_model, right_model))) == sized_shape(old(tree.model)) by {
@@ -888,14 +888,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have to_integer(value) == rb_subtree_size(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1, left_model, right_model)))) by {
                                             rewrite(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1, left_model, right_model))) == sized_shape(old(tree.model)));
                                             rewrite(old(tree.model) == SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right));
-                                            assumption();
+                                            known();
                                         }
                                         let checked = fold(sized_at(rb_new), { model: SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1, left_model, right_model)) }, { metadata: promoted_metadata, left: other, right: demoted_checked });
-                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { assumption(); }
+                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { known(); }
                                         have to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)) by {
                                             rewrite(checked.model == SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1, left_model, right_model)));
                                             unfold(sized_value(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1, left_model, right_model))));
-                                            assumption();
+                                            known();
                                         }
                                         solve();
                                     },
@@ -908,18 +908,18 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         apply(size_sum_as_integer(l.value, r.value));
                                         child_size_separation(rb_old as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_right, { metadata: r });
                                         child_size_separation(rb_new as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_right, { metadata: r });
-                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_right); assumption(); }
+                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_right); known(); }
                                         mark before_rotate;
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
-                                        have l.value == 0 by { assumption(); }
-                                        have r.value == rv by { assumption(); }
-                                        have l.value == at(before_rotate, l.value) by { assumption(); }
-                                        have r.value == at(before_rotate, r.value) by { assumption(); }
-                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { assumption(); }
+                                        have l.value == 0 by { known(); }
+                                        have r.value == rv by { known(); }
+                                        have l.value == at(before_rotate, l.value) by { known(); }
+                                        have r.value == at(before_rotate, r.value) by { known(); }
+                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { known(); }
                                         have metadata.value == 1 + l.value + r.value by {
                                             rewrite(l.value == at(before_rotate, l.value));
                                             rewrite(r.value == at(before_rotate, r.value));
-                                            assumption();
+                                            known();
                                         }
                                         have metadata.value == 1 + rv by {
                                             rewrite(metadata.value == 1 + l.value + r.value);
@@ -931,7 +931,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             rewrite(left_model == SizedTree::Empty);
                                             unfold(sized_value(SizedTree::Empty));
                                             rewrite(sized_value(right_model) == rv);
-                                            assumption();
+                                            known();
                                         }
                                         unfold(l);
                                         let left = fold(sized_at((rb_old as (void *) as (struct sized_node *))->rb.rb_left), { model: SizedTree::Empty });
@@ -940,12 +940,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         let right = fold(sized_at((rb_old as (void *) as (struct sized_node *))->rb.rb_right), { model: SizedTree::Node(rid, rp, rc, rv, rl, rr) }, { metadata: rm, left: rleft, right: rright });
                                         have to_integer(metadata.value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) by {
                                             rewrite(metadata.value == 1 + rv);
-                                            assumption();
+                                            known();
                                         }
-                                        have rb_old == rb_new->rb_right by { assumption(); }
+                                        have rb_old == rb_new->rb_right by { known(); }
                                         have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
-                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
-                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
+                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { known(); }
+                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { known(); }
                                         transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
                                             at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent;
                                             rb_old == at(before_rotate, rb_new->rb_right);
@@ -974,12 +974,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
 
                                         have to_integer(sized_value(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model))) == rb_subtree_size(sized_shape(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model))) by {
                                             rewrite(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model) == demoted_checked.model);
-                                            assumption();
+                                            known();
                                         }
                                         have sized_parent_is(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), rb_new) == 1 by {
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), rb_new));
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), rb_new));
-                                            assumption();
+                                            known();
                                         }
 
                                         have sized_shape(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model))) == sized_shape(old(tree.model)) by {
@@ -1000,14 +1000,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have to_integer(value) == rb_subtree_size(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)))) by {
                                             rewrite(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model))) == sized_shape(old(tree.model)));
                                             rewrite(old(tree.model) == SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right));
-                                            assumption();
+                                            known();
                                         }
                                         let checked = fold(sized_at(rb_new), { model: SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)) }, { metadata: promoted_metadata, left: other, right: demoted_checked });
-                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { assumption(); }
+                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { known(); }
                                         have to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)) by {
                                             rewrite(checked.model == SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)));
                                             unfold(sized_value(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model))));
-                                            assumption();
+                                            known();
                                         }
                                         solve();
                                     },
@@ -1028,13 +1028,13 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                     SizedTree::Empty => {
                                         unfold(right);
                                         unfold(sized_value(SizedTree::Empty));
-                                        have (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 by { assumption(); }
+                                        have (rb_old as (void *) as (struct sized_node *))->rb.rb_right == 0 by { known(); }
                                         let r = fold(optional_size((rb_old as (void *) as (struct sized_node *))->rb.rb_right), { value: 0 });
                                         have 0 <= l.value by { solve(); }
                                         have 0 <= r.value by { solve(); }
                                         have r.value <= 2147483646 by { solve(); }
-                                        have sized_value(right_model) == r.value by { assumption(); }
-                                        have sized_value(left_model) == l.value by { assumption(); }
+                                        have sized_value(right_model) == r.value by { known(); }
+                                        have sized_value(left_model) == l.value by { known(); }
                                         have 2147483646 - sized_value(right_model) == 2147483646 - r.value by {
                                             rewrite(sized_value(right_model) == r.value);
                                             normalize();
@@ -1043,12 +1043,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         apply(size_sum_as_integer(l.value, r.value));
                                         child_size_separation(rb_old as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_left, { metadata: l });
                                         child_size_separation(rb_new as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_left, { metadata: l });
-                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_right); assumption(); }
+                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_right); known(); }
                                         mark before_rotate;
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
-                                        have l.value == lv by { assumption(); }
-                                        have r.value == 0 by { assumption(); }
-                                        have metadata.value == 1 + lv by { assumption(); }
+                                        have l.value == lv by { known(); }
+                                        have r.value == 0 by { known(); }
+                                        have metadata.value == 1 + lv by { known(); }
                                         unfold(l);
                                         let lm = fold(size_metadata((rb_old as (void *) as (struct sized_node *))->rb.rb_left), { value: lv });
                                         let left = fold(sized_at((rb_old as (void *) as (struct sized_node *))->rb.rb_left), { model: SizedTree::Node(lid, lp, lc, lv, ll, lr) }, { metadata: lm, left: lleft, right: lright });
@@ -1060,16 +1060,16 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             rewrite(right_model == SizedTree::Empty);
                                             unfold(sized_value(SizedTree::Empty));
                                             normalize();
-                                            assumption();
+                                            known();
                                         }
                                         have to_integer(metadata.value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) by {
                                             rewrite(metadata.value == 1 + lv);
-                                            assumption();
+                                            known();
                                         }
-                                        have rb_old == rb_new->rb_right by { assumption(); }
+                                        have rb_old == rb_new->rb_right by { known(); }
                                         have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
-                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
-                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
+                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { known(); }
+                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { known(); }
                                         transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
                                             at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent;
                                             rb_old == at(before_rotate, rb_new->rb_right);
@@ -1098,12 +1098,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
 
                                         have to_integer(sized_value(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model))) == rb_subtree_size(sized_shape(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model))) by {
                                             rewrite(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model) == demoted_checked.model);
-                                            assumption();
+                                            known();
                                         }
                                         have sized_parent_is(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), rb_new) == 1 by {
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), rb_new));
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), rb_new));
-                                            assumption();
+                                            known();
                                         }
 
                                         have sized_shape(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model))) == sized_shape(old(tree.model)) by {
@@ -1124,14 +1124,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have to_integer(value) == rb_subtree_size(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)))) by {
                                             rewrite(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model))) == sized_shape(old(tree.model)));
                                             rewrite(old(tree.model) == SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right));
-                                            assumption();
+                                            known();
                                         }
                                         let checked = fold(sized_at(rb_new), { model: SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)) }, { metadata: promoted_metadata, left: other, right: demoted_checked });
-                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { assumption(); }
+                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { known(); }
                                         have to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)) by {
                                             rewrite(checked.model == SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)));
                                             unfold(sized_value(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model))));
-                                            assumption();
+                                            known();
                                         }
                                         solve();
                                     },
@@ -1152,18 +1152,18 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         child_size_separation(rb_new as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_left, { metadata: l });
                                         child_size_separation(rb_old as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_right, { metadata: r });
                                         child_size_separation(rb_new as (void *) as (struct sized_node *), (rb_old as (void *) as (struct sized_node *))->rb.rb_right, { metadata: r });
-                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_right); assumption(); }
+                                        have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_right); known(); }
                                         mark before_rotate;
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
-                                        have l.value == lv by { assumption(); }
-                                        have r.value == rv by { assumption(); }
-                                        have l.value == at(before_rotate, l.value) by { assumption(); }
-                                        have r.value == at(before_rotate, r.value) by { assumption(); }
-                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { assumption(); }
+                                        have l.value == lv by { known(); }
+                                        have r.value == rv by { known(); }
+                                        have l.value == at(before_rotate, l.value) by { known(); }
+                                        have r.value == at(before_rotate, r.value) by { known(); }
+                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { known(); }
                                         have metadata.value == 1 + l.value + r.value by {
                                             rewrite(l.value == at(before_rotate, l.value));
                                             rewrite(r.value == at(before_rotate, r.value));
-                                            assumption();
+                                            known();
                                         }
                                         have metadata.value == 1 + lv + rv by {
                                             rewrite(metadata.value == 1 + l.value + r.value);
@@ -1183,16 +1183,16 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             rewrite(right_model == SizedTree::Node(rid, rp, rc, rv, rl, rr));
                                             unfold(sized_value(SizedTree::Node(rid, rp, rc, rv, rl, rr)));
                                             normalize();
-                                            assumption();
+                                            known();
                                         }
                                         have to_integer(metadata.value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) by {
                                             rewrite(metadata.value == 1 + lv + rv);
-                                            assumption();
+                                            known();
                                         }
-                                        have rb_old == rb_new->rb_right by { assumption(); }
+                                        have rb_old == rb_new->rb_right by { known(); }
                                         have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
-                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
-                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
+                                        have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { known(); }
+                                        have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { known(); }
                                         transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
                                             at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent;
                                             rb_old == at(before_rotate, rb_new->rb_right);
@@ -1221,12 +1221,12 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
 
                                         have to_integer(sized_value(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model))) == rb_subtree_size(sized_shape(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model))) by {
                                             rewrite(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model) == demoted_checked.model);
-                                            assumption();
+                                            known();
                                         }
                                         have sized_parent_is(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), rb_new) == 1 by {
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), rb_new));
                                             unfold(sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), rb_new));
-                                            assumption();
+                                            known();
                                         }
 
                                         have sized_shape(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model))) == sized_shape(old(tree.model)) by {
@@ -1247,14 +1247,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have to_integer(value) == rb_subtree_size(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)))) by {
                                             rewrite(sized_shape(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model))) == sized_shape(old(tree.model)));
                                             rewrite(old(tree.model) == SizedTree::Node(promoted, above, promoted_color, stale, promoted_left, promoted_right));
-                                            assumption();
+                                            known();
                                         }
                                         let checked = fold(sized_at(rb_new), { model: SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)) }, { metadata: promoted_metadata, left: other, right: demoted_checked });
-                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { assumption(); }
+                                        have sized_shape(checked.model) == sized_shape(old(tree.model)) by { known(); }
                                         have to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)) by {
                                             rewrite(checked.model == SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)));
                                             unfold(sized_value(SizedTree::Node(promoted, above, promoted_color, value, promoted_left, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model))));
-                                            assumption();
+                                            known();
                                         }
                                         solve();
                                     },

@@ -33,7 +33,7 @@ int32 read_ref(int32** p) {
     match saved.link {
         Link::Present(linked) => {
             unfold(saved);
-            have old(*p) == linked by { assumption(); }
+            have old(*p) == linked by { known(); }
             open(control(*p)) { step_until(function.exit); }
             let saved = fold(slot(p), { link: Link::Present(linked) });
             solve();
@@ -115,7 +115,7 @@ fn opening_control_retains_loaded_pointer_facts() {
         .open_have(have.proposition.clone())
         .unwrap()
         .driver()
-        .apply_step(ProofStep::Assumption)
+        .apply_step(ProofStep::Known)
         .unwrap()
         .join()
         .unwrap();

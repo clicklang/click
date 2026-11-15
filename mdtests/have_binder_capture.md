@@ -26,9 +26,9 @@ int32 bad(int32 x) {
                 intro();
                 have forall (w: int32) { w == 5 } by {
                     intro();
-                    assumption();
+                    known();
                 }
-                assumption();
+                known();
             }
             have x == 5 by {
                 instantiate(
@@ -41,9 +41,9 @@ int32 bad(int32 x) {
                     forall (z: int32) { z == 5 },
                     x
                 ) using { };
-                assumption();
+                known();
             }
-            assumption();
+            known();
         }
         preserve by {
             have forall (u: int32) {
@@ -53,9 +53,9 @@ int32 bad(int32 x) {
                 intro();
                 have forall (w: int32) { w == 5 } by {
                     intro();
-                    assumption();
+                    known();
                 }
-                assumption();
+                known();
             }
             have x == 5 by {
                 instantiate(
@@ -68,9 +68,9 @@ int32 bad(int32 x) {
                     forall (z: int32) { z == 5 },
                     x
                 ) using { };
-                assumption();
+                known();
             }
-            assumption();
+            known();
         }
     }
     step();
@@ -79,5 +79,5 @@ int32 bad(int32 x) {
 ```
 
 ```expect
-fail: have body tactic 2: `assumption` requires the current goal as an available semantic fact
+fail: have body tactic 2: `known` requires the current goal as an available semantic fact
 ```

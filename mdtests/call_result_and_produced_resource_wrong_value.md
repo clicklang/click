@@ -31,9 +31,9 @@ void caller(int32* p) {
     ensures checked.value == 1;
 } by {
     let { result: status, output: checked } = step(set, { input: input });
-    have status == 2 by { assumption(); }
+    have status == 2 by { known(); }
 }
 ```
 ```expect
-fail: `assumption` requires the current goal as an available semantic fact
+fail: `known` requires the current goal as an available semantic fact
 ```

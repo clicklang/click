@@ -133,7 +133,7 @@ pub(crate) enum ExecutionUpdateError {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum PropositionAssumptionContext {
+pub(crate) enum PropositionKnownContext {
     Exact,
     Pure,
     Materialized,
@@ -929,10 +929,10 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
 
     /// Closes the focused proposition goal when the step that produced this
     /// state added it as a fact. A goal that was already available before
-    /// the step stays open; only `assumption` closes that. The match is
+    /// the step stays open; only `known` closes that. The match is
     /// exact: a planned step sequence relies on the goal staying open after
     /// a step that adds it under another spelling, and the written-script
-    /// runner closes that case with a recorded `assumption` instead.
+    /// runner closes that case with a recorded `known` instead.
     pub(crate) fn closed_if_goal_was_added(&self) -> Option<Self> {
         let (goal, _) = self.focused_proposition()?;
         self.state
@@ -966,9 +966,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         )
     }
 
-    pub(crate) fn apply_assumption(
+    pub(crate) fn apply_known(
         &self,
-        context: PropositionAssumptionContext,
+        context: PropositionKnownContext,
     ) -> Result<Self, PropositionCloseError> {
         let (goal, facts) = self
             .focused_proposition()
@@ -976,25 +976,23 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let proposition = goal.proposition();
         let available = |proposition: &Proposition| {
             if let Some(outcome) = goal.outcome.as_deref() {
-                facts.pure_assumption_available(proposition)
+                facts.pure_known_available(proposition)
                     || facts.available_across_effects(proposition, &*outcome.core.effect_facts)
             } else {
                 match context {
-                    PropositionAssumptionContext::Exact => {
+                    PropositionKnownContext::Exact => {
                         // Instantiation can expose an inner universal whose retained
                         // binder differs from the goal's independently lowered binder.
                         // Alpha-equivalence preserves the exact fact; use the indexed
                         // quantified lookup without invoking a derivation search.
                         facts.available(proposition) || facts.quantified_fact_available(proposition)
                     }
-                    PropositionAssumptionContext::Pure => {
-                        facts.pure_assumption_available(proposition)
-                    }
-                    PropositionAssumptionContext::Materialized => {
+                    PropositionKnownContext::Pure => facts.pure_known_available(proposition),
+                    PropositionKnownContext::Materialized => {
                         // Alpha-equivalent quantified and Integer facts remain
                         // materialized when their exact snapshot-aware keys match.
                         // This does not admit cross-effect transport.
-                        facts.pure_assumption_available(proposition)
+                        facts.pure_known_available(proposition)
                     }
                 }
             }
@@ -3179,7 +3177,7 @@ mod tests {
     }
 
     #[test]
-    fn materialized_assumption_accepts_same_snapshot_alpha_facts_only() {
+    fn materialized_known_accepts_same_snapshot_alpha_facts_only() {
         use crate::kernel::proof::{
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
@@ -3259,12 +3257,12 @@ mod tests {
                 ProofFacts::from_ordered(std::slice::from_ref(&quantified_source)),
                 quantified_goal.clone(),
             )
-            .apply_assumption(PropositionAssumptionContext::Materialized)
+            .apply_known(PropositionKnownContext::Materialized)
             .is_ok()
         );
         assert!(
             root(ProofFacts::default(), quantified_goal)
-                .apply_assumption(PropositionAssumptionContext::Materialized)
+                .apply_known(PropositionKnownContext::Materialized)
                 .is_err()
         );
 
@@ -3306,12 +3304,12 @@ mod tests {
                 ProofFacts::from_ordered(std::slice::from_ref(&fold_fact)),
                 fold_goal.clone(),
             )
-            .apply_assumption(PropositionAssumptionContext::Materialized)
+            .apply_known(PropositionKnownContext::Materialized)
             .is_ok()
         );
         assert!(
             root(ProofFacts::default(), fold_goal.clone())
-                .apply_assumption(PropositionAssumptionContext::Materialized)
+                .apply_known(PropositionKnownContext::Materialized)
                 .is_err()
         );
 
@@ -3327,7 +3325,7 @@ mod tests {
                 ProofFacts::from_ordered(&[loadable(before, Variable(70))]),
                 loadable(changed, Variable(71)),
             )
-            .apply_assumption(PropositionAssumptionContext::Materialized)
+            .apply_known(PropositionKnownContext::Materialized)
             .is_err()
         );
     }
@@ -3400,10 +3398,7 @@ mod tests {
             )
             .unwrap();
         assert!(body.apply_normalize().is_err());
-        assert!(
-            body.apply_assumption(PropositionAssumptionContext::Pure)
-                .is_err()
-        );
+        assert!(body.apply_known(PropositionKnownContext::Pure).is_err());
         assert!(
             frontier
                 .retain_invariant_body(scope.clone(), &body)
@@ -3416,7 +3411,7 @@ mod tests {
         };
         assumed.state.facts = assumed.state.facts.with_fact(goal.proposition().clone());
         let unrelated = TestProof::root((), assumed)
-            .apply_assumption(PropositionAssumptionContext::Exact)
+            .apply_known(PropositionKnownContext::Exact)
             .ok()
             .unwrap();
         assert!(frontier.retain_invariant_body(scope, &unrelated).is_err());

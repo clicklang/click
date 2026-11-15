@@ -40,7 +40,7 @@ void call(struct node* p, struct node* q, int32* anchor) {
     ensures p->left == 0;
 } by {
     unfold(x); unfold(y);
-    have separate(memory(p->left), memory(q->left)) by assumption();
+    have separate(memory(p->left), memory(q->left)) by known();
     step(); step();
     have p->left == 0;
     mark before;

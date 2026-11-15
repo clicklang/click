@@ -10,7 +10,7 @@ theorem needs_nonnegative(x: int32) {
     requires x >= 0;
 
     ensures x >= 0 by {
-        assumption();
+        known();
     }
 }
 
@@ -20,7 +20,7 @@ theorem positive_premise(x: int32) {
     ensures x >= 0 by {
         have x >= 0;
         apply(needs_nonnegative(x));
-        assumption();
+        known();
     }
 }
 
@@ -61,7 +61,7 @@ theorem left_leaf_from_a_match(tree: Tree, value: int, left: Tree, right: Tree) 
     ensures size(Tree::Node(value, left, right)) == size(right) + 1 by {
         have left == Tree::Leaf;
         apply(leaf_left_size(value, left, right));
-        assumption();
+        known();
     }
 }
 ```

@@ -301,7 +301,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 preserve(separate(statement(1).footprint, memory(destination->capacity)));
             }
             have destination->capacity == at(before_source_write, destination->capacity) by {
-                assumption();
+                known();
             }
             fold(pool_object(destination, object));
             fold(pool_slot(source));

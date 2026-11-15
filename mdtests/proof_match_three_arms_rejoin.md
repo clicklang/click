@@ -49,13 +49,13 @@ int32 peek(struct cell* node) {
     step();
     match c.model {
         Sign::Neg(value) => {
-            have node != 0 by assumption();
+            have node != 0 by known();
         },
         Sign::Zero(value) => {
-            have node != 0 by assumption();
+            have node != 0 by known();
         },
         Sign::Pos(value) => {
-            have node != 0 by assumption();
+            have node != 0 by known();
         },
     }
     step();

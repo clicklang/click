@@ -76,7 +76,7 @@ void detach(struct node* n) {
             }
             have is_root(u.model) == 1 by {
                 rewrite(u.model == Tree::Node(identity, 0, value));
-                assumption();
+                known();
             }
             solve();
         },

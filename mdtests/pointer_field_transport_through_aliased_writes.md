@@ -30,7 +30,7 @@ void alias_frame(struct node *p, struct node *n, struct node *g) {
         rewrite(p == parent);
         normalize();
     }
-    step_until(function.exit); assumption();
+    step_until(function.exit); known();
 }
 ```
 

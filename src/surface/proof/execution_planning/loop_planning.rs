@@ -237,7 +237,7 @@ fn initialize_script_layout<'a>(
         })
         && rest[invariant_items.len()..]
             .iter()
-            .all(|tactic| matches!(tactic, ProofTactic::Assumption | ProofTactic::Solve));
+            .all(|tactic| matches!(tactic, ProofTactic::Known | ProofTactic::Solve));
     let mut grouped: Vec<Vec<(usize, &SourceProof)>> = Vec::new();
     let mut consumed = 0;
     for item in invariant_items {
@@ -257,7 +257,7 @@ fn initialize_script_layout<'a>(
     let names_every_invariant = grouped.len() == invariant_items.len()
         && rest[consumed..]
             .iter()
-            .all(|tactic| matches!(tactic, ProofTactic::Assumption | ProofTactic::Solve));
+            .all(|tactic| matches!(tactic, ProofTactic::Known | ProofTactic::Solve));
     let invariant_bodies = names_every_invariant.then_some(grouped);
     // Only a `solve()` that stands for what is left of the phase is a
     // whole-phase closer. A `solve()` written before the steps it closes
@@ -1276,7 +1276,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             } else {
                 // The implicit bundle closer plans a default `solve` body.
                 // Its premise selection is smart work even when the first
-                // checked member happens to close by assumption.
+                // checked member happens to close by `known()`.
                 (
                     tactics.len(),
                     source.loop_source_index,

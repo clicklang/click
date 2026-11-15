@@ -2433,7 +2433,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
         if direct_claims.is_empty() && !direct_resource_claims.is_empty() {
             let tactics = direct_resource_evidence
                 .values()
-                .map(|_| ProofTactic::Assumption)
+                .map(|_| ProofTactic::Known)
                 .collect::<Vec<_>>();
             let certificate =
                 ProofCertificate::from_proof_tactics(&tactics)
@@ -2744,8 +2744,8 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             };
             // Keep the checked authority for the original claims,
             // but close the rewritten goals in the expanded proof.
-            // Reflexive residuals need normalization, not assumption. With
-            // resource claims, keep the ordinary assumption closers: they
+            // Reflexive residuals need normalization, not `known`. With
+            // resource claims, keep the ordinary `known` closers: they
             // follow contract order, whose next goal may be ownership.
             if proof_context.constants.grouped_contract
                 && direct_resource_claims.is_empty()
@@ -2791,7 +2791,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                     tactics.extend(
                         direct_resource_evidence
                             .values()
-                            .map(|_| ProofTactic::Assumption),
+                            .map(|_| ProofTactic::Known),
                     );
                     ProofCertificate::from_proof_tactics(&tactics)
                         .map_err(|error| {
@@ -3051,7 +3051,7 @@ fn continue_claim_existence_proof<'a>(
 /// claim's existence proof rather than on the path's outcome proof.
 /// The main goal a written closer acts on after execution: the first open
 /// claim, in contract order. A resource claim (`owns`, `produces`) is a goal
-/// like a proposition claim; `assumption` closes it when the instance is held.
+/// like a proposition claim; `known` closes it when the instance is held.
 ///
 /// The outcome `Proof` holds the claim goals of a path that has one. A
 /// divergent path has none, and its closures say which claims are open.
@@ -3773,7 +3773,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // transition up front. A control node defers the transition
                     // to the reached closer, since earlier tactics can decide
                     // which arm will run. An expanded proof closes its
-                    // resource ensures with `assumption()` and never re-folds.
+                    // resource ensures with `known()` and never re-folds.
                     if !post_execution_tactics.iter().any(|deferred| {
                         matches!(
                             deferred.tactic,
@@ -3837,11 +3837,11 @@ pub(super) fn finish_ordered_proof<'a>(
                     let mut visits_selected_capture = false;
                     let mut surface_post_choices = Vec::new();
                     let mut batch_previous_capture = None;
-                    // Consecutive assumption closers only discharge claims;
+                    // Consecutive `known` closers only discharge claims;
                     // they do not change the outcome or its ambient facts.
                     // A failed whole-contract transition must not be retried
                     // once per returned member in an expanded solve proof.
-                    let mut assumption_transition_attempted = false;
+                    let mut known_transition_attempted = false;
                     // Exact closers discharge claims without changing the ambient
                     // outcome or facts. Share their lazily prepared return views,
                     // including a failed preparation, until another tactic runs.
@@ -3892,14 +3892,14 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                         if !matches!(
                             deferred.tactic,
-                            PostExecutionTactic::Leaf(ProofTactic::Assumption)
+                            PostExecutionTactic::Leaf(ProofTactic::Known)
                         ) {
-                            assumption_transition_attempted = false;
+                            known_transition_attempted = false;
                         }
                         if !matches!(
                             deferred.tactic,
                             PostExecutionTactic::Leaf(
-                                ProofTactic::Assumption
+                                ProofTactic::Known
                                     | ProofTactic::Normalize
                                     | ProofTactic::NormalizeUsing(_)
                                     | ProofTactic::ArithmeticUsing(_)
@@ -4006,13 +4006,13 @@ pub(super) fn finish_ordered_proof<'a>(
                             && let Some(crate::kernel::proof::OutcomeGoal::Closing(kind)) =
                                 root.first_open_outcome_goal()?
                         {
-                            return Err(root.step_error(format!("`{closer}` requires a proposition goal; the current contract-closing goal is {}; use `assumption()` for this closing operation", kind.description())));
+                            return Err(root.step_error(format!("`{closer}` requires a proposition goal; the current contract-closing goal is {}; use `known()` for this closing operation", kind.description())));
                         }
-                        // Written assumption and solve select the same closing goal.
+                        // Written `known` and `solve` select the same closing goal.
                         // The implicit solver schedules that primitive for every omitted proof.
                         if matches!(
                             post_tactic,
-                            PostExecutionTactic::Leaf(ProofTactic::Assumption)
+                            PostExecutionTactic::Leaf(ProofTactic::Known)
                                 | PostExecutionTactic::Solve
                                 | PostExecutionTactic::ImplicitSolve
                         ) && !matches!(post_tactic, PostExecutionTactic::ImplicitSolve)
@@ -4034,7 +4034,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 path_capture,
                                 post_execution_index,
                                 *tactic_index,
-                                ProofTactic::Assumption,
+                                ProofTactic::Known,
                             );
                             continue;
                         }
@@ -4487,7 +4487,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 }
                             }
                             PostExecutionTactic::Leaf(
-                                ProofTactic::Assumption
+                                ProofTactic::Known
                                 | ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
                                 | ProofTactic::ArithmeticUsing(_)
@@ -4497,14 +4497,14 @@ pub(super) fn finish_ordered_proof<'a>(
                             )
                             | PostExecutionTactic::Both(_) => {
                                 // The written closers that apply one step to
-                                // the main goal: `assumption`, the normalizing
-                                // closers and `both`. Only `assumption` reads
+                                // the main goal: `known`, the normalizing
+                                // closers and `both`. Only `known` reads
                                 // a resource claim and the outcome's recorded
                                 // lowerings; only the others close a divergent
                                 // path's claims vacuously.
-                                let assumption = matches!(
+                                let is_known = matches!(
                                     post_tactic,
-                                    PostExecutionTactic::Leaf(ProofTactic::Assumption)
+                                    PostExecutionTactic::Leaf(ProofTactic::Known)
                                 );
                                 let closer_name = match post_tactic {
                                     PostExecutionTactic::Both(_) => "both",
@@ -4560,13 +4560,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // transition, which `solve` applies before
                                 // closing claims against the outcome. The
                                 // closure `solve` records for such a claim is
-                                // spelled `assumption`, so the same reading of
+                                // spelled `known`, so the same reading of
                                 // the outcome has to be available here: without
                                 // it an expanded `solve` cannot reproduce the
                                 // claim its own certificate reports closed.
-                                if assumption
+                                if is_known
                                     && !resource_transition_applied
-                                    && !assumption_transition_attempted
+                                    && !known_transition_attempted
                                     && matches!(outcome, FunctionOutcome::Return { .. })
                                     && claims.iter().enumerate().any(|(index, claim)| {
                                         let clause = claim.clause();
@@ -4574,7 +4574,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             && matches!(clause.ensure(), Ensure::Resource(_))
                                     })
                                 {
-                                    assumption_transition_attempted = true;
+                                    known_transition_attempted = true;
                                     let established = crate::kernel::program_function_return_resources_definitionally_established(
                                         pre_state,
                                         function,
@@ -4602,9 +4602,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                     path_index,
                                 )?;
                                 let mut retained_certificate = None;
-                                // An `assumption` that closes no goal keeps
+                                // An `known` that closes no goal keeps
                                 // one fresh goal's checked context.
-                                let mut failed_assumption = None;
+                                let mut failed_known = None;
                                 // A `both` that closes no goal and was refused
                                 // for exactly one goal reports that refusal,
                                 // which names the arm tactic by its source
@@ -4616,7 +4616,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 for claim_index in main_claim.into_iter() {
                                     let claim = &claims[claim_index];
                                     let ensure_clause = claim.clause();
-                                    if !assumption
+                                    if !is_known
                                         && matches!(outcome, FunctionOutcome::VerificationDiverges)
                                     {
                                         if matches!(post_tactic, PostExecutionTactic::Both(_)) {
@@ -4659,7 +4659,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         continue;
                                     }
                                     if let Ensure::Resource(_resource) = ensure_clause.ensure() {
-                                        if assumption
+                                        if is_known
                                             && let Ok(checked_resource) =
                                                 required_outcome(&outcome_proof)?
                                                     .check_outcome_resource_claim(
@@ -4711,7 +4711,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     // Independently prove that exact original
                                     // claim on the current root; never treat a
                                     // failed rewritten proof as a success.
-                                    if assumption && rewritten_claim_proofs[claim_index].is_some() {
+                                    if is_known && rewritten_claim_proofs[claim_index].is_some() {
                                         if let Some(root) = &fixed_state_root {
                                             for original in kernel_goals.iter().flatten() {
                                                 let candidate = root
@@ -4721,7 +4721,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         surface_goal,
                                                     )?
                                                     .driver()
-                                                    .apply_step(ProofStep::Assumption);
+                                                    .apply_step(ProofStep::Known);
                                                 if let Ok(proof) = candidate {
                                                     retained_certificate =
                                                         Some(proof.certificate());
@@ -4803,11 +4803,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                         // Keep one selected failed goal's checked context.
                                         // A fresh summary alone loses its opt-in trace.
                                         Err(ClaimStepMiss { error, origin }) => {
-                                            if assumption {
+                                            if is_known {
                                                 if origin == ClaimProofOrigin::Fresh
                                                     && error.is_some()
                                                 {
-                                                    failed_assumption = error;
+                                                    failed_known = error;
                                                 }
                                             } else if matches!(
                                                 post_tactic,
@@ -4831,9 +4831,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 crate::surface::diagnostics::describe_ensure_clause(
                                                     claims[index].clause(),
                                                 );
-                                            if assumption {
+                                            if is_known {
                                                 format!(
-                                                    "`assumption` found no available fact or held instance for the current goal `{goal}`"
+                                                    "`known` found no available fact or held instance for the current goal `{goal}`"
                                                 )
                                             } else {
                                                 format!(
@@ -4847,7 +4847,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: {reason}"
                                     ));
                                     return Err(
-                                        match failed_assumption
+                                        match failed_known
                                             .and_then(|failure| failure.diagnostic().cloned())
                                         {
                                             Some(mut diagnostic) => {
@@ -5045,7 +5045,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             path_capture,
                                             post_execution_index,
                                             *tactic_index,
-                                            ProofTactic::Assumption,
+                                            ProofTactic::Known,
                                         );
                                     }
                                 }
@@ -5300,7 +5300,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             &post_return_facts,
                             ClosingProofMode::Implicit,
                         )? {
-                            path_grouped_surface_closers.push(ProofTactic::Assumption);
+                            path_grouped_surface_closers.push(ProofTactic::Known);
                         }
                     }
 
@@ -5968,7 +5968,7 @@ mod tests {
             vec![
                 ProofTactic::Step,
                 if value {
-                    ProofTactic::Assumption
+                    ProofTactic::Known
                 } else {
                     ProofTactic::Normalize
                 },
@@ -5991,7 +5991,7 @@ mod tests {
         assert_eq!(actual, &condition);
         assert_eq!(
             then_proof.steps(),
-            &[ProofStep::Assumption, ProofStep::Normalize]
+            &[ProofStep::Known, ProofStep::Normalize]
         );
         assert_eq!(
             else_proof.steps(),

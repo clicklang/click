@@ -147,16 +147,16 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
                 at(loop(0).exit, dst[k]) == old(src[k])
         } by {
             rewrite(at(loop(0).exit, n) == at(loop(0).exit, i));
-            assumption();
+            known();
         }
         have forall (k: int32) { 0 <= k and k < n implies dst[k] == old(src[k]) } by {
-            assumption();
+            known();
         }
-        assumption();
+        known();
     }
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
 }
 ```
 

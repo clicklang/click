@@ -452,7 +452,7 @@ forgetting alone preserves the version because it changes knowledge, not the
 object's initialization or lifetime. This identity is for definedness facts,
 not general snapshot equality or permission to access memory.
 `mdtests/local_array_quantified_definedness_survives_disjoint_store.md` covers
-`assumption()` after a store to an unrelated local.
+`known()` after a store to an unrelated local.
 
 A scalar read handle retains its structural descriptor (memory version,
 address, and read kind) in the load registry. A generated read-definition fact

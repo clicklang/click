@@ -35,13 +35,13 @@ void direct(int32* x) {
 } by {
     apply(repair_contract());
     let { result: status, output: done } = step(Repair, { input: dirty });
-    have status == 1 by { assumption(); }
+    have status == 1 by { known(); }
     unfold(done);
-    have x[0] == 1 by { assumption(); }
+    have x[0] == 1 by { known(); }
     let done = fold(Ready(x), { value: 1 });
 }
 ```
 
 ```expect
-fail: `assumption` requires the current goal as an available semantic fact
+fail: `known` requires the current goal as an available semantic fact
 ```

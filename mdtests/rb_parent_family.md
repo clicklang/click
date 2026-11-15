@@ -205,7 +205,7 @@ int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
             }
             contradiction(address(parent) == address(node));
         } else {
-            assumption();
+            known();
         }
     }
 }

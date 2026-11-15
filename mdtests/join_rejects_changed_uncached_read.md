@@ -27,17 +27,17 @@ void keep(struct pair* p, int32 x) {
     owns p->left;
 } by {
     step();
-    have p->tag == 42 by { assumption(); }
-    have p->count == 17 by { assumption(); }
+    have p->tag == 42 by { known(); }
+    have p->count == 17 by { known(); }
     mark before_join;
     branch ensuring { fact 1 == 1; } then { step(); } else { step(); }
-    have p->tag == 42 by { assumption(); }
-    have p->count == 17 by { assumption(); }
+    have p->tag == 42 by { known(); }
+    have p->count == 17 by { known(); }
     step();
     solve();
 }
 ```
 
 ```expect
-fail: `assumption` requires the current goal as an available semantic fact
+fail: `known` requires the current goal as an available semantic fact
 ```

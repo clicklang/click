@@ -1286,7 +1286,7 @@ fn checked_original_claim_can_close_after_rewrite_but_unrelated_have_cannot() {
         } by {
             step_until(function.exit); rewrite(x == 1);
             have result == 1 by { rewrite(x == 1); normalize(); }
-            assumption();
+            known();
         }
     "#;
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
@@ -2361,7 +2361,7 @@ int32 keep(int32 x, int32 y) {
                 0 <= to_integer(x) + to_integer(y);
             }
         }
-        assumption();
+        known();
     }
 }
 "#;
@@ -2427,7 +2427,7 @@ int32 fixed_c_params(int32 i, int32 total, int32 value) {
                 to_integer(i) <= 1000;
             }
         }
-        assumption();
+        known();
     }
 }
 "#;

@@ -4970,7 +4970,7 @@ pub struct TerminationVerdicts {
 ///
 /// `assumed_terminating` names callees outside the verified set whose
 /// declarations promise that they return: an external contract, or a function
-/// this run did not select. They are assumptions in the same sense as those
+/// this run did not select. They are knowns in the same sense as those
 /// callees' postconditions.
 ///
 /// `declared_diverging` names verified functions whose declarations say they

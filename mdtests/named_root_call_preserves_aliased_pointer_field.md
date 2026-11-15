@@ -62,9 +62,9 @@ void probe(struct node *p, struct root *root) {
   have nid->left == rid;
   have rid == p->right->left->left by { normalize() using { p->right == sid; sid->left == nid; nid->left == rid; }; }
   have nid == p->right->left by { normalize() using { p->right == sid; sid->left == nid; }; }
-  have separate(memory(p->right->left->left->left), memory(p->right->left->left)) by assumption();
+  have separate(memory(p->right->left->left->left), memory(p->right->left->left)) by known();
   have separate(memory(rid->left), memory(nid->left)) by { transport(separate(memory(p->right->left->left->left), memory(p->right->left->left)), separate(memory(rid->left), memory(nid->left))) using { separate(memory(p->right->left->left->left), memory(p->right->left->left)); rid == p->right->left->left; nid == p->right->left; }; }
-  have separate(memory(p->right->left->right), memory(p->right->left->left->right)) by assumption();
+  have separate(memory(p->right->left->right), memory(p->right->left->left->right)) by known();
   have separate(memory(nid->right), memory(rid->right)) by { transport(separate(memory(p->right->left->right), memory(p->right->left->left->right)), separate(memory(nid->right), memory(rid->right))) using { separate(memory(p->right->left->right), memory(p->right->left->left->right)); nid == p->right->left; rid == p->right->left->left; }; }
   step(); step(); step(); step(); step(); step();
   let { after: c } = step(helper, { before: c });

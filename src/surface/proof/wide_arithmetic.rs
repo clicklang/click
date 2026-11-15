@@ -4,11 +4,11 @@
 //!
 //! A 64-bit goal is proved through its exact Integer observations, by the
 //! steps a proof would write by hand: each listed 64-bit order premise is
-//! restated over its observations by `assumption`, each sum or difference in
+//! restated over its observations by `known`, each sum or difference in
 //! the premises and the goal is shown to stay in range (an unsigned one does
 //! not wrap, a signed one is defined) and then observed term by term by its
 //! in-range identity, the Integer claim is proved by the Integer certificate,
-//! and `assumption` concludes the goal. Every step is `assumption` or an
+//! and `known` concludes the goal. Every step is `known` or an
 //! explicit arithmetic certificate, recorded as such, so the expansion is
 //! that explicit script and nothing here is trusted.
 use super::*;

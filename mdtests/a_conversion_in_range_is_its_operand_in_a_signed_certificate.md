@@ -40,7 +40,7 @@ int32 next_byte(int32 x) {
             conclusion 10;
         }
     }
-    assumption();
+    known();
 }
 ```
 

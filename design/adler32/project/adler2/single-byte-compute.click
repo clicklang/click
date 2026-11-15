@@ -390,16 +390,16 @@ impl adler2::Adler32 {
      integer_cast_identity bounds [0, 1] => to_integer(self.b) == to_integer(at(reduced_b, __rust_mir_151)); conclusion 0;
      } }
      have bytes[0] == old(bytes[0]) by solve() using {};
-     have old(adler_spec_a(bytes, 1, 1)) == truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521) by assumption();
-     have old(adler_spec_b(bytes, 1, 1, 0)) == truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521) by assumption();
+     have old(adler_spec_a(bytes, 1, 1)) == truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521) by known();
+     have old(adler_spec_b(bytes, 1, 1, 0)) == truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521) by known();
      have to_integer(self.a) == to_integer((1u32 + old((bytes[0] as u32))) % 65521u32) by {
      rewrite(to_integer(self.a) == to_integer(at(reduced_a, __rust_mir_149)));
      rewrite(at(reduced_a, __rust_mir_149) == (1u32 + old((bytes[0] as u32))) % 65521u32);
      solve();
      }
      apply(integer::uint32_remainder_to_integer(1u32 + old((bytes[0] as u32)), 65521u32));
-     have to_integer((1u32 + old((bytes[0] as u32))) % 65521u32) == truncating_remainder(to_integer(1u32 + old((bytes[0] as u32))), 65521) by assumption();
-     have to_integer(1u32 + old((bytes[0] as u32))) == 1 + to_integer(old((bytes[0] as u32))) by assumption();
+     have to_integer((1u32 + old((bytes[0] as u32))) % 65521u32) == truncating_remainder(to_integer(1u32 + old((bytes[0] as u32))), 65521) by known();
+     have to_integer(1u32 + old((bytes[0] as u32))) == 1 + to_integer(old((bytes[0] as u32))) by known();
      have to_integer(self.a) == old(adler_spec_a(bytes, 1, 1)) by {
      rewrite(to_integer(self.a) == to_integer((1u32 + old((bytes[0] as u32))) % 65521u32));
      rewrite(to_integer((1u32 + old((bytes[0] as u32))) % 65521u32) == truncating_remainder(to_integer(1u32 + old((bytes[0] as u32))), 65521));
@@ -414,8 +414,8 @@ impl adler2::Adler32 {
      solve();
      }
      apply(integer::uint32_remainder_to_integer(393126u32 + (1u32 + old((bytes[0] as u32))), 65521u32));
-     have to_integer((393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32) == truncating_remainder(to_integer(393126u32 + (1u32 + old((bytes[0] as u32)))), 65521) by assumption();
-     have to_integer(393126u32 + (1u32 + old((bytes[0] as u32)))) == 393126 + to_integer(1u32 + old((bytes[0] as u32))) by assumption();
+     have to_integer((393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32) == truncating_remainder(to_integer(393126u32 + (1u32 + old((bytes[0] as u32)))), 65521) by known();
+     have to_integer(393126u32 + (1u32 + old((bytes[0] as u32)))) == 393126 + to_integer(1u32 + old((bytes[0] as u32))) by known();
      have to_integer(self.b) == old(adler_spec_b(bytes, 1, 1, 0)) by {
      rewrite(to_integer(self.b) == to_integer((393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32));
      rewrite(to_integer((393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32) == truncating_remainder(to_integer(393126u32 + (1u32 + old((bytes[0] as u32)))), 65521));

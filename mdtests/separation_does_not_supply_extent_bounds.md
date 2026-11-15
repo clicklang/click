@@ -3,10 +3,10 @@
 ```click
 theorem no_extent_fact(p: int32*, q: int32*, n: int32) {
     requires separate(memory(p[0..n]), memory(q[0..1]));
-    ensures 0 <= n by { assumption(); }
+    ensures 0 <= n by { known(); }
 }
 ```
 
 ```expect
-fail: `assumption` requires the current goal as an available semantic fact
+fail: `known` requires the current goal as an available semantic fact
 ```

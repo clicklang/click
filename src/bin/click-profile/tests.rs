@@ -706,7 +706,7 @@ fn each_sidecar_spends_its_own_work_budget() {
         .unwrap();
         let path = root.join(format!("{name}.click"));
         fs::write(&path, format!(
-            "verifying \"{name}.c\";\nint32 {name}(int32 x) {{ ensures result == x; }} by {{ step(); assumption(); }}\n"
+            "verifying \"{name}.c\";\nint32 {name}(int32 x) {{ ensures result == x; }} by {{ step(); known(); }}\n"
         )).unwrap();
         sidecars.push(path);
     }
@@ -1310,7 +1310,7 @@ fn profile_recommendations_expand_loop_closers_and_mixed_have_bodies() {
 theorem mixed(x: int32) {
     ensures x == 1 implies x == 1 by {
         have x == 1 implies x == 1 by { intro(); solve(); }
-        assumption();
+        known();
     }
 }"#,
     );

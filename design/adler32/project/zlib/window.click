@@ -9,7 +9,7 @@ theorem zlib_remaining_step(total: uint64, remaining: uint64, amount: uint64) {
  ensures to_integer(remaining - amount) <= to_integer(total) by solve() using { remaining <= total; total <= 5551u64; amount <= remaining; };
  ensures to_integer(total - (remaining - amount)) <= to_integer(5551u64) by solve() using { remaining <= total; total <= 5551u64; amount <= remaining; };
  ensures to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount) by {
-  have to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount); assumption();
+  have to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount); known();
  }
  ensures to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(zlib_prefix_count(total, remaining)) + to_integer(amount) by {
   have to_integer(total - remaining) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 5551u64; };
@@ -71,7 +71,7 @@ theorem zlib_block_lane(bytes: uint8[], total: uint64, remaining: uint64, lane: 
    to_integer(total - remaining) <= 5535;
    to_integer(lane) <= 15;
   };
-  both { assumption(); }
+  both { known(); }
   and { solve() using { to_integer(zlib_prefix_count(total, remaining) + lane) <= 5550; }; }
  }
  ensures (bytes + (total - remaining))[lane] == bytes[zlib_prefix_count(total, remaining) + lane] by {

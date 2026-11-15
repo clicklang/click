@@ -25,7 +25,7 @@ int32 use_allocation() { ensures result == 0; } by {
     have statement(1).allocation != 0;
     step();
     step();
-    have statement(1).allocation != 0 by assumption();
+    have statement(1).allocation != 0 by known();
 }
 ```
 

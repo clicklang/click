@@ -46,7 +46,7 @@ int32 region_read(struct region* region, int32 index) {
         };
     }
     have 0 <= index by {
-        assumption();
+        known();
     }
     have to_integer(region->start) <= to_integer(region->start + index);
     have to_integer(region->start + index + 1) <= to_integer(region->end);

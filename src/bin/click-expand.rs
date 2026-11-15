@@ -958,7 +958,7 @@ int32 identity(int32 x) {
         // restated; the rest close in goal order with one closer each.
         assert!(
             expanded.ends_with(
-                "    }\n    assumption();\n    assumption();\n    assumption();\n    normalize();\n    normalize();\n    normalize();\n}\n"
+                "    }\n    known();\n    known();\n    known();\n    normalize();\n    normalize();\n    normalize();\n}\n"
             ),
             "{expanded}"
         );

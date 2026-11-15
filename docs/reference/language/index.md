@@ -664,7 +664,7 @@ order, then one decrease obligation. For a single component that obligation is
 or `post[0] == pre[0] and post[1] < pre[1]`, and so on, where `pre` reads the
 component at the start of the iteration and `post` at the back edge. Choosing
 the pivot is therefore an ordinary proof of one disjunct, closed with
-`assumption()`, that the proof makes and [`click expand`](../cli/expand.md)
+`known()`, that the proof makes and [`click expand`](../cli/expand.md)
 prints, not a search the kernel
 performs. The back edge closes each of those members with `solve()`, as it
 closes each invariant and as a function's exit closes each `ensures`; where
@@ -1609,7 +1609,7 @@ theorem lift(callback: int32 (*)()) executes callback() {
     requires Exact(callback);
     ensures Progress(callback) as { cell: k } by {
         step(Exact, { cell: k });
-        have k.revision == old(k.revision) + 1 by assumption();
+        have k.revision == old(k.revision) + 1 by known();
         solve();
     }
 }
@@ -4261,7 +4261,7 @@ Use `*obj` for the complete storage of a struct object:
 owns *owner;
 owns data[0..length];
 ...
-have separate(memory(*owner), memory(data[0..length])) by assumption();
+have separate(memory(*owner), memory(data[0..length])) by known();
 ```
 
 `*owner` is layout-aware: it denotes the imported C struct's aligned

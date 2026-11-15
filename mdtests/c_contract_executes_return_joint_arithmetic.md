@@ -19,10 +19,10 @@ theorem lift(callback: int32 (*)(int32*)) executes callback(int32* cell) {
     requires Second(callback);
     ensures Target(callback) by {
         unfold(Cell(cell)); step(First);
-        have result == 0 by assumption();
+        have result == 0 by known();
         apply(zero_increment_defined(result));
         have to_integer(cell[0]) == to_integer(result + 1) by {
-            assumption();
+            known();
         }
         apply(zero_successor(cell[0], result));
         fold(Cell(cell)); solve();

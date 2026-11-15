@@ -23,8 +23,8 @@ theorem adler_bounded_count(count: uint64) {
     conclusion 0;
    }
   }
-  have 0 <= to_integer(count as uint32 as int32) by { rewrite(to_integer(count as uint32 as int32) == to_integer(count)); assumption(); }
-  assumption();
+  have 0 <= to_integer(count as uint32 as int32) by { rewrite(to_integer(count as uint32 as int32) == to_integer(count)); known(); }
+  known();
  }
  ensures count as uint32 as int32 as uint64 == count by {
   have to_integer(count) <= 18446744073709551615;
@@ -36,8 +36,8 @@ theorem adler_bounded_count(count: uint64) {
     conclusion 0;
    }
   }
-  have 0 <= to_integer(count as uint32 as int32) by { rewrite(to_integer(count as uint32 as int32) == to_integer(count)); assumption(); }
-  have to_integer(count as uint32 as int32) <= 2147483647 by { rewrite(to_integer(count as uint32 as int32) == to_integer(count)); assumption(); }
+  have 0 <= to_integer(count as uint32 as int32) by { rewrite(to_integer(count as uint32 as int32) == to_integer(count)); known(); }
+  have to_integer(count as uint32 as int32) <= 2147483647 by { rewrite(to_integer(count as uint32 as int32) == to_integer(count)); known(); }
   have to_integer(count as uint32 as int32 as uint64) == to_integer(count as uint32 as int32) by {
    arithmetic_certificate rules {
     premise 0: 0 <= to_integer(count as uint32 as int32) => 0 <= to_integer(count as uint32 as int32);
@@ -46,8 +46,8 @@ theorem adler_bounded_count(count: uint64) {
     conclusion 0;
    }
   }
-  have to_integer(count as uint32 as int32 as uint64) == to_integer(count) by { rewrite(to_integer(count as uint32 as int32 as uint64) == to_integer(count as uint32 as int32)); assumption(); }
-  assumption();
+  have to_integer(count as uint32 as int32 as uint64) == to_integer(count) by { rewrite(to_integer(count as uint32 as int32 as uint64) == to_integer(count as uint32 as int32)); known(); }
+  known();
  }
 }
 
@@ -78,9 +78,9 @@ theorem adler_bounded_count_lower(count: uint64, low: int32) {
   have to_integer(low) <= to_integer(count as uint32 as int32) by {
    rewrite(to_integer(count as uint32 as int32) == to_integer(count));
    rewrite(to_integer(low) == to_integer(low as uint64));
-   assumption();
+   known();
   }
-  assumption();
+  known();
  }
 }
 
@@ -102,8 +102,8 @@ theorem adler_bounded_count_upper(count: uint64, high: int32) {
   have to_integer(count as uint32 as int32) <= to_integer(high) by {
    rewrite(to_integer(count as uint32 as int32) == to_integer(count));
    rewrite(to_integer(high) == to_integer(high as uint64));
-   assumption();
+   known();
   }
-  assumption();
+  known();
  }
 }

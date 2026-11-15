@@ -28,7 +28,7 @@ void caller(struct box *q) {
         }
     }
     step();
-    assumption();
+    known();
 }
 ```
 

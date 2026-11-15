@@ -28,7 +28,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             have color_bit(shade) == 0 by {
                 unfold(sized_flip_color(SizedTree::Node(identity, ancestor, shade, value, left, right)));
                 rewrite(color_bit(shade) == sized_flip_color(SizedTree::Node(identity, ancestor, shade, value, left, right)));
-                rewrite(SizedTree::Node(identity, ancestor, shade, value, left, right) == state.model); assumption();
+                rewrite(SizedTree::Node(identity, ancestor, shade, value, left, right) == state.model); known();
             }
             let { focus: focus, path: path } = unfold(state);
             let { metadata: metadata, left: l, right: r } = unfold(focus);
@@ -37,19 +37,19 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite((node->__rb_parent_color & 1) == color_bit(shade));
                 rewrite(color_bit(shade) == 0); normalize();
             }
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { assumption(); }
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
             mark m0; step();
             have *((&node->__rb_parent_color) as (int32 **)) == at(m0, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { assumption(); }
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
             mark m1; step();
             have *((&node->__rb_parent_color) as (int32 **)) == at(m1, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { assumption(); }
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
             mark m2; step();
             have *((&node->__rb_parent_color) as (int32 **)) == at(m2, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { assumption(); }
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
             mark m3; step();
             have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { assumption(); }
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
             let focus = fold(sized_at(node), { model: SizedTree::Node(identity, ancestor, shade, value, left, right) }, { metadata: metadata, left: l, right: r });
             let state = fold(sized_flip_state(root), { chain: old(state.chain), model: old(state.model), context: old(state.context) }, { focus: focus, path: path });
             loop {
@@ -130,11 +130,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 unfold(sized_flip_result(SizedFlipChain::Root, SizedTree::Node(identity, ancestor, shade, value, left, right)));
                                 unfold(sized_recolor(SizedTree::Node(identity, ancestor, shade, value, left, right), Color::Black));
                                 unfold(sized_plug(SizedContext::Top, SizedTree::Node(identity, 0, Color::Black, value, left, right)));
-                                have ancestor == 0 by assumption();
+                                have ancestor == 0 by known();
                                 rewrite(ancestor == 0); normalize();
                             }
                             let state = fold(sized_flip_state(root), { chain: old(state.chain), model: focus.model, context: SizedContext::Top }, { focus: focus, path: path });
-                            have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by assumption();
+                            have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by known();
                             step();
                         },
                         SizedFlipChain::Stop(ctx) => {
@@ -147,7 +147,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             have sized_flip_black_boundary(ctx) == 1 by {
                                 unfold(sized_flip_allowed(SizedFlipChain::Stop(ctx)));
                                 rewrite(sized_flip_black_boundary(ctx) == sized_flip_allowed(SizedFlipChain::Stop(ctx)));
-                                rewrite(SizedFlipChain::Stop(ctx) == old(state.chain)); assumption();
+                                rewrite(SizedFlipChain::Stop(ctx) == old(state.chain)); known();
                             }
                             match ctx {
                                 SizedContext::Top => {
@@ -168,7 +168,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                     have color_bit(color) == 1 by {
                                         unfold(sized_flip_black_boundary(SizedContext::Left(a, gp, color, cached, sibling, up)));
                                         rewrite(color_bit(color) == sized_flip_black_boundary(SizedContext::Left(a, gp, color, cached, sibling, up)));
-                                        rewrite(SizedContext::Left(a, gp, color, cached, sibling, up) == ctx); assumption();
+                                        rewrite(SizedContext::Left(a, gp, color, cached, sibling, up) == ctx); known();
                                     }
                                     let { metadata: a_size, sibling: held_sibling, up: held_up } = unfold(path);
                                     have (a->__rb_parent_color & 1) == 1 by {
@@ -195,7 +195,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(path.model == SizedContext::Left(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Left(a, gp, color, cached, sibling, up) == ctx); normalize();
                                     }
                                     let state = fold(sized_flip_state(root), { chain: old(state.chain), model: focus.model, context: path.model }, { focus: focus, path: path });
-                                    have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by assumption();
+                                    have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by known();
                                     step();
                                 },
                                 SizedContext::Right(a, gp, color, cached, sibling, up) => {
@@ -209,7 +209,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                     have color_bit(color) == 1 by {
                                         unfold(sized_flip_black_boundary(SizedContext::Right(a, gp, color, cached, sibling, up)));
                                         rewrite(color_bit(color) == sized_flip_black_boundary(SizedContext::Right(a, gp, color, cached, sibling, up)));
-                                        rewrite(SizedContext::Right(a, gp, color, cached, sibling, up) == ctx); assumption();
+                                        rewrite(SizedContext::Right(a, gp, color, cached, sibling, up) == ctx); known();
                                     }
                                     let { metadata: a_size, sibling: held_sibling, up: held_up } = unfold(path);
                                     have (a->__rb_parent_color & 1) == 1 by {
@@ -236,7 +236,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(path.model == SizedContext::Right(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Right(a, gp, color, cached, sibling, up) == ctx); normalize();
                                     }
                                     let state = fold(sized_flip_state(root), { chain: old(state.chain), model: focus.model, context: path.model }, { focus: focus, path: path });
-                                    have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by assumption();
+                                    have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by known();
                                     step();
                                 },
                             }

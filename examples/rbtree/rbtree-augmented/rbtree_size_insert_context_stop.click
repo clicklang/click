@@ -57,16 +57,16 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(path.model == SizedContext::Left(a, above, shade, count, sibling_model, up_model));
                         unfold(sized_context_parent(SizedContext::Left(a, above, shade, count, sibling_model, up_model), 0)); normalize();
                     }
-                    have ancestor == a by { assumption(); }
+                    have ancestor == a by { known(); }
                     have color_bit(shade) == 1 by {
                         unfold(sized_stop_parent_black(SizedContext::Left(a, above, shade, count, sibling_model, up_model)));
                         rewrite(color_bit(shade) == sized_stop_parent_black(SizedContext::Left(a, above, shade, count, sibling_model, up_model)));
-                        rewrite(SizedContext::Left(a, above, shade, count, sibling_model, up_model) == path.model); assumption();
+                        rewrite(SizedContext::Left(a, above, shade, count, sibling_model, up_model) == path.model); known();
                     }
                     have tree.model == SizedTree::Node(node, a, Color::Red, value, left_model, right_model) by {
                         rewrite(node == identity);
                         rewrite(a == ancestor);
-                        rewrite(Color::Red == original_shade); assumption();
+                        rewrite(Color::Red == original_shade); known();
                     }
                     let { metadata: metadata, left: left, right: right } = unfold(tree);
                     unfold(color_bit(Color::Red));
@@ -75,19 +75,19 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite((node->__rb_parent_color & 1) == color_bit(Color::Red));
                         rewrite(color_bit(Color::Red) == 0); normalize();
                     }
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { known(); }
                     mark m0; step();
                     have *((&node->__rb_parent_color) as (int32 **)) == at(m0, *((&node->__rb_parent_color) as (int32 **))) by solve();
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { known(); }
                     mark m1; step();
                     have *((&node->__rb_parent_color) as (int32 **)) == at(m1, *((&node->__rb_parent_color) as (int32 **))) by solve();
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { known(); }
                     mark m2; step();
                     have *((&node->__rb_parent_color) as (int32 **)) == at(m2, *((&node->__rb_parent_color) as (int32 **))) by solve();
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { known(); }
                     mark m3; step();
                     have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { known(); }
                     let tree = fold(sized_at(node), { model: old(state.model) }, { metadata: metadata, left: left, right: right });
                     let state = fold(sized_stop_at(node, root), { model: old(state.model), context: old(state.context) }, { tree: tree, path: path });
                     loop {
@@ -114,7 +114,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         }
                     }
                     let { tree: tree, path: path } = unfold(state);
-                    have node == old(node) by { assumption(); }
+                    have node == old(node) by { known(); }
                     have sized_parent_is(tree.model, sized_context_parent(path.model, 0)) == 1 by {
                         rewrite(tree.model == SizedTree::Node(node, a, Color::Red, value, left_model, right_model));
                         unfold(sized_parent_is(SizedTree::Node(node, a, Color::Red, value, left_model, right_model), sized_context_parent(path.model, 0)));
@@ -125,7 +125,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(sized_value(SizedTree::Node(node, a, Color::Red, value, left_model, right_model))); normalize();
                     }
                     let { whole: whole } = restore_sized_context(node, root->rb_node, 0, value, { path: path, sub: tree });
-                    have whole.model == sized_plug(old(state.context), old(state.model)) by { assumption(); }
+                    have whole.model == sized_plug(old(state.context), old(state.model)) by { known(); }
                     step_until(function.exit);
                 },
                 SizedContext::Right(a, above, shade, count, sibling_model, up_model) => {
@@ -133,16 +133,16 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(path.model == SizedContext::Right(a, above, shade, count, sibling_model, up_model));
                         unfold(sized_context_parent(SizedContext::Right(a, above, shade, count, sibling_model, up_model), 0)); normalize();
                     }
-                    have ancestor == a by { assumption(); }
+                    have ancestor == a by { known(); }
                     have color_bit(shade) == 1 by {
                         unfold(sized_stop_parent_black(SizedContext::Right(a, above, shade, count, sibling_model, up_model)));
                         rewrite(color_bit(shade) == sized_stop_parent_black(SizedContext::Right(a, above, shade, count, sibling_model, up_model)));
-                        rewrite(SizedContext::Right(a, above, shade, count, sibling_model, up_model) == path.model); assumption();
+                        rewrite(SizedContext::Right(a, above, shade, count, sibling_model, up_model) == path.model); known();
                     }
                     have tree.model == SizedTree::Node(node, a, Color::Red, value, left_model, right_model) by {
                         rewrite(node == identity);
                         rewrite(a == ancestor);
-                        rewrite(Color::Red == original_shade); assumption();
+                        rewrite(Color::Red == original_shade); known();
                     }
                     let { metadata: metadata, left: left, right: right } = unfold(tree);
                     unfold(color_bit(Color::Red));
@@ -151,19 +151,19 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite((node->__rb_parent_color & 1) == color_bit(Color::Red));
                         rewrite(color_bit(Color::Red) == 0); normalize();
                     }
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { known(); }
                     mark m0; step();
                     have *((&node->__rb_parent_color) as (int32 **)) == at(m0, *((&node->__rb_parent_color) as (int32 **))) by solve();
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { known(); }
                     mark m1; step();
                     have *((&node->__rb_parent_color) as (int32 **)) == at(m1, *((&node->__rb_parent_color) as (int32 **))) by solve();
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { known(); }
                     mark m2; step();
                     have *((&node->__rb_parent_color) as (int32 **)) == at(m2, *((&node->__rb_parent_color) as (int32 **))) by solve();
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { known(); }
                     mark m3; step();
                     have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
-                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { known(); }
                     let tree = fold(sized_at(node), { model: old(state.model) }, { metadata: metadata, left: left, right: right });
                     let state = fold(sized_stop_at(node, root), { model: old(state.model), context: old(state.context) }, { tree: tree, path: path });
                     loop {
@@ -190,7 +190,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         }
                     }
                     let { tree: tree, path: path } = unfold(state);
-                    have node == old(node) by { assumption(); }
+                    have node == old(node) by { known(); }
                     have sized_parent_is(tree.model, sized_context_parent(path.model, 0)) == 1 by {
                         rewrite(tree.model == SizedTree::Node(node, a, Color::Red, value, left_model, right_model));
                         unfold(sized_parent_is(SizedTree::Node(node, a, Color::Red, value, left_model, right_model), sized_context_parent(path.model, 0)));
@@ -201,7 +201,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(sized_value(SizedTree::Node(node, a, Color::Red, value, left_model, right_model))); normalize();
                     }
                     let { whole: whole } = restore_sized_context(node, root->rb_node, 0, value, { path: path, sub: tree });
-                    have whole.model == sized_plug(old(state.context), old(state.model)) by { assumption(); }
+                    have whole.model == sized_plug(old(state.context), old(state.model)) by { known(); }
                     step_until(function.exit);
                 },
             }

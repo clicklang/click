@@ -13,7 +13,7 @@ void redirect(struct packet input, int32* q) {
 } by {
     step();
     have input.data == q by { normalize(); }
-    have old(input.data) != q by { assumption(); }
+    have old(input.data) != q by { known(); }
 }
 ```
 

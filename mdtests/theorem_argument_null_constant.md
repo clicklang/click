@@ -46,7 +46,7 @@ theorem parent_is_stable(t: Tree, p: struct node*) {
 theorem tree_parent_is_null_stable(t: Tree) {
     ensures parent_is(t, 0) == parent_is(t, 0) by {
         apply(parent_is_stable(t, 0));
-        assumption();
+        known();
     }
 }
 

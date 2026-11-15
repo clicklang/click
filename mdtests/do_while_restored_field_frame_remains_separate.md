@@ -76,7 +76,7 @@ void walk(struct Node* p, int32* marker) {
             mark before_store;
             step();
             have marker[0] == 9 by {
-                assumption();
+                known();
             }
             step_until(function.exit); solve();
         },

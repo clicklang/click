@@ -127,9 +127,9 @@ int32 detachable_buffer_pipeline(
     fold(attached_buffer(owner));
     step();
     step();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    known();
+    known();
+    known();
+    known();
+    known();
 }

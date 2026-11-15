@@ -34,7 +34,7 @@ theorem obtained() {
             solve();
         }
         witness { y: z };
-        assumption();
+        known();
     }
 }
 

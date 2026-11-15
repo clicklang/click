@@ -23,12 +23,12 @@ theorem adler_count_bounds(r: uint64) {
  ensures 0 <= r as uint32 as int32 and r as uint32 as int32 <= 22208 by {
   apply(adler_count_observation(r)) using { r <= 22208u64; };
   have 0u64 <= r by normalize();
-  have 0 <= to_integer(r as uint32 as int32) by { rewrite(to_integer(r as uint32 as int32) == to_integer(r)); assumption(); }
-  have to_integer(r as uint32 as int32) <= 22208 by { rewrite(to_integer(r as uint32 as int32) == to_integer(r)); assumption(); }
+  have 0 <= to_integer(r as uint32 as int32) by { rewrite(to_integer(r as uint32 as int32) == to_integer(r)); known(); }
+  have to_integer(r as uint32 as int32) <= 22208 by { rewrite(to_integer(r as uint32 as int32) == to_integer(r)); known(); }
   both {
-   assumption();
+   known();
   } and {
-   assumption();
+   known();
   }
  }
 }
@@ -42,9 +42,9 @@ theorem adler_count_at_least(r: uint64, k: uint64) {
   have to_integer(k as uint32 as int32) <= to_integer(r as uint32 as int32) by {
    rewrite(to_integer(k as uint32 as int32) == to_integer(k));
    rewrite(to_integer(r as uint32 as int32) == to_integer(r));
-   assumption();
+   known();
   }
-  assumption();
+  known();
  }
 }
 theorem adler_count_step(r: uint64, k: uint64) {
@@ -69,7 +69,7 @@ theorem adler_count_step(r: uint64, k: uint64) {
    rewrite(to_integer(k as uint32 as int32) == to_integer(k));
    normalize();
   }
-  assumption();
+  known();
  }
 }
 theorem adler_count_lane_step(r: uint64) {
@@ -104,7 +104,7 @@ theorem adler_count_zero(r: uint64) {
   have to_integer(r as uint32 as int32) == 0 by { rewrite(r as uint32 as int32 == 0); normalize(); }
   have to_integer(r) == 0 by solve() using { to_integer(r as uint32 as int32) == to_integer(r); to_integer(r as uint32 as int32) == 0; };
   have to_integer(r) == to_integer(0u64) by normalize() using { to_integer(r) == 0; };
-  assumption();
+  known();
  }
 }
 
@@ -173,7 +173,7 @@ theorem adler_count_previous_chunk_byte_observation(bytes: uint8[], total: uint6
   }
   have to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 4) == to_integer((total - remaining - 4u64) as uint32 as int32) by normalize() using { to_integer((total - remaining - 4u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 4); };
   rewrite(to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 4) == to_integer((total - remaining - 4u64) as uint32 as int32));
-  assumption();
+  known();
  }
 }
 
@@ -185,7 +185,7 @@ theorem adler_small_prefix_integer_advance(total: int32, remaining: int32) {
  requires 4 <= to_integer(total - remaining);
  ensures to_integer(total - remaining) == to_integer((total - remaining) - 4) + 4 by {
   have defined(total - remaining);
-  have defined(total - remaining) by assumption();
+  have defined(total - remaining) by known();
   have defined((total - remaining) - 4);
   have to_integer((total - remaining) - 4) == to_integer((total - remaining)) - to_integer(4);
   solve() using { to_integer((total - remaining) - 4) == to_integer(total - remaining) - to_integer(4); };

@@ -12,7 +12,7 @@ theorem guarded_universal_reordered() {
         intro();
         extract(k >= 0);
         intro();
-        assumption();
+        known();
     }
 }
 ```

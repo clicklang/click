@@ -664,7 +664,7 @@ void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
     ensures ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == 0;
 } by {
     step();
-    have rb->__rb_parent_color == (address(p) | color) by { assumption(); }
+    have rb->__rb_parent_color == (address(p) | color) by { known(); }
     have rb->__rb_parent_color == 1 by {
         rewrite(rb->__rb_parent_color == (address(p) | color));
         rewrite(p == 0);
@@ -896,7 +896,7 @@ fn rbtree_insert_refuses_a_skipped_recolour() {
     assert!(
         (message.contains("`have` failed for `node->__rb_parent_color == 1`")
             || message.contains("`have` failed for `load_uint64(node) == 1`"))
-            && message.contains("assumption")
+            && message.contains("known")
             && !message.contains("budget exhausted"),
         "unexpected refusal: {message}"
     );
@@ -1088,7 +1088,7 @@ fn erase_source_refuses_replacement(
                         "`normalize using` goal did not normalize to true using the listed conditions",
                     )
                     || error.contains(
-                        "`assumption` requires the current goal as an available semantic fact",
+                        "`known` requires the current goal as an available semantic fact",
                     )))
             || error
                 .contains("unclosed goal: new->__rb_parent_color == old(old->__rb_parent_color)",)

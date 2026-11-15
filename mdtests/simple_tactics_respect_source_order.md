@@ -8,7 +8,7 @@ theorem exact_zero(x: int32) {
     requires x == 0;
 
     ensures x == 0 by {
-        assumption();
+        known();
     }
 }
 
@@ -16,7 +16,7 @@ theorem no_reordering(x: int32) {
     requires x == 0;
 
     ensures x == 0 by {
-        assumption();
+        known();
         apply(exact_zero(x));
     }
 }

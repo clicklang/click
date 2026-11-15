@@ -90,10 +90,10 @@ void probe(struct node *p, struct root *root) {
   }
   have separate(c, memory(near->right));
   have nid == near;
-  have separate(c, memory(nid->right)) by { rewrite(nid == near); assumption(); }
+  have separate(c, memory(nid->right)) by { rewrite(nid == near); known(); }
   mark before_call;
   let { after: c } = step(helper, { before: c });
-  have contains(at(before_call, c), statement(3).footprint) by { assumption(); }
+  have contains(at(before_call, c), statement(3).footprint) by { known(); }
   apply(separation::contains_refl(memory(nid->right))) using {};
   apply(separation::separate_restrict(at(before_call, c), memory(nid->right), statement(3).footprint, memory(nid->right))) using {
    at(before_call, separate(c, memory(nid->right)));

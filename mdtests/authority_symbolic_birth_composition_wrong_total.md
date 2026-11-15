@@ -32,7 +32,7 @@ void mint_pair(int32* o, int32 n, int32 m) {
         solve();
     }
     fold(m of tok(o));
-    have count(tok(o)) == n by assumption();
+    have count(tok(o)) == n by known();
 }
 void run(int32* o, int32 n, int32 m) {
     owns authority(tok(o));
@@ -47,5 +47,5 @@ void run(int32* o, int32 n, int32 m) {
 ```
 
 ```expect
-fail: `assumption` requires the current goal
+fail: `known` requires the current goal
 ```

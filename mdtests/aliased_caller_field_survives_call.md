@@ -36,7 +36,7 @@ void probe(struct node *p, struct node *q) {
     match a.model {
         Tag::At(id, cm) => {
             let {kid: kid} = unfold(a);
-            have p == id by assumption();
+            have p == id by known();
             step();
             have separate(memory(p->other), memory(q->tag));
             mark before;

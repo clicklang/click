@@ -3226,7 +3226,7 @@ fn contract_certification_reuses_a_matching_kernel_checked_execution() {
     assert_eq!(
         crate::kernel::api::take_checked_function_body_execution_count(),
         0,
-        "an artifact with an unproved entry assumption must not be reused, and certification must not execute the body instead"
+        "an artifact with an unproved entry known must not be reused, and certification must not execute the body instead"
     );
     assert_eq!(fallback.path_count(), 0);
     assert!(
@@ -6024,7 +6024,7 @@ fn certification_keeps_conditional_universal_guards_snapshots_and_sorts() {
     let facts = PureFactContext::new().assume_proposition(fact);
     let proves = |goal: &Proposition| {
         let certified = crate::kernel::PureFactContext::settles_exactly(&facts, goal);
-        assert_eq!(proof_facts.pure_assumption_available(goal), certified);
+        assert_eq!(proof_facts.pure_known_available(goal), certified);
         certified
     };
     let goal = conditional_path_universal(&ty, 200, memory.clone(), 0);
@@ -6378,7 +6378,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                     .focus_contract_claim(goal, ())
                     .expect("forwarded claim requirements");
                 let closed = proof
-                    .apply_assumption(PropositionAssumptionContext::Exact)
+                    .apply_known(PropositionKnownContext::Exact)
                     .unwrap_or_else(|_| {
                         panic!("forwarded ensure {index} must follow from the call")
                     });

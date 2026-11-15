@@ -1776,8 +1776,7 @@ mod tests {
             "oversized_{}",
             "n".repeat(click::surface::DEFAULT_DIAGNOSTIC_BYTE_LIMIT)
         );
-        let source =
-            format!("theorem {name}(x: Integer) {{ ensures x == 0 by {{ assumption(); }} }}");
+        let source = format!("theorem {name}(x: Integer) {{ ensures x == 0 by {{ known(); }} }}");
         let (_root, path) = temporary_project("ordinary-byte-limit", "void f() {}", &source);
         let report = entry_with([path.display().to_string()]).expect_err("false theorem");
         assert!(report.len() <= click::surface::DEFAULT_DIAGNOSTIC_BYTE_LIMIT);
@@ -1964,7 +1963,7 @@ mod tests {
 
     #[test]
     fn user_defined_tactic_trace_selects_its_own_checked_path() {
-        let source = "verifying \"program.c\";\ntactic keep(x: int32) {\n    requires x == 3;\n    ensures x == 3;\n} by {\n    have x == 3 by { assumption(); }\n}\ntactic broken(x: int32) { ensures x == 4; } by { have x == 4 by { assumption(); } }\n";
+        let source = "verifying \"program.c\";\ntactic keep(x: int32) {\n    requires x == 3;\n    ensures x == 3;\n} by {\n    have x == 3 by { known(); }\n}\ntactic broken(x: int32) { ensures x == 4; } by { have x == 4 by { known(); } }\n";
         let (root, path) = temporary_project("tactic-trace", "void unused() {}", source);
         let loaded = load_target_inputs(&path, None).unwrap();
         assert!(matches!(
@@ -1996,7 +1995,7 @@ mod tests {
         let ordinary = entry_with([path.display().to_string()]).unwrap_err();
         assert!(ordinary.contains("--trace-proof broken"), "{ordinary}");
         fs::write(root.join("library.click"),
-            "tactic imported(x: int32) { requires x == 3; ensures x == 3; } by { have x == 3 by { assumption(); } }")
+            "tactic imported(x: int32) { requires x == 3; ensures x == 3; } by { have x == 3 by { known(); } }")
             .unwrap();
         fs::write(&path, format!("import \"library.click\";\n{source}")).unwrap();
         let imported = entry_with([
@@ -2072,7 +2071,7 @@ tactic choose() { owns x: choice(); ensures 0 == 0; } by {
     #[test]
     fn declined_theorem_application_preserves_checked_trace() {
         let source = r#"verifying "program.c";
-theorem positive(x: int32) { requires x > 0; ensures x > 0 by { assumption(); } }
+theorem positive(x: int32) { requires x > 0; ensures x > 0 by { known(); } }
 void walk(int32 n) { requires n >= 0; ensures 0 == 0; } by {
     step(); step();
     loop {
@@ -2080,7 +2079,7 @@ void walk(int32 n) { requires n >= 0; ensures 0 == 0; } by {
         invariant 0 <= i and i <= n;
         initialize by solve();
         preserve by {
-            have i >= 0 by { assumption(); }
+            have i >= 0 by { known(); }
             apply(positive(0));
             step();
         }
@@ -2088,7 +2087,7 @@ void walk(int32 n) { requires n >= 0; ensures 0 == 0; } by {
     step(); normalize();
 }
 void plain(int32 n) { requires n >= 0; ensures 0 == 0; } by {
-    have n >= 0 by { assumption(); }
+    have n >= 0 by { known(); }
     apply(positive(0));
     step_until(function.exit); normalize();
 }

@@ -43,7 +43,7 @@ theorem needs_both_siblings(x: int32) {
     requires x != 11;
 
     ensures x >= 0 by {
-        assumption();
+        known();
     }
 }
 
@@ -53,7 +53,7 @@ theorem goal_is_the_first_conclusion(x: int32) {
     ensures x >= 0 by {
         apply(three_bounds(x));
         apply(needs_upper(x));
-        assumption();
+        known();
     }
 }
 
@@ -68,7 +68,7 @@ theorem goal_is_the_middle_conclusion(x: int32) {
             x >= 0;
             x != 11;
         };
-        assumption();
+        known();
     }
 }
 
@@ -78,9 +78,9 @@ theorem a_sibling_conclusion_is_restated(x: int32) {
     ensures x != 11 by {
         apply(three_bounds(x));
         have x <= 10 by {
-            assumption();
+            known();
         }
-        assumption();
+        known();
     }
 }
 
@@ -90,7 +90,7 @@ theorem goal_is_no_conclusion(x: int32) {
     ensures x <= 20 by {
         apply(three_bounds(x));
         apply(needs_upper(x));
-        assumption();
+        known();
     }
 }
 ```

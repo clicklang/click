@@ -12,7 +12,7 @@ spec enum Wrap { Wrap(Box) }
 theorem distinct_variants_through_a_shared_value(x: Box, a: int32) {
     requires x == Box::Full(a);
     requires x == Box::Empty;
-    ensures 0 == 1 by assumption();
+    ensures 0 == 1 by known();
 }
 
 theorem distinct_nested_variants_through_a_shared_value(x: Wrap, a: int32) {

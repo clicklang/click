@@ -1553,11 +1553,11 @@ mod tests {
         );
         assert_eq!(
             trace_header(
-                "tactic 3 > have body tactic 1: assumption()",
+                "tactic 3 > have body tactic 1: known()",
                 Some(&[3, 1]),
                 &label,
             ),
-            "tactic@475: assumption()"
+            "tactic@475: known()"
         );
     }
 

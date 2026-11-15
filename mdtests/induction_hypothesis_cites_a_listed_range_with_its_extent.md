@@ -28,7 +28,7 @@ theorem hypothesis_cites_the_range_extent(v: int32[], lo: int32, n: int32, hi: i
     ensures 0 <= hi by {
         induct(hi) as ih;
         if hi <= 0 {
-            assumption();
+            known();
         } else {
             have 0 < hi;
             have 0 <= to_integer(hi - 1) by { solve() using { 0 < hi; }; }
@@ -41,7 +41,7 @@ theorem hypothesis_cites_the_range_extent(v: int32[], lo: int32, n: int32, hi: i
                 to_integer(hi - 1) <= to_integer(n);
                 n >= 0 and viewable(v[lo..n]);
             };
-            assumption();
+            known();
         }
     }
 }
@@ -49,7 +49,7 @@ theorem hypothesis_cites_the_range_extent(v: int32[], lo: int32, n: int32, hi: i
 theorem stated_range_extent_is_nonnegative(v: int32[], lo: int32, n: int32) {
     views v[lo..n];
     requires defined(n - lo);
-    ensures 0 <= to_integer(n - lo) by assumption();
+    ensures 0 <= to_integer(n - lo) by known();
 }
 
 theorem apply_cites_the_range_extent(v: int32[], lo: int32, n: int32) {

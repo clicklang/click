@@ -73,7 +73,7 @@ int32 probe_contract(struct job *j) {
 
         initialize by {
             have j->lo <= i and i <= j->hi by {
-                both { normalize(); } and { assumption(); }
+                both { normalize(); } and { known(); }
             }
             have forall (k: int32) { j->lo <= k and k < i implies j->p[k] == j->v } by {
                 intro();
@@ -140,7 +140,7 @@ int32 probe_contract(struct job *j) {
                 instantiate(at(region(4).entry, forall (k: int32) {
                     j->lo <= k and k <= i implies j->p[k] == j->v
                 }), k) using { j->lo <= k; k <= at(region(4).entry, i); };
-                assumption();
+                known();
             }
             solve();
         }

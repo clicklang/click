@@ -11,7 +11,7 @@ theorem invalid<T>(left: T, right: T) {
 theorem expose(left: int32, right: int32) {
     ensures left == right by {
         apply(invalid(left, right));
-        assumption();
+        known();
     }
 }
 ```
