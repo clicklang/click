@@ -50,6 +50,7 @@ pub(super) struct ProgramState {
     pending_bodies: BTreeMap<usize, String>,
     pub(super) bodies: Vec<Arc<ContractBodyProof>>,
     next_body: usize,
+    recursion: Option<Arc<super::recursion_authority::RecursionDeclarations>>,
 }
 
 /// Captured by the native root constructor. Surface cannot publish a body or
@@ -169,10 +170,36 @@ impl CompletedProgramContracts {
 }
 
 impl ProgramContractProof {
+    pub(crate) fn open_with_recursion_declarations(
+        requested: BTreeSet<String>,
+        declared_diverging: BTreeSet<String>,
+        bodyless_declarations: &BTreeSet<String>,
+        functions: &[&ProgramFunction],
+        plans: &[FunctionTerminationPlan],
+    ) -> Result<Self, TerminationError> {
+        let recursion = super::recursion_authority::RecursionDeclarations::open(functions, plans)?;
+        Ok(Self::open_inner(
+            requested,
+            declared_diverging,
+            bodyless_declarations,
+            Some(recursion),
+        ))
+    }
+
+    #[cfg(test)]
     pub(crate) fn open(
         requested: BTreeSet<String>,
         declared_diverging: BTreeSet<String>,
         bodyless_declarations: &BTreeSet<String>,
+    ) -> Self {
+        Self::open_inner(requested, declared_diverging, bodyless_declarations, None)
+    }
+
+    fn open_inner(
+        requested: BTreeSet<String>,
+        declared_diverging: BTreeSet<String>,
+        bodyless_declarations: &BTreeSet<String>,
+        recursion: Option<Arc<super::recursion_authority::RecursionDeclarations>>,
     ) -> Self {
         let goals = requested
             .iter()
@@ -200,6 +227,7 @@ impl ProgramContractProof {
                 pending_bodies: BTreeMap::new(),
                 bodies: Vec::new(),
                 next_body: 0,
+                recursion,
             })))),
             requested,
             declared_diverging,
@@ -250,7 +278,7 @@ impl ProgramContractProof {
         let subjects = subjects.into_values().collect::<Vec<_>>();
         let rules = prepare_independent_loop_exits(&subjects, &loop_rules);
         let heights = program_termination_height_plan(&rules, inputs.inline_bodies);
-        let obligations = super::obligations::TerminationObligations::generate(
+        let obligations = super::obligations::TerminationObligations::generate_with_recursion(
             &rules,
             inputs.plans,
             &loop_rules,
@@ -260,6 +288,7 @@ impl ProgramContractProof {
             &self.declared_diverging,
             inputs.diverging_contracts,
             inputs.has_unselected_functions,
+            state.recursion.as_deref(),
         )
         .map_err(ProgramContractFailure::Analysis)?;
         state.retire(&ProgramContractGoal::BodyOpening);
