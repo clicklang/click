@@ -78,13 +78,14 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         click_function_types.insert(
             definition.name().to_string(),
             ClickFunctionType {
+                value_parameter: false,
                 type_parameters: definition.type_parameters().to_vec(),
                 parameters: definition.parameters().to_vec(),
                 return_type: definition.return_type_with_object_class(),
             },
         );
     }
-    validate_algebraic_type_uses(file, &click_function_types)?;
+    validate_algebraic_type_uses(file, &mut click_function_types)?;
 
     for definition in &resource_definitions {
         crate::surface::enter_ambient_declaration(definition.name());
@@ -211,7 +212,11 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             click_functions,
             &format!("function `{}`", definition.name()),
         )?;
-        validate_program_valued_function_folds(definition, &click_function_types)?;
+        with_function_parameter_types(
+            definition.parameters(),
+            &mut click_function_types,
+            |types| validate_program_valued_function_folds(definition, types),
+        )?;
         let mut calls = BTreeSet::new();
         collect_click_function_calls(body, &mut calls);
         function_calls.insert(definition.name().to_string(), calls);

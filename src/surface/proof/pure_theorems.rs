@@ -287,7 +287,8 @@ impl PureTheoremContext {
                 Some(ClickType::Integer) => true,
                 Some(_) => false,
                 None if matches!(value, ContractExpression::Lambda { .. })
-                    || lambdas::is_proposition_value(&value) =>
+                    || lambdas::is_proposition_value(&value)
+                    || matches!(&value, ContractExpression::Call { name, .. } if spec_definitions.functions.get(name).is_some_and(|definition| definition.return_type() == &ClickType::Proposition)) =>
                 {
                     false
                 }

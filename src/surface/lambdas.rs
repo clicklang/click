@@ -14,6 +14,67 @@ pub(super) fn validate_body_state(body: &ContractExpression) -> Result<(), Click
     Ok(())
 }
 
+pub(super) fn has_function_parameters(definition: &ClickFunctionDefinition) -> bool {
+    definition
+        .parameters()
+        .iter()
+        .any(|parameter| matches!(parameter.click_type(), ClickType::Function { .. }))
+}
+
+/// Specialize one selected declaration into typed lexical argument bindings.
+/// All captures and simultaneous argument binding use ordinary beta elaboration.
+pub(super) fn specialize_call(
+    definition: &ClickFunctionDefinition,
+    arguments: &[ContractExpression],
+) -> Result<Option<ContractExpression>, String> {
+    if !has_function_parameters(definition) && definition.return_type() != &ClickType::Proposition {
+        return Ok(None);
+    }
+    for (parameter, argument) in definition.parameters().iter().zip(arguments) {
+        if matches!(parameter.click_type(), ClickType::Function { .. }) {
+            let value = reduce_head_fully(argument)?;
+            let ContractExpression::Lambda {
+                parameters, result, ..
+            } = value.as_ref()
+            else {
+                return Err(format!(
+                    "function `{}` needs a concrete lambda for `{}`",
+                    definition.name(),
+                    parameter.name()
+                ));
+            };
+            if signature(parameters, result) != *parameter.click_type() {
+                return Err(format!(
+                    "function `{}` callback `{}` expects {}",
+                    definition.name(),
+                    parameter.name(),
+                    validation::describe_click_type(parameter.click_type())
+                ));
+            }
+        }
+    }
+    let body = definition
+        .body()
+        .ok_or_else(|| format!("function `{}` has no body to specialize", definition.name()))?;
+    reduce_head(&ContractExpression::Apply {
+        function: Box::new(ContractExpression::Lambda {
+            parameters: definition
+                .parameters()
+                .iter()
+                .map(|parameter| {
+                    (
+                        parameter.name().to_string(),
+                        parameter.click_type_with_object_class(),
+                    )
+                })
+                .collect(),
+            result: definition.return_type().clone(),
+            body: Box::new(body.clone()),
+        }),
+        arguments: arguments.to_vec(),
+    })
+}
+
 pub(super) fn signature(parameters: &[(String, ClickType)], result: &ClickType) -> ClickType {
     ClickType::Function {
         parameters: parameters.iter().map(|(_, ty)| ty.clone()).collect(),
@@ -279,7 +340,7 @@ pub(super) fn reduce_head(
                         arguments: arguments.clone(),
                     }));
                 }
-                return Err("application expects a specification lambda value".into());
+                return Ok(None);
             };
             if parameters.len() != arguments.len() {
                 return Err(format!(
@@ -336,6 +397,127 @@ pub(super) fn reduce_head(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn specification_function_parameters_apply_forward_and_expand() {
+        let declarations = "function twice(f: fn(Integer) -> Integer, x: Integer) -> Integer { f(f(x)) } function forward(f: fn(Integer) -> Integer, x: Integer) -> Integer { let alias = f; twice(alias, x) }";
+        for (name, proof) in [
+            (
+                "twice",
+                "by { unfold(twice(|n: Integer| -> Integer { n + 1 }, 3)); solve(); }",
+            ),
+            (
+                "forward",
+                "by { unfold(forward(|n: Integer| -> Integer { n + 1 }, 3)); solve(); }",
+            ),
+        ] {
+            let source = format!(
+                "{declarations} theorem test() {{ ensures {name}(|n: Integer| -> Integer {{ n + 1 }}, 3) == 5 {proof} }}"
+            );
+            let verified = verify_click_theorems(&source)
+                .unwrap_or_else(|error| panic!("{source}: {}", error.report()));
+            let expanded = verified[0].expanded_proof_source().unwrap();
+            assert!(!expanded.contains("solve("), "{expanded}");
+            verify_click_theorems(&source.replace(proof, &expanded))
+                .unwrap_or_else(|error| panic!("{expanded}: {}", error.report()));
+            assert!(verify_click_theorems(&source.replace("== 5", "== 6")).is_err());
+        }
+    }
+
+    #[test]
+    fn callback_binders_shadow_and_proposition_helpers_expand() {
+        let source = "function shadow(f: fn(Integer) -> Integer, x: Integer) -> Integer { (|f: Integer| -> Integer { f + 1 })(x) } theorem test() { ensures shadow(|n: Integer| -> Integer { n }, 3) == 4 by solve(); }";
+        verify_click_theorems(source).unwrap_or_else(|error| panic!("{}", error.report()));
+        for (declaration, statement, proof) in [
+            (
+                "function every(p: fn(int32) -> Prop, lo: int32, hi: int32) -> Prop { (lo..hi).all(p) }",
+                "every(|i: int32| -> Prop { i < hi }, lo, hi)",
+                "by { intro(); intro(); solve(); }",
+            ),
+            (
+                "function some(p: fn(int32) -> Prop, lo: int32, hi: int32) -> Prop { (lo..hi).any(p) }",
+                "some(|i: int32| -> Prop { i == lo }, lo, hi)",
+                "by { witness { item: lo }; solve(); }",
+            ),
+        ] {
+            let source = format!(
+                "{declaration} theorem test(lo: int32, hi: int32) {{ requires lo < hi; ensures {statement} {proof} }}"
+            );
+            let verified = verify_click_theorems(&source)
+                .unwrap_or_else(|error| panic!("{source}: {}", error.report()));
+            let expanded = verified[0].expanded_proof_source().unwrap();
+            assert!(!expanded.contains("solve("), "{expanded}");
+            verify_click_theorems(&source.replace(proof, &expanded))
+                .unwrap_or_else(|error| panic!("{expanded}: {}", error.report()));
+        }
+    }
+
+    #[test]
+    fn callback_fold_append_and_memory_expansions_recheck() {
+        let proof = "by { peel(total(|acc: Integer, i: int32| -> Integer { acc + to_integer(i) }, lo, hi + 1)) using { lo <= hi; hi < 2147483647; }; solve(); }";
+        let source = format!(
+            "function total(step: fn(Integer, int32) -> Integer, lo: int32, hi: int32) -> Integer {{ (lo..hi).fold(0, step) }} theorem test(lo: int32, hi: int32) {{ requires lo <= hi; requires hi < 2147483647; ensures total(|acc: Integer, i: int32| -> Integer {{ acc + to_integer(i) }}, lo, hi + 1) == total(|acc: Integer, i: int32| -> Integer {{ acc + to_integer(i) }}, lo, hi) + to_integer(hi) {proof} }}"
+        );
+        let verified =
+            verify_click_theorems(&source).unwrap_or_else(|error| panic!("{}", error.report()));
+        let expanded = verified[0].expanded_proof_source().unwrap();
+        assert!(!expanded.contains("solve("), "{expanded}");
+        verify_click_theorems(&source.replace(proof, &expanded))
+            .unwrap_or_else(|error| panic!("{expanded}: {}", error.report()));
+
+        let c = [("write.c", "void write(int32* p) { p[0] = 5; }")];
+        let proof = "by { step_until(function.exit); unfold(access(|i: int32| -> Integer { to_integer(p[i]) }, 0)); solve(); }";
+        let source = format!(
+            "verifying \"write.c\"; function access(read: fn(int32) -> Integer, i: int32) -> Integer {{ read(i) }} void write(int32* p) {{ owns p[0..1]; requires p[0] == 0; ensures access(|i: int32| -> Integer {{ to_integer(p[i]) }}, 0) == 5; }} {proof}"
+        );
+        let verified =
+            verify_c_sources(&source, &c).unwrap_or_else(|error| panic!("{}", error.report()));
+        let expanded = verified[0].expanded_proof_source().unwrap();
+        assert!(!expanded.contains("solve("), "{expanded}");
+        verify_c_sources(&source.replace(proof, &expanded), &c)
+            .unwrap_or_else(|error| panic!("{expanded}: {}", error.report()));
+    }
+
+    #[test]
+    fn callbacks_preserve_algebraic_arguments_and_results() {
+        let declarations = "spec enum Boxed { Value(Integer) } function wrap(f: fn(Integer) -> Integer, x: Integer) -> Boxed { Boxed::Value(f(x)) } function accepts(p: fn(Integer) -> Prop, b: Boxed) -> Prop { b == Boxed::Value(4) and p(4) }";
+        for (statement, proof) in [
+            (
+                "wrap(|x: Integer| -> Integer { x + 1 }, 3) == Boxed::Value(4)",
+                "by { unfold(wrap(|x: Integer| -> Integer { x + 1 }, 3)); have to_integer(3) + 1 == 4 by solve(); solve(); }",
+            ),
+            (
+                "accepts(|x: Integer| -> Prop { x == 4 }, Boxed::Value(4))",
+                "by solve();",
+            ),
+        ] {
+            let source = format!("{declarations} theorem test() {{ ensures {statement} {proof} }}");
+            let verified = verify_click_theorems(&source)
+                .unwrap_or_else(|error| panic!("{source}: {}", error.report()));
+            let expanded = verified[0].expanded_proof_source().unwrap();
+            assert!(!expanded.contains("solve("), "{expanded}");
+            verify_click_theorems(&source.replace(proof, &expanded))
+                .unwrap_or_else(|error| panic!("{expanded}: {}", error.report()));
+        }
+    }
+
+    #[test]
+    fn specification_callback_signatures_are_checked_even_when_unused() {
+        for source in [
+            "function bad(f: fn(Integer) -> Integer) -> Integer { f(true) }",
+            "function bad() -> Prop { missing == 0 }",
+            "function bad(f: fn(Integer) -> Integer) -> Integer { f(1, 2) }",
+            "function bad(f: fn(Integer) -> Integer) -> Integer { f + 1 }",
+            "function bad(f: fn(Integer) -> Integer) -> Bool { f(1) }",
+            "function bad(f: fn(Integer) -> Integer) -> Integer { let unused = |n: Integer| -> Integer { f(true) }; 0 }",
+            "function bad(f: fn(fn(Integer) -> Integer) -> Integer) -> Integer { 0 }",
+            "theorem bad(f: fn(Integer) -> Integer) { ensures true; }",
+            "function bad(f: fn(Integer) -> Integer) -> fn(Integer) -> Integer { f }",
+            "function use(f: fn(Integer) -> Integer) -> Integer { f(1) } theorem bad() { ensures use(|x: int32| -> int32 { x }) == 1; }",
+        ] {
+            assert!(parser::parse(source).is_err(), "accepted {source}");
+        }
+    }
 
     #[test]
     fn proposition_lambdas_reject_wrong_value_categories_and_signatures() {

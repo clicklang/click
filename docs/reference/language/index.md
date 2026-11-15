@@ -4150,7 +4150,10 @@ Supported expression features include parameters, literals, `+`, `-`, `*`,
 `/`, `%`, `<<`, `>>`, `int32` bitwise `&`, `|`, `^`, unary `~`, indexing,
 `let name [: type] = value; body`, `if proposition { then } else { else }`,
 range `.fold`, typed specification lambdas and their application, and calls
-to other Click functions. A fold accepts a lambda value as its step. `.all` and `.any` accept
+to other Click functions. Specification functions accept explicitly typed
+function parameters, and transparent `Prop` results support logical adapters;
+see [Function parameters](grammar.md#function-parameters-in-specification-functions).
+A fold accepts a lambda value as its step. `.all` and `.any` accept
 proposition-valued lambdas (`fn(Index) -> Prop`); see
 [Range predicates](grammar.md#range-predicates). See
 [Range folds](grammar.md#range-folds) for its signature and compatibility

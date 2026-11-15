@@ -86,6 +86,13 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .filter(|function| *function.return_type() == ClickType::Integer)
             .map(|function| function.name().to_string())
             .collect::<BTreeSet<_>>();
+        let imported_proposition_functions = imported_ids
+            .iter()
+            .filter_map(|imported| locals.get(imported))
+            .flat_map(|file| file.click_function_definitions())
+            .filter(|function| *function.return_type() == ClickType::Proposition)
+            .map(|function| function.name().to_string())
+            .collect::<BTreeSet<_>>();
         let imported_pointer_functions = imported_ids
             .iter()
             .filter_map(|imported| locals.get(imported))
@@ -175,6 +182,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             &imported_resources,
             &imported_declarations,
             &imported_integer_functions,
+            &imported_proposition_functions,
             &imported_pointer_functions,
             &imported_integer_parameters,
             layouts.clone(),
