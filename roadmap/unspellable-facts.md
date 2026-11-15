@@ -461,7 +461,8 @@ Same-type Boolean assignments, temporary-result handoffs and memory receipts
 preserve the producer root. A byte write that assembles a wider integer keeps
 that integer result, and changed-type conversions keep their existing behavior.
 General native output and replacement of compatibility keys remain later work.
-Validation: all 1,805 selected tests passed, including every scaling test,
+Validation: all 1,898 integration tests passed, including every scaling test,
+preservation proofs and memory provenance,
 Boolean storage key agreement, actual statement stores and memory reloads,
 temporary result receipts, byte-view cases and existing pointer handoffs.
 Growing-prefix storage and retrieval perform no operand traversal or numeric
