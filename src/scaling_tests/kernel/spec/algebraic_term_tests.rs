@@ -163,3 +163,44 @@ fn signed_match_definedness_does_not_scan_constructor_facts() {
         );
     }
 }
+
+#[test]
+fn common_constructor_projection_selects_shared_field_without_exporting_prefix() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut native =
+            KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Int32)]);
+        native.node = AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields: vec![AlgebraicValue::Program(ProgramValue::Int32(
+                MachineTerm::Variable(Variable(999652)),
+            ))],
+        };
+        let root = KernelTermImport::default().algebraic(&native);
+        let KernelTermNode::Constructor(mut constructor) = root.node().clone() else {
+            unreachable!()
+        };
+        let mut field = constructor.fields[0].clone();
+        for _ in 0..size {
+            field = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [field.clone(), field],
+            );
+        }
+        constructor.fields[0] = field.clone();
+        let arguments = [SpecCallArgument::Shared(constructor.into_term())];
+        let projection = PureProjection {
+            argument: 0,
+            variant: "Arm".into(),
+            field: 0,
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
+            projected_field(&projection, &arguments, ProgramType::Int32, true).unwrap()
+        });
+        assert_eq!(value.shared(), Some(&field));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work <= 4, "size={size} work={work}");
+    }
+}

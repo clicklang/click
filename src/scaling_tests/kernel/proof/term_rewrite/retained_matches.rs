@@ -83,6 +83,7 @@ fn common_match_reduction_retains_shared_machine_body() {
         )
         .unwrap();
         let exports = KernelTermExport::machine_export_count();
+        let algebraic_exports = KernelTermExport::algebraic_export_count();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             TermRewrite::empty().reduce_retained_match(&matched)
         });
@@ -99,6 +100,10 @@ fn common_match_reduction_retains_shared_machine_body() {
             KernelTermNode::Variable(variable) if *variable == Variable(991924)
         ));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert_eq!(
+            KernelTermExport::algebraic_export_count(),
+            algebraic_exports
+        );
         assert!(work <= 150 * size + 300, "size={size}, work={work}");
     }
 }

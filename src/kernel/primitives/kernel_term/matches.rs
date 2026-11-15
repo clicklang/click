@@ -275,6 +275,44 @@ impl KernelMatch {
 }
 
 impl KernelConstructor {
+    /// Select a written field without materializing its siblings or prefix.
+    pub(crate) fn field(&self, variant: &str, index: usize) -> Option<&KernelTerm> {
+        crate::instrumentation::record_deterministic_work(1);
+        (self.variant == variant)
+            .then(|| self.fields.get(index))
+            .flatten()
+    }
+
+    /// The existing match checker still consumes native typed replacements.
+    /// Check precisely its schema/field policy at that selected boundary;
+    /// constructor selection itself reads the common descriptor.
+    pub(crate) fn checked_native_fields(
+        &self,
+        export: &mut KernelTermExport,
+    ) -> Option<Vec<AlgebraicValue>> {
+        if !self.algebraic_type.has_consistent_root_schema() {
+            return None;
+        }
+        let schema = self
+            .algebraic_type
+            .variants
+            .iter()
+            .find(|v| v.name == self.variant)?;
+        if schema.fields.len() != self.fields.len() {
+            return None;
+        }
+        self.fields
+            .iter()
+            .zip(&schema.fields)
+            .map(|(field, expected)| {
+                let value = export_value(export, field).ok()?;
+                value
+                    .is_well_formed_for(expected, &self.algebraic_type.schemas)
+                    .then_some(value)
+            })
+            .collect()
+    }
+
     pub(crate) fn into_term(self) -> KernelTerm {
         KernelTerm::intern(
             KernelType::Algebraic(self.algebraic_type.clone()),
@@ -347,6 +385,49 @@ mod tests {
     fn names() -> BindingNames {
         BindingNames::written(&["field".into()])
     }
+    #[test]
+    fn common_constructor_checked_fields_match_native_refusals() {
+        let mut valid =
+            KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Int32)]);
+        valid.node = AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields: vec![AlgebraicValue::Program(ProgramValue::Int32(
+                MachineTerm::Variable(Variable(999653)),
+            ))],
+        };
+        let mut cases = vec![valid.clone()];
+        let mut wrong_variant = valid.clone();
+        if let AlgebraicTermNode::Constructor { variant, .. } = &mut wrong_variant.node {
+            *variant = "Other".into();
+        }
+        cases.push(wrong_variant);
+        let mut wrong_count = valid.clone();
+        if let AlgebraicTermNode::Constructor { fields, .. } = &mut wrong_count.node {
+            fields.clear();
+        }
+        cases.push(wrong_count);
+        let mut wrong_type = valid.clone();
+        if let AlgebraicTermNode::Constructor { fields, .. } = &mut wrong_type.node {
+            fields[0] = AlgebraicValue::Integer(IntegerTerm::var(Variable(999653)));
+        }
+        cases.push(wrong_type);
+        let mut wrong_schema = valid;
+        wrong_schema.algebraic_type.name = "Missing".into();
+        cases.push(wrong_schema);
+        for native in cases {
+            let root = KernelTermImport::default().algebraic(&native);
+            let KernelTermNode::Constructor(constructor) = root.node() else {
+                unreachable!()
+            };
+            assert_eq!(
+                constructor
+                    .checked_native_fields(&mut KernelTermExport::default())
+                    .as_deref(),
+                native.checked_constructor_fields()
+            );
+        }
+    }
+
     #[test]
     fn numeric_match_roots_preserve_observation_identity_and_typed_arms() {
         let _session = crate::kernel::VerificationSession::enter();
