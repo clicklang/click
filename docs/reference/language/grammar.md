@@ -117,8 +117,20 @@ documentation inventory keep the following accepted words synchronized.
 | `changes_only` | Transition proposition naming recorded before/after points and the resources allowed to change. |
 | `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate rules { ... }`. Its step words are listed under [Arithmetic-certificate words](#arithmetic-certificate-words). |
 | `rewrite`, `transport`, `instantiate`, `solve`, `induct` | Equality, transport, quantifier, closing, and induction tactics. |
-| `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
+| `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also writes numeric and pointer casts (including `as float` and `as double`) and introduces the target contract's proof instances on an `executes` conclusion. |
 | `function`, `loop`, `region`, `statement`, `call`, `test`, `assignment`, `read`, `read_event`, `back_edge`, `entry`, `exit` | Program-region and point selectors. Each names a region. `region(N)` is the `N`th atomic region, one `step()` crosses; `statement(i)` is a statement as written, and a chain continues it with `.statement(j)` and ends it with `.region(j)`, `.call(f, j)`, `.test()`, `.assignment(x, j)` or `.read(j)`. Unchained `assignment(local, N)` and `read(N)`, and `back_edge()` or `loop(i).back_edge()`, are execution targets only. The suffix `.read_event(i).result` selects a completed volatile observation within an atomic region; it is not a point or execution target. |
+| `termination` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `termination_local` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `termination_strict` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `termination_body` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `termination_returns` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `termination_divergence` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `termination_callbacks` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `strict` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `normal` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `check_termination_local` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `check_termination_component` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `check_termination_callbacks` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
 
 See [Tactics](../tactics/index.md) for tactic syntax and classification, and
 [Core tactics](../tactics/index.md#core-tactics) for the ones a hand-written

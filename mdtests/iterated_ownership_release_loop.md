@@ -12,7 +12,8 @@ element `data[i]` outright, so the iterated fact cannot hold it and the store
 rule opens a hole at `i`. The stored value makes the guard true, so the hole
 stays open until `give(data[i..i + 1])` moves the element back into the fact.
 The proof then extends the free range by one cell: the new cell from the
-store, the rest transported across it.
+store, the rest preserved explicitly across the decrement and store before
+returning ownership with `give`.
 
 `src/surface/tests/expansion_tests.rs` expands this fixture's proof and
 reverifies the result; `click audit` agrees.
@@ -92,7 +93,6 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
             }
             have 0 <= i;
             step();
-            give(data[i..i + 1]);
             have forall (k: int32) {
                 i <= k and k < end implies occupied[k] == 0
             } by {
@@ -117,17 +117,22 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                     have 0 <= k;
                     have k < capacity;
                     have i < capacity;
-                    transport(
-                        at(opened, occupied[k]) == 0,
-                        occupied[k] == 0
-                    ) using {
-                        at(opened, occupied[k]) == 0;
-                        i < k;
-                        0 <= i;
-                        i < capacity;
-                        0 <= k;
-                        k < capacity;
-                    };
+                    have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
+                        normalize() using { };
+                    }
+                    have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
+                        preserve(separate(loop(0).statement(0).footprint, memory(occupied[k])));
+                    }
+                    have i != k by { solve() using { i < k; }; }
+                    have separate(memory(occupied[i]), memory(occupied[k])) by {
+                        apply(click::separation::separate_elements(occupied, i, k)) using { i != k; };
+                    }
+                    have separate(loop(0).statement(1).footprint, memory(occupied[k])) by {
+                        normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
+                    }
+                    have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
+                        preserve(separate(loop(0).statement(1).footprint, memory(occupied[k])));
+                    }
                     known();
                 } else {
                     have i == k;
@@ -141,6 +146,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                 have to_integer(at(opened, i) - 1) <= to_integer(end);
                 known();
             }
+            give(data[i..i + 1]);
             let w = fold(arena_window(data, occupied, capacity, start, end), { next: i });
             have 0 <= to_integer(0 - start + at(region(3).entry, i) - 1) by {
                 solve() using {

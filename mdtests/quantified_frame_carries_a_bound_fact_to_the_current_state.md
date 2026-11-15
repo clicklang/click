@@ -1,8 +1,8 @@
 # a quantified fact that is not an equality crosses a separated store
 
 The bound on every `next[k]` holds at `before`, and the store writes the
-separated `visited`. One `transport` from the fact at `before` restates it
-at the current state.
+separated `visited`. Explicit containment and preservation relate the selected
+current read to `before`; instantiation supplies its old bounds.
 
 ```c filename=quantified_frame_carries_a_bound_fact_to_the_current_state.c
 void mark(int32 *next, int32 *visited, int32 n, int32 cur) {
@@ -37,12 +37,32 @@ void mark(int32 *next, int32 *visited, int32 n, int32 cur) {
         };
     }
     step();
-    transport(
-        at(before, forall (k: int32) { 0 <= k and k < n implies 0 <= next[k] and next[k] < n }),
-        forall (k: int32) { 0 <= k and k < n implies 0 <= next[k] and next[k] < n }
-    ) using {
-        at(before, forall (k: int32) { 0 <= k and k < n implies 0 <= next[k] and next[k] < n });
-    };
+    have forall (k: int32) { 0 <= k and k < n implies 0 <= next[k] and next[k] < n } by {
+        intro();
+        intro();
+        have contains(memory(next[0..n]), memory(next[k])) by {
+            apply(click::separation::contains_element(next, 0, n, k)) using { 0 <= k; k < n; };
+        }
+        have contains(memory(visited[cur]), memory(visited[cur])) by {
+            apply(click::separation::contains_refl(memory(visited[cur])));
+        }
+        have separate(memory(visited[cur]), memory(next[k])) by {
+            apply(click::separation::separate_restrict(memory(visited[cur]), memory(next[0..n]), memory(visited[cur]), memory(next[k]))) using {
+                separate(memory(visited[cur]), memory(next[0..n]));
+                contains(memory(visited[cur]), memory(visited[cur]));
+                contains(memory(next[0..n]), memory(next[k]));
+            };
+        }
+        have separate(statement(0).footprint, memory(next[k])) by {
+            normalize() using { separate(memory(visited[cur]), memory(next[k])); };
+        }
+        have next[k] == at(before, next[k]) by {
+            preserve(separate(statement(0).footprint, memory(next[k])));
+        }
+        instantiate(at(before, forall (j: int32) { 0 <= j and j < n implies 0 <= next[j] and next[j] < n }), k) using { 0 <= k; k < n; };
+        rewrite(next[k], at(before, next[k]));
+        known();
+    }
 }
 ```
 

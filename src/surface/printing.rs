@@ -489,6 +489,21 @@ pub(super) fn print_proposition(
                 format!("({start}..{end}).any({item} => {body})")
             }
         }
+        ClickProposition::PredicateCall { name, arguments }
+            if crate::kernel::TerminationAtomKind::from_spelling(name).is_some() =>
+        {
+            let arguments = arguments
+                .iter()
+                .map(|argument| {
+                    let ContractExpression::Binding(name) = argument else {
+                        unreachable!("termination labels are quoted names")
+                    };
+                    format!("{name:?}")
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{name}({arguments})")
+        }
         ClickProposition::PredicateCall { name, arguments } => format!(
             "{name}({})",
             arguments
@@ -1132,6 +1147,22 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 &prefix,
                 &format!("obtain ({bindings}) {{ {body} }}"),
             );
+        }
+        ProofTactic::CheckTerminationLocal(function) => line(
+            output,
+            &prefix,
+            &format!("check_termination_local({function:?});"),
+        ),
+        ProofTactic::CheckTerminationComponent { function, strict } => line(
+            output,
+            &prefix,
+            &format!(
+                "check_termination_component({function:?}, {});",
+                if *strict { "strict" } else { "normal" }
+            ),
+        ),
+        ProofTactic::CheckTerminationCallbacks => {
+            line(output, &prefix, "check_termination_callbacks();")
         }
         ProofTactic::Known => line(output, &prefix, "known();"),
         ProofTactic::Extract(proposition) => line(

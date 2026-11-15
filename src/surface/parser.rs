@@ -2063,6 +2063,8 @@ impl Parser {
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
         let mut tactic_definitions = Vec::new();
+        let mut termination_proof = None;
+        let mut termination_span = None;
         let mut library_imports = self
             .implied_library_modules
             .iter()
@@ -2082,6 +2084,15 @@ impl Parser {
                 }
             } else if self.peek_ident() == Some("import") {
                 imports.push(self.parse_import()?);
+            } else if self.peek_ident() == Some("termination") {
+                let start = self.positions[self.position].clone();
+                self.position += 1;
+                if termination_proof.is_some() {
+                    return Err(self.error("only one `termination by` block is allowed"));
+                }
+                self.expect_ident_spelling("by")?;
+                termination_proof = Some(self.parse_possibly_empty_tactic_block()?);
+                termination_span = Some((start, self.positions[self.position - 1].clone()));
             } else if self.peek_ident() == Some("verifying") {
                 verifying_sources.push(self.parse_verifying_source()?);
             } else if let Some(directive @ ("target" | "mode")) =
@@ -2415,6 +2426,8 @@ impl Parser {
             contract_definitions,
             function_blocks,
             tactic_definitions,
+            termination_proof,
+            termination_span,
             declaration_owners: BTreeMap::new(),
             entry_module: None,
             source_spans: std::sync::Arc::new(SourceSpans {
@@ -8557,6 +8570,22 @@ impl Parser {
             {
                 return self.parse_contract_value_application();
             }
+            if let Some(kind) = self
+                .peek_ident()
+                .and_then(crate::kernel::TerminationAtomKind::from_spelling)
+            {
+                let name = self.expect_ident("termination predicate")?;
+                self.expect(Token::LParen)?;
+                let arguments = if kind == crate::kernel::TerminationAtomKind::Callbacks {
+                    Vec::new()
+                } else {
+                    vec![ContractExpression::Binding(
+                        self.expect_string("function name")?,
+                    )]
+                };
+                self.expect(Token::RParen)?;
+                return Ok(ClickProposition::PredicateCall { name, arguments });
+            }
             let start = self.position;
             let (name, arguments) = self.parse_call_arguments("predicate or function name")?;
             if let Some(classification) = float_classification_from_name(&name) {
@@ -10894,6 +10923,28 @@ impl Parser {
                 return Ok(ProofTactic::Witness(ProofWitness::new(bindings)));
             }
             "obtain" => return self.parse_obtain(),
+            "check_termination_local" => {
+                self.expect(Token::LParen)?;
+                let function = self.expect_string("function name")?;
+                self.expect(Token::RParen)?;
+                ProofTactic::CheckTerminationLocal(function)
+            }
+            "check_termination_component" => {
+                self.expect(Token::LParen)?;
+                let function = self.expect_string("function name")?;
+                self.expect(Token::Comma)?;
+                let strict = match self.expect_ident("strict or normal")?.as_str() {
+                    "strict" => true,
+                    "normal" => false,
+                    _ => return Err(self.error("expected `strict` or `normal`")),
+                };
+                self.expect(Token::RParen)?;
+                ProofTactic::CheckTerminationComponent { function, strict }
+            }
+            "check_termination_callbacks" => {
+                self.expect_empty_tactic_args(&name)?;
+                ProofTactic::CheckTerminationCallbacks
+            }
             "known" => {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::Known
@@ -14392,7 +14443,7 @@ impl Parser {
     /// A name an `as` clause binds may not be a cast's type name: `e as T`
     /// is a cast, so `induct(x) as uint32` would read as one.
     fn refuse_cast_type_binder(&self, name: &str) -> Result<(), ClickError> {
-        if rust_syntax::click_integer_cast_type(name).is_some()
+        if rust_syntax::click_numeric_cast_type(name).is_some()
             || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
         {
             return Err(self.error(format!(
@@ -14477,7 +14528,7 @@ impl Parser {
         ))
     }
 
-    /// A Click cast of `operand` to an integer or pointer `target_type`,
+    /// A Click cast of `operand` to a numeric or pointer `target_type`,
     /// `x as uint32` or `p as (uint8 *)`.
     fn lower_click_cast(
         &mut self,
@@ -14496,11 +14547,13 @@ impl Parser {
     ) -> Result<ContractExpression, ClickError> {
         let historical = crate::surface::validation::contains_old_expression(&operand)
             || crate::surface::validation::contains_at_expression(&operand);
-        // Integer casts consume the value observed by their operand.
-        // Other cast families retain their current-expression validation.
-        let integer_target = matches!(
+        // Numeric casts consume the value observed by their operand.
+        // Pointer casts retain their current-expression validation.
+        let numeric_target = matches!(
             target_type,
-            ProgramType::Int8
+            ProgramType::Float32
+                | ProgramType::Float64
+                | ProgramType::Int8
                 | ProgramType::Int16
                 | ProgramType::Int32
                 | ProgramType::UInt8
@@ -14511,7 +14564,7 @@ impl Parser {
                 | ProgramType::Int128
                 | ProgramType::UInt128
         );
-        if historical && !integer_target {
+        if historical && !numeric_target {
             return Err(self.error("scalar cast expects a current expression; put old(...) around the whole cast for an entry-state value"));
         }
         let expression = contract_expression_as_program_expression(&operand)
@@ -17116,8 +17169,11 @@ impl Parser {
         }
         match self.tokens.get(index) {
             Some(Token::Ident(name)) if matches!(name.as_str(), "void" | "float" | "double") => {
-                self.tokens.get(index + 1) == Some(&Token::Star)
-                    && self.tokens.get(index + 2) == Some(&Token::RParen)
+                (self.tokens.get(index + 1) == Some(&Token::Star)
+                    && self.tokens.get(index + 2) == Some(&Token::RParen))
+                    || (index == self.position + 1
+                        && matches!(name.as_str(), "float" | "double")
+                        && self.tokens.get(index + 1) == Some(&Token::RParen))
             }
             Some(Token::Ident(name)) => matches!(
                 name.as_str(),
@@ -17175,7 +17231,7 @@ impl Parser {
         ) || self.starts_cast_at(close + 1)
     }
 
-    /// Whether `as` at `index` begins a cast: `as` and an integer type name,
+    /// Whether `as` at `index` begins a cast: `as` and a numeric type name,
     /// or `as (` with a pointer type, so `(a + b) as uint32 == c` reads its
     /// parentheses as an expression.
     fn starts_cast_at(&self, index: usize) -> bool {
@@ -17187,13 +17243,13 @@ impl Parser {
         }
         match self.tokens.get(index + 1) {
             Some(Token::Ident(name)) => {
-                rust_syntax::click_integer_cast_type(name).is_some()
+                rust_syntax::click_numeric_cast_type(name).is_some()
                     || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
             }
             Some(Token::LParen) => matches!(
                 self.tokens.get(index + 2),
                 Some(Token::Ident(name)) if matches!(name.as_str(), "void" | "struct" | "const" | "volatile")
-                    || rust_syntax::click_integer_cast_type(name).is_some()
+                    || rust_syntax::click_numeric_cast_type(name).is_some()
             ),
             _ => false,
         }
@@ -18123,6 +18179,15 @@ mod tactic_classification_tests {
         ("instantiate-using", "instantiate(F, 1) using { x == 1; };"),
         ("solve", "solve();"),
         ("solve-using", "solve() using { x == 1; };"),
+        ("check-termination-local", "check_termination_local(\"f\");"),
+        (
+            "check-termination-component",
+            "check_termination_component(\"f\", normal);",
+        ),
+        (
+            "check-termination-callbacks",
+            "check_termination_callbacks();",
+        ),
     ];
 
     fn label(class: TacticClass) -> &'static str {

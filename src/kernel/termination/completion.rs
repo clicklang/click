@@ -43,11 +43,12 @@ impl PartialEq for ProgramContractBodies {
 }
 impl Eq for ProgramContractBodies {}
 
-struct ProgramState {
-    proof: ProgramProof,
-    open: BTreeMap<ProgramContractGoal, BranchId>,
+#[derive(Clone)]
+pub(super) struct ProgramState {
+    pub(super) proof: ProgramProof,
+    pub(super) open: BTreeMap<ProgramContractGoal, BranchId>,
     pending_bodies: BTreeMap<usize, String>,
-    bodies: Vec<Arc<ContractBodyProof>>,
+    pub(super) bodies: Vec<Arc<ContractBodyProof>>,
     next_body: usize,
 }
 
@@ -121,7 +122,7 @@ impl ProgramBodyOwner {
 }
 
 impl ProgramState {
-    fn retire(&mut self, goal: &ProgramContractGoal) {
+    pub(super) fn retire(&mut self, goal: &ProgramContractGoal) {
         charge_termination_work(1);
         let id = self.open.remove(goal).expect("a declared program goal");
         self.proof = self
@@ -144,6 +145,7 @@ pub(crate) struct ProgramTerminationInputs<'a> {
 
 pub(crate) enum ProgramContractFailure {
     Analysis(TerminationError),
+    #[cfg(test)]
     MissingReturnEvidence(String),
     UnfinishedBody(String),
     Obligation {
@@ -260,6 +262,7 @@ impl ProgramContractProof {
         )
         .map_err(ProgramContractFailure::Analysis)?;
         state.retire(&ProgramContractGoal::BodyOpening);
+        #[cfg(test)]
         let divergence_goals = self
             .declared_diverging
             .iter()
@@ -274,6 +277,7 @@ impl ProgramContractProof {
             state,
             obligations,
             requested: self.requested,
+            #[cfg(test)]
             divergence_goals,
         })
     }
@@ -285,15 +289,16 @@ pub(crate) struct ProgramTerminationProof {
     state: ProgramState,
     obligations: super::obligations::TerminationObligations,
     requested: BTreeSet<String>,
+    #[cfg(test)]
     divergence_goals: Vec<String>,
 }
 
 /// This token can only be constructed by proof execution after discharging
 /// every declared goal. Successful completion accepts no checking inputs.
 pub(crate) struct ProvedProgramContracts {
-    proof: ProgramProof,
-    bodies: Vec<Arc<ContractBodyProof>>,
-    rules: Vec<VerifiedFunctionTerminationRule>,
+    pub(super) proof: ProgramProof,
+    pub(super) bodies: Vec<Arc<ContractBodyProof>>,
+    pub(super) rules: Vec<VerifiedFunctionTerminationRule>,
 }
 
 impl ProvedProgramContracts {
@@ -307,6 +312,11 @@ impl ProvedProgramContracts {
 }
 
 impl ProgramTerminationProof {
+    pub(crate) fn into_ordinary_scope(self) -> Arc<super::ordinary::OrdinaryTerminationScope> {
+        super::ordinary::OrdinaryTerminationScope::new(self.state, self.obligations, self.requested)
+    }
+
+    #[cfg(test)]
     pub(crate) fn prove_implicitly(
         mut self,
     ) -> Result<ProvedProgramContracts, ProgramContractFailure> {

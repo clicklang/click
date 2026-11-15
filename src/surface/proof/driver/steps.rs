@@ -419,6 +419,20 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
 
         let mut provenance_step = step.clone();
         let checked_proposition_successor = match &step {
+            ProofStep::CheckTerminationLocal(function) => Some(
+                driver_proof.apply_termination_check(crate::kernel::TerminationCheck::Local(
+                    function.clone(),
+                )),
+            ),
+            ProofStep::CheckTerminationComponent { function, strict } => Some(
+                driver_proof.apply_termination_check(crate::kernel::TerminationCheck::Component {
+                    function: function.clone(),
+                    strict: *strict,
+                }),
+            ),
+            ProofStep::CheckTerminationCallbacks => Some(
+                driver_proof.apply_termination_check(crate::kernel::TerminationCheck::Callbacks),
+            ),
             ProofStep::Known => Some(driver_proof.apply_known()),
             ProofStep::Normalize => Some(driver_proof.apply_normalize()),
             ProofStep::NormalizeUsing(premises) => {

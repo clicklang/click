@@ -5099,7 +5099,7 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
             assert_eq!(value, expected, "{text}");
         }
     }
-    for text in ["p as float", "p as double", "p as (float)", "p as (double)"] {
+    for text in ["p as (float)", "p as (double)"] {
         assert!(
             parser::parse(&format!("function probe(p: uint8*) -> float {{ {text} }}")).is_err()
         );
@@ -5493,5 +5493,190 @@ fn common_float_arithmetic_round_trips_existing_operators() {
                 .unwrap();
             assert_eq!(value, format.value(source), "{text}");
         }
+    }
+}
+
+#[test]
+fn numeric_float_cast_spellings_match_native_conversions_and_round_trip() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let sources = [
+        (
+            "uint8*",
+            ProgramValue::typed_pointer(Pointer::null(), ProgramType::UInt8Pointer),
+        ),
+        (
+            "int128",
+            ProgramValue::Int128(MachineTerm::Variable(Variable(999943))),
+        ),
+        (
+            "int32",
+            ProgramValue::Int32(MachineTerm::constant(16_777_217)),
+        ),
+        (
+            "int32",
+            ProgramValue::Int32(MachineTerm::Variable(Variable(999940))),
+        ),
+        (
+            "uint32",
+            ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
+        ),
+        (
+            "int64",
+            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+        ),
+        (
+            "uint64",
+            ProgramValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
+        ),
+        (
+            "float",
+            ProgramValue::Float32(MachineTerm::constant(0x80000000)),
+        ),
+        (
+            "float",
+            ProgramValue::Float32(MachineTerm::constant(0x7f800123)),
+        ),
+        (
+            "float",
+            ProgramValue::Float32(MachineTerm::Variable(Variable(999941))),
+        ),
+        (
+            "double",
+            ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
+        ),
+        (
+            "double",
+            ProgramValue::Float64(MachineTerm::uint64_constant(0xfff8000000000123)),
+        ),
+        (
+            "double",
+            ProgramValue::Float64(MachineTerm::uint64_constant(0x3ff0000010000000)),
+        ),
+        (
+            "double",
+            ProgramValue::Float64(MachineTerm::Variable(Variable(999942))),
+        ),
+    ];
+    for (source_name, value) in sources {
+        let state = ExecutionState::new().with_local("x", value.clone());
+        for (target_name, target_type) in [
+            ("float", ProgramType::Float32),
+            ("double", ProgramType::Float64),
+        ] {
+            let native = ProgramExpression::Cast {
+                expression: Box::new(ProgramExpression::Value(value.clone())),
+                target_type,
+                integer_mode: crate::kernel::IntegerCastMode::CConversion,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            };
+            let expected =
+                crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                    &state,
+                    &SpecExpression::ProgramExpression(native),
+                    Some(&state),
+                    &PureFactContext::new(),
+                );
+            let mut text = format!("x as {target_name}");
+            for _ in 0..2 {
+                let parsed = parser::parse(&format!(
+                    "function probe(x: {source_name}) -> {target_name} {{ {text} }}"
+                ))
+                .unwrap();
+                let expression = parsed.click_function_definitions()[0].body().unwrap();
+                let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                    expression,
+                    BTreeMap::new(),
+                    &state,
+                    BTreeMap::new(),
+                    BTreeMap::new(),
+                    None,
+                    &RecordedSnapshots::new(),
+                    SpecDefinitions::new(
+                        &PredicateEnvironment::new(&[]),
+                        &ClickFunctionEnvironment::new(&[]),
+                    ),
+                    BTreeSet::new(),
+                    BTreeMap::new(),
+                )
+                .unwrap();
+                let actual =
+                    crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                        &state,
+                        &spec,
+                        Some(&state),
+                        &PureFactContext::new(),
+                    );
+                match (&actual, &expected) {
+                    (Ok(actual), Ok(expected)) => {
+                        assert_eq!(actual, expected, "{source_name}: {text}")
+                    }
+                    (Err(_), Err(_)) => {}
+                    _ => panic!("{source_name}: {text}: {actual:?} vs {expected:?}"),
+                }
+                text = diagnostics::describe_contract_expression(expression);
+                assert!(text.contains(&format!("as {target_name}")), "{text}");
+            }
+        }
+    }
+}
+
+#[test]
+fn numeric_float_casts_read_historical_and_current_operands() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let parsed =
+        parser::parse("double probe(int32 x) { ensures result == (old(x) + x) as double; }")
+            .unwrap();
+    let Ensure::Proposition(ClickProposition::Comparison {
+        right: expression, ..
+    }) = parsed.function_blocks()[0].ensures()[0].ensure()
+    else {
+        panic!("cast postcondition")
+    };
+    let entry = ProgramValue::Int32(MachineTerm::constant(1));
+    let current = ProgramValue::Int32(MachineTerm::constant(3));
+    let state = ExecutionState::new().with_local("x", entry.clone());
+    let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+        expression,
+        BTreeMap::new(),
+        &state,
+        BTreeMap::from([("x".into(), entry)]),
+        BTreeMap::from([("x".into(), current)]),
+        None,
+        &RecordedSnapshots::new(),
+        SpecDefinitions::new(
+            &PredicateEnvironment::new(&[]),
+            &ClickFunctionEnvironment::new(&[]),
+        ),
+        BTreeSet::new(),
+        BTreeMap::new(),
+    )
+    .unwrap();
+    let (value, obligations) =
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+            &state,
+            &spec,
+            Some(&state),
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert_eq!(
+        value,
+        ProgramValue::Float64(MachineTerm::uint64_constant(0x4010000000000000))
+    );
+    assert!(obligations.is_empty());
+}
+
+#[test]
+fn numeric_float_cast_syntax_keeps_pointer_targets_and_c_style_refusals() {
+    for text in [
+        "function probe(x: int32) -> float { x as (float) }",
+        "function probe(x: int32) -> double { (double)x }",
+        "function probe(p: void*) -> void* { p as (float **) }",
+    ] {
+        let error = parser::parse(text).expect_err("unsupported cast spelling");
+        assert_eq!(error.kind, ClickErrorKind::Syntax, "{error:?}");
     }
 }

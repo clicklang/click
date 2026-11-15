@@ -2792,6 +2792,9 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::ApplyInductionUsing { .. }
             | ProofTactic::ApplyTheorem(_)
             | ProofTactic::ApplyTheoremUsing { .. }
+            | ProofTactic::CheckTerminationLocal(_)
+            | ProofTactic::CheckTerminationComponent { .. }
+            | ProofTactic::CheckTerminationCallbacks
             | ProofTactic::Known
             | ProofTactic::Extract(_)
             | ProofTactic::Normalize
@@ -2923,6 +2926,9 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::LetSatisfy(_) => "obtain",
         ProofTactic::Sorry => "sorry",
         ProofTactic::Choose(_) => "choose",
+        ProofTactic::CheckTerminationLocal(_) => "check_termination_local",
+        ProofTactic::CheckTerminationComponent { .. } => "check_termination_component",
+        ProofTactic::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofTactic::Known => "known",
         ProofTactic::Extract(_) => "extract",
         ProofTactic::Normalize => "normalize",

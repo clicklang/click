@@ -140,21 +140,21 @@ void fill(struct arena *arena, int32 start, int32 end) {
                 }
                 have 0 <= k;
                 have k < at(opened, arena->capacity);
-                transport(
-                    at(opened, arena->occupied[k]) == 0,
-                    arena->occupied[k] == 0
-                ) using {
-                    at(opened, arena->occupied) == old(arena->occupied);
-                    arena->occupied == old(arena->occupied);
-                    at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
-                    at(opened, separate(memory(*arena), memory(arena->data[0..arena->capacity])));
-                    at(opened, arena->occupied[k]) == 0;
-                    at(opened, i) < k;
-                    0 <= at(opened, i);
-                    at(opened, i) < at(opened, arena->capacity);
-                    0 <= k;
-                    k < at(opened, arena->capacity);
-                };
+                have at(opened, i) != k by { solve() using { at(opened, i) < k; }; }
+                have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                    apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using { at(opened, i) != k; };
+                }
+                have arena->occupied == at(opened, arena->occupied) by { known(); }
+                have separate(loop(0).statement(0).footprint, memory(arena->occupied[k])) by {
+                    rewrite(arena->occupied, at(opened, arena->occupied));
+                    normalize() using {
+                        at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k])));
+                    };
+                }
+                have arena->occupied[k] == at(opened, arena->occupied[k]) by {
+                    rewrite(arena->occupied, at(opened, arena->occupied));
+                    known();
+                }
                 known();
             }
             step();
