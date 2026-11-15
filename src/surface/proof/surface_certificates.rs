@@ -5006,6 +5006,23 @@ pub(super) fn contract_expression_mentions_program_local(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => false,
+        ContractExpression::Lambda { .. } => {
+            let mut captures = BTreeSet::new();
+            collect_contract_expression_referenced_names(expression, &mut captures);
+            captures
+                .iter()
+                .any(|name| !parameter_names.contains(name.as_str()))
+        }
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            contract_expression_mentions_program_local(function, parameter_names)
+                || arguments.iter().any(|argument| {
+                    contract_expression_mentions_program_local(argument, parameter_names)
+                })
+        }
+
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             contract_expression_mentions_program_local(inner, parameter_names)

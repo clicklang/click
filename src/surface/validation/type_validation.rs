@@ -367,7 +367,9 @@ fn validate_scoped_integer_proposition_one(
                         right,
                         ScopedExpressionShape::AlgebraicMatch,
                     );
-            if !has_range_fold || has_algebraic_match {
+            let has_lambda = contains_scoped_expression_shape(left, ScopedExpressionShape::Lambda)
+                || contains_scoped_expression_shape(right, ScopedExpressionShape::Lambda);
+            if !has_lambda && (!has_range_fold || has_algebraic_match) {
                 if left_kind == Some(true) || right_kind == Some(true) {
                     if left_kind.is_none() || right_kind.is_none() {
                         return Err(ClickError::new(format!(
@@ -426,7 +428,7 @@ fn validate_scoped_integer_proposition_one(
                 }
                 Ok(())
             } else {
-                validate_comparison_expression_types(
+                validate_comparison_expression_types_without_lambda(
                     left,
                     *operator,
                     right,
@@ -570,6 +572,26 @@ fn integer_expression_kind(
         return Some(false);
     }
     match expression {
+        ContractExpression::Apply { function, .. } => match function.as_ref() {
+            ContractExpression::Lambda { result, .. } => Some(*result == ClickType::Integer),
+            _ => lambdas::reduce_head(expression)
+                .ok()
+                .flatten()
+                .and_then(|reduced| {
+                    integer_expression_kind(&reduced, integer_bindings, click_functions, locals)
+                }),
+        },
+        ContractExpression::Let { value, .. }
+            if matches!(value.as_ref(), ContractExpression::Lambda { .. }) =>
+        {
+            lambdas::reduce_head(expression)
+                .ok()
+                .flatten()
+                .and_then(|reduced| {
+                    integer_expression_kind(&reduced, integer_bindings, click_functions, locals)
+                })
+        }
+
         ContractExpression::IntegerLiteral(_) => Some(false),
         ContractExpression::Call { name, arguments } if is_integer_truncation(name) => {
             (arguments.len() == 2).then_some(true)
@@ -741,6 +763,7 @@ fn integer_expression_kind(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ScopedExpressionShape {
+    Lambda,
     RangeFold,
     AlgebraicMatch,
 }
@@ -757,6 +780,20 @@ fn contains_scoped_expression_shape(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => false,
+        ContractExpression::Lambda { body, .. } => {
+            shape == ScopedExpressionShape::Lambda || contains_scoped_expression_shape(body, shape)
+        }
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            shape == ScopedExpressionShape::Lambda
+                || contains_scoped_expression_shape(function, shape)
+                || arguments
+                    .iter()
+                    .any(|argument| contains_scoped_expression_shape(argument, shape))
+        }
+
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
             shape == ScopedExpressionShape::AlgebraicMatch
                 || contains_scoped_expression_shape(scrutinee, shape)
@@ -966,6 +1003,7 @@ fn contains_integer_expression_signal(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum SpecValueType {
+    Function(ClickType),
     Scalar(Option<InterfaceType>),
     Integer,
     Sequence(Option<InterfaceType>),
@@ -974,6 +1012,9 @@ pub(super) enum SpecValueType {
 
 fn spec_value_matches_click_type(actual: &SpecValueType, expected: &ClickType) -> bool {
     match (actual, expected) {
+        (SpecValueType::Function(actual), expected @ ClickType::Function { .. }) => {
+            actual == expected
+        }
         (SpecValueType::Scalar(None), ClickType::Program(_) | ClickType::CObjectPointer { .. }) => {
             true
         }
@@ -1063,6 +1104,7 @@ pub(super) fn narrow_arithmetic_value_type(
 
 pub(super) fn describe_spec_value_type(value_type: &SpecValueType) -> String {
     match value_type {
+        SpecValueType::Function(ty) => describe_click_type(ty),
         SpecValueType::Scalar(Some(interface_type)) => describe_interface_type(*interface_type),
         SpecValueType::Scalar(None) => "a C value".to_string(),
         SpecValueType::Integer => "Integer".to_string(),
@@ -1089,6 +1131,48 @@ pub(super) fn infer_scoped_spec_value_type(
     expected_integer: bool,
 ) -> Result<SpecValueType, ClickError> {
     match expression {
+        ContractExpression::Lambda {
+            parameters,
+            result,
+            body,
+        } => {
+            validate_lambda_value(
+                parameters,
+                result,
+                body,
+                variables,
+                integer_bindings,
+                click_functions,
+                context,
+            )?;
+            Ok(SpecValueType::Function(lambdas::signature(
+                parameters, result,
+            )))
+        }
+        ContractExpression::Apply { function, .. } => {
+            if matches!(function.as_ref(), ContractExpression::Lambda { .. }) {
+                infer_scoped_spec_value_type(
+                    function,
+                    variables,
+                    integer_bindings,
+                    click_functions,
+                    context,
+                    false,
+                )?;
+            }
+            let applied = lambdas::reduce_head(expression)
+                .map_err(ClickError::new)?
+                .expect("an application reduces");
+            infer_scoped_spec_value_type(
+                &applied,
+                variables,
+                integer_bindings,
+                click_functions,
+                context,
+                expected_integer,
+            )
+        }
+
         ContractExpression::ResourceField(access)
             if access.click_type == Some(ClickType::Integer) =>
         {
@@ -1217,6 +1301,11 @@ pub(super) fn infer_scoped_spec_value_type(
                 context,
                 false,
             )?;
+            if matches!(&inner, SpecValueType::Function(_)) {
+                return Err(ClickError::new(
+                    "specification functions cannot be bitwise operands",
+                ));
+            }
             if matches!(&inner, SpecValueType::Integer) {
                 return Err(ClickError::new(format!(
                     "C bitwise operators cannot be applied to mathematical Integer expressions in {context}"
@@ -1349,6 +1438,20 @@ pub(super) fn infer_scoped_spec_value_type(
                     describe_spec_value_type(&value_type)
                 )));
             }
+
+            if matches!(value_type, SpecValueType::Function(_)) {
+                let reduced = lambdas::reduce_head(expression)
+                    .map_err(ClickError::new)?
+                    .ok_or_else(|| ClickError::new("expected a literal lambda binding"))?;
+                return infer_scoped_spec_value_type(
+                    &reduced,
+                    variables,
+                    integer_bindings,
+                    click_functions,
+                    context,
+                    expected_integer,
+                );
+            }
             let mut body_variables = variables.clone();
             let mut body_integer_bindings = integer_bindings.clone();
             body_variables.remove(name);
@@ -1453,6 +1556,12 @@ pub(super) fn infer_scoped_spec_value_type(
                     context,
                     matches!(expected, ClickType::Integer),
                 )?;
+                if matches!(&actual, SpecValueType::Function(_)) {
+                    return Err(ClickError::new(format!(
+                        "function `{name}` argument {index} expects {}, got a specification function in {context}",
+                        describe_click_type(expected)
+                    )));
+                }
                 match expected {
                     ClickType::Integer if !matches!(&actual, SpecValueType::Integer) => {
                         return Err(ClickError::new(format!(
@@ -1505,7 +1614,7 @@ pub(super) fn infer_scoped_spec_value_type(
                     SpecValueType::Scalar(Some(*interface_type))
                 }
                 ClickType::Algebraic(application) => SpecValueType::Algebraic(application.clone()),
-                ClickType::Parameter(_) => SpecValueType::Scalar(None),
+                ClickType::Function { .. } | ClickType::Parameter(_) => SpecValueType::Scalar(None),
             })
         }
         ContractExpression::Old(inner)
@@ -1579,6 +1688,13 @@ fn infer_scoped_arithmetic_operands(
                 "mathematical Integer arithmetic cannot mix with C values in {context}"
             )));
         }
+    }
+    if matches!(&left_type, SpecValueType::Function(_))
+        || matches!(&right_type, SpecValueType::Function(_))
+    {
+        return Err(ClickError::new(format!(
+            "specification functions cannot be arithmetic operands in {context}"
+        )));
     }
     Ok((left_type, right_type))
 }
@@ -1807,6 +1923,40 @@ fn validate_comparison_expression_types(
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
+    if contains_scoped_expression_shape(left, ScopedExpressionShape::Lambda)
+        || contains_scoped_expression_shape(right, ScopedExpressionShape::Lambda)
+    {
+        let proposition = ClickProposition::Comparison {
+            left: left.clone(),
+            operator,
+            right: right.clone(),
+        };
+        return validate_theorem_proposition_expression_types(
+            &proposition,
+            variables,
+            &BTreeSet::new(),
+            click_functions,
+            context,
+        );
+    }
+    validate_comparison_expression_types_without_lambda(
+        left,
+        operator,
+        right,
+        variables,
+        click_functions,
+        context,
+    )
+}
+
+fn validate_comparison_expression_types_without_lambda(
+    left: &ContractExpression,
+    operator: ComparisonOperator,
+    right: &ContractExpression,
+    variables: &BTreeMap<String, InterfaceType>,
+    click_functions: &BTreeMap<String, ClickFunctionType>,
+    context: &str,
+) -> Result<(), ClickError> {
     let mut locals = BTreeSet::new();
     let no_integer_parameters = BTreeSet::new();
     let left_kind =
@@ -1831,6 +1981,10 @@ fn validate_comparison_expression_types(
     refuse_bool_literal_comparison(left, &left_type, right, &right_type, context)?;
     refuse_bool_integer_comparison(left, &left_type, operator, right, &right_type, context)?;
     match (left_type, right_type) {
+        (SpecValueType::Function(_), _) | (_, SpecValueType::Function(_)) => Err(ClickError::new(
+            "specification functions cannot be compared; apply them to values instead",
+        )),
+
         (SpecValueType::Scalar(element), SpecValueType::Sequence(sequence))
             if operator == ComparisonOperator::In =>
         {
@@ -2166,6 +2320,10 @@ fn return_type_needs_instantiation(click_type: &ClickType) -> bool {
     match click_type {
         ClickType::Resource => false,
         ClickType::Parameter(_) | ClickType::Program(InterfaceType::ParameterPointer(_)) => true,
+        ClickType::Function { parameters, result } => {
+            parameters.iter().any(return_type_needs_instantiation)
+                || return_type_needs_instantiation(result)
+        }
         ClickType::Algebraic(application) => application
             .arguments
             .iter()
@@ -2181,6 +2339,24 @@ fn infer_spec_value_type(
     context: &str,
 ) -> Result<SpecValueType, ClickError> {
     match expression {
+        ContractExpression::Lambda {
+            parameters, result, ..
+        } => Ok(SpecValueType::Function(lambdas::signature(
+            parameters, result,
+        ))),
+        ContractExpression::Apply { function, .. } => Ok(
+            match lambdas::application_result_type(function).map_err(ClickError::new)? {
+                ClickType::Integer => SpecValueType::Integer,
+                ClickType::Program(ty)
+                | ClickType::CObjectPointer {
+                    interface_type: ty, ..
+                } => SpecValueType::Scalar(Some(ty)),
+                ClickType::Algebraic(ty) => SpecValueType::Algebraic(ty),
+                ty @ ClickType::Function { .. } => SpecValueType::Function(ty),
+                ClickType::Parameter(_) | ClickType::Resource => SpecValueType::Scalar(None),
+            },
+        ),
+
         ContractExpression::ResourceField(access)
             if access.click_type == Some(ClickType::Integer) =>
         {
@@ -2396,7 +2572,7 @@ fn infer_spec_value_type(
                                     interface_type.map(ClickType::Program)
                                 }
                                 SpecValueType::Integer => Some(ClickType::Integer),
-                                SpecValueType::Sequence(_) => None,
+                                SpecValueType::Sequence(_) | SpecValueType::Function(_) => None,
                             },
                         )
                     })
@@ -2435,7 +2611,7 @@ fn infer_spec_value_type(
                     SpecValueType::Scalar(Some(interface_type))
                 }
                 ClickType::Integer => SpecValueType::Integer,
-                ClickType::Parameter(_) => SpecValueType::Scalar(None),
+                ClickType::Function { .. } | ClickType::Parameter(_) => SpecValueType::Scalar(None),
             })
         }
         _ => Ok(SpecValueType::Scalar(infer_contract_expression_type(
@@ -2895,6 +3071,15 @@ pub(in crate::surface) fn describe_interface_type(interface_type: InterfaceType)
 pub(in crate::surface) fn describe_click_type(click_type: &ClickType) -> String {
     match click_type {
         ClickType::Resource => "Resource".into(),
+        ClickType::Function { parameters, result } => format!(
+            "fn({}) -> {}",
+            parameters
+                .iter()
+                .map(describe_click_type)
+                .collect::<Vec<_>>()
+                .join(", "),
+            describe_click_type(result)
+        ),
         ClickType::Parameter(name) => name.clone(),
         ClickType::Program(interface_type) => describe_interface_type(*interface_type),
         ClickType::CObjectPointer {
@@ -3189,6 +3374,15 @@ pub(super) fn infer_contract_expression_type(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => Ok(None),
+        ContractExpression::Lambda { .. } => Err(ClickError::new(
+            "a specification lambda is not a scalar value",
+        )),
+        ContractExpression::Apply { function, .. } => {
+            Ok(lambdas::application_result_type(function)
+                .map_err(ClickError::new)?
+                .interface_type())
+        }
+
         ContractExpression::ResourceField(access) => match &access.click_type {
             Some(ClickType::Program(ty)) => Ok(Some(*ty)),
             Some(ClickType::Integer) => Ok(None),
@@ -3388,6 +3582,7 @@ pub(super) fn infer_contract_expression_type(
                 SpecValueType::Integer
                 | SpecValueType::Scalar(None)
                 | SpecValueType::Sequence(_)
+                | SpecValueType::Function(_)
                 | SpecValueType::Algebraic(_) => None,
             },
         ),
@@ -4519,6 +4714,12 @@ fn validate_contract_expression_calls(
     if deep_literal_add_type(expression).is_some() {
         return Ok(());
     }
+    if let Some(reduced) = lambdas::reduce_head(expression).map_err(ClickError::new)? {
+        if let ContractExpression::Let { value, .. } = expression {
+            validate_contract_expression_calls(value, click_functions, context)?;
+        }
+        return validate_contract_expression_calls(&reduced, click_functions, context);
+    }
     match expression {
         ContractExpression::Resource(subject) => {
             validate_resource_subject_calls(subject, click_functions, context)
@@ -4526,6 +4727,11 @@ fn validate_contract_expression_calls(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => Ok(()),
+        ContractExpression::Lambda { body, .. } => {
+            validate_contract_expression_calls(body, click_functions, context)
+        }
+        ContractExpression::Apply { .. } => unreachable!("applications reduce above"),
+
         ContractExpression::IntegerLiteral(_) => Ok(()),
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             validate_contract_expression_calls(inner, click_functions, context)
@@ -4745,4 +4951,109 @@ fn validate_if_condition_proposition(
             "predicate call `{name}` is not supported in `if` expression condition in {context}"
         ))),
     }
+}
+
+/// Check a lambda using only names mentioned by its body, never copying an
+/// unrelated ambient typing environment. Memory-dependent functions await
+/// an explicit account of guards and snapshots.
+fn validate_lambda_value(
+    parameters: &[(String, ClickType)],
+    result: &ClickType,
+    body: &ContractExpression,
+    variables: &BTreeMap<String, InterfaceType>,
+    integer_bindings: &BTreeSet<String>,
+    functions: &BTreeMap<String, ClickFunctionType>,
+    context: &str,
+) -> Result<(), ClickError> {
+    let supported = |ty: &ClickType| {
+        *ty == ClickType::Integer
+            || ty
+                .interface_type()
+                .is_some_and(|ty| type_is_arithmetic(ty) && ty != InterfaceType::Void)
+    };
+    if !supported(result) || parameters.iter().any(|(_, ty)| !supported(ty)) {
+        return Err(ClickError::new(
+            "lambda parameters and results currently require Integer or C scalar types",
+        ));
+    }
+    let mut callees = Vec::new();
+    if contract_expression_reads_memory(body, &mut callees) {
+        return Err(ClickError::new(
+            "specification lambdas cannot read memory yet; capture a value instead",
+        ));
+    }
+    if let Some(name) = callees.iter().find(|name| {
+        !is_integer_conversion(name)
+            && !is_integer_truncation(name)
+            && name.as_str() != "to_nat"
+            && !functions
+                .get(generic_instance_source_name(name))
+                .is_some_and(|function| function.memory_independent)
+    }) {
+        return Err(ClickError::new(format!(
+            "specification lambdas cannot call memory-dependent function `{name}`"
+        )));
+    }
+    let mut names = BTreeSet::new();
+    collect_contract_expression_referenced_names(body, &mut names);
+    let mut local_variables = BTreeMap::new();
+    let mut local_integers = BTreeSet::new();
+    for name in names {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(ty) = variables.get(&name) {
+            local_variables.insert(name.clone(), *ty);
+        }
+        if integer_bindings.contains(&name) {
+            local_integers.insert(name);
+        }
+    }
+    for (name, ty) in parameters {
+        local_variables.remove(name);
+        local_integers.remove(name);
+        if *ty == ClickType::Integer {
+            local_integers.insert(name.clone());
+        } else if let Some(ty) = ty.interface_type() {
+            local_variables.insert(name.clone(), ty);
+        }
+    }
+    let mut actual = infer_scoped_spec_value_type(
+        body,
+        &local_variables,
+        &local_integers,
+        functions,
+        context,
+        *result == ClickType::Integer,
+    )?;
+    if !spec_value_matches_click_type(&actual, result) {
+        if let Some(narrow) =
+            narrow_arithmetic_value_type(body, result, "lambda result", &mut |leaf| {
+                infer_scoped_spec_value_type(
+                    leaf,
+                    &local_variables,
+                    &local_integers,
+                    functions,
+                    context,
+                    false,
+                )
+            })?
+        {
+            actual = narrow;
+        }
+    }
+    if !spec_value_matches_click_type(&actual, result)
+        || (*result == ClickType::Program(InterfaceType::Bool)
+            && actual != SpecValueType::Scalar(Some(InterfaceType::Bool)))
+    {
+        return Err(ClickError::new(format!(
+            "lambda result expects {}, got {}",
+            describe_click_type(result),
+            describe_spec_value_type(&actual)
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/surface/validation/type_validation.rs");
 }

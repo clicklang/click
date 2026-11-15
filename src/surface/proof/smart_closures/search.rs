@@ -1903,7 +1903,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let replacement = match &click_type {
-            ClickType::Resource => return Ok(None),
+            ClickType::Function { .. } | ClickType::Resource => return Ok(None),
             ClickType::Integer | ClickType::Algebraic(_) => {
                 ContractExpression::Binding(choice_name.clone())
             }

@@ -73,6 +73,7 @@ mod generics;
 pub(crate) use generics::primitive_instance_type;
 mod integer_conversions;
 mod integer_truncation;
+mod lambdas;
 mod lowering;
 mod modules;
 mod names;
@@ -263,6 +264,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "field",
     "fold",
     "forall",
+    "fn",
     "function",
     "gather",
     "give",
@@ -387,6 +389,8 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "import",
     "iterated-ownership",
     "implies",
+    "lambda",
+    "lambda-application",
     "let-where",
     "match-expression",
     "not",
@@ -1090,6 +1094,11 @@ pub enum ClickType {
     /// An exact, specification-only signed integer with no C representation.
     Integer,
     Algebraic(AlgebraicTypeApplication),
+    /// A pure specification function; never a C function pointer.
+    Function {
+        parameters: Vec<ClickType>,
+        result: Box<ClickType>,
+    },
 }
 
 impl ClickType {
@@ -1101,7 +1110,7 @@ impl ClickType {
                 Some(*interface_type)
             }
             Self::Integer => None,
-            Self::Algebraic(_) => None,
+            Self::Algebraic(_) | Self::Function { .. } => None,
         }
     }
 }
@@ -1678,6 +1687,7 @@ struct ClickFunctionType {
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
     return_type: ClickType,
+    memory_independent: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3013,6 +3023,26 @@ pub(crate) fn collect_current_contract_expression_variables(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => {}
+        ContractExpression::Lambda {
+            parameters, body, ..
+        } => {
+            let mut captures = BTreeSet::new();
+            collect_current_contract_expression_variables(body, &mut captures);
+            for (name, _) in parameters {
+                captures.remove(name);
+            }
+            names.extend(captures);
+        }
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            collect_current_contract_expression_variables(function, names);
+            for argument in arguments {
+                collect_current_contract_expression_variables(argument, names);
+            }
+        }
+
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::AlgebraicVariable { name, .. } => {
             names.insert(name.clone());
@@ -3344,6 +3374,17 @@ pub enum SurfaceTerm {
         condition: Box<ClickProposition>,
         then_branch: Box<ContractExpression>,
         else_branch: Box<ContractExpression>,
+    },
+    /// A typed, lexically scoped pure specification function.
+    Lambda {
+        parameters: Vec<(String, ClickType)>,
+        result: ClickType,
+        body: Box<ContractExpression>,
+    },
+    /// Application of an expression whose value is a specification function.
+    Apply {
+        function: Box<ContractExpression>,
+        arguments: Vec<ContractExpression>,
     },
     RangeFold {
         start: Box<ContractExpression>,
@@ -7901,6 +7942,17 @@ fn contract_expression_reads_memory(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => false,
+        ContractExpression::Lambda { body, .. } => contract_expression_reads_memory(body, callees),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            contract_expression_reads_memory(function, callees)
+                || arguments
+                    .iter()
+                    .any(|argument| contract_expression_reads_memory(argument, callees))
+        }
+
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
@@ -8014,7 +8066,14 @@ fn contract_expression_reads_memory(
                     .any(|argument| contract_expression_reads_memory(argument, callees))
         }
         ContractExpression::Call { name, arguments } => {
-            callees.push(name.clone());
+            // Numeric conversions and exact integer operations are pure;
+            // any memory read remains visible in their explicit arguments.
+            if !integer_conversions::is_integer_conversion(name)
+                && !integer_truncation::is_integer_truncation(name)
+                && name != "to_nat"
+            {
+                callees.push(name.clone());
+            }
             arguments
                 .iter()
                 .any(|argument| contract_expression_reads_memory(argument, callees))
@@ -9649,6 +9708,7 @@ impl FunctionParameter {
             ClickType::Program(interface_type)
             | ClickType::CObjectPointer { interface_type, .. } => *interface_type,
             ClickType::Integer => panic!("a mathematical Integer parameter has no C type"),
+            ClickType::Function { .. } => panic!("a specification function has no C type"),
             ClickType::Algebraic(_) => {
                 panic!("an algebraic Click parameter has no C type")
             }

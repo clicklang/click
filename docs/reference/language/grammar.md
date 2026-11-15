@@ -575,12 +575,49 @@ C fragments use C-like precedence. From lowest to highest:
 | 8 | supported unary operators | Prefix |
 | 9 | calls, indexing, member access | Left, postfix |
 
-A sidecar has no `&&` or `||`: conjunction and disjunction are the
-proposition connectives `and` and `or`, and a sidecar that writes `&&` or
-`||` is refused with that spelling.
+Conjunction and disjunction are the proposition connectives `and` and `or`.
+The C logical operators `&&` and binary `||` are refused with those spellings.
+A nullary specification lambda uses `||` for its empty parameter list.
 
 This table describes the parser, not all of ISO C. The normative set of types,
 statements, and operators that Click accepts is in [Supported C](c.md).
+
+## Specification lambdas
+
+A lambda is a lexical specification value. Each parameter and the result have
+an explicit type: `|x: Integer| -> Integer { x + 1 }`. Call a lambda value with
+ordinary application syntax, `f(value)`, or apply an expression directly,
+`(|x: Integer| -> Integer { x + 1 })(3)`. Arguments are bound simultaneously,
+so a parameter never captures a name in another argument. A nullary lambda
+can be applied as `(|| -> Integer { 7 })()`.
+
+Expression-local `let` bindings can name and alias lambdas. A local annotation
+uses `fn` to spell the function signature, as `fn(Integer) -> Integer`;
+otherwise the literal determines its type. Captures retain their lexical binding across
+later shadowing. Lambdas are nonrecursive values: the name a `let` introduces
+is not in scope in its initializer.
+
+<!-- verified-example: mdtests/typed_lambdas.md -->
+```click
+function captured(offset: Integer) -> Integer {
+    let add = |x: Integer| -> Integer { x + offset };
+    let offset: Integer = 100;
+    add(2)
+}
+```
+
+This first slice supports `Integer`, `Bool`, 8–64 bit integers, and
+floating-point scalar parameters and results. The result type checks the body even when the lambda
+is unused. Lambdas may capture pure values and other local lambdas; they may
+call named specification functions classified as independent of C memory.
+Memory reads, resource observations, and snapshot selectors inside lambda
+bodies are refused. Function-valued declaration parameters and results,
+function equality, proposition-valued lambdas, and algebraic lambda
+parameters/results are not supported yet. `.all`, `.any`, and `.fold` retain
+their existing inline binder syntax; they do not yet accept lambda values.
+
+Applications elaborate to typed lexical value bindings, using existing kernel
+terms. They introduce no higher-order proof search or automatic extensionality.
 
 ## Ranges and binders
 
