@@ -85,3 +85,52 @@ fn float_inequality_lowering_preserves_ieee_constant_results() {
         }
     }
 }
+
+#[test]
+fn float_call_results_retain_nested_arguments_and_match_native_production() {
+    let _session = VerificationSession::enter();
+    for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+        let call = |argument| SpecExpression::PureFunctionApplication {
+            name: "float_step".into(),
+            arguments: vec![SpecPureFunctionArgument::Value(argument)],
+            result_type: format.program_type(),
+            pointer_result: None,
+            result_object_class: None,
+            projection: None,
+        };
+        let expression = call(call(SpecExpression::Value(
+            format.value(MachineTerm::Variable(Variable(1008203))),
+        )));
+        let state = ExecutionState::new();
+        let scope = SpecScope::unbound(&state, None);
+        let exports = KernelTermExport::float_export_count();
+        let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            scope,
+            &expression,
+            &PureFactContext::new(),
+            &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+        )
+        .unwrap();
+        let root = paths[0].value.shared().unwrap();
+        assert!(matches!(root.node(), KernelTermNode::FloatCall(_)));
+        assert!(matches!(
+            root.children()[0].node(),
+            KernelTermNode::FloatCall(_)
+        ));
+        assert_eq!(KernelTermExport::float_export_count(), exports);
+        let mut execution = ExecutionBudget::new();
+        let mut budget = SpecEvaluation::logical(&mut execution);
+        budget.machine_result_production_disabled = true;
+        let native = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            scope,
+            &expression,
+            &PureFactContext::new(),
+            &mut budget,
+        )
+        .unwrap();
+        assert_eq!(
+            paths[0].value.clone().into_native(),
+            native[0].value.clone().into_native()
+        );
+    }
+}

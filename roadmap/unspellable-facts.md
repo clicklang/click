@@ -732,7 +732,7 @@ existing polarity error: float `!=` already carries `NotEqual`, so lowering
 must not negate it again. Ordinary, NaN and signed-zero cases retain their IEEE
 meaning in propositions and Boolean values.
 
-8y retains float comparisons and classifications as typed Boolean nodes with
+8y ([PR #2897](https://github.com/clicklang/click/pull/2897)) retains float comparisons and classifications as typed Boolean nodes with
 common float operands. Borrowed predicate readers preserve comparison width,
 operator, classification and exact operand syntax, including signed-zero and
 NaN payloads. These are structural constructors; existing producers retain
@@ -743,6 +743,21 @@ condition export and selected Boolean rewrite/key adapters remain explicit
 boundaries for the closure audit; this does not migrate float calls or storage.
 The 90 focused float checks, float fact-stability audit (zero differences),
 2,155 reader/scaling checks and quality checks passed.
+
+8z retains typed Click float calls with common argument roots and result width.
+Original `Value(machine)` versus `SharedMachine` argument carriers remain
+exact, as for algebraic calls. Native float-call import/export is iterative;
+constructing nested shared calls does not export their argument prefixes.
+Specification production retains float arguments through float-result calls,
+and Surface raising uses the existing function-call spelling in the separate
+float renderer. Variable readers, certification admission, load detection and
+candidate fingerprints preserve their existing policies. Call argument
+fingerprints remain exact under the memory-blind selector and stable across
+verification sessions, using the existing memo for shared float prefixes.
+Selected nonfloat argument payload adapters remain for 8ac; unknown untyped
+native intrinsic calls remain explicit legacy boundaries for 8ad. Execution
+and memory handoffs remain 8aa–8ab. The 101 focused float, fixture and deep
+integer-synthesis checks passed, with zero float fact-stability differences.
 
 ### 8a inventory
 

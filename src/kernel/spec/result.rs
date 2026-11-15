@@ -277,11 +277,14 @@ impl SpecCallArgument {
         }
     }
 
-    pub(super) fn into_algebraic_call_operand(
-        self,
-    ) -> (KernelTerm, Option<SharedMachineIntegerTerm>) {
+    pub(super) fn into_typed_call_operand(self) -> (KernelTerm, Option<SharedMachineIntegerTerm>) {
         match self {
-            Self::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => (root, None),
+            Self::Shared(root)
+                if matches!(root.ty(), KernelType::Algebraic(_))
+                    || FloatOperandView::from_shared(&root).is_some() =>
+            {
+                (root, None)
+            }
             Self::Shared(root) if matches!(root.ty(), KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some()) =>
             {
                 let KernelType::Program(ty) = root.ty() else {
@@ -309,6 +312,11 @@ impl SpecCallArgument {
         match self {
             Self::Native(value) => value,
             Self::Shared(value) => {
+                if FloatOperandView::from_shared(&value).is_some() {
+                    return PureFunctionArgument::Value(
+                        KernelTermExport::float(&value).expect("selected float argument boundary"),
+                    );
+                }
                 if matches!(value.ty(), KernelType::Algebraic(_)) {
                     return PureFunctionArgument::Algebraic(
                         KernelTermExport::default()
@@ -360,7 +368,7 @@ mod pointer_observation_tests {
             assert_eq!(shared.clone().into_native(), value);
             let argument = SpecCallArgument::from_value(shared);
             assert_eq!(argument.native_descriptor(), Some(&expected));
-            let (restored, carrier) = argument.into_algebraic_call_operand();
+            let (restored, carrier) = argument.into_typed_call_operand();
             assert_eq!(restored, root);
             assert!(carrier.is_none());
         }

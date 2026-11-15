@@ -3878,6 +3878,7 @@ fn evaluate_spec_algebraic_call_in(
                     argument,
                     &path_assumptions,
                     false,
+                    false,
                     budget,
                 )?
             };
@@ -3941,7 +3942,7 @@ fn evaluate_spec_algebraic_call_in(
                         name.to_owned(),
                         arguments
                             .into_iter()
-                            .map(SpecCallArgument::into_algebraic_call_operand)
+                            .map(SpecCallArgument::into_typed_call_operand)
                             .collect(),
                     ))
                 },
@@ -5539,6 +5540,7 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
                 scope,
                 argument,
                 &path_assumptions,
+                false,
                 false,
                 budget,
             )?;
@@ -7893,6 +7895,8 @@ fn evaluate_spec_pure_function_application_paths_in(
                 argument,
                 &path_assumptions,
                 result_type.is_pointer(),
+                KernelFloatType::from_program_type(result_type).is_some()
+                    && !budget.machine_result_production_disabled,
                 budget,
             )?;
             let mut argument_paths = argument_paths.into_iter().peekable();
@@ -7955,6 +7959,24 @@ fn evaluate_spec_pure_function_application_paths_in(
                 value: KernelTermImport::default()
                     .machine_call(format, &application)
                     .into(),
+                facts,
+                obligations,
+            });
+            continue;
+        }
+        if !budget.machine_result_production_disabled
+            && let Some(format) = KernelFloatType::from_program_type(result_type)
+        {
+            results.push(SpecExpressionPath {
+                value: KernelTerm::float_call(
+                    format,
+                    name.to_owned(),
+                    arguments
+                        .into_iter()
+                        .map(SpecCallArgument::into_typed_call_operand)
+                        .collect(),
+                )
+                .into(),
                 facts,
                 obligations,
             });
@@ -8041,7 +8063,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                     name.to_owned(),
                     arguments
                         .into_iter()
-                        .map(SpecCallArgument::into_algebraic_call_operand)
+                        .map(SpecCallArgument::into_typed_call_operand)
                         .collect(),
                 )
                 .into(),
@@ -8309,6 +8331,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
     argument: &SpecPureFunctionArgument,
     assumptions: &PureFactContext,
     retain_pointers: bool,
+    retain_floats: bool,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPureFunctionArgumentPath>> {
     let state = scope.state;
@@ -8323,6 +8346,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 argument,
                 assumptions,
                 retain_pointers,
+                retain_floats,
                 budget,
             )?;
             Ok(paths
@@ -8406,7 +8430,11 @@ fn evaluate_spec_pure_function_argument_paths_in(
             Ok(paths
                 .into_iter()
                 .map(|path| SpecPureFunctionArgumentPath {
-                    value: if !retain_pointers && path.value.program_type().is_pointer() {
+                    value: if retain_floats
+                        && KernelFloatType::from_program_type(path.value.program_type()).is_some()
+                    {
+                        SpecCallArgument::Shared(path.value.common_operand())
+                    } else if !retain_pointers && path.value.program_type().is_pointer() {
                         SpecCallArgument::Native(PureFunctionArgument::Value(
                             path.value.into_native(),
                         ))
