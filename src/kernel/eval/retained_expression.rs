@@ -1,6 +1,6 @@
 //! Execution arithmetic retains produced operands across expression paths.
 //! Native operators remain explicit boundaries for unmigrated operations and
-//! pointer arithmetic; they retain their original metadata and definedness.
+//! value families; they retain their original metadata and definedness.
 use super::*;
 use crate::kernel::execution_value::ExecutionValue;
 type ExecutionValuePath = ExpressionPath<ExecutionValue>;
@@ -20,6 +20,21 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExecutionValuePath>> {
+    if let ProgramExpression::StepResult { step, .. } = expression
+        && let Some(value) = state
+            .step_results
+            .as_ref()
+            .and_then(|results| results.get(step))
+        && value.value().shared().is_some()
+    {
+        budget.consume_expression_step()?;
+        budget.check_path_width(1)?;
+        return Ok(vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(value.value().clone()),
+            facts: ExecutionFacts::new(),
+            obligations: vec![],
+        }]);
+    }
     if let ProgramExpression::Variable(name) = expression
         && !state.locals.is_array_object(name)
         && !state.locals.is_aggregate_object(name)
@@ -1672,5 +1687,112 @@ mod tests {
 
     mod scaling_tests {
         include!("../../scaling_tests/kernel/eval/retained_expression/tests.rs");
+    }
+    #[test]
+    fn pointer_steps_keep_nested_read_call_and_arithmetic_roots_through_storage() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source_memory = Memory::new();
+        let source_address = Pointer::symbolic(Variable(1027900));
+        let read = ExecutionValue::retain_native(
+            source_memory.symbolic_pointer_load(&source_address, ProgramType::Int32Pointer),
+        );
+        let read_root = read.shared().unwrap().clone();
+        let call_root = KernelTerm::shared_pointer_call(
+            KernelTerm::checked_call(
+                KernelType::Program(ProgramType::Int32Pointer),
+                "nested".into(),
+                vec![read_root.clone()],
+            ),
+            SharedPointerValue::import(&PointerValue::new(
+                Memory::local_pointer("pointer_step_pointee"),
+                ProgramType::Int32Pointer,
+            )),
+        );
+        let mut state = ExecutionState::new();
+        state.set_memory(
+            Memory::new().with_block(Memory::local_pointer("pointer_step_pointee").block, 16),
+        );
+        state.locals.set_retained_typed_with_all_qualifiers(
+            "p",
+            ExecutionValue::Shared(call_root.clone()),
+            ProgramType::Int32Pointer,
+            false,
+            false,
+            false,
+            false,
+        );
+        let statement = ProgramStatement::StepValue {
+            step: 11,
+            expression: ProgramExpression::Add(
+                Box::new(ProgramExpression::Variable("p".into())),
+                Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                    MachineTerm::constant(1),
+                ))),
+            ),
+            value_type: Some(ProgramType::Int32Pointer),
+            pointee_constant: false,
+        };
+        let result = super::super::statements::execute_execution_statement(
+            &state,
+            &statement,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        let StatementOutcome::Normal(after) = result else {
+            panic!("pointer step: {result:?}")
+        };
+        let expression = ProgramExpression::StepResult {
+            step: 11,
+            origin: crate::kernel::StepOrigin::Operator(crate::kernel::OperatorKind::Ternary),
+        };
+        let paths = evaluate_expression_value_paths(
+            &after,
+            &expression,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let ExpressionOutcome::Value(value) = &paths[0].outcome else {
+            panic!("step receipt")
+        };
+        let root = value.shared().unwrap();
+        let KernelTermNode::PointerArithmetic { operands, .. } = root.node() else {
+            panic!("arithmetic root")
+        };
+        assert_eq!(operands[0], call_root);
+        let KernelTermNode::PointerCall { call, .. } = operands[0].node() else {
+            panic!("call root")
+        };
+        let KernelTermNode::Call { arguments, .. } = call.node() else {
+            panic!("call arguments")
+        };
+        assert_eq!(arguments[0], read_root);
+        let KernelTermNode::PointerRead { memory, .. } = arguments[0].node() else {
+            panic!("snapshot read")
+        };
+        assert_eq!(memory, &crate::kernel::intern_memory_ref(&source_memory));
+        let address = Memory::local_pointer("pointer_step_cell");
+        let stored = after
+            .memory
+            .clone()
+            .with_block(address.block.clone(), 8)
+            .store_retained(address.clone(), value.clone());
+        let loaded = super::super::memory_loads::evaluate_retained_memory_load_paths(
+            &stored,
+            address,
+            ProgramType::Int32Pointer,
+            ExecutionFacts::new(),
+            vec![],
+            &PureFactContext::new(),
+            false,
+            false,
+            None,
+            None,
+        );
+        let ExpressionOutcome::Value(loaded) = &loaded[0].outcome else {
+            panic!("memory receipt")
+        };
+        assert_eq!(loaded.shared(), Some(root));
+        assert_eq!(after.step_result(11), Some(&value.native().into_owned()));
     }
 }

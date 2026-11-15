@@ -10184,7 +10184,7 @@ pub struct ExecutionState {
     /// call step sets one, the rest of the statement reads it, and the
     /// statement's end drops what it read. `None` is the canonical state at
     /// every statement boundary.
-    pub(crate) step_results: Option<Arc<BTreeMap<u32, ProgramValue>>>,
+    pub(crate) step_results: Option<Arc<BTreeMap<u32, StoredMemoryValue>>>,
 }
 
 /// What made a statement's step result.
@@ -10276,15 +10276,29 @@ impl ProgramExpression {
 impl ExecutionState {
     /// Records the term call `call` of the running statement returned.
     pub(super) fn set_step_result(&mut self, call: u32, value: ProgramValue) {
+        self.set_retained_step_result(call, value.into());
+    }
+
+    /// Keep an executed pointer producer through its statement-local handoff.
+    /// This uses the same native-key carrier as memory, without changing the
+    /// key or admitting other value families into common storage.
+    pub(super) fn set_retained_step_result(
+        &mut self,
+        call: u32,
+        value: crate::kernel::ExecutionValue,
+    ) {
         let mut results = self.step_results.as_deref().cloned().unwrap_or_default();
-        results.insert(call, value);
+        results.insert(call, value.into());
         self.step_results = Some(Arc::new(results));
     }
 
     /// The term call `call` of the running statement returned, once its call
     /// step has run.
     pub(crate) fn step_result(&self, call: u32) -> Option<&ProgramValue> {
-        self.step_results.as_ref()?.get(&call)
+        self.step_results
+            .as_ref()?
+            .get(&call)
+            .map(StoredMemoryValue::native)
     }
 
     /// Ends the results of `steps`: their reader has read them.

@@ -278,3 +278,59 @@ fn complete_c_and_rust_machine_handoffs_retain_roots_without_prefix_exports() {
         );
     }
 }
+
+#[test]
+fn retained_pointer_step_receipts_do_not_walk_dags_or_sibling_results() {
+    for unrelated in [0, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut state = ExecutionState::new();
+        for n in 0..unrelated {
+            state.set_step_result(1000 + n, ProgramValue::Int32(MachineTerm::constant(n)));
+        }
+        for size in [16, 64, 256] {
+            let mut argument =
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1027950));
+            for _ in 0..size {
+                argument = KernelTerm::machine_binary_shared(
+                    MachineIntegerType::Int32,
+                    Op::Add,
+                    [argument.clone(), argument],
+                );
+            }
+            let root = KernelTerm::shared_pointer_call(
+                KernelTerm::checked_call(
+                    KernelType::Program(ProgramType::Int32Pointer),
+                    "step".into(),
+                    vec![argument],
+                ),
+                SharedPointerValue::import(&PointerValue::new(
+                    Pointer::symbolic(Variable(1027951)),
+                    ProgramType::Int32Pointer,
+                )),
+            );
+            state.set_retained_step_result(11, root.clone().into());
+            let expression = ProgramExpression::StepResult {
+                step: 11,
+                origin: crate::kernel::StepOrigin::Call("step".into()),
+            };
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..16 {
+                    let paths = evaluate_expression_value_paths(
+                        &state,
+                        &expression,
+                        &PureFactContext::new(),
+                        &mut ExecutionBudget::new(),
+                    )
+                    .unwrap();
+                    let ExpressionOutcome::Value(value) = &paths[0].outcome else {
+                        panic!("step receipt")
+                    };
+                    assert_eq!(value.shared(), Some(&root));
+                }
+            });
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work <= 64, "size={size} unrelated={unrelated} work={work}");
+        }
+    }
+}

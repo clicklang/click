@@ -60,11 +60,14 @@ Already landed:
   branch/indexing controls. Specification reads no longer emit C access events.
 
 **The split is not complete.** Common roots are live for supported numeric
-evaluation, calls, execution handoffs, range folds, and numeric/algebraic match
-results. Remaining work includes complete-pointer/address boundaries, other
-Boolean and opaque result families, the general raise/lower and certificate
-boundary, and duplicate storage removal. Named native compatibility consumers
-remain explicit; closing chunk 6 does not close those other packages. These are
+evaluation, calls, execution handoffs, range folds, numeric/algebraic match
+results, and complete pointers/read addresses. Chunk 7 covers pointer formation,
+arithmetic, calls, branches, locals, returns, temporary statement results and
+memory storage/receipt. Remaining packages are Boolean and opaque result
+families (8), the general raise/lower and certificate boundary (9), and duplicate
+storage removal/final closure (10). Named native checking, ABI, nonpointer-cell
+and presentation compatibility consumers remain explicit; closing chunk 7 does
+not close those packages. These are
 representation boundaries, not a count of every remaining verifier defect.
 
 The previous document interleaved open boxes with later paragraphs completing
@@ -86,7 +89,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 4 | Mixed-width arithmetic and casts | Implemented as subchunks 4a–4j below, one PR per subchunk. Numeric producers retain shared operands and results within the existing supported profile. General call and nonnumeric compatibility boundaries belong to the remaining packages; the previous combined branch stays unmerged reference material. |
 | 5 | C/Rust execution result carriers | Supported machine handoffs implemented in 5a–5g below: expression paths, local bindings, returns and caller receipt retain common roots. Native memory-cell, specification and presentation boundaries remain explicit. |
 | 6 | Folds, binders and algebraic matches | Implemented as 6a–6n below. Common fold and numeric/algebraic match results retain scoped children; remaining native consumers are named compatibility boundaries. |
-| 7 | Complete pointers and read addresses | Delivery sequence 7a–7u below; shared offset preparation starts the package. |
+| 7 | Complete pointers and read addresses | Implemented as 7a–7u below, one PR per slice. Supported pointer producers and execution/storage handoffs retain common roots; checking and Surface consumers preserve metadata, snapshot identity and existing rules. |
 | 8 | Remaining Boolean and opaque expression payloads | Open |
 | 9 | Unified raising/lowering and certificate boundaries | Open |
 | 10 | Duplicate storage removal and final closure | Open |
@@ -363,6 +366,21 @@ existing conversions. Cell equality/hash/order and native diagnostic views keep
 the previous payload identity. Logical reads still name their snapshot version;
 alias rules, metadata, refusals and history limits are unchanged. Other cell
 families remain explicit native payloads.
+
+7u removes the superseded native candidate-selection and union-copy adapters.
+Temporary call/operator/prior-assignment results use the same native-key pointer
+carrier as memory, so a statement's `StepResult` keeps its producer root. Existing
+native result typing, missing-result errors, source names and diagnostic payloads
+remain unchanged. Closure regressions cover nested snapshot-read/call/arithmetic
+children through temporary results, stores and loads, plus selected-result scaling;
+the common-pointer Surface round-trip suite remains part of validation.
+
+Package 7 does not remove all native compatibility data. Pointer checking still
+uses selected cached native payloads, complete pointer-carrying integer records
+retain their representation metadata, aggregate ABI operations keep their existing
+native interfaces, and nonpointer memory families are not migrated by this package.
+The remaining packages above own general boundary unification and duplicate
+storage removal. No new pointer semantics, syntax, indexes or budgets were added.
 
 ## Chunk 6: folds, binders and algebraic matches
 

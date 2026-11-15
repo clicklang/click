@@ -5907,7 +5907,7 @@ fn state_call_result(
 ) -> Option<ContractExpression> {
     let (step, _) = state.step_results.as_ref()?.iter().find(|(_, value)| {
         crate::instrumentation::record_deterministic_work(1);
-        matches(value)
+        matches(value.native())
     })?;
     crate::surface::diagnostics::step_result_expression(*step)
 }

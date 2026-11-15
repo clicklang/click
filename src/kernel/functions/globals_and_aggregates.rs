@@ -1289,15 +1289,6 @@ pub(super) fn copy_aggregate_fields(
     memory
 }
 
-pub(super) fn copy_aggregate_union_member(
-    memory: &Memory,
-    source_field: &Pointer,
-    element_type: ProgramType,
-) -> Option<ProgramValue> {
-    copy_retained_aggregate_union_member(memory, source_field, element_type)
-        .map(ExecutionValue::into_native)
-}
-
 pub(super) fn copy_retained_aggregate_union_member(
     memory: &Memory,
     source_field: &Pointer,
