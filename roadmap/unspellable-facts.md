@@ -485,7 +485,8 @@ tests passed, including every scaling test, termination and contract completion,
 Integer conversion checks and ordinary example projects.
 The CI-quality check passed.
 
-8p represents algebraic variables and constructors directly in common roots,
+8p ([#2835](https://github.com/clicklang/click/pull/2835), merged) represents
+algebraic variables and constructors directly in common roots,
 reusing the prepared constructor payload. Imports retain typed Integer/numeric
 and nested algebraic fields; unmigrated field families retain exact native
 payloads rather than coalescing pointer annotations through value equality.
