@@ -8743,6 +8743,7 @@ pub(in crate::surface) fn program_contract_failure(
             ))
             .at_declaration(name)
         }
+        #[cfg(test)]
         ProgramContractFailure::MissingReturnEvidence(name) => {
             let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
             ClickError::new(format!(

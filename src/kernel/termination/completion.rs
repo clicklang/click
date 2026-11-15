@@ -145,6 +145,7 @@ pub(crate) struct ProgramTerminationInputs<'a> {
 
 pub(crate) enum ProgramContractFailure {
     Analysis(TerminationError),
+    #[cfg(test)]
     MissingReturnEvidence(String),
     UnfinishedBody(String),
     Obligation {
@@ -158,7 +159,7 @@ pub(crate) enum ProgramContractFailure {
 pub(crate) struct CompletedProgramContracts {
     _proof: ProgramProof,
     _bodies: Vec<Arc<ContractBodyProof>>,
-    pub(super) rules: Vec<VerifiedFunctionTerminationRule>,
+    rules: Vec<VerifiedFunctionTerminationRule>,
 }
 
 impl CompletedProgramContracts {

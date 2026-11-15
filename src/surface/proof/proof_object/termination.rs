@@ -30,7 +30,7 @@ impl<'a> Proof<'a> {
         root
     }
 
-    pub(in crate::surface::proof) fn apply_termination_check(
+    pub(super) fn apply_termination_check(
         &self,
         step: TerminationCheck,
     ) -> Result<KernelProofHandle, ClickError> {

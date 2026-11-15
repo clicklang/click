@@ -38,7 +38,12 @@ fn selected_termination_steps_do_not_visit_unrelated_functions_or_goals() {
 #[test]
 fn whole_termination_proof_and_completion_scale_with_explicit_output() {
     for size in [1, 16, 64, 256, 512] {
-        let scope = scope(size);
+        let (scope, generation_work) =
+            crate::instrumentation::measure_deterministic_work(|| scope(size));
+        assert!(
+            generation_work <= 128 * size + 128,
+            "{size}: {generation_work} generation work"
+        );
         let proof = Proof::for_program_termination((), scope.clone(), ());
         let ((proof, work), index_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -83,5 +88,25 @@ fn termination_dependency_planning_stops_at_the_ordinary_run_budget() {
             work <= 10,
             "{size} functions: {work} work before bounded refusal"
         );
+    }
+}
+
+#[test]
+fn publishing_selected_promises_does_not_visit_unrelated_rule_subjects() {
+    for size in [1, 16, 64, 256, 1024] {
+        let scope = scope_requested(size, BTreeSet::from(["leaf0".into()]));
+        assert_eq!(scope.requested_subjects.len(), 1);
+        let mut proof = Proof::for_program_termination((), scope.clone(), ());
+        for step in scope.plan(scope.goal(), &ProofFacts::default()).unwrap() {
+            proof = proof.check_termination(&step).unwrap().0;
+        }
+        let proof = proof
+            .apply_known(PropositionKnownContext::Exact)
+            .unwrap_or_else(|_| panic!("the selected promise was proved"));
+        let (completed, work) = crate::instrumentation::measure_deterministic_work(|| {
+            proof.finish_program_termination().unwrap().complete()
+        });
+        assert!(work <= 16, "{size} subjects: {work} publication work");
+        assert_eq!(completed.into_termination_rules().len(), 1);
     }
 }

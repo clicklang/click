@@ -83,7 +83,7 @@ pub(crate) struct TerminationCheckReport {
 pub(crate) struct OrdinaryTerminationScope {
     pub(super) obligations: TerminationObligations,
     state: ProgramState,
-    requested: BTreeSet<String>,
+    requested_subjects: Vec<ProgramFunction>,
     pub(crate) declared_diverging: BTreeSet<String>,
     atoms: BTreeMap<(TerminationAtomKind, String), Proposition>,
     spellings: BTreeMap<String, (TerminationAtomKind, String)>,
@@ -98,14 +98,16 @@ fn conjunction(mut goals: Vec<Proposition>) -> Proposition {
         return Proposition::ConditionIs(ConditionTerm::Constant(true), true);
     }
     while goals.len() > 1 {
-        goals = goals
-            .chunks(2)
-            .map(|pair| match pair {
-                [left, right] => Proposition::And(Box::new(left.clone()), Box::new(right.clone())),
-                [one] => one.clone(),
-                _ => unreachable!(),
-            })
-            .collect();
+        let mut next = Vec::with_capacity(goals.len().div_ceil(2));
+        let mut pairs = goals.into_iter();
+        while let Some(left) = pairs.next() {
+            charge_termination_work(1);
+            next.push(match pairs.next() {
+                Some(right) => Proposition::And(Box::new(left), Box::new(right)),
+                None => left,
+            });
+        }
+        goals = next;
     }
     goals.pop().unwrap()
 }
@@ -125,7 +127,9 @@ impl OrdinaryTerminationScope {
             .chain(obligations.declared_diverging.iter().cloned())
             .collect::<BTreeSet<_>>();
         for goal in obligations.function_goals.values() {
+            charge_termination_work(1);
             for call in &goal.calls {
+                charge_termination_work(1);
                 match call {
                     TerminationCallObligation::Callee { callee, .. }
                     | TerminationCallObligation::External { callee, .. } => {
@@ -144,6 +148,7 @@ impl OrdinaryTerminationScope {
         let mut atoms = BTreeMap::new();
         let mut spellings = BTreeMap::new();
         for name in &names {
+            charge_termination_work(1);
             for kind in [
                 TerminationAtomKind::Local,
                 TerminationAtomKind::Strict,
@@ -151,6 +156,7 @@ impl OrdinaryTerminationScope {
                 TerminationAtomKind::Returns,
                 TerminationAtomKind::Divergence,
             ] {
+                charge_termination_work(1);
                 let key = format!("\0termination:{brand}:{}:{name}", kind.spelling());
                 spellings.insert(key.clone(), (kind, name.clone()));
                 atoms.insert(
@@ -212,12 +218,23 @@ impl OrdinaryTerminationScope {
             members.sort();
             components.push(members);
         }
+        charge_termination_work(state.open.len());
         let bindings = state.open.keys().cloned().collect::<Vec<_>>();
         let declared_diverging = obligations.declared_diverging.clone();
+        // Capture publication subjects with the root's selected promises.
+        // Completion never scans unrelated function rules.
+        let requested_subjects = requested
+            .iter()
+            .filter_map(|name| {
+                charge_termination_work(1);
+                let index = obligations.ruled.get(name)?;
+                Some(obligations.partial_rules[*index].function.clone())
+            })
+            .collect();
         let mut scope = Self {
             obligations,
             state,
-            requested,
+            requested_subjects,
             declared_diverging,
             atoms,
             spellings,
@@ -235,7 +252,7 @@ impl OrdinaryTerminationScope {
             }
         }
         goals.push(scope.atom(TerminationAtomKind::Callbacks, "").unwrap());
-        for name in &scope.requested {
+        for name in &requested {
             goals.push(scope.atom(TerminationAtomKind::Returns, name).unwrap());
         }
         scope.goal = conjunction(goals);
@@ -368,8 +385,13 @@ impl OrdinaryTerminationScope {
                     TerminationAtomKind::Returns
                 };
                 let Some(&component) = self.component_of.get(function) else {
+                    let atom = self.atom(public, function)?;
                     let value = self.obligations.assumed_terminating.contains(function);
-                    self.emit(&mut output, public, function, value);
+                    output.push(if value {
+                        atom
+                    } else {
+                        Proposition::Not(Box::new(atom))
+                    });
                     if !strict {
                         self.emit(&mut output, TerminationAtomKind::Body, function, value);
                         self.emit(
@@ -668,13 +690,12 @@ impl OrdinaryTerminationScope {
         for binding in &self.bindings {
             state.retire(binding);
         }
+        charge_termination_work(self.requested_subjects.len());
         let rules = self
-            .obligations
-            .partial_rules
+            .requested_subjects
             .iter()
-            .filter(|rule| self.requested.contains(rule.function.name()))
-            .map(|rule| VerifiedFunctionTerminationRule {
-                function: rule.function.clone(),
+            .map(|function| VerifiedFunctionTerminationRule {
+                function: function.clone(),
             })
             .collect();
         ProvedProgramContracts {
@@ -694,6 +715,13 @@ mod tests {
     type Proof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
 
     fn scope(size: usize) -> Arc<OrdinaryTerminationScope> {
+        scope_requested(
+            size,
+            (0..size).map(|index| format!("leaf{index}")).collect(),
+        )
+    }
+
+    fn scope_requested(size: usize, requested: BTreeSet<String>) -> Arc<OrdinaryTerminationScope> {
         let rules = (0..size)
             .map(|index| VerifiedFunctionRule {
                 pointer_result: None,
@@ -708,14 +736,7 @@ mod tests {
                 applied_tactics: Default::default(),
             })
             .collect::<Vec<_>>();
-        let owner = ProgramContractProof::open(
-            rules
-                .iter()
-                .map(|rule| rule.function.name().into())
-                .collect(),
-            BTreeSet::new(),
-            &BTreeSet::new(),
-        );
+        let owner = ProgramContractProof::open(requested, BTreeSet::new(), &BTreeSet::new());
         owner
             .generate_termination(ProgramTerminationInputs {
                 partial_rules: &rules,

@@ -18028,6 +18028,15 @@ mod tactic_classification_tests {
         ("instantiate-using", "instantiate(F, 1) using { x == 1; };"),
         ("solve", "solve();"),
         ("solve-using", "solve() using { x == 1; };"),
+        ("check-termination-local", "check_termination_local(\"f\");"),
+        (
+            "check-termination-component",
+            "check_termination_component(\"f\", normal);",
+        ),
+        (
+            "check-termination-callbacks",
+            "check_termination_callbacks();",
+        ),
     ];
 
     fn label(class: TacticClass) -> &'static str {

@@ -717,6 +717,20 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn program_termination_claim_expands_and_rechecks() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/termination_ordinary_proof_steps.md");
+        let arguments = parse_arguments(
+            ["--claim", "program.termination", path.to_str().unwrap()].map(str::to_string),
+        )
+        .unwrap();
+        let expanded = run(&arguments)
+            .expect("ordinary termination certificate replays with implicit solving disabled");
+        assert!(expanded.contains("termination by {"));
+        assert!(expanded.contains("check_termination_component(\"caller\", normal)"));
+    }
+
+    #[test]
     #[ignore = "nightly: 1.2s in the parallel gate"]
     fn symbolic_borrowed_range_expansion_rechecks_without_serializing_graph_ids() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

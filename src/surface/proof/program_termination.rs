@@ -407,6 +407,23 @@ termination by {{
     }
 
     #[test]
+    fn unknown_checked_termination_component_is_a_source_error() {
+        let source = format!(
+            r#"{SOURCE}
+termination by {{ check_termination_component("missing", normal); }}
+"#
+        );
+        let error = verify_c_sources(&source, &[("termination.c", C)]).unwrap_err();
+        assert!(
+            error
+                .report()
+                .contains("not part of this termination proof"),
+            "{}",
+            error.report()
+        );
+    }
+
+    #[test]
     fn termination_atoms_cannot_be_assumed_in_an_ordinary_contract() {
         let source = "theorem forged() { requires termination_returns(\"leaf\"); ensures true; }";
         assert!(verify_click_theorems(source).is_err());

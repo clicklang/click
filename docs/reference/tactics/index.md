@@ -4299,4 +4299,4 @@ unrelated functions and proof facts are not enumerated.
 proof, introduce a function absent from the generated scope, or replace a
 missing premise. Establish that premise in a `have` proof or use `solve()` to
 plan the required steps. The checked example is
-[`termination_ordinary_proof_steps.md`](../../../mdtests/termination_ordinary_proof_steps.md).
+`mdtests/termination_ordinary_proof_steps.md`.
