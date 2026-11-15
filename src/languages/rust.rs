@@ -8,6 +8,7 @@ pub mod names;
 mod profile;
 mod runtime;
 pub mod schema;
+pub(crate) mod source_statements;
 pub(crate) mod standard_library;
 pub(crate) use crate_inputs::CrateConfig;
 pub use import::PreparedRustImport;

@@ -788,10 +788,13 @@ fn lower_function(
         records,
         functions,
     };
-    let body = match &f.mir {
-        Some(mir) if f.body.is_empty() => moves::lower(&mut cx, f, mir)?,
+    let (body, region_sites) = match &f.mir {
+        Some(mir) if f.body.is_empty() => {
+            let lowered = moves::lower(&mut cx, f, mir)?;
+            (lowered.statement, lowered.sites)
+        }
         Some(_) => return Err("Rust function must select exactly one body representation".into()),
-        None => cx.body(&f.body)?,
+        None => (cx.body(&f.body)?, Vec::new()),
     };
     let loop_iterators = std::mem::take(&mut cx.loop_iterators);
     let mut kernel = program_function(
@@ -821,7 +824,11 @@ fn lower_function(
         .with_prelowered_kernel_function(kernel)
         .with_closure_captures(f.captures)
         .with_trait_interface(f.implements.clone())
-        .with_loop_iterators(loop_iterators);
+        .with_loop_iterators(loop_iterators)
+        .with_source_sites(crate::languages::interface::SourceSites {
+            paths: f.sites.clone(),
+            regions: region_sites,
+        });
     if let Some((name, layout)) = return_layout {
         lowered = lowered.with_struct_return(name.clone(), layout.clone());
     }

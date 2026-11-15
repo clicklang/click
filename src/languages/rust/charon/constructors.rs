@@ -215,6 +215,7 @@ mod tests {
                 };
                 *target = index;
                 mir.blocks.push(out::MirBlock {
+                    terminator_site: None,
                     statements: vec![],
                     terminator: repeat,
                 });

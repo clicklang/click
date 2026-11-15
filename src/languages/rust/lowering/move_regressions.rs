@@ -88,6 +88,7 @@ fn rust_kernel_rejects_duplicate_move_drop_and_missing_cleanup() {
             if corruption == 1 {
                 let duplicate = mir.blocks.len();
                 mir.blocks.push(crate::languages::rust::schema::MirBlock {
+                    terminator_site: None,
                     statements: vec![],
                     terminator: T::Drop {
                         local: local.clone(),

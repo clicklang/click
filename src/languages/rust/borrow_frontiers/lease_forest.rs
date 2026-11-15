@@ -315,6 +315,8 @@ pub(in crate::languages::rust) fn certify(
             }
             S::BeginStorage { local } | S::EndStorage { local }
                 if types.contains_key(local.as_str()) => {}
+            // A source site runs nothing.
+            S::Site { .. } => {}
             _ => return None,
         }
     }
