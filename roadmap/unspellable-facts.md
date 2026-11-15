@@ -583,7 +583,7 @@ Validation: all 2,794 selected tests passed, including every scaling test,
 algebraic/Boolean/call/nat checks, readers/rewrites, Surface synthesis and full
 ordinary example projects. The quality gate exited 0.
 
-8s.2 represents algebraic reads with their abstract type, exact snapshot and
+8s.2 (merged [PR #2840](https://github.com/clicklang/click/pull/2840)) represents algebraic reads with their abstract type, exact snapshot and
 shared address. Boolean and algebraic reads reuse the same snapshot descriptor,
 keeping producer arena identity separate from native observation equality.
 Import/export, syntax comparison, observation normalization and existing Surface
@@ -599,6 +599,28 @@ and existing Boolean read and algebraic fact-key regressions.
 Validation: all 2,214 broader tests passed, including every scaling test,
 abstract/parameter/memory checks, algebraic and Boolean behavior, readers,
 rewrites, Surface synthesis and full ordinary example projects. The quality
+gate exited 0.
+
+8t retains algebraic roots through specification bindings, constructors and
+selected match fields, algebraic-valued program matches, execution locals,
+arguments, returns, assignments, temporary results and memory cells. Runtime
+enum construction and field selection use common fields directly. Native key
+adapters preserve the existing equality, ordering and hash contracts. A named
+algebraic leaf has a direct compatibility reading without an export walk.
+
+Program-carried parameter arguments and fields retain their distinct native
+argument form at the mixed-family adapter (8ac). Native Integer result readings,
+required-construction records, fact-witness lookup and public native output
+remain explicit compatibility boundaries; this slice does not redesign their
+contracts. Ordinary program conditionals still refuse unequal algebraic arms;
+logical algebraic conditionals retain the separate 8s.1 behavior. No search,
+evidence, budget or language changes are included.
+
+Thirty focused tests passed, including nested constructor binding/selection,
+runtime field refusals, storage key parity, conditional refusal parity and
+constant-work construction around growing shared fields. All 2,540 broader tests
+passed, including argument/return/caller-result retention, program-call result
+parity, every scaling test and the full ordinary example corpus. The quality
 gate exited 0.
 
 ### 8a inventory

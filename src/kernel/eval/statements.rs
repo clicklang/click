@@ -635,6 +635,7 @@ fn write_program_lvalue_paths_without_local_reference(
         && matches!(
             value.program_type(),
             ProgramType::Bool
+                | ProgramType::Parameter(_)
                 | ProgramType::Int8
                 | ProgramType::UInt8
                 | ProgramType::Int16
@@ -798,9 +799,11 @@ fn write_program_lvalue_paths_without_local_reference(
             )])
         }
         LValueStorage::Memory { pointer } => {
-            let retained_boolean = value
+            let retained_direct = value
                 .shared()
-                .filter(|root| root.ty() == &KernelType::Bool)
+                .filter(|root| {
+                    root.ty() == &KernelType::Bool || matches!(root.ty(), KernelType::Algebraic(_))
+                })
                 .cloned();
             let retained_pointer = value
                 .shared()
@@ -1060,11 +1063,12 @@ fn write_program_lvalue_paths_without_local_reference(
                     }
                     None => effective_assumptions,
                 };
-            let retained_written = if written_value.program_type() == ProgramType::Bool
-                && let Some(root) = retained_boolean
+            let retained_written = if let Some(root) = retained_direct
+                && ExecutionValue::Shared(root.clone()).program_type()
+                    == written_value.program_type()
             {
-                // Byte assembly produces an integer; a remaining Bool is the
-                // original selected value, with its producer root intact.
+                // Byte assembly produces an integer. An unchanged Boolean or
+                // algebraic type keeps the original selected producer.
                 ExecutionValue::Shared(root)
             } else {
                 match retained_pointer {
@@ -4490,9 +4494,12 @@ fn execute_execution_statement_leaf_paths(
             {
                 let outcome = match path.outcome {
                     ExpressionOutcome::Value(value) => {
-                        let retained_boolean = value
+                        let retained_direct = value
                             .shared()
-                            .filter(|root| root.ty() == &KernelType::Bool)
+                            .filter(|root| {
+                                root.ty() == &KernelType::Bool
+                                    || matches!(root.ty(), KernelType::Algebraic(_))
+                            })
                             .cloned();
                         let retained_pointer = value
                             .shared()
@@ -4514,8 +4521,9 @@ fn execute_execution_statement_leaf_paths(
                         match value {
                             Some(value) => {
                                 let mut next = state.clone();
-                                let value = if value.program_type() == ProgramType::Bool
-                                    && let Some(root) = retained_boolean
+                                let value = if let Some(root) = retained_direct
+                                    && ExecutionValue::Shared(root.clone()).program_type()
+                                        == value.program_type()
                                 {
                                     ExecutionValue::Shared(root)
                                 } else {

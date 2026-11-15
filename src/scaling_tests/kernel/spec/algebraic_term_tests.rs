@@ -312,3 +312,72 @@ fn nested_algebraic_conditionals_retain_branches_with_linear_work() {
         );
     }
 }
+
+#[test]
+fn algebraic_constructor_handoffs_do_not_export_growing_fields() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let inner = maybe_type();
+        let outer = envelope_type(&inner);
+        let mut field =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999763));
+        for _ in 0..size {
+            field = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [field.clone(), field],
+            );
+        }
+        let root = crate::kernel::KernelConstructor {
+            algebraic_type: inner.clone(),
+            variant: "Some".into(),
+            fields: vec![field],
+        }
+        .into_term();
+        let mut values = crate::persistent::PersistentMap::default();
+        values.insert("seed".into(), root.clone());
+        let expression = SpecAlgebraicExpression {
+            algebraic_type: outer,
+            node: SpecAlgebraicExpressionNode::Constructor {
+                variant: "Present".into(),
+                fields: vec![SpecAlgebraicValue::Algebraic(SpecAlgebraicExpression {
+                    algebraic_type: inner,
+                    node: SpecAlgebraicExpressionNode::Binding("seed".into()),
+                })],
+            },
+        };
+        let state = ExecutionState::new();
+        let scope = SpecScope {
+            values: Some(&values),
+            ..SpecScope::unbound(&state, None)
+        };
+        let exports = (
+            KernelTermExport::algebraic_export_count(),
+            KernelTermExport::machine_export_count(),
+        );
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_spec_algebraic_at_state_with_bindings_in(
+                scope,
+                &expression,
+                &PureFactContext::new(),
+                &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+            )
+            .unwrap()
+        });
+        let AlgebraicResult::Shared(result) = &paths[0].value else {
+            panic!("retained result");
+        };
+        let KernelTermNode::Constructor(constructor) = result.node() else {
+            panic!("constructor");
+        };
+        assert_eq!(constructor.fields, vec![root]);
+        assert_eq!(
+            (
+                KernelTermExport::algebraic_export_count(),
+                KernelTermExport::machine_export_count()
+            ),
+            exports
+        );
+        assert!(work < 100, "size={size} work={work}");
+    }
+}

@@ -139,6 +139,42 @@ impl KernelTermImport {
     }
 }
 
+impl KernelTerm {
+    /// Explicit selected-value compatibility view for native storage keys and
+    /// APIs. Ordinary handoffs keep the common root and do not request it.
+    pub(crate) fn algebraic_native_value(&self) -> Option<&ProgramValue> {
+        if !matches!(self.ty(), KernelType::Algebraic(_)) {
+            return None;
+        }
+        let PureFunctionArgument::Value(value) = self
+            .0
+            .argument_leaf
+            .get_or_init(|| {
+                Box::new(PureFunctionArgument::Value(ProgramValue::Parameter(
+                    Box::new(
+                        if let (KernelType::Algebraic(ty), KernelTermNode::Variable(variable)) =
+                            (self.ty(), self.node())
+                        {
+                            AlgebraicTerm {
+                                algebraic_type: ty.clone(),
+                                node: AlgebraicTermNode::Variable(*variable),
+                            }
+                        } else {
+                            KernelTermExport::default()
+                                .algebraic(self)
+                                .expect("algebraic value output")
+                        },
+                    ),
+                )))
+            })
+            .as_ref()
+        else {
+            unreachable!("algebraic value descriptor")
+        };
+        Some(value)
+    }
+}
+
 impl KernelTermExport {
     #[cfg(test)]
     pub(crate) fn algebraic_export_count() -> usize {
