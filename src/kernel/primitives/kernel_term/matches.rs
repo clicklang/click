@@ -275,6 +275,12 @@ impl KernelMatch {
 }
 
 impl KernelConstructor {
+    pub(crate) fn into_term(self) -> KernelTerm {
+        KernelTerm::intern(
+            KernelType::Algebraic(self.algebraic_type.clone()),
+            KernelTermNode::Constructor(self),
+        )
+    }
     pub(crate) fn import(import: &mut KernelTermImport, value: &AlgebraicTerm) -> Option<Self> {
         let AlgebraicTermNode::Constructor { variant, fields } = &value.node else {
             return None;

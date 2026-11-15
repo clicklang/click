@@ -15,8 +15,8 @@ mod algebraic;
 mod machine;
 #[allow(dead_code)]
 mod matches;
-pub(crate) use matches::KernelMatch;
 pub(crate) use matches::KernelMatchArm;
+pub(crate) use matches::{KernelConstructor, KernelMatch};
 mod pointer_observations;
 mod reads;
 // Prepared pointer payloads; producer activation follows scoped consumers and spelling.
@@ -58,6 +58,7 @@ pub enum KernelTermNode {
     /// Scoped range iteration. Only the body is under its two binders.
     Fold(KernelFold),
     Match(KernelMatch),
+    Constructor(KernelConstructor),
     BoolLiteral(bool),
     BoolRead(KernelBooleanRead),
     BoolCast {
@@ -346,6 +347,10 @@ impl NodeKey {
         // outside shared observations until their scoped consumers migrate.
         // Inspect immediate children only; retain the result across growing DAGs.
         let opaque_observation_boundary = match &node {
+            KernelTermNode::Constructor(constructor) => constructor
+                .fields
+                .iter()
+                .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::Match(matched) if matches!(ty, KernelType::Program(_)) => matched
                 .arguments
                 .iter()
@@ -726,6 +731,7 @@ impl KernelTerm {
         match self.node() {
             KernelTermNode::Fold(fold) => &fold.arguments,
             KernelTermNode::Match(matched) => &matched.arguments,
+            KernelTermNode::Constructor(constructor) => &constructor.fields,
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. }
@@ -1011,6 +1017,7 @@ pub(crate) struct KernelTermImport {
 impl KernelTermImport {
     pub(crate) fn argument(&mut self, value: &PureFunctionArgument) -> KernelTerm {
         match value {
+            PureFunctionArgument::Algebraic(value) => self.algebraic(value),
             PureFunctionArgument::Integer(value) => self.integer(value),
             PureFunctionArgument::SharedMachine(value) => value
                 .shared_operand()
@@ -1468,7 +1475,12 @@ impl KernelTermExport {
             )));
         }
         if matches!(term.ty(), KernelType::Algebraic(_))
-            && matches!(term.node(), KernelTermNode::Match(_))
+            && matches!(
+                term.node(),
+                KernelTermNode::Match(_)
+                    | KernelTermNode::Constructor(_)
+                    | KernelTermNode::Variable(_)
+            )
         {
             return self.algebraic(term).map(PureFunctionArgument::Algebraic);
         }

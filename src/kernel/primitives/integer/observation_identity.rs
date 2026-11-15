@@ -105,6 +105,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     arguments.to_vec()
                 }
                 KernelTermNode::IntegerOperation { arguments, .. } => arguments.clone(),
+                KernelTermNode::Constructor(constructor) => constructor.fields.clone(),
                 KernelTermNode::Call { arguments, .. } => arguments.clone(),
                 KernelTermNode::BoolCast { operand, .. }
                 | KernelTermNode::MachineObservation { operand, .. }
@@ -148,6 +149,12 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 }
                 KernelTermNode::Legacy(value) => {
                     KernelTerm::native_observation_leaf(value.value().clone())
+                }
+                KernelTermNode::Constructor(constructor) => {
+                    let mut constructor = constructor.clone();
+                    constructor.fields =
+                        constructor.fields.iter().map(|child| get(child)).collect();
+                    constructor.into_term()
                 }
                 KernelTermNode::BoolCast {
                     destination,
