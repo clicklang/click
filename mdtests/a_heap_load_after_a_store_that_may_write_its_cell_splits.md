@@ -2,7 +2,7 @@
 
 The proof splits allocation failure and the two store-alias cases. When `u`
 is nonzero, it establishes separation of `buf[u]` from `buf[0]`, then uses
-`statement(5).footprint` and a transport certificate to preserve the earlier
+`statement(5).footprint` and a explicit preservation proof to preserve the earlier
 `3`. No memory-history recovery is needed.
 
 The `separation::contains_subrange` law derives containment in `buf[1..4]` from
@@ -91,12 +91,7 @@ int32 read_back(int32 u) {
                 normalize() using { separate(memory(buf[u]), memory(buf[0])); };
             }
             have buf[0] == at(before_store, buf[0]) by {
-                transport_certificate {
-                    premise 0: separate(statement(5).footprint, memory(buf[0]))
-                        => separate(statement(5).footprint, memory(buf[0]));
-                    preserve 0 => buf[0] == at(before_store, buf[0]);
-                    conclusion 1;
-                }
+                preserve(separate(statement(5).footprint, memory(buf[0])));
             }
             have buf[0] == 3 by solve();
             step_until(function.exit);
@@ -152,12 +147,7 @@ int32 read_back_stepped(int32 u) {
                 normalize() using { separate(memory(buf[u]), memory(buf[0])); };
             }
             have buf[0] == at(before_store, buf[0]) by {
-                transport_certificate {
-                    premise 0: separate(statement(5).footprint, memory(buf[0]))
-                        => separate(statement(5).footprint, memory(buf[0]));
-                    preserve 0 => buf[0] == at(before_store, buf[0]);
-                    conclusion 1;
-                }
+                preserve(separate(statement(5).footprint, memory(buf[0])));
             }
             have buf[0] == 3 by solve();
             step_until(function.exit);

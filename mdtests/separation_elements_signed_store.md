@@ -21,12 +21,7 @@ void keep(uint8* bytes, int32 i, int32 k) {
         normalize() using { separate(memory(*(bytes + i)), memory(*(bytes + k))); };
     }
     have bytes[k] == at(before, bytes[k]) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(*(bytes + k)))
-                => separate(statement(0).footprint, memory(*(bytes + k)));
-            preserve 0 => bytes[k] == at(before, bytes[k]);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(*(bytes + k))));
     }
     step_until(function.exit);
     known();

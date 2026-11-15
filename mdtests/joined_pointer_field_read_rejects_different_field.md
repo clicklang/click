@@ -89,30 +89,15 @@ void inspect(struct node* parent) {
                         preserve(separate(loop(0).statement(0).footprint, memory(parent->right)));
                     }
                     have parent->right == at(before_sibling, parent->right) by {
-                        transport_certificate {
-                            premise 0: separate(loop(0).statement(0).footprint, memory(parent->right))
-                                => separate(loop(0).statement(0).footprint, memory(parent->right));
-                            preserve 0 => parent->right == at(before_sibling, parent->right);
-                            conclusion 1;
-                        }
+                        preserve(separate(loop(0).statement(0).footprint, memory(parent->right)));
                     }
                     have separate(loop(0).statement(0).footprint, memory(parent->left)) by { normalize() using {}; }
                     have parent->left == at(before_sibling, parent->left) by {
-                        transport_certificate {
-                            premise 0: separate(loop(0).statement(0).footprint, memory(parent->left))
-                                => separate(loop(0).statement(0).footprint, memory(parent->left));
-                            preserve 0 => parent->left == at(before_sibling, parent->left);
-                            conclusion 1;
-                        }
+                        preserve(separate(loop(0).statement(0).footprint, memory(parent->left)));
                     }
                     have separate(loop(0).statement(0).footprint, memory(parent->left->left)) by { normalize() using {}; }
                     have parent->left->left == at(before_sibling, parent->left->left) by {
-                        transport_certificate {
-                            premise 0: separate(loop(0).statement(0).footprint, memory(parent->left->left))
-                                => separate(loop(0).statement(0).footprint, memory(parent->left->left));
-                            preserve 0 => parent->left->left == at(before_sibling, parent->left->left);
-                            conclusion 1;
-                        }
+                        preserve(separate(loop(0).statement(0).footprint, memory(parent->left->left)));
                     }
                     have sibling == model by { known(); }
                     mark split;

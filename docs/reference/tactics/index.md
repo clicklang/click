@@ -956,7 +956,7 @@ searched or inferred. Expansion reprints both unchanged.
 
 A call publishes the callee's postconditions. It does not search memory history
 to turn symbolic reads in those postconditions into extra constant equalities.
-Establish the needed read equality in the proof; use a transport certificate
+Establish the needed read equality in the proof; use `preserve(...)`
 when it crosses a memory effect. Already-available equalities remain usable by
 `known()` and explicit arithmetic or rewrite steps.
 
@@ -1106,7 +1106,6 @@ step is still checked.
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(separate(region.footprint, resource))` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
-| `transport_certificate { premise ...; preserve ...; transitive ...; conclusion N; }` | simple | Specialized | Check explicit preservation and equality composition. | [Reference](#transport-certificates) |
 | `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }` | simple | Expansion output | Check explicit arithmetic evidence. | [Reference](#arithmetic-certificates) |
 | `rewrite(P)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
@@ -2004,9 +2003,9 @@ planning again.
 A simple tactic for a read-equality or read-definedness goal. Cite an exactly available separation
 between a recorded region footprint and the resource being read. The tactic
 constructs equality of the selected read at the region's exit and entry, in
-that order. It uses the same primitive as a transport certificate's `preserve`
-node, with no premise discovery or history search. The current goal selects
-the read type or named-resource field; it must match the constructed equality.
+that order. It applies one primitive directly, with no premise discovery or
+history search. The current goal selects the read type or named-resource
+field; it must match the constructed equality.
 
 For `defined(read)`, the separated resource must be the complete typed cell.
 The tactic looks up the exact `defined(read)` fact at the footprint's entry
@@ -2017,38 +2016,11 @@ does not establish initialization from ownership or value equality alone.
 
 Use an ordinary `have` to establish this equality, then `rewrite` and
 `known` to carry a proposition across the change. The tactic remains
-`preserve(...)` in expansion. It does not expand general `transport` searches;
-that migration is separate. Unavailable separation, an unsupported observation,
+`preserve(...)` in expansion. Unavailable separation, an unsupported observation,
 or mismatched endpoints is a local refusal. This tactic is distinct from a
 loop's `preserve by { ... }` proof block.
 
 **Checked example:** [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md).
-
-### Transport certificates
-
-**Form:** `transport_certificate { premise ...; preserve ...; transitive ...; conclusion N; }`
-
-An explicit sequence of primitive transport operations. Nodes are numbered from
-zero in written order; references must point backward. Each node constructs its
-result from the cited facts, and `=> P` asserts that the result is exactly `P`.
-It does not search memory history, discover separation, or find intermediate
-equalities.
-
-- `premise i: P => P;` imports an exactly available fact. The stated result
-  must be the same proposition; `i` must equal this node's position.
-- `preserve i => R;` uses node `i`'s `separate(region.footprint, B)` to
-  establish equality of a read of `B` at the region's exit and entry. Either
-  separation orientation is accepted. The footprint carries its endpoints.
-- The older `preserve i, j => R;` form still accepts `changes_only` and
-  separation as separate premises for a single constant-size store.
-- `transitive i, j => R;` composes `x == y` and `y == z` into `x == z`.
-- `conclusion N;` must be last and unique; node `N` must equal the goal.
-
-A reflexive equality that lowering already reduced to `true` needs no read
-observation: `preserve` introduces that constant fact directly, and `transitive`
-retains the other equality when one cited equality reduced to `true` or is
-a syntactically reflexive pointer-address equality. A non-reflexive address
-equality does not establish complete pointer equality.
 
 `region.footprint` is a resource descriptor, not ownership. Execution records
 writes, call effects, resource changes, and allocation lifetime changes while
@@ -2088,12 +2060,13 @@ are compared in byte coordinates; their written range-validity conditions are
 retained. Separating two footprint collections is not a simple normalization
 rule. Empty memory ranges, distinct storage blocks, and token/memory pairs
 are disjoint directly. This simple rule does not walk a region containing several transitions: write individual
-preservation nodes and compose their equalities with `transitive`.
+`have` goals using `preserve(...)`, then compose the equalities with `rewrite` and `known`.
 
 `preserve` supports complete pointer, `uint8`, 32/64-bit integer, and abstract
 typed memory observations. It also preserves a selected field of a named owned
 resource: cite `separate(region.footprint, r)` and write
-`preserve N => r.field == at(region.entry, r.field);`.
+`preserve(separate(region.footprint, r));` under a goal such as
+`r.field == at(region.entry, r.field)`.
 Field lowering supplies the instance identity and field selector. The primitive
 reads that field from the footprint's persistent entry and exit resource contexts
 by identity; it does not unfold the resource or enumerate its other fields.
@@ -2108,23 +2081,18 @@ type. `preserve` looks up the selected observations and constructs their equalit
 it does not reconstruct values from cached cells or memory derivations. This
 includes pointers whose address and provenance have different internal names.
 Read observations are retained only while lowering and applying an explicit
-certificate, then released. Nested applications have isolated tables. Ordinary
+`preserve(...)` step, then released. Nested applications have isolated tables. Ordinary
 checking does not retain these observations. Missing observations fail locally;
 no alias or history fallback runs.
 Pointer preservation also accepts address equality when the pointer domains
-already agree. `transitive` supports pointer-value, pointer-address, and native
-machine-integer, algebraic, and mathematical `Integer` equalities.
+already agree. Equality composition uses ordinary `rewrite` and `known` steps.
 Footprints can record non-memory resources, symbolic release extents, and
 multiple mutable call resources. Wide-index memory ranges are not yet supported.
 Joined branch/loop footprints still need
 producer integration; use recorded individual transitions where available.
 An unavailable premise, unsupported rule, or mismatched endpoint fails locally.
 
-The certificate can be handwritten and is retained by expansion. Automatic
-expansion of general `transport` searches into these certificates is not yet
-implemented.
-
-**Checked example:** [`transport_certificate.md`](https://github.com/clicklang/click/blob/master/mdtests/transport_certificate.md).
+**Checked examples:** [`preserve_pointer_read.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_pointer_read.md), [`preserve_resource_field.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_resource_field.md).
 
 ### Arithmetic certificates
 
@@ -3528,7 +3496,7 @@ For current-point `viewable(A)` to `viewable(B)` with explicitly cited
 are memory ranges with the same written base and int32 endpoints, citing
 `lo <= inner_lo`, `inner_lo <= inner_hi`, and `inner_hi <= hi` instead
 produces an explicit `have contains(...)` using `separation::contains_subrange` first.
-These cases leave no `transport` or `transport_certificate` in the expansion.
+These cases expand to ordinary library applications.
 See `mdtests/viewable_restrict_transport_expansion.md`.
 
 At an execution frontier, a focused equality between a read now and the same

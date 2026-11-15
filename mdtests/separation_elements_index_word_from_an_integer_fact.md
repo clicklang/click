@@ -50,12 +50,7 @@ int32 read_first(int32 m) {
             normalize() using { separate(memory(q[m - 1]), memory(q[0])); };
         }
         have q[0] == at(before_store, q[0]) by {
-            transport_certificate {
-                premise 0: separate(statement(3).footprint, memory(q[0]))
-                    => separate(statement(3).footprint, memory(q[0]));
-                preserve 0 => q[0] == at(before_store, q[0]);
-                conclusion 1;
-            }
+            preserve(separate(statement(3).footprint, memory(q[0])));
         }
         have q[0] == 7 by solve();
         step_until(function.exit);

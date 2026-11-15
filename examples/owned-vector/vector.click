@@ -843,20 +843,12 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             step();
             have separate(statement(0).footprint, memory(owner->data)) by { normalize() using {}; }
             have owner->data == at(statement(0).entry, owner->data) by {
-                transport_certificate {
-                    premise 0: separate(statement(0).footprint, memory(owner->data)) => separate(statement(0).footprint, memory(owner->data));
-                    preserve 0 => owner->data == at(statement(0).entry, owner->data);
-                    conclusion 1;
-                }
+                preserve(separate(statement(0).footprint, memory(owner->data)));
             }
             step();
             have separate(statement(1).footprint, memory(owner->data)) by { normalize() using {}; }
             have owner->data == at(statement(1).entry, owner->data) by {
-                transport_certificate {
-                    premise 0: separate(statement(1).footprint, memory(owner->data)) => separate(statement(1).footprint, memory(owner->data));
-                    preserve 0 => owner->data == at(statement(1).entry, owner->data);
-                    conclusion 1;
-                }
+                preserve(separate(statement(1).footprint, memory(owner->data)));
             }
             step();
         }
@@ -1300,12 +1292,7 @@ int32 vector_fill(struct vector* owner, int32 value) {
                 };
             }
             have owner->data == at(before_fill, owner->data) by {
-                transport_certificate {
-                    premise 0: separate(loop(0).statement(0).footprint, memory(owner->data))
-                        => separate(loop(0).statement(0).footprint, memory(owner->data));
-                    preserve 0 => owner->data == at(before_fill, owner->data);
-                    conclusion 1;
-                }
+                preserve(separate(loop(0).statement(0).footprint, memory(owner->data)));
             }
             have owner->data == old(owner->data) by {
                 normalize() using {

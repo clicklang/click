@@ -36,7 +36,7 @@ back through execution history.
 
 ## Preserve the explicit proof route
 
-Use `transport_certificate` to preserve the complete pointer observation across
+Use `preserve(...)` to preserve the complete pointer observation across
 a separated transition. A numeric word equality alone does not connect pointer
 provenance. The saved-word fixture uses `*(slot as (int32 **))` for its complete
 eight-byte observation; it does not dereference the observed pointee.
@@ -95,7 +95,7 @@ exact complete-pointer equations.
 1. Isolate the next history traversal with a deterministic scaling regression,
    including cold queries and misses.
 2. State the preservation argument with explicit separation, a recorded
-   `.footprint`, and `transport_certificate` links. Use the producer's typed
+   `.footprint`, and `preserve(...)` links. Use the producer's typed
    reads and exact snapshots; do not reconstruct identities or search for
    intermediate states while applying a link.
 3. Discuss missing primitives before extending the kernel. Remove the walk

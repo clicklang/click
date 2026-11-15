@@ -18,7 +18,7 @@ overflow
 ([`an_interface_fact_needs_its_terms_defined_in_each_arm.md`](an_interface_fact_needs_its_terms_defined_in_each_arm.md)).
 
 The swap arm explicitly preserves earlier cells across each store using
-element separation and transport certificates.
+element separation and explicit preservation steps.
 
 ```c filename=bubble_pass3.c
 int32 bubble_pass3(int32 p[3]) {
@@ -91,23 +91,13 @@ int32 bubble_pass3(int32 p[3]) {
                             normalize() using { separate(memory(p[j]), memory(p[0])); };
                         }
                         have at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]) by {
-                            transport_certificate {
-                                premise 0: separate(loop(0).statement(0).statement(1).footprint, memory(p[0]))
-                                    => separate(loop(0).statement(0).statement(1).footprint, memory(p[0]));
-                                preserve 0 => at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]);
-                                conclusion 1;
-                            }
+                            preserve(separate(loop(0).statement(0).statement(1).footprint, memory(p[0])));
                         }
                         have separate(loop(0).statement(0).statement(2).footprint, memory(p[0])) by {
                             normalize() using { separate(memory(p[j + 1]), memory(p[0])); };
                         }
                         have at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]) by {
-                            transport_certificate {
-                                premise 0: separate(loop(0).statement(0).statement(2).footprint, memory(p[0]))
-                                    => separate(loop(0).statement(0).statement(2).footprint, memory(p[0]));
-                                preserve 0 => at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]);
-                                conclusion 1;
-                            }
+                            preserve(separate(loop(0).statement(0).statement(2).footprint, memory(p[0])));
                         }
                         unfold(all_le_range);
                         intro(); intro();

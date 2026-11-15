@@ -24,12 +24,7 @@ void beside_call(int *p, int *q, int *r) {
         };
     }
     have *r == at(statement(0).entry, *r) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(*r))
-                => separate(statement(0).footprint, memory(*r));
-            preserve 0 => *r == at(statement(0).entry, *r);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(*r)));
     }
     step();
     known(); known(); known();

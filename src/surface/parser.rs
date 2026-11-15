@@ -10849,9 +10849,6 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 ProofTactic::Preserve(separation)
             }
-            "transport_certificate" => {
-                return self.parse_transport_certificate_tactic();
-            }
             "arithmetic_certificate" => {
                 return self.parse_arithmetic_certificate_tactic();
             }
@@ -11487,93 +11484,6 @@ impl Parser {
         }
         self.expect(Token::RBrace)?;
         Ok(premises)
-    }
-
-    fn parse_transport_certificate_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        self.expect(Token::LBrace)?;
-        let mut nodes = Vec::new();
-        let mut conclusion = None;
-        while self.peek() != Some(&Token::RBrace) {
-            let keyword = self.expect_ident("transport certificate instruction")?;
-            if keyword == "conclusion" {
-                if conclusion.is_some() {
-                    return Err(self.error("duplicate transport conclusion"));
-                }
-                conclusion = Some(self.expect_index("transport conclusion")?);
-                self.expect(Token::Semicolon)?;
-                if self.peek() != Some(&Token::RBrace) {
-                    return Err(self.error("transport conclusion must be last"));
-                }
-                continue;
-            }
-            let first = self.expect_index("transport node reference")?;
-            let node = match keyword.as_str() {
-                "premise" => {
-                    if first != nodes.len() {
-                        return Err(
-                            self.error("transport premise index must match its node position")
-                        );
-                    }
-                    self.expect(Token::Colon)?;
-                    let proposition = self.parse_proposition()?;
-                    self.expect(Token::FatArrow)?;
-                    let result = self.parse_proposition()?;
-                    TransportCertificateNode::Premise {
-                        index: first,
-                        proposition,
-                        result,
-                    }
-                }
-                "preserve" if self.peek() == Some(&Token::FatArrow) => {
-                    if first >= nodes.len() {
-                        return Err(self.error("transport references must name earlier nodes"));
-                    }
-                    self.position += 1;
-                    TransportCertificateNode::Preserve {
-                        effect: None,
-                        separation: first,
-                        result: self.parse_proposition()?,
-                    }
-                }
-                "preserve" | "transitive" => {
-                    self.expect(Token::Comma)?;
-                    let second = self.expect_index("transport node reference")?;
-                    if first >= nodes.len() || second >= nodes.len() {
-                        return Err(self.error("transport references must name earlier nodes"));
-                    }
-                    self.expect(Token::FatArrow)?;
-                    let result = self.parse_proposition()?;
-                    if keyword == "preserve" {
-                        TransportCertificateNode::Preserve {
-                            effect: Some(first),
-                            separation: second,
-                            result,
-                        }
-                    } else {
-                        TransportCertificateNode::Transitive {
-                            left: first,
-                            right: second,
-                            result,
-                        }
-                    }
-                }
-                _ => {
-                    return Err(self.error("expected premise, preserve, transitive, or conclusion"));
-                }
-            };
-            self.expect(Token::Semicolon)?;
-            nodes.push(node);
-        }
-        self.expect(Token::RBrace)?;
-        let conclusion =
-            conclusion.ok_or_else(|| self.error("transport certificate needs a conclusion"))?;
-        if conclusion >= nodes.len() {
-            return Err(self.error("transport conclusion must name an existing node"));
-        }
-        Ok(ProofTactic::TransportCertificate(TransportCertificate {
-            nodes,
-            conclusion,
-        }))
     }
 
     fn parse_arithmetic_certificate_tactic(&mut self) -> Result<ProofTactic, ClickError> {
@@ -17821,10 +17731,6 @@ mod tactic_classification_tests {
         (
             "preserve",
             "preserve(separate(statement(0).footprint, memory(*p)));",
-        ),
-        (
-            "transport-certificate",
-            "transport_certificate { premise 0: x == 1 => x == 1; conclusion 0; }",
         ),
         (
             "arithmetic-certificate",

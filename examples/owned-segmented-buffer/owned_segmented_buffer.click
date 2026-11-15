@@ -162,23 +162,13 @@ int32 owned_segmented_buffer_set_first(
         normalize() using { at(before_store, separate(memory(owner->first_data), memory(owner->first_data[index]))); };
     }
     have owner->first_data == at(before_store, owner->first_data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(owner->first_data))
-                => separate(statement(0).footprint, memory(owner->first_data));
-            preserve 0 => owner->first_data == at(before_store, owner->first_data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(owner->first_data)));
     }
     have separate(statement(0).footprint, memory(owner->second_data)) by {
         normalize() using { at(before_store, separate(memory(owner->second_data), memory(owner->first_data[index]))); };
     }
     have owner->second_data == at(before_store, owner->second_data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(owner->second_data))
-                => separate(statement(0).footprint, memory(owner->second_data));
-            preserve 0 => owner->second_data == at(before_store, owner->second_data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(owner->second_data)));
     }
     step();
     solve();
@@ -230,23 +220,13 @@ int32 owned_segmented_buffer_set_second(
         normalize() using { at(before_store, separate(memory(owner->first_data), memory(owner->second_data[index]))); };
     }
     have owner->first_data == at(before_store, owner->first_data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(owner->first_data))
-                => separate(statement(0).footprint, memory(owner->first_data));
-            preserve 0 => owner->first_data == at(before_store, owner->first_data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(owner->first_data)));
     }
     have separate(statement(0).footprint, memory(owner->second_data)) by {
         normalize() using { at(before_store, separate(memory(owner->second_data), memory(owner->second_data[index]))); };
     }
     have owner->second_data == at(before_store, owner->second_data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(owner->second_data))
-                => separate(statement(0).footprint, memory(owner->second_data));
-            preserve 0 => owner->second_data == at(before_store, owner->second_data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(owner->second_data)));
     }
     step();
     solve();

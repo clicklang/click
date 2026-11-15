@@ -64,12 +64,7 @@ int32 peek(struct node* n, int32 x) {
                         normalize() using {};
                     }
                     have n->next == at(before_assignment, n->next) by {
-                        transport_certificate {
-                            premise 0: separate(statement(2).footprint, memory(n->next))
-                                => separate(statement(2).footprint, memory(n->next));
-                            preserve 0 => n->next == at(before_assignment, n->next);
-                            conclusion 1;
-                        }
+                        preserve(separate(statement(2).footprint, memory(n->next)));
                     }
                     have defined(id->next) by { rewrite(id == n); normalize(); }
                     let t = fold(list(0), { model: Chain::Nil });
@@ -82,23 +77,13 @@ int32 peek(struct node* n, int32 x) {
                         normalize() using {};
                     }
                     have n->next == at(before_assignment, n->next) by {
-                        transport_certificate {
-                            premise 0: separate(statement(2).footprint, memory(n->next))
-                                => separate(statement(2).footprint, memory(n->next));
-                            preserve 0 => n->next == at(before_assignment, n->next);
-                            conclusion 1;
-                        }
+                        preserve(separate(statement(2).footprint, memory(n->next)));
                     }
                     have separate(statement(2).footprint, memory(n->next->next)) by {
                         normalize() using {};
                     }
                     have n->next->next == at(before_assignment, n->next->next) by {
-                        transport_certificate {
-                            premise 0: separate(statement(2).footprint, memory(n->next->next))
-                                => separate(statement(2).footprint, memory(n->next->next));
-                            preserve 0 => n->next->next == at(before_assignment, n->next->next);
-                            conclusion 1;
-                        }
+                        preserve(separate(statement(2).footprint, memory(n->next->next)));
                     }
                     have defined(id->next) by { rewrite(id == n); normalize(); }
                     let t = fold(list(n->next), { model: Chain::Cons(tid, w, more) }, { tail: u });

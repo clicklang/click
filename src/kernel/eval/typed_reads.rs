@@ -34,7 +34,7 @@ thread_local! {
     static READS: std::cell::RefCell<Option<Reads>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Retain observations only while lowering and applying an explicit certificate.
+/// Retain observations only while lowering and applying an explicit preservation step.
 /// Nested scopes have isolated tables; dropping a scope restores its caller.
 pub(crate) struct ReadScope(Option<Reads>);
 impl ReadScope {
@@ -80,7 +80,7 @@ pub(super) fn record(memory: &Memory, address: &Pointer, value: &ProgramValue) {
 }
 
 /// Only the producer can file observations. A missing entry is not permission
-/// to evaluate a read here. The written certificate names its reads by lowering
+/// to evaluate a read here. The preservation goal names its reads by lowering
 /// them before applying the primitive.
 pub(in crate::kernel) fn get(
     memory: &Memory,

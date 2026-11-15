@@ -1272,17 +1272,15 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         Ok(self.closed_focused())
     }
 
-    pub(crate) fn apply_transport_certificate(
+    pub(crate) fn apply_preserve(
         &self,
-        certificate: &super::transport_certificate::TransportCertificate,
+        separation: &Proposition,
+        field: Option<crate::kernel::eval::typed_reads::FieldSelection>,
     ) -> Result<Self, String> {
         let (goal, facts) = self
             .focused_proposition()
-            .ok_or("transport certificate requires a proposition goal")?;
-        let result = certificate.apply(|p| facts.contains(p))?;
-        if &result != goal.proposition() {
-            return Err("transport conclusion does not match the goal".into());
-        }
+            .ok_or("preserve requires a proposition goal")?;
+        super::preservation::apply(separation, field, goal.proposition(), |p| facts.contains(p))?;
         Ok(self.closed_focused())
     }
 

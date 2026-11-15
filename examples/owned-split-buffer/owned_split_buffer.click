@@ -121,12 +121,7 @@ int32 owned_split_buffer_set_left(
         };
     }
     have owner->data == at(before_store, owner->data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(owner->data))
-                => separate(statement(0).footprint, memory(owner->data));
-            preserve 0 => owner->data == at(before_store, owner->data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(owner->data)));
     }
     step();
     solve();
@@ -194,12 +189,7 @@ int32 owned_split_buffer_set_right(
         };
     }
     have owner->data == at(before_store, owner->data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(owner->data))
-                => separate(statement(0).footprint, memory(owner->data));
-            preserve 0 => owner->data == at(before_store, owner->data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(owner->data)));
     }
     step();
     solve();

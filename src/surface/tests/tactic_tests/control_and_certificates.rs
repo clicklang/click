@@ -222,7 +222,7 @@ fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_03")]
-fn relation_transport_certificate_matches_its_native_cast_conclusion() {
+fn integer_relation_certificate_matches_its_native_cast_conclusion() {
     let source = r#"import click::integer;
         theorem cast_bound(a: int128) {
             requires -99 <= to_integer(a);
@@ -1415,7 +1415,7 @@ test_batches! {
     ],
     control_batch_03: [
         integer_certificate_keeps_negative_observation_bounds_when_adding,
-        relation_transport_certificate_matches_its_native_cast_conclusion,
+        integer_relation_certificate_matches_its_native_cast_conclusion,
         both_and_proves_exact_conjuncts_and_rejects_incomplete_arms,
         both_and_outcome_expands_and_rechecks,
     ],

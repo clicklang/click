@@ -79,12 +79,7 @@ int32 read_literal() {
         normalize() using { separate(memory(guard), memory(message[1])); };
     }
     have message[1] == at(before, message[1]) by {
-        transport_certificate {
-            premise 0: separate(statement(3).footprint, memory(message[1]))
-                => separate(statement(3).footprint, memory(message[1]));
-            preserve 0 => message[1] == at(before, message[1]);
-            conclusion 1;
-        }
+        preserve(separate(statement(3).footprint, memory(message[1])));
     }
     have message[1] == 'k' by { normalize() using { message[1] == at(before, message[1]); at(before, message[1]) == 'k'; }; }
     step();
