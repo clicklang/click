@@ -48,7 +48,7 @@ pub(in crate::kernel) fn execution_narrow_binary(
 pub(super) fn operator(expression: &SpecExpression) -> Option<MachineBinaryOp> {
     Some(match expression {
         SpecExpression::Add(..) => MachineBinaryOp::Add,
-        SpecExpression::Subtract(..) => MachineBinaryOp::Subtract,
+        SpecExpression::Negate(..) | SpecExpression::Subtract(..) => MachineBinaryOp::Subtract,
         SpecExpression::Multiply(..) => MachineBinaryOp::Multiply,
         SpecExpression::Divide(..) => MachineBinaryOp::Divide,
         SpecExpression::Remainder(..) => MachineBinaryOp::Remainder,

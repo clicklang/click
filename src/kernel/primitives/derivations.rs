@@ -1937,7 +1937,8 @@ fn program_expression_steps_for_mode(expression: &ProgramExpression, lvalue: boo
             continue;
         }
         match expression {
-            ProgramExpression::Value(_)
+            ProgramExpression::StringLiteral(_)
+            | ProgramExpression::Value(_)
             | ProgramExpression::FunctionAddress(_)
             | ProgramExpression::StepResult { .. } => {}
             ProgramExpression::Cast { expression, .. } => pending.push((expression, false)),
@@ -1950,7 +1951,8 @@ fn program_expression_steps_for_mode(expression: &ProgramExpression, lvalue: boo
                 pending.push((then_branch, false));
                 pending.push((else_branch, false));
             }
-            ProgramExpression::FloatNegate(expression)
+            ProgramExpression::Negate(expression)
+            | ProgramExpression::FloatNegate(expression)
             | ProgramExpression::FloatClassification { expression, .. }
             | ProgramExpression::EnumField {
                 value: expression, ..
@@ -2032,7 +2034,7 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
                 cost.add_expression(program_expression_source_steps(pointer));
             }
             ProgramStatement::Assert { condition, .. }
-            | ProgramStatement::LoopTest { condition }
+            | ProgramStatement::LoopTest { condition, .. }
             | ProgramStatement::StepValue {
                 expression: condition,
                 ..

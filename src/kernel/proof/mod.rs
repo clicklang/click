@@ -36,6 +36,7 @@ mod obligations;
 pub(crate) mod signed_arithmetic;
 mod storage;
 pub(crate) mod term_rewrite;
+mod termination;
 
 pub(crate) use branches::{BranchId, ProofBranch, ProofBranchState, ProofBranches, SplitId};
 pub(crate) use execution::{

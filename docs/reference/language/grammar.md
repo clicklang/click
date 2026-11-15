@@ -52,6 +52,11 @@ for binary32 it preserves the existing internal carrier distinction by using
 an unsuffixed literal for the signed carrier and `u32` for the unsigned one.
 Both forms denote the same IEEE bits.
 
+Unary `-x` on a float flips its sign bit, including signed zero and NaN
+payloads. It uses the same negation as C float expressions; integer unary
+minus retains its existing arithmetic and definedness conditions
+(`mdtests/float_unary_negation_preserves_signed_zero.md`).
+
 <!-- verified-example: mdtests/float_bit_literals_preserve_ieee_values.md -->
 ```click
 theorem float_bits() {
@@ -112,8 +117,20 @@ documentation inventory keep the following accepted words synchronized.
 | `changes_only` | Transition proposition naming recorded before/after points and the resources allowed to change. |
 | `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate rules { ... }`. Its step words are listed under [Arithmetic-certificate words](#arithmetic-certificate-words). |
 | `rewrite`, `transport`, `instantiate`, `solve`, `induct` | Equality, transport, quantifier, closing, and induction tactics. |
-| `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
+| `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also writes numeric and pointer casts (including `as float` and `as double`) and introduces the target contract's proof instances on an `executes` conclusion. |
 | `function`, `loop`, `region`, `statement`, `call`, `test`, `assignment`, `read`, `read_event`, `back_edge`, `entry`, `exit` | Program-region and point selectors. Each names a region. `region(N)` is the `N`th atomic region, one `step()` crosses; `statement(i)` is a statement as written, and a chain continues it with `.statement(j)` and ends it with `.region(j)`, `.call(f, j)`, `.test()`, `.assignment(x, j)` or `.read(j)`. Unchained `assignment(local, N)` and `read(N)`, and `back_edge()` or `loop(i).back_edge()`, are execution targets only. The suffix `.read_event(i).result` selects a completed volatile observation within an atomic region; it is not a point or execution target. |
+| `termination` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `termination_local` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `termination_strict` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `termination_body` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `termination_returns` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `termination_divergence` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `termination_callbacks` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `strict` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `normal` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `check_termination_local` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `check_termination_component` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
+| `check_termination_callbacks` | Program termination proof syntax; see [termination proofs](index.md#program-termination-proofs). |
 
 See [Tactics](../tactics/index.md) for tactic syntax and classification, and
 [Core tactics](../tactics/index.md#core-tactics) for the ones a hand-written
@@ -575,12 +592,50 @@ C fragments use C-like precedence. From lowest to highest:
 | 8 | supported unary operators | Prefix |
 | 9 | calls, indexing, member access | Left, postfix |
 
-A sidecar has no `&&` or `||`: conjunction and disjunction are the
-proposition connectives `and` and `or`, and a sidecar that writes `&&` or
-`||` is refused with that spelling.
+Conjunction and disjunction are the proposition connectives `and` and `or`.
+The C logical operators `&&` and binary `||` are refused with those spellings.
+A nullary specification lambda uses `||` for its empty parameter list.
 
 This table describes the parser, not all of ISO C. The normative set of types,
 statements, and operators that Click accepts is in [Supported C](c.md).
+
+## Specification lambdas
+
+A lambda is a lexical specification value. Each parameter and the result have
+an explicit type: `|x: Integer| -> Integer { x + 1 }`. Call a lambda value with
+ordinary application syntax, `f(value)`, or apply an expression directly,
+`(|x: Integer| -> Integer { x + 1 })(3)`. Arguments are bound simultaneously,
+so a parameter never captures a name in another argument. A nullary lambda
+can be applied as `(|| -> Integer { 7 })()`.
+
+Expression-local `let` bindings can name and alias lambdas. A local annotation
+uses `fn` to spell the function signature, as `fn(Integer) -> Integer`;
+otherwise the literal determines its type. Captures retain their lexical binding across
+later shadowing. Lambdas are nonrecursive values: the name a `let` introduces
+is not in scope in its initializer.
+
+<!-- verified-example: mdtests/typed_lambdas.md -->
+```click
+function captured(offset: Integer) -> Integer {
+    let add = |x: Integer| -> Integer { x + offset };
+    let offset: Integer = 100;
+    add(2)
+}
+```
+
+This first slice supports `Integer`, `Bool`, 8–64 bit integers, and
+floating-point scalar parameters and results. The result type checks the body even when the lambda
+is unused. Lambdas may capture pure values and other local lambdas; they may
+call named specification functions classified as independent of C memory.
+Memory reads, resource observations, and snapshot selectors inside lambda
+bodies are refused. Function-valued declaration parameters and results,
+function equality, proposition-valued lambdas, and algebraic lambda
+parameters/results are not supported yet. `.fold` accepts these lambda
+values as its step. `.all` and `.any` retain their existing inline binder
+syntax; they do not yet accept lambda values.
+
+Applications elaborate to typed lexical value bindings, using existing kernel
+terms. They introduce no higher-order proof search or automatic extensionality.
 
 ## Ranges and binders
 
@@ -593,6 +648,35 @@ hi`. A range can introduce a binder through `.all`, `.any`, or `.fold`:
 (lo..hi).any(|k| { p[k] == needle })
 (lo..hi).fold(0, |acc, k| { acc + p[k] })
 ```
+
+### Range folds
+
+`(lo..hi).fold(initial, step)` accepts a typed specification lambda value.
+The step must have exactly the signature `fn(A, I) -> A`, where `A` is the
+accumulator carrier and `I` is the range's index carrier. The initial value
+must have carrier `A`. A step can be a literal, a local binding or alias, or
+an expression producing a lambda. Captures retain their lexical bindings.
+
+<!-- verified-example: mdtests/lambda_folds.md -->
+```click
+function lambda_total(lo: int32, hi: int32, offset: Integer) -> Integer {
+    let step = |acc: Integer, k: int32| -> Integer { acc + to_integer(k) + offset };
+    let alias: fn(Integer, int32) -> Integer = step;
+    (lo..hi).fold(0, alias)
+}
+```
+
+The supported carriers remain unchanged: an `Integer` accumulator can use
+`int32`, `uint64`, or `Integer` indices; an `int32` accumulator requires
+`int32` indices. A typed step and its initial value are checked even for an
+empty range. Applications use the same capture-avoiding elaboration as an
+explicit lambda call, and fold laws and machine arithmetic guards are unchanged.
+
+The unannotated shorthand `.fold(initial, |acc, k| { body })` remains
+supported and infers its carriers from the range, initial value, and body.
+It retains support for guarded memory reads. A standalone typed lambda used
+as a step has the current specification-lambda restrictions, including no
+memory reads in its body; capture a read value before constructing it.
 
 Quantifiers use an explicitly typed binder:
 

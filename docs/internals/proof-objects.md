@@ -502,13 +502,33 @@ address-takings. Generation can reject malformed input, but executes no loop,
 recursion, or callback proof. Targeted-selection measure handling occurs here,
 using the already generated recursive edges rather than retrying a checker.
 
-`ProgramTerminationProof::prove_implicitly` executes these requirements. It
-shares the existing loop/recursion descent primitives with the standalone
-termination API. Local descent is proved once per function; strict callback and
-pointer-enabled dependency proofs reuse those results and do not walk the
-function bodies again. Each produced return proof closes its corresponding
-native return goal; callback safety and divergence policy close their own goals.
-The executor never blanket-retires the root's remaining goals.
+`ProgramTerminationProof::into_ordinary_scope` binds these requirements to the
+ordinary proposition proof object. Its root is the conjunction of the selected
+return promises, callback safety, and divergence policies. The private native
+scope owns their identities; Source names them with `termination_returns("f")`,
+`termination_callbacks()`, and `termination_divergence("f")`. These propositions
+cannot be assumed in unrelated contracts or theorems.
+
+An optional top-level `termination by { ... }` block runs the ordinary proof
+driver: `have`, logical steps, `known`, and `solve` have their normal meanings.
+Omitting the block invokes ordinary bounded `solve` on the same root. Its
+termination strategy plans the generated dependencies and emits checked
+`check_termination_local("f")`, `check_termination_component("f", strict|normal)`,
+and `check_termination_callbacks()` steps, followed by `known()`. Local descent
+uses the same primitives as the standalone termination API; its result is
+retained as a fact and reused by strict and normal dependency steps. The
+intermediate spellings are `termination_local("f")`, `termination_strict("f")`,
+and `termination_body("f")`, together with their negations when refused.
+
+`click expand --claim program.termination file.click` writes this ordinary
+certificate as a `termination by` block. Replay needs no termination search;
+checking a partial script does not complete the root merely because some
+termination facts were established. Nested proof contexts can use termination
+steps but cannot publish the program's completion. Successful completion
+publishes only the root's captured return promises, never branch-local optional
+facts. Diagnostics retain the descent/callee reason, while traces show the
+ordinary goal and checked steps. The standalone raw termination API retains its
+independent convenience executor.
 
 Only successful proof execution constructs the affine `ProvedProgramContracts`
 token. Its infallible `complete()` takes no checking inputs and only moves the

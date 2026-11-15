@@ -1327,6 +1327,21 @@ Supported C surface includes:
   supported scalar, data-pointer, fixed-array, and embedded-struct shapes; each
   value has independent storage and may be accessed with `value.field`
 
+Struct-valued calls within expressions and struct-valued conditional operators
+produce address-backed step results. They introduce no program local. A proof
+reads their fields as `statement(i).call(f, j).result.field` or
+`statement(i).ternary(j).result.field`; embedded fields and literal array
+indexes are supported, for example `.result.inner.value` and
+`.result.items[1]`. These reads use the producer's exit snapshot. Pointer fields
+are shallow values: their pointees retain their own storage and permissions.
+The anonymous result's storage ends with its full expression; copying a pointer
+into that storage does not extend its lifetime. A source `statement(i).exit` includes
+that lifetime boundary.
+
+<!-- verified-example: mdtests/aggregate_result_storage_ends_at_the_statement_exit.md -->
+<!-- verified-example: mdtests/aggregate_expression_result_field.md -->
+<!-- verified-example: mdtests/aggregate_expression_results_are_named_by_their_source_steps.md -->
+
 Comparisons return C-style `int32` values: `0` or `1`. They are not Click
 propositions by themselves. `int8`, `int16`, `uint8`, and `uint16` rvalues, and
 a `bool`'s integer value `b as int32`, promote to `int32` for arithmetic, ordered comparisons, shifts, bitwise operators,
@@ -1645,6 +1660,23 @@ designators, and dynamic or non-literal initialization remain unsupported.
 <!-- verified-example: mdtests/designated_aggregate_static_objects.md -->
 
 ## String literals
+
+A proof names a function body's literal object with `f.string_literal(i)`.
+The zero-based ordinal counts literal objects in source order, after adjacent
+string concatenation, including formats lowered specially for `snprintf`.
+`"file.c"::f.string_literal(i)` is the fully qualified form; a declared C source
+alias also qualifies the function. Bare `f` requires an unambiguous owner.
+Indexing and pointer casts use the ordinary pointer syntax. A qualified native
+pointer view is written `f.string_literal(0) as (const uint8 *)`; `volatile`
+and `const volatile` pointer targets also retain those qualifiers when raised.
+An unqualified byte cast continues to inherit a source const view. The literal has its
+own static, read-only storage and introduces no C local. A pointer escaping its
+function retains this identity. Equal text in distinct occurrences has distinct
+source references without a guarantee that their storage differs: C permits
+pooling identical strings. Raising and expansion retain the source reference.
+
+<!-- verified-example: mdtests/string_literal_source_reference.md -->
+<!-- verified-example: mdtests/string_literal_source_reference_out_of_range.md -->
 
 Click accepts basic ASCII string literals in expressions, such as `"ok\\n"`.
 Adjacent basic literals are concatenated as in C, so `"hello, " "world"`

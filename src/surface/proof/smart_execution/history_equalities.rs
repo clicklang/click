@@ -2,6 +2,49 @@
 use super::*;
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Discover already recorded footprint separations only in smart search.
+    /// The resulting proof applies explicit preservation at each endpoint;
+    /// replay neither enumerates facts nor follows memory history.
+    pub(in crate::surface::proof) fn try_recorded_footprint_preservation(
+        search_input: &Proof<'a>,
+        source: &ClickProposition,
+        target: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_recorded_footprint_preservation");
+        if preservation_read(source, target).is_none() {
+            return Ok(None);
+        }
+        let Some(spellings) = search_input.context_surface_propositions() else {
+            return Ok(None);
+        };
+        let mut premises = Vec::new();
+        for fact in search_input.facts().propositions() {
+            check_verification_deadline()?;
+            crate::instrumentation::record_deterministic_work(1);
+            let Proposition::ResourceSeparate { left, .. } = fact else {
+                continue;
+            };
+            if !matches!(left.as_ref(), crate::kernel::Resource::Footprint(_)) {
+                continue;
+            }
+            let premise = spellings.surface(fact)?;
+            if preservation_separation_matches(source, target, premise)
+                && !premises.contains(premise)
+            {
+                premises.push(premise.clone());
+            }
+        }
+        let Some(steps) = statement_preservation_steps(source, target, &premises) else {
+            return Ok(None);
+        };
+        attempt::candidate_outcome(
+            search_input
+                .driver()
+                .apply_ordinary_transport_steps(target, steps),
+        )
+    }
+
     pub(in crate::surface::proof) fn try_history_indexed_equalities(
         search_input: &Proof<'a>,
         source: &ClickProposition,

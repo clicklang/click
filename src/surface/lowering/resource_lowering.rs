@@ -2790,6 +2790,10 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
         ContractExpression::Resource(_) => {
             Err(ClickError::new("a Resource descriptor is not a C argument"))
         }
+        ContractExpression::Lambda { .. } | ContractExpression::Apply { .. } => Err(
+            ClickError::new("a specification lambda application is not a C resource argument"),
+        ),
+
         ContractExpression::IntegerLiteral(text) => {
             let value = text.parse::<u64>().map_err(|_| {
                 ClickError::new("an arbitrary Integer literal requires Integer context")
@@ -2812,12 +2816,9 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
                     MachineTerm::constant(0u32.wrapping_sub(value as u32)),
                 )));
             }
-            Ok(ProgramExpression::Subtract(
-                Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                    MachineTerm::constant(0),
-                ))),
-                Box::new(resource_argument_to_program_expression(expression)?),
-            ))
+            Ok(ProgramExpression::Negate(Box::new(
+                resource_argument_to_program_expression(expression)?,
+            )))
         }
         ContractExpression::ResourceField(_) => Err(ClickError::new(
             "resource fields are symbolic Click values, not C arguments",

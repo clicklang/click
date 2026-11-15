@@ -313,6 +313,7 @@ impl Adapter<'_> {
             })
             .collect::<Result<_, String>>()?;
         Ok(out::Function {
+            sites: Vec::new(),
             name: name.to_string(),
             return_type,
             parameters,
@@ -3340,6 +3341,8 @@ pub(super) fn decode_crate(
     }
     let mut functions = Vec::new();
     let mut used_names = BTreeSet::new();
+    // Each source file parsed once, for its functions' statements as written.
+    let mut parsed_files = BTreeMap::<usize, Option<syn::File>>::new();
     for (id, name) in &adapter.functions {
         if !used_names.insert(name) {
             return Err(unsupported("colliding proof function names"));
@@ -3613,12 +3616,47 @@ pub(super) fn decode_crate(
             unsized_objects: traits::unsized_objects(&adapter, body),
             coercions: std::cell::RefCell::new(Vec::new()),
         };
+        // The function's statements as written, and the one each MIR
+        // statement and terminator comes from: the innermost whose source
+        // holds where it starts, in the function's own file (a macro's code
+        // is where the macro is called).
+        let item_span = f.item_meta.span.data();
+        let parsed = parsed_files
+            .entry(item_span.file_id.index())
+            .or_insert_with(|| {
+                krate
+                    .files
+                    .get(item_span.file_id)
+                    .and_then(|file| file.contents.as_deref())
+                    .and_then(super::source_statements::parse)
+            });
+        let source_statements = parsed
+            .as_ref()
+            .and_then(|file| {
+                super::source_statements::function_statements(
+                    file,
+                    (item_span.beg.line as usize, item_span.beg.col as usize),
+                )
+            })
+            .unwrap_or_default();
+        let site_of = |span: a::Span| -> Option<u32> {
+            let at = [Some(span.data()), span.generated_from_span()]
+                .into_iter()
+                .flatten()
+                .find(|data| data.file_id == item_span.file_id)?;
+            super::source_statements::innermost(
+                &source_statements,
+                (at.beg.line as usize, at.beg.col as usize),
+            )
+            .map(|index| index as u32)
+        };
         let mut blocks = Vec::new();
         let mut coercions = Vec::new();
         for (id, block) in b.body.body.iter_enumerated() {
             if let Some(message) = panic_messages.get(&id) {
                 coercions.push((blocks.len(), Vec::new()));
                 blocks.push(out::MirBlock {
+                    terminator_site: None,
                     statements: Vec::new(),
                     terminator: T::Panic {
                         message: message.clone(),
@@ -3626,26 +3664,34 @@ pub(super) fn decode_crate(
                 });
                 continue;
             }
-            let mut statements: Vec<S> = block
-                .statements
-                .iter()
-                .map(|s| {
-                    if let Some(statements) = b.slice_pair_statement(s)? {
-                        return Ok(statements);
-                    }
-                    b.statement(s)
+            let mut statements: Vec<S> = Vec::new();
+            let mut current_site = None;
+            for s in &block.statements {
+                let converted = match b.slice_pair_statement(s)? {
+                    Some(statements) => statements,
+                    None => b
+                        .statement(s)
                         .map(|s| s.into_iter().collect::<Vec<_>>())
                         .map_err(|e| {
                             format!(
                                 "{} in {name}: {e}",
                                 refusal_location(&krate, source, s.span, f.item_meta.span)
                             )
-                        })
-                })
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .flatten()
-                .collect();
+                        })?,
+                };
+                if converted.is_empty() {
+                    continue;
+                }
+                let site = site_of(s.span);
+                if site != current_site
+                    && let Some(site) = site
+                {
+                    statements.push(S::Site { site });
+                }
+                current_site = site;
+                statements.extend(converted);
+            }
+            let terminator_site = site_of(block.terminator.span);
             let conversion = if matches!(
                 b.adapter.borrowed_protocol_call(&block.terminator)?,
                 Some(protocol::BorrowedProtocolCall::Into { .. })
@@ -3666,6 +3712,11 @@ pub(super) fn decode_crate(
                     target: target.index(),
                 })
             } else if let Some(conversion) = conversion {
+                if terminator_site != current_site
+                    && let Some(site) = terminator_site
+                {
+                    statements.push(S::Site { site });
+                }
                 statements.push(conversion);
                 let u::TerminatorKind::Call { target, .. } = &block.terminator.kind else {
                     unreachable!();
@@ -3684,6 +3735,7 @@ pub(super) fn decode_crate(
             })?;
             coercions.push((blocks.len(), b.coercions.take()));
             blocks.push(out::MirBlock {
+                terminator_site,
                 statements,
                 terminator,
             });
@@ -3695,6 +3747,10 @@ pub(super) fn decode_crate(
         temporaries::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         functions.push(out::Function {
+            sites: source_statements
+                .iter()
+                .map(|statement| statement.path.clone())
+                .collect(),
             name: name.clone(),
             return_type: adapter.ty(&f.signature.output).map_err(|error| {
                 format!(
@@ -3759,6 +3815,7 @@ pub(super) fn decode_crate(
             })
             .collect();
         let instance = out::Function {
+            sites: Vec::new(),
             name: name.clone(),
             return_type: output,
             parameters,
@@ -5684,6 +5741,7 @@ mod tests {
                 if corruption == 1 {
                     let duplicate = mir.blocks.len();
                     mir.blocks.push(out::MirBlock {
+                        terminator_site: None,
                         statements: vec![],
                         terminator: T::Drop {
                             local: local.clone(),

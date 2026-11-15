@@ -109,6 +109,8 @@ struct SourceExecutionLayoutData {
     /// result is the state's call result of that number while its statement
     /// runs.
     call_numbers: BTreeMap<usize, u32>,
+    aggregate_results: BTreeMap<usize, BTreeMap<String, crate::kernel::AggregateField>>,
+    full_expression_ends: BTreeSet<usize>,
     /// The region of each step whose result its statement reads, by the
     /// step's number: a call step, or an assignment step keeping its
     /// target's prior value.
@@ -194,6 +196,7 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
             ProgramExpression::AddressOf(place)
             | ProgramExpression::CheckedObjectAddress(place) => pending.push((place, false)),
             ProgramExpression::Cast { expression, .. }
+            | ProgramExpression::Negate(expression)
             | ProgramExpression::FloatNegate(expression)
             | ProgramExpression::FloatClassification { expression, .. }
             | ProgramExpression::EnumField {
@@ -221,7 +224,8 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
             crate::kernel::binary_c_expression!(a, b) => {
                 pending.extend([(a.as_ref(), true), (b.as_ref(), true)])
             }
-            ProgramExpression::Value(_)
+            ProgramExpression::StringLiteral(_)
+            | ProgramExpression::Value(_)
             | ProgramExpression::Variable(_)
             | ProgramExpression::FunctionAddress(_)
             | ProgramExpression::StepResult { .. } => {}
@@ -335,6 +339,7 @@ impl SourceExecutionLayout {
             .iter()
             .map(|p| p.name().to_string())
             .collect();
+        let imported = function;
         let Some(function) = function.prelowered_kernel_function() else {
             return Ok(Self::new_for_function(function));
         };
@@ -580,6 +585,45 @@ impl SourceExecutionLayout {
             }
         }
         visit(function.body(), &mut next_statement_index, &mut layout)?;
+        // The statements as written its front end says each region comes
+        // from, which name them as C's do.
+        if let Some(sites) = imported.source_sites() {
+            if sites.regions.len() != next_statement_index {
+                return Err(ClickError::new(format!(
+                    "`{}` has {next_statement_index} regions but its front end placed {} in its statements as written",
+                    imported.name(),
+                    sites.regions.len()
+                )));
+            }
+            for (region, site) in sites.regions.iter().enumerate() {
+                let Some(site) = site else {
+                    continue;
+                };
+                let path = sites.paths.get(*site as usize).ok_or_else(|| {
+                    ClickError::new(format!(
+                        "`{}` places a region in statement {site}, which it does not have",
+                        imported.name()
+                    ))
+                })?;
+                layout
+                    .source_statements
+                    .entry(path.clone())
+                    .or_default()
+                    .push(region);
+                layout.region_paths.insert(region, path.clone());
+            }
+            // A loop is the statement its own region comes from, the region
+            // just before its body.
+            let loops = layout
+                .loop_bodies
+                .iter()
+                .filter_map(|(index, body)| {
+                    let path = layout.region_paths.get(&body.checked_sub(1)?)?;
+                    Some((*index, path.clone()))
+                })
+                .collect::<Vec<_>>();
+            layout.loop_paths.extend(loops);
+        }
         collect_kernel_automatic_exits(function.body(), &mut layout);
         Ok(Self {
             data: std::sync::Arc::new(layout),
@@ -658,6 +702,9 @@ impl SourceExecutionLayout {
                 .and_then(syntax::CSite::get)
                 .and_then(|site| site.source_path())
             {
+                if matches!(statement, syntax::CStatement::EndAggregateLifetimes { .. }) {
+                    layout.full_expression_ends.insert(index);
+                }
                 layout
                     .source_statements
                     .entry(path.to_vec())
@@ -667,6 +714,34 @@ impl SourceExecutionLayout {
             }
             if let syntax::CStatement::LoopTest { .. } = statement {
                 layout.loop_tests.insert(index);
+            }
+            if let syntax::CStatement::CallResult {
+                aggregate_layout: Some(result_layout),
+                ..
+            }
+            | syntax::CStatement::StepValue {
+                aggregate_layout: Some(result_layout),
+                ..
+            } = statement
+            {
+                let value_layout = result_layout.to_kernel_aggregate_layout();
+                // The operator region owns the arm's result spelling.
+                let owner = match statement {
+                    syntax::CStatement::StepValue { steps, .. } => steps
+                        .first()
+                        .and_then(|step| layout.step_regions.get(step))
+                        .copied()
+                        .unwrap_or(index),
+                    _ => index,
+                };
+                layout.aggregate_results.insert(
+                    owner,
+                    value_layout
+                        .fields()
+                        .iter()
+                        .map(|field| (field.name().to_string(), field.clone()))
+                        .collect(),
+                );
             }
             if let syntax::CStatement::CallResult { call, .. } = statement {
                 layout.call_numbers.insert(index, *call);
@@ -1128,6 +1203,18 @@ impl SourceExecutionLayout {
     }
 
     /// The number of the call inside an expression that `region` is.
+    pub(in crate::surface) fn is_aggregate_result(&self, region: usize) -> bool {
+        self.data.aggregate_results.contains_key(&region)
+    }
+
+    pub(in crate::surface) fn aggregate_result_field(
+        &self,
+        region: usize,
+        field: &str,
+    ) -> Option<&crate::kernel::AggregateField> {
+        self.data.aggregate_results.get(&region)?.get(field)
+    }
+
     pub(in crate::surface) fn call_number(&self, region: usize) -> Option<u32> {
         self.data.call_numbers.get(&region).copied()
     }
@@ -1445,6 +1532,12 @@ impl SourceExecutionLayout {
     fn source_statement_exit(&self, path: &[u32]) -> usize {
         let data = &self.data;
         if let Some(regions) = data.source_statements.get(path) {
+            if let Some(last) = regions
+                .last()
+                .filter(|last| data.full_expression_ends.contains(last))
+            {
+                return *last;
+            }
             let compound = regions.iter().find(|region| {
                 data.statements
                     .get(region)
@@ -1583,13 +1676,16 @@ pub(in crate::surface) fn collect_program_expression_referenced_names(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Variable(name) => {
             names.insert(name.clone());
         }
-        ProgramExpression::Cast { expression, .. } | ProgramExpression::FloatNegate(expression) => {
+        ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression) => {
             collect_program_expression_referenced_names(expression, names);
         }
         ProgramExpression::Ternary {
@@ -1901,6 +1997,40 @@ mod source_execution_layout_tests {
     use super::*;
 
     #[test]
+    fn source_statement_exit_includes_aggregate_temporary_retirement() {
+        use crate::surface::{ProgramPointKind, SourcePathStep};
+        let functions = syntax::parse_functions(
+            r#"
+            struct box { int32 value; int32 items[1]; };
+            struct box make() { struct box out = {0, {7}}; return out; }
+            int32 plain() { int32* p = make().items; return 0; }
+            int32 conditional(struct box input) { struct box out = 0 ? make() : input; return 0; }
+            int32 choose() { switch (make().value) { case 0: break; } return 0; }
+        "#,
+        )
+        .unwrap();
+        for function in &functions[1..] {
+            let layout = SourceExecutionLayout::for_function(function).unwrap();
+            let exit = layout
+                .source_path_region(&[SourcePathStep::Statement(0)], ProgramPointKind::Exit)
+                .unwrap();
+            let next = layout
+                .source_path_region(&[SourcePathStep::Statement(1)], ProgramPointKind::Entry)
+                .unwrap();
+            assert_eq!(
+                exit + 1,
+                next,
+                "{} exits before its lifetime boundary",
+                function.name()
+            );
+            assert_eq!(
+                layout.source_path_spelling(exit, ProgramPointKind::Exit),
+                Some(vec![SourcePathStep::Statement(0)])
+            );
+        }
+    }
+
+    #[test]
     fn allocation_regions_are_named_for_source_and_typed_execution() {
         let function = syntax::parse_function("void f() { int32* p; p = malloc(4); }").unwrap();
         let typed = function
@@ -2141,6 +2271,8 @@ mod source_execution_layout_tests {
                 calls: BTreeSet::new(),
                 loop_tests: BTreeSet::new(),
                 call_numbers: BTreeMap::new(),
+                aggregate_results: BTreeMap::new(),
+                full_expression_ends: BTreeSet::new(),
                 step_regions: BTreeMap::new(),
                 prior_steps: BTreeMap::new(),
                 operator_regions: BTreeMap::new(),

@@ -267,7 +267,8 @@ fn child_expressions<'a>(
 ) {
     match expression {
         CExpression::ScalarUpdate { .. } => {}
-        CExpression::Void
+        CExpression::StringLiteral(_)
+        | CExpression::Void
         | CExpression::Variable(_)
         | CExpression::StepResult { .. }
         | CExpression::FunctionAddress(_)
@@ -359,7 +360,8 @@ pub(crate) fn child_statements<'a>(
     statements: &mut Vec<&'a CStatement>,
 ) {
     match statement {
-        CStatement::Skip
+        CStatement::EndAggregateLifetimes { .. }
+        | CStatement::Skip
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

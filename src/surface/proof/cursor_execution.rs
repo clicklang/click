@@ -4449,7 +4449,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         ProgramStatement::If { condition, .. } => {
             format!("if ({})", describe_program_expression(condition))
         }
-        ProgramStatement::LoopTest { condition } => {
+        ProgramStatement::LoopTest { condition, .. } => {
             format!(
                 "the loop's test ({})",
                 describe_program_expression(condition)

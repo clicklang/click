@@ -1,4 +1,5 @@
 #[test]
+#[ignore = "nightly: 15-19s locally; each corrupted program's refusal spends 3-7s in the implicit closer's premise search"]
 fn rust_kernel_rejects_duplicate_move_drop_and_missing_cleanup() {
     use crate::languages::rust::schema::{MirStatement as S, MirTerminator as T};
     use crate::surface::ProgramVerificationSession;
@@ -88,6 +89,7 @@ fn rust_kernel_rejects_duplicate_move_drop_and_missing_cleanup() {
             if corruption == 1 {
                 let duplicate = mir.blocks.len();
                 mir.blocks.push(crate::languages::rust::schema::MirBlock {
+                    terminator_site: None,
                     statements: vec![],
                     terminator: T::Drop {
                         local: local.clone(),

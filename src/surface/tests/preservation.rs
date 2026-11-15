@@ -1,6 +1,10 @@
 use super::expansion_tests::mdtest_sources;
 use super::*;
 
+// Smart transport fixtures keep their source and target explicit, but let
+// search choose the derivation. Already-retained facts may expand to known();
+// every expansion must replay without implicit solve or legacy transport.
+
 #[test]
 fn removed_transport_certificate_is_not_a_tactic() {
     let source = "theorem retired() { ensures true by { transport_certificate { premise 0: true => true; conclusion 0; } } }";
@@ -538,7 +542,7 @@ fn generic_viewability_transport_expands_to_ordinary_restriction() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_04")]
-fn single_write_transport_expands_to_preserve_without_search() {
+fn single_write_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/single_write_transport_expansion.md");
     let sources = sources
         .iter()
@@ -546,7 +550,6 @@ fn single_write_transport_expands_to_preserve_without_search() {
         .collect::<Vec<_>>();
     verify_c_sources(&source, &sources).unwrap();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-    assert!(expanded.contains("preserve(separate("), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -557,7 +560,7 @@ fn single_write_transport_expands_to_preserve_without_search() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_05")]
-fn single_write_resource_transport_expands_to_preserve_without_search() {
+fn single_write_resource_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/single_write_resource_transport_expansion.md");
     let sources = sources
         .iter()
@@ -565,7 +568,6 @@ fn single_write_resource_transport_expands_to_preserve_without_search() {
         .collect::<Vec<_>>();
     verify_c_sources(&source, &sources).unwrap();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-    assert!(expanded.contains("preserve(separate("), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -574,11 +576,7 @@ fn single_write_resource_transport_expands_to_preserve_without_search() {
 #[test]
 fn bare_transport_of_a_known_resource_read_expands_to_lookup() {
     let (source, sources) = mdtest_sources("mdtests/single_write_resource_transport_expansion.md");
-    let bare = source.replace(
-        " using {\n            separate(statement(0).footprint, m);\n        }",
-        "",
-    );
-    assert_ne!(bare, source);
+    let bare = source;
     let sources = sources
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
@@ -604,17 +602,11 @@ fn multiple_write_transport_expands_to_ordinary_equalities() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    for source in [source.clone(), source.replace(
-        "separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));",
-        "separate(statement(1).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*q));",
-    )] {
-        verify_c_sources(&source, &sources).unwrap();
-        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), 2, "{expanded}");
-        assert!(!expanded.contains("transport("), "{expanded}");
-        assert!(!expanded.contains("transport_certificate"), "{expanded}");
-        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
-    }
+    verify_c_sources(&source, &sources).unwrap();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
@@ -626,11 +618,6 @@ fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-    assert_eq!(
-        expanded.matches("preserve(separate(").count(),
-        2,
-        "{expanded}"
-    );
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -648,10 +635,7 @@ fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
     let c = sources[0].1.replace("*p = 1;", "*q = 1;");
     let overlapping = source.replace("views *q;", "owns *q;");
     assert!(verify_c_sources(&overlapping, &[(sources[0].0.as_str(), c.as_str())]).is_err());
-    let invalid = source.replace(
-        "            separate(statement(1).footprint, memory(*q));",
-        "            separate(statement(1).footprint, memory(*p));",
-    );
+    let invalid = source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { known(); }\n        transport(");
     let sources = sources
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
@@ -660,7 +644,7 @@ fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
 }
 
 #[test]
-fn inequality_transport_expands_to_preserve_rewrite_and_known() {
+fn inequality_transport_expands_to_ordinary_steps() {
     let (source, sources) = mdtest_sources("mdtests/inequality_transport_expansion.md");
     let sources = sources
         .iter()
@@ -669,8 +653,6 @@ fn inequality_transport_expands_to_preserve_rewrite_and_known() {
     for relation in [">", ">=", "<", "<=", "!="] {
         let source = source.replace("> 0", &format!("{relation} 0"));
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert!(expanded.contains("preserve(separate("), "{expanded}");
-        assert!(expanded.contains("rewrite("), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -688,13 +670,15 @@ fn inequality_transport_expands_to_preserve_rewrite_and_known() {
 fn inequality_transport_handles_multiple_statements_and_resource_fields() {
     let (source, sources) = mdtest_sources("mdtests/inequality_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
-    let source = source.replace("    have *q > 0 by", r#"
+    let source = source.replace(
+        "    have *q > 0 by",
+        r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
     }
-    have *q > 0 by"#).replace("            separate(statement(0).footprint, memory(*q));",
-        "            separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));");
+    have *q > 0 by"#,
+    );
     let resource = source
         .replace(
             "void keep(int32*",
@@ -710,11 +694,6 @@ fn inequality_transport_handles_multiple_statements_and_resource_fields() {
     for source in [source, resource, reversed] {
         let sources = [(sources[0].0.as_str(), c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(
-            expanded.matches("preserve(separate(").count(),
-            2,
-            "{expanded}"
-        );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -735,8 +714,6 @@ fn known_value_transport_expands_to_ordinary_steps() {
     );
     for source in [source.clone(), reversed] {
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert!(expanded.contains("preserve(separate("), "{expanded}");
-        assert!(expanded.contains("rewrite("), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -754,12 +731,15 @@ fn known_value_transport_expands_to_ordinary_steps() {
 fn known_value_transport_preserves_resource_fields_across_statements() {
     let (source, sources) = mdtest_sources("mdtests/known_value_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
-    let source = source.replace("    have *q == 7 by", r#"
+    let source = source.replace(
+        "    have *q == 7 by",
+        r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
     }
-    have *q == 7 by"#).replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));");
+    have *q == 7 by"#,
+    );
     let resource = source
         .replace(
             "void keep(int32*",
@@ -771,11 +751,6 @@ fn known_value_transport_preserves_resource_fields_across_statements() {
     for source in [source, resource] {
         let sources = [(sources[0].0.as_str(), c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(
-            expanded.matches("preserve(separate(").count(),
-            2,
-            "{expanded}"
-        );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -783,7 +758,7 @@ fn known_value_transport_preserves_resource_fields_across_statements() {
 }
 
 #[test]
-fn snapshot_comparison_transport_expands_without_search() {
+fn snapshot_comparison_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/snapshot_comparison_transport_expansion.md");
     let sources = sources
         .iter()
@@ -792,8 +767,6 @@ fn snapshot_comparison_transport_expands_without_search() {
     for relation in ["==", "!=", "<", "<=", ">", ">="] {
         let source = source.replace("== 7", &format!("{relation} 7"));
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert!(expanded.contains("preserve(separate("), "{expanded}");
-        assert!(expanded.contains("rewrite("), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -824,22 +797,15 @@ fn snapshot_comparison_transport_retains_the_other_operands_snapshot() {
             "at(statement(0).entry, *q == *p)",
         )
         .replace("have *q == 7", "have *q == at(statement(0).entry, *p)")
-        .replace(
-            ", *q == 7) using",
-            ", *q == at(statement(0).entry, *p)) using",
-        );
+        .replace(", *q == 7)", ", *q == at(statement(0).entry, *p))");
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-    assert!(expanded.contains("preserve(separate("), "{expanded}");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     // The write changes p from 7 to 0. Its old value may not become its current value.
     let wrong = source
         .replace("have *q == at(statement(0).entry, *p)", "have *q == *p")
-        .replace(
-            ", *q == at(statement(0).entry, *p)) using",
-            ", *q == *p) using",
-        );
+        .replace(", *q == at(statement(0).entry, *p))", ", *q == *p)");
     assert!(verify_c_sources(&wrong, &sources).is_err());
 }
 
@@ -848,12 +814,15 @@ fn snapshot_comparison_transport_retains_the_other_operands_snapshot() {
 fn snapshot_comparison_transport_handles_resource_fields_across_statements() {
     let (source, sources) = mdtest_sources("mdtests/snapshot_comparison_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
-    let source = source.replace("    have *q == 7 by", r#"
+    let source = source.replace(
+        "    have *q == 7 by",
+        r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
     }
-    have *q == 7 by"#).replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));");
+    have *q == 7 by"#,
+    );
     let resource = source
         .replace(
             "void keep(int32*",
@@ -865,11 +834,6 @@ fn snapshot_comparison_transport_handles_resource_fields_across_statements() {
     for source in [source, resource] {
         let sources = [(sources[0].0.as_str(), c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(
-            expanded.matches("preserve(separate(").count(),
-            2,
-            "{expanded}"
-        );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -877,7 +841,7 @@ fn snapshot_comparison_transport_handles_resource_fields_across_statements() {
 }
 
 #[test]
-fn two_read_transport_expands_both_operands_without_search() {
+fn two_read_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     let sources = sources
         .iter()
@@ -894,11 +858,6 @@ fn two_read_transport_expands_both_operands_without_search() {
     ));
     for source in variants {
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(
-            expanded.matches("preserve(separate(").count(),
-            2,
-            "{expanded}"
-        );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -919,7 +878,7 @@ fn two_read_transport_refuses_changed_reads_and_missing_source() {
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
     assert!(verify_c_sources(&source.replace("    requires *q == *r;\n", ""), &sources).is_err());
-    let invalid = source.replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(0).footprint, memory(*p));");
+    let invalid = source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { known(); }\n        transport(");
     assert!(verify_c_sources(&invalid, &sources).is_err());
 }
 
@@ -928,7 +887,9 @@ fn two_read_transport_refuses_changed_reads_and_missing_source() {
 fn two_read_transport_handles_resources_and_multiple_statements() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
-    let source = source.replace("    have *q == *r by", r#"
+    let source = source.replace(
+        "    have *q == *r by",
+        r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
@@ -936,7 +897,8 @@ fn two_read_transport_handles_resources_and_multiple_statements() {
     have separate(statement(1).footprint, memory(*r)) by {
         normalize() using { separate(memory(*p), memory(*r)); };
     }
-    have *q == *r by"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
+    have *q == *r by"#,
+    );
     let resource = source
         .replace(
             "void keep(int32*",
@@ -951,11 +913,6 @@ fn two_read_transport_handles_resources_and_multiple_statements() {
     for source in [source, resource] {
         let sources = [(sources[0].0.as_str(), c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(
-            expanded.matches("preserve(separate(").count(),
-            4,
-            "{expanded}"
-        );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -963,7 +920,7 @@ fn two_read_transport_handles_resources_and_multiple_statements() {
 }
 
 #[test]
-fn conjunction_transport_expands_with_ordinary_both() {
+fn conjunction_transport_expands_to_ordinary_steps() {
     let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
     let sources = sources
         .iter()
@@ -980,12 +937,6 @@ fn conjunction_transport_expands_with_ordinary_both() {
     ];
     for source in variants {
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert!(expanded.contains("both {"), "{expanded}");
-        assert_eq!(
-            expanded.matches("preserve(separate(").count(),
-            2,
-            "{expanded}"
-        );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -1012,7 +963,7 @@ fn conjunction_transport_requires_both_facts_and_preservations() {
         );
         assert!(verify_c_sources(&missing, &sources).is_err());
     }
-    let invalid = source.replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(0).footprint, memory(*p));");
+    let invalid = source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { known(); }\n        transport(");
     assert!(verify_c_sources(&invalid, &sources).is_err());
 }
 
@@ -1021,7 +972,9 @@ fn conjunction_transport_requires_both_facts_and_preservations() {
 fn conjunction_transport_handles_resources_and_multiple_statements() {
     let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
-    let source = source.replace("    have *q == 7 and *r == 8 by", r#"
+    let source = source.replace(
+        "    have *q == 7 and *r == 8 by",
+        r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
@@ -1029,7 +982,8 @@ fn conjunction_transport_handles_resources_and_multiple_statements() {
     have separate(statement(1).footprint, memory(*r)) by {
         normalize() using { separate(memory(*p), memory(*r)); };
     }
-    have *q == 7 and *r == 8 by"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
+    have *q == 7 and *r == 8 by"#,
+    );
     let resource = source
         .replace(
             "void keep(int32*",
@@ -1044,11 +998,6 @@ fn conjunction_transport_handles_resources_and_multiple_statements() {
     for source in [source, resource] {
         let sources = [(sources[0].0.as_str(), c.as_str())];
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-        assert_eq!(
-            expanded.matches("preserve(separate(").count(),
-            4,
-            "{expanded}"
-        );
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
@@ -1088,7 +1037,6 @@ fn nested_conjunction_transport_expands_and_replays() {
         resource,
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
-        assert!(expanded.matches("both {").count() >= 2, "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
@@ -1110,8 +1058,7 @@ fn nested_conjunction_transport_checks_deep_leaves_and_all_evidence() {
         .collect::<Vec<_>>();
     for invalid in [
         source.replace("requires *q == 7 and (*r == 8 and *s == 9);", "requires *q == 7 and *r == 8;"),
-        source.replace("            separate(statement(0).footprint, memory(*s));",
-            "            separate(statement(0).footprint, memory(*s));\n            separate(statement(0).footprint, memory(*p));"),
+        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { known(); }\n        transport("),
     ] {
         assert!(verify_c_sources(&invalid, &files).is_err());
     }
@@ -1136,12 +1083,13 @@ fn conjunction_projection_transport_expands_only_the_selected_leaf() {
         source.clone(),
         source.replace("*p == 8 and *q == 7", "*q == 7 and *p == 8"),
         source.replace("*p == 8 and *q == 7", "*p == 8 and (*p > 0 and *q == 7)"),
-        source.replace("at(statement(0).entry, *p == 8 and *q == 7)", "at(statement(0).entry, *p == 8) and at(statement(0).entry, *q == 7)"),
-        source.replace("            separate(statement(0).footprint", "            at(statement(0).entry, *p == 8 and *q == 7);\n            separate(statement(0).footprint"),
+        source.replace(
+            "at(statement(0).entry, *p == 8 and *q == 7)",
+            "at(statement(0).entry, *p == 8) and at(statement(0).entry, *q == 7)",
+        ),
         resource,
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), 1, "{expanded}");
         assert!(!expanded.contains("both {"), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
@@ -1161,8 +1109,8 @@ fn conjunction_projection_transport_checks_source_and_preservation() {
         .collect::<Vec<_>>();
     for invalid in [
         source.replace("requires *p == 8 and *q == 7;", "requires *p == 8;"),
-        source.replace("at(statement(0).entry, *p == 8 and *q == 7)", "at(statement(0).entry, *p == 8 and *q == 9)"),
-        source.replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*p));"),
+        source.replace("have *q == 7", "have *q == 9").replace(", *q == 7)", ", *q == 9)"),
+        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { known(); }\n        transport("),
     ] {
         assert!(verify_c_sources(&invalid, &files).is_err());
     }
@@ -1172,15 +1120,17 @@ fn conjunction_projection_transport_checks_source_and_preservation() {
 fn conjunction_projection_transport_crosses_multiple_statements() {
     let (source, files) = mdtest_sources("mdtests/conjunction_projection_transport_expansion.md");
     let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
-    let source = source.replace("    have *q == 7 by", r#"
+    let source = source.replace(
+        "    have *q == 7 by",
+        r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
     }
-    have *q == 7 by"#).replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));");
+    have *q == 7 by"#,
+    );
     let files = [(files[0].0.as_str(), c.as_str())];
     let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
-    assert_eq!(expanded.matches("preserve(separate(").count(), 2);
     assert!(!expanded.contains("transport("));
     assert!(!expanded.contains("transport_certificate"));
     without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
@@ -1208,14 +1158,19 @@ fn conjunction_selection_transport_expands_and_replays() {
         source.clone(),
         source.replace("*q == 7 and *r == 8", "*r == 8 and *q == 7"),
         source.replace("*q == 7 and *r == 8", "(*r == 8 and *q == 7) and *q == 7"),
-        source.replace("*q == 7 and (*p == 8 and *r == 8)", "(*q == 7 and *q > 0) and (*p == 8 and *r == 8)")
+        source
+            .replace(
+                "*q == 7 and (*p == 8 and *r == 8)",
+                "(*q == 7 and *q > 0) and (*p == 8 and *r == 8)",
+            )
             .replace("*q == 7 and *r == 8", "(*r == 8 and *q > 0) and *q == 7"),
-        source.replace("at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8))", "at(statement(0).entry, *q == 7) and at(statement(0).entry, *p == 8 and *r == 8)"),
-        source.replace("            separate(statement(0).footprint, memory(*q));", "            at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8));\n            separate(statement(0).footprint, memory(*q));"),
+        source.replace(
+            "at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8))",
+            "at(statement(0).entry, *q == 7) and at(statement(0).entry, *p == 8 and *r == 8)",
+        ),
         resource,
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
-        assert!(expanded.contains("both {"), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
@@ -1237,7 +1192,7 @@ fn conjunction_selection_transport_checks_every_selected_leaf() {
     for invalid in [
         source.replace("requires *q == 7 and (*p == 8 and *r == 8);", "requires *q == 7 and *p == 8;"),
         source.replace("*q == 7 and *r == 8", "*q == 7 and *r == 9"),
-        source.replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*p));"),
+        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { known(); }\n        transport("),
     ] {
         assert!(verify_c_sources(&invalid, &files).is_err());
     }
@@ -1247,7 +1202,9 @@ fn conjunction_selection_transport_checks_every_selected_leaf() {
 fn conjunction_selection_transport_crosses_multiple_statements() {
     let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
     let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
-    let source = source.replace("    have *q == 7 and *r == 8 by", r#"
+    let source = source.replace(
+        "    have *q == 7 and *r == 8 by",
+        r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
@@ -1255,10 +1212,10 @@ fn conjunction_selection_transport_crosses_multiple_statements() {
     have separate(statement(1).footprint, memory(*r)) by {
         normalize() using { separate(memory(*p), memory(*r)); };
     }
-    have *q == 7 and *r == 8 by"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
+    have *q == 7 and *r == 8 by"#,
+    );
     let files = [(files[0].0.as_str(), c.as_str())];
     let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
-    assert_eq!(expanded.matches("preserve(separate(").count(), 4);
     assert!(!expanded.contains("transport("));
     assert!(!expanded.contains("transport_certificate"));
     without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
@@ -1282,21 +1239,19 @@ fn implication_transport_expands_by_preserving_guard_and_conclusion() {
         .replace("memory(*r)", "b")
         .replace("*q", "a.value")
         .replace("*r", "b.value");
-    let shared = source.replace("*r == 8", "*q > 0").replace(
-        "            separate(statement(0).footprint, memory(*r));",
-        "",
-    );
-    for (source, preserves) in [
-        (source.clone(), 2),
-        (source.replace("*q == 7 implies *r == 8", "*q > 0 implies *r != 8"), 2),
-        (source.replace("*q == 7 implies *r == 8", "*q < *r implies *r == 8"), 2),
-        (source.replace("at(statement(0).entry, *q == 7 implies *r == 8)", "at(statement(0).entry, *q == 7) implies at(statement(0).entry, *r == 8)"), 2),
-        (source.replace("            separate(statement(0).footprint, memory(*q));", "            at(statement(0).entry, *q == 7 implies *r == 8);\n            separate(statement(0).footprint, memory(*q));"), 2),
-        (resource, 2),
-        (shared, 1),
+    let shared = source.replace("*r == 8", "*q > 0");
+    for source in [
+        source.clone(),
+        source.replace("*q == 7 implies *r == 8", "*q > 0 implies *r != 8"),
+        source.replace("*q == 7 implies *r == 8", "*q < *r implies *r == 8"),
+        source.replace(
+            "at(statement(0).entry, *q == 7 implies *r == 8)",
+            "at(statement(0).entry, *q == 7) implies at(statement(0).entry, *r == 8)",
+        ),
+        resource,
+        shared,
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
-        assert_eq!(expanded.matches("preserve(separate(").count(), preserves, "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
@@ -1312,12 +1267,10 @@ fn implication_transport_handles_four_distinct_reads() {
         .replace("*q == 7 implies *r == 8", "*q < *r implies *s < *t");
     for read in ["s", "t"] {
         source = source.replace("    views *q;", &format!("    views *{read};\n    requires separate(memory(*p), memory(*{read}));\n    views *q;"))
-            .replace("    have *q < *r implies *s < *t by", &format!("    have separate(statement(0).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}\n    have *q < *r implies *s < *t by"))
-            .replace("            separate(statement(0).footprint, memory(*q));", &format!("            separate(statement(0).footprint, memory(*{read}));\n            separate(statement(0).footprint, memory(*q));"));
+            .replace("    have *q < *r implies *s < *t by", &format!("    have separate(statement(0).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}\n    have *q < *r implies *s < *t by"));
     }
     let files = [(files[0].0.as_str(), c.as_str())];
     let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
-    assert_eq!(expanded.matches("preserve(separate(").count(), 4);
     assert!(!expanded.contains("transport("));
     assert!(!expanded.contains("transport_certificate"));
     without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
@@ -1342,10 +1295,6 @@ fn implication_transport_rejects_changed_guard_and_conclusion() {
         invalid = invalid
             .replace(&block, "")
             .replace(
-                &format!("            separate(statement(0).footprint, memory(*{read}));"),
-                "            at(statement(0).entry, *q == 7 implies *r == 8);",
-            )
-            .replace(
                 "normalize() using { separate(memory(*p), memory(*q)); };",
                 "normalize() using { separate(memory(*q), memory(*r)); };",
             )
@@ -1361,7 +1310,7 @@ fn implication_transport_rejects_changed_guard_and_conclusion() {
         .collect::<Vec<_>>();
     for invalid in [
         source.replace("    requires *q == 7 implies *r == 8;", ""),
-        source.replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*p));"),
+        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { known(); }\n        transport("),
     ] {
         assert!(verify_c_sources(&invalid, &files).is_err());
     }
@@ -1371,7 +1320,9 @@ fn implication_transport_rejects_changed_guard_and_conclusion() {
 fn implication_transport_crosses_multiple_statements() {
     let (source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
     let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
-    let source = source.replace("    have *q == 7 implies *r == 8 by", r#"
+    let source = source.replace(
+        "    have *q == 7 implies *r == 8 by",
+        r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
@@ -1379,10 +1330,10 @@ fn implication_transport_crosses_multiple_statements() {
     have separate(statement(1).footprint, memory(*r)) by {
         normalize() using { separate(memory(*p), memory(*r)); };
     }
-    have *q == 7 implies *r == 8 by"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
+    have *q == 7 implies *r == 8 by"#,
+    );
     let files = [(files[0].0.as_str(), c.as_str())];
     let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
-    assert_eq!(expanded.matches("preserve(separate(").count(), 4);
     assert!(!expanded.contains("transport("));
     assert!(!expanded.contains("transport_certificate"));
     without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();
@@ -1420,11 +1371,6 @@ fn compound_implication_transport_expands_without_whole_goal_rewrites() {
     }
     for source in variants {
         let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
-        assert_eq!(
-            expanded.matches("preserve(separate(").count(),
-            2,
-            "{expanded}"
-        );
         assert!(!expanded.contains("rewrite("), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
@@ -1446,8 +1392,7 @@ fn compound_implication_transport_rejects_changed_nested_guards() {
         let invalid = source.replace(original, formula).replace("views *q;", "owns *q;")
             .replace(&format!("    requires {formula};"), &format!("    requires *q == 0 and *r == 7;\n    requires separate(memory(*q), memory(*r));\n    requires {formula};"))
             .replace("    have separate(statement(0).footprint, memory(*q)) by {\n        normalize() using { separate(memory(*p), memory(*q)); };\n    }\n", "")
-            .replace("normalize() using { separate(memory(*p), memory(*r)); };", "normalize() using { separate(memory(*q), memory(*r)); };")
-            .replace("            separate(statement(0).footprint, memory(*q));", &format!("            at(statement(0).entry, {formula});"));
+            .replace("normalize() using { separate(memory(*p), memory(*r)); };", "normalize() using { separate(memory(*q), memory(*r)); };");
         assert!(verify_c_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
     }
     let files = files
@@ -1456,7 +1401,7 @@ fn compound_implication_transport_rejects_changed_nested_guards() {
         .collect::<Vec<_>>();
     for invalid in [
         source.replace(&format!("    requires {original};"), ""),
-        source.replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(0).footprint, memory(*p));"),
+        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { known(); }\n        transport("),
     ] { assert!(verify_c_sources(&invalid, &files).is_err()); }
 }
 
@@ -1464,7 +1409,9 @@ fn compound_implication_transport_rejects_changed_nested_guards() {
 fn compound_implication_transport_crosses_multiple_statements() {
     let (source, files) = mdtest_sources("mdtests/compound_implication_transport_expansion.md");
     let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
-    let source = source.replace("    have (*q == 7 and *r > 0) implies", r#"
+    let source = source.replace(
+        "    have (*q == 7 and *r > 0) implies",
+        r#"
     step();
     have separate(statement(1).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
@@ -1472,10 +1419,10 @@ fn compound_implication_transport_crosses_multiple_statements() {
     have separate(statement(1).footprint, memory(*r)) by {
         normalize() using { separate(memory(*p), memory(*r)); };
     }
-    have (*q == 7 and *r > 0) implies"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
+    have (*q == 7 and *r > 0) implies"#,
+    );
     let files = [(files[0].0.as_str(), c.as_str())];
     let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
-    assert_eq!(expanded.matches("preserve(separate(").count(), 4);
     assert!(!expanded.contains("rewrite("));
     assert!(!expanded.contains("transport("));
     assert!(!expanded.contains("transport_certificate"));
@@ -1513,10 +1460,10 @@ test_batches! {
         resource_viewability_restriction_expands_without_transport,
         viewability_transport_expands_to_ordinary_restriction,
         generic_viewability_transport_expands_to_ordinary_restriction,
-        single_write_transport_expands_to_preserve_without_search,
+        single_write_transport_expansion_replays_without_search,
     ],
     transport_batch_05: [
-        single_write_resource_transport_expands_to_preserve_without_search,
+        single_write_resource_transport_expansion_replays_without_search,
         multiple_write_transport_expands_to_ordinary_equalities,
         multiple_write_resource_transport_expands_to_ordinary_equalities,
         multiple_write_transport_rejects_changed_reads_and_invalid_separation,
@@ -1541,7 +1488,7 @@ test_batches! {
 
 #[test]
 #[ignore = "nightly: computed scalar transport expansion and cold replay"]
-fn computed_scalar_transport_expands_read_preservation() {
+fn computed_scalar_transport_expands_to_ordinary_steps() {
     let (source, sources) = mdtest_sources("mdtests/snapshot_comparison_transport_expansion.md");
     let source = source.replace("*q == 7", "*q + 1 == 8");
     let sources = sources
@@ -1550,11 +1497,6 @@ fn computed_scalar_transport_expands_read_preservation() {
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert_eq!(
-        expanded.matches("preserve(separate(").count(),
-        1,
-        "{expanded}"
-    );
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let missing = source.replace("    requires *q + 1 == 8;\n", "");
@@ -1570,30 +1512,21 @@ fn computed_scalar_transport_expands_read_preservation() {
 
 #[test]
 #[ignore = "nightly: indexed transport expansion and cold replay"]
-fn indexed_read_transport_expands_to_selected_preservation() {
+fn indexed_read_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     let source = source.replace("*q", "q[0]").replace("*r", "q[1]");
-    let source = source.replace(
-        "            separate(statement(0).footprint, memory(q[0]));",
-        "            at(statement(0).entry, q[0] == q[1]);\n            separate(statement(0).footprint, memory(q[0]));",
-    );
     let sources = sources
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert_eq!(
-        expanded.matches("preserve(separate(").count(),
-        2,
-        "{expanded}"
-    );
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
 #[ignore = "nightly: returned-have transport expansion and cold replay"]
-fn a_returned_have_expands_the_same_single_preservation() {
+fn returned_have_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/single_write_transport_expansion.md");
     let source = source
         .replace(
@@ -1608,15 +1541,13 @@ fn a_returned_have_expands_the_same_single_preservation() {
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert_eq!(
-        expanded.matches("preserve(separate(").count(),
-        1,
-        "{expanded}"
-    );
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
-    let changed = expanded.replace("at(statement(0).exit, *q)", "at(statement(0).exit, *p)");
-    assert_ne!(changed, expanded, "the preservation names its exit read");
-    assert!(without_implicit_solve(|| verify_c_sources(&changed, &sources)).is_err());
+    let changed = source.replace(
+        "*q == at(statement(0).entry, *q)",
+        "*q != at(statement(0).entry, *q)",
+    );
+    assert_ne!(changed, source);
+    assert!(verify_c_sources(&changed, &sources).is_err());
 }
 
 #[test]
@@ -1666,4 +1597,88 @@ fn memory_observation_does_not_establish_initialization() {
         "{}",
         error.report()
     );
+}
+
+#[test]
+#[ignore = "nightly: quantified preservation migration expansion and cold replay"]
+fn quantified_preservation_migrations_expand_and_replay() {
+    for fixture in [
+        "mdtests/quantified_frame_carries_a_fact_past_the_excluded_store.md",
+        "mdtests/quantified_frame_preserves_uint64_equality.md",
+        "mdtests/quantified_frame_carries_a_bound_fact_to_the_current_state.md",
+        "mdtests/quantified_disjoint_array_store_frame.md",
+        "mdtests/quantified_fact_explicit_transport_inside_have.md",
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "mark.contract")
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+    }
+}
+
+#[test]
+#[ignore = "nightly: copy-loop migration expansion and cold replay"]
+fn copy_loop_preservation_migrations_expand_and_replay() {
+    for (fixture, claim) in [
+        ("mdtests/copy3_array_demo.md", "copy3.contract"),
+        (
+            "mdtests/copy_n_segment_invariant.md",
+            "copy_n_segment_invariant.contract",
+        ),
+        (
+            "mdtests/uninitialized_destination_beside_a_viewed_source.md",
+            "copy_n_segment_invariant.contract",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+    }
+}
+
+#[test]
+#[ignore = "nightly: loop ownership preservation migration expansion and cold replay"]
+fn loop_ownership_preservation_migrations_expand_and_replay() {
+    for (fixture, claim) in [
+        (
+            "mdtests/retained_loop_metadata_transport_crosses_a_separated_store.md",
+            "clear.contract",
+        ),
+        (
+            "mdtests/empty_loop_footprint_preserves_nested_read_transport.md",
+            "fill.contract",
+        ),
+        (
+            "mdtests/iterated_ownership_claim_loop.md",
+            "claim_run.contract",
+        ),
+        (
+            "mdtests/iterated_ownership_release_loop.md",
+            "release_run.contract",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+    }
 }

@@ -3028,58 +3028,24 @@ fn verify_program_in_context(
     {
         assumed_terminating.extend(modeled_thread_runtime_names());
     }
-    let proved_program = program_contracts.generate_termination(crate::kernel::ProgramTerminationInputs {
-        partial_rules: &partial_rules,
-        plans: &termination_plans,
-        inline_bodies: &inline_bodies,
-        assumed_terminating: &assumed_terminating,
-        diverging_contracts: &diverging_contracts,
-        has_unselected_functions: !unselected_executing_names.is_empty(),
-    }).and_then(|proof| proof.prove_implicitly()).map_err(|failure| {
-        use crate::kernel::{ProgramContractFailure, ProgramContractGoal};
-        match failure {
-            ProgramContractFailure::UnfinishedBody(name) => {
-                let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
-                ClickError::new(format!("contract proof for `{name}` still owes its body obligations")).at_declaration(name)
-            }
-            ProgramContractFailure::MissingReturnEvidence(name) => {
-                let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
-                ClickError::new(format!("contract proof for `{name}` still owes its program termination obligation")).at_declaration(name)
-            }
-            ProgramContractFailure::Analysis(error) => {
-                let located = ClickError::new(format!("could not certify C termination: {error}"));
-                match error.function() {
-                    Some(function) => located.at_declaration(function.split_once('#').map_or(function, |(name, _)| name)),
-                    None => located,
-                }
-            }
-            ProgramContractFailure::Obligation { goal, verdicts } => {
-                let spelling = |name: &str| name.split_once('#').map_or(name, |(name, _)| name).to_string();
-                match goal {
-                    ProgramContractGoal::DivergencePolicy(name) => {
-                        let name = spelling(&name);
-                        ClickError::new(format!("`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker")).at_declaration(&name)
-                    }
-                    ProgramContractGoal::CallbackSafety => {
-                        let unsuitable = &verdicts.unsuitable_callbacks[0];
-                        let taker = spelling(&unsuitable.taker);
-                        let callback = spelling(&unsuitable.callback);
-                        let lacks = match verdicts.refusals.get(&unsuitable.callback) {
-                            Some(refusal) => termination_refusal_report(&callback, refusal, &verdicts.refusals, &declared_diverging, None, &tactic_names),
-                            None => "it has no termination evidence".to_string(),
-                        };
-                        ClickError::new(format!("could not certify termination for `{taker}`: it takes the address of `{callback}`, and a function reached through a function pointer must return without calling through one: {lacks}")).at_declaration(&taker)
-                    }
-                    ProgramContractGoal::Returns(name) => {
-                        let refusal = &verdicts.refusals[&name];
-                        let name = spelling(&name);
-                        ClickError::new(format!("could not certify termination for `{name}`: {}", termination_refusal_report(&name, refusal, &verdicts.refusals, &declared_diverging, verdicts.unsuitable_callbacks.first(), &tactic_names))).at_declaration(&name)
-                    }
-                    ProgramContractGoal::Program | ProgramContractGoal::Body { .. } | ProgramContractGoal::BodyOpening => unreachable!("the program root was opened into its declared goals"),
-                }
-            }
-        }
-    })?;
+    let generated_program = program_contracts
+        .generate_termination(crate::kernel::ProgramTerminationInputs {
+            partial_rules: &partial_rules,
+            plans: &termination_plans,
+            inline_bodies: &inline_bodies,
+            assumed_terminating: &assumed_terminating,
+            diverging_contracts: &diverging_contracts,
+            has_unselected_functions: !unselected_executing_names.is_empty(),
+        })
+        .map_err(|failure| program_contract_failure(failure, &declared_diverging, &tactic_names))?;
+    let (proved_program, _termination_certificate) = super::proof::program_termination::prove(
+        generated_program,
+        file.termination_proof.as_deref(),
+        SpecDefinitions::new(&predicate_environment, &click_function_environment),
+        &theorem_environment,
+        &tactic_names,
+    )?;
+    super::expansion::record_termination_certificate(&_termination_certificate);
     let completed_program = proved_program.complete();
     function_environment = function_environment
         .with_verified_function_termination_rules(completed_program.into_termination_rules());
@@ -3909,7 +3875,8 @@ fn c_statement_calls_recording(
             syntax::CStatement::Label { statement, .. } => {
                 collect_function_pointer_names(statement, names)
             }
-            syntax::CStatement::Skip
+            syntax::CStatement::EndAggregateLifetimes { .. }
+            | syntax::CStatement::Skip
             | syntax::CStatement::Break
             | syntax::CStatement::Continue
             | syntax::CStatement::Goto { .. }
@@ -4031,7 +3998,8 @@ fn c_statement_calls_recording(
             syntax::CExpression::UnionField { pointer, .. } => {
                 collect_function_addresses(pointer, names);
             }
-            syntax::CExpression::Void
+            syntax::CExpression::StringLiteral(_)
+            | CExpression::Void
             | syntax::CExpression::Variable(_)
             | syntax::CExpression::StepResult { .. }
             | syntax::CExpression::Int32Literal(_)
@@ -4067,8 +4035,10 @@ fn c_statement_calls_recording(
         allocator: &mut BTreeSet<&'static str>,
     ) {
         match statement {
-            syntax::CStatement::Skip | syntax::CStatement::Break | syntax::CStatement::Continue => {
-            }
+            syntax::CStatement::EndAggregateLifetimes { .. }
+            | syntax::CStatement::Skip
+            | syntax::CStatement::Break
+            | syntax::CStatement::Continue => {}
             syntax::CStatement::Goto { .. } => calls.push(BTreeSet::new()),
             syntax::CStatement::Label { statement, .. } => {
                 visit(statement, calls, function_pointer_names, allocator)
@@ -4887,6 +4857,7 @@ impl parser::ProgramLayouts {
             .map(|function| (function.name(), function.source_name()))
             .collect::<BTreeMap<_, _>>();
         for function in &execution.functions {
+            tables.register_string_literals(function);
             let captures = function.closure_captures();
             if !captures.is_empty() {
                 tables.closure_captures.insert(
@@ -8757,5 +8728,89 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
             crate::languages::rust::names::result_type_name(&spelling(ok), &spelling(err))
         }
         _ => algebraic_type.name.clone(),
+    }
+}
+
+pub(in crate::surface) fn program_contract_failure(
+    failure: crate::kernel::ProgramContractFailure,
+    declared_diverging: &BTreeSet<String>,
+    tactic_names: &BTreeSet<String>,
+) -> ClickError {
+    use crate::kernel::{ProgramContractFailure, ProgramContractGoal};
+    match failure {
+        ProgramContractFailure::UnfinishedBody(name) => {
+            let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
+            ClickError::new(format!(
+                "contract proof for `{name}` still owes its body obligations"
+            ))
+            .at_declaration(name)
+        }
+        #[cfg(test)]
+        ProgramContractFailure::MissingReturnEvidence(name) => {
+            let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
+            ClickError::new(format!(
+                "contract proof for `{name}` still owes its program termination obligation"
+            ))
+            .at_declaration(name)
+        }
+        ProgramContractFailure::Analysis(error) => {
+            let located = ClickError::new(format!("could not certify C termination: {error}"));
+            match error.function() {
+                Some(function) => located
+                    .at_declaration(function.split_once('#').map_or(function, |(name, _)| name)),
+                None => located,
+            }
+        }
+        ProgramContractFailure::Obligation { goal, verdicts } => {
+            let spelling = |name: &str| {
+                name.split_once('#')
+                    .map_or(name, |(name, _)| name)
+                    .to_string()
+            };
+            match goal {
+                ProgramContractGoal::DivergencePolicy(name) => {
+                    let name = spelling(&name);
+                    ClickError::new(format!("`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker")).at_declaration(&name)
+                }
+                ProgramContractGoal::CallbackSafety => {
+                    let unsuitable = &verdicts.unsuitable_callbacks[0];
+                    let taker = spelling(&unsuitable.taker);
+                    let callback = spelling(&unsuitable.callback);
+                    let lacks = match verdicts.refusals.get(&unsuitable.callback) {
+                        Some(refusal) => termination_refusal_report(
+                            &callback,
+                            refusal,
+                            &verdicts.refusals,
+                            &declared_diverging,
+                            None,
+                            &tactic_names,
+                        ),
+                        None => "it has no termination evidence".to_string(),
+                    };
+                    ClickError::new(format!("could not certify termination for `{taker}`: it takes the address of `{callback}`, and a function reached through a function pointer must return without calling through one: {lacks}")).at_declaration(&taker)
+                }
+                ProgramContractGoal::Returns(name) => {
+                    let refusal = &verdicts.refusals[&name];
+                    let name = spelling(&name);
+                    ClickError::new(format!(
+                        "could not certify termination for `{name}`: {}",
+                        termination_refusal_report(
+                            &name,
+                            refusal,
+                            &verdicts.refusals,
+                            &declared_diverging,
+                            verdicts.unsuitable_callbacks.first(),
+                            &tactic_names
+                        )
+                    ))
+                    .at_declaration(&name)
+                }
+                ProgramContractGoal::Program
+                | ProgramContractGoal::Body { .. }
+                | ProgramContractGoal::BodyOpening => {
+                    unreachable!("the program root was opened into its declared goals")
+                }
+            }
+        }
     }
 }

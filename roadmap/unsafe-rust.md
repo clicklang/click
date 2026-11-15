@@ -84,8 +84,9 @@ from, unless Click adopts Tree Borrows' rule for it.
 
 ## Dependencies
 
-- [The shared object model](object-model.md) owns lifetimes and the shared
-  memory semantics this builds on.
+- The shared [object and memory laws](../design/cpp-object-model.md#decisions-and-scope)
+  and [current native-interface evidence](../design/object-model-current-audit.md#native-interface-evidence-matrix)
+  constrain this work.
 - The loaded-pointer representation (pointers read from memory named by the
   read, not by arithmetic on the argument block) is in progress; raw pointers
   stored in struct fields depend on it.

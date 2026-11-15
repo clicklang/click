@@ -121,7 +121,8 @@ impl<'a> SpecNode<'a> {
                     visit(N::Expression(left));
                     visit(N::Expression(right));
                 }
-                SpecExpression::BitwiseNot(body)
+                SpecExpression::Negate(body)
+                | SpecExpression::BitwiseNot(body)
                 | SpecExpression::NarrowArithmetic(body, _)
                 | SpecExpression::Cast(body, _)
                 | SpecExpression::PointerCoercion(body, _)

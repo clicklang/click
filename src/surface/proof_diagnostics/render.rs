@@ -1378,6 +1378,15 @@ impl Renderer<'_> {
                 self.push(if *value { " is true" } else { " is false" });
             }
             Proposition::Predicate { name, arguments } => {
+                if let Some(surface) =
+                    crate::surface::proof::program_termination::predicate_spelling(name)
+                {
+                    self.push(&crate::surface::printing::source_click_proposition(
+                        &surface,
+                    ));
+                    self.depth -= 1;
+                    return;
+                }
                 if name == &format!("{}1", crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX)
                     && let [origin, start, end] = arguments.as_slice()
                 {
@@ -2407,7 +2416,9 @@ impl Renderer<'_> {
             crate::kernel::PointerBlock::LoadedPointer(identity) => {
                 self.fmt(format_args!("loaded-pointer#{}", identity.0))
             }
-            crate::kernel::PointerBlock::StringLiteral { identity, .. } => self.push(identity),
+            crate::kernel::PointerBlock::StringLiteral { identity, .. } => {
+                self.push(&identity.to_string())
+            }
         };
         self.push("+");
         self.offset(&p.offset, 0);

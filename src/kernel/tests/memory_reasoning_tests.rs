@@ -4258,7 +4258,7 @@ fn owned_members_in_different_blocks_are_separate() {
     // Equal literals may share their bytes, so owning both separates nothing.
     let literal = |identity: &str| Pointer {
         block: PointerBlock::StringLiteral {
-            identity: identity.to_string(),
+            identity: StringLiteralId::new(identity, 0),
             bytes: b"ok\0".to_vec(),
         },
         offset: PointerOffsetTerm::Constant(0),
@@ -5828,7 +5828,7 @@ fn a_verifier_temporary_is_proven_distinct_from_every_named_block() {
     let argument = PointerBlock::ExternalArgument;
     let object = PointerBlock::ExternalObject(Variable(5));
     let literal = PointerBlock::StringLiteral {
-        identity: "string:one".to_string(),
+        identity: StringLiteralId::new("one", 0),
         bytes: b"ok\0".to_vec(),
     };
     let heap = PointerBlock::Heap(1000001);
@@ -5863,7 +5863,7 @@ fn a_verifier_temporary_is_proven_distinct_from_every_named_block() {
 #[test]
 fn string_literal_blocks_separate_only_by_their_bytes() {
     let literal = |identity: &str, bytes: &[u8]| PointerBlock::StringLiteral {
-        identity: identity.to_string(),
+        identity: StringLiteralId::new(identity, 0),
         bytes: bytes.to_vec(),
     };
     let ok = literal("first", b"ok");

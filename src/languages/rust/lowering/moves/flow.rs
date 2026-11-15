@@ -130,6 +130,7 @@ pub(super) fn header_condition(
                 definitions.insert(name.clone(), expanded);
             }
             S::EndStorage { local } if scalar(local) => {}
+            S::Site { .. } => {}
             _ => return Err("MIR while header requires pure scalar copies and comparisons".into()),
         }
     }
@@ -497,6 +498,7 @@ mod tests {
     fn function(blocks: Vec<MirBlock>) -> Function {
         let span = Span { line: 1, column: 1 };
         Function {
+            sites: Vec::new(),
             name: "flow".into(),
             return_type: Type::Unit,
             parameters: vec![],
@@ -519,6 +521,7 @@ mod tests {
     }
     fn block(terminator: T) -> MirBlock {
         MirBlock {
+            terminator_site: None,
             statements: vec![],
             terminator,
         }
@@ -587,6 +590,7 @@ mod tests {
             locals: vec![],
             blocks: vec![
                 MirBlock {
+                    terminator_site: None,
                     statements: vec![
                         S::Assign {
                             target: local("alias"),
@@ -605,6 +609,7 @@ mod tests {
                     terminator: T::Goto { target: 1 },
                 },
                 MirBlock {
+                    terminator_site: None,
                     statements: vec![
                         S::EndStorage {
                             local: "alias".into(),
@@ -849,6 +854,7 @@ mod tests {
         let mut mir = MirBody {
             locals: vec![],
             blocks: vec![MirBlock {
+                terminator_site: None,
                 statements: vec![
                     assign("m", local("i")),
                     assign("i", E::Integer { value: 5 }),

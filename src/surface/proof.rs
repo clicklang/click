@@ -45,6 +45,7 @@ pub(in crate::surface) use proof_object::{
 mod checked_drivers;
 mod execution_state;
 mod guarded_consequents;
+pub(in crate::surface) mod program_termination;
 mod pure_theorems;
 pub(in crate::surface) use pure_theorems::kernel_law_index_types;
 mod resources;

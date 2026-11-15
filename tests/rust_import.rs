@@ -3817,6 +3817,43 @@ fn charon_generic_stack_verifies_once_for_every_type() {
         .unwrap_or_else(|error| panic!("{error:?}"));
 }
 
+/// A Rust function's statements as written name its points, as a C
+/// function's do: `round_trip`'s three statements each make one call, which
+/// `statement(i).call(0)` reaches.
+#[test]
+fn charon_rust_statements_as_written_name_their_calls() {
+    let prepared = generic_stack_prepared();
+    // `round_trip`'s proof reaches its three calls by raw region; name each
+    // by its statement instead.
+    let head = "fn generic_stack::round_trip(";
+    let start = GENERIC_STACK_SIDECAR
+        .find(head)
+        .expect("round_trip's proof");
+    let (before, proof) = GENERIC_STACK_SIDECAR.split_at(start);
+    let mut proof = proof.to_string();
+    for statement in 0..3 {
+        let at = proof
+            .find("    step_until(region(")
+            .expect("a step to one of round_trip's calls");
+        let end = at + proof[at..].find(");").expect("the step's end") + 2;
+        proof.replace_range(
+            at..end,
+            &format!("    step_until(statement({statement}).call(0));"),
+        );
+    }
+    let named = format!("{before}{proof}");
+    verify_rust_function(&named, &prepared, "generic_stack::round_trip")
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    // `round_trip` has three statements.
+    let missing = named.replacen("statement(2).call(0)", "statement(3).call(0)", 1);
+    let error = verify_rust_function(&missing, &prepared, "generic_stack::round_trip")
+        .expect_err("a statement the function does not have is refused");
+    assert!(
+        format!("{error}").contains("has no `statement(3)`"),
+        "{error}"
+    );
+}
+
 /// A `push` that claims the old list is kept is refused.
 #[test]
 fn charon_generic_stack_refuses_a_push_that_keeps_the_old_list() {

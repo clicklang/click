@@ -616,7 +616,11 @@ fn verify_expansion(
     whole_claim: bool,
 ) -> Result<(), String> {
     let check = || {
-        if whole_claim {
+        if whole_claim && claim == "program.termination" {
+            click::surface::without_implicit_solve_for_claim(claim, || {
+                verify_expansion_now(project, expanded, inputs, claim)
+            })
+        } else if whole_claim {
             click::surface::without_implicit_solve(|| {
                 verify_expansion_now(project, expanded, inputs, claim)
             })
@@ -711,6 +715,20 @@ mod tests {
     use click::surface::c_tactic_source_position;
     use std::env;
     use std::time::Duration;
+
+    #[test]
+    fn program_termination_claim_expands_and_rechecks() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/termination_ordinary_proof_steps.md");
+        let arguments = parse_arguments(
+            ["--claim", "program.termination", path.to_str().unwrap()].map(str::to_string),
+        )
+        .unwrap();
+        let expanded = run(&arguments)
+            .expect("ordinary termination certificate replays with implicit solving disabled");
+        assert!(expanded.contains("termination by {"));
+        assert!(expanded.contains("check_termination_component(\"caller\", normal)"));
+    }
 
     #[test]
     #[ignore = "nightly: 1.2s in the parallel gate"]

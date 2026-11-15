@@ -202,6 +202,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
             match operator {
                 ComparisonOperator::LessEqual => left <= right,
                 ComparisonOperator::LessThan => left < right,
+                ComparisonOperator::Equal => left == right,
                 _ => panic!("unexpected order axiom operator: {operator:?}"),
             }
         }
@@ -209,7 +210,12 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         let large: BigInt = (BigInt::from(1) << 160) + 1;
         let mut samples: Vec<BigInt> = (-2..=2).map(BigInt::from).collect();
         samples.extend([large.clone(), -large]);
-        for name in ["add_le", "multiply_order_nonnegative", "round_down_le"] {
+        for name in [
+            "add_le",
+            "multiply_order_nonnegative",
+            "round_down_le",
+            "le_antisymmetric",
+        ] {
             let law = library
                 .iter()
                 .find(|law| law.name() == format!("click::integer::{name}"))

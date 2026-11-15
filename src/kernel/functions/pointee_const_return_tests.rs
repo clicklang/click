@@ -118,13 +118,19 @@ fn pointee_const_return_string_literal_storage_is_read_only_but_type_is_mutable(
         ProgramType::UInt8Pointer,
         "literal_source",
         Vec::new(),
-        program_return(crate::kernel::program_expression::variable("literal")),
+        program_return(ProgramExpression::StringLiteral(StringLiteralId::new(
+            "literal_source",
+            0,
+        ))),
     )
-    .with_string_literals(vec![StringLiteral::new("literal", b"ok\0".to_vec())]);
+    .with_string_literals(vec![StringLiteral::new(
+        StringLiteralId::new("literal_source", 0),
+        b"ok\0".to_vec(),
+    )]);
     let state = initialize_program_function_globals(&ExecutionState::new(), &function);
     let paths = evaluate_program_expression_paths(
         &state,
-        &crate::kernel::program_expression::variable("literal"),
+        &ProgramExpression::StringLiteral(StringLiteralId::new("literal_source", 0)),
         &PureFactContext::new(),
         &mut ExecutionBudget::default(),
     )

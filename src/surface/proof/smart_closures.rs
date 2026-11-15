@@ -1,4 +1,5 @@
 //! Smart closure search and linear script interpretation.
+mod integer_composition;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_term;
 use crate::kernel::{bits32_constant, constant_u32, int64_constant, uint64_constant};
@@ -141,6 +142,15 @@ fn collect_signed_surface_terms<'a>(
         terms.push(expression);
         match expression {
             ContractExpression::Resource(_) => {}
+            ContractExpression::Lambda { .. } => {}
+            ContractExpression::Apply {
+                function,
+                arguments,
+            } => {
+                pending.push(function);
+                pending.extend(arguments);
+            }
+
             ContractExpression::CUnary { operand: inner, .. }
             | ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)

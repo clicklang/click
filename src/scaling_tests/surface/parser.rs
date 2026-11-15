@@ -41,3 +41,36 @@ fn comparison_lookahead_stops_at_its_proposition() {
     });
     assert_linear(&conjuncts);
 }
+
+#[test]
+fn literal_reference_parsing_shares_the_source_index_as_other_literals_grow() {
+    let mut samples = Vec::new();
+    for count in [1, 16, 256] {
+        let mut layouts = ProgramLayouts::default();
+        for ordinal in 0..count {
+            let id = crate::kernel::StringLiteralId::new("f", ordinal);
+            let pointer = crate::kernel::Memory::string_literal_pointer(&id, b"x\0");
+            std::sync::Arc::make_mut(&mut layouts.string_literal_values).insert(
+                id,
+                ProgramValue::typed_pointer(pointer, ProgramType::UInt8Pointer),
+            );
+        }
+        std::sync::Arc::make_mut(&mut layouts.string_literal_owners)
+            .insert("f".into(), BTreeSet::from([None]));
+        let index = layouts.string_literal_values.clone();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut parser =
+                Parser::with_program_layouts("f.string_literal(0)", layouts, None).unwrap();
+            assert!(std::sync::Arc::ptr_eq(
+                &index,
+                &parser.string_literal_values
+            ));
+            parser.parse_contract_expression().unwrap()
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
+}

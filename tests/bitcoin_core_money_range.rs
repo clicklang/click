@@ -4514,3 +4514,98 @@ fn pinned_std_byte_reinterpretation_requires_original_storage_ownership() {
     }
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+#[ignore = "nightly: modular byte-output composition with pinned C++ source"]
+fn pinned_std_byte_modular_output_initializes_uint32_offline() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cpp-byte-output");
+    let harness = fs::read_to_string(fixture.join("initialize.cpp")).unwrap();
+    let source = fs::read_to_string(fixture.join("initialize.click")).unwrap();
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "modular-byte-output-word",
+        &harness,
+        &["sysroot/usr/include/c++/12/cstddef"],
+    );
+    fs::write(root.join("byte.click"), &source).unwrap();
+    let project = read_click_project(&root.join("byte.click"), &source).unwrap();
+    click::surface::with_proof_trace("probe", || {
+        verify_program_prepared_project(&project, &import)
+    })
+    .unwrap_or_else(|error| panic!("{}\n{source}", error.report()));
+    let expanded = expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::program(&import),
+        "probe.ensures_0",
+    )
+    .unwrap();
+    let rewritten = project.with_entry_source(expanded.clone());
+    click::surface::without_implicit_solve_for_claim("probe.contract", || {
+        verify_program_prepared_project(&rewritten, &import).map_err(|error| error.report())
+    })
+    .unwrap();
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&project, &import).unwrap();
+    let position = project_tactic_source_position(
+        &rewritten,
+        &ProgramInputs::program(&import),
+        "probe.ensures_0",
+        0,
+    )
+    .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .unwrap();
+    fs::remove_dir_all(root).unwrap();
+
+    // Each control retains the original four-byte caller and modular call.
+    // Missing output initialization must fail even beside value postconditions.
+    let missing_byte = harness.replace("p[3] = static_cast<std::byte>(18);", "");
+    let no_permission = source
+        .replace("consumes uninitialized(p[0..4]);", "views p[0..4];")
+        .replace("produces p[0..4];", "");
+    let stale_harness = harness.replace("unsigned int obj;", "unsigned int obj = 0;");
+    let stale_source = source
+        .replace("ensures result == 305419896u32;", "ensures result == 0u32;")
+        .replace(
+            "    step();",
+            "    have obj == 0u32 by { known(); }\n    step();",
+        );
+    for (name, cpp, proof) in [
+        (
+            "byte-output-missing-byte",
+            missing_byte.as_str(),
+            source.as_str(),
+        ),
+        (
+            "byte-output-no-permission",
+            harness.as_str(),
+            no_permission.as_str(),
+        ),
+        (
+            "byte-output-stale-word",
+            stale_harness.as_str(),
+            stale_source.as_str(),
+        ),
+    ] {
+        let (root, import) = pinned_span_fixture_with_exact_dependencies(
+            name,
+            cpp,
+            &["sysroot/usr/include/c++/12/cstddef"],
+        );
+        fs::write(root.join("byte.click"), proof).unwrap();
+        let project = read_click_project(&root.join("byte.click"), proof).unwrap();
+        if name == "byte-output-stale-word" {
+            let companion =
+                proof.replace("ensures result == 0u32;", "ensures result == 305419896u32;");
+            let positive = project.with_entry_source(companion);
+            verify_program_prepared_project(&positive, &import).unwrap();
+        }
+        let error = verify_program_prepared_project(&project, &import).expect_err(name);
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{name}: {error}"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+}

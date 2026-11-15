@@ -205,3 +205,60 @@ fn integer_affine_comparison_work_is_linear_in_a_shared_term_dag() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn integer_coefficient_normalization_work_scales_with_selected_terms() {
+    let mut costs = Vec::new();
+    for size in [16u64, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut sum = IntegerTerm::constant_i64(0);
+        let mut distributed = IntegerTerm::constant_i64(0);
+        for index in 0..size {
+            let value = IntegerTerm::Variable(Variable(991_000 + index));
+            sum = IntegerTerm::add(sum, value.clone());
+            distributed = IntegerTerm::add(
+                distributed,
+                IntegerTerm::multiply(IntegerTerm::constant_i64(7), value),
+            );
+        }
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(
+                IntegerTerm::multiply(IntegerTerm::constant_i64(7), sum).into(),
+                distributed.into(),
+            ),
+            true,
+        );
+        let (proved, work) =
+            crate::instrumentation::measure_deterministic_work(|| normalizes_context_free(&goal));
+        assert!(proved);
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= 6 * pair[0]),
+        "coefficient normalization rescanned its input: {costs:?}"
+    );
+}
+
+#[test]
+fn integer_coefficient_normalization_visits_shared_nodes_once() {
+    let mut costs = Vec::new();
+    for depth in [16u64, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut value: SharedIntegerTerm = IntegerTerm::Variable(Variable(992_001)).into();
+        for _ in 0..depth {
+            value = IntegerTerm::Add(value.clone(), value).into();
+        }
+        let left = IntegerTerm::Multiply(IntegerTerm::constant_i64(3).into(), value.clone()).into();
+        let right =
+            IntegerTerm::Add(value.clone(), IntegerTerm::Add(value.clone(), value).into()).into();
+        let goal = Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true);
+        let (proved, work) =
+            crate::instrumentation::measure_deterministic_work(|| normalizes_context_free(&goal));
+        assert!(proved);
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
+        "coefficient normalization expanded shared paths: {costs:?}"
+    );
+}

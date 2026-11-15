@@ -491,6 +491,11 @@ fn substitute_click_proposition_nonlogical(
                 body: Box::new(body),
             })
         }
+        ClickProposition::PredicateCall { name, .. }
+            if crate::kernel::TerminationAtomKind::from_spelling(name).is_some() =>
+        {
+            Ok(proposition.clone())
+        }
         ClickProposition::PredicateCall { name, arguments } => {
             Ok(ClickProposition::PredicateCall {
                 name: name.clone(),
@@ -874,7 +879,7 @@ fn collect_click_proposition_binding_names(
     }
 }
 
-fn collect_contract_expression_binding_names(
+pub(in crate::surface) fn collect_contract_expression_binding_names(
     expression: &ContractExpression,
     names: &mut BTreeSet<String>,
 ) {
@@ -885,6 +890,22 @@ fn collect_contract_expression_binding_names(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => {}
+        ContractExpression::Lambda {
+            parameters, body, ..
+        } => {
+            names.extend(parameters.iter().map(|(name, _)| name.clone()));
+            collect_contract_expression_binding_names(body, names);
+        }
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            collect_contract_expression_binding_names(function, names);
+            for argument in arguments {
+                collect_contract_expression_binding_names(argument, names);
+            }
+        }
+
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
@@ -1577,6 +1598,31 @@ fn rewrite_contract_expression_exact(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => (expression.clone(), false),
+        // A rewrite does not cross a lambda binder: applying it first
+        // exposes its body with the established capture-avoiding rules.
+        ContractExpression::Lambda { .. } => (expression.clone(), false),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            let (function, mut changed) = unary(function);
+            let arguments = arguments
+                .iter()
+                .map(|argument| {
+                    let (argument, did_change) = unary(argument);
+                    changed |= did_change;
+                    argument
+                })
+                .collect();
+            (
+                ContractExpression::Apply {
+                    function: Box::new(function),
+                    arguments,
+                },
+                changed,
+            )
+        }
+
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
@@ -2764,6 +2810,26 @@ fn collect_contract_expression_referenced_names_one(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => {}
+        ContractExpression::Lambda {
+            parameters, body, ..
+        } => {
+            let mut captures = BTreeSet::new();
+            collect_contract_expression_referenced_names(body, &mut captures);
+            for (name, _) in parameters {
+                captures.remove(name);
+            }
+            names.extend(captures);
+        }
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            collect_contract_expression_referenced_names(function, names);
+            for argument in arguments {
+                collect_contract_expression_referenced_names(argument, names);
+            }
+        }
+
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::Negate(inner) => {
             collect_contract_expression_referenced_names(inner, names);
@@ -3037,6 +3103,8 @@ fn collect_click_proposition_referenced_names_one(
                 names.insert(item.clone());
             }
         }
+        ClickProposition::PredicateCall { name, .. }
+            if crate::kernel::TerminationAtomKind::from_spelling(name).is_some() => {}
         ClickProposition::PredicateCall { arguments, .. } => {
             for argument in arguments {
                 collect_contract_expression_referenced_names(argument, names);
@@ -3702,6 +3770,76 @@ fn substitute_contract_expression_node(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => Ok(expression.clone()),
+        ContractExpression::Lambda {
+            parameters,
+            result,
+            body,
+        } => {
+            let bound = parameters
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<BTreeSet<_>>();
+            let mut scoped = substitutions.clone();
+            scoped.values = Cow::Owned(
+                substitutions
+                    .values
+                    .iter()
+                    .filter(|(name, _)| !bound.contains(name.as_str()))
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect(),
+            );
+            let mut replacement_names = BTreeSet::new();
+            for replacement in scoped.substituted_expressions() {
+                collect_contract_expression_referenced_names(replacement, &mut replacement_names);
+            }
+            let mut used = replacement_names.clone();
+            used.extend(parameters.iter().map(|(name, _)| name.clone()));
+            used.extend(scoped.replaced_names().cloned());
+            collect_contract_expression_binding_names(body, &mut used);
+            collect_contract_expression_referenced_names(body, &mut used);
+            let mut next = 0;
+            let mut renaming = BTreeMap::new();
+            let parameters = parameters
+                .iter()
+                .map(|(name, ty)| {
+                    if !replacement_names.contains(name) {
+                        return (name.clone(), ty.clone());
+                    }
+                    let fresh = loop {
+                        let candidate = format!("__click_lambda_{next}");
+                        next += 1;
+                        if used.insert(candidate.clone()) {
+                            break candidate;
+                        }
+                    };
+                    renaming.insert(name.clone(), ContractExpression::Binding(fresh.clone()));
+                    (fresh, ty.clone())
+                })
+                .collect();
+            let renamed = if renaming.is_empty() {
+                None
+            } else {
+                Some(substitute_contract_expression(body, &renaming)?)
+            };
+            let body =
+                substitute_contract_expression_in(renamed.as_ref().unwrap_or(body), &scoped)?;
+            Ok(ContractExpression::Lambda {
+                parameters,
+                result: result.clone(),
+                body: Box::new(body),
+            })
+        }
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => Ok(ContractExpression::Apply {
+            function: Box::new(substitute_contract_expression_in(function, substitutions)?),
+            arguments: arguments
+                .iter()
+                .map(|argument| substitute_contract_expression_in(argument, substitutions))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
+
         ContractExpression::Old(_) | ContractExpression::At { .. }
             if substitutions.current_program_values =>
         {
@@ -4372,7 +4510,8 @@ pub(in crate::surface) fn substitute_program_expression_in(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ProgramExpression, String> {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => Ok(expression.clone()),
         ProgramExpression::Variable(name) => {
@@ -4403,6 +4542,9 @@ pub(in crate::surface) fn substitute_program_expression_in(
             pointee_constant: *pointee_constant,
             explicit_qualification: *explicit_qualification,
         }),
+        ProgramExpression::Negate(expression) => Ok(ProgramExpression::Negate(Box::new(
+            substitute_program_expression_in(expression, substitutions)?,
+        ))),
         ProgramExpression::FloatNegate(expression) => Ok(ProgramExpression::FloatNegate(Box::new(
             substitute_program_expression_in(expression, substitutions)?,
         ))),
@@ -4611,6 +4753,8 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => None,
+        ContractExpression::Lambda { .. } | ContractExpression::Apply { .. } => None,
+
         ContractExpression::ResourceField(access) => field(access),
         ContractExpression::IntegerLiteral(value) => {
             let value = value.parse::<u64>().ok()?;
@@ -4764,6 +4908,8 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => None,
+        ContractExpression::Lambda { .. } | ContractExpression::Apply { .. } => None,
+
         ContractExpression::ResourceField(_) => None,
         ContractExpression::IntegerLiteral(_) | ContractExpression::Negate(_) => {
             resource_argument_to_program_expression(expression).ok()

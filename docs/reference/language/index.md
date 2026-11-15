@@ -214,13 +214,15 @@ passed as `n as uint64`.
 
 ### Casts
 
-A cast is written after its operand, `e as T`. An integer target is bare:
-`x as uint32`, `old(x) as int32`, `n / d as int128`. A pointer target is
+A cast is written after its operand, `e as T`. A numeric target is bare:
+`x as uint32`, `old(x) as int32`, `n / d as int128`, `x as float`, `x as double`. A pointer target is
 parenthesized: `p as (uint8 *)`, `p as (void *)`, `p as (struct node *)`,
 `p as (const struct node *)`. The targets are the ten machine integer types
-`int8` to `uint128`, `void *`, a pointer to one of them, `float *`, `double *`,
-and a pointer to a struct; a pointer target is unqualified except for a
-struct's `const`, and a byte view inherits its source's qualification. A Rust source's sidecar
+`int8` to `uint128`, `float`, `double`, `void *`, a pointer to one of them,
+and a pointer to a struct. Native pointer targets may add `const`, `volatile`,
+or both before the pointee type, such as `p as (const uint8 *)`; struct pointer
+targets support `const`. An unqualified byte view inherits its source's const
+qualification. Qualifying a pointer grants no memory access permission. A Rust source's sidecar
 also writes Rust's scalar names, `x as u32`.
 
 Float pointer casts preserve the address and use the existing pointer-cast
@@ -228,9 +230,16 @@ rules: in a pure-function body, a non-byte scalar pointer target requires a
 `void *` source. A byte pointer therefore uses
 `p as (void *) as (float *)` (or `double *`). Reads and arithmetic after
 `p as (float *)` or `p as (double *)` use that pointee's width. A cast supplies no access permission or initializedness,
-and does not perform a numeric conversion of the stored bits. Bare `as float`
-and `as double` are not added to default Click by these pointer forms.
+and does not perform a numeric conversion of the stored bits.
 See `mdtests/contract_float_pointer_casts.md` for reads and pointer strides.
+
+The numeric targets `float` and `double` use the existing C binary32 and
+binary64 conversion rules, including integer rounding, width conversion,
+signed zero, infinities, and NaNs. Like integer targets, these Click spellings
+cast the value observed by their operand, including `old(...)` and `at(...)`.
+They do not add a conversion from mathematical `Integer` or 128-bit integers.
+Float-to-integer casts keep their existing finite/range obligations. Checked
+examples: `mdtests/float_numeric_cast_spellings.md`.
 
 `as` binds tighter than every binary operator and looser than every unary
 one, as in Rust, and chains left to right:
@@ -3954,8 +3963,17 @@ call of `f` and its second atomic region.
 than one statement's, so `call(twice, 1)` is the second call of `twice`
 wherever it is written (`mdtests/a_function_level_call_is_named_among_the_function_s_calls.md`,
 `mdtests/a_function_level_call_past_the_function_s_calls_is_refused.md`).
-A Rust proof names a call this way, writing `f` as its path, such as
+A Rust proof writes `f` as its path, such as
 `call(result_values::ok_if, 0).result`.
+
+A Rust function's statements as written are named the same way.
+`statement(i)` is the `i`th statement of the body's block, its tail expression
+included. `S.statement(j)` counts the statements of every block inside `S` in
+source order, so an `if`'s arms share one count, and so do a `match`'s arms; an
+arm whose body is no block is one statement. A closure is a function of its
+own. Each region is in the innermost statement whose source holds the MIR it
+was lowered from, so `step_until(statement(1).call(0))` stops at the second
+statement's call (`charon_rust_statements_as_written_name_their_calls`).
 
 `.region(j)`, `.call(f, j)`, `.test()`, `.assignment(x, j)`, `.read(j)`,
 `.and(j)`, `.or(j)` and `.ternary(j)` end a chain
@@ -4034,10 +4052,10 @@ not every branch/loop boundary currently has a complete recorded footprint.
 Click writes points the same way. A diagnostic, a suggested premise or an
 expansion names a recorded point by its statement: `.entry` or `.exit` when
 the point is one, and the statement's `.call(f, j)` or `.region(j)` otherwise.
-A call that belongs to no statement as written, as in a Rust function, is
-written `call(f, j)` among the function's calls. Click writes `region(N)`
-only for another atomic region that belongs to no statement as written, such
-as a `break`, or in a function whose frontend records none.
+A call that belongs to no statement as written is written `call(f, j)` among
+the function's calls. Click writes `region(N)` only for another atomic region
+that belongs to no statement as written, such as a `break` or a Rust drop the
+compiler added, or in a function whose frontend records none.
 Nested statements and loop bodies are in
 `mdtests/statement_regions_count_the_arms_of_an_if_together.md` and
 `mdtests/statement_regions_reach_a_loop_body.md`.
@@ -4135,7 +4153,10 @@ function count3(p: int32[], x: int32) -> int32 {
 Supported expression features include parameters, literals, `+`, `-`, `*`,
 `/`, `%`, `<<`, `>>`, `int32` bitwise `&`, `|`, `^`, unary `~`, indexing,
 `let name [: type] = value; body`, `if proposition { then } else { else }`,
-range `.fold`, and calls to other Click functions.
+range `.fold`, typed specification lambdas and their application, and calls
+to other Click functions. A fold accepts a lambda value as its step; see
+[Range folds](grammar.md#range-folds) for its signature and compatibility
+shorthand.
 
 A function returning `bool` states a truth value, and its body may be a
 comparison or a connective of comparisons: `function positive(x: int32) ->
@@ -4560,3 +4581,25 @@ proposition. C proofs receive this fact from a little-endian execution
 environment; a big-endian environment supplies its negation. Pure theorems
 have no target assumption and must require the fact explicitly. It is the
 target premise of `integer::uint32_from_le_bytes`.
+
+
+## Program termination proofs
+
+After function bodies have been proved, program closing has an ordinary goal
+combining the selected return promises, divergence policies, and callback safety.
+An optional top-level `termination by { ... }` block supplies its proof. With no
+block, or with proofs omitted at its end, the implicit solver runs on that goal.
+Ordinary `have`, logical tactics, `known`, and `solve` work inside the block.
+
+The propositions are `termination_returns("f")`, `termination_divergence("f")`,
+and `termination_callbacks()`. Checked steps also expose `termination_local("f")`,
+`termination_strict("f")`, and `termination_body("f")`. Quoted names identify
+functions rather than proof variables. Negations record refused classifications;
+these scoped propositions cannot be declared as assumptions in unrelated
+contracts or theorems.
+
+`click expand --claim program.termination file.click` writes a replayable block
+of [termination checks](../tactics/index.md#termination-checks) and ordinary proof
+steps. `click verify --trace-proof program.termination file.click` traces that
+proof. Completion publishes the captured return promises after the ordinary
+root goal closes and discovers no additional obligations.

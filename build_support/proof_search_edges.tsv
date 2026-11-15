@@ -208,6 +208,9 @@ src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_guarded_
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_restricted_guarded_consequent	driver	4
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_restricted_guarded_consequent	try_restricted_solve_closure	2
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_restricted_guarded_consequent	try_solve_closure	1
+src/surface/proof/program_termination.rs	mixed	::prove	driver	1
+src/surface/proof/program_termination.rs	mixed	::solve_omitted	try_solve_closure	1
+src/surface/proof/program_termination.rs	mixed	::try_closure	driver	2
 src/surface/proof/proof_object.rs	presentation	Proof::spelled_goal	available_surface_fact	2
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::execute_enum_match_group	execute_enum_match_group	1
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::execute_enum_match_group	try_focused_execute_to_exit_within	1
@@ -657,6 +660,12 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_ste
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	try_ordinary_viewability_restriction_closure	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_history_indexed_equalities	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_history_indexed_equalities	driver	3
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_integer_add_le_using	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_integer_add_le_using	driver	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_integer_add_le_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_integer_composition_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_integer_composition_using	1
+src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::apply_integer_composition	driver	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::selected_arithmetic	apply_integer_composition	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_integer_composition_using	apply_integer_composition	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	apply_integer_composition	1
+src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	driver	2
+src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_recorded_footprint_preservation	1
+src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_recorded_footprint_preservation	driver	1

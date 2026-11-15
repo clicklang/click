@@ -109,6 +109,14 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => None,
+        ContractExpression::Lambda { body, .. } => fixed_measure_state(body),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            fixed_measure_state(function).or_else(|| arguments.iter().find_map(fixed_measure_state))
+        }
+
         ContractExpression::Old(_) => Some(FixedMeasureState::Old),
         ContractExpression::At { selector, .. } => Some(FixedMeasureState::At(selector.clone())),
         ContractExpression::IntegerLiteral(_)
@@ -191,6 +199,11 @@ pub(in crate::surface) fn resolve_resource_field_schema(
         .iter()
         .map(|field| {
             let ty = match field.click_type() {
+                ClickType::Function { .. } => {
+                    return Err(ClickError::new(
+                        "specification function fields are not supported",
+                    ));
+                }
                 ClickType::Resource => {
                     return Err(ClickError::new(
                         "Resource values are supported as theorem parameters only",
@@ -3402,6 +3415,9 @@ pub(in crate::surface) fn lower_surface_integer_term(
             KernelTermNode::IntegerLiteral(value) => value.bits() as usize + 1,
             _ => 1,
         };
+        if let Some(reduced) = lambdas::reduce_head(expression)? {
+            return lower(&reduced, integer_values, locals, importer);
+        }
         match expression {
             SurfaceTerm::IntegerLiteral(value) => {
                 check_integer_lowering_work(
@@ -4765,6 +4781,29 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecProposition, String> {
         match proposition {
             ClickProposition::PredicateCall { name, arguments } => {
+                if let Some(kind) = crate::kernel::TerminationAtomKind::from_spelling(name) {
+                    let scope = self.spec_definitions.termination_scope
+                        .ok_or("termination propositions are available only inside `termination by` proofs")?;
+                    let function = match (kind, arguments.as_slice()) {
+                        (crate::kernel::TerminationAtomKind::Callbacks, []) => "",
+                        (_, [ContractExpression::Binding(name)])
+                            if kind != crate::kernel::TerminationAtomKind::Callbacks =>
+                        {
+                            name
+                        }
+                        _ => return Err(format!("invalid arguments to `{name}`")),
+                    };
+                    let Proposition::Predicate { name, arguments } = scope.atom(kind, function)?
+                    else {
+                        unreachable!()
+                    };
+                    debug_assert!(matches!(arguments.as_slice(), [Term::ExecutionState(_)]));
+                    return Ok(SpecProposition::Predicate {
+                        name,
+                        arguments: vec![],
+                        resource_state_dependent: false,
+                    });
+                }
                 if name == "held" {
                     let [mutex] = arguments.as_slice() else {
                         return Err(format!(
@@ -4880,6 +4919,12 @@ impl AnnotationLowerer<'_> {
                     );
                     for (parameter, argument) in definition.parameters().iter().zip(arguments) {
                         match parameter.click_type() {
+                            ClickType::Function { .. } => {
+                                return Err(
+                                    "specification function parameters are not supported yet"
+                                        .into(),
+                                );
+                            }
                             ClickType::Resource => {
                                 return Err(
                                     "Resource predicate parameters are not supported".into()
@@ -5313,6 +5358,16 @@ impl AnnotationLowerer<'_> {
         lexical_bindings: &mut Vec<(String, Option<ClickType>)>,
     ) -> Option<ClickType> {
         match expression {
+            ContractExpression::Lambda {
+                parameters, result, ..
+            } => Some(lambdas::signature(parameters, result)),
+            ContractExpression::Apply { function, .. } => match self
+                .contract_expression_click_type_in_scope(function, environment, lexical_bindings)?
+            {
+                ClickType::Function { result, .. } => Some(*result),
+                _ => None,
+            },
+
             ContractExpression::ResourceField(access) => access.click_type.clone(),
             ContractExpression::IntegerLiteral(_) => None,
             ContractExpression::Binding(name) => {
@@ -5601,6 +5656,9 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<crate::kernel::SpecIntegerExpression, String> {
+        if let Some(reduced) = lambdas::reduce_head(expression)? {
+            return self.lower_contract_integer_to_spec(&reduced, environment);
+        }
         use crate::kernel::SpecIntegerExpression;
         check_integer_lowering_work(1)?;
         match expression {
@@ -6160,6 +6218,9 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
+        if let Some(reduced) = lambdas::reduce_head(expression)? {
+            return self.lower_contract_expression_to_spec(&reduced, environment);
+        }
         let mut operands = Vec::new();
         let mut current = expression;
         while let ContractExpression::Add(left, right) = current {
@@ -6196,11 +6257,32 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
+        if let Some((region, accesses)) = region_result_read(expression)
+            && let Some(snapshots) = self.snapshots
+        {
+            let index = snapshots.result_region_index(region)?;
+            // Ordinary pointer results retain their usual indexing and member reads.
+            if snapshots
+                .source_layout
+                .as_ref()
+                .is_some_and(|layout| layout.is_aggregate_result(index))
+            {
+                return self.lower_region_result_read(region, &accesses, environment);
+            }
+        }
         if let Some((region, name, accesses)) = region_parameter_read(expression) {
             return self.lower_region_parameter_read(region, name, &accesses, environment);
         }
         match expression {
             ContractExpression::Resource(_) => Err("a Resource descriptor is not a C value".into()),
+            ContractExpression::Lambda { .. } => {
+                Err("a specification lambda must be applied to produce a scalar".into())
+            }
+            ContractExpression::Apply { .. } => {
+                let reduced = lambdas::reduce_head(expression)?.expect("an application reduces");
+                self.lower_contract_expression_to_spec(&reduced, environment)
+            }
+
             ContractExpression::CUnary { operand, lowered } => {
                 let value = self.lower_contract_expression_to_spec(operand, environment)?;
                 match lowered {
@@ -6718,10 +6800,9 @@ impl AnnotationLowerer<'_> {
                         MachineTerm::constant(0u32.wrapping_sub(value as u32)),
                     )));
                 }
-                Ok(SpecExpression::Subtract(
-                    Box::new(SpecExpression::Value(int32(0))),
-                    Box::new(self.lower_contract_expression_to_spec(expression, environment)?),
-                ))
+                Ok(SpecExpression::Negate(Box::new(
+                    self.lower_contract_expression_to_spec(expression, environment)?,
+                )))
             }
             // Arithmetic on a pointer offsets it by whole elements, as C does.
             ContractExpression::Add(left, right) => {
@@ -7119,6 +7200,9 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecAlgebraicExpression, String> {
+        if let Some(reduced) = lambdas::reduce_head(expression)? {
+            return self.lower_contract_algebraic_to_spec(&reduced, environment);
+        }
         if let Some(enum_type) = self.enum_program_value_type(expression, environment) {
             return Ok(SpecAlgebraicExpression {
                 algebraic_type: enum_type.algebraic_type(),
@@ -7618,6 +7702,9 @@ impl AnnotationLowerer<'_> {
             .zip(arguments)
             .map(|(parameter, argument)| {
                 let lowered = match parameter.click_type() {
+                    ClickType::Function { .. } => {
+                        Err("specification function parameters are not supported yet".into())
+                    }
                     ClickType::Resource => {
                         Err("Resource function parameters are not supported".into())
                     }
@@ -7806,6 +7893,9 @@ impl AnnotationLowerer<'_> {
     ) -> Result<Option<ClickType>, String> {
         match expected {
             ClickType::Resource => Ok(Some(ClickType::Resource)),
+            ClickType::Function { .. } => {
+                Err("specification function parameters are not supported yet".into())
+            }
             ClickType::Algebraic(_) => {
                 let value = self.lower_contract_algebraic_to_spec(argument, environment)?;
                 Ok(Some(generics::click_type_from_algebraic_value_type(
@@ -8242,6 +8332,98 @@ impl AnnotationLowerer<'_> {
             contract_result_in_scope: environment.contract_result_in_scope,
             checking_definedness: environment.checking_definedness,
         }))
+    }
+
+    /// Read a scalar field of an aggregate result at its producer's exit.
+    fn lower_region_result_read(
+        &mut self,
+        region: &CodeRegionRef,
+        accesses: &[RegionParameterAccess<'_>],
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecExpression, String> {
+        let snapshots = self
+            .snapshots
+            .ok_or("aggregate result requires a function execution")?;
+        let index = snapshots.result_region_index(region)?;
+        let layout = snapshots
+            .source_layout
+            .as_ref()
+            .ok_or("aggregate result requires a source layout")?;
+        let mut path = String::new();
+        for access in accesses {
+            match access {
+                RegionParameterAccess::Field(name) => {
+                    if !path.is_empty() {
+                        path.push('.');
+                    }
+                    path.push_str(name);
+                }
+                RegionParameterAccess::Index(index) => {
+                    let i = literal_element_index(index)
+                        .ok_or("aggregate result array fields require a literal index")?;
+                    path.push_str(&format!("[{i}]"));
+                }
+            }
+        }
+        let (field, element) = match layout.aggregate_result_field(index, &path) {
+            Some(field) => (field, None),
+            None => {
+                let Some((last, _)) = accesses.split_last() else {
+                    unreachable!()
+                };
+                let RegionParameterAccess::Index(position) = last else {
+                    return Err(format!(
+                        "`{}.result` has no aggregate field `{path}`",
+                        diagnostics::describe_code_region_ref(region)
+                    ));
+                };
+                let position = literal_element_index(position)
+                    .ok_or("aggregate result array fields require a literal index")?;
+                let cut = path.rfind('[').expect("indexed path");
+                let field = layout
+                    .aggregate_result_field(index, &path[..cut])
+                    .ok_or_else(|| format!("aggregate result has no field `{}`", &path[..cut]))?;
+                (field, Some(position))
+            }
+        };
+        let (offset, value_type) = match element {
+            Some(position) => {
+                let (element, count) =
+                    super::resource_lowering::array_field_elements(field.program_type())
+                        .ok_or("result field is not an array")?;
+                if position >= count {
+                    return Err(format!("result array field has {count} elements"));
+                }
+                (
+                    field.offset_bytes() + position * element.byte_width(),
+                    element,
+                )
+            }
+            None => (field.offset_bytes(), field.program_type()),
+        };
+        if super::resource_lowering::array_field_elements(value_type).is_some() {
+            return Err("read an element of the aggregate result array field".into());
+        }
+        let pointer = snapshots.region_result_value(region)?;
+        let read = ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
+            pointer: Box::new(crate::kernel::program_expression::pointer_offset_bytes(
+                ProgramExpression::Value(pointer),
+                offset,
+            )),
+            value_type,
+            volatile: false,
+            pointee_constant: false,
+            access_class: None,
+            source: Default::default(),
+        });
+        self.lower_at_expression_to_spec(
+            &SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Region(index),
+                kind: ProgramPointKind::Exit,
+            }),
+            &read,
+            environment,
+        )
     }
 
     /// `R.parameter(name).field[i]`: the scalar the call at `R` read from
@@ -8818,6 +9000,9 @@ impl AnnotationLowerer<'_> {
                 Box::new(self.lower_program_expression_to_spec(left, environment)?),
                 Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
+            ProgramExpression::Negate(expression) => Ok(SpecExpression::Negate(Box::new(
+                self.lower_program_expression_to_spec(expression, environment)?,
+            ))),
             ProgramExpression::BitwiseNot(expression) => Ok(SpecExpression::BitwiseNot(Box::new(
                 self.lower_program_expression_to_spec(expression, environment)?,
             ))),
@@ -9681,6 +9866,9 @@ fn click_type_to_algebraic_value_type(
 ) -> Result<AlgebraicValueType, String> {
     match click_type {
         ClickType::Resource => Err("Resource is not an algebraic field type".into()),
+        ClickType::Function { .. } => {
+            Err("specification function datatype fields are not supported".into())
+        }
         ClickType::Parameter(name) => Err(format!("unresolved type parameter `{name}`")),
         ClickType::Program(interface_type) => {
             Ok(AlgebraicValueType::Program(interface_type.to_kernel_type()))
@@ -10082,6 +10270,30 @@ pub(in crate::surface) fn region_parameter_read(
             ContractExpression::RegionParameter { region, name } => {
                 accesses.reverse();
                 return Some((region, name.as_str(), accesses));
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn region_result_read(
+    expression: &ContractExpression,
+) -> Option<(&CodeRegionRef, Vec<RegionParameterAccess<'_>>)> {
+    let mut accesses = Vec::new();
+    let mut current = expression;
+    loop {
+        match current {
+            ContractExpression::Field { base, field, .. } => {
+                accesses.push(RegionParameterAccess::Field(field));
+                current = base;
+            }
+            ContractExpression::Index(base, index) => {
+                accesses.push(RegionParameterAccess::Index(index));
+                current = base;
+            }
+            ContractExpression::RegionResult(region) if !accesses.is_empty() => {
+                accesses.reverse();
+                return Some((region, accesses));
             }
             _ => return None,
         }

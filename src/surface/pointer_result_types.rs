@@ -400,6 +400,19 @@ impl Analysis<'_> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
             ContractExpression::Resource(_) => {}
+            ContractExpression::Lambda { body, .. } => {
+                self.check_expression(body, bindings, definition)?
+            }
+            ContractExpression::Apply {
+                function,
+                arguments,
+            } => {
+                self.check_expression(function, bindings, definition)?;
+                for argument in arguments {
+                    self.check_expression(argument, bindings, definition)?;
+                }
+            }
+
             ContractExpression::AlgebraicConstructor {
                 algebraic_type,
                 variant,

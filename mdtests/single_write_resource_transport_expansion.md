@@ -18,9 +18,7 @@ void keep(int *p) {
     }
     have m.value == at(statement(0).entry, m.value) by {
         transport(at(statement(0).entry, m.value) == at(statement(0).entry, m.value),
-            m.value == at(statement(0).entry, m.value)) using {
-            separate(statement(0).footprint, m);
-        };
+            m.value == at(statement(0).entry, m.value));
     }
     step();
 }

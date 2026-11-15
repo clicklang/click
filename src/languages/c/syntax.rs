@@ -149,22 +149,25 @@ struct StaticAddress {
     extent: Option<crate::kernel::SubobjectExtent>,
 }
 
-/// One string literal occurring in a C function. The hidden name is emitted
-/// into the C expression tree as an array object; `bytes` includes the
-/// required terminating NUL byte.
+/// One string literal occurrence, with static storage and a source identity.
+/// `bytes` includes the required terminating NUL byte.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CStringLiteral {
-    name: String,
+    identity: Option<crate::kernel::StringLiteralId>,
     bytes: Vec<u8>,
     /// The target's plain `char`, the literal's element type (C11 6.4.5p6).
     plain_char: PlainChar,
 }
 
 impl CStringLiteral {
-    fn new(name: String, mut bytes: Vec<u8>, plain_char: PlainChar) -> Self {
+    fn new(
+        identity: Option<crate::kernel::StringLiteralId>,
+        mut bytes: Vec<u8>,
+        plain_char: PlainChar,
+    ) -> Self {
         bytes.push(0);
         Self {
-            name,
+            identity,
             bytes,
             plain_char,
         }
@@ -177,12 +180,17 @@ impl CStringLiteral {
     /// The kernel literal: its bytes stored as cells of the target's plain
     /// `char` representation.
     pub fn to_kernel(&self) -> crate::kernel::StringLiteral {
-        crate::kernel::StringLiteral::new(self.name.clone(), self.bytes.clone())
-            .with_element_type(self.plain_char.byte_type().to_kernel_type())
+        crate::kernel::StringLiteral::new(
+            self.identity
+                .clone()
+                .expect("literal metadata has a function owner"),
+            self.bytes.clone(),
+        )
+        .with_element_type(self.plain_char.byte_type().to_kernel_type())
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn identity(&self) -> Option<&crate::kernel::StringLiteralId> {
+        self.identity.as_ref()
     }
 
     pub fn bytes(&self) -> &[u8] {
@@ -2466,6 +2474,10 @@ impl CStatementSite {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CStatement {
+    EndAggregateLifetimes {
+        steps: Vec<u32>,
+        site: CSite,
+    },
     Skip,
     Break,
     Continue,
@@ -2518,6 +2530,7 @@ pub enum CStatement {
     /// result is that statement's `CExpression::StepResult { step, .. }`,
     /// never a variable.
     CallResult {
+        aggregate_layout: Option<RecordLayout>,
         call: u32,
         function_name: String,
         arguments: Vec<CExpression>,
@@ -2622,6 +2635,7 @@ pub enum CStatement {
     /// makes: true continues, false leaves the loop. It is a position of the
     /// loop as written (`loop(i).test`), not a statement of the source.
     LoopTest {
+        aggregate_steps: Vec<u32>,
         condition: CExpression,
         /// The loop's site: the test is the loop's own region.
         site: CSite,
@@ -2641,6 +2655,7 @@ pub enum CStatement {
     /// `steps` (one per reader); see `ProgramStatement::StepValue`. With no
     /// steps the value is evaluated and discarded.
     StepValue {
+        aggregate_layout: Option<RecordLayout>,
         steps: Vec<u32>,
         expression: CExpression,
         interface_type: Option<InterfaceType>,
@@ -2780,6 +2795,7 @@ pub struct COperator {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CExpression {
+    StringLiteral(std::sync::Arc<CStringLiteral>),
     Void,
     Variable(String),
     /// The result of a step this expression's statement made: the term a
@@ -3072,23 +3088,6 @@ impl ImportedFunction {
     }
 
     fn static_object_address(&self, name: &str) -> Option<StaticAddress> {
-        if let Some(literal) = self
-            .string_literals
-            .iter()
-            .find(|literal| literal.name() == name)
-        {
-            let length = u32::try_from(literal.bytes().len()).ok()?;
-            return Some(StaticAddress {
-                extent: None,
-                pointer: crate::kernel::Memory::string_literal_pointer(
-                    &self.name,
-                    literal.name(),
-                    literal.bytes(),
-                ),
-                interface_type: InterfaceType::CharArray(literal.plain_char(), length),
-                constant: false,
-            });
-        }
         if let Some(global) = self
             .globals
             .values()
@@ -3203,6 +3202,18 @@ impl ImportedFunction {
 
     fn static_address_expression(&self, expression: &CExpression) -> Option<StaticAddress> {
         match expression {
+            CExpression::StringLiteral(literal) => Some(StaticAddress {
+                pointer: crate::kernel::Memory::string_literal_pointer(
+                    literal.identity()?,
+                    literal.bytes(),
+                ),
+                interface_type: InterfaceType::CharArray(
+                    literal.plain_char(),
+                    u32::try_from(literal.bytes().len()).expect("literal length fits u32"),
+                ),
+                constant: false,
+                extent: None,
+            }),
             CExpression::Variable(name) => self.static_object_address(name),
             CExpression::Field {
                 pointer,
@@ -3959,7 +3970,8 @@ impl CStatement {
     /// it; see [`CSite`].
     pub fn site(&self) -> Option<&CSite> {
         match self {
-            Self::Declare { site, .. }
+            Self::EndAggregateLifetimes { site, .. }
+            | Self::Declare { site, .. }
             | Self::StepValue { site, .. }
             | Self::DeclareStructValue { site, .. }
             | Self::Assign { site, .. }
@@ -3991,6 +4003,7 @@ impl CStatement {
 
     fn site_mut(&mut self) -> Option<&mut CSite> {
         match self {
+            Self::EndAggregateLifetimes { site, .. } => Some(site),
             Self::Declare { site, .. }
             | Self::StepValue { site, .. }
             | Self::DeclareStructValue { site, .. }
@@ -4078,17 +4091,34 @@ impl CStatement {
     ) -> crate::kernel::ProgramStatement {
         match self {
             Self::StepValue {
+                aggregate_layout,
+
                 steps,
                 expression,
                 interface_type,
                 pointee_constant,
                 ..
             } => crate::kernel::ProgramStatement::StepValue {
+                aggregate_layout: aggregate_layout.as_ref().map(|record| {
+                    crate::kernel::AggregateResultLayout {
+                        layout: record.to_kernel_aggregate_layout(),
+                        declared_class: record
+                            .class
+                            .clone()
+                            .map(crate::kernel::effective_type::CAccessClass::Struct),
+                    }
+                }),
                 steps: steps.clone(),
                 expression: expression.to_kernel_expression(),
                 value_type: interface_type.map(|interface_type| interface_type.to_kernel_type()),
                 pointee_constant: *pointee_constant,
             },
+            Self::EndAggregateLifetimes { steps, .. } => {
+                crate::kernel::ProgramStatement::EndAutomaticLifetimes {
+                    names: Vec::new(),
+                    steps: steps.clone(),
+                }
+            }
             Self::Skip => crate::kernel::program_skip(),
             Self::Break => crate::kernel::program_break(),
             Self::Continue => crate::kernel::program_continue(),
@@ -4157,6 +4187,8 @@ impl CStatement {
                 prior_result: *prior_result,
             },
             Self::CallResult {
+                aggregate_layout,
+
                 call,
                 function_name,
                 arguments,
@@ -4166,6 +4198,15 @@ impl CStatement {
                 callee,
                 ..
             } => crate::kernel::ProgramStatement::CallResult {
+                aggregate_layout: aggregate_layout.as_ref().map(|record| {
+                    crate::kernel::AggregateResultLayout {
+                        layout: record.to_kernel_aggregate_layout(),
+                        declared_class: record
+                            .class
+                            .clone()
+                            .map(crate::kernel::effective_type::CAccessClass::Struct),
+                    }
+                }),
                 call: *call,
                 function_name: function_name.clone(),
                 arguments: arguments
@@ -4217,7 +4258,12 @@ impl CStatement {
                 condition.to_kernel_expression(),
                 label.clone(),
             ),
-            Self::LoopTest { condition, .. } => crate::kernel::ProgramStatement::LoopTest {
+            Self::LoopTest {
+                aggregate_steps,
+                condition,
+                ..
+            } => crate::kernel::ProgramStatement::LoopTest {
+                aggregate_steps: aggregate_steps.clone(),
                 condition: condition.to_kernel_expression(),
             },
             Self::Return(expression, _) => {
@@ -4352,6 +4398,12 @@ impl CExpression {
 
     fn lower_expression(&self) -> crate::kernel::ProgramExpression {
         match self {
+            Self::StringLiteral(literal) => crate::kernel::ProgramExpression::StringLiteral(
+                literal
+                    .identity
+                    .clone()
+                    .expect("runtime string literal belongs to a function"),
+            ),
             Self::StepResult { step, origin, .. } => crate::kernel::ProgramExpression::StepResult {
                 step: *step,
                 origin: origin.clone(),
@@ -4993,7 +5045,8 @@ fn validate_function_returns(
             .iter()
             .try_for_each(|case| validate_function_returns(&case.body, return_type)),
         CStatement::Label { statement, .. } => validate_function_returns(statement, return_type),
-        CStatement::Skip
+        CStatement::EndAggregateLifetimes { .. }
+        | CStatement::Skip
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -5472,7 +5525,8 @@ fn statement_contains_control_transfer(statement: &CStatement) -> bool {
         CStatement::Switch { cases, .. } => cases
             .iter()
             .any(|case| statement_contains_control_transfer(&case.body)),
-        CStatement::Skip
+        CStatement::EndAggregateLifetimes { .. }
+        | CStatement::Skip
         | CStatement::Declare { .. }
         | CStatement::DeclareStructValue { .. }
         | CStatement::Assign { .. }
@@ -6052,7 +6106,8 @@ fn evaluate_static_integer_expression(
             *interface_type,
         ),
         CExpression::CheckedArrayIndex { index, .. } => evaluate_static_integer_expression(index),
-        CExpression::Void
+        CExpression::StringLiteral(_)
+        | CExpression::Void
         | CExpression::Variable(_)
         | CExpression::StepResult { .. }
         | CExpression::Call { .. }
@@ -6823,7 +6878,8 @@ fn contains_aggregate_value(expression: &CExpression) -> bool {
         crate::languages::c::syntax::binary_c_expression!(left, right) => {
             contains_aggregate_value(left) || contains_aggregate_value(right)
         }
-        CExpression::Void
+        CExpression::StringLiteral(_)
+        | CExpression::Void
         | CExpression::Variable(_)
         | CExpression::StepResult { .. }
         | CExpression::FunctionAddress(_)
@@ -7149,11 +7205,9 @@ struct Parser {
     /// The number the next call inside an expression gets: its result is
     /// `CExpression::StepResult` with that number.
     next_call_result: u32,
+    aggregate_expression_steps: Vec<u32>,
     callback_statement_sources: imbl::OrdMap<String, CExpression>,
-    next_synthesized_aggregate: u32,
-    next_string_literal: u32,
     next_field_source_ordinal: u32,
-    string_literal_names: BTreeSet<String>,
     loop_contexts: Vec<CLoopContext>,
     function_declarations: BTreeMap<String, CFunctionHeader>,
     /// The most recent attribute that is valid only on `static inline`.
@@ -7728,11 +7782,9 @@ impl Parser {
             address_taken_variables: BTreeSet::new(),
             next_scoped_name: 0,
             next_call_result: 0,
+            aggregate_expression_steps: Vec::new(),
             callback_statement_sources: imbl::OrdMap::new(),
-            next_synthesized_aggregate: 0,
-            next_string_literal: 0,
             next_field_source_ordinal: 0,
-            string_literal_names: BTreeSet::new(),
             loop_contexts: Vec::new(),
             function_declarations: BTreeMap::new(),
             static_inline_attribute: "always-inline",
@@ -8122,7 +8174,36 @@ impl Parser {
         }
     }
 
+    fn is_aggregate_result_member(&self, expression: &CExpression) -> bool {
+        let CExpression::Field { pointer, .. } = expression else {
+            return false;
+        };
+        let mut base = pointer.as_ref();
+        loop {
+            match base {
+                CExpression::Subobject { pointer, .. }
+                | CExpression::PointerOffsetBytes { pointer, .. }
+                | CExpression::Cast {
+                    expression: pointer,
+                    ..
+                } => base = pointer,
+                CExpression::Call { .. }
+                | CExpression::IndirectCall { .. }
+                | CExpression::Ternary { .. }
+                | CExpression::StepResult { .. } => {
+                    return self.aggregate_struct_name(base).is_some();
+                }
+                _ => return false,
+            }
+        }
+    }
+
     fn reject_constant_lvalue_write(&self, expression: &CExpression) -> Result<(), CSyntaxError> {
+        if self.is_aggregate_result_member(expression) {
+            return Err(
+                self.error_here("a member of an aggregate expression result is not an lvalue")
+            );
+        }
         if self.expression_is_constant_lvalue(expression) {
             Err(self.error_here("cannot modify a const-qualified lvalue"))
         } else {
@@ -8150,14 +8231,6 @@ impl Parser {
     }
 
     fn static_object_type(&self, name: &str) -> Option<(InterfaceType, bool)> {
-        // A string literal has static storage duration and type `char[N]`
-        // (C11 6.4.5p6), not a const-qualified type. Its storage is the
-        // enclosing function's read-only literal block, so only a literal
-        // inside a function body is a static object here.
-        if self.current_function_source_name.is_some() && self.string_literal_names.contains(name) {
-            let length = self.variable_types.get(name)?.array_length()?;
-            return Some((InterfaceType::CharArray(self.plain_char, length), false));
-        }
         if let Some(global) = self
             .globals
             .values()
@@ -8230,6 +8303,13 @@ impl Parser {
 
     fn static_address_expression(&self, expression: &CExpression) -> Option<(InterfaceType, bool)> {
         match expression {
+            CExpression::StringLiteral(literal) if literal.identity.is_some() => Some((
+                InterfaceType::CharArray(
+                    literal.plain_char(),
+                    u32::try_from(literal.bytes().len()).expect("literal length fits u32"),
+                ),
+                false,
+            )),
             CExpression::Variable(name) => self.static_object_type(name),
             CExpression::Field {
                 pointer,
@@ -8288,10 +8368,9 @@ impl Parser {
     /// literal or another static table, as the address of its first element
     /// (C11 6.3.2.1p3); any other initializer unchanged.
     fn decayed_static_pointer_initializer(&self, initializer: &CExpression) -> CExpression {
-        if let CExpression::Variable(name) = initializer
-            && self
-                .static_object_type(name)
-                .is_some_and(|(interface_type, _)| interface_type.array_length().is_some())
+        if self
+            .static_address_expression(initializer)
+            .is_some_and(|(ty, _)| ty.array_length().is_some())
         {
             return CExpression::AddressOf(Box::new(CExpression::Index(
                 Box::new(initializer.clone()),
@@ -8320,9 +8399,7 @@ impl Parser {
         }
         let Some((target_type, target_is_constant)) = self.static_address_target(initializer)
         else {
-            if let CExpression::Variable(name) = initializer
-                && self.string_literal_names.contains(name)
-            {
+            if matches!(initializer, CExpression::StringLiteral(_)) {
                 return Err(self.error_here(
                     "file-scope pointer initializers do not support string literals yet",
                 ));
@@ -9126,6 +9203,7 @@ impl Parser {
         let string_literals = std::mem::take(&mut self.string_literals);
         let inline_body = header.name != header.source_name;
         Ok(ImportedFunction {
+            source_sites: None,
             return_type: header.return_type,
             return_pointee_constant: header.return_pointee_constant,
             return_reference: false,
@@ -12528,9 +12606,25 @@ impl Parser {
         target_struct: &str,
         expression: CExpression,
     ) -> Result<CStatement, CSyntaxError> {
+        let start = self.aggregate_expression_steps.len();
         let (prefix, expression) = self.lower_expression_calls(expression)?;
         let copy = self.aggregate_copy_statement_raw(target_pointer, target_struct, expression)?;
-        Ok(prepend_statements(prefix, copy))
+        let steps = self
+            .aggregate_expression_steps
+            .drain(start..)
+            .collect::<Vec<_>>();
+        let lowered = prepend_statements(prefix, copy);
+        Ok(if steps.is_empty() {
+            lowered
+        } else {
+            CStatement::Seq(
+                Box::new(lowered),
+                Box::new(CStatement::EndAggregateLifetimes {
+                    steps,
+                    site: CSite::NONE,
+                }),
+            )
+        })
     }
 
     fn aggregate_copy_statement_raw(
@@ -12540,7 +12634,14 @@ impl Parser {
         expression: CExpression,
     ) -> Result<CStatement, CSyntaxError> {
         self.scalar_struct_value_layout(target_struct)?;
+        let is_step_result = matches!(expression, CExpression::StepResult { .. });
         let (source_pointer, source_struct) = match expression {
+            expression @ CExpression::StepResult { .. } => {
+                let struct_name = self.aggregate_struct_name(&expression).ok_or_else(|| {
+                    self.error_here("aggregate copy requires an aggregate step result")
+                })?;
+                (expression, struct_name)
+            }
             CExpression::Variable(name) => {
                 let source_struct =
                     self.variable_struct_values
@@ -12576,7 +12677,7 @@ impl Parser {
             .structs
             .get(target_struct)
             .expect("validated struct value has a layout");
-        if !layout.aggregate_unions.is_empty() {
+        if is_step_result || !layout.aggregate_unions.is_empty() {
             return Ok(CStatement::AggregateCopy {
                 target: target_pointer,
                 source: source_pointer,
@@ -13206,12 +13307,15 @@ impl Parser {
         self.next_call_result = self.next_call_result.saturating_add(1);
         // Value returns already materialize independent aggregate storage.
         // Retain its pointer; copying into the destination is a separate effect.
+        let layout = self.scalar_struct_value_layout(&struct_name)?;
+        self.aggregate_expression_steps.push(call);
         prefix.push(CStatement::CallResult {
+            aggregate_layout: Some(layout.clone()),
             call,
             function_name: function_name.clone(),
             arguments,
             result_type: Some(InterfaceType::UInt8Pointer),
-            result_aggregate_layout: Some(self.scalar_struct_value_layout(&struct_name)?),
+            result_aggregate_layout: Some(layout),
             result_pointee_constant: false,
             site: CSite::NONE,
             callee: None,
@@ -13221,7 +13325,7 @@ impl Parser {
             CExpression::StepResult {
                 step: call,
                 origin: crate::kernel::StepOrigin::Call(function_name),
-                interface_type: Some(InterfaceType::UInt8Pointer),
+                interface_type: Some(InterfaceType::Int32),
                 pointee_constant: false,
                 struct_name: Some(struct_name),
             },
@@ -13261,6 +13365,7 @@ impl Parser {
                 prefix,
                 CStatement::Seq(
                     Box::new(CStatement::CallResult {
+                        aggregate_layout: None,
                         call,
                         function_name: function_name.clone(),
                         arguments,
@@ -13321,12 +13426,18 @@ impl Parser {
                     )));
                 }
                 let layout = self.scalar_struct_value_layout(&struct_name)?;
+                let start = self.aggregate_expression_steps.len();
                 let (mut prefix, source) =
                     self.lower_aggregate_call_result(function_name, arguments, struct_name)?;
                 prefix.push(CStatement::AggregateCopy {
                     target: CExpression::Variable(target),
                     source,
                     layout,
+                    site: CSite::NONE,
+                });
+                let steps = self.aggregate_expression_steps.drain(start..).collect();
+                prefix.push(CStatement::EndAggregateLifetimes {
+                    steps,
                     site: CSite::NONE,
                 });
                 return Ok(balanced_statement_sequence(prefix).expect("call and aggregate copy"));
@@ -13587,6 +13698,11 @@ impl Parser {
 
     fn aggregate_struct_name(&self, expression: &CExpression) -> Option<String> {
         match expression {
+            CExpression::StepResult {
+                interface_type: Some(InterfaceType::Int32),
+                struct_name,
+                ..
+            } => struct_name.clone(),
             CExpression::StepResult { .. } => None,
             CExpression::Variable(name) => self.variable_struct_values.get(name).cloned(),
             CExpression::Call { function_name, .. } => self
@@ -13622,6 +13738,7 @@ impl Parser {
             | CExpression::StatementExpression { .. }
             | CExpression::Assignment { .. }
             | CExpression::ScalarUpdate { .. }
+            | CExpression::StringLiteral(_)
             | CExpression::Void
             | CExpression::FunctionAddress(_)
             | CExpression::Int32Literal(_)
@@ -13673,6 +13790,7 @@ impl Parser {
             | CExpression::IndirectCall { .. }
             | CExpression::StatementExpression { .. }
             | CExpression::AddressOf(_)
+            | CExpression::StringLiteral(_)
             | CExpression::Void
             | CExpression::Variable(_)
             | CExpression::StepResult { .. }
@@ -13732,76 +13850,20 @@ impl Parser {
         }
     }
 
-    fn fresh_synthesized_aggregate_name(&mut self) -> String {
-        loop {
-            let name = format!(
-                "__click_aggregate_result{}",
-                self.next_synthesized_aggregate
-            );
-            self.next_synthesized_aggregate = self.next_synthesized_aggregate.saturating_add(1);
-            let already_used = self.variable_types.contains_key(&name)
-                || self
-                    .scopes
-                    .iter()
-                    .any(|scope| scope.iter().any(|binding| binding.kernel_name == name));
-            if !already_used {
-                return name;
+    fn string_literal_expression(&mut self, bytes: Vec<u8>) -> CExpression {
+        let ordinal = u32::try_from(self.string_literals.len()).expect("literal count fits u32");
+        let identity = self.current_function_source_name.as_ref().map(|function| {
+            let mut id = crate::kernel::StringLiteralId::new(function.clone(), ordinal);
+            if let Some(source) = &self.source_identity {
+                id = id.with_source(source);
             }
+            id
+        });
+        let literal = std::sync::Arc::new(CStringLiteral::new(identity, bytes, self.plain_char));
+        if literal.identity.is_some() {
+            self.string_literals.push(literal.as_ref().clone());
         }
-    }
-
-    fn declare_synthesized_aggregate(
-        &mut self,
-        struct_name: &str,
-    ) -> Result<(String, RecordLayout), CSyntaxError> {
-        let layout = self.structs.get(struct_name).cloned().ok_or_else(|| {
-            self.error_here(format!("unknown struct declaration `{struct_name}`"))
-        })?;
-        let name = self.fresh_synthesized_aggregate_name();
-        // This name is a lowering artifact, not a C declaration. Keep its
-        // layout metadata in the parser-wide table so later lowering passes
-        // can still recognize the generated aggregate expression after the
-        // source block that introduced it has closed.
-        self.variable_types
-            .insert(name.clone(), record_value_type(&layout));
-        self.variable_structs
-            .insert(name.clone(), struct_name.to_string());
-        self.variable_struct_values
-            .insert(name.clone(), struct_name.to_string());
-        Ok((name, layout))
-    }
-
-    fn fresh_string_literal_name(&mut self, bytes: Vec<u8>) -> String {
-        loop {
-            let name = format!("__click_string_literal{}", self.next_string_literal);
-            self.next_string_literal = self.next_string_literal.saturating_add(1);
-            let already_used = self.variable_types.contains_key(&name)
-                || self
-                    .scopes
-                    .iter()
-                    .any(|scope| scope.iter().any(|binding| binding.kernel_name == name));
-            if already_used {
-                continue;
-            }
-            let length = bytes
-                .len()
-                .checked_add(1)
-                .and_then(|length| u32::try_from(length).ok())
-                .expect("validated string literal length fits in u32");
-            // The literal's storage takes plain `char`'s representation;
-            // `source_expression_type` restores its `char[]` source type.
-            let storage = match self.plain_char {
-                PlainChar::Unsigned => InterfaceType::UInt8Array(length),
-                PlainChar::Signed => InterfaceType::Int8Array(length),
-            };
-            self.variable_types.insert(name.clone(), storage);
-            self.variable_array_shapes
-                .insert(name.clone(), vec![length]);
-            self.string_literals
-                .push(CStringLiteral::new(name.clone(), bytes, self.plain_char));
-            self.string_literal_names.insert(name.clone());
-            return name;
-        }
+        CExpression::StringLiteral(literal)
     }
 
     fn lower_call_expressions(
@@ -13936,7 +13998,8 @@ impl Parser {
                     }
                 }
                 CStatement::Label { statement, .. } => statements.push(statement),
-                CStatement::Skip
+                CStatement::EndAggregateLifetimes { .. }
+                | CStatement::Skip
                 | CStatement::Break
                 | CStatement::Continue
                 | CStatement::Goto { .. }
@@ -14004,7 +14067,8 @@ impl Parser {
                     expressions.push(left);
                     expressions.push(right);
                 }
-                CExpression::Void
+                CExpression::StringLiteral(_)
+                | CExpression::Void
                 | CExpression::Variable(_)
                 | CExpression::StepResult { .. }
                 | CExpression::FunctionAddress(_)
@@ -14066,7 +14130,8 @@ impl Parser {
                     expressions.push(left);
                     expressions.push(right);
                 }
-                CExpression::Void
+                CExpression::StringLiteral(_)
+                | CExpression::Void
                 | CExpression::Variable(_)
                 | CExpression::StepResult { .. }
                 | CExpression::FunctionAddress(_)
@@ -14101,7 +14166,8 @@ impl Parser {
             // A call's result is the term the call returned: nothing the
             // statement does afterwards changes it.
             CExpression::StepResult { .. } => false,
-            CExpression::Void
+            CExpression::StringLiteral(_)
+            | CExpression::Void
             | CExpression::Call { .. }
             | CExpression::IndirectCall { .. }
             | CExpression::FunctionAddress(_)
@@ -14270,9 +14336,27 @@ impl Parser {
                 site,
                 operator,
             } => {
+                let start = self.aggregate_expression_steps.len();
                 let (prefix, condition) = self.lower_expression_calls(condition)?;
-                let then_branch = self.lower_statement_calls(*then_branch)?;
-                let else_branch = self.lower_statement_calls(*else_branch)?;
+                let steps = self
+                    .aggregate_expression_steps
+                    .drain(start..)
+                    .collect::<Vec<_>>();
+                let before_arm = |arm| {
+                    if steps.is_empty() {
+                        arm
+                    } else {
+                        CStatement::Seq(
+                            Box::new(CStatement::EndAggregateLifetimes {
+                                steps: steps.clone(),
+                                site: CSite::NONE,
+                            }),
+                            Box::new(arm),
+                        )
+                    }
+                };
+                let then_branch = before_arm(self.lower_statement_calls(*then_branch)?);
+                let else_branch = before_arm(self.lower_statement_calls(*else_branch)?);
                 Ok(prepend_statements(
                     prefix,
                     CStatement::If {
@@ -14289,12 +14373,18 @@ impl Parser {
                 body,
                 site,
             } => {
+                let start = self.aggregate_expression_steps.len();
                 let (prefix, condition) = self.lower_expression_calls(condition)?;
+                let aggregate_steps = self
+                    .aggregate_expression_steps
+                    .drain(start..)
+                    .collect::<Vec<_>>();
                 let body = self.lower_statement_calls(*body)?;
                 if !prefix.is_empty() {
                     let guard = prepend_statements(
                         prefix,
                         CStatement::LoopTest {
+                            aggregate_steps: aggregate_steps.clone(),
                             condition,
                             site: site.clone(),
                         },
@@ -14316,7 +14406,12 @@ impl Parser {
                 body,
                 site,
             } => {
+                let start = self.aggregate_expression_steps.len();
                 let (prefix, condition) = self.lower_expression_calls(condition)?;
+                let aggregate_steps = self
+                    .aggregate_expression_steps
+                    .drain(start..)
+                    .collect::<Vec<_>>();
                 let body = self.lower_statement_calls(*body)?;
                 if prefix.is_empty() {
                     return Ok(CStatement::DoWhile {
@@ -14332,11 +14427,16 @@ impl Parser {
                 // returning to the shell head; nested loops keep their own
                 // continue targets.
                 let body = prepend_condition_check_before_loop_continues(
-                    body, &prefix, &condition, &site,
+                    body,
+                    &prefix,
+                    &condition,
+                    &site,
+                    &aggregate_steps,
                 )?;
                 let condition_check = prepend_statements(
                     prefix,
                     CStatement::LoopTest {
+                        aggregate_steps: aggregate_steps.clone(),
                         condition,
                         site: site.clone(),
                     },
@@ -14354,7 +14454,12 @@ impl Parser {
                 body,
                 site,
             } => {
+                let start = self.aggregate_expression_steps.len();
                 let (prefix, condition) = self.lower_expression_calls(condition)?;
+                let aggregate_steps = self
+                    .aggregate_expression_steps
+                    .drain(start..)
+                    .collect::<Vec<_>>();
                 let initializer = self.lower_statement_calls(*initializer)?;
                 let step = self.lower_statement_calls(*step)?;
                 let body = self.lower_statement_calls(*body)?;
@@ -14362,6 +14467,7 @@ impl Parser {
                     let guard = prepend_statements(
                         prefix,
                         CStatement::LoopTest {
+                            aggregate_steps: aggregate_steps.clone(),
                             condition,
                             site: site.clone(),
                         },
@@ -14387,24 +14493,50 @@ impl Parser {
                 cases,
                 site,
             } => {
+                let start = self.aggregate_expression_steps.len();
                 let (prefix, expression) = self.lower_expression_calls(expression)?;
+                let steps = self
+                    .aggregate_expression_steps
+                    .drain(start..)
+                    .collect::<Vec<_>>();
                 let cases = cases
                     .into_iter()
                     .map(|case| {
                         Ok(CSwitchCase {
                             value: case.value,
-                            body: Box::new(self.lower_statement_calls(*case.body)?),
+                            body: Box::new({
+                                let body = self.lower_statement_calls(*case.body)?;
+                                if steps.is_empty() {
+                                    body
+                                } else {
+                                    CStatement::Seq(
+                                        Box::new(CStatement::EndAggregateLifetimes {
+                                            steps: steps.clone(),
+                                            site: CSite::NONE,
+                                        }),
+                                        Box::new(body),
+                                    )
+                                }
+                            }),
                         })
                     })
                     .collect::<Result<Vec<_>, CSyntaxError>>()?;
-                Ok(prepend_statements(
+                let lowered = prepend_statements(
                     prefix,
                     CStatement::Switch {
                         expression,
                         cases,
-                        site,
+                        site: site.clone(),
                     },
-                ))
+                );
+                Ok(if steps.is_empty() {
+                    lowered
+                } else {
+                    CStatement::Seq(
+                        Box::new(lowered),
+                        Box::new(CStatement::EndAggregateLifetimes { steps, site }),
+                    )
+                })
             }
             statement => self.lower_flat_statement_calls(statement),
         }
@@ -14417,8 +14549,30 @@ impl Parser {
         &mut self,
         statement: CStatement,
     ) -> Result<CStatement, CSyntaxError> {
+        let start = self.aggregate_expression_steps.len();
+        let site = statement.site().cloned().unwrap_or(CSite::NONE);
+        let is_return = matches!(statement, CStatement::Return(..));
+        let lowered = self.lower_flat_statement_calls_inner(statement)?;
+        let steps = self
+            .aggregate_expression_steps
+            .drain(start..)
+            .collect::<Vec<_>>();
+        if steps.is_empty() || is_return {
+            return Ok(lowered);
+        }
+        Ok(CStatement::Seq(
+            Box::new(lowered),
+            Box::new(CStatement::EndAggregateLifetimes { steps, site }),
+        ))
+    }
+
+    fn lower_flat_statement_calls_inner(
+        &mut self,
+        statement: CStatement,
+    ) -> Result<CStatement, CSyntaxError> {
         match statement {
-            CStatement::Skip
+            CStatement::EndAggregateLifetimes { .. }
+            | CStatement::Skip
             | CStatement::Break
             | CStatement::Continue
             | CStatement::Goto { .. }
@@ -14481,24 +14635,39 @@ impl Parser {
                     },
                 ))
             }
-            CStatement::LoopTest { condition, site } => {
+            CStatement::LoopTest {
+                condition,
+                site,
+                mut aggregate_steps,
+            } => {
+                let start = self.aggregate_expression_steps.len();
                 let (prefix, condition) = self.lower_expression_calls(condition)?;
+                aggregate_steps.extend(self.aggregate_expression_steps.drain(start..));
                 Ok(prepend_statements(
                     prefix,
-                    CStatement::LoopTest { condition, site },
+                    CStatement::LoopTest {
+                        condition,
+                        site,
+                        aggregate_steps,
+                    },
                 ))
             }
             CStatement::StepValue {
+                aggregate_layout,
+
                 steps,
                 expression,
                 interface_type,
                 pointee_constant,
                 site,
+                ..
             } => {
                 let (prefix, expression) = self.lower_expression_calls(expression)?;
                 Ok(prepend_statements(
                     prefix,
                     CStatement::StepValue {
+                        aggregate_layout,
+
                         steps,
                         expression,
                         interface_type,
@@ -15010,6 +15179,7 @@ impl Parser {
             let step = self.next_call_result;
             self.next_call_result = self.next_call_result.saturating_add(1);
             prefix.push(CStatement::StepValue {
+                aggregate_layout: None,
                 steps: vec![step],
                 expression: CExpression::Variable(name.clone()),
                 interface_type: Some(interface_type),
@@ -15143,22 +15313,33 @@ impl Parser {
                     .function_declaration(&function_name)
                     .and_then(|function| function.return_struct_name.clone());
                 if let Some(struct_name) = return_struct_name {
-                    let (target, layout) = self.declare_synthesized_aggregate(&struct_name)?;
-                    prefix.push(CStatement::DeclareStructValue {
-                        name: target.clone(),
-                        layout: layout.clone(),
+                    let layout = self.structs.get(&struct_name).cloned().ok_or_else(|| {
+                        self.error_here(format!("unknown struct declaration `{struct_name}`"))
+                    })?;
+                    let call = self.next_call_result;
+                    self.next_call_result = self.next_call_result.saturating_add(1);
+                    self.aggregate_expression_steps.push(call);
+                    prefix.push(CStatement::CallResult {
+                        call,
+                        function_name: function_name.clone(),
+                        arguments,
+                        result_type: None,
+                        result_pointee_constant: false,
+                        result_aggregate_layout: Some(layout.clone()),
+                        aggregate_layout: Some(layout),
+                        callee: None,
                         site: CSite::NONE,
                     });
-                    let (call, source) =
-                        self.lower_aggregate_call_result(function_name, arguments, struct_name)?;
-                    prefix.extend(call);
-                    prefix.push(CStatement::AggregateCopy {
-                        target: CExpression::Variable(target.clone()),
-                        source,
-                        layout,
-                        site: CSite::NONE,
-                    });
-                    return Ok((prefix, CExpression::Variable(target)));
+                    return Ok((
+                        prefix,
+                        CExpression::StepResult {
+                            step: call,
+                            origin: crate::kernel::StepOrigin::Call(function_name),
+                            interface_type: Some(InterfaceType::Int32),
+                            pointee_constant: false,
+                            struct_name: Some(struct_name),
+                        },
+                    ));
                 }
                 // The call is a step of its own; the rest of the expression
                 // reads the term it returns by the call's number.
@@ -15186,6 +15367,7 @@ impl Parser {
                     (None, false, None)
                 };
                 prefix.push(CStatement::CallResult {
+                    aggregate_layout: None,
                     call,
                     function_name: function_name.clone(),
                     arguments,
@@ -15249,32 +15431,42 @@ impl Parser {
                     ));
                 }
                 if let Some(struct_name) = then_struct {
-                    let (target, layout) = self.declare_synthesized_aggregate(&struct_name)?;
-                    let then_copy = self.aggregate_copy_statement_raw(
-                        CExpression::Variable(target.clone()),
-                        &struct_name,
-                        then_branch,
-                    )?;
-                    let else_copy = self.aggregate_copy_statement_raw(
-                        CExpression::Variable(target.clone()),
-                        &struct_name,
-                        else_branch,
-                    )?;
-                    let then_statement = prepend_statements(then_prefix, then_copy);
-                    let else_statement = prepend_statements(else_prefix, else_copy);
-                    prefix.push(CStatement::DeclareStructValue {
-                        name: target.clone(),
-                        layout,
+                    let layout = self.structs.get(&struct_name).cloned().ok_or_else(|| {
+                        self.error_here(format!("unknown struct declaration `{struct_name}`"))
+                    })?;
+                    let step = self.next_call_result;
+                    self.next_call_result = self.next_call_result.saturating_add(1);
+                    self.aggregate_expression_steps.push(step);
+                    let value = |expression| CStatement::StepValue {
+                        steps: vec![step],
+                        expression,
+                        interface_type: None,
+                        pointee_constant: false,
+                        aggregate_layout: Some(layout.clone()),
                         site: CSite::NONE,
-                    });
+                    };
                     prefix.push(CStatement::If {
                         condition,
-                        then_branch: Box::new(then_statement),
-                        else_branch: Box::new(else_statement),
+                        then_branch: Box::new(prepend_statements(then_prefix, value(then_branch))),
+                        else_branch: Box::new(prepend_statements(else_prefix, value(else_branch))),
                         site: CSite::NONE,
-                        operator: None,
+                        operator: Some(COperator {
+                            kind: crate::kernel::OperatorKind::Ternary,
+                            step,
+                        }),
                     });
-                    return Ok((prefix, CExpression::Variable(target)));
+                    return Ok((
+                        prefix,
+                        CExpression::StepResult {
+                            step,
+                            origin: crate::kernel::StepOrigin::Operator(
+                                crate::kernel::OperatorKind::Ternary,
+                            ),
+                            interface_type: Some(InterfaceType::Int32),
+                            pointee_constant: false,
+                            struct_name: Some(struct_name),
+                        },
+                    ));
                 }
                 if then_prefix.is_empty() && else_prefix.is_empty() {
                     return Ok((
@@ -15303,6 +15495,7 @@ impl Parser {
                 let step = self.next_call_result;
                 self.next_call_result = self.next_call_result.saturating_add(1);
                 let value = |expression| CStatement::StepValue {
+                    aggregate_layout: None,
                     steps: vec![step],
                     expression,
                     interface_type: Some(interface_type),
@@ -15349,6 +15542,7 @@ impl Parser {
                 let mut prefix = vec![body];
                 prefix.extend(value_prefix);
                 prefix.push(CStatement::StepValue {
+                    aggregate_layout: None,
                     steps: vec![step],
                     expression: value,
                     interface_type: Some(interface_type),
@@ -15462,6 +15656,7 @@ impl Parser {
                     struct_name: struct_name.clone(),
                 };
                 prefix.push(CStatement::StepValue {
+                    aggregate_layout: None,
                     steps: vec![stored, result],
                     expression: value,
                     interface_type: Some(interface_type),
@@ -15647,6 +15842,7 @@ impl Parser {
             signature.return_struct_name.clone(),
         );
         prefix.push(CStatement::CallResult {
+            aggregate_layout: None,
             call,
             function_name: function_name.clone(),
             arguments,
@@ -15722,6 +15918,7 @@ impl Parser {
         let step = self.next_call_result;
         self.next_call_result = self.next_call_result.saturating_add(1);
         let value = |expression| CStatement::StepValue {
+            aggregate_layout: None,
             steps: vec![step],
             expression,
             interface_type: Some(InterfaceType::Int32),
@@ -16044,6 +16241,9 @@ impl Parser {
                 "Click models a call to `{source_name}` only with a string-literal format"
             )));
         }
+        // The format is lowered into the callee's specification, but its C
+        // literal object still has a source occurrence and static storage.
+        let _ = self.string_literal_expression(format.clone());
         let pieces = formatted_output::parse_format(&format).map_err(|reason| {
             self.error_at_previous(format!("`{source_name}` format: {reason}"))
         })?;
@@ -16576,6 +16776,7 @@ impl Parser {
             // A step's value nothing reads: read it here, so it ends with
             // this statement.
             statements.push(CStatement::StepValue {
+                aggregate_layout: None,
                 steps: Vec::new(),
                 expression: value,
                 interface_type: None,
@@ -16595,6 +16796,7 @@ impl Parser {
             let pointee_constant = self.expression_pointee_is_constant(&value);
             // Evaluated and discarded, as an expression statement's value is.
             statements.push(CStatement::StepValue {
+                aggregate_layout: None,
                 steps: Vec::new(),
                 expression: value,
                 interface_type: Some(interface_type),
@@ -16750,6 +16952,11 @@ impl Parser {
             let target = self.parse_unary()?;
             if matches!(target, CExpression::ScalarUpdate { .. }) {
                 return Err(self.error_here("an expression update result is not an lvalue"));
+            }
+            if self.is_aggregate_result_member(&target) {
+                return Err(
+                    self.error_here("a member of an aggregate expression result is not an lvalue")
+                );
             }
             if self
                 .source_expression_type(&target)
@@ -17401,7 +17608,19 @@ impl Parser {
                                             Some(InterfaceType::UInt8Array(_))
                                         ))
                         );
-                        if struct_value || matches!(&expression, CExpression::UnionAddress { .. }) {
+                        let aggregate_result =
+                            matches!(
+                                &expression,
+                                CExpression::Call { .. }
+                                    | CExpression::IndirectCall { .. }
+                                    | CExpression::Ternary { .. }
+                                    | CExpression::StepResult { .. }
+                                    | CExpression::StatementExpression { .. }
+                            ) && self.aggregate_struct_name(&expression).is_some();
+                        if struct_value
+                            || aggregate_result
+                            || matches!(&expression, CExpression::UnionAddress { .. })
+                        {
                             self.resolve_field_access(&expression, &field_name)?
                         } else {
                             self.resolve_array_struct_field_access(&expression, &field_name)?
@@ -17542,7 +17761,8 @@ impl Parser {
             | CExpression::Divide(left, right) => {
                 self.expression_is_float(left) || self.expression_is_float(right)
             }
-            CExpression::Void
+            CExpression::StringLiteral(_)
+            | CExpression::Void
             | CExpression::Call { .. }
             | CExpression::IndirectCall { .. }
             | CExpression::FunctionAddress(_)
@@ -17604,6 +17824,7 @@ impl Parser {
 
     fn struct_pointer_name(&self, expression: &CExpression) -> Option<String> {
         match expression {
+            CExpression::StepResult { struct_name, .. } => struct_name.clone(),
             CExpression::Variable(name)
                 if matches!(
                     self.variable_types.get(name),
@@ -17712,6 +17933,7 @@ impl Parser {
 
     fn struct_pointer_pointer_name(&self, expression: &CExpression) -> Option<String> {
         match expression {
+            CExpression::StepResult { struct_name, .. } => struct_name.clone(),
             CExpression::Variable(name)
                 if matches!(
                     self.variable_types.get(name),
@@ -17867,21 +18089,11 @@ impl Parser {
     fn source_expression_type(&self, expression: &CExpression) -> Option<InterfaceType> {
         match expression {
             CExpression::StepResult { interface_type, .. } => *interface_type,
-            CExpression::Variable(name) => {
-                let interface_type = self.variable_types.get(name).copied()?;
-                if self.string_literal_names.contains(name) {
-                    match interface_type {
-                        InterfaceType::UInt8Array(length) => {
-                            return Some(InterfaceType::CharArray(PlainChar::Unsigned, length));
-                        }
-                        InterfaceType::Int8Array(length) => {
-                            return Some(InterfaceType::CharArray(PlainChar::Signed, length));
-                        }
-                        _ => {}
-                    }
-                }
-                Some(interface_type)
-            }
+            CExpression::StringLiteral(literal) => Some(InterfaceType::CharArray(
+                literal.plain_char(),
+                u32::try_from(literal.bytes().len()).expect("literal length fits u32"),
+            )),
+            CExpression::Variable(name) => self.variable_types.get(name).copied(),
             CExpression::FunctionAddress(name) => {
                 self.function_declaration_for_call(name).map(|header| {
                     function_pointer_type(&function_pointer_signature_from_header(header))
@@ -18080,8 +18292,7 @@ impl Parser {
         if initializes_array
             && expected == InterfaceType::UInt8Pointer
             && matches!(actual, InterfaceType::CharPointer(_))
-            && matches!(expression, CExpression::Variable(name)
-                if self.string_literal_names.contains(name))
+            && matches!(expression, CExpression::StringLiteral(_))
         {
             return Ok(None);
         }
@@ -18396,6 +18607,11 @@ impl Parser {
         CSyntaxError,
     > {
         let (struct_name, union_name) = match base {
+            CExpression::Call { .. }
+            | CExpression::IndirectCall { .. }
+            | CExpression::Ternary { .. }
+            | CExpression::StatementExpression { .. } => (self.aggregate_struct_name(base), None),
+            CExpression::StepResult { struct_name, .. } => (struct_name.clone(), None),
             CExpression::Variable(base_name) => {
                 (self.variable_structs.get(base_name).cloned(), None)
             }
@@ -18740,8 +18956,10 @@ impl Parser {
                 // A complete array object, such as `char tmp[12]` or a
                 // string literal, is not converted to a pointer here: its
                 // size is the whole array's (C11 6.3.2.1p3, 6.5.3.4p2).
-                if let CExpression::Variable(_) = &operand
-                    && let Some(interface_type) = self.source_expression_type(&operand)
+                if matches!(
+                    &operand,
+                    CExpression::Variable(_) | CExpression::StringLiteral(_)
+                ) && let Some(interface_type) = self.source_expression_type(&operand)
                     && !interface_type.is_pointer()
                     && interface_type.pointee_type().is_some()
                 {
@@ -18853,7 +19071,7 @@ impl Parser {
                     };
                     bytes.extend(next);
                 }
-                Ok(CExpression::Variable(self.fresh_string_literal_name(bytes)))
+                Ok(self.string_literal_expression(bytes))
             }
             Some(Token::LParen) => {
                 let expression = self.parse_expression()?;
@@ -19899,6 +20117,7 @@ fn statement_continues_enclosing_loop(statement: &CStatement) -> bool {
         CStatement::While { .. }
         | CStatement::DoWhile { .. }
         | CStatement::For { .. }
+        | CStatement::EndAggregateLifetimes { .. }
         | CStatement::Skip
         | CStatement::Break
         | CStatement::Goto { .. }
@@ -19926,6 +20145,7 @@ fn prepend_condition_check_before_loop_continues(
     prefix: &[CStatement],
     loop_condition: &CExpression,
     loop_site: &CSite,
+    aggregate_steps: &[u32],
 ) -> Result<CStatement, CSyntaxError> {
     Ok(match statement {
         // A `continue` in a `do ... while` goes to the loop's test, which
@@ -19934,6 +20154,7 @@ fn prepend_condition_check_before_loop_continues(
             prefix.to_vec(),
             CStatement::Seq(
                 Box::new(CStatement::LoopTest {
+                    aggregate_steps: aggregate_steps.to_vec(),
                     condition: loop_condition.clone(),
                     site: loop_site.clone(),
                 }),
@@ -19946,12 +20167,14 @@ fn prepend_condition_check_before_loop_continues(
                 prefix,
                 loop_condition,
                 loop_site,
+                aggregate_steps,
             )?),
             Box::new(prepend_condition_check_before_loop_continues(
                 *second,
                 prefix,
                 loop_condition,
                 loop_site,
+                aggregate_steps,
             )?),
         ),
         CStatement::If {
@@ -19967,12 +20190,14 @@ fn prepend_condition_check_before_loop_continues(
                 prefix,
                 loop_condition,
                 loop_site,
+                aggregate_steps,
             )?),
             else_branch: Box::new(prepend_condition_check_before_loop_continues(
                 *else_branch,
                 prefix,
                 loop_condition,
                 loop_site,
+                aggregate_steps,
             )?),
             site,
             operator,
@@ -20004,6 +20229,7 @@ fn prepend_condition_check_before_loop_continues(
         statement @ (CStatement::While { .. }
         | CStatement::DoWhile { .. }
         | CStatement::For { .. }
+        | CStatement::EndAggregateLifetimes { .. }
         | CStatement::Skip
         | CStatement::Break
         | CStatement::Goto { .. }
@@ -20083,7 +20309,8 @@ fn first_embedded_call_position(expression: &CExpression) -> Option<SourcePositi
             first_embedded_call_position(left).or_else(|| first_embedded_call_position(right))
         }
         CExpression::CheckedArrayIndex { index, .. } => first_embedded_call_position(index),
-        CExpression::Void
+        CExpression::StringLiteral(_)
+        | CExpression::Void
         | CExpression::Variable(_)
         | CExpression::StepResult { .. }
         | CExpression::FunctionAddress(_)
@@ -20175,7 +20402,8 @@ fn first_assignment_position(expression: &CExpression) -> Option<SourcePosition>
         crate::languages::c::syntax::binary_c_expression!(left, right) => {
             first_assignment_position(left).or_else(|| first_assignment_position(right))
         }
-        CExpression::Void
+        CExpression::StringLiteral(_)
+        | CExpression::Void
         | CExpression::Variable(_)
         | CExpression::StepResult { .. }
         | CExpression::FunctionAddress(_)
@@ -20200,7 +20428,8 @@ fn first_assignment_position(expression: &CExpression) -> Option<SourcePosition>
 fn expression_reads_runtime_value(expression: &CExpression) -> bool {
     match expression {
         CExpression::ScalarUpdate { .. } => true,
-        CExpression::Void
+        CExpression::StringLiteral(_)
+        | CExpression::Void
         | CExpression::FunctionAddress(_)
         | CExpression::Int32Literal(_)
         | CExpression::UInt8Literal(_)

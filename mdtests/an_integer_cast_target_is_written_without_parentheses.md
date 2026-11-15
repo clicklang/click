@@ -11,5 +11,5 @@ theorem narrow(x: int64) {
 ```
 
 ```expect
-fail: an integer cast target is written without parentheses: `e as uint32`; only a pointer target is parenthesized, `e as (uint8 *)`
+fail: a numeric cast target is written without parentheses: `e as uint32`; only a pointer target is parenthesized, `e as (uint8 *)`
 ```

@@ -7240,6 +7240,43 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 },
             )?
         }
+        SpecExpression::Negate(right) => {
+            let left = SpecExpression::Value(int32(0));
+            let right_step_width = spec_expression_pointer_step_width(state, right);
+            evaluate_spec_scalar_binary_paths_in(
+                expression,
+                SpecScope { state, ..scope },
+                &left,
+                right,
+                assumptions,
+                budget,
+                |left, right, facts, obligations| {
+                    if matches!(right, ProgramValue::Float32(_) | ProgramValue::Float64(_)) {
+                        return apply_program_float_negate(right, facts, obligations);
+                    }
+                    apply_spec_arithmetic(
+                        crate::kernel::MachineBinaryOp::Subtract,
+                        left,
+                        right,
+                        facts,
+                        obligations,
+                        assumptions,
+                        |left, right, facts, obligations, context| {
+                            apply_program_subtract(
+                                state,
+                                left,
+                                right,
+                                None,
+                                right_step_width,
+                                facts,
+                                obligations,
+                                context,
+                            )
+                        },
+                    )
+                },
+            )?
+        }
         SpecExpression::Subtract(left, right) => {
             let left_step_width = spec_expression_pointer_step_width(state, left);
             let right_step_width = spec_expression_pointer_step_width(state, right);

@@ -334,7 +334,8 @@ fn collect_spec_expression_carriers(
             }
             collect_spec_expression_carriers(right, variables, integer_seen);
         }
-        SpecExpression::BitwiseNot(value)
+        SpecExpression::Negate(value)
+        | SpecExpression::BitwiseNot(value)
         | SpecExpression::NarrowArithmetic(value, _)
         | SpecExpression::Cast(value, _)
         | SpecExpression::PointerCoercion(value, _) => {
@@ -428,9 +429,11 @@ fn collect_spec_program_expression_carriers(
     match expression {
         ProgramExpression::Value(value) => collect_program_value_carriers(value, variables),
         ProgramExpression::Variable(_)
+        | ProgramExpression::StringLiteral(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::Negate(expression)
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
@@ -1219,6 +1222,9 @@ impl<'a> TermRewrite<'a> {
                 Box::new(self.rewrite_spec_expression(left)?),
                 Box::new(self.rewrite_spec_expression(right)?),
             ),
+            SpecExpression::Negate(value) => {
+                SpecExpression::Negate(Box::new(self.rewrite_spec_expression(value)?))
+            }
             SpecExpression::BitwiseNot(value) => {
                 SpecExpression::BitwiseNot(Box::new(self.rewrite_spec_expression(value)?))
             }
@@ -1740,6 +1746,7 @@ impl<'a> TermRewrite<'a> {
     ) -> Result<ProgramExpression, SpecRewriteError> {
         self.spec_visit()?;
         let result = match expression {
+            ProgramExpression::StringLiteral(_) => expression.clone(),
             ProgramExpression::Value(value) => ProgramExpression::Value(self.value(value)),
             ProgramExpression::Variable(name) => ProgramExpression::Variable(name.clone()),
             ProgramExpression::FunctionAddress(name) => {
@@ -1772,6 +1779,9 @@ impl<'a> TermRewrite<'a> {
                 then_branch: Box::new(self.rewrite_program_expression(then_branch)?),
                 else_branch: Box::new(self.rewrite_program_expression(else_branch)?),
             },
+            ProgramExpression::Negate(value) => {
+                ProgramExpression::Negate(Box::new(self.rewrite_program_expression(value)?))
+            }
             ProgramExpression::FloatNegate(value) => {
                 ProgramExpression::FloatNegate(Box::new(self.rewrite_program_expression(value)?))
             }

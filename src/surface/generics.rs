@@ -128,6 +128,22 @@ pub(super) fn unify_click_type(
     match pattern {
         ClickType::Resource if actual == &ClickType::Resource => Ok(()),
         ClickType::Resource => Err("expected Resource argument".into()),
+        ClickType::Function { parameters, result } => {
+            let ClickType::Function {
+                parameters: actual_parameters,
+                result: actual_result,
+            } = actual
+            else {
+                return Err("expected a specification function type".into());
+            };
+            if parameters.len() != actual_parameters.len() {
+                return Err("specification function arity mismatch".into());
+            }
+            for (pattern, actual) in parameters.iter().zip(actual_parameters) {
+                unify_click_type(pattern, actual, allowed, substitution)?;
+            }
+            unify_click_type(result, actual_result, allowed, substitution)
+        }
         ClickType::Parameter(name) if allowed.contains(name.as_str()) => {
             bind_type_argument(name, actual.clone().into(), substitution)
         }
@@ -237,6 +253,13 @@ pub(super) fn instantiate_click_type(
 ) -> Result<ClickType, String> {
     match click_type {
         ClickType::Resource => Ok(ClickType::Resource),
+        ClickType::Function { parameters, result } => Ok(ClickType::Function {
+            parameters: parameters
+                .iter()
+                .map(|ty| instantiate_click_type(ty, substitution))
+                .collect::<Result<_, _>>()?,
+            result: Box::new(instantiate_click_type(result, substitution)?),
+        }),
         ClickType::Parameter(name) => substitution
             .get(name)
             .ok_or_else(|| format!("unresolved type parameter `{name}`"))
@@ -616,9 +639,10 @@ pub(super) fn instantiate_function_for_surface_call_with_variables(
             ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
                 Some(parameter.click_type().clone())
             }
-            ClickType::Algebraic(_) | ClickType::Parameter(_) | ClickType::Integer => {
-                syntactic_expression_type(argument, variables)
-            }
+            ClickType::Algebraic(_)
+            | ClickType::Parameter(_)
+            | ClickType::Function { .. }
+            | ClickType::Integer => syntactic_expression_type(argument, variables),
         })
         .collect::<Vec<_>>();
     let substitution = infer_type_substitution(
@@ -766,9 +790,10 @@ pub(super) fn instantiate_predicate_for_surface_call(
             ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
                 Some(parameter.click_type().clone())
             }
-            ClickType::Algebraic(_) | ClickType::Parameter(_) | ClickType::Integer => {
-                syntactic_expression_type(argument, variables)
-            }
+            ClickType::Algebraic(_)
+            | ClickType::Parameter(_)
+            | ClickType::Function { .. }
+            | ClickType::Integer => syntactic_expression_type(argument, variables),
         })
         .collect::<Vec<_>>();
     let substitution = infer_type_substitution(
@@ -1295,6 +1320,26 @@ fn instantiate_expression(
     let recurse =
         |expression: &ContractExpression| instantiate_expression(expression, substitution);
     Ok(match expression {
+        ContractExpression::Lambda {
+            parameters,
+            result,
+            body,
+        } => ContractExpression::Lambda {
+            parameters: parameters
+                .iter()
+                .map(|(name, ty)| Ok((name.clone(), instantiate_click_type(ty, substitution)?)))
+                .collect::<Result<_, String>>()?,
+            result: instantiate_click_type(result, substitution)?,
+            body: Box::new(recurse(body)?),
+        },
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => ContractExpression::Apply {
+            function: Box::new(recurse(function)?),
+            arguments: arguments.iter().map(recurse).collect::<Result<_, _>>()?,
+        },
+
         ContractExpression::AlgebraicConstructor {
             algebraic_type,
             variant,

@@ -794,7 +794,7 @@ pub(super) fn single_statement_preservation_premise(
 }
 
 /// The explicit old/current observation shared by preservation expansions.
-fn preservation_read(
+pub(super) fn preservation_read(
     source: &ClickProposition,
     target: &ClickProposition,
 ) -> Option<(CodeRegionRef, ContractExpression)> {
@@ -839,6 +839,33 @@ fn preservation_read(
         return None;
     }
     Some((region, current))
+}
+
+/// Whether one explicit footprint separation selects the transported read.
+/// Search uses this syntactic test while selecting premises; it performs no
+/// lookup, lowering, or traversal of the proof state.
+pub(super) fn preservation_separation_matches(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premise: &ClickProposition,
+) -> bool {
+    let Some((_, read)) = preservation_read(source, target) else {
+        return false;
+    };
+    let ClickProposition::Separate {
+        left: ResourceSubject::Footprint(_),
+        right,
+    } = premise
+    else {
+        return false;
+    };
+    match (
+        transport_read_subject(&read),
+        transport_separation_subject(right),
+    ) {
+        (Some(read), Some(kept)) => read == kept,
+        _ => false,
+    }
 }
 
 /// Expand a written list of footprint separations into independent preservation
@@ -5006,6 +5033,23 @@ pub(super) fn contract_expression_mentions_program_local(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => false,
+        ContractExpression::Lambda { .. } => {
+            let mut captures = BTreeSet::new();
+            collect_contract_expression_referenced_names(expression, &mut captures);
+            captures
+                .iter()
+                .any(|name| !parameter_names.contains(name.as_str()))
+        }
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            contract_expression_mentions_program_local(function, parameter_names)
+                || arguments.iter().any(|argument| {
+                    contract_expression_mentions_program_local(argument, parameter_names)
+                })
+        }
+
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             contract_expression_mentions_program_local(inner, parameter_names)

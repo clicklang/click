@@ -190,6 +190,10 @@ pub(in crate::surface) struct FunctionLocals {
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    pub(in crate::surface) string_literal_values:
+        std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
+    pub(in crate::surface) string_literal_owners:
+        std::sync::Arc<BTreeMap<String, BTreeSet<Option<String>>>>,
     /// A C definition's execution name, indexed by translation unit and source spelling.
     pub(in crate::surface) qualified_functions: BTreeMap<(String, String), String>,
     pub(in crate::surface) program_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
@@ -839,6 +843,8 @@ fn reduce_contract_binary_expression(
 }
 
 struct Parser {
+    string_literal_values: std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
+    string_literal_owners: std::sync::Arc<BTreeMap<String, BTreeSet<Option<String>>>>,
     /// The loop clause currently being read, including its phase proofs.
     /// Source-aware parsing can reject unbound values before proof execution.
     loop_name_context: Option<String>,
@@ -973,6 +979,8 @@ struct Parser {
     proposition_nesting: usize,
     proof_nesting: usize,
     contract_expression_nesting: usize,
+    /// Interval certificates juxtapose a term and two parenthesized bounds.
+    certificate_operand_boundary: bool,
     contract_if_nesting: usize,
     algebraic_type_nesting: usize,
     tokens: Vec<Token>,
@@ -1260,6 +1268,33 @@ struct ParsedFunctionSignature {
     return_struct_name: Option<String>,
 }
 
+impl ProgramLayouts {
+    pub(in crate::surface) fn register_string_literals(
+        &mut self,
+        function: &crate::languages::interface::ImportedFunction,
+    ) {
+        for literal in function.string_literals() {
+            let literal = literal.to_kernel();
+            let id = literal.identity().clone();
+            std::sync::Arc::make_mut(&mut self.string_literal_owners)
+                .entry(id.function().to_owned())
+                .or_default()
+                .insert(id.source().map(str::to_owned));
+            let pointer = crate::kernel::Memory::string_literal_pointer(&id, literal.bytes());
+            std::sync::Arc::make_mut(&mut self.string_literal_values).insert(
+                id,
+                ProgramValue::typed_pointer(
+                    pointer,
+                    literal
+                        .element_type()
+                        .pointer_to()
+                        .expect("character pointer"),
+                ),
+            );
+        }
+    }
+}
+
 /// Give a concrete replacement for scalar and slice signatures. Record and
 /// method contracts need an `impl` and the imported type identity instead.
 impl Parser {
@@ -1295,6 +1330,7 @@ fn algebraic_parameter_types(
             ClickType::Parameter(_)
             | ClickType::Program(_)
             | ClickType::CObjectPointer { .. }
+            | ClickType::Function { .. }
             | ClickType::Integer => None,
         })
         .collect()
@@ -1387,6 +1423,8 @@ impl Parser {
             &layouts.record_spellings,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+        parser.string_literal_values = layouts.string_literal_values;
+        parser.string_literal_owners = layouts.string_literal_owners;
         parser.program_object_names_by_function = layouts.program_object_names;
         parser.rust_enum_types = layouts.rust_enum_types;
         parser.recursion_peers_by_function = layouts.recursion_peers;
@@ -1631,6 +1669,8 @@ impl Parser {
         };
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
+            string_literal_values: Default::default(),
+            string_literal_owners: Default::default(),
             rust_object_traits,
             cpp_object_methods,
             record_spellings: BTreeMap::new(),
@@ -1676,6 +1716,7 @@ impl Parser {
             proposition_nesting: 0,
             proof_nesting: 0,
             contract_expression_nesting: 0,
+            certificate_operand_boundary: false,
             contract_if_nesting: 0,
             algebraic_type_nesting: 0,
             position: 0,
@@ -2022,6 +2063,8 @@ impl Parser {
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
         let mut tactic_definitions = Vec::new();
+        let mut termination_proof = None;
+        let mut termination_span = None;
         let mut library_imports = self
             .implied_library_modules
             .iter()
@@ -2041,6 +2084,15 @@ impl Parser {
                 }
             } else if self.peek_ident() == Some("import") {
                 imports.push(self.parse_import()?);
+            } else if self.peek_ident() == Some("termination") {
+                let start = self.positions[self.position].clone();
+                self.position += 1;
+                if termination_proof.is_some() {
+                    return Err(self.error("only one `termination by` block is allowed"));
+                }
+                self.expect_ident_spelling("by")?;
+                termination_proof = Some(self.parse_possibly_empty_tactic_block()?);
+                termination_span = Some((start, self.positions[self.position - 1].clone()));
             } else if self.peek_ident() == Some("verifying") {
                 verifying_sources.push(self.parse_verifying_source()?);
             } else if let Some(directive @ ("target" | "mode")) =
@@ -2374,6 +2426,8 @@ impl Parser {
             contract_definitions,
             function_blocks,
             tactic_definitions,
+            termination_proof,
+            termination_span,
             declaration_owners: BTreeMap::new(),
             entry_module: None,
             source_spans: std::sync::Arc::new(SourceSpans {
@@ -3086,6 +3140,12 @@ impl Parser {
         );
         self.expect(Token::Arrow)?;
         let (return_type, parsed_c_return_type) = self.parse_click_type()?;
+        if matches!(return_type, ClickType::Function { .. }) {
+            return Err(
+                self.error("specification function declaration results are not supported yet")
+            );
+        }
+
         let return_object_class = parsed_c_return_type
             .as_ref()
             .and_then(|parsed| self.declared_object_class(parsed));
@@ -3897,6 +3957,12 @@ impl Parser {
                     });
                 } else {
                     let (click_type, parsed_c_type) = self.parse_click_type()?;
+                    if matches!(click_type, ClickType::Function { .. }) {
+                        return Err(self.error(
+                            "specification function declaration parameters are not supported yet",
+                        ));
+                    }
+
                     let parsed_parameter = if let Some(parsed_type) = parsed_c_type {
                         if self.peek() == Some(&Token::LParen) {
                             let (interface_type, function_pointer_signature) =
@@ -6286,6 +6352,35 @@ impl Parser {
     }
 
     fn parse_click_type(&mut self) -> Result<(ClickType, Option<ParsedType>), ClickError> {
+        if self.peek_ident() == Some("fn") && self.peek_next() == Some(&Token::LParen) {
+            if self.algebraic_type_nesting >= MATCH_NESTING_LIMIT {
+                return Err(self
+                    .error("specification function type nesting exceeds Click's supported depth"));
+            }
+            self.algebraic_type_nesting += 1;
+            self.position += 2;
+            let mut parameters = Vec::new();
+            if self.peek() != Some(&Token::RParen) {
+                loop {
+                    parameters.push(self.parse_click_type()?.0);
+                    if self.peek() != Some(&Token::Comma) {
+                        break;
+                    }
+                    self.position += 1;
+                }
+            }
+            self.expect(Token::RParen)?;
+            self.expect(Token::Arrow)?;
+            let (result, _) = self.parse_click_type()?;
+            self.algebraic_type_nesting -= 1;
+            return Ok((
+                ClickType::Function {
+                    parameters,
+                    result: Box::new(result),
+                },
+                None,
+            ));
+        }
         if let Some(element) = self.take_rust_slice_value_type()? {
             return Ok((
                 ClickType::Algebraic(AlgebraicTypeApplication {
@@ -8492,6 +8587,22 @@ impl Parser {
             {
                 return self.parse_contract_value_application();
             }
+            if let Some(kind) = self
+                .peek_ident()
+                .and_then(crate::kernel::TerminationAtomKind::from_spelling)
+            {
+                let name = self.expect_ident("termination predicate")?;
+                self.expect(Token::LParen)?;
+                let arguments = if kind == crate::kernel::TerminationAtomKind::Callbacks {
+                    Vec::new()
+                } else {
+                    vec![ContractExpression::Binding(
+                        self.expect_string("function name")?,
+                    )]
+                };
+                self.expect(Token::RParen)?;
+                return Ok(ClickProposition::PredicateCall { name, arguments });
+            }
             let start = self.position;
             let (name, arguments) = self.parse_call_arguments("predicate or function name")?;
             if let Some(classification) = float_classification_from_name(&name) {
@@ -8722,7 +8833,7 @@ impl Parser {
                                     .set_scoped(NameKind::ContractBinding, &name, true);
                                 self.integer_literal_context = false;
                             }
-                            ClickType::Parameter(_) => {
+                            ClickType::Function { .. } | ClickType::Parameter(_) => {
                                 return Err(self.error(
                                     "quantifier type must be a concrete C, Integer, or algebraic type",
                                 ));
@@ -9910,7 +10021,10 @@ impl Parser {
             {
                 return Err(self.error("only pointer-to-struct types are supported"));
             }
-            if matches!(click_type, ClickType::Parameter(_)) {
+            if matches!(
+                click_type,
+                ClickType::Function { .. } | ClickType::Parameter(_)
+            ) {
                 return Err(self.error(
                     "existential binding type must be a concrete C, Integer, or algebraic type",
                 ));
@@ -9945,7 +10059,9 @@ impl Parser {
                     self.names.set_scoped(NameKind::ContractBinding, name, true);
                     self.integer_literal_context = false;
                 }
-                ClickType::Parameter(_) => unreachable!("rejected above"),
+                ClickType::Function { .. } | ClickType::Parameter(_) => {
+                    unreachable!("rejected above")
+                }
             }
         }
         let body = self.parse_proposition()?;
@@ -10824,6 +10940,28 @@ impl Parser {
                 return Ok(ProofTactic::Witness(ProofWitness::new(bindings)));
             }
             "obtain" => return self.parse_obtain(),
+            "check_termination_local" => {
+                self.expect(Token::LParen)?;
+                let function = self.expect_string("function name")?;
+                self.expect(Token::RParen)?;
+                ProofTactic::CheckTerminationLocal(function)
+            }
+            "check_termination_component" => {
+                self.expect(Token::LParen)?;
+                let function = self.expect_string("function name")?;
+                self.expect(Token::Comma)?;
+                let strict = match self.expect_ident("strict or normal")?.as_str() {
+                    "strict" => true,
+                    "normal" => false,
+                    _ => return Err(self.error("expected `strict` or `normal`")),
+                };
+                self.expect(Token::RParen)?;
+                ProofTactic::CheckTerminationComponent { function, strict }
+            }
+            "check_termination_callbacks" => {
+                self.expect_empty_tactic_args(&name)?;
+                ProofTactic::CheckTerminationCallbacks
+            }
             "known" => {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::Known
@@ -11906,7 +12044,7 @@ impl Parser {
                 }
                 "interval_from_affine" => {
                     let source = self.expect_index("affine source")?;
-                    let term = self.parse_contract_expression()?;
+                    let term = self.parse_interval_certificate_term()?;
                     let lower = self.expect_signed_i64("interval lower bound")?;
                     let upper = self.expect_signed_i64("interval upper bound")?;
                     self.expect(Token::Semicolon)?;
@@ -11919,7 +12057,7 @@ impl Parser {
                 }
                 "interval_from_affine_direct" => {
                     let source = self.expect_index("affine source")?;
-                    let term = self.parse_contract_expression()?;
+                    let term = self.parse_interval_certificate_term()?;
                     let lower = self.expect_signed_i64("interval lower bound")?;
                     let upper = self.expect_signed_i64("interval upper bound")?;
                     self.expect(Token::Semicolon)?;
@@ -11931,7 +12069,7 @@ impl Parser {
                     }
                 }
                 "interval_atom" => {
-                    let term = self.parse_contract_expression()?;
+                    let term = self.parse_interval_certificate_term()?;
                     let lower = self.expect_signed_i64("interval lower bound")?;
                     let upper = self.expect_signed_i64("interval upper bound")?;
                     self.expect(Token::Semicolon)?;
@@ -14325,7 +14463,7 @@ impl Parser {
     /// A name an `as` clause binds may not be a cast's type name: `e as T`
     /// is a cast, so `induct(x) as uint32` would read as one.
     fn refuse_cast_type_binder(&self, name: &str) -> Result<(), ClickError> {
-        if rust_syntax::click_integer_cast_type(name).is_some()
+        if rust_syntax::click_numeric_cast_type(name).is_some()
             || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
         {
             return Err(self.error(format!(
@@ -14348,18 +14486,32 @@ impl Parser {
         ))
     }
 
-    /// The target of a Click cast at the cursor, after its `(` or inside the
-    /// parentheses of a pointer target: an integer type, `void *`, or a
-    /// scalar pointer type such as `uint8 *` or `float *`, unqualified.
-    fn parse_click_cast_type(&mut self) -> Result<ProgramType, ClickError> {
+    /// A native cast target. Pointer qualifiers add to the source view;
+    /// an unqualified byte cast still inherits its source qualification.
+    fn parse_click_cast_type(&mut self) -> Result<(ProgramType, bool, bool), ClickError> {
+        let mut constant = false;
+        let mut volatile = false;
+        while let Some(name) = self.peek_ident() {
+            match name {
+                "const" => constant = true,
+                "volatile" => volatile = true,
+                _ => break,
+            }
+            self.position += 1;
+        }
         let parsed_type = self.parse_type()?;
         let target_type = parsed_type.interface_type.to_kernel_type();
         if parsed_type.reference
-            || (target_type.is_pointer() && (parsed_type.constant || parsed_type.pointee_constant))
+            || parsed_type.constant
+            || (!target_type.is_pointer() && (constant || volatile))
         {
-            return Err(self.error("contract cast targets must be unqualified native types; byte views inherit the source qualification"));
+            return Err(self.error("contract cast qualifiers apply to a pointer's pointee"));
         }
-        Ok(target_type)
+        Ok((
+            target_type,
+            constant || parsed_type.pointee_constant,
+            volatile,
+        ))
     }
 
     /// A struct-pointer cast of `source_operand`, `p as (struct s *)`: the
@@ -14396,20 +14548,32 @@ impl Parser {
         ))
     }
 
-    /// A Click cast of `operand` to an integer or pointer `target_type`,
+    /// A Click cast of `operand` to a numeric or pointer `target_type`,
     /// `x as uint32` or `p as (uint8 *)`.
     fn lower_click_cast(
         &mut self,
         target_type: ProgramType,
         operand: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
+        self.lower_qualified_click_cast(target_type, false, false, operand)
+    }
+
+    fn lower_qualified_click_cast(
+        &mut self,
+        target_type: ProgramType,
+        pointee_constant: bool,
+        pointee_volatile: bool,
+        operand: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
         let historical = crate::surface::validation::contains_old_expression(&operand)
             || crate::surface::validation::contains_at_expression(&operand);
-        // Integer casts consume the value observed by their operand.
-        // Other cast families retain their current-expression validation.
-        let integer_target = matches!(
+        // Numeric casts consume the value observed by their operand.
+        // Pointer casts retain their current-expression validation.
+        let numeric_target = matches!(
             target_type,
-            ProgramType::Int8
+            ProgramType::Float32
+                | ProgramType::Float64
+                | ProgramType::Int8
                 | ProgramType::Int16
                 | ProgramType::Int32
                 | ProgramType::UInt8
@@ -14420,7 +14584,7 @@ impl Parser {
                 | ProgramType::Int128
                 | ProgramType::UInt128
         );
-        if historical && !integer_target {
+        if historical && !numeric_target {
             return Err(self.error("scalar cast expects a current expression; put old(...) around the whole cast for an entry-state value"));
         }
         let expression = contract_expression_as_program_expression(&operand)
@@ -14447,8 +14611,8 @@ impl Parser {
                     crate::kernel::IntegerCastMode::CConversion
                 },
                 pointee_struct: None,
-                pointee_volatile: false,
-                pointee_constant: false,
+                pointee_volatile,
+                pointee_constant,
                 explicit_qualification: false,
             },
         })
@@ -14468,7 +14632,7 @@ impl Parser {
         if self.starts_contract_scalar_cast() {
             let open = self.position;
             self.position += 1;
-            let target_type = self.parse_click_cast_type()?;
+            let (target_type, _, _) = self.parse_click_cast_type()?;
             let close = self.position;
             self.expect(Token::RParen)?;
             let target = self.tokens[open + 1..close]
@@ -14663,6 +14827,16 @@ impl Parser {
         Ok(expression)
     }
 
+    /// A certificate's `(term) (lower) (upper)` has operand delimiters,
+    /// rather than two applications of a parenthesized value. Inside the
+    /// term's own delimiters, ordinary lambda applications remain available.
+    fn parse_interval_certificate_term(&mut self) -> Result<ContractExpression, ClickError> {
+        let previous = std::mem::replace(&mut self.certificate_operand_boundary, true);
+        let term = self.parse_contract_expression();
+        self.certificate_operand_boundary = previous;
+        term
+    }
+
     // Keep postfix metadata and field-lowering temporaries out of the
     // recursive expression parser frame. Nested `match` expressions only
     // retain this small dispatcher while their primary is parsed.
@@ -14671,7 +14845,10 @@ impl Parser {
         &mut self,
         mut expression: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
-        if let ContractExpression::RegionParameter { .. } = &expression {
+        if matches!(&expression, ContractExpression::RegionParameter { .. })
+            || (matches!(&expression, ContractExpression::RegionResult(_))
+                && self.peek() == Some(&Token::Dot))
+        {
             return self.parse_region_parameter_suffix(expression);
         }
         expression = self.resolve_reference_parameter(expression)?;
@@ -14752,15 +14929,38 @@ impl Parser {
         };
         let mut postfixes = 0;
         loop {
+            if self.certificate_operand_boundary && self.peek() == Some(&Token::LParen) {
+                return Ok(expression);
+            }
+
             if !matches!(
                 self.peek(),
-                Some(Token::LBracket | Token::Arrow | Token::Dot)
+                Some(Token::LBracket | Token::Arrow | Token::Dot | Token::LParen)
             ) {
                 return Ok(expression);
             }
             self.check_expression_chain_limit(postfixes)?;
             postfixes += 1;
             match self.peek() {
+                Some(Token::LParen) => {
+                    self.position += 1;
+                    let mut arguments = Vec::new();
+                    if self.peek() != Some(&Token::RParen) {
+                        loop {
+                            arguments.push(self.parse_contract_expression()?);
+                            if self.peek() != Some(&Token::Comma) {
+                                break;
+                            }
+                            self.position += 1;
+                        }
+                    }
+                    self.expect(Token::RParen)?;
+                    expression = ContractExpression::Apply {
+                        function: Box::new(expression),
+                        arguments,
+                    };
+                    struct_name = None;
+                }
                 // A slice parameter is a pointer and a length; its subslice
                 // is the method on the slice value it stands for.
                 Some(Token::LBracket)
@@ -15288,7 +15488,94 @@ impl Parser {
         found
     }
 
+    /// A source literal object: `f.string_literal(i)` or `"file.c"::f.string_literal(i)`.
+    fn take_string_literal_reference(&mut self) -> Result<Option<ContractExpression>, ClickError> {
+        let start = self.position;
+        let first = match self.peek() {
+            Some(Token::Ident(name)) => (false, name.clone()),
+            Some(Token::String(name)) => (true, name.clone()),
+            _ => return Ok(None),
+        };
+        self.position += 1;
+        let (source, function) = if self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+            let Some(Token::Ident(function)) = self.peek() else {
+                self.position = start;
+                return Ok(None);
+            };
+            let function = function.clone();
+            self.position += 1;
+            let source = if first.0 {
+                first.1.clone()
+            } else {
+                // An explicit source alias uses the same qualification as C objects.
+                match self.source_aliases.get(&first.1) {
+                    Some(source) => source.clone(),
+                    None => {
+                        self.position = start;
+                        return Ok(None);
+                    }
+                }
+            };
+            (Some(source), function)
+        } else {
+            if first.0 {
+                self.position = start;
+                return Ok(None);
+            }
+            if let Some((alias, name)) = first.1.split_once("::") {
+                let Some(source) = self.source_aliases.get(alias).cloned() else {
+                    self.position = start;
+                    return Ok(None);
+                };
+                (Some(source), name.to_string())
+            } else {
+                (None, first.1.clone())
+            }
+        };
+        if self.peek() != Some(&Token::Dot)
+            || self.peek_next() != Some(&Token::Ident("string_literal".into()))
+        {
+            self.position = start;
+            return Ok(None);
+        }
+        self.position += 2;
+        self.expect(Token::LParen)?;
+        let ordinal = self.expect_index("string literal ordinal")?;
+        self.expect(Token::RParen)?;
+        let source = if source.is_some() {
+            source
+        } else {
+            let owners = self.string_literal_owners.get(&function).ok_or_else(|| {
+                self.error(format!("C function `{function}` has no string literals"))
+            })?;
+            if owners.len() != 1 {
+                return Err(self.error(format!(
+                    "literal owner `{function}` is ambiguous; qualify its C source"
+                )));
+            }
+            owners.first().expect("registered owner").clone()
+        };
+        let mut id = crate::kernel::StringLiteralId::new(
+            function,
+            u32::try_from(ordinal).map_err(|_| self.error("string literal ordinal exceeds u32"))?,
+        );
+        if let Some(source) = source {
+            id = id.with_source(source);
+        }
+        let value = self
+            .string_literal_values
+            .get(&id)
+            .ok_or_else(|| self.error(format!("unknown string literal `{id}`")))?;
+        Ok(Some(ContractExpression::ProgramExpression(
+            ProgramExpression::Value(value.clone()),
+        )))
+    }
+
     fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        if let Some(literal) = self.take_string_literal_reference()? {
+            return Ok(literal);
+        }
         let start = self.position;
         if let Ok(region) = self.parse_code_region_ref()
             && self.peek() == Some(&Token::Dot)
@@ -15406,6 +15693,65 @@ impl Parser {
                 _ => {}
             }
         }
+        if self.peek() == Some(&Token::Pipe) {
+            self.position += 1;
+            let mut parameters = Vec::new();
+            let mut bound = BTreeSet::new();
+            if self.peek() != Some(&Token::Pipe) {
+                loop {
+                    let name = self.expect_ident("lambda parameter name")?;
+                    self.refuse_bool_literal_binder(&name)?;
+                    if !bound.insert(name.clone()) {
+                        return Err(self.error(format!("duplicate lambda parameter `{name}`")));
+                    }
+                    self.expect(Token::Colon)?;
+                    let (click_type, _) = self.parse_click_type()?;
+                    parameters.push((name, click_type));
+                    if self.peek() != Some(&Token::Comma) {
+                        break;
+                    }
+                    self.position += 1;
+                }
+            }
+            self.expect(Token::Pipe)?;
+            self.expect(Token::Arrow)?;
+            let (result, _) = self.parse_click_type()?;
+            self.expect(Token::LBrace)?;
+            let previous_bool = std::mem::replace(&mut self.bool_value_context, false);
+            let previous_integer = std::mem::replace(
+                &mut self.integer_literal_context,
+                result == ClickType::Integer,
+            );
+            let scope = self.names.scope();
+            let mut shadowed = Vec::new();
+            for (name, ty) in &parameters {
+                self.names.set_scoped(NameKind::ContractBinding, name, true);
+                self.names
+                    .set_scoped(NameKind::IntegerParameter, name, *ty == ClickType::Integer);
+                self.names.set_scoped(NameKind::IntegerLet, name, false);
+                self.names.set_scoped_struct_param(name, None);
+                shadowed.push(self.bind_let_operand(name, Some(ty), None));
+            }
+            let body = self
+                .parse_branch_value(result == ClickType::Program(InterfaceType::Bool))
+                .and_then(|body| match &result {
+                    ClickType::Integer => Ok(self.at_integer_position(body)),
+                    ClickType::Program(ty) => self.typed_let_literal("lambda result", *ty, body),
+                    _ => Ok(body),
+                });
+            self.unbind_let_operands(shadowed);
+            self.names.end(scope);
+            self.bool_value_context = previous_bool;
+            self.integer_literal_context = previous_integer;
+            let body = body?;
+            self.expect(Token::RBrace)?;
+            return Ok(ContractExpression::Lambda {
+                parameters,
+                result,
+                body: Box::new(body),
+            });
+        }
+
         if self.looks_like_algebraic_constructor() {
             let algebraic_type = self.parse_algebraic_type_application()?;
             self.expect(Token::ColonColon)?;
@@ -15659,6 +16005,12 @@ impl Parser {
         if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::LParen)
         {
             let (name, arguments) = self.parse_call_arguments("function name")?;
+            if self.names.contains(NameKind::ContractBinding, &name) {
+                return Ok(ContractExpression::Apply {
+                    function: Box::new(ContractExpression::Binding(name)),
+                    arguments,
+                });
+            }
             let call = ContractExpression::Call {
                 name: name.clone(),
                 arguments,
@@ -15764,7 +16116,10 @@ impl Parser {
             )),
             Some(Token::LParen) => {
                 let start = self.position;
-                let expression = self.parse_contract_expression()?;
+                let boundary = std::mem::replace(&mut self.certificate_operand_boundary, false);
+                let expression = self.parse_contract_expression();
+                self.certificate_operand_boundary = boundary;
+                let expression = expression?;
                 if self.continues_as_rust_bool_value() {
                     // Rust's `(x > 3)` is a `bool` value: the proposition's
                     // truth value, as in a `-> bool` body.
@@ -16262,6 +16617,16 @@ impl Parser {
         self.expect(Token::LParen)?;
         let initial = self.parse_contract_expression()?;
         self.expect(Token::Comma)?;
+        // The old unannotated two-name spelling remains contextual sugar.
+        // A typed literal or any other expression is an ordinary step value.
+        let legacy_binder = self.peek() == Some(&Token::Pipe)
+            && matches!(self.peek_next(), Some(Token::Ident(_)))
+            && self.tokens.get(self.position + 2) == Some(&Token::Comma);
+        if !legacy_binder {
+            let step = self.parse_contract_expression()?;
+            self.expect(Token::RParen)?;
+            return Ok(lambdas::range_fold(start, end, initial, step));
+        }
         self.expect(Token::Pipe)?;
         let accumulator = self.expect_ident("fold accumulator name")?;
         self.expect(Token::Comma)?;
@@ -16814,13 +17179,37 @@ impl Parser {
     }
 
     fn starts_contract_scalar_cast(&self) -> bool {
-        self.starts_float_pointer_cast_at(self.position)
-            || (self.peek() == Some(&Token::LParen)
-                && self.peek_next() == Some(&Token::Ident("void".to_string()))
-                && self.tokens.get(self.position + 2) == Some(&Token::Star)
-                && self.tokens.get(self.position + 3) == Some(&Token::RParen))
-            || self.peek() == Some(&Token::LParen)
-                && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "int8" | "uint8" | "int16" | "uint16" | "uint32" | "int32" | "uint64" | "int64" | "int128" | "uint128"))
+        if self.peek() != Some(&Token::LParen) {
+            return false;
+        }
+        let mut index = self.position + 1;
+        while matches!(self.tokens.get(index), Some(Token::Ident(name)) if matches!(name.as_str(), "const" | "volatile"))
+        {
+            index += 1;
+        }
+        match self.tokens.get(index) {
+            Some(Token::Ident(name)) if matches!(name.as_str(), "void" | "float" | "double") => {
+                (self.tokens.get(index + 1) == Some(&Token::Star)
+                    && self.tokens.get(index + 2) == Some(&Token::RParen))
+                    || (index == self.position + 1
+                        && matches!(name.as_str(), "float" | "double")
+                        && self.tokens.get(index + 1) == Some(&Token::RParen))
+            }
+            Some(Token::Ident(name)) => matches!(
+                name.as_str(),
+                "int8"
+                    | "uint8"
+                    | "int16"
+                    | "uint16"
+                    | "uint32"
+                    | "int32"
+                    | "uint64"
+                    | "int64"
+                    | "int128"
+                    | "uint128"
+            ),
+            _ => false,
+        }
     }
 
     fn parenthesized_atom_continues_as_contract_expression(&self) -> bool {
@@ -16838,7 +17227,8 @@ impl Parser {
         matches!(
             self.tokens.get(close + 1),
             Some(
-                Token::EqualEqual
+                Token::LParen
+                    | Token::EqualEqual
                     | Token::BangEqual
                     | Token::LessThan
                     | Token::LessEqual
@@ -16861,7 +17251,7 @@ impl Parser {
         ) || self.starts_cast_at(close + 1)
     }
 
-    /// Whether `as` at `index` begins a cast: `as` and an integer type name,
+    /// Whether `as` at `index` begins a cast: `as` and a numeric type name,
     /// or `as (` with a pointer type, so `(a + b) as uint32 == c` reads its
     /// parentheses as an expression.
     fn starts_cast_at(&self, index: usize) -> bool {
@@ -16873,13 +17263,13 @@ impl Parser {
         }
         match self.tokens.get(index + 1) {
             Some(Token::Ident(name)) => {
-                rust_syntax::click_integer_cast_type(name).is_some()
+                rust_syntax::click_numeric_cast_type(name).is_some()
                     || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
             }
             Some(Token::LParen) => matches!(
                 self.tokens.get(index + 2),
-                Some(Token::Ident(name)) if matches!(name.as_str(), "void" | "struct" | "const")
-                    || rust_syntax::click_integer_cast_type(name).is_some()
+                Some(Token::Ident(name)) if matches!(name.as_str(), "void" | "struct" | "const" | "volatile")
+                    || rust_syntax::click_numeric_cast_type(name).is_some()
             ),
             _ => false,
         }
@@ -17812,6 +18202,15 @@ mod tactic_classification_tests {
         ("instantiate-using", "instantiate(F, 1) using { x == 1; };"),
         ("solve", "solve();"),
         ("solve-using", "solve() using { x == 1; };"),
+        ("check-termination-local", "check_termination_local(\"f\");"),
+        (
+            "check-termination-component",
+            "check_termination_component(\"f\", normal);",
+        ),
+        (
+            "check-termination-callbacks",
+            "check_termination_callbacks();",
+        ),
     ];
 
     fn label(class: TacticClass) -> &'static str {
@@ -18062,6 +18461,68 @@ mod rewrite_syntax_tests {
                 Parser::new(source).unwrap().parse_proof_tactic().is_err(),
                 "{source}"
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod qualified_native_pointer_cast_tests {
+    use super::*;
+
+    #[test]
+    fn native_pointer_cast_qualifiers_survive_both_source_renderers() {
+        for qualifiers in ["const", "volatile", "const volatile"] {
+            for ty in ["int8", "uint8", "void", "float", "double"] {
+                let source = format!("p as ({qualifiers} {ty} *)");
+                let parse = |source: &str| {
+                    Parser::new(source)
+                        .unwrap()
+                        .parse_contract_expression()
+                        .unwrap_or_else(|error| panic!("{source}: {error}"))
+                };
+                let expression = parse(&source);
+                let lowered = contract_expression_as_program_expression(&expression).unwrap();
+                let ProgramExpression::Cast {
+                    pointee_constant,
+                    pointee_volatile,
+                    ..
+                } = &lowered
+                else {
+                    panic!("pointer cast")
+                };
+                assert_eq!(*pointee_constant, qualifiers.contains("const"));
+                assert_eq!(*pointee_volatile, qualifiers.contains("volatile"));
+                for rendered in [
+                    diagnostics::describe_contract_expression(&expression),
+                    diagnostics::describe_program_expression(&lowered),
+                ] {
+                    assert_eq!(
+                        contract_expression_as_program_expression(&parse(&rendered)).unwrap(),
+                        lowered,
+                        "{source}: {rendered}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod lambda_certificate_parser_tests {
+    use super::*;
+
+    #[test]
+    fn typed_lambda_applications_preserve_interval_operand_boundaries() {
+        for source in [
+            "(value) (-2147483648) (2147483646)",
+            "1 (-2147483648) (2147483646)",
+            "((|x: int32| -> int32 { x })(value)) (-2147483648) (2147483646)",
+        ] {
+            let mut parser = Parser::new(source).unwrap();
+            parser.parse_interval_certificate_term().unwrap();
+            assert_eq!(parser.expect_signed_i64("lower").unwrap(), -2147483648);
+            assert_eq!(parser.expect_signed_i64("upper").unwrap(), 2147483646);
+            assert!(parser.peek().is_none());
         }
     }
 }

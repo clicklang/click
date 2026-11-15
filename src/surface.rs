@@ -73,6 +73,7 @@ mod generics;
 pub(crate) use generics::primitive_instance_type;
 mod integer_conversions;
 mod integer_truncation;
+mod lambdas;
 mod lowering;
 mod modules;
 mod names;
@@ -263,6 +264,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "field",
     "fold",
     "forall",
+    "fn",
     "function",
     "gather",
     "give",
@@ -350,6 +352,18 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "witness",
     "write",
     "true",
+    "termination",
+    "termination_local",
+    "termination_strict",
+    "termination_body",
+    "termination_returns",
+    "termination_divergence",
+    "termination_callbacks",
+    "strict",
+    "normal",
+    "check_termination_local",
+    "check_termination_component",
+    "check_termination_callbacks",
 ];
 
 /// Stable identifiers for the documented Surface Click declaration,
@@ -366,6 +380,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "region-allocation",
     "region-footprint",
     "region-parameter",
+    "string-literal-reference",
     "read-event-result",
     "auto",
     "bool",
@@ -387,6 +402,8 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "import",
     "iterated-ownership",
     "implies",
+    "lambda",
+    "lambda-application",
     "let-where",
     "match-expression",
     "not",
@@ -428,6 +445,8 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "verifying",
     "viewable",
     "write",
+    "termination",
+    "termination-goals",
 ];
 
 /// The `click::` path of a Click library module identity:
@@ -801,6 +820,8 @@ pub struct ClickFile {
     theorem_definitions: Vec<TheoremDefinition>,
     contract_definitions: Vec<ContractDefinition>,
     function_blocks: Vec<FunctionBlock>,
+    termination_proof: Option<Vec<ProofTactic>>,
+    termination_span: Option<(crate::source::SourcePosition, crate::source::SourcePosition)>,
     /// User-defined tactics: contracts over the proof state, each proved once
     /// and then applied as one simple step.
     tactic_definitions: Vec<TacticDefinition>,
@@ -1090,6 +1111,11 @@ pub enum ClickType {
     /// An exact, specification-only signed integer with no C representation.
     Integer,
     Algebraic(AlgebraicTypeApplication),
+    /// A pure specification function; never a C function pointer.
+    Function {
+        parameters: Vec<ClickType>,
+        result: Box<ClickType>,
+    },
 }
 
 impl ClickType {
@@ -1101,7 +1127,7 @@ impl ClickType {
                 Some(*interface_type)
             }
             Self::Integer => None,
-            Self::Algebraic(_) => None,
+            Self::Algebraic(_) | Self::Function { .. } => None,
         }
     }
 }
@@ -1678,6 +1704,7 @@ struct ClickFunctionType {
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
     return_type: ClickType,
+    memory_independent: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2862,7 +2889,8 @@ pub(crate) fn collect_program_expression_variables(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Variable(name) => {
@@ -2871,7 +2899,8 @@ pub(crate) fn collect_program_expression_variables(
         ProgramExpression::Cast { expression, .. } => {
             collect_program_expression_variables(expression, names);
         }
-        ProgramExpression::FloatNegate(expression)
+        ProgramExpression::Negate(expression)
+        | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
             value: expression, ..
@@ -3013,6 +3042,26 @@ pub(crate) fn collect_current_contract_expression_variables(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => {}
+        ContractExpression::Lambda {
+            parameters, body, ..
+        } => {
+            let mut captures = BTreeSet::new();
+            collect_current_contract_expression_variables(body, &mut captures);
+            for (name, _) in parameters {
+                captures.remove(name);
+            }
+            names.extend(captures);
+        }
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            collect_current_contract_expression_variables(function, names);
+            for argument in arguments {
+                collect_current_contract_expression_variables(argument, names);
+            }
+        }
+
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::AlgebraicVariable { name, .. } => {
             names.insert(name.clone());
@@ -3344,6 +3393,17 @@ pub enum SurfaceTerm {
         condition: Box<ClickProposition>,
         then_branch: Box<ContractExpression>,
         else_branch: Box<ContractExpression>,
+    },
+    /// A typed, lexically scoped pure specification function.
+    Lambda {
+        parameters: Vec<(String, ClickType)>,
+        result: ClickType,
+        body: Box<ContractExpression>,
+    },
+    /// Application of an expression whose value is a specification function.
+    Apply {
+        function: Box<ContractExpression>,
+        arguments: Vec<ContractExpression>,
     },
     RangeFold {
         start: Box<ContractExpression>,
@@ -5732,6 +5792,12 @@ pub enum ProofTactic {
     Witness(ProofWitness),
     LetSatisfy(ProofLetSatisfy),
     Choose(ProofChoice),
+    CheckTerminationLocal(String),
+    CheckTerminationComponent {
+        function: String,
+        strict: bool,
+    },
+    CheckTerminationCallbacks,
     Known,
     Extract(ClickProposition),
     Normalize,
@@ -5841,6 +5907,7 @@ pub enum SimpleTactic {
     Witness,
     LetSatisfy,
     Choose,
+    Termination,
     Known,
     Extract,
     Normalize,
@@ -6237,6 +6304,21 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         syntax: "solve() using",
         class: "smart",
     },
+    PublicTacticForm {
+        id: "check-termination-local",
+        syntax: "check_termination_local(",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "check-termination-component",
+        syntax: "check_termination_component(",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "check-termination-callbacks",
+        syntax: "check_termination_callbacks()",
+        class: "simple",
+    },
 ];
 
 mod proof_certificate;
@@ -6374,6 +6456,9 @@ impl ProofTactic {
             Self::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
             Self::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
             Self::Choose(_) => TacticClass::Simple(SimpleTactic::Choose),
+            Self::CheckTerminationLocal(_)
+            | Self::CheckTerminationComponent { .. }
+            | Self::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
             Self::Known => TacticClass::Simple(SimpleTactic::Known),
             Self::Extract(_) => TacticClass::Simple(SimpleTactic::Extract),
             Self::Normalize | Self::NormalizeUsing(_) => {
@@ -7604,6 +7689,8 @@ impl ParameterIndex {
 #[derive(Clone, Copy)]
 struct SpecDefinitions<'a> {
     struct_sizes: Option<&'a BTreeMap<String, u32>>,
+    termination_scope: Option<&'a std::sync::Arc<crate::kernel::OrdinaryTerminationScope>>,
+    termination_tactics: Option<&'a BTreeSet<String>>,
     predicates: &'a PredicateEnvironment,
     functions: &'a ClickFunctionEnvironment,
 }
@@ -7614,7 +7701,19 @@ impl<'a> SpecDefinitions<'a> {
             predicates,
             functions,
             struct_sizes: None,
+            termination_scope: None,
+            termination_tactics: None,
         }
+    }
+
+    fn with_termination_scope(
+        mut self,
+        scope: &'a std::sync::Arc<crate::kernel::OrdinaryTerminationScope>,
+        tactics: &'a BTreeSet<String>,
+    ) -> Self {
+        self.termination_scope = Some(scope);
+        self.termination_tactics = Some(tactics);
+        self
     }
 
     fn with_struct_sizes(mut self, sizes: &'a BTreeMap<String, u32>) -> Self {
@@ -7857,6 +7956,17 @@ fn contract_expression_reads_memory(
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => false,
+        ContractExpression::Lambda { body, .. } => contract_expression_reads_memory(body, callees),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            contract_expression_reads_memory(function, callees)
+                || arguments
+                    .iter()
+                    .any(|argument| contract_expression_reads_memory(argument, callees))
+        }
+
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
@@ -7970,7 +8080,14 @@ fn contract_expression_reads_memory(
                     .any(|argument| contract_expression_reads_memory(argument, callees))
         }
         ContractExpression::Call { name, arguments } => {
-            callees.push(name.clone());
+            // Numeric conversions and exact integer operations are pure;
+            // any memory read remains visible in their explicit arguments.
+            if !integer_conversions::is_integer_conversion(name)
+                && !integer_truncation::is_integer_truncation(name)
+                && name != "to_nat"
+            {
+                callees.push(name.clone());
+            }
             arguments
                 .iter()
                 .any(|argument| contract_expression_reads_memory(argument, callees))
@@ -9605,6 +9722,7 @@ impl FunctionParameter {
             ClickType::Program(interface_type)
             | ClickType::CObjectPointer { interface_type, .. } => *interface_type,
             ClickType::Integer => panic!("a mathematical Integer parameter has no C type"),
+            ClickType::Function { .. } => panic!("a specification function has no C type"),
             ClickType::Algebraic(_) => {
                 panic!("an algebraic Click parameter has no C type")
             }

@@ -1,6 +1,7 @@
-//! Typed floating-point atoms. Import is structural: neither host floating-point
+//! Typed floating-point values. Import is structural: neither host floating-point
 //! conversion nor constant evaluation changes a written carrier or its bits.
 use super::*;
+mod arithmetic;
 mod read;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -123,7 +124,7 @@ impl<'a> FloatOperandView<'a> {
 }
 
 impl KernelTermImport {
-    pub(crate) fn float(&mut self, format: KernelFloatType, term: &MachineTerm) -> KernelTerm {
+    fn float_atom(&mut self, format: KernelFloatType, term: &MachineTerm) -> KernelTerm {
         crate::instrumentation::record_deterministic_work(1);
         if let MachineTerm::MemoryLoad(memory, pointer, kind) = term
             && *kind == format.load_kind()
@@ -148,11 +149,7 @@ impl KernelTermImport {
 impl KernelTermExport {
     pub(crate) fn float(term: &KernelTerm) -> Result<ProgramValue, &'static str> {
         let view = FloatOperandView::from_shared(term).ok_or("expected float term")?;
-        Ok(view.format().value(
-            view.native_compat()
-                .ok_or("unsupported float node")?
-                .clone(),
-        ))
+        Ok(view.format().value(Self::float_machine(term)?))
     }
 }
 
@@ -238,7 +235,25 @@ mod tests {
     }
 
     #[test]
-    fn float_compounds_keep_the_explicit_native_boundary() {
+    fn unmigrated_float_selections_keep_the_exact_native_payload() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let native = MachineTerm::If {
+                condition: Box::new(ConditionTerm::Constant(true)),
+                then_term: Box::new(MachineTerm::Variable(Variable(999937))),
+                else_term: Box::new(MachineTerm::Variable(Variable(999938))),
+            };
+            let root = KernelTermImport::default().float(format, &native);
+            assert!(matches!(root.node(), KernelTermNode::Legacy(_)));
+            assert_eq!(
+                KernelTermExport::float(&root).unwrap(),
+                format.value(native)
+            );
+        }
+    }
+
+    #[test]
+    fn float_arithmetic_uses_shared_operands_and_explicit_export() {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             let native = match format {
@@ -254,11 +269,11 @@ mod tests {
                 },
             };
             let root = KernelTermImport::default().float(format, &native);
-            assert!(matches!(root.node(), KernelTermNode::Legacy(_)));
+            assert!(matches!(root.node(), KernelTermNode::FloatBinary { .. }));
             let view = FloatOperandView::from_shared(&root).unwrap();
             assert_eq!(view.literal(), None);
             assert_eq!(view.variable(), None);
-            assert_eq!(view.native_compat(), Some(&native));
+            assert!(view.native_compat().is_none());
             assert_eq!(
                 KernelTermExport::float(&root).unwrap(),
                 format.value(native)

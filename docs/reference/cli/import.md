@@ -901,8 +901,14 @@ an explicit artifact node or call-result conversion. Reverse typed casts,
 nonstandard enum targets, const removal and general character-pointer
 reinterpretation remain refused. Concrete byte stores use the shared byte
 representation rules; on the selected target, four checked stores can initialize
-an unwritten declared uint32, while partial stores cannot. Native contract
-casts such as `result == p as (uint8 *)` express pointer identity across access
+an unwritten declared uint32, while partial stores cannot. Output transfer
+also composes with this view: a body-checked helper that consumes
+four unwritten bytes and produces them initialized can specify each output byte;
+the caller can prove the exact little-endian uint32 when reading its declared
+object. Builtin native scalar pointer subscripts `p[i]` and `i[p]` with 32/64-bit
+integer indices use the same checked pointer-add/load/store forms as `*(p + i)`.
+
+Native contract casts such as `result == p as (uint8 *)` express pointer identity across access
 types without granting authority. Dynamic-extent `std::span<std::byte>` now
 retains authenticated standard-byte template arguments, including their
 positions and locked declaration metadata even when fields do not mention

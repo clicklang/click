@@ -218,6 +218,7 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
                 Visit::Skip
             }
             crate::kernel::binary_spec_expression!(_, _)
+            | SpecExpression::Negate(_)
             | SpecExpression::BitwiseNot(_)
             | SpecExpression::LoopEntrySnapshot(_)
             | SpecExpression::Cast(..)
@@ -337,6 +338,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
                 }
             }
             crate::kernel::binary_spec_expression!(_, _)
+            | SpecExpression::Negate(_)
             | SpecExpression::BitwiseNot(_)
             | SpecExpression::NarrowArithmetic(..)
             | SpecExpression::Cast(..)
@@ -503,11 +505,13 @@ pub(super) fn program_expression_supports_stateful_memory_refinement(
     expression: &ProgramExpression,
 ) -> bool {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => true,
         ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::Negate(expression)
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
@@ -557,11 +561,13 @@ pub(in crate::kernel) fn program_expression_is_state_independent(
     expression: &ProgramExpression,
 ) -> bool {
     match expression {
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => true,
         ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::Negate(expression)
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
@@ -636,10 +642,12 @@ pub(super) fn program_expression_mentions_variable(
 ) -> bool {
     match expression {
         ProgramExpression::Variable(variable) => variable == name,
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => false,
         ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::Negate(expression)
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
@@ -695,11 +703,13 @@ pub(super) fn program_expression_takes_address_of_variable(
         | ProgramExpression::CheckedObjectAddress(expression) => {
             program_expression_mentions_variable(expression, name)
         }
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => false,
         ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::Negate(expression)
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
@@ -841,7 +851,8 @@ pub(super) fn program_expression_uses_object_address(
 ) -> bool {
     match expression {
         ProgramExpression::Variable(variable) => variable == name,
-        ProgramExpression::Value(_)
+        ProgramExpression::StringLiteral(_)
+        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => false,
         // A scalar or pointer load produces a value, not the address of the
@@ -861,6 +872,7 @@ pub(super) fn program_expression_uses_object_address(
         },
 
         ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::Negate(expression)
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {

@@ -148,7 +148,7 @@ Proof tooling:
 - [One fact-aware frame query instead of scattered history walks](fact-aware-frame-walks.md)
 - [KernelTerm / SurfaceTerm: finish the representation split](unspellable-facts.md)
 
-## P2: after launch (16)
+## P2: after launch (15)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
@@ -167,7 +167,6 @@ C language coverage:
 
 Additional languages:
 
-- [Close object-model gaps in supported C++](object-model.md)
 - [C++ coverage toward Bitcoin Core](cpp-support.md)
 - [Model C++ exceptions with class types and exceptional resources](cpp-exceptions.md)
 - [Support unsafe Rust](unsafe-rust.md)
