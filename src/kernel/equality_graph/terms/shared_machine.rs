@@ -475,6 +475,7 @@ impl TermClasses {
                     }
                 }
                 N::IntegerToMachine { .. }
+                | N::BoolCast { .. }
                 | N::PointerAddress { .. }
                 | N::Legacy(_)
                 | N::Call { .. } => self.intern_typed_machine(
@@ -508,6 +509,27 @@ impl TermClasses {
 mod tests {
     use super::*;
     use crate::kernel::{IntegerTerm, KernelTermImport, SharedMachineIntegerTerm};
+
+    #[test]
+    fn common_boolean_cast_registration_matches_native_classes() {
+        use crate::kernel::{ConditionTerm, KernelTermExport};
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in crate::kernel::machine_integer::FORMATS {
+            let native = T::bool_cast(format, ConditionTerm::Variable(Variable(999461)));
+            let root = KernelTermImport::default()
+                .machine_arithmetic(format, &native)
+                .unwrap();
+            assert!(matches!(root.node(), N::BoolCast { .. }));
+            for width in [W::Bits8, W::Bits16, W::Bits32, W::Bits64, W::Bits128] {
+                let mut classes = TermClasses::default();
+                let exports = KernelTermExport::machine_export_count();
+                let shared = classes.intern_shared_machine(&root, width);
+                let written = classes.intern_typed_machine(&native, width);
+                assert_eq!(classes.root(shared), classes.root(written));
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
+        }
+    }
 
     #[test]
     fn common_pointer_address_registration_matches_native_classes() {

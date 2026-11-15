@@ -268,7 +268,7 @@ struct TermData {
     // Temporary reverse bridge. Weak because the old node caches this term.
     integer: Mutex<WeakIntegerTerm>,
     machine_leaf: MachineLeafCache,
-    pointer_leaf: std::sync::OnceLock<Box<PureFunctionArgument>>,
+    argument_leaf: std::sync::OnceLock<Box<PureFunctionArgument>>,
 }
 
 struct NodeKeyData {
@@ -424,6 +424,7 @@ impl NodeKey {
             KernelTermNode::MachineLiteral(_)
             | KernelTermNode::MemoryLoad { .. }
             | KernelTermNode::PointerAddress { .. } => true,
+            KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
@@ -447,7 +448,7 @@ impl NodeKey {
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
-            KernelTermNode::IntegerToMachine { .. } => true,
+            KernelTermNode::IntegerToMachine { .. } | KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
                 LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
@@ -475,7 +476,9 @@ impl NodeKey {
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
-            KernelTermNode::IntegerToMachine { .. } | KernelTermNode::MachineCast { .. } => true,
+            KernelTermNode::IntegerToMachine { .. }
+            | KernelTermNode::MachineCast { .. }
+            | KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::MachineBinary {
                 operator,
                 arguments,
@@ -611,7 +614,7 @@ impl Interner {
             key: key.clone(),
             integer: Mutex::default(),
             machine_leaf: Default::default(),
-            pointer_leaf: Default::default(),
+            argument_leaf: Default::default(),
         });
         self.terms.insert(key.clone(), Arc::downgrade(&value));
         self.cleanup.push_back(key);

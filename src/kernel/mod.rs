@@ -258,6 +258,10 @@ pub(crate) use reasoning::{
 };
 pub(crate) use spec::is_verified_load_variable_defining_fact;
 pub(crate) use spec::program_value_word32_term;
+pub(crate) use termination::{
+    ProgramContractBodies, ProgramContractFailure, ProgramContractGoal, ProgramContractProof,
+    ProgramTerminationInputs,
+};
 pub use termination::{
     TerminationRefusal, TerminationVerdicts, UnsuitableCallback, program_function_callees,
     program_termination_height_plan, program_verified_function_termination_rules,

@@ -1488,6 +1488,11 @@ described below.
 goal that is already available or true by direct computation, without search,
 typically after a `rewrite`. It closes the goal or refuses; it adds no fact.
 
+Smart closure prefers `known()` for computational leaves, including residuals
+after a rewrite or unfold and leaves inside logical proofs. Expansion retains
+`normalize()` only where its broader rules are still needed; it does not
+replace an explicitly written `normalize()` with another tactic.
+
 **Accepts** a goal that is available, where an atomic proposition is
 available when one of these holds:
 
@@ -2095,6 +2100,23 @@ An unavailable premise, unsupported rule, or mismatched endpoint fails locally.
 **Checked examples:** [`preserve_pointer_read.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_pointer_read.md), [`preserve_resource_field.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_resource_field.md).
 
 ### Arithmetic certificates
+
+Migration to ordinary arithmetic proofs has begun. These certificate rules
+have named laws, applied with explicit `using` premises:
+
+| Certificate operation | Ordinary law |
+| --- | --- |
+| Add two non-strict Integer bounds | `integer::add_le(a, b, c, d)` |
+| Scale an inequality by a nonnegative factor | `integer::multiply_order_nonnegative(a, b, factor)` |
+| Round an Integer upper bound | `integer::round_down_le(value, bound, divisor, remainder)` |
+
+`solve() using` expands a direct sum of two selected non-strict Integer bounds
+to `apply(integer::add_le(...)) using { ... }`. Other arithmetic still uses
+the certificate forms below. The [library reference](../library/index.md#foundational-integer-order-axioms)
+states the laws' exact guards. General affine composition, equality and
+refutation plans, signed interval proofs, and specialized cast, pointer and
+floating rules remain to migrate; their replacement is not implicit in `apply`.
+
 
 **Form:** `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }`
 

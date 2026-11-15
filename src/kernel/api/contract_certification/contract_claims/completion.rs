@@ -30,6 +30,8 @@ pub(crate) struct WholeContractProof {
     entry: Arc<PreparedContractEntryCases>,
     open: PersistentMap<ContractCompletionGoal, BranchId>,
     proof: RootProof,
+    modular: bool,
+    claim_cells: bool,
 }
 
 impl std::fmt::Debug for WholeContractProof {
@@ -51,12 +53,14 @@ pub(crate) struct AdmittedContractProof {
     execution: Arc<FunctionContractExecution>,
 }
 
-/// Evidence that every declared clause and every entry boundary was completed.
-/// Registration receives an already packaged rule; it discovers no new claim
-/// requirements and cannot substitute another function or a subset of proofs.
+/// Partial-correctness proof of every declared clause and entry boundary.
+/// Eligible rules are usable during modular proof execution. Whole-contract
+/// completion also needs the enclosing program's termination obligations.
 #[derive(Clone, Debug)]
-pub(crate) struct CompletedContract {
-    rule: Option<VerifiedFunctionRule>,
+pub(crate) struct ContractBodyProof {
+    rule: VerifiedFunctionRule,
+    modular: bool,
+    loop_rules: Vec<VerifiedLoopRule>,
 }
 
 /// Affine owner of one strategy's execution and ordinary outcome completions.
@@ -164,25 +168,33 @@ impl ContractExecutionOwner {
     }
 }
 
-impl CompletedContract {
+impl ContractBodyProof {
+    pub(crate) fn loop_rules(&self) -> &[VerifiedLoopRule] {
+        &self.loop_rules
+    }
     pub(crate) fn into_rule(&self) -> Option<VerifiedFunctionRule> {
-        self.rule.clone()
+        self.modular.then(|| self.rule.clone())
+    }
+    pub(in crate::kernel) fn termination_rule(&self) -> &VerifiedFunctionRule {
+        &self.rule
     }
 }
 
 impl WholeContractProof {
     pub(crate) fn open(entry: Arc<PreparedContractEntryCases>) -> Result<Self, String> {
         let function = &entry.function;
-        if entry.cases.is_empty()
-            || function.contract_claims().is_empty()
-            // Startup-owned effects are closed by the program-entry boundary;
-            // program entry never produces a modular function rule.
-            || (!function.is_program_entry()
-                && (!function_contract_claims_are_complete(function)
-                    || !function.verified_direct_contract_supported()))
-        {
-            return Err("the declaration does not describe a complete supported contract".into());
+        if entry.cases.is_empty() {
+            return Err("the contract entry has no cases".into());
         }
+        // Fix reusable-rule eligibility at opening. A startup or a contract
+        // with source-only clauses still owns its body/termination proof, but
+        // completing it must not expose an unsupported modular contract.
+        let claim_cells = function.opaque_contract_supported()
+            && !function.contract_claims().is_empty()
+            && (function.is_program_entry()
+                || (function_contract_claims_are_complete(function)
+                    && function.verified_direct_contract_supported()));
+        let modular = claim_cells && !function.is_program_entry();
         let mut keys = BTreeSet::new();
         for claim in function.contract_claims() {
             if !keys.insert(claim.key()) {
@@ -193,12 +205,14 @@ impl WholeContractProof {
         for case in 0..entry.cases.len() {
             crate::instrumentation::record_deterministic_work(1);
             goals.push(ContractCompletionGoal::Boundary { case });
-            for claim in function.contract_claims() {
-                crate::instrumentation::record_deterministic_work(1);
-                goals.push(ContractCompletionGoal::Claim {
-                    case,
-                    key: claim.key().clone(),
-                });
+            if claim_cells {
+                for claim in function.contract_claims() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    goals.push(ContractCompletionGoal::Claim {
+                        case,
+                        key: claim.key().clone(),
+                    });
+                }
             }
         }
         let branch = |goal| {
@@ -222,7 +236,13 @@ impl WholeContractProof {
             )
             .unwrap_or_else(|_| panic!("the contract root was just opened"));
         let open = goals.into_iter().zip(ids).collect();
-        Ok(Self { entry, open, proof })
+        Ok(Self {
+            entry,
+            open,
+            proof,
+            modular,
+            claim_cells,
+        })
     }
 
     #[cfg(test)]
@@ -312,21 +332,25 @@ impl AdmittedContractProof {
         &self.execution
     }
 
-    pub(crate) fn complete(self) -> Result<CompletedContract, ContractCompletionGoal> {
+    pub(crate) fn complete(self) -> Result<ContractBodyProof, ContractCompletionGoal> {
         if let Some(goal) = self.owner.first_open() {
             return Err(goal);
         }
         // Every cell was retired by its checked producer. Construct the rule
         // directly from the retained execution metadata, without validating
         // those completions or the declaration a second time.
-        let rule = (!self.function.is_program_entry()).then(|| VerifiedFunctionRule {
+        let rule = VerifiedFunctionRule {
             pointer_result: self.execution.pointer_result.clone(),
             function: self.function,
             loop_semantics: self.execution.loop_semantics,
             checked_callees: self.execution.checked_callees.clone(),
             applied_tactics: self.execution.applied_tactics.clone(),
-        });
-        Ok(CompletedContract { rule })
+        };
+        Ok(ContractBodyProof {
+            rule,
+            modular: self.owner.modular,
+            loop_rules: Vec::new(),
+        })
     }
 }
 
@@ -404,7 +428,12 @@ impl ContractProofProgress {
             remaining_paths,
             "contract boundary",
         );
-        for claim in execution.function.contract_claims() {
+        let claims = if owner.claim_cells {
+            execution.function.contract_claims()
+        } else {
+            &[]
+        };
+        for claim in claims {
             let operation = match claim.target() {
                 FunctionContractClaimTarget::BodySafety => "contract claim: body safety",
                 FunctionContractClaimTarget::EnsureProposition(_) => "contract claim: proposition",

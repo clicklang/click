@@ -2550,7 +2550,8 @@ fn contract_fact_values(fact: &Proposition) -> Option<Vec<ProgramValue>> {
 /// owns both the semantic successor and the exact simple certificate that
 /// produced it, so ordinary operation does not reconstruct and check that
 /// certificate through the legacy gateway.
-/// The ordered int32 equalities a `rewrite ...; normalize` certificate cites.
+/// The ordered int32 equalities a rewrite certificate ending in `known` or
+/// legacy `normalize` cites.
 ///
 /// Returns `None` for any other certificate shape, or when a cited surface
 /// proposition does not lower.
@@ -2562,7 +2563,7 @@ fn certificate_int32_rewrites(
 ) -> Option<Vec<Proposition>> {
     let steps = certificate.steps();
     let (rewrite_steps, closer) = steps.split_at(steps.len().saturating_sub(1));
-    if !matches!(closer, [ProofStep::Normalize]) || rewrite_steps.is_empty() {
+    if !matches!(closer, [ProofStep::Known | ProofStep::Normalize]) || rewrite_steps.is_empty() {
         return None;
     }
     rewrite_steps

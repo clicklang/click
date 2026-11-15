@@ -8,7 +8,7 @@ mod completion;
 #[cfg(test)]
 pub(crate) use completion::WholeContractProof;
 pub(crate) use completion::{
-    CompletedContract, CompletedContractExecution, ContractCompletionGoal, ContractExecutionOwner,
+    CompletedContractExecution, ContractBodyProof, ContractCompletionGoal, ContractExecutionOwner,
     ContractProofProgress, WholeContractRoot,
 };
 

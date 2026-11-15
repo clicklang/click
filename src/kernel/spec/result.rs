@@ -33,6 +33,26 @@ impl SpecValue {
             )
             .map(Self::Native));
         }
+        if let (Some(left), Some(right)) = (then_value.boolean(), else_value.boolean()) {
+            let Some((condition, expected)) = proposition_as_single_condition(proposition)
+                .or_else(|| compound_spec_value_condition(proposition))
+            else {
+                return Ok(None);
+            };
+            let (left, right) = if expected {
+                (left, right)
+            } else {
+                (right, left)
+            };
+            return Ok(Some(
+                KernelTerm::boolean_if([
+                    KernelTermImport::default().condition(&condition),
+                    left,
+                    right,
+                ])
+                .into(),
+            ));
+        }
         if let (Some((left_format, left)), Some((right_format, right))) =
             (then_value.machine(), else_value.machine())
         {
@@ -168,6 +188,29 @@ impl SpecValue {
                     [left, right],
                 ),
                 op != ComparisonOperator::NotEqual,
+            )));
+        }
+        // Logical Bool equality builds its common operands before the explicit
+        // proposition output boundary. Raw C words retain their nonzero policy.
+        let logical = |value: &Self| match value {
+            Self::Shared(root)
+                if root.ty() == &KernelType::Bool
+                    && !matches!(root.node(), KernelTermNode::BoolLiteral(_)) =>
+            {
+                Some(root.clone())
+            }
+            Self::Native(ProgramValue::Bool(word)) => word
+                .bool_cast_operand()
+                .map(|condition| KernelTermImport::default().condition(condition)),
+            _ => None,
+        };
+        if matches!(op, ComparisonOperator::Equal | ComparisonOperator::NotEqual)
+            && let (Some(left), Some(right)) = (logical(self), logical(right))
+        {
+            let root = KernelTerm::boolean_equal([left, right]);
+            return Ok(Some(Proposition::ConditionIs(
+                KernelTermExport::condition(&root).expect("Boolean equality"),
+                op == ComparisonOperator::Equal,
             )));
         }
         let left = self.native();

@@ -3,6 +3,12 @@ use super::*;
 use crate::kernel::MachineCastSpelling as E;
 
 pub(in crate::kernel::spec) fn cast(value: &SpecValue, target: ProgramType) -> Option<KernelTerm> {
+    if let Some(boolean) = value.boolean() {
+        return Some(KernelTerm::boolean_cast(
+            MachineIntegerType::from_program_type(target)?,
+            boolean,
+        ));
+    }
     cast_signedness(value, target)
         .or_else(|| cast_widening(value, target))
         .or_else(|| cast_narrowing(value, target))

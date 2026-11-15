@@ -1711,6 +1711,110 @@ mod tests {
         include!("../../scaling_tests/kernel/eval/retained_expression/tests.rs");
     }
     #[test]
+    fn boolean_temporary_results_keep_the_producer_root() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let root = KernelTermImport::default().boolean_call(&SharedPureApplication::intern(
+            "boolean_step".into(),
+            vec![],
+        ));
+        for value_type in [None, Some(ProgramType::Bool)] {
+            let mut state = ExecutionState::new();
+            state.locals.set_retained_typed_with_all_qualifiers(
+                "b",
+                ExecutionValue::Shared(root.clone()),
+                ProgramType::Bool,
+                false,
+                false,
+                false,
+                false,
+            );
+            let statement = ProgramStatement::StepValue {
+                steps: vec![11],
+                expression: ProgramExpression::Variable("b".into()),
+                value_type,
+                pointee_constant: false,
+            };
+            let outcome = super::super::statements::execute_execution_statement(
+                &state,
+                &statement,
+                &PureFactContext::new(),
+            )
+            .unwrap();
+            let StatementOutcome::Normal(after) = outcome else {
+                panic!("{outcome:?}")
+            };
+            let paths = evaluate_expression_value_paths(
+                &after,
+                &ProgramExpression::StepResult {
+                    step: 11,
+                    origin: crate::kernel::StepOrigin::Operator(
+                        crate::kernel::OperatorKind::Ternary,
+                    ),
+                },
+                &PureFactContext::new(),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap();
+            let ExpressionOutcome::Value(value) = &paths[0].outcome else {
+                panic!()
+            };
+            assert_eq!(value.shared(), Some(&root));
+            let address = Memory::local_pointer("boolean_step_cell");
+            let memory = Memory::new()
+                .with_block(address.block.clone(), 1)
+                .store_retained(address.clone(), value.clone());
+            let loaded = super::super::memory_loads::evaluate_retained_memory_load_paths(
+                &memory,
+                address,
+                ProgramType::Bool,
+                ExecutionFacts::new(),
+                vec![],
+                &PureFactContext::new(),
+                false,
+                false,
+                None,
+                None,
+            );
+            let ExpressionOutcome::Value(loaded) = &loaded[0].outcome else {
+                panic!("memory receipt")
+            };
+            assert_eq!(loaded.shared(), Some(&root));
+            let mut store_state = (*after).clone();
+            let address = Memory::local_pointer("boolean_statement_cell");
+            store_state.set_memory(Memory::new().with_block(address.block.clone(), 1));
+            let statement = ProgramStatement::TypedStore {
+                pointer: ProgramExpression::Value(ProgramValue::typed_pointer(
+                    address.clone(),
+                    ProgramType::VoidPointer,
+                )),
+                value: ProgramExpression::Variable("b".into()),
+                value_type: ProgramType::Bool,
+                access_class: None,
+                volatile: false,
+                pointee_constant: false,
+                source: Default::default(),
+            };
+            let stored = super::super::statements::execute_execution_statement(
+                &store_state,
+                &statement,
+                &PureFactContext::new(),
+            )
+            .unwrap();
+            let StatementOutcome::Normal(stored) = stored else {
+                panic!("Boolean store: {stored:?}")
+            };
+            assert_eq!(
+                stored
+                    .memory
+                    .known_retained_value(&address)
+                    .unwrap()
+                    .shared(),
+                Some(&root)
+            );
+        }
+    }
+
+    #[test]
     fn pointer_steps_keep_nested_read_call_and_arithmetic_roots_through_storage() {
         let _session = crate::kernel::VerificationSession::enter();
         let source_memory = Memory::new();
