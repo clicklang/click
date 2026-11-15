@@ -2404,7 +2404,7 @@ fn solve_keeps_valid_integer_offset_function_goals() {
 /// One read, one name: a read through a loop alias of a field a call left
 /// unchanged reads the call's unchanged-bytes source, whose cell holds the
 /// field's read at the loop head. That read names it; it is not named again
-/// at the projected snapshot (`docs/internals/spellability.md`).
+/// at the projected snapshot (`docs/internals/raise-lower-principle.md`).
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_14")]
 fn a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name() {

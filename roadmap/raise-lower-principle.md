@@ -2,8 +2,8 @@
 
 Priority: P1.
 
-Soundness: incomplete. No false acceptance is known from a missing spelling.
-A missing spelling can lose proof completeness or prevent checked expansion.
+Soundness: incomplete. No false acceptance is known from a failure to raise a
+fact. Failed raising can lose proof completeness or prevent checked expansion.
 Removing a compatibility checker without preserving its rules also loses
 completeness and is not a valid migration.
 
@@ -11,17 +11,18 @@ completeness and is not a valid migration.
 
 **Current priority: finish the KernelTerm / SurfaceTerm split.** This milestone
 has a finite representation and consumer checklist. Eliminating every existing
-spellability defect is a separate follow-up, not its completion criterion.
+raise-lower principle defect is a separate follow-up, not its completion criterion.
 
 `SurfaceTerm` represents source expressions. `KernelTerm` is the common typed,
 immutable expression DAG used by kernel expression producers and consumers.
 Lowering can make implicit conversions explicit: two Surface expressions may
 lower to the same kernel term. Raising a supported common term must preserve its
 identity: `lower(raise(x)) == x`. The reverse direction preserves a canonical
-spelling, not every detail of the original source text.
+Surface form, not every detail of the original source text.
 
-The broader requirement that every proof-state fact and goal has an exact
-spelling remains in [Spellability](../docs/internals/spellability.md). Closing
+The broader requirement that every proof-state fact and goal raises to an
+exact Surface form remains in the
+[raise-lower principle](../docs/internals/raise-lower-principle.md). Closing
 this migration does not declare that broader project complete.
 
 Preserve these rules throughout the migration:
@@ -2206,7 +2207,7 @@ final common boundary remain open.
 - `NativeComparisonView::integer_condition` retains observations; its
   `boxed_value` call applies only to a written operand or literal. The boxed
   comparison wrappers still serve native-input converse readings, Surface
-  spelling/planning (`observed_native_surface_comparison` and premise spelling
+  spelling/planning (`observed_native_surface_comparison` and premise raising
   in `surface/proof/smart_closures.rs`), and `ProofObligation::verification_condition`
   production through `canonical_observation_form`. The latter also serves the
   frontend's `verify_kernel_standard_theorem_axiom` declaration check in
@@ -2394,7 +2395,7 @@ model; states and resources need not become expression nodes.
 ### 4. Close the common boundary and declare the split complete
 
 - [ ] Route supported common nodes through shared structural lowering and
-  raising. Remove exports to the old speller and duplicate family-specific
+  raising. Remove exports to the old raiser and duplicate family-specific
   expression conversion paths.
 - [ ] Make fact/goal term operands use that common path while preserving their
   proposition, binder and resource structure. A separate fact renderer may
@@ -2409,7 +2410,7 @@ model; states and resources need not become expression nodes.
 **Split complete when all four steps are closed:** common term-level round trips
 are exact, checker and producer paths use the common representation, obsolete
 expression bridges are removed, and the integration gate passes. The remaining
-spellability work below does not silently extend this finish line.
+raise-lower principle work below does not silently extend this finish line.
 
 ## Final validation and scope control
 
@@ -2421,7 +2422,7 @@ scaling tests across growing DAGs, changed contexts and unrelated facts.
 
 Use `scripts/check.sh` as the integration gate; do not substitute a nightly run,
 raise limits or weaken proofs. Run the regular-corpus fact-stability audit with
-zero differences and record a separate spellability census with its remaining
+zero differences and record a separate raise-lower principle census with its remaining
 misses. A globally empty census is **not** required to close this split.
 
 A new census finding blocks the migration only if a reproduction demonstrates
@@ -2448,7 +2449,7 @@ audit found additional live routes. Finish those checker migrations and remove
 the implicit adapters before proceeding through steps 2–4. Do not resume the
 census backlog as the default next task.
 
-## Spellability follow-up — outside the split's finish line
+## Raise-lower principle follow-up — outside the split's finish line
 
 Keep these visible without reopening completed migration steps:
 
@@ -2462,8 +2463,8 @@ Keep these visible without reopening completed migration steps:
   equations with a `match` right side and a call precondition instance recorded
   before its result. Reproduce before claiming they remain current; preserve
   `charon_held_value_locals_are_spelled_by_name` coverage.
-- Other introduced-value names, missing fact syntax, total fact/goal spelling
-  and a globally zero-miss census remain the broader unspellable-facts project.
+- Other introduced-value names, missing fact syntax, total fact/goal raising
+  and a globally zero-miss census remain the broader unraisable-facts project.
   They are not extra unchecked steps in the representation milestone.
 
 Latest landed evidence (#2492, before this documentation revision): the full

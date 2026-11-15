@@ -240,7 +240,7 @@ pub fn inventory(path: &str, file: &syn::File) -> BTreeMap<String, usize> {
                 caller.as_str(),
                 "spelled_goal"
                     | "structural_proposition_candidate"
-                    | "record_spellability_census"
+                    | "record_raise_lower_census"
                     | "trace_pointer_pair"
                     | "spell_refutation"
                     | "spelled_goal_for_search"

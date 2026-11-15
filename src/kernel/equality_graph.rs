@@ -116,7 +116,7 @@ pub(in crate::kernel) struct MachineAtom(crate::kernel::SharedMachineIntegerTerm
 ///
 /// Both offsets sign-extend before scaling, so they differ only where the
 /// `int32` product wraps. `(char *)p + i * 4` keeps that byte offset when it
-/// is formed (`docs/internals/spellability.md#lowering-is-fact-stable`); this
+/// is formed (`docs/internals/raise-lower-principle.md#lowering-is-fact-stable`); this
 /// is the relation that names it as element `i`. The terms are imported as
 /// shared terms, so naming them attaches no spelling to an operand another
 /// check holds in shared form. A constant-size match on the condition;
@@ -3718,9 +3718,9 @@ mod tests {
         assert!(other_spelling.are_equal(&left, &right));
         assert!(other_spelling.are_equal(&right, &left));
 
-        let mut unspellable = EqualityGraph::default();
-        unspellable.add_equality(&at(a, 0), &at(b, i64::MIN));
-        unspellable.add_offset_equality(
+        let mut unraisable = EqualityGraph::default();
+        unraisable.add_equality(&at(a, 0), &at(b, i64::MIN));
+        unraisable.add_offset_equality(
             &PointerOffsetTerm::Add(
                 Box::new(x.clone()),
                 Box::new(PointerOffsetTerm::Constant(i64::MIN)),
@@ -3729,9 +3729,9 @@ mod tests {
         );
         // The raw address applications can use the stated MIN translation
         // directly, without constructing its unrepresentable opposite sign.
-        assert!(unspellable.are_equal(&left, &right));
-        assert!(unspellable.are_equal(&right, &left));
-        assert!(!unspellable.are_equal(&left, &right.offset_by_bytes(1)));
+        assert!(unraisable.are_equal(&left, &right));
+        assert!(unraisable.are_equal(&right, &left));
+        assert!(!unraisable.are_equal(&left, &right.offset_by_bytes(1)));
     }
 
     #[test]

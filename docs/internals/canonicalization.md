@@ -81,7 +81,7 @@ two-stage composition:
    A logical read of an integer cell (a Click expression, not C evaluation)
    does not take a recorded value, except a cell holding its own read: it
    keeps its version name, and the read-over-write authority relates it to
-   the stored value ([spellability](spellability.md#a-read-names-its-version)).
+   the stored value ([raise-lower principle](raise-lower-principle.md#a-read-names-its-version)).
 2. **Replace each remaining load with its load variable**: the kernel
    variable identified by the cell and the snapshot of its last write, found
    by walking the memory derivation DAG.

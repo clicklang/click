@@ -1,4 +1,4 @@
-# `solve` exhausts its budget spelling premises of an inclusive-range loop
+# `solve` exhausts its budget raising premises of an inclusive-range loop
 
 Soundness: incomplete. A true back-edge member is refused after the smart
 work budget runs out; no false claim verifies.
@@ -7,7 +7,7 @@ The back-edge closer of a two-line inclusive-range loop runs `solve` out of
 its 2,000,000-unit budget (about 10 s in a debug build) on the member
 `total + 1 == 256` of the pass that exhausts the range, instead of closing
 it or failing promptly. `CLICK_TIMINGS=1` attributes the work to premise
-spelling: about 3.5M units in `solve closure: premise spelling` over 62
+spelling: about 3.5M units in `solve closure: premise raising` over 62
 calls, and about 400 calls of `solve premise surface at recorded
 snapshots` / `across recorded snapshots`. The refusal names the member by a
 compiler temporary, `__rust_mir_10 == 256`.
@@ -48,6 +48,6 @@ verifies; this shape blocks rewriting it over `RangeInclusive`'s own
 ## Acceptance
 
 - The member closes, or `solve` declines promptly naming what it lacks;
-  premise spelling work stays proportional to the premises the goal can use.
-- A regression with this proof, and a work bound on its premise-spelling
+  premise raising work stays proportional to the premises the goal can use.
+- A regression with this proof, and a work bound on its premise-raising
   operations.

@@ -67,7 +67,7 @@
 - [Rbtree launch roadmap](internals/roadmap.md)
 - [Architecture](internals/architecture.md)
 - [Surface names and source printing](internals/source-names-and-printing.md)
-- [Spellability](internals/spellability.md)
+- [Raise-lower principle](internals/raise-lower-principle.md)
 - [The verification pipeline](concepts/verification-pipeline.md)
 - [Surface Click and Kernel Click](concepts/surface-and-kernel.md)
 - [Proof landscape](concepts/proof-landscape.md)

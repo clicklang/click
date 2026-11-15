@@ -91,7 +91,7 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   with scalar leaves have ordinary expansion coverage. They do not settle
   non-scalar leaves, binders, other proof contexts or legacy retirement.
 - **Separate owners:** the representation split in
-  [unspellable facts](unspellable-facts.md) owns the remaining shared-term
+  [unraisable facts](raise-lower-principle.md) owns the remaining shared-term
   migration boundaries. Its original R1–R7 reproductions are closed; use its
   current closure checklist for remaining work. Those identifiers are local to
   that document, not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
@@ -127,7 +127,7 @@ fact-context parameter and expansion writes a step proof that replays without
 implicit solve. Other arithmetic operators still decide some safety conditions
 before emitting any obligation. Replacing those decisions needs
 round-trippable goals and flat generation/publication costs. The earlier, unlanded arithmetic-migration prototype failed `struct_array_element_expands_with_its_subscript`
-(the initialized-global sum has no round-tripping overflow-goal spelling) and
+(the initialized-global sum has no round-tripping overflow-goal raising) and
 `straight_line_assignments_cost_the_same_at_every_position` (work grows from
 2765 to 2885 across twelve assignments). These are prototype findings, not
 current failing tests; reproduce them when revisiting that migration. Retain

@@ -633,7 +633,7 @@ fn rbtree_solve_recolor_expansion_rechecks() {
                 &project.with_entry_source(expanded),
                 &source_refs(&c_sources),
             )
-            .expect("a whole-claim expansion must not emit unspellable values");
+            .expect("a whole-claim expansion must not emit unraisable values");
             return;
         }
         Err(error) => error,

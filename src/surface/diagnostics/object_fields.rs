@@ -260,7 +260,7 @@ pub(super) fn ambient_struct_layout(
     })
 }
 
-pub(super) fn object_field_spelling(block: &str, offset: u32, width: u32) -> Option<String> {
+pub(super) fn object_field_surface(block: &str, offset: u32, width: u32) -> Option<String> {
     AMBIENT_OBJECT_FIELDS.with(|slot| {
         let slot = slot.borrow();
         let (name, _, fields) = declared_object(slot.as_ref()?, block)?;

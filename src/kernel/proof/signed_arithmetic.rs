@@ -3483,7 +3483,7 @@ fn affine_difference(
 
 /// Whether two claims are both unconditionally true constant comparisons on
 /// the same carrier (for example, a rebuilt `0 <= 0` conclusion against a
-/// `0 == 0` goal spelling). Accepting such a pair proves a true goal from a
+/// `0 == 0` goal raising). Accepting such a pair proves a true goal from a
 /// true conclusion; anything with variables or a false constant still
 /// requires exact claim equality.
 fn trivially_true_claims(left: &SignedArithmeticClaim, right: &SignedArithmeticClaim) -> bool {
@@ -4694,7 +4694,7 @@ mod tests {
             }],
             conclusion: 0,
         };
-        // A rebuilt `0 <= 0` conclusion closes a `0 == 0` goal spelling and
+        // A rebuilt `0 <= 0` conclusion closes a `0 == 0` goal raising and
         // vice versa: both denote unconditional truth.
         le_certificate.check(&eq_zero, &[]).unwrap();
         let eq_certificate = SignedArithmeticCertificate {

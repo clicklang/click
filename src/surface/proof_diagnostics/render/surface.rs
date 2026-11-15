@@ -1445,7 +1445,7 @@ impl Printer<'_> {
                 if crate::kernel::model_fields::registered_model_field_origin(*variable).is_some() {
                     return self.placeholder(|printer| printer.unnamed_variable(*variable));
                 }
-                if let Some(field) = crate::kernel::model_fields::model_field_spelling(*variable) {
+                if let Some(field) = crate::kernel::model_fields::model_field_surface(*variable) {
                     return Some(atom(field));
                 }
                 if let Some(count) =
@@ -2696,7 +2696,7 @@ impl Printer<'_> {
                 .map(|(_, name)| name.clone())
                 .or_else(|| self.labels.integer_name_for(*variable).map(str::to_owned))
                 .or_else(|| self.variable_name(*variable))
-                .or_else(|| crate::kernel::model_fields::model_field_spelling(*variable))
+                .or_else(|| crate::kernel::model_fields::model_field_surface(*variable))
             {
                 Some(name) => Some(atom(name)),
                 None => self.placeholder(|printer| printer.unnamed_variable(*variable)),

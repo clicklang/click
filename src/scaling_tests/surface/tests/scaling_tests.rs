@@ -19,7 +19,7 @@ fn trivial_disjuncts_do_not_spell_unrelated_premises() {
         assert_eq!(
             sample
                 .named_work
-                .get("operation `solve closure: premise spelling`")
+                .get("operation `solve closure: premise raising`")
                 .copied()
                 .unwrap_or(0),
             0,
@@ -92,7 +92,7 @@ int32 probe(int32* p) {{
         assert!(!guards[0].failed);
         let spelling = sample
             .named_work
-            .get("operation `solve closure: premise spelling`")
+            .get("operation `solve closure: premise raising`")
             .copied()
             .unwrap_or(0);
         samples.push((size, guards[0].work, spelling));
@@ -124,7 +124,7 @@ int32 probe(int32* p) {{
             }
         }
     }
-    eprintln!("constructor guard (stores, closure work, premise spelling): {samples:?}");
+    eprintln!("constructor guard (stores, closure work, premise raising): {samples:?}");
     assert!(
         samples.iter().all(|(_, _, spelling)| *spelling == 0),
         "{samples:?}"
@@ -7578,7 +7578,7 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
                 size: returns,
                 work: *sample
                     .named_work
-                    .get("operation `solve closure: premise spelling`")
+                    .get("operation `solve closure: premise raising`")
                     .unwrap_or(&0),
                 named_work: BTreeMap::new(),
             });
@@ -7726,8 +7726,8 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         assert_near_linear_scaling("executing a fan-out's paths", &execute);
         eprintln!("fan-out snapshot transport work: {transport:?}");
         assert_near_linear_scaling("solve's snapshot transport search", &transport);
-        eprintln!("fan-out premise spelling work: {spelling:?}");
-        assert_near_linear_scaling("solve's premise spelling", &spelling);
+        eprintln!("fan-out premise raising work: {spelling:?}");
+        assert_near_linear_scaling("solve's premise raising", &spelling);
         eprintln!("indexed fan-out: {samples:?}; selection: {selection:?}");
         assert!(
             selection.windows(2).all(|pair| pair[1] <= pair[0] * 2 + 8),

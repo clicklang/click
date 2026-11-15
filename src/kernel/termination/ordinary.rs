@@ -79,7 +79,7 @@ pub(crate) struct TerminationCheckReport {
 }
 
 /// Immutable producer-owned inputs. Predicate names contain a non-identifier
-/// scope brand; Source can name them only through the checked goal spellings.
+/// scope brand; Source can name them only through the checked goal raisings.
 pub(crate) struct OrdinaryTerminationScope {
     pub(super) obligations: TerminationObligations,
     state: ProgramState,

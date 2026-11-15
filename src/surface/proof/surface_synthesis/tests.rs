@@ -1721,7 +1721,7 @@ fn forall_loadable_range_call_requirement_is_spellable() {
 /// `exists_loadable_range` calls `need_cells`, whose precondition wraps the
 /// same range in an existential over the length. The witness name and the
 /// binder identities a fresh lowering allocates are its own, so only
-/// spellability is asserted here; the range shape itself round-trips in the
+/// raise-lower principle is asserted here; the range shape itself round-trips in the
 /// universal test above.
 #[test]
 fn exists_loadable_range_call_requirement_is_spellable() {

@@ -3864,7 +3864,7 @@ fn describe_model_field_version_stop(
     stop: &resource_tracker::Stop,
     since: &str,
 ) -> Option<String> {
-    let field = crate::kernel::model_fields::instance_field_spelling(identity, field_index)?;
+    let field = crate::kernel::model_fields::instance_field_surface(identity, field_index)?;
     // A parent-qualified path is not what the registry names, so it has no
     // spelling of its own and this says nothing rather than the parent's.
     if !children.is_empty() {
@@ -4325,7 +4325,7 @@ pub(in crate::surface) fn diagnostic_source_load_cell(
     if let (PointerOffsetTerm::Constant(offset), PointerBlock::Concrete(block)) =
         (&pointer.offset, &pointer.block)
         && let Ok(offset) = u32::try_from(*offset)
-        && let Some(field) = object_fields::object_field_spelling(block, offset, kind.byte_width())
+        && let Some(field) = object_fields::object_field_surface(block, offset, kind.byte_width())
     {
         return Some(field);
     }
@@ -4796,7 +4796,7 @@ fn describe_source_cell_of_width(
     if let (Some(width), PointerOffsetTerm::Constant(offset), PointerBlock::Concrete(block)) =
         (width, &pointer.offset, &pointer.block)
         && let Ok(offset) = u32::try_from(*offset)
-        && let Some(field) = object_fields::object_field_spelling(block, offset, width)
+        && let Some(field) = object_fields::object_field_surface(block, offset, width)
     {
         return Some(SourceCell {
             object: field,
@@ -7859,9 +7859,9 @@ pub(super) fn describe_bitvector_with_context(
         // stored inside the instance fact, so there is nothing in the term to
         // recover it from; the mint registered it.
         MachineTerm::Variable(variable)
-            if crate::kernel::model_fields::model_field_spelling(*variable).is_some() =>
+            if crate::kernel::model_fields::model_field_surface(*variable).is_some() =>
         {
-            crate::kernel::model_fields::model_field_spelling(*variable)
+            crate::kernel::model_fields::model_field_surface(*variable)
                 .expect("checked registered above")
         }
         MachineTerm::Variable(variable) => lowering_only_variable("v", variable.0),
@@ -8141,7 +8141,7 @@ fn describe_storage_write_outside_footprint(
             if let (PointerOffsetTerm::Constant(offset), PointerBlock::Concrete(block)) =
                 (&pointer.offset, &pointer.block)
                 && let Ok(offset) = u32::try_from(*offset)
-                && let Some(field) = object_fields::object_field_spelling(block, offset, *bytes)
+                && let Some(field) = object_fields::object_field_surface(block, offset, *bytes)
             {
                 return format!("the {bytes}-byte store to `{field}`");
             }
