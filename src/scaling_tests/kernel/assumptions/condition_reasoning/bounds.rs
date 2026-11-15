@@ -223,3 +223,50 @@ fn shared_exact_order_walk_visits_dag_endpoints_once() {
         assert!(lw * small <= sw * large * 2, "{samples:?}");
     }
 }
+
+#[test]
+fn initialized_range_order_collection_does_not_enumerate_elements() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let mut costs = Vec::new();
+    for size in [16, 1024, 1_000_000] {
+        let var = Variable(9_200_100);
+        let index = MachineTerm::Variable(var);
+        let guard = Proposition::And(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
+                true,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::signed_less_than(index.clone(), MachineTerm::constant(size)),
+                true,
+            )),
+        );
+        let source = Proposition::ForAll {
+            name: Default::default(),
+            var,
+            sort: Sort::ProgramInt32,
+            body: Box::new(Proposition::Implies(
+                Box::new(guard),
+                Box::new(Proposition::MemoryReadDefined {
+                    memory: Memory::new(),
+                    pointer: Pointer::symbolic(Variable(9_200_101)).offset_by_elements(index, 4),
+                    value_type: ProgramType::Int32,
+                }),
+            )),
+        };
+        let context = PureFactContext::new();
+        let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut facts = Vec::new();
+            context.collect_finite_forall_order_facts(&source, &mut facts);
+            assert!(facts.is_empty());
+            assert!(!context.proposition_proves_condition(
+                &source,
+                &ConditionTerm::signed_less_than(MachineTerm::Variable(var), 7u32.into()),
+                true,
+            ));
+        });
+        costs.push(cost);
+    }
+    assert!(costs[0] > 0);
+    assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+}

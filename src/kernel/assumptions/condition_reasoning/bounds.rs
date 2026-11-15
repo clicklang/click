@@ -162,6 +162,9 @@ impl PureFactContext {
         proposition: &Proposition,
         order_facts: &mut Vec<OrderFact>,
     ) {
+        if !super::super::proposition_reasoning::has_condition_conclusion(proposition) {
+            return;
+        }
         let mut variables = Vec::new();
         let body = collect_forall_chain(proposition, &mut variables);
         if variables.is_empty() {
