@@ -367,7 +367,7 @@ raw-pointer constructor/substitution parity, block and snapshot identity,
 load authority, read ordering, dependency modes and frame transport. The
 CI-quality check passed.
 
-8i retains complete-pointer equality operands, including designation, opaque
+8i (merged [PR #2818](https://github.com/clicklang/click/pull/2818)) retains complete-pointer equality operands, including designation, opaque
 extent, explicit extent and exact qualifiers/evidence. Its observation identity
 uses the native logical fields without changing the producer payload. Snapshot
 selectors and dependency readers use shared address roles directly; extent widths
@@ -386,7 +386,7 @@ snapshot keys, dependency admission, read order and observation identity. Exact
 producer metadata stays retained while logical keys preserve the native const,
 volatile, type and extent distinctions. The CI-quality check passed.
 
-8j retains overflow conditions as typed numeric operand pairs with their exact
+8j (merged [PR #2821](https://github.com/clicklang/click/pull/2821)) retains overflow conditions as typed numeric operand pairs with their exact
 format and operation. Identity, observation normalization, snapshot selectors,
 dependency readers and load matching inspect the shared operands directly.
 Reconstruction reuses the existing constant and width-interval rules. Bitvector
@@ -399,6 +399,21 @@ machine formats and overflow operations, constructor and substitution parity,
 load authority, exact format/operation keys, dependencies and frame transport.
 Shared arithmetic DAGs remain retained without numeric exports. The CI-quality
 check passed.
+
+8k retains Boolean reads as typed snapshot/shared-address nodes. Producer keys
+keep exact snapshot arenas and address spelling; observation identity preserves
+native memory and address equality. Substitution retains the existing snapshot
+and raw/smart address policies. Variable, capture, binder and memory-dependency
+readers preserve their distinct admission rules and read order. Resource
+diagnostics still report only the one-byte Boolean cell; their selected native
+read descriptor is cached without exporting an enclosing Boolean expression.
+Frame transport and load matching retain the existing Boolean-value refusals.
+Surface output remains at its explicit compatibility boundary.
+
+Validation: all 1,907 selected tests passed on current upstream, including every
+scaling test, Boolean-read substitution and identity parity, dependency widths
+and ordering, resource diagnostics and the intervening MIR temporary tests.
+The CI-quality check passed.
 
 ### 8a inventory
 
