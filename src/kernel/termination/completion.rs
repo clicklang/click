@@ -208,13 +208,12 @@ impl ProgramContractProof {
         self.bodies.clone()
     }
 
-    /// The implicit program closer discharges the already declared goals with
-    /// the existing SCC/descent operation. This constructs the successor;
-    /// Source never checks a completed contract for further requirements.
-    pub(crate) fn complete(
+    /// Seal body opening and generate termination requirements. No descent
+    /// proof executes here, and this operation cannot complete the contract.
+    pub(crate) fn generate_termination(
         self,
         inputs: ProgramTerminationInputs<'_>,
-    ) -> Result<CompletedProgramContracts, ProgramContractFailure> {
+    ) -> Result<ProgramTerminationProof, ProgramContractFailure> {
         let mut state = self
             .bodies
             .0
@@ -248,49 +247,79 @@ impl ProgramContractProof {
         }
         let rules = subjects.into_values().collect::<Vec<_>>();
         let heights = program_termination_height_plan(&rules, inputs.inline_bodies);
-        let mut plans = inputs.plans.to_vec();
-        let plan_indices = plans
-            .iter()
-            .enumerate()
-            .map(|(index, plan)| {
-                charge_termination_work(1);
-                (plan.function_name().to_string(), index)
-            })
-            .collect::<BTreeMap<_, _>>();
-        let verdicts = loop {
-            let verdicts = program_verified_function_termination_rules(
-                &rules,
-                &plans,
-                &loop_rules,
-                inputs.inline_bodies,
-                &heights,
-                inputs.assumed_terminating,
-                &self.declared_diverging,
-                inputs.diverging_contracts,
-            );
-            let Err(error) = &verdicts else {
-                break verdicts;
-            };
-            // In a targeted run, the assumed functions may break a recursive
-            // cycle. Its measure belongs to the run selecting the whole cycle.
-            let retried = inputs.has_unselected_functions
-                && error.is_superfluous_recursive_measure()
-                && error.function().is_some_and(|function| {
-                    plan_indices
-                        .get(function)
-                        .is_some_and(|&index| plans[index].recursive_measure.take().is_some())
-                });
-            if !retried {
-                break verdicts;
-            }
-        }
+        let obligations = super::obligations::TerminationObligations::generate(
+            &rules,
+            inputs.plans,
+            &loop_rules,
+            inputs.inline_bodies,
+            &heights,
+            inputs.assumed_terminating,
+            &self.declared_diverging,
+            inputs.diverging_contracts,
+            inputs.has_unselected_functions,
+        )
         .map_err(ProgramContractFailure::Analysis)?;
+        state.retire(&ProgramContractGoal::BodyOpening);
+        let divergence_goals = self
+            .declared_diverging
+            .iter()
+            .filter(|name| {
+                state
+                    .open
+                    .contains_key(&ProgramContractGoal::DivergencePolicy((*name).clone()))
+            })
+            .cloned()
+            .collect();
+        Ok(ProgramTerminationProof {
+            state,
+            obligations,
+            requested: self.requested,
+            divergence_goals,
+        })
+    }
+}
 
+/// Open generated obligations, with all source inputs retained by their
+/// producer. Proof execution is a separate affine operation.
+pub(crate) struct ProgramTerminationProof {
+    state: ProgramState,
+    obligations: super::obligations::TerminationObligations,
+    requested: BTreeSet<String>,
+    divergence_goals: Vec<String>,
+}
+
+/// This token can only be constructed by proof execution after discharging
+/// every declared goal. Successful completion accepts no checking inputs.
+pub(crate) struct ProvedProgramContracts {
+    proof: ProgramProof,
+    bodies: Vec<Arc<ContractBodyProof>>,
+    rules: Vec<VerifiedFunctionTerminationRule>,
+}
+
+impl ProvedProgramContracts {
+    pub(crate) fn complete(self) -> CompletedProgramContracts {
+        CompletedProgramContracts {
+            _proof: self.proof,
+            _bodies: self.bodies,
+            rules: self.rules,
+        }
+    }
+}
+
+impl ProgramTerminationProof {
+    pub(crate) fn prove_implicitly(
+        mut self,
+    ) -> Result<ProvedProgramContracts, ProgramContractFailure> {
+        let assumed = self.obligations.assumed_terminating.clone();
+        let verdicts = self
+            .obligations
+            .prove_implicitly()
+            .map_err(ProgramContractFailure::Analysis)?;
         let failed = verdicts
             .unjustified_diverging
             .iter()
             .map(|name| ProgramContractGoal::DivergencePolicy(name.clone()))
-            .find(|goal| state.open.contains_key(goal))
+            .find(|goal| self.state.open.contains_key(goal))
             .or_else(|| {
                 (!verdicts.unsuitable_callbacks.is_empty())
                     .then_some(ProgramContractGoal::CallbackSafety)
@@ -314,29 +343,31 @@ impl ProgramContractProof {
                 verdicts: Box::new(verdicts),
             });
         }
-        let returning = verdicts
-            .rules
-            .iter()
-            .map(|rule| {
-                charge_termination_work(1);
-                rule.function.name()
-            })
-            .collect::<BTreeSet<_>>();
-        for name in &self.requested {
+        // Consume this execution's native conclusions directly, closing only
+        // the matching return goals. No blanket retirement of open goals.
+        for rule in &verdicts.rules {
             charge_termination_work(1);
-            if !returning.contains(name.as_str()) && !inputs.assumed_terminating.contains(name) {
-                return Err(ProgramContractFailure::MissingReturnEvidence(name.clone()));
+            let name = rule.function.name();
+            if self.requested.remove(name) {
+                self.state
+                    .retire(&ProgramContractGoal::Returns(name.to_string()));
             }
         }
-        // Each success is the direct output of this owner's analysis. These
-        // are not caller-supplied receipts to revalidate or reconstruct.
-        let goals = state.open.keys().cloned().collect::<Vec<_>>();
-        for goal in goals {
-            state.retire(&goal);
+        for name in self.requested {
+            charge_termination_work(1);
+            if !assumed.contains(&name) {
+                return Err(ProgramContractFailure::MissingReturnEvidence(name));
+            }
+            self.state.retire(&ProgramContractGoal::Returns(name));
         }
-        Ok(CompletedProgramContracts {
-            _proof: state.proof,
-            _bodies: state.bodies,
+        for name in self.divergence_goals {
+            self.state
+                .retire(&ProgramContractGoal::DivergencePolicy(name));
+        }
+        self.state.retire(&ProgramContractGoal::CallbackSafety);
+        Ok(ProvedProgramContracts {
+            proof: self.state.proof,
+            bodies: self.state.bodies,
             rules: verdicts.rules,
         })
     }
@@ -346,7 +377,7 @@ impl ProgramContractProof {
 mod tests {
     use super::*;
 
-    fn rule(name: &str, body: ProgramStatement) -> VerifiedFunctionRule {
+    pub(super) fn rule(name: &str, body: ProgramStatement) -> VerifiedFunctionRule {
         VerifiedFunctionRule {
             pointer_result: None,
             function: ProgramFunction::new(ProgramType::Void, name, vec![], body),
@@ -356,11 +387,11 @@ mod tests {
         }
     }
 
-    fn finish(
+    fn generate(
         owner: ProgramContractProof,
         rules: &[VerifiedFunctionRule],
-    ) -> Result<CompletedProgramContracts, ProgramContractFailure> {
-        owner.complete(ProgramTerminationInputs {
+    ) -> Result<ProgramTerminationProof, ProgramContractFailure> {
+        owner.generate_termination(ProgramTerminationInputs {
             partial_rules: rules,
             plans: &[],
             inline_bodies: &[],
@@ -368,6 +399,15 @@ mod tests {
             diverging_contracts: &BTreeSet::new(),
             has_unselected_functions: false,
         })
+    }
+
+    fn finish(
+        owner: ProgramContractProof,
+        rules: &[VerifiedFunctionRule],
+    ) -> Result<CompletedProgramContracts, ProgramContractFailure> {
+        generate(owner, rules)
+            .and_then(|proof| proof.prove_implicitly())
+            .map(|proof| proof.complete())
     }
 
     #[test]
@@ -402,7 +442,7 @@ mod tests {
             BTreeSet::new(),
             &BTreeSet::new(),
         );
-        let result = finish(
+        let generated = generate(
             owner,
             &[rule(
                 "spin",
@@ -416,6 +456,20 @@ mod tests {
                 ),
             )],
         );
+        let generated =
+            generated.unwrap_or_else(|_| panic!("generation must not attempt the loop proof"));
+        assert_eq!(
+            generated.obligations.function_goals["spin"].loop_indices,
+            [0]
+        );
+        assert!(
+            generated
+                .state
+                .open
+                .contains_key(&ProgramContractGoal::Returns("spin".into()))
+        );
+        assert!(generated.state.proof.completion().is_none());
+        let result = generated.prove_implicitly();
         let Err(ProgramContractFailure::Obligation { goal, verdicts }) = result else {
             panic!("termination is required before contract completion");
         };
@@ -459,6 +513,37 @@ mod tests {
         .unwrap_or_else(|_| panic!("a justified diverges contract can complete"));
         assert!(completed._proof.completion().is_some());
         assert!(completed.into_termination_rules().is_empty());
+    }
+
+    #[test]
+    fn generated_requirements_retain_their_assumption_context() {
+        let rules = [rule(
+            "caller",
+            crate::kernel::program_call("external", vec![]),
+        )];
+        let mut assumptions = BTreeSet::from(["external".into()]);
+        let owner = ProgramContractProof::open(
+            BTreeSet::from(["caller".into()]),
+            BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+        let proof = owner
+            .generate_termination(ProgramTerminationInputs {
+                partial_rules: &rules,
+                plans: &[],
+                inline_bodies: &[],
+                assumed_terminating: &assumptions,
+                diverging_contracts: &BTreeSet::new(),
+                has_unselected_functions: false,
+            })
+            .unwrap_or_else(|_| panic!("generate the stated external-call obligation"));
+        assumptions.clear();
+        drop(rules);
+        let proved = proof
+            .prove_implicitly()
+            .unwrap_or_else(|_| panic!("the captured assumption remains available"));
+        assert!(proved.proof.completion().is_some());
+        assert_eq!(proved.complete().into_termination_rules().len(), 1);
     }
 
     #[test]
