@@ -187,12 +187,12 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 34 | 74 |
+| `mdtests/` | 31 | 69 |
 | `examples/` | 27 | 350 |
 | `library/` | 0 | 0 |
-| Total | 61 | 424 |
+| Total | 58 | 419 |
 
-The 15 mdtests with failure expectations still require migration while retaining
+The 14 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text
 to expansion/mutation tests; migrate those inputs together with their tests,
 rather than replacing a smart test input with an already-expanded proof. Positive fixtures also need full-file verification:
@@ -201,25 +201,53 @@ rewritten proof's remaining suffix closes. Remaining groups include historical
 initializedness, computed range bounds, loop frames, and call preservation.
 The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
-### Remaining migration order
+### Remaining PR-sized chunks
 
-Keep these independently reviewable; split a family further when a baseline
-repair or missing primitive needs its own discussion. Complete whole-proof
-verification and expansion/replay checks before declaring a family migrated.
+Keep the IDs stable while these chunks are pending; remove rows when they land.
+Aim for one coherent PR per row. A new primitive or verifier defect gets its
+own diagnosis/fix rather than growing a migration PR. Revalidate prepared local
+changes against upstream before publishing. Each migration needs whole-proof
+verification and expansion/replay with implicit search disabled; reject legacy
+output for the migrated family. Investigate chunk 17 early to expose baseline
+risk before the larger tree migrations. Medium confidence means the proof
+pattern is understood but the complete family has not yet been validated.
 
-1. Remaining array fixtures: bubble-sort and unfolded-resource prefixes,
-   bounded/initializedness observations and refusal controls.
-2. Loop frames, retained metadata, nested cursors and iterated ownership.
-3. Calls and resource scopes: footprints, borrowing, folds and graph fixtures.
-4. Arena.
-5. Repair the rbtree-insert baseline below, then migrate insertion separately.
-6. Rbtree deletion.
-7. Augmented trees: local rotations, flips, propagation and model facts.
-8. Augmented trees: nested/context/double/mirrored rotations.
-9. Residual internal producers: demonstrate successful legacy output before
-    changing a producer.
-10. Final written-corpus inventory and expansion/replay audit with search
-    disabled during replay. Syntax/dispatcher retirement is the next chunk.
+| ID | Work | Confidence |
+| --- | --- | --- |
+| 1 | Publish resource-scope migrations | Clear; revalidate |
+| 2 | Retained-field substitution repair and regression | Medium |
+| 3 | Recursive-call and copied-byte refusal migrations | Clear; revalidate |
+| 4 | Conditional-call and graph-summary migrations | Clear; revalidate |
+| 5 | Arena: final live-count store preservation | Clear |
+| 6 | Arena: pre-loop viewability and initial reads | Uncertain: exact held-range spelling |
+| 7 | Arena allocation: search-loop preservation | Medium |
+| 8 | Arena allocation: marking-loop preservation | Medium |
+| 9 | Arena allocation: finishing stores, returns, pipeline | Medium |
+| 10 | Remaining array mdtests, including bubble-sort | Medium; check baselines |
+| 11 | Remaining loop-frame mdtests | Medium |
+| 12 | Remaining call and branching-graph mdtests | Medium |
+| 13 | Named-root aliased-pointer baseline diagnosis/repair | Uncertain |
+| 14 | Named-root fixture migration after baseline repair | Medium |
+| 15 | Remaining fold, resource-observation, count mdtests | Medium |
+| 16 | Remaining negative mdtests, preserving semantic refusals | Medium |
+| 17 | Red-black insertion baseline diagnosis/repair | Uncertain |
+| 18 | Insertion: field and parent-link preservation | Medium |
+| 19 | Insertion: inner/double rotations | Medium |
+| 20 | Insertion: mirrored and remaining paths | Medium |
+| 21 | Deletion: augmented-erase wrapper | Medium |
+| 22 | Deletion: primary color-fixup cases | Medium |
+| 23 | Deletion: mirrored and remaining fixups | Medium |
+| 24 | Augmented trees: basic rotation, model, propagation | Medium |
+| 25 | Augmented trees: color flips and mirrored flips | Medium |
+| 26 | Augmented trees: single/context rotations | Medium |
+| 27 | Augmented trees: local double rotations | Medium |
+| 28 | Augmented trees: context double/far rotations | Medium |
+| 29 | Augmented trees: middle-subtree double rotations | Medium; split if large |
+| 30 | Reproduce residual internal producers' surviving legacy output | Uncertain; investigation may need no code change |
+| 31 | Migrate producer paths demonstrated by chunk 30 | Uncertain size; may split |
+| 32 | Remove written syntax and dispatcher support; update syntax tests | Clear after migrations |
+| 33 | Delete obsolete transition-context rebuilding implementation | Medium |
+| 34 | Enforce expanded proofs cannot create ProofSearch | Medium |
 
 ### Migration blockers to resolve
 
