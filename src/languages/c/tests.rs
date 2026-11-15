@@ -15051,7 +15051,7 @@ fn aggregate_call_assignment_rejects_a_different_struct_destination() {
 }
 
 #[test]
-fn nested_aggregate_call_result_uses_the_same_explicit_copy() {
+fn nested_aggregate_call_result_has_no_generated_destination_copy() {
     let functions = syntax::parse_functions(
         "struct pair { int32 x; int32 y; }; struct pair make();
          int32 read(struct pair p); int32 caller() { return read(make()); }",
@@ -15059,7 +15059,9 @@ fn nested_aggregate_call_result_uses_the_same_explicit_copy() {
     .expect("nested aggregate call parses");
     let body = format!("{:?}", functions[0].body());
     assert_eq!(body.matches("CallResult {").count(), 2, "{body}");
-    assert_eq!(body.matches("AggregateCopy {").count(), 1, "{body}");
+    assert_eq!(body.matches("AggregateCopy {").count(), 0, "{body}");
+    assert!(!body.contains("DeclareStructValue"), "{body}");
+    assert!(!body.contains("__click_aggregate_result"), "{body}");
     assert!(!body.contains("CallConstruct"), "{body}");
 }
 
