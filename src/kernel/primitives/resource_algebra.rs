@@ -5998,15 +5998,38 @@ impl ResourceContext {
         }
         let first_new = self.storage.next_entry_id;
         let mut inserted = Vec::new();
+        let mut indexed_checked = Vec::new();
         for fact in facts {
+            // Check the new footprint against the maintained caller frame
+            // before insertion, so the query never has to skip its own entry.
+            let checked = match self.constant_owned_overlap(&fact, assumptions) {
+                super::memory_equality_index::ConstantOwnedOverlap::Unsupported => false,
+                super::memory_equality_index::ConstantOwnedOverlap::Clear => true,
+                super::memory_equality_index::ConstantOwnedOverlap::Overlap(entry) => {
+                    return Err(
+                        ResourceContextValidityError::OverlappingOwnedMemoryResources {
+                            left: self
+                                .fact(entry)
+                                .memory_own_range()
+                                .expect("indexed owner")
+                                .clone(),
+                            right: fact.memory_own_range().expect("queried owner").clone(),
+                        },
+                    );
+                }
+            };
             let entry = self.storage.next_entry_id;
             self.insert_fact(fact.clone());
             inserted.push((fact, self.occurrence(entry)));
+            indexed_checked.push(checked);
         }
         for right_entry in first_new..self.storage.next_entry_id {
             let right = self.fact(right_entry);
             if let Some(error) = self.exclusive_validity_error(right) {
                 return Err(error);
+            }
+            if indexed_checked[(right_entry - first_new) as usize] {
+                continue;
             }
             let Some(right_range) = right.memory_own_range() else {
                 continue;
