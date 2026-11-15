@@ -1937,6 +1937,29 @@ theorem use_subslice_len(a: uint64, b: uint64, n: uint64) {
         solve();
     }
 }
+
+theorem check_integer_add_le(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a <= b;
+    requires c <= d;
+    ensures a + c <= b + d by {
+        apply(integer::add_le(a, b, c, d)) using { a <= b; c <= d; };
+    }
+}
+
+theorem check_integer_round_down_le(x: Integer) {
+    requires x * 2 <= 5;
+    ensures x <= 2 by {
+        have (2 * 2) + 1 == 5 by { normalize(); }
+        have x * 2 <= (2 * 2) + 1 by {
+            rewrite((2 * 2) + 1 == 5);
+            known();
+        }
+        apply(integer::round_down_le(x, 2, 2, 1)) using {
+            0 < 2; 1 < 2; x * 2 <= (2 * 2) + 1;
+        };
+    }
+}
+
 ```
 
 ```expect

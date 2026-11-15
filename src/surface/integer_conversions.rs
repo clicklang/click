@@ -55,6 +55,198 @@ mod tests {
     use super::*;
 
     #[test]
+    fn integer_order_axioms_apply_without_certificates_or_search() {
+        let source = r#"
+import click::integer;
+theorem sum(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a <= b;
+    requires c <= d;
+    ensures a + c <= b + d by {
+        apply(integer::add_le(a, b, c, d)) using { a <= b; c <= d; };
+    }
+}
+theorem scaled(x: Integer, y: Integer, k: Integer) {
+    requires x <= y;
+    requires 0 <= k;
+    ensures x * k <= y * k by {
+        apply(integer::multiply_order_nonnegative(x, y, k)) using { x <= y; 0 <= k; };
+    }
+}
+theorem rounded(x: Integer) {
+    requires x * 2 <= 5;
+    ensures x <= 2 by {
+        have (2 * 2) + 1 == 5 by { normalize(); }
+        have x * 2 <= (2 * 2) + 1 by {
+            rewrite((2 * 2) + 1 == 5);
+            known();
+        }
+        apply(integer::round_down_le(x, 2, 2, 1)) using {
+            0 < 2; 1 < 2; x * 2 <= (2 * 2) + 1;
+        };
+    }
+}
+theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a <= b;
+    requires c <= d;
+    requires not (a + c <= b + d);
+    ensures false by {
+        have a + c <= b + d by {
+            apply(integer::add_le(a, b, c, d)) using { a <= b; c <= d; };
+        }
+        contradiction(a + c <= b + d);
+    }
+}
+"#;
+        crate::surface::proof::without_implicit_solve(|| verify_c_sources(source, &[])).unwrap();
+        let expanded = expand_c_claim_source_by_label(source, &[], "rounded.ensures_0").unwrap();
+        assert!(!expanded.contains("arithmetic_certificate"));
+        crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+    }
+
+    #[test]
+    fn integer_order_axioms_refuse_missing_guards_and_unrelated_conclusions() {
+        for (name, parameters, arguments, premises, goal) in [
+            (
+                "add_le",
+                "a: Integer, b: Integer, c: Integer, d: Integer",
+                "a, b, c, d",
+                vec!["a <= b", "c <= d"],
+                "a + c <= b + d",
+            ),
+            (
+                "multiply_order_nonnegative",
+                "a: Integer, b: Integer, k: Integer",
+                "a, b, k",
+                vec!["a <= b", "0 <= k"],
+                "a * k <= b * k",
+            ),
+            (
+                "round_down_le",
+                "x: Integer, b: Integer, d: Integer, r: Integer",
+                "x, b, d, r",
+                vec!["0 < d", "r < d", "x * d <= b * d + r"],
+                "x <= b",
+            ),
+        ] {
+            let source = |omitted: Option<usize>, goal: &str| {
+                let requires = premises
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| Some(*index) != omitted)
+                    .map(|(_, premise)| format!("requires {premise}; "))
+                    .collect::<String>();
+                let using = premises
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| Some(*index) != omitted)
+                    .map(|(_, premise)| format!("{premise}; "))
+                    .collect::<String>();
+                format!(
+                    "import click::integer; theorem test({parameters}) {{ {requires} ensures {goal} by {{ apply(integer::{name}({arguments})) using {{ {using} }}; }} }}"
+                )
+            };
+            for index in 0..premises.len() {
+                assert!(
+                    verify_c_sources(&source(Some(index), goal), &[]).is_err(),
+                    "{name}: guard {index}"
+                );
+            }
+            assert!(
+                verify_c_sources(&source(None, "false"), &[]).is_err(),
+                "{name}: forged conclusion"
+            );
+        }
+    }
+
+    #[test]
+    fn selected_integer_sum_expands_to_an_ordinary_law_application() {
+        let source = "theorem sum(a: Integer, b: Integer, c: Integer, d: Integer) { requires a <= b; requires c <= d; ensures a + c <= b + d by { solve() using { a <= b; c <= d; }; } }";
+        let expanded = expand_c_claim_source_by_label(source, &[], "sum.ensures_0").unwrap();
+        assert!(expanded.contains("integer::add_le"), "{expanded}");
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+        // An ambient second bound cannot fill an explicitly omitted premise.
+        assert!(
+            verify_c_sources(&source.replace("a <= b; c <= d; };", "a <= b; };"), &[]).is_err()
+        );
+    }
+
+    #[test]
+    fn integer_order_axiom_declarations_match_an_independent_bigint_oracle() {
+        use num_bigint::BigInt;
+        fn expression(term: &ContractExpression, values: &BTreeMap<String, BigInt>) -> BigInt {
+            match term {
+                ContractExpression::Binding(name)
+                | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                    values[name].clone()
+                }
+                ContractExpression::IntegerLiteral(value) => value.parse().unwrap(),
+                ContractExpression::Add(a, b) => expression(a, values) + expression(b, values),
+                ContractExpression::Subtract(a, b) => expression(a, values) - expression(b, values),
+                ContractExpression::Multiply(a, b) => expression(a, values) * expression(b, values),
+                ContractExpression::Negate(a) => -expression(a, values),
+                _ => panic!("unexpected order axiom expression: {term:?}"),
+            }
+        }
+        fn proposition(p: &ClickProposition, values: &BTreeMap<String, BigInt>) -> bool {
+            let ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            } = p
+            else {
+                panic!("unexpected order axiom proposition: {p:?}")
+            };
+            let (left, right) = (expression(left, values), expression(right, values));
+            match operator {
+                ComparisonOperator::LessEqual => left <= right,
+                ComparisonOperator::LessThan => left < right,
+                _ => panic!("unexpected order axiom operator: {operator:?}"),
+            }
+        }
+        let library = standard_library_theorem_definitions().unwrap();
+        let large: BigInt = (BigInt::from(1) << 160) + 1;
+        let mut samples: Vec<BigInt> = (-2..=2).map(BigInt::from).collect();
+        samples.extend([large.clone(), -large]);
+        for name in ["add_le", "multiply_order_nonnegative", "round_down_le"] {
+            let law = library
+                .iter()
+                .find(|law| law.name() == format!("click::integer::{name}"))
+                .unwrap();
+            assert!(law.is_axiom());
+            let arity = law.parameters().len();
+            let mut applicable = 0;
+            for mut index in 0..samples.len().pow(arity as u32) {
+                let values = law
+                    .parameters()
+                    .iter()
+                    .map(|parameter| {
+                        let value = samples[index % samples.len()].clone();
+                        index /= samples.len();
+                        (parameter.name().to_owned(), value)
+                    })
+                    .collect();
+                if law.requires().iter().all(|requirement| {
+                    let Requirement::Proposition(p) = requirement else {
+                        panic!("resource premise in {name}")
+                    };
+                    proposition(p, &values)
+                }) {
+                    applicable += 1;
+                    for ensure in law.ensures() {
+                        let Ensure::Proposition(p) = ensure.ensure() else {
+                            panic!("resource conclusion in {name}")
+                        };
+                        assert!(proposition(p, &values), "{name}: {values:?}");
+                    }
+                }
+            }
+            assert!(applicable > 0, "{name}: vacuous oracle");
+        }
+    }
+
+    #[test]
     fn int32_remainder_bridge_requires_definedness_and_expands() {
         let source = "import click::integer; theorem remainder(a: int32, b: int32) { requires defined(a % b); requires to_integer(b) != 0; ensures to_integer(a % b) == truncating_remainder(to_integer(a), to_integer(b)) by { apply(integer::int32_remainder_to_integer(a, b)) using { defined(a % b); to_integer(b) != 0; } } }";
         verify_c_sources(source, &[]).unwrap();

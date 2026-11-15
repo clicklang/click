@@ -4966,3 +4966,11 @@ path = "reference/library/index.md#separationcontains_rebase"
 [[item]]
 id = "library.theorem.separation::separate_adjacent_ranges"
 path = "reference/library/index.md#separationseparate_adjacent_ranges"
+
+[[item]]
+id = "library.theorem.integer::add_le"
+path = "reference/library/index.md#integeradd_le"
+
+[[item]]
+id = "library.theorem.integer::round_down_le"
+path = "reference/library/index.md#integerround_down_le"

@@ -1,3 +1,20 @@
+// Foundational Integer order laws. These expose rules previously available
+// only inside arithmetic certificates, through ordinary explicit application.
+axiom add_le(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a <= b;
+    requires c <= d;
+    ensures a + c <= b + d;
+}
+
+// No nonnegativity assumption on the remainder is needed for this upper
+// bound. The strict upper bound and positive divisor are both essential.
+axiom round_down_le(value: Integer, bound: Integer, divisor: Integer, remainder: Integer) {
+    requires 0 < divisor;
+    requires remainder < divisor;
+    requires value * divisor <= bound * divisor + remainder;
+    ensures value <= bound;
+}
+
 theorem int32_increment_upper_bound(value: int32, upper: int32) {
     requires value < upper;
 
@@ -1238,17 +1255,10 @@ theorem upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, u
         }
     }
 }
-theorem multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
+axiom multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
     requires a <= b;
     requires 0 <= factor;
-    ensures a * factor <= b * factor by {
-        arithmetic_certificate rules {
-            premise 0: a <= b => a <= b;
-            premise 1: 0 <= factor => 0 <= factor;
-            integer_multiply_order bounds [0, 1] => a * factor <= b * factor;
-            conclusion 0;
-        }
-    }
+    ensures a * factor <= b * factor;
 }
 
 theorem multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
