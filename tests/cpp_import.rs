@@ -14692,8 +14692,8 @@ fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
             step();
             let {{ result: empty }} = step(Base::Empty, {{}});
             have empty == {empty} by {{
-                rewrite(empty == (if state.left.base.value == 0 {{ true }} else {{ false }}));
-                rewrite(state.left.base.value == {value});
+                rewrite(empty, (if state.left.base.value == 0 {{ true }} else {{ false }}));
+                rewrite(state.left.base.value, {value});
                 normalize();
             }}
             step_until(function.exit);
@@ -15027,8 +15027,8 @@ fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
             step();
             let {{ result: empty }} = step(predicate, {{}});
             have empty == {empty} by {{
-                rewrite(empty == (if state.left.base.value == 0 {{ true }} else {{ false }}));
-                rewrite(state.left.base.value == {value});
+                rewrite(empty, (if state.left.base.value == 0 {{ true }} else {{ false }}));
+                rewrite(state.left.base.value, {value});
                 normalize();
             }}
             step_until(function.exit);
@@ -16305,7 +16305,7 @@ fn converted_wide_boolean_calls_observe_high_bits() {
             String::new()
         } else {
             format!(
-                "have not (to_integer(captured) == 0) by {{ rewrite(to_integer(captured) == {point}); normalize(); }}"
+                "have not (to_integer(captured) == 0) by {{ rewrite(to_integer(captured), {point}); normalize(); }}"
             )
         };
         let proof = format!(

@@ -34,8 +34,8 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
  have to_integer(h.b) == old(adler_spec_b_u64(data, 3u64, 1, 0));
  have 65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum_u64(data, 3u64, 1, 0)) by {
   unfold(adler_spec_checksum_u64(data, 3u64, 1, 0));
-  rewrite(to_integer(h.a) == old(adler_spec_a_u64(data, 3u64, 1)));
-  rewrite(to_integer(h.b) == old(adler_spec_b_u64(data, 3u64, 1, 0)));
+  rewrite(to_integer(h.a), old(adler_spec_a_u64(data, 3u64, 1)));
+  rewrite(to_integer(h.b), old(adler_spec_b_u64(data, 3u64, 1, 0)));
   solve();
  }
  step();

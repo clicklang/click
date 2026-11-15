@@ -25,7 +25,7 @@ fn sum(bytes: &[u8]) -> i32 {
     have loop(0).iter.as_slice().as_ptr() == bytes;
     have bytes.len() - loop(0).iter.len() == 0u64;
     have prefix(bytes, bytes.len() - loop(0).iter.len()) == 0 by {
-        rewrite(bytes.len() - loop(0).iter.len() == 0u64);
+        rewrite(bytes.len() - loop(0).iter.len(), 0u64);
         have 0u64 <= 0u64;
         peel(prefix(bytes, 0u64)) using { 0u64 <= 0u64; };
         solve();
@@ -70,7 +70,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 have to_integer(bytes.len() - iter.len()) == to_integer((bytes.len() - at(iteration, iter.len())) + 1u64);
                 have iter.len() <= bytes.len();
                 have iter.as_slice().as_ptr() == bytes + (bytes.len() - iter.len()) by {
-                    rewrite((bytes.len() - iter.len()) == (bytes.len() - at(iteration, iter.len())) + 1u64);
+                    rewrite((bytes.len() - iter.len()), (bytes.len() - at(iteration, iter.len())) + 1u64);
                     known();
                 }
                 have iter.len() < at(iteration, iter.len());
@@ -84,7 +84,7 @@ fn sum(bytes: &[u8]) -> i32 {
     }
     have loop(0).iter.len() == 0u64;
     have prefix(bytes, bytes.len() - loop(0).iter.len()) == prefix(bytes, bytes.len()) by {
-        rewrite(loop(0).iter.len() == 0u64);
+        rewrite(loop(0).iter.len(), 0u64);
         solve();
     }
 }

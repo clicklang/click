@@ -83,16 +83,16 @@ tactic convert(p: struct node*) {
             let { rest: r } = unfold(x);
             apply(links_len_is_nonnegative(rest_model));
             have 0 <= links_len(r.model) by {
-                rewrite(r.model == rest_model);
+                rewrite(r.model, rest_model);
                 known();
             }
             have links_len(old(x.model)) == links_len(rest_model) + 1 by {
-                rewrite(old(x.model) == Links::Cons(rest_model));
+                rewrite(old(x.model), Links::Cons(rest_model));
                 unfold(links_len(Links::Cons(rest_model)));
                 normalize();
             }
             have links_len(r.model) < links_len(old(x.model)) by {
-                rewrite(r.model == rest_model);
+                rewrite(r.model, rest_model);
                 solve() using { links_len(old(x.model)) == links_len(rest_model) + 1; };
             }
             let { y: r2 } = convert(p->next, { x: r });

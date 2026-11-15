@@ -9,7 +9,7 @@ theorem wrong(c: Color) {
     requires c == Color::Black;
     ensures choose(c) == Color::Black by {
         unfold(choose(c));
-        rewrite(c == Color::Black);
+        rewrite(c, Color::Black);
         normalize();
     }
 }

@@ -235,33 +235,7 @@ protected resource alongside the required resource. Do not ask the user to
 supply a description argument to repair missing ownership or lost association.
 Distinguish a missing resource from an unsupported contract form.
 
-## Implemented groundwork and next work
-
-`ResourceDescription` already separates family, captured arguments, and schema
-from occurrence identity and observed fields. Declared mutex restoration checks
-that description and actual ownership. The lower-level transition accepts an
-explicit owned replacement; current runtime unlock still selects the original
-instance until named `state` input transport is connected.
-
-The unused opaque resource-parameter atoms and description-substitution
-helpers have been removed. `ResourceDescription` and `ResourceReference`
-remain for checked mutex types and ordinary named resource arguments.
-
-Next, carry the checked protected-resource association through the ordinary
-named authority interface and connect runtime `state` inputs and outputs.
-Keep runtime contracts and user-defined helpers on the same resource transfer
-rules. Extend named storage transport using ordinary memory authority when
-needed. Preserve the existing C source and ABI.
-
-Acceptance includes association preservation through calls and reborrows,
-rejection of wrong resources and stale acquisitions, fresh observations after
-acquisition, checked replacement on release, and refusal to destroy while
-loans or guards survive. Scope and memory-effect checks must remain bounded
-and operate on explicit inputs and state changes, without copying whole resource
-environments or enumerating all concrete callers.
-
-
-## First implementation: ordinary resource arguments
+## Ordinary resource arguments
 
 A resource declaration can take a named exclusive resource after its value
 parameters, using the same binder notation as contract resource handles:
@@ -300,55 +274,26 @@ parameters, matched resource bodies are not supported, and reference
 parameter types cannot themselves take resource arguments yet. Fields select a
 member's form, not whether its family can be counted. Named-contract call transport still requires
 owned input instances; transporting a reference to escrowed state requires a
-separate change to contract entry and refinement checking. Mutex permissions
-have not yet been connected to this mechanism.
+separate change to contract entry and refinement checking. Typed mutex permissions use resource types directly, as described above;
+they do not require an owned reference to escrowed state.
 
-## Earlier worker proposal (superseded by resource types)
+## Current implementation and remaining work
 
-Status: resource-valued arguments accepted. Implementation is in progress;
-the worker contract below remains a target, not a verified example.
+Typed `mutex_use(mu, R(args))` permissions carry the checked protected-resource
+association through calls and reborrows. Acquisition produces fresh protected
+observations and release accepts a restored instance of the same resource
+type. The implemented helpers, worker create/join transfer and population
+controls are described in [Mutex resource contracts](mutex-resource-contracts.md).
+The [counter proof](https://github.com/clicklang/click/blob/master/design/concurrency-probes/README.md)
+uses these rules to establish two conserved increments.
 
-The frozen counter worker was tried with the existing requirement
-`owns access: mutex_use(&(argument as (struct mutex_counter *))->mutex);`.
-Its lock succeeds, but its ordinary increment fails for missing read authority
-on the counter's `value` field. A declaration-level mutex annotation on
-`counter_state` could not have supplied the missing association either: an
-arbitrary caller could supply use authority for a different protected
-assertion at that same address.
+This supersedes the old proposal to transport resource descriptions as
+function proof parameters and the instruction to connect ordinary typed state
+transfer. Named storage transport and destruction's named state output remain
+proposals in the mutex contract design. New transport must preserve resource
+type, initialization/acquisition identity and actual authority, with fresh
+observations after acquisition and no recovery while loans or guards survive.
 
-The agreed minimum extension is to let an ordinary resource argument appear
-in another resource's arguments. Reuse the existing resource-parameter binder
-notation; do not introduce angle parameters or a `protecting` modifier. A
-worker interface could state the following relationship (this sketch does not
-yet specify how a named contract is attached to the pthread worker):
-
-```text
-contract void * Increment(void *argument) {
-    // `state: counter_state(argument as (struct mutex_counter *))` is a
-    // reference-only handle; its declaring clause is not yet designed.
-    owns access: mutex_use(&(argument as (struct mutex_counter *))->mutex, state);
-    ensures result == 0;
-}
-```
-
-Here `state` is supplied through the existing proof-only resource interface.
-The worker does not own it on entry. The `mutex_use` requirement authenticates
-its association with the actual initialization. Lock supplies ownership and
-fresh observations; unlock consumes the restored resource. No field of
-`state` may be read merely because its name is available. The association must
-permit a replacement instance satisfying the same protected assertion, rather
-than pinning the occurrence supplied at initialization forever.
-
-This is a general resource-argument extension, not a second mutex-only input
-language. It changes the current rule that every passed instance must already
-be owned, so reference availability and ownership must be checked separately.
-The resource argument uses existing binder notation. How the worker's ordinary
-contract is selected at `pthread_create` still needs to be established without
-changing C.
-
-After that boundary, shared acquisition must freshen protected observations,
-use loans must split across outstanding workers, and destruction must wait for
-all uses to return. The exact final value additionally needs a checked
-conservation argument connecting each worker's update to the mutex's value.
-Two completed-worker tokens alone cannot establish that connection, and
-existing sequential `Count` must not be silently given shared semantics.
+The [historical investigation](https://github.com/clicklang/click/blob/2175760b9/docs/internals/resource-parameters.md)
+retains the withdrawn syntax and staged implementation notes. It is not an
+additional interface or backlog.

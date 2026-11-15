@@ -18,4 +18,5 @@ tests cover partial call writes, preservation of known lanes, uninitialized or
 incompatible source storage, and compact copies up to a million elements.
 
 This fixes the copy prerequisite of `adler2`'s first nonempty vector path. The
-complete four-byte checksum contract remains subsequent work.
+complete checksum proof has since landed; see the
+[adler2 result](../../adler32/project/adler2/README.md).

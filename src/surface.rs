@@ -321,6 +321,8 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "little_endian",
     "scatter",
     "separate",
+    "float32_from_bits",
+    "float64_from_bits",
     "sizeof",
     "solve",
     "sorry",
@@ -6202,7 +6204,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "rewrite",
-        syntax: "rewrite(P)",
+        syntax: "rewrite(from, to)",
         class: "simple",
     },
     PublicTacticForm {
@@ -10460,27 +10462,29 @@ impl ClickError {
     pub fn report(&self) -> String {
         let _accessors = self.report_model_accessor_scope();
         // A requested proof trace keeps its typed notation throughout.
-        let _typed = self
+        let typed_trace = self
             .diagnostic
             .as_ref()
             .is_some_and(|diagnostic| proof_trace::enabled_for(&diagnostic.claim_label))
             .then(proof_diagnostics::render::TypedNotationScope::enter);
         let mut snapshot_labels = proof_diagnostics::render::SnapshotLabels::ambient();
-        let traced_message = self.diagnostic.as_ref().and_then(|diagnostic| {
-            (self.kind == ClickErrorKind::Proof
-                && proof_trace::enabled_for(&diagnostic.claim_label))
-            .then(|| {
-                proof_diagnostics::render_terminal_message_labeled(
-                    &self.message,
-                    diagnostic,
-                    self.search_failures
-                        .as_deref()
-                        .map_or(&[][..], Vec::as_slice),
-                    &mut snapshot_labels,
-                )
-            })
+        // The prerequisite and the rest of this report share the captured
+        // proof's names, in ordinary reports as well as typed traces. A fresh
+        // renderer here loses match binders even though the diagnostic state
+        // still retains their exact values.
+        let rendered_message = self.diagnostic.as_ref().map(|diagnostic| {
+            proof_diagnostics::render_terminal_message_labeled(
+                &self.message,
+                diagnostic,
+                self.search_failures
+                    .as_deref()
+                    .map_or(&[][..], Vec::as_slice),
+                &mut snapshot_labels,
+            )
         });
-        let message = traced_message.as_deref().unwrap_or_else(|| self.message());
+        let message = rendered_message
+            .as_deref()
+            .unwrap_or_else(|| self.message());
         let (summary, context) = message.split_once('\n').unwrap_or((message, ""));
         let mut report = format!("{summary}\n  error kind: {}", self.kind.label());
         if let Some(tactic) = self.failed_tactic {
@@ -10489,14 +10493,10 @@ impl ClickError {
         }
         if let Some(requirement) = &self.unresolved_requirement {
             report.push_str("\n  goal: ");
-            report.push_str(&if traced_message.is_some() {
-                proof_diagnostics::render::render_proposition_labeled(
-                    &requirement.proposition,
-                    &mut snapshot_labels,
-                )
-            } else {
-                proof_diagnostics::render::render_proposition(&requirement.proposition)
-            });
+            report.push_str(&proof_diagnostics::render::render_proposition_labeled(
+                &requirement.proposition,
+                &mut snapshot_labels,
+            ));
             if let Some(context) = &requirement.context {
                 report.push_str("\n  check: ");
                 report.push_str(context);
@@ -10522,7 +10522,7 @@ impl ClickError {
             report.push('\n');
             report.push_str(&trace);
         }
-        if traced_message.is_some() {
+        if typed_trace.is_some() {
             report
         } else {
             bound_diagnostic_message(report)

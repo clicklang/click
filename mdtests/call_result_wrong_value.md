@@ -54,7 +54,7 @@ int has_class(int x) {
 } by {
     let { result: r } = step(classify, { });
     have r == classified(x) + 1 by {
-        rewrite(r == classified(x));
+        rewrite(r, classified(x));
         normalize();
     }
     branch { step(); solve(); } else {}

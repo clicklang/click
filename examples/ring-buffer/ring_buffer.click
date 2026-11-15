@@ -81,7 +81,7 @@ int32 ring_buffer_push_wrap(
         known();
     }
     have owner->data[0] == value by {
-        rewrite(owner->data == data);
+        rewrite(owner->data, data);
         known();
     }
     step(); solve();
@@ -135,8 +135,7 @@ int32 ring_buffer_pipeline(
     fold(ring_frame(owner));
     fold(linear_ring(owner));
     have result == replacement by {
-        rewrite(at(region(4).entry, pushed) ==
-            at(region(4).entry, replacement));
+        rewrite(at(region(4).entry, pushed), at(region(4).entry, replacement));
         normalize();
     }
     have owner->tail == 4 by {

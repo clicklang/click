@@ -90,18 +90,16 @@ void set_parent_red(struct rb_node* node, struct rb_node* parent) {
                 solve() using { aligned(parent, 8); };
             }
             have node->__rb_parent_color == address(parent) + (node->__rb_parent_color & 1) by {
-                rewrite(node->__rb_parent_color == address(parent));
-                rewrite((address(parent) & 1) == 0u64);
+                rewrite(node->__rb_parent_color, address(parent));
+                rewrite((address(parent) & 1), 0u64);
                 normalize();
             }
             let u = fold(rb_at(node), {
                 model: RbTree::Node(identity, parent, Color::Red, left_model, right_model)
             });
             have u.model == rb_reparent_color(old(t.model), parent, Color::Red) by {
-                rewrite(u.model
-                    == RbTree::Node(identity, parent, Color::Red, left_model, right_model));
-                rewrite(old(t.model)
-                    == RbTree::Node(identity, old_parent, color, left_model, right_model));
+                rewrite(u.model, RbTree::Node(identity, parent, Color::Red, left_model, right_model));
+                rewrite(old(t.model), RbTree::Node(identity, old_parent, color, left_model, right_model));
                 unfold(rb_reparent_color(
                     RbTree::Node(identity, old_parent, color, left_model, right_model),
                     parent, Color::Red));

@@ -49,8 +49,8 @@ int read_saved(struct Box *box) {
     }
     have box->p[box->start] == 22 by {
         have box->p[box->start] == 22 by {
-            rewrite(22 == at(before, box->p)[k]);
-            rewrite((box->p + box->start) == (at(before, box->p) + k));
+            rewrite(22, at(before, box->p)[k]);
+            rewrite((box->p + box->start), (at(before, box->p) + k));
             normalize();
         }
         known();

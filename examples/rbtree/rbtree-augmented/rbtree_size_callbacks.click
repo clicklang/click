@@ -106,7 +106,7 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                 step(); step();
                 let { checked: checked } = step(RotateTreeLeft, { tree: tree });
                 have sized_rotation_input_tree(old(input.model)) == tree_model by {
-                    rewrite(old(input.model) == SizedRotationInput::Left(tree_model));
+                    rewrite(old(input.model), SizedRotationInput::Left(tree_model));
                     unfold(sized_rotation_input_tree(SizedRotationInput::Left(tree_model)));
                     normalize();
                 }
@@ -117,7 +117,7 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                 step(); step();
                 let { checked: checked } = step(RotateTreeRight, { tree: tree });
                 have sized_rotation_input_tree(old(input.model)) == tree_model by {
-                    rewrite(old(input.model) == SizedRotationInput::Right(tree_model));
+                    rewrite(old(input.model), SizedRotationInput::Right(tree_model));
                     unfold(sized_rotation_input_tree(SizedRotationInput::Right(tree_model)));
                     normalize();
                 }

@@ -11,6 +11,43 @@ pub(in crate::surface) fn source_click_proposition(proposition: &ClickPropositio
     print_proposition(proposition, PropositionSpelling::Source)
 }
 
+// The checker retains equality evidence internally. The Surface operation
+// states its directed endpoints separately, preserving the same source type
+// barriers as an equality comparison.
+fn source_rewrite_arguments(equality: &ClickProposition) -> String {
+    fn operands(equality: &ClickProposition, positive: bool) -> (String, String) {
+        match equality {
+            ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            } if (*operator == ComparisonOperator::Equal && positive)
+                || (*operator == ComparisonOperator::NotEqual && !positive) =>
+            {
+                (
+                    comparison_operand(left, right, PropositionSpelling::Source),
+                    comparison_operand(right, left, PropositionSpelling::Source),
+                )
+            }
+            ClickProposition::At {
+                selector,
+                proposition,
+            } => {
+                let (left, right) = operands(proposition, positive);
+                let selector = describe_snapshot_selector(selector);
+                (
+                    format!("at({selector}, {left})"),
+                    format!("at({selector}, {right})"),
+                )
+            }
+            ClickProposition::Not(inner) => operands(inner, !positive),
+            _ => unreachable!("a checked rewrite must carry equality evidence"),
+        }
+    }
+    let (left, right) = operands(equality, true);
+    format!("{left}, {right}")
+}
+
 /// A proposition spelled for a refusal a person reads. It may print a term
 /// as what it means, such as an unsigned order, in a form that is not Click
 /// source, so it never reaches generated source.
@@ -1104,7 +1141,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::Rewrite(equality) => line(
             output,
             &prefix,
-            &format!("rewrite({});", source_click_proposition(equality)),
+            &format!("rewrite({});", source_rewrite_arguments(equality)),
         ),
         ProofTactic::Transport { source, target } => line(
             output,
@@ -2667,7 +2704,7 @@ mod tests {
                 requires index == 1;
                 views p[0..4];
                 ensures {printed};
-            }} by {{ step_until(function.exit); rewrite(index == 1); solve(); }}
+            }} by {{ step_until(function.exit); rewrite(index, 1); solve(); }}
         "#
         );
         let sources = [(

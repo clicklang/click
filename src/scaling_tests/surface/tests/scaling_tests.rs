@@ -166,8 +166,8 @@ theorem count_step(n: uint64{parameters}) {{
             to_integer(0u64) <= to_integer(n - 1u64);
             to_integer(n - 1u64) < to_integer(18446744073709551615u64);
         }};
-        rewrite(full_width_count(n - 1u64) == to_integer(n - 1u64));
-        rewrite(to_integer(n - 1u64) == to_integer(n) - to_integer(1u64));
+        rewrite(full_width_count(n - 1u64), to_integer(n - 1u64));
+        rewrite(to_integer(n - 1u64), to_integer(n) - to_integer(1u64));
         solve() using {{}};
     }}
 }}"
@@ -2463,7 +2463,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
              \x20               Chain::Nil => {{ contradiction(c.model == Chain::Nil); }},\n\
              \x20               Chain::Link(rest_model) => {{\n\
              \x20                   have chain_len(c.model) == chain_len(rest_model) + 1 by {{\n\
-             \x20                       rewrite(c.model == Chain::Link(rest_model));\n\
+             \x20                       rewrite(c.model, Chain::Link(rest_model));\n\
              \x20                       unfold(chain_len(Chain::Link(rest_model)));\n\
              \x20                       normalize();\n\
              \x20                   }}\n\
@@ -3035,7 +3035,7 @@ fn wide_execution_match_project(width: usize) -> (String, String) {
                  \x20           step_until(function.exit);\n\
                  \x20           let c = fold(cell(p), {{ model: Wide::V{index} }}, {{}});\n\
                  \x20           have wide_code(old(c.model)) == {index} by {{\n\
-                 \x20               rewrite(old(c.model) == Wide::V{index});\n\
+                 \x20               rewrite(old(c.model), Wide::V{index});\n\
                  \x20               unfold(wide_code(Wide::V{index}));\n\
                  \x20               normalize();\n\
                  \x20           }}\n\
@@ -4062,23 +4062,23 @@ resource holder_state(h: struct holder*) {
         known();
     }
     have defined(h->start + i) by {
-        rewrite(h->start == s);
+        rewrite(h->start, s);
         known();
     }
     have h->start <= h->start + i by {
-        rewrite(h->start == s);
+        rewrite(h->start, s);
         known();
     }
     have h->start + i + 1 <= l by {
-        rewrite(h->start == s);
+        rewrite(h->start, s);
         known();
     }
     have 0 <= h->start + i by {
-        rewrite(h->start == s);
+        rewrite(h->start, s);
         solve() using { 0 <= s; s <= s + i; };
     }
     have h->start + i < l by {
-        rewrite(h->start == s);
+        rewrite(h->start, s);
         known();
     }
     step_until(function.exit);

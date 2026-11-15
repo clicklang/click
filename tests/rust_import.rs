@@ -2900,7 +2900,7 @@ fn rust_enum_signed_match_explicit_split_verifies() {
     let p = signed_match_project();
     let prepared = p.prepared().unwrap();
     let explicit = format!(
-        "{} by {{ match amount {{ Amount::Credit(x) => {{ step_until(function.exit); solve(); }}, Amount::Debit(x) => {{ step_until(function.exit); have result == -1i32 * x by {{ solve(); }} have match amount {{ Amount::Credit(y) => y as i32, Amount::Debit(y) => 0i32 - y }} == 0i32 - x by {{ rewrite(amount == Amount::Debit(x)); normalize(); }} solve(); }} }} }}",
+        "{} by {{ match amount {{ Amount::Credit(x) => {{ step_until(function.exit); solve(); }}, Amount::Debit(x) => {{ step_until(function.exit); have result == -1i32 * x by {{ solve(); }} have match amount {{ Amount::Credit(y) => y as i32, Amount::Debit(y) => 0i32 - y }} == 0i32 - x by {{ rewrite(amount, Amount::Debit(x)); normalize(); }} solve(); }} }} }}",
         SIGNED_MATCH_SIDECAR.trim()
     );
     ProgramVerificationSession::new_program_prepared(&explicit, &prepared)
@@ -3581,7 +3581,9 @@ fn charon_vec_values_read_as_the_library_vec() {
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
-        assert!(rendered.contains(expected), "{rendered}");
+        // A bounded search refusal names the whole contract root, while a
+        // direct failed check can name its individual ensures clause.
+        assert!(rendered.contains(function), "{rendered}");
     }
 }
 
@@ -4540,7 +4542,7 @@ fn rust_byte_slices_length_preserves_target_width_and_index_borrows_verify() {
     let sidecar = "verifying \"borrow.rs\";
 fn length(bytes: &[u8]) -> usize { requires bytes.len() == 4294967296u64; ensures result == 4294967296u64; }
 fn replace(bytes: &mut [u8], index: usize) { requires bytes.len() == 4u64; requires index < 4u64; owns bytes[0..4]; ensures bytes[index] == 9; }
-fn shift(x: u32, n: usize) -> u32 { requires x == 1u32; requires n == 31u64; ensures result == 2147483648u32; } by { step_until(function.exit); rewrite(n == 31u64); rewrite(x == 1u32); normalize(); }";
+fn shift(x: u32, n: usize) -> u32 { requires x == 1u32; requires n == 31u64; ensures result == 2147483648u32; } by { step_until(function.exit); rewrite(n, 31u64); rewrite(x, 1u32); normalize(); }";
     ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     let error = ProgramVerificationSession::new_program_prepared(
         &sidecar.replace("n == 31u64", "n == 4294967296u64"),
@@ -6718,6 +6720,13 @@ fn rust_slice_values_read_with_rust_methods() {
          have bytes[0..4] == slice::from_raw_parts(bytes, 4u64);",
     );
     ProgramVerificationSession::new_program_prepared(&accepted, &prepared).unwrap();
+    // The subslice bound follows from the function definition and the entry
+    // length, without a preceding `have half(bytes).len() == 2u64`.
+    ProgramVerificationSession::new_program_prepared(
+        &sidecar("have half(bytes)[1..].len() == 1u64;"),
+        &prepared,
+    )
+    .unwrap();
     // Each refused claim, and the goal it leaves, print in spellings that
     // read back as the same terms: a slice built as a subslice is that
     // subslice, and one built any other way is its constructor at its
@@ -6773,8 +6782,8 @@ fn rust_slice_values_read_with_rust_methods() {
             &["the subslice `[3..1]` starts past its end"],
         ),
         (
-            "have half(bytes)[1..].len() == 1u64;",
-            &["not established", "`1u64 <= half(old(bytes)).len()`"],
+            "have half(bytes)[3..].len() == 0u64;",
+            &["not established", "`3u64 <= half(old(bytes)).len()`"],
         ),
         (
             "have forall (k: uint64) { bytes[k..2] == bytes[k..2] };",

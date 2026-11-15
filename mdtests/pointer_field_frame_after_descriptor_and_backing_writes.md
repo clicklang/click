@@ -79,7 +79,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     }
     fold(owned_string(owner));
     have to_integer(owner->len) == to_integer((old(owner->len) + 1)) by {
-        rewrite(to_integer(owner->len) == to_integer(at(region(3).entry, (index + 1))));
+        rewrite(to_integer(owner->len), to_integer(at(region(3).entry, (index + 1))));
         known();
     }
     known();

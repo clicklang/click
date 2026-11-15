@@ -15,11 +15,11 @@ uint32 pick(uint32* xs, uint64 n, uint64 r) {
     ensures result == xs[(n - r) - 1u64];
 } by {
     have n - 1u64 == (n - r) - 1u64 by {
-        rewrite(r == 0u64);
+        rewrite(r, 0u64);
         solve();
     }
     have xs[n - 1u64] == xs[(n - r) - 1u64] by {
-        rewrite(n - 1u64 == (n - r) - 1u64);
+        rewrite(n - 1u64, (n - r) - 1u64);
         solve();
     }
 }

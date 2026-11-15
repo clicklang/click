@@ -15,7 +15,7 @@ verifying "alias-view.c";
 int32 f(const uint8* bytes, const uint8* cursor) {
  views bytes[0..4]; requires cursor == bytes; ensures result == 0;
 } by {
- have viewable(cursor[0..4]) by { rewrite(cursor == bytes); solve(); }
+ have viewable(cursor[0..4]) by { rewrite(cursor, bytes); solve(); }
 }
 int32 shifted(const uint8* bytes, const uint8* cursor) {
  views bytes[0..8]; requires cursor == bytes + 2; ensures result == 0;
@@ -45,7 +45,7 @@ int32 shifted(const uint8* bytes, const uint8* cursor) {
  }
      known();
  }
- have viewable(cursor[0..4]) by { rewrite(cursor == bytes + 2); known(); }
+ have viewable(cursor[0..4]) by { rewrite(cursor, bytes + 2); known(); }
 }
 ```
 

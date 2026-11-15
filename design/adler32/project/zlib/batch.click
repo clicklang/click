@@ -31,8 +31,8 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have sum2 == 0u64 by solve();
    have to_integer(adler) == 1 by solve() using { adler == 1u64; };
    have to_integer(sum2) == 0 by solve() using { sum2 == 0u64; };
-   have adler_spec_a(old(buf), zlib_prefix_count(old(len), len), 1) == 1 by { rewrite(zlib_prefix_count(old(len), len) == 0); known(); }
-   have adler_spec_b(old(buf), zlib_prefix_count(old(len), len), 1, 0) == 0 by { rewrite(zlib_prefix_count(old(len), len) == 0); known(); }
+   have adler_spec_a(old(buf), zlib_prefix_count(old(len), len), 1) == 1 by { rewrite(zlib_prefix_count(old(len), len), 0); known(); }
+   have adler_spec_b(old(buf), zlib_prefix_count(old(len), len), 1, 0) == 0 by { rewrite(zlib_prefix_count(old(len), len), 0); known(); }
    have to_integer(adler) == adler_spec_a(old(buf), zlib_prefix_count(old(len), len), 1) by solve() using {
     to_integer(adler) == 1;
     adler_spec_a(old(buf), zlib_prefix_count(old(len), len), 1) == 1;
@@ -48,8 +48,8 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have len == 5552u64 by solve() using { 5552u64 <= len; len <= 5552u64; };
    have zlib_prefix_count(old(len), len) == 0 by { unfold(zlib_prefix_count(old(len), len)); solve(); }
    apply(zlib_batch_empty_components(old(buf)));
-   have adler_spec_a(old(buf), zlib_prefix_count(old(len), len), 1) == 1 by { rewrite(zlib_prefix_count(old(len), len) == 0); known(); }
-   have adler_spec_b(old(buf), zlib_prefix_count(old(len), len), 1, 0) == 0 by { rewrite(zlib_prefix_count(old(len), len) == 0); known(); }
+   have adler_spec_a(old(buf), zlib_prefix_count(old(len), len), 1) == 1 by { rewrite(zlib_prefix_count(old(len), len), 0); known(); }
+   have adler_spec_b(old(buf), zlib_prefix_count(old(len), len), 1, 0) == 0 by { rewrite(zlib_prefix_count(old(len), len), 0); known(); }
    have to_integer(adler) == 1 by solve() using {
     to_integer(adler) == adler_spec_a(old(buf), zlib_prefix_count(old(len), len), 1);
     adler_spec_a(old(buf), zlib_prefix_count(old(len), len), 1) == 1;
@@ -89,15 +89,15 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      apply(zlib_batch_prefix_initial());
      have zlib_batch_count(n) == 0 by known();
      apply(adler_sum_empty(old(buf), 0));
-     have buf == old(buf) + zlib_batch_count(n) by { rewrite(zlib_batch_count(n) == 0); known(); }
+     have buf == old(buf) + zlib_batch_count(n) by { rewrite(zlib_batch_count(n), 0); known(); }
      have to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_batch_count(n)) by {
-      rewrite(zlib_batch_count(n) == 0); rewrite(adler_byte_sum(old(buf), 0) == 0); known();
+      rewrite(zlib_batch_count(n), 0); rewrite(adler_byte_sum(old(buf), 0), 0); known();
      }
      have to_integer(sum2) == to_integer(zlib_batch_count(n)) + adler_weighted_sum(old(buf), zlib_batch_count(n), zlib_batch_count(n)) by {
-      rewrite(zlib_batch_count(n) == 0); rewrite(adler_weighted_sum(old(buf), 0, 0) == 0); known();
+      rewrite(zlib_batch_count(n), 0); rewrite(adler_weighted_sum(old(buf), 0, 0), 0); known();
      }
-     have to_integer(adler) <= 1 + 255 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); solve() using { to_integer(adler) == 1; }; }
-     have to_integer(sum2) <= 1415761 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); solve() using { to_integer(sum2) == 0; }; }
+     have to_integer(adler) <= 1 + 255 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n), 0); solve() using { to_integer(adler) == 1; }; }
+     have to_integer(sum2) <= 1415761 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n), 0); solve() using { to_integer(sum2) == 0; }; }
      solve();
     }
     preserve by {

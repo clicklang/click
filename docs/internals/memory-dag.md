@@ -449,8 +449,8 @@ shape, boundary, sibling-snapshot, marker-preservation, and scaling regressions
 live in `src/kernel/tests/memory_dag_tests.rs`; heap lifetime edges also have
 coverage in `src/kernel/tests/heap_tests.rs`.
 
-The chronological implementation record, measurements, and rejected
-experiments are preserved in `design/memory-dag.md`. They aren't part of the
+The [historical implementation record](https://github.com/clicklang/click/blob/2175760b9/design/memory-dag.md)
+preserves the original measurements and rejected experiments. It is not the
 current architecture contract.
 
 ## Failed explicit transport walks

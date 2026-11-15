@@ -373,8 +373,8 @@ rechecks those steps without rerunning the planner. Profiling and audit use the
 same checked boundary.
 
 Two rules make the mathematical `Integer` family complete for refutations
-over the integers, the form a simplex-based planner produces (see
-`design/smt-auto-stage1.md` in the repository). `negated_goal`
+over the integers, the form a simplex-based planner produces (see the
+[historical solver design](https://github.com/clicklang/click/blob/2175760b9/design/smt-auto-stage1.md)). `negated_goal`
 assumes the integer negation of a bound goal: for the goal `t <= 0` it is
 `-t + 1 <= 0`, and an equality goal is refused. A conclusion node may then be a
 contradiction, a constant claim such as `1 <= 0`. This is sound with or
@@ -919,7 +919,7 @@ arms; the Surface spelling is `if c { a } else { b }`. A rewrite that decides
 the condition (a substitution, `normalize() using`, or `solve`'s known
 conditions) leaves the selected arm, and arms a rewrite makes equal leave one,
 also under an exact Integer substitution, since that only deletes a node:
-`rewrite(x == y); normalize();` closes `(if c { x } else { y }) == x`, as for
+`rewrite(x, y); normalize();` closes `(if c { x } else { y }) == x`, as for
 a machine conditional. The affine fragment keeps an unresolved conditional as
 one opaque atom by its shared identity, as it keeps a product or quotient; a
 bound over its arms takes a case split
@@ -1471,7 +1471,7 @@ changing its Rust source. See the
 [checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_polynomial_and_quotient_shift.md).
 ## Checked equality rewriting
 
-`rewrite(a == b)` accepts mathematical Integer equality alongside native,
+`rewrite(a, b)` accepts mathematical Integer equality alongside native,
 pointer and algebraic equalities. Its equality must be an exact available fact,
 in either orientation. The kernel refines the selected goal by substituting
 exact occurrences of `a` with `b`; the remaining goal still needs a proof.
@@ -1493,7 +1493,7 @@ an exact whole fold does not enter that binder and remains supported.
 theorem integer_product_congruence(a: Integer, b: Integer, d: Integer) {
     requires a == b;
     ensures a * d + a == b * d + b by {
-        rewrite(a == b);
+        rewrite(a, b);
         solve();
     }
 }
@@ -1522,8 +1522,8 @@ theorem observed_quotient_correction(q: int64, quotient: Integer) {
     requires to_integer(q) == quotient;
     ensures to_integer(q + 1i64) == quotient + 1 by {
         have to_integer(q + 1i64) == to_integer(q) + to_integer(1i64);
-        rewrite(to_integer(q + 1i64) == to_integer(q) + 1);
-        rewrite(to_integer(q) == quotient);
+        rewrite(to_integer(q + 1i64), to_integer(q) + 1);
+        rewrite(to_integer(q), quotient);
         solve();
     }
 }

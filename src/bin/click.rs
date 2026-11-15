@@ -1245,7 +1245,7 @@ function tag(p: int32*) -> int32 { 0 }
 theorem bad(p: int32*, q: int32*) {
     requires p == q;
     ensures tag(p) == 1 by {
-        rewrite(p == q);
+        rewrite(p, q);
         known();
     }
 }

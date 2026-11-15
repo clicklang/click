@@ -86,8 +86,8 @@ int32 count_run(int32 n) {
                     cases {
                         (i <= 2 and run == 0) => {
                             have i == 2;
-                            rewrite(run == 0);
-                            rewrite(i == 2);
+                            rewrite(run, 0);
+                            rewrite(i, 2);
                             normalize() using { i <= 2; };
                         }
                         (2 <= i and to_integer(2 + run) == to_integer(i)) => {

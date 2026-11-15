@@ -54,7 +54,7 @@ theorem adler_tail_a_next(k: Integer, a: Integer, byte: Integer) {
  }
  ensures a + byte <= adler_tail_a_ceiling(k + 1) by {
   apply(adler_tail_ceiling_increments(k));
-  rewrite(adler_tail_a_ceiling(k + 1) == adler_tail_a_ceiling(k) + 255);
+  rewrite(adler_tail_a_ceiling(k + 1), adler_tail_a_ceiling(k) + 255);
   solve() using { a <= adler_tail_a_ceiling(k); byte <= 255; };
  }
 }
@@ -78,7 +78,7 @@ theorem adler_tail_b_next(k: Integer, a: Integer, b: Integer, byte: Integer) {
  ensures b + a + byte <= adler_tail_b_ceiling(k + 1) by {
   apply(adler_tail_a_next(k, a, byte)) using { k <= 2; a <= adler_tail_a_ceiling(k); byte <= 255; };
   apply(adler_tail_ceiling_increments(k));
-  rewrite(adler_tail_b_ceiling(k + 1) == adler_tail_b_ceiling(k) + 328365);
+  rewrite(adler_tail_b_ceiling(k + 1), adler_tail_b_ceiling(k) + 328365);
   solve() using { b <= adler_tail_b_ceiling(k); a + byte <= 328365; };
  }
 }

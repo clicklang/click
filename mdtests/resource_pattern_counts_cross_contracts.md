@@ -90,7 +90,7 @@ void pool_return(struct pool* pool, int32 object) {
 } by {
     unfold(valid_pool);
     have 1 <= pool->checked_out by {
-        rewrite(pool->checked_out == count(pool_object(pool, _)));
+        rewrite(pool->checked_out, count(pool_object(pool, _)));
         solve() using { count(pool_object(pool, _)) >= 1; };
     }
     unfold(pool_object(pool, object));

@@ -1,5 +1,9 @@
 # A modular C pointer-field prefix postcondition survives checked restoration
 
+The prefix proof runs before return. It preserves each selected element across
+the append and length-field writes using explicit separation facts, then joins
+the two equalities. The caller receives the resulting quantified contract.
+
 ```c filename=vector.c
 struct vector {
     int32 len;
@@ -53,6 +57,57 @@ int32 vector_push(struct vector* owner, int32 value) {
     step();
     step();
     step();
+    have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
+        intro();
+        intro();
+        extract(0 <= k);
+        extract(k < old(owner->len));
+        // The append writes at the old length, beyond this prefix element.
+        have old(owner->len) != k by {
+            intro();
+            have not (k < old(owner->len)) by {
+                rewrite(old(owner->len), k);
+                normalize();
+            }
+            contradiction(k < old(owner->len));
+        }
+        have separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])) by {
+            apply(click::separation::separate_elements(old(owner->data), old(owner->len), k)) using { old(owner->len) != k; };
+        }
+        have separate(statement(4).footprint, memory(old(owner->data)[k])) by {
+            normalize() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
+        }
+        have at(statement(4).exit, owner->data[k]) == at(statement(4).entry, owner->data[k]) by {
+            preserve(separate(statement(4).footprint, memory(old(owner->data)[k])));
+        }
+        // Restrict the struct/array separation to the length field and element.
+        have k < old(owner->cap) by {
+            arithmetic_certificate {
+                premise 0: k < old(owner->len) => to_integer(k) < to_integer(old(owner->len));
+                premise 1: old(owner->len) <= old(owner->cap) => to_integer(old(owner->len)) <= to_integer(old(owner->cap));
+                add 0, 1 => to_integer(k) + to_integer(old(owner->len)) < to_integer(old(owner->len)) + to_integer(old(owner->cap));
+                conclusion 2;
+            }
+        }
+        have contains(memory(*owner), memory(owner->len)) by { normalize(); }
+        have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {
+            apply(click::separation::contains_element(old(owner->data), 0, old(owner->cap), k)) using { 0 <= k; k < old(owner->cap); };
+        }
+        have separate(memory(owner->len), memory(old(owner->data)[k])) by {
+            apply(click::separation::separate_restrict(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]), memory(owner->len), memory(old(owner->data)[k]))) using {
+                separate(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]));
+                contains(memory(*owner), memory(owner->len));
+                contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k]));
+            };
+        }
+        have separate(statement(5).footprint, memory(old(owner->data)[k])) by {
+            normalize() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
+        }
+        have at(statement(5).exit, owner->data[k]) == at(statement(5).entry, owner->data[k]) by {
+            preserve(separate(statement(5).footprint, memory(old(owner->data)[k])));
+        }
+        known();
+    }
     step();
     have owner->data == old(owner->data) by {
         solve();
@@ -61,18 +116,6 @@ int32 vector_push(struct vector* owner, int32 value) {
         solve();
     }
     fold(vector_storage(owner));
-    have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
-        intro();
-        intro();
-        extract(0 <= k);
-        extract(k < old(owner->len));
-        transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
-            at(region(5).entry, owner->len) <= at(region(5).entry, owner->cap);
-            0 <= k;
-            k < old(owner->len);
-        };
-        known();
-    }
     known();
     known();
     known();

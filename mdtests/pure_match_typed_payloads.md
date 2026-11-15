@@ -14,11 +14,11 @@ theorem integer_identity(count: Integer) { ensures count == count by { normalize
 theorem payload_identity(item: Payload<Shade>) {
     ensures rebuild_payload(item) == item by {
         match item {
-            Payload::Empty => { rewrite(item == Payload<Shade>::Empty); unfold(rebuild_payload(Payload<Shade>::Empty)); normalize(); },
+            Payload::Empty => { rewrite(item, Payload<Shade>::Empty); unfold(rebuild_payload(Payload<Shade>::Empty)); normalize(); },
             Payload::Link(pointer, wide, count, shade) => {
                 apply(pointer_identity(pointer));
                 apply(integer_identity(count));
-                rewrite(item == Payload<Shade>::Link(pointer, wide, count, shade));
+                rewrite(item, Payload<Shade>::Link(pointer, wide, count, shade));
                 match shade {
                     Shade::Red => {
                         unfold(rebuild_payload(Payload<Shade>::Link(pointer, wide, count, Shade::Red))); solve();

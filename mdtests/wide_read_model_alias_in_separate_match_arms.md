@@ -70,9 +70,9 @@ void inspect(struct node* parent, int32 side) {
         preserve by {
             match tree_context.model {
                 Parent::Left(pid, sm) => {
-                    have parent == parent_identity(Parent::Left(pid, sm)) by { rewrite(Parent::Left(pid, sm) == tree_context.model); known(); }
+                    have parent == parent_identity(Parent::Left(pid, sm)) by { rewrite(Parent::Left(pid, sm), tree_context.model); known(); }
                     have parent == pid by { unfold(parent_identity(Parent::Left(pid, sm))); solve(); }
-                    have side == direction(Parent::Left(pid, sm)) by { rewrite(Parent::Left(pid, sm) == tree_context.model); known(); }
+                    have side == direction(Parent::Left(pid, sm)) by { rewrite(Parent::Left(pid, sm), tree_context.model); known(); }
                     have side == 1 by { unfold(direction(Parent::Left(pid, sm))); solve(); }
                     let { c: c } = unfold(tree_context);
                     mark tag_inputs;
@@ -87,18 +87,18 @@ void inspect(struct node* parent, int32 side) {
                     step(copy_tag, {});
                     have sibling->tag == at(rotation, parent->tag);
                     have model->tag == sibling->tag by { normalize() using { sibling == model; }; }
-                    have model->tag == at(rotation, parent->tag) by { rewrite(model->tag == sibling->tag); known(); }
+                    have model->tag == at(rotation, parent->tag) by { rewrite(model->tag, sibling->tag); known(); }
                     let child = fold(cell(sibling), {model: Pair::At(model)});
-                    have child.model == sm by { rewrite(child.model == Pair::At(model)); known(); }
+                    have child.model == sm by { rewrite(child.model, Pair::At(model)); known(); }
                     let tree_context = fold(parent_at(root), {model: Parent::Left(pid, sm)}, {c: child});
                     step(); step();
                 },
             }
                 },
                 Parent::Right(pid, sm) => {
-                    have parent == parent_identity(Parent::Right(pid, sm)) by { rewrite(Parent::Right(pid, sm) == tree_context.model); known(); }
+                    have parent == parent_identity(Parent::Right(pid, sm)) by { rewrite(Parent::Right(pid, sm), tree_context.model); known(); }
                     have parent == pid by { unfold(parent_identity(Parent::Right(pid, sm))); solve(); }
-                    have side == direction(Parent::Right(pid, sm)) by { rewrite(Parent::Right(pid, sm) == tree_context.model); known(); }
+                    have side == direction(Parent::Right(pid, sm)) by { rewrite(Parent::Right(pid, sm), tree_context.model); known(); }
                     have side == 0 by { unfold(direction(Parent::Right(pid, sm))); solve(); }
                     let { c: c } = unfold(tree_context);
                     mark tag_inputs;
@@ -114,9 +114,9 @@ void inspect(struct node* parent, int32 side) {
                     step(copy_tag, {});
                     have sibling->tag == at(rotation, parent->tag);
                     have model->tag == sibling->tag by { normalize() using { sibling == model; }; }
-                    have model->tag == at(rotation, parent->tag) by { rewrite(model->tag == sibling->tag); known(); }
+                    have model->tag == at(rotation, parent->tag) by { rewrite(model->tag, sibling->tag); known(); }
                     let child = fold(cell(sibling), {model: Pair::At(model)});
-                    have child.model == sm by { rewrite(child.model == Pair::At(model)); known(); }
+                    have child.model == sm by { rewrite(child.model, Pair::At(model)); known(); }
                     let tree_context = fold(parent_at(root), {model: Parent::Right(pid, sm)}, {c: child});
                     step(); step();
                 },

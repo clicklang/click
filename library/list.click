@@ -41,7 +41,7 @@ theorem append_right_identity<T>(xs: List<T>) {
             List::Cons(head, tail) => {
                 apply(ih(tail));
                 unfold(list::append(List<T>::Cons(head, tail), List<T>::Nil));
-                rewrite(list::append(tail, List<T>::Nil) == tail);
+                rewrite(list::append(tail, List<T>::Nil), tail);
                 normalize();
             }
         }
@@ -68,16 +68,12 @@ theorem append_associative<T>(xs: List<T>, ys: List<T>, zs: List<T>) {
             List::Cons(head, tail) => {
                 apply(ih(tail));
                 apply(list::append_cons(head, tail, ys));
-                rewrite(list::append(List<T>::Cons(head, tail), ys)
-                    == List<T>::Cons(head, list::append(tail, ys)));
+                rewrite(list::append(List<T>::Cons(head, tail), ys), List<T>::Cons(head, list::append(tail, ys)));
                 apply(list::append_cons(head, list::append(tail, ys), zs));
-                rewrite(list::append(List<T>::Cons(head, list::append(tail, ys)), zs)
-                    == List<T>::Cons(head, list::append(list::append(tail, ys), zs)));
+                rewrite(list::append(List<T>::Cons(head, list::append(tail, ys)), zs), List<T>::Cons(head, list::append(list::append(tail, ys), zs)));
                 apply(list::append_cons(head, tail, list::append(ys, zs)));
-                rewrite(list::append(List<T>::Cons(head, tail), list::append(ys, zs))
-                    == List<T>::Cons(head, list::append(tail, list::append(ys, zs))));
-                rewrite(list::append(list::append(tail, ys), zs)
-                    == list::append(tail, list::append(ys, zs)));
+                rewrite(list::append(List<T>::Cons(head, tail), list::append(ys, zs)), List<T>::Cons(head, list::append(tail, list::append(ys, zs))));
+                rewrite(list::append(list::append(tail, ys), zs), list::append(tail, list::append(ys, zs)));
                 solve();
             }
         }
@@ -111,25 +107,19 @@ theorem contains_append<T>(xs: List<T>, ys: List<T>, value: T) {
             List::Cons(head, tail) => {
                 apply(ih(tail));
                 apply(list::append_cons(head, tail, ys));
-                rewrite(list::append(List<T>::Cons(head, tail), ys)
-                    == List<T>::Cons(head, list::append(tail, ys)));
+                rewrite(list::append(List<T>::Cons(head, tail), ys), List<T>::Cons(head, list::append(tail, ys)));
                 if head == value {
                     apply(list::contains_cons(head, list::append(tail, ys), value));
-                    rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value)
-                        == if head == value { true } else { list::contains(list::append(tail, ys), value) });
+                    rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value), if head == value { true } else { list::contains(list::append(tail, ys), value) });
                     apply(list::contains_cons(head, tail, value));
-                    rewrite(list::contains(List<T>::Cons(head, tail), value)
-                        == if head == value { true } else { list::contains(tail, value) });
+                    rewrite(list::contains(List<T>::Cons(head, tail), value), if head == value { true } else { list::contains(tail, value) });
                     normalize() using { head == value; };
                 } else {
                     apply(list::contains_cons(head, list::append(tail, ys), value));
-                    rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value)
-                        == if head == value { true } else { list::contains(list::append(tail, ys), value) });
+                    rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value), if head == value { true } else { list::contains(list::append(tail, ys), value) });
                     apply(list::contains_cons(head, tail, value));
-                    rewrite(list::contains(List<T>::Cons(head, tail), value)
-                        == if head == value { true } else { list::contains(tail, value) });
-                    rewrite(list::contains(list::append(tail, ys), value)
-                        == if list::contains(tail, value) { true } else { list::contains(ys, value) });
+                    rewrite(list::contains(List<T>::Cons(head, tail), value), if head == value { true } else { list::contains(tail, value) });
+                    rewrite(list::contains(list::append(tail, ys), value), if list::contains(tail, value) { true } else { list::contains(ys, value) });
                     normalize() using { not(head == value); };
                 }
             }
@@ -149,7 +139,7 @@ function length<T>(xs: List<T>) -> Nat
 theorem length_nil<T>(xs: List<T>) {
     requires xs == List<T>::Nil;
     ensures list::length(xs) == Nat::Zero by {
-        rewrite(xs == List<T>::Nil);
+        rewrite(xs, List<T>::Nil);
         unfold(list::length(List<T>::Nil));
         normalize();
     }
@@ -174,17 +164,14 @@ theorem length_append<T>(xs: List<T>, ys: List<T>) {
             List::Cons(head, tail) => {
                 apply(ih(tail));
                 apply(list::append_cons(head, tail, ys));
-                rewrite(list::append(List<T>::Cons(head, tail), ys)
-                    == List<T>::Cons(head, list::append(tail, ys)));
+                rewrite(list::append(List<T>::Cons(head, tail), ys), List<T>::Cons(head, list::append(tail, ys)));
                 apply(list::length_cons(head, list::append(tail, ys)));
-                rewrite(list::length(List<T>::Cons(head, list::append(tail, ys)))
-                    == Nat::Succ(list::length(list::append(tail, ys))));
+                rewrite(list::length(List<T>::Cons(head, list::append(tail, ys))), Nat::Succ(list::length(list::append(tail, ys))));
                 apply(list::length_cons(head, tail));
-                rewrite(list::length(List<T>::Cons(head, tail)) == Nat::Succ(list::length(tail)));
+                rewrite(list::length(List<T>::Cons(head, tail)), Nat::Succ(list::length(tail)));
                 apply(nat::add_succ_left(list::length(tail), list::length(ys)));
-                rewrite(nat::add(Nat::Succ(list::length(tail)), list::length(ys))
-                    == Nat::Succ(nat::add(list::length(tail), list::length(ys))));
-                rewrite(list::length(list::append(tail, ys)) == nat::add(list::length(tail), list::length(ys)));
+                rewrite(nat::add(Nat::Succ(list::length(tail)), list::length(ys)), Nat::Succ(nat::add(list::length(tail), list::length(ys))));
+                rewrite(list::length(list::append(tail, ys)), nat::add(list::length(tail), list::length(ys)));
                 normalize();
             }
         }

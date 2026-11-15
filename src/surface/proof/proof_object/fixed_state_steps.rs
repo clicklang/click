@@ -1254,10 +1254,10 @@ impl<'a> Proof<'a> {
             _ => unreachable!("unsupported choice sort above"),
         };
         let mut locals = self.state().locals().clone();
-        locals.values = locals.values.with_inserted(
+        locals.set_values(locals.values.with_inserted(
             choice.name.clone(),
             ContractExpression::ProgramExpression(ProgramExpression::Value(chosen.clone())),
-        );
+        ));
         locals.next_choice_variable = chosen_variable.0.saturating_add(1);
         let added_facts = if self.facts().contains_top_level(&chosen_fact) {
             Vec::new()
@@ -1361,43 +1361,49 @@ impl<'a> Proof<'a> {
         for ((name, _), (fact, variable, sort)) in binding.bindings.iter().zip(opened) {
             match sort {
                 Sort::Integer => {
-                    locals.integer_values = locals.integer_values.with_inserted(
+                    locals.set_integer_values(locals.integer_values.with_inserted(
                         name.clone(),
                         crate::kernel::SpecIntegerExpression::Term(
                             crate::kernel::IntegerTerm::var(variable),
                         ),
-                    );
+                    ));
                 }
                 sort if sort.machine_integer_type().is_some() => {
-                    locals.values = locals.values.with_inserted(
-                        name.clone(),
-                        ContractExpression::ProgramExpression(ProgramExpression::Value(
-                            sort.machine_integer_type()
-                                .unwrap()
-                                .symbolic_value(variable),
-                        )),
+                    locals.set_values(
+                        locals.values.with_inserted(
+                            name.clone(),
+                            ContractExpression::ProgramExpression(ProgramExpression::Value(
+                                sort.machine_integer_type()
+                                    .unwrap()
+                                    .symbolic_value(variable),
+                            )),
+                        ),
                     );
                 }
                 sort if sort.pointer_type().is_some() => {
-                    locals.values = locals.values.with_inserted(
-                        name.clone(),
-                        ContractExpression::ProgramExpression(ProgramExpression::Value(
-                            sort.symbolic_pointer_value(variable)
-                                .expect("pointer choice sort"),
-                        )),
+                    locals.set_values(
+                        locals.values.with_inserted(
+                            name.clone(),
+                            ContractExpression::ProgramExpression(ProgramExpression::Value(
+                                sort.symbolic_pointer_value(variable)
+                                    .expect("pointer choice sort"),
+                            )),
+                        ),
                     );
                 }
                 Sort::Algebraic(algebraic_type) => {
-                    locals.values = locals
-                        .values
-                        .with_inserted(name.clone(), ContractExpression::Binding(name.clone()));
-                    locals.algebraic_values = locals.algebraic_values.with_inserted(
+                    locals.set_values(
+                        locals
+                            .values
+                            .with_inserted(name.clone(), ContractExpression::Binding(name.clone())),
+                    );
+                    locals.set_algebraic_values(locals.algebraic_values.with_inserted(
                         name.clone(),
                         crate::kernel::SpecAlgebraicExpression {
                             algebraic_type,
                             node: crate::kernel::SpecAlgebraicExpressionNode::Variable(variable),
                         },
-                    );
+                    ));
                 }
                 _ => unreachable!("kernel rejected unsupported existential sort"),
             }
@@ -1630,17 +1636,17 @@ impl<'a> Proof<'a> {
             &body, var, &chosen,
         );
         let mut locals = self.state().locals().clone();
-        locals.values = locals.values.with_inserted(
+        locals.set_values(locals.values.with_inserted(
             choice.name.clone(),
             ContractExpression::Binding(choice.name.clone()),
-        );
-        locals.algebraic_values = locals.algebraic_values.with_inserted(
+        ));
+        locals.set_algebraic_values(locals.algebraic_values.with_inserted(
             choice.name.clone(),
             crate::kernel::SpecAlgebraicExpression {
                 algebraic_type,
                 node: crate::kernel::SpecAlgebraicExpressionNode::Variable(chosen_variable),
             },
-        );
+        ));
         locals.next_choice_variable = chosen_variable.0.saturating_add(1);
         let added = (!self.facts().contains_top_level(&fact))
             .then(|| fact.clone())
@@ -1870,10 +1876,10 @@ impl<'a> Proof<'a> {
                 })?;
         let chosen = crate::kernel::IntegerTerm::var(chosen_variable);
         let mut locals = self.state().locals().clone();
-        locals.integer_values = locals.integer_values.with_inserted(
+        locals.set_integer_values(locals.integer_values.with_inserted(
             choice.name.clone(),
             crate::kernel::SpecIntegerExpression::Term(chosen),
-        );
+        ));
         locals.next_choice_variable = chosen_variable.0.saturating_add(1);
         let added = (!self.facts().contains_top_level(&fact))
             .then(|| fact.clone())
@@ -1955,17 +1961,17 @@ impl<'a> Proof<'a> {
             &body, var, &chosen,
         );
         let mut locals = self.state().locals().clone();
-        locals.values = locals.values.with_inserted(
+        locals.set_values(locals.values.with_inserted(
             choice.name.clone(),
             ContractExpression::Binding(choice.name.clone()),
-        );
-        locals.algebraic_values = locals.algebraic_values.with_inserted(
+        ));
+        locals.set_algebraic_values(locals.algebraic_values.with_inserted(
             choice.name.clone(),
             crate::kernel::SpecAlgebraicExpression {
                 algebraic_type,
                 node: crate::kernel::SpecAlgebraicExpressionNode::Variable(chosen_variable),
             },
-        );
+        ));
         locals.next_choice_variable = chosen_variable.0.saturating_add(1);
         let added = (!self.facts().contains_top_level(&fact))
             .then(|| fact.clone())

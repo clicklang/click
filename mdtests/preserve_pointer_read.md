@@ -53,7 +53,7 @@ void copy_pos(struct cursor *target, struct cursor *source) {
         have source->data == at(after, source->data) by {
             preserve(separate(statement(1).footprint, memory(source->data)));
         }
-        rewrite(source->data == at(after, source->data));
+        rewrite(source->data, at(after, source->data));
         known();
     }
     step();

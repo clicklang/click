@@ -136,24 +136,24 @@ void arena_write(struct region* region, int32 index, int32 value) {
         known();
     }
     have defined(region->start + index) by {
-        rewrite(region->start == s);
+        rewrite(region->start, s);
         known();
     }
     have to_integer(region->start) <= to_integer(region->start + index) by {
-        rewrite(region->start == s);
+        rewrite(region->start, s);
         known();
     }
     have defined(s + index + 1);
     have defined(region->start + index + 1) by {
-        rewrite(region->start == s);
+        rewrite(region->start, s);
         known();
     }
     have to_integer(region->start + index + 1) <= to_integer(e) by {
-        rewrite(region->start == s);
+        rewrite(region->start, s);
         known();
     }
     have 0 <= to_integer(region->start + index) by {
-        rewrite(region->start == s);
+        rewrite(region->start, s);
         have 0 <= to_integer(s + index);
         known();
     }
@@ -162,8 +162,8 @@ void arena_write(struct region* region, int32 index, int32 value) {
         solve();
     }
     have to_integer(region->start + index) < to_integer(region->arena->capacity) by {
-        rewrite(region->start == s);
-        rewrite(region->arena->capacity == c);
+        rewrite(region->start, s);
+        rewrite(region->arena->capacity, c);
         known();
     }
     mark w;

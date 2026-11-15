@@ -225,7 +225,7 @@ needle = "contradiction(x == x);"
 [[form]]
 id = "rewrite"
 path = "mdtests/simple_tactics.md"
-needle = "rewrite(x == y);"
+needle = "rewrite(x, y);"
 
 [[form]]
 id = "transport"

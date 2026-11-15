@@ -79,7 +79,7 @@ int forward_class(int x) {
     let { result: r } = step(classify, { });
     step();
     have result == classified(x) by {
-        rewrite(r == classified(x));
+        rewrite(r, classified(x));
         normalize();
     }
     solve();

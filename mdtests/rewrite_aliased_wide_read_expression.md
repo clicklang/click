@@ -43,8 +43,8 @@ uint64 lowbit(struct item* root, struct item* parent, struct item* node) {
     have (node->word & 1) == color_bit(Color::Red) by { known(); }
     have color_bit(Color::Red) == 0 by { known(); }
     have (node->word & 1) == 0 by {
-        rewrite((node->word & 1) == color_bit(Color::Red));
-        rewrite(color_bit(Color::Red) == 0);
+        rewrite((node->word & 1), color_bit(Color::Red));
+        rewrite(color_bit(Color::Red), 0);
         normalize();
     }
 }

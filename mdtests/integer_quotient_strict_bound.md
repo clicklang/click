@@ -25,7 +25,7 @@ theorem checked_strict_lower(n: Integer, d: Integer, bound: Integer) {
                 apply(integer::nonpositive_dividend_remainder(n, d));
                 apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
-                    rewrite(bound == truncating_quotient(n, d));
+                    rewrite(bound, truncating_quotient(n, d));
                     known();
                 }
                 have not (bound * d < n) by { solve() using {
@@ -64,7 +64,7 @@ theorem checked_strict_upper(n: Integer, d: Integer, bound: Integer) {
                 apply(integer::nonnegative_dividend_remainder(n, d));
                 apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
-                    rewrite(bound == truncating_quotient(n, d));
+                    rewrite(bound, truncating_quotient(n, d));
                     known();
                 }
                 have not (n < bound * d) by { solve() using {

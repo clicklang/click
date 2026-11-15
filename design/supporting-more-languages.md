@@ -1,508 +1,85 @@
-# Supporting more languages
-
-This is the durable design reference for extending Click beyond C. It
-consolidates the C++/Rust architecture and borrowing investigations requested
-on 2026-09-11. Initial borrowing evidence was recorded at `bf0399b5`; this
-consolidation uses `2ac83e6d`. The [probe record](borrow-probes/README.md)
-contains executable evidence, compiler versions, and reproduction commands.
-This design record predates the delivered C++ frontend; it does not itself
-implement a Rust frontend.
-
-The [stable-views record](../docs/internals/stable-views.md) and the completed
-[basic C++ example](../examples/basic-cpp/README.md) carry the implemented
-boundaries. This document owns the cross-language rationale and future
-investigations, so those decisions survive issue closure.
-
-The [Rust resource correspondence](rust-resource-correspondence.md) adds
-paired Rust compiler/runtime witnesses and independent resource-model traces
-for moves, shared field borrows, exclusive reborrowing, recovery, and disjoint
-fields. The first safe-Rust frontend should reuse rustc's type and borrow
-checking. Typed HIR and MIR remain candidate extraction boundaries; a complete
-loan/lifetime export is not a prerequisite until the chosen proof interpretation
-requires it. The correspondence record qualifies the earlier MIR-first advice
-below and records the remaining production-model gaps.
-
-## Sequence: C++ first, Rust next
-
-The delivered basic C++ milestone is a pinned, non-throwing C++20 subset with scalar
-functions, pointer/reference parameters, simple objects, explicit construction,
-and implicit destruction on ordinary and early returns. The defining example
-is an RAII guard that restores a caller's integer after the function captures
-its return value. This supplies a real language-specific semantic test and a
-usable path from original `.cpp` source through normal Click sidecars.
-
-| Consideration | C++ first | Rust first |
-| --- | --- | --- |
-| Compiler boundary | The pinned Clang typed exporter records semantic AST and cleanup information. | rustc MIR plus the selected phase's type, move, borrow, lifetime, and drop information. |
-| Small meaningful feature | References and a simple constructor/destructor across two return paths are verified. | Shared/exclusive references and reborrows across calls. |
-| Existing overlap | Scalar, pointer, memory, and call machinery is reused where C++ semantics agree. | Memory/call machinery can be reused, but reference validity and borrow provenance need additional interpretation. |
-| Main design question tested | The second frontend preserves source identity, object lifetime, and implicit cleanup in the shared checker for the bounded slice. | Can the borrow protocol and compiler extraction agree on active references and recovered authority? |
-| Current evidence | The basic C++ source witness and one checked exceptional guard have landed; the separate P1 demo still needs its two-guard case. | The stable-view rules already require small checked borrowing and concurrency models. |
-
-This was a sequencing judgment, not a measured claim that a Clang exporter
-would be cheap. Click now has both its preprocessed-C import and a narrow typed
-Clang C++ export. C++ first limited the new semantic work while testing the
-whole program-language boundary. Rust follows once the shared borrowing model
-and that boundary have evidence behind them. Avoid doing both frontends
-simultaneously for the first milestone.
-
-The bounded C++ slice and the safe-Rust Adler-32 checksum milestone have
-landed and are the launch demonstrations for those languages. The Rust frontend is
-[delivered for the Linux x86-64 GNU launch scope](rust-charon-assessment.md#completed-linux-frontend-delivery).
-The remaining C++ front-end pipeline is tracked by
-[cpp-support.md](../roadmap/cpp-support.md).
-The launch remains P1 -> unchanged Linux rbtree verification -> public launch
-with rbtree as the key demo. Broad C++ and Rust coverage remain later work.
-Neither a successful
-compiler probe nor accepting C-shaped code with a `.cpp` extension is enough
-to announce the first slice as complete.
-
-## Shared architecture and source boundaries
-
-Keep one Surface Click proof language and one checked verification engine.
-Put new program-language frontends beside `src/languages/c`, as anticipated
-by the [architecture](../docs/internals/architecture.md). Share the proof
-object, logical terms, resources, memory operations, and tool orchestration
-where their semantics agree. Retain a language-specific layer for validity,
-aliasing, object lifetime, cleanup, and exceptional behavior.
-
-The immediate implementation boundary is `CVerificationSession` and its
-prepared inputs in `src/surface/verification.rs`, not a repository-wide rename
-of every `C`-prefixed type. Introduce a program/source identity and a small
-semantic input boundary as the second frontend needs them. New rules must
-advance the same checked proof object and carry ordinary provenance; do not
-create a parallel verifier for a new source language.
-
-Use compiler semantic information deliberately:
-
-- **C/C++:** a pinned Clang LibTooling exporter can provide resolved
-  declarations, types, layouts, source locations, and implicit operations.
-  The delivered C++ exporter owns a narrow, versioned output schema.
-  Clang's AST preserves source-level structure, and LibTooling supports
-  standalone semantic tools. Human AST/CFG dumps are investigation aids.
-  [Clang AST](https://clang.llvm.org/docs/IntroductionToTheClangAST.html),
-  [LibTooling](https://clang.llvm.org/docs/LibTooling.html)
-- **Rust:** use a pinned rustc integration and reuse its type and borrow
-  checking for the supported safe subset. Compare typed HIR and MIR as
-  extraction boundaries; retain the type, move, and borrow information needed
-  by the chosen proof interpretation. The compiler's borrow analysis includes
-  moves and region inference over the control-flow graph, but Click need not
-  reproduce that analysis. A pretty-printed MIR file alone is not the contract
-  for the importer. [rustc borrow checking](https://rustc-dev-guide.rust-lang.org/borrow-check.html)
-
-Do not choose optimized LLVM IR as the only source-verification boundary
-because both compilers emit it. LLVM has its own undefined-behavior semantics,
-including poison and undef; a proof of lowered instructions does not by itself
-recover the source's type/reference/object-lifetime obligations. An LLVM
-backend could be a separate future verification layer with an explicit
-refinement story. [LLVM UB manual](https://llvm.org/docs/UndefinedBehavior.html)
-
-Every prepared program must name its source language/standard, compiler and
-exporter identity, target ABI/layout, semantic flags, selected sources, and
-dependencies. Extend the current locked-import discipline; do not mix
-certificates or cached successes across these identities. Start with one
-qualified profile rather than making general multi-target support a hidden
-dependency. The compiler and source-to-kernel translation remain in the
-trusted computing base until a checked refinement replaces that assumption.
-Smart proof search remains outside it.
-
-For eventual mixed-language programs, keep allocation and address identity
-shared across a real FFI boundary. Give each boundary an explicit calling
-convention, layout, ownership transfer, validity, and unwind policy. Separate
-language heaps that accidentally forbid cross-language aliasing would obscure
-the problem. Cross-language calls and machine-code correctness are later
-claims, not implied by two independent frontends.
-
-## Control flow, goto, and implicit cleanup
-
-The statement-tree/frontier representation has grown beyond a cursor that only
-advances through lexical source: checked forward C jumps and narrow C++ cleanup
-edges are implemented. The [goto roadmap item](../roadmap/goto.md) owns remaining
-general C jumps; future design must also accommodate Rust MIR blocks. A common
-edge representation needs an explicit target, path state, source attribution,
-and any checked scope/lifetime effects. A source jump, destructor call, loan
-expiration, and object-lifetime end are distinct events.
-
-For C++, leaving a scope can destroy constructed automatic objects, in reverse
-construction order. Jumping into a scope across non-vacuous initialization is
-restricted. The frontend supplies language-specific legal edges and cleanup
-obligations; a shared label mechanism must not invent C++ semantics for C.
-[C++ scope transfers](https://eel.is/c++draft/stmt.dcl)
-
-Return has a sequencing requirement: first evaluate/capture the result, then
-perform the required cleanup, then deliver the result and resulting state to
-the caller. Otherwise a destructor changing an aliased location can silently
-change the modeled return value. [C++ returns](https://eel.is/c++draft/stmt.return)
-
-For Rust, MIR supplies explicit branches, drops, and unwind successors; drop
-elaboration accounts for whether a value was actually initialized or moved.
-Do not treat every local as needing an unconditional drop, or recover a loan
-merely because its local storage ends. Future unwind/abort paths must be
-distinguishable from normal returns. [rustc drop elaboration](https://rustc-dev-guide.rust-lang.org/mir/drop-elaboration.html)
-
-The first C++ slice covered normal scope exits and returns. The selected scalar
-exception slice now checks the two-guard cross-call throw, the
-throw-before-second-guard conditional lifetime, and reverse cleanup on both
-normal and caught paths. General goto, irreducible control flow, broader C++
-exceptions, Rust panic unwinding, and coroutines remain unsupported while the
-edge representation reserves their semantic distinctions. Backedges still
-need invariants and termination evidence; a tactic budget is not a termination
-proof. The bounded control-flow design, profile, trust boundary, resource
-tracker role, and scaling evidence are recorded in the
-[architecture note](../docs/internals/architecture.md#selected-control-flow-and-c-cleanup-model).
-Compare a forward C cleanup jump, the C++ RAII return example, and a Rust
-conditional drop when selecting the shared representation.
-
-The remaining [goto roadmap item](../roadmap/goto.md) tracks general backward and
-irreducible jumps at P2. The exception proof is a bounded extension of the
-completed non-throwing basic C++ milestone, not a claim of general C++
-unwinding or an exception ABI proof.
-
-For that probe, exceptional behavior is part of the verified function
-interface: a closed `throws int32` signature states which payload may cross a
-modular call. Outcome-specific postconditions are separate proof claims.
-Omitting `noexcept` in C++ does not infer a Click exceptional signature, and
-omitting a Click exceptional signature means the body must prove non-throwing.
-
-The scalar profile imports a typed `throw int`, one named by-value `catch (int)`,
-and try-local `noexcept` guards whose destructors run after a helper call
-throws. The checked regressions in
-[`cpp_one_guard_unwind.md`](../mdtests/cpp_one_guard_unwind.md),
-[`cpp_two_guard_unwind.md`](../mdtests/cpp_two_guard_unwind.md), and
-[`cpp_guard_unwind_before_second.md`](../mdtests/cpp_guard_unwind_before_second.md)
-prove the resulting state on normal and caught paths. This is neither general
-C++ unwinding nor proof of an exception ABI.
-
-## Shared resources and Rust borrowing
-
-Stable shared borrowing for ordinary memory shipped from the P1
-[stable views record](../docs/internals/stable-views.md), superseding the original
-investigation's advice to preserve weak C views. The observations below
-describe the shipped semantics.
-
-The analogy between Click `owns`/`views` and Rust `&mut`/`&` is useful and
-close at ordinary function-call boundaries. Keep the two access modes. A
-literal identification of the current memory resource laws with Rust
-references would nevertheless be incorrect.
-
-The concept the investigation found missing was a borrow protocol: which
-authority is lent, which accesses the lender must suspend, how that authority
-can be reborrowed, and when the lender can recover it. C now has one, built
-around the existing resource system rather than replacing it. Its adequacy for
-unsafe Rust still requires a separate investigation.
-
-The earlier advice to separate storage, validity, and access should not be
-read as a proposal to replace `owns` and `views` with three competing resource
-systems. Click already separates allocated storage and initialization from
-memory-access authority. Rust references can package the relevant facts and
-authority together while the checker retains those distinctions internally.
-
-### What the C implementation guarantees
-
-The [resource documentation](../docs/concepts/resources.md) and
-[memory resource algebra](../src/kernel/primitives/resource_algebra.rs) agree:
-
-- Memory ownership permits reads and writes. A memory view permits reads and
-  keeps the covered memory unchanged and allocated while the borrow is active.
-- A view cannot coexist with an overlapping owner. Ownership satisfies a view
-  requirement by lending: the owner is escrowed for the borrow and recovered at
-  the return, and no rule turns a view back into ownership.
-- A memory write changes the current snapshot. A prior observation remains
-  a fact about its prior snapshot unless checked framing transports it, and an
-  observation taken through a borrow is historical once the borrow ends.
-- `owns` borrows and returns the resource selected at function entry;
-  `consumes` and `produces` express other transfer roles.
-- A composite whose body views memory is a struct holding a borrow. Folding one
-  keeps the lender's authority suspended until the composite is unfolded or
-  consumed, which is the C shape of `struct Cursor<'a>`.
-
-The algebra's `pair_validity_error` still checks only overlapping owned ranges;
-the owner/view partition is enforced by the loan ledger at contract entry and
-at call planning rather than by the family's pair validity.
-`memory_resource_fact_permits_write` checks the address range, width, and owned
-authority, and the ledger then checks the write against the live loans. Neither
-distinguishes two Rust borrow origins for accesses to the same address.
-
-These are the current sequential C semantics. The existing
-[`pointer_params_may_alias_without_separate` regression](../mdtests/pointer_params_may_alias_without_separate.md)
-rejects an unchanged-value claim after a potentially aliasing write. It
-passed when rerun during this investigation, meaning the false claim was
-correctly rejected.
-
-The [C probe](borrow-probes/alias.c) writes 7 through `p` and then reads
-through `q`. Its sidecar owns `p` and requires `p == q`, and Click verifies
-`result == 7` using ordinary verification. Ownership of the location authorizes
-both accesses, so the aliased read needs no view clause of its own; the
-investigation's original sidecar, which viewed `q` beside the owner, is the
-shape the stable-view rules refuse.
-
-### Where the Rust analogy holds and where it needs more structure
-
-| Situation | Relationship to Click |
-| --- | --- |
-| A helper reads through `&i32` and returns | Close to a call-scoped `views` requirement satisfied from ownership. |
-| A helper mutates through `&mut i32` and returns | Close to `owns`, with exclusive access lent for the call and returned afterward. |
-| A shared borrow remains usable across a write | Memory `views` restricts the writer: the lender's authority is suspended for the borrow. |
-| A mutable reference is reborrowed | Click tracks shared child borrows and their dependency on the parent. An exclusive child that also restricts conflicting parent reads exists only in the checked design model. |
-| A function returns a borrowed reference | Supported where the borrow escapes inside a produced composite, which keeps the input's loan open until the composite is consumed. A bare returned reference carries no loan. |
-| `&Cell<i32>` supports a mutation | Shared access needs a type-specific protocol, not a universal read-only view of all underlying bytes. |
-| `&mut MaybeUninit<i32>` is initialized | Ownership and wrapper validity can exist before the payload is a valid `i32`. |
-
-Rust's reference validity and aliasing rules apply even in unsafe code.
-The Rust Reference explicitly leaves some details of unsafe aliasing unsettled.
-An implementation must identify its supported model and compiler assumptions;
-passing the safe borrow checker is not evidence that arbitrary unsafe accesses
-have been justified. [Rust Reference](https://doc.rust-lang.org/reference/behavior-considered-undefined.html)
-
-### Observing through an owner versus lending authority
-
-Click's memory resources now distinguish two things the investigation
-conflated. An owner may read its own memory and publish observations supported
-by that ownership, which is not a transferable borrow. Lending is the other
-operation, and it is what a `views` requirement uses:
-
-```text
-exclusive authority over R
-    -> suspended lender authority + shared borrow of R for lifetime k
-
-end k, after its active accesses and dependent borrows are finished
-    -> restored lender authority over the current R
-```
-
-This is explanatory notation, not Click syntax. C implements this shape:
-reborrowing carries a dependency relation between the child and parent loans,
-and the lender retains an entitlement to recover authority rather than a second
-usable writer during the loan. A mutable child loan must also restrict
-conflicting parent reads, not only writes; that case lives in the checked
-design model and has no C surface.
-
-Duplicability is compatible with this design. A shared-borrow description can
-be copied while every actual access additionally requires evidence that its
-lifetime is active. Ending the lifetime can invalidate that access evidence
-without searching for and deleting every historical copy of the description.
-Plain fractional permissions alone do not supply this lifetime protocol.
-
-RustBelt supplies a useful precedent: it separates type ownership from a
-type-specific sharing predicate, and uses lifetime tokens to control access
-to borrowed resources. Shared-reference descriptions can be persistent while
-access remains lifetime-bound. Its treatment of `Cell` and mutexes shows why
-the sharing interpretation depends on the type.
-[RustBelt, sections 4–6](https://plv.mpi-sws.org/rustbelt/popl18/paper.pdf)
-
-VeriFast provides a concrete implementation reference: its lifetime logic
-ends a lifetime before recovering exclusive ownership from a borrow.
-[VeriFast lifetime logic](https://verifast.github.io/verifast/rust-reference/lifetime-logic.html)
-
-## Borrowing complications to revisit for Rust
-
-### Returned references and functional specifications
-
-The `left` probe returns a mutable reference into a caller's `Pair`. A
-caller can mutate through that result and later use the pair. It cannot
-mutate `p.left` while the returned reference remains in use; the negative
-probe receives Rust diagnostic E0506.
-
-A future contract must connect the returned reference, its parent loan, and
-the value recovered by the caller after the loan ends. Current snapshots and
-explicit memory may help describe this, but the current return boundary alone
-does not establish that connection. Experiment with a conditional choice of
-borrowed fields next, so a solution cannot depend on one fixed field path.
-
-RefinedRust addresses this with borrow names connecting a mutable reference's
-current value to what its owner recovers later. Its frontend also extracts
-lifetime hints alongside MIR. This is evidence that both semantic contracts
-and compiler extraction need attention, not a reason to introduce prophecy
-variables into Click without testing whether its explicit-memory design needs
-them. [RefinedRust, sections 2–5](https://plv.mpi-sws.org/refinedrust/paper-refinedrust.pdf)
-
-### Interior mutability
-
-The positive Rust probe calls `Cell::set` through one shared reference and
-observes the update through another reference to the same cell. Both references
-remain ordinary shared references. Rust's `UnsafeCell` is the primitive behind
-this exception to shared-reference immutability; it does not remove the
-uniqueness requirements of mutable references.
-[UnsafeCell](https://doc.rust-lang.org/std/cell/struct.UnsafeCell.html)
-
-Keep `views memory(range)` read-only. A shared view of an abstract Rust object
-would expose its allowed operations through that type's checked sharing
-protocol. `Cell`, `RefCell`, and `Mutex` require different protocols; simply
-projecting every contained owned byte range to a memory view is insufficient.
-Do not authorize arbitrary writes merely because a type contains `UnsafeCell`.
-
-A mutex-like sharing protocol grants the right to acquire a guard; it does
-not expose permanent raw views of its mutable payload. The invariant holds
-the payload's authority between critical sections. A copied abstract view is
-not automatically transferable between threads: type-specific sharing must
-justify that transfer, including Rust's `Send`/`Sync` distinctions. Keep a
-thread-local cell and a transferable mutex as contrasting model examples.
-
-### Address identity and access authority
-
-Two pointers can identify the same storage while having different allowed
-accesses during a Rust borrow. Current C checks can transfer range authority
-across proved pointer equality. That behavior should remain correct for C,
-but Rust needs additional access-origin checks.
-
-The future representation should keep storage identity usable for load/store
-indexing while tracking reference/loan provenance separately. Whether that
-information belongs on pointer values, execution operations, or both is an
-open implementation decision. It must not be erased by casts or equality
-rewrites in the unsafe subset. Allocation provenance alone is insufficient.
-
-## What the compiler probes tell us
-
-The Rust probes compile and run for shared-then-write, mutable reborrowing,
-returned field borrowing, disjoint slices, `Cell`, initialization, and cleanup
-on both early and ordinary returns. Three conflicting-write probes fail with
-E0506. These are concrete compiler/runtime observations, not formal proofs.
-
-One especially useful result: in unoptimized MIR for `shared_then_write`,
-the write through `p` occurs before `StorageDead(q)`. The shared reference's
-last use is earlier. Therefore local storage lifetime cannot simply serve as
-borrow lifetime. The default MIR output also removes the child reference in
-`mutable_reborrow`, while unoptimized MIR retains it. A production frontend
-must select its MIR phase and collect loan/lifetime information deliberately.
-Human-readable dumps are inspection tools, not stable interchange formats.
-
-The C++ probe permits `int&` and `const int&` to alias while the first writes
-and the second reads. Its RAII guard executes on both returns. Clang's CFG
-dump includes an implicit destructor on each return path. Thus C++ needs
-cleanup and object-lifetime semantics, but its references do not require
-imposing Rust's exclusive/shared borrow discipline on all C++ accesses.
-
-The delivered [basic C++ regression](../examples/basic-cpp/README.md) has an
-explicit constructor and a destructor that restores the entry value. A temporary
-header-free compiler probe returned 7/9 on the early/ordinary paths and left
-the caller's integer at 41 in both cases. It compiled and ran with the same
-Apple Clang 16 toolchain. Cross-target syntax/CFG inspection for x86-64 Linux
-also showed the initializer list and both implicit destructor calls.
-That initial compiler probe checked source visibility, not a Click proof or
-exporter completeness; the later checked example supplies the Click proof.
-The original C++ probe uses host headers; the header-free reduction avoids
-treating host-header success as Linux target qualification.
-
-The compiler probes use the local ARM64 macOS target; the Click probe uses
-Click's supported x86-64 Linux target. They establish structural semantic
-distinctions, not cross-target layout agreement or source-to-machine refinement.
-
-## Near-term decisions
-
-1. Done: `owns` and `views` are retained, and ordinary memory views are stable
-   shared borrows.
-2. Preserve the existing separation of access mode, transfer role, and
-   snapshot in `CResourceSpec`. These are already separate fields; no broad
-   refactor is needed to create that separation.
-3. Treat the shipped C loan ledger as groundwork, not a full Rust loan system.
-   It has shared reborrows, scoped recovery, and escaping borrows inside a
-   produced composite; exclusive reborrows and thread-context splitting exist
-   only in the checked design model. Do not broaden those semantics silently.
-4. Keep access-origin and loan checks beside storage lookup when changing
-   memory-access interfaces. Rust borrow origins are still not distinguished
-   for two accesses to the same address.
-5. Done: the basic C++ slice uses a typed compiler import and checked normal
-   cleanup edges, shared in design with goto without adding general jumps to
-   that first milestone. The later
-   [one-guard exception regression](../mdtests/cpp_one_guard_unwind.md) now
-   checks one unwind edge; the P1 control-flow demo still owns its broader
-   two-guard acceptance case.
-
-Valid C aliasing was not a reason to keep views weak. The
-[ownership-only probe](borrow-probes/alias-owned.click) verifies the same C and
-postcondition without a conflicting view, and the
-[field-split probe](borrow-probes/field-split.click) preserves a caller's field
-invariant using a view of the unchanged field. Both migrations left the C
-unchanged, which is the standard every later frontend inherits.
-Do not call a mutable reborrow a duplicable owner. The completed basic C++
-milestone and the still-open P1 control-flow demo are the scoped
-second-language requirements; neither implies broad C++ coverage.
-
-## Rust's first support slice, after C++
-
-The next language milestone should be basic **safe, monomorphic Rust with
-scoped references**: small functions over `i32`, `u32`, `bool`, and plain
-struct fields; local initialization, branches, direct calls, shared/exclusive
-reference parameters, and local reborrowing. Return scalars or supported
-plain values initially. Use a pinned toolchain and target, no external crate
-dependencies, and an explicit panic policy. Overflow/bounds checks must be
-proved unreachable or modeled; accepting safe Rust is not itself proof of a
-functional postcondition or absence of panics.
-
-The defining positive should lend a mutable field to a helper, use a shorter
-shared or mutable reborrow, end it, and then reuse the parent. Prove the final
-value and preservation of another field. Reject conflicting accesses and a
-false postcondition. Pair source tests with adversarial checked-transition
-tests so compiler rejection alone is not mistaken for kernel validation.
-
-Collect source spans, type validity, moves/initialization, and any loan
-information required by the selected HIR/MIR boundary and proof interpretation.
-Reconcile this with the lowered execution operations. State precisely which
-compiler analyses are trusted and which obligations Click checks; a successful
-borrow check does not establish the functional claims or justify an arbitrary
-translation to C operations.
-
-Defer returned references, general generics/traits, enums with complex validity,
-trait objects, closures, async, unsafe code, interior-mutability libraries,
-standard-library verification, and threading to later slices. Returned field
-borrows remain an early design model requirement in the stable-views design record; actual Rust
-surface support follows when contracts can bind the escaping lifetime and
-connect the final borrowed value to the recovered owner. The initial Rust support milestone and subsequent shared-specification checksum
-demonstration are [complete for Linux](rust-charon-assessment.md#completed-linux-frontend-delivery).
-
-## Later coverage and investigation gates
-
-Broader language support should proceed through semantic examples rather than
-ever wider syntax acceptance:
-
-1. Specify and check shared loans, mutable reborrows, end-of-loan recovery,
-   returned loans, and branch-selected field loans. Include negative cases
-   for parent reuse too early, use after expiry, and duplicate recovery.
-2. Test one interior-mutable object protocol and one unsafe raw-pointer
-   access against a selected Rust aliasing model. Distinguish unsupported
-   behavior from an invalid proof. Do not infer general unsafe Rust support
-   from the safe examples.
-3. Compare compiler extraction phases using those same inputs. Preserve
-   source locations, loan relationships, initialization, and cleanup effects.
-4. Check deterministic scaling with several loan counts and nesting depths,
-   plus growing unrelated resource contexts. Ending a loan should touch its
-   dependent obligations, not scan every fact, pointer, or memory snapshot.
-
-For C++, the selected scalar-exception probe now verifies one guard inside a
-`try`; finish the two-guard and conditional-lifetime paths in the P1
-control-flow demo. Broader object initialization/validity and storage reuse,
-class copy/move and temporaries, and exceptions during partial construction
-remain later work; they are not prerequisites of that narrow probe.
-Keep the exception-disabled object profile, exception-enabled `normal_only`
-compatibility profile, and scalar-exception probe profile distinct in locked
-import identity. The probe uses Clang's typed source semantics plus Click's
-checked constructed-object stack for cleanup; compiler ABI landing pads are
-not the proof representation.
-Template instantiation can use compiler-resolved definitions,
-but template syntax support is not a library proof. Virtual dispatch,
-inheritance/subobject identity, standard-library contracts, and concurrent
-objects each need explicit semantic coverage before taking on a large project.
-
-For Rust, follow scoped borrowing with returned references, initialization
-wrappers such as `MaybeUninit`, drops after moves and partially initialized
-values, and checked sharing protocols for `Cell`, `RefCell`, and `Mutex`.
-Treat `Pin`, unsafe raw-pointer aliasing, reference provenance, enum validity,
-and atomics as dedicated semantic investigations. Destructors are not a
-universal liveness guarantee: safe code can intentionally forget values, so
-recovery must follow checked authority and lifetime rules.
-[Rust `forget`](https://doc.rust-lang.org/std/mem/fn.forget.html)
-
-Concurrent C is an independent check on the common resource model, not a
-feature that becomes solved by implementing Rust. Begin with shared readers,
-disjoint writers, and lock protocols; later test release/acquire publication
-against an explicit memory model. Linux RCU, inline assembly, volatile/device
-memory, FFI, build configurations, and platform contracts are further boundaries
-on any claim to verify whole systems software. Language parsing alone does not
-cover them. The [concurrency roadmap item](../roadmap/concurrency-and-atomics.md) and
-[compiler/ABI roadmap item](../roadmap/multiple-compilers.md) own those implementation
-areas when scheduled.
-
-Keep unsupported behavior explicit and preserve the original program source.
-Each new slice needs a real source witness, a false-claim/invalid-operation
-counterexample, a precise trust and target boundary, ordinary proof-tool
-agreement, and evidence that checking scales with the selected program and
-certificate. Preserve these criteria when the current P1 issues close.
+# Supporting C, C++ and Rust
+
+Click uses one specification language and checked engine for its supported
+C, C++ and Rust subsets. The languages have equal standing; the historical
+"C++ first, Rust next" sequence is not a current priority rule. Launch scope
+and open delivery requirements are owned by the
+[roadmap](../roadmap/README.md), including [Rust support](../roadmap/rust-support.md).
+
+## Shared engine, language-specific admission
+
+Frontends share proof objects, logical terms, immutable memory snapshots,
+resources, execution and tool orchestration wherever semantics agree.
+Each frontend retains its own rules for valid values, object creation,
+aliasing, moves, lifetime, cleanup and exceptional outcomes. A parser accepting
+a source extension is not evidence that those operations are supported.
+
+Use pinned compiler semantic information: Clang declaration/type/layout and
+cleanup evidence for C++, Charon's selected rustc MIR representation for Rust,
+and the admitted C import profile. Bind compiler/extractor identity, options,
+target/layout, selected source/dependencies and library assumptions into
+prepared inputs. Reject partial or mismatched artifacts. Keep original source
+bytes and source metadata for contracts, observations and diagnostics.
+
+Compiler extraction and source-to-kernel translation belong to the trusted
+boundary. Rust's type/borrow checking establishes source legality; it does not
+prove functional postconditions or authenticate arbitrary sidecar authority.
+Adopting Charon does not adopt Aeneas's functional memory interpretation.
+
+## Authority, values and cleanup
+
+Access mode, transfer role and snapshot are distinct. `owns` at a call borrows
+and returns authority; `consumes`/`produces` can describe a move. `views` is a
+stable shared loan backed by suspended write authority. An old observation
+stays a fact about its snapshot, not necessarily the current value.
+
+A mutable reborrow cannot duplicate ownership. Recovery must return updated
+contents once, preserve disjoint access, and reject expired or wrong child
+identities. Field partition and nested dependencies need explicit evidence.
+The [production Rust assessment](rust-borrow-authority-assessment.md) owns the
+implemented call and local-lease subsets; the independent
+[worked correspondence](rust-resource-correspondence.md) and
+[compiler probes](borrow-probes/README.md) are evidence for their stated models,
+not substitutes for imported source or adversarial sidecar checks.
+
+Do not apply stable read-only payload rules to interior-mutability types such
+as `Cell`, `RefCell` or `Mutex`. Each needs its own sharing protocol.
+Returned borrows, unsafe raw access, `Pin`, partial initialization, atomics and
+escaping authority need their selected semantic boundaries.
+
+Implicit cleanup must use resolved source operations in source order across
+normal, early and admitted exceptional exits. C cleanup jumps, C++ destructors
+and Rust drops can share machinery without acquiring each other's semantics.
+The selected two-guard/conditional-lifetime C++ control-flow demonstration is
+complete; broader exceptions, replacement and unwinding remain separately
+scoped. [Aggregate construction](aggregate-construction.md) and
+[Object-model laws](cpp-object-model.md) record the destination, copy and
+lifetime distinctions to preserve.
+
+## Evidence required for a new slice
+
+Select a real source witness and preserve its program. State the compiler,
+target, configuration and trusted library/runtime assumptions. Check actual
+bodies and modular calls, false postconditions, absent authority, invalid
+operations and hostile artifact metadata. Ordinary verification, profiling,
+expansion, cold and retained checking must agree on the claim.
+
+Keep repeated values and shared CFG joins compact. An operation's work must
+follow its selected input and relevant state delta, with deterministic
+multi-size checks for changed representations/hot paths. A successful
+compiler probe, small standalone resource model or faster corpus timing does
+not establish the whole semantic or scaling boundary.
+
+Concurrency is an independent test of the resource model. The modeled shared
+counter and one-shot release/acquire publication demonstrations are complete;
+Linux RCU, broader memory orders and real platform/runtime bindings remain
+separate requirements in [Concurrency](../roadmap/concurrency-and-atomics.md).
+The [compiler/ABI item](../roadmap/multiple-compilers.md) owns additional targets.
+
+## History
+
+The [original language-sequencing investigation](https://github.com/clicklang/click/blob/2175760b9/design/supporting-more-languages.md)
+retains the compiler comparisons and original support-slice proposals.
+Current interfaces and limits live in the [C reference](../docs/reference/language/c.md),
+[Rust reference](../docs/reference/rust.md), and
+[coverage matrix](../docs/reference/coverage.md), rather than that old sequence.

@@ -41,7 +41,7 @@ void cut(uint8* s, uint64 n) {
                 k < 1u64;
             };
         }
-        rewrite(k == 0u64);
+        rewrite(k, 0u64);
         solve();
     }
     fold(cstr_at(s, 0u64));

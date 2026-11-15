@@ -94,8 +94,8 @@ int32 read_through_equal_local(struct cell* node, struct cell* parent) {
                 normalize();
             }
             have value == 7 by {
-                rewrite(value == holder_value(Holder::Full(identity, value)));
-                rewrite(Holder::Full(identity, value) == f.model);
+                rewrite(value, holder_value(Holder::Full(identity, value)));
+                rewrite(Holder::Full(identity, value), f.model);
                 known();
             }
             unfold(f);

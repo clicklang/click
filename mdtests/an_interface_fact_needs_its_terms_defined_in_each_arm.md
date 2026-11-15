@@ -69,8 +69,8 @@ int32 bubble_pass3(int32 p[3]) {
                         have separate(memory(p[2]), memory(p[0])) by {
                             apply(separation::separate_elements(p, 2 as uint64, 0 as uint64)) using {};
                         }
-                        have separate(memory(p[j]), memory(p[0])) by { rewrite(j == 1); known(); }
-                        have separate(memory(p[j + 1]), memory(p[0])) by { rewrite(j == 1); known(); }
+                        have separate(memory(p[j]), memory(p[0])) by { rewrite(j, 1); known(); }
+                        have separate(memory(p[j + 1]), memory(p[0])) by { rewrite(j, 1); known(); }
                         have separate(loop(0).statement(0).statement(1).footprint, memory(p[0])) by {
                             normalize() using { separate(memory(p[j]), memory(p[0])); };
                         }
@@ -86,7 +86,7 @@ int32 bubble_pass3(int32 p[3]) {
                         unfold(all_le_range);
                         intro(); intro();
                         have k == 0 by solve();
-                        rewrite(k == 0);
+                        rewrite(k, 0);
                         solve();
                     }
                 }

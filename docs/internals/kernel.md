@@ -584,8 +584,9 @@ In `src/kernel/`:
   assigned per function, and two facts only combine within one context.
   Debug builds also refuse a narrow value whose word is not the canonical
   carrier of its format (see "One meaning for a narrow value" below). Why
-  the width stays implied instead of part of the term is ruled in
-  `design/typed-indices.md`.
+  some widths stay context-implied while machine operators carry formats is
+  explained in `design/machine-integers.md`; the older typed-index rulings
+  against format-carrying nodes were superseded.
 - `PointerOffsetTerm`: pointer-offset expressions.
 - `ConditionTerm`: proof-level truth-valued conditions: machine comparisons
   `Compare { format, relation, left, right }` and overflow tests

@@ -62,8 +62,8 @@ int32 caller(struct arena* arena, struct region* first, struct region* second) {
         solve();
     }
     have first->arena->data == second->arena->data by {
-        rewrite(first->arena == arena);
-        rewrite(second->arena == arena);
+        rewrite(first->arena, arena);
+        rewrite(second->arena, arena);
         normalize();
     }
     have second->arena->data == at(m, second->arena->data) by {

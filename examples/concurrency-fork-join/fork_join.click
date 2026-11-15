@@ -178,7 +178,7 @@ void *fill_range(void *argument) {
                 } else {
                     extract(k <= index);
                     have k == index;
-                    rewrite(k == index);
+                    rewrite(k, index);
                     solve();
                 }
             }
@@ -249,13 +249,13 @@ int fill_parallel(int output[4]) {
         } by {
             intro() as k;
             intro();
-            have 0 <= k by { rewrite(0 == first_job.begin); known(); }
-            have k < 2 by { rewrite(2 == first_job.end); known(); }
+            have 0 <= k by { rewrite(0, first_job.begin); known(); }
+            have k < 2 by { rewrite(2, first_job.end); known(); }
             instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k) using {
                 0 <= k; k < 2;
             };
-            rewrite(first_job.output == output);
-            rewrite(first_job.value == 11);
+            rewrite(first_job.output, output);
+            rewrite(first_job.value, 11);
             known();
         }
         have range_filled(&first_job) by { unfold(range_filled); known(); }
@@ -278,13 +278,13 @@ int fill_parallel(int output[4]) {
     } by {
         intro() as k;
         intro();
-        have 0 <= k by { rewrite(0 == first_job.begin); known(); }
-        have k < 2 by { rewrite(2 == first_job.end); known(); }
+        have 0 <= k by { rewrite(0, first_job.begin); known(); }
+        have k < 2 by { rewrite(2, first_job.end); known(); }
         instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k) using {
             0 <= k; k < 2;
         };
-        rewrite(first_job.output == output);
-        rewrite(first_job.value == 11);
+        rewrite(first_job.output, output);
+        rewrite(first_job.value, 11);
         known();
     }
     have range_filled(&first_job) by { unfold(range_filled); known(); }
