@@ -5,7 +5,12 @@ fn claim_closing_updates_only_selected_entries_and_preserves_forks() {
     for count in [16_usize, 64, 256, 512] {
         let outcome = outcome();
         let original = OutcomeClaimGoals::open(
-            (0..count).map(|index| (FunctionContractClaimKey::Ensure(index), None)),
+            (0..count).map(|index| {
+                (
+                    FunctionContractClaimKey::Ensure(index),
+                    Some(Target::EnsureResource(index)),
+                )
+            }),
             false,
         );
         let ((closed, work), indexed_work) = crate::persistent::measure_persistent_work(|| {
@@ -78,7 +83,12 @@ fn outcome_goal_selection_ignores_closed_claims_and_unrelated_proof_facts() {
     let core = outcome();
     for count in [16, 64, 256, 512] {
         let mut claims = OutcomeClaimGoals::open(
-            (0..count).map(|index| (FunctionContractClaimKey::Ensure(index), None)),
+            (0..count).map(|index| {
+                (
+                    FunctionContractClaimKey::Ensure(index),
+                    Some(Target::EnsureResource(index)),
+                )
+            }),
             false,
         );
         let mut goal =
@@ -175,7 +185,12 @@ fn ordinary_closing_steps_ignore_unrelated_facts_and_closed_source_claims() {
     let mut baseline = None;
     for count in [16, 64, 256, 512] {
         let mut claims = OutcomeClaimGoals::open(
-            (0..count).map(|index| (FunctionContractClaimKey::Ensure(index), None)),
+            (0..count).map(|index| {
+                (
+                    FunctionContractClaimKey::Ensure(index),
+                    Some(Target::EnsureResource(index)),
+                )
+            }),
             false,
         );
         for index in 0..count {
