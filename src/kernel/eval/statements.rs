@@ -797,8 +797,11 @@ fn write_program_lvalue_paths_without_local_reference(
             )])
         }
         LValueStorage::Memory { pointer } => {
-            let retained_value = value;
-            let value = retained_value.native().into_owned();
+            let retained_pointer = value
+                .shared()
+                .filter(|root| root.pointer_payload().is_some())
+                .cloned();
+            let value = value.into_native();
             // The loan obligation names the evaluated source lvalue. Keep its
             // address before storage chooses an equivalent owner's coordinates.
             let source_pointer = pointer.clone();
@@ -1052,9 +1055,15 @@ fn write_program_lvalue_paths_without_local_reference(
                     }
                     None => effective_assumptions,
                 };
+            let retained_written = match retained_pointer {
+                Some(root) => {
+                    ExecutionValue::Shared(root).retain_checked_pointer(written_value.clone())
+                }
+                None => ExecutionValue::from(written_value.clone()).retain_pointer_result(),
+            };
             let next_memory = state.memory.clone().store_retained_classed_with_context(
                 written_pointer.clone(),
-                retained_value.retain_checked_pointer(written_value.clone()),
+                retained_written,
                 &effective_assumptions,
                 lvalue_classes
                     .0
@@ -4229,7 +4238,7 @@ fn execute_execution_statement_leaf_paths(
                         path.facts.push(fact);
                     }
                     if let Some((step, value)) = &prior {
-                        after.set_step_result(*step, value.clone().into_native());
+                        after.set_retained_step_result(*step, value.clone());
                     }
                 }
             }
@@ -4279,13 +4288,10 @@ fn execute_execution_statement_leaf_paths(
                 budget,
             )?;
             for path in &mut paths {
-                let Some(value) = path
-                    .call_result
-                    .as_ref()
-                    .map(|value| value.native().into_owned())
-                else {
+                let Some(retained_value) = path.call_result.as_ref() else {
                     continue;
                 };
+                let value = retained_value.native().into_owned();
                 // The result has the callee's declared type, as it would
                 // assigned to a local of that type.
                 let value = match result_type {
@@ -4308,7 +4314,10 @@ fn execute_execution_statement_leaf_paths(
                     None => value,
                 };
                 if let StatementOutcome::Normal(state) = &mut path.outcome {
-                    state.set_step_result(*call, value);
+                    state.set_retained_step_result(
+                        *call,
+                        retained_value.retain_checked_pointer(value),
+                    );
                 }
             }
             paths
@@ -4348,6 +4357,10 @@ fn execute_execution_statement_leaf_paths(
             {
                 let outcome = match path.outcome {
                     ExpressionOutcome::Value(value) => {
+                        let retained_pointer = value
+                            .shared()
+                            .filter(|root| root.pointer_payload().is_some())
+                            .cloned();
                         let value = value.into_native();
                         let value = match value_type {
                             Some(value_type) => {
@@ -4364,7 +4377,13 @@ fn execute_execution_statement_leaf_paths(
                         match value {
                             Some(value) => {
                                 let mut next = state.clone();
-                                next.set_step_result(*step, value);
+                                let value = match retained_pointer {
+                                    Some(root) => {
+                                        ExecutionValue::Shared(root).retain_checked_pointer(value)
+                                    }
+                                    None => ExecutionValue::from(value).retain_pointer_result(),
+                                };
+                                next.set_retained_step_result(*step, value);
                                 StatementOutcome::Normal(Box::new(next))
                             }
                             None => StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),

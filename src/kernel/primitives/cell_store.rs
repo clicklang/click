@@ -2774,16 +2774,6 @@ impl CellStore {
     /// accepts. A run answers through `run_rule`, as for
     /// [`Self::retain_only_candidates_by`]; a run can hold the match only at
     /// a slot in the set it answers.
-    pub(crate) fn find_candidate_by(
-        &self,
-        candidates: &AliasCandidates,
-        found: impl FnMut(&Pointer, &ProgramValue) -> bool,
-        run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
-    ) -> (Option<ProgramValue>, usize) {
-        let (value, visited) = self.find_retained_candidate_by(candidates, found, run_rule);
-        (value.map(ExecutionValue::into_native), visited)
-    }
-
     pub(crate) fn find_retained_candidate_by(
         &self,
         candidates: &AliasCandidates,

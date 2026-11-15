@@ -876,7 +876,7 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
             std::sync::Arc::new(
                 results
                     .iter()
-                    .map(|(call, value)| (*call, s.program_value(value)))
+                    .map(|(call, value)| (*call, s.expression_value(value.value()).into()))
                     .collect(),
             )
         }),
