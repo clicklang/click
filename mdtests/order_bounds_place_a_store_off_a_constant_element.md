@@ -77,12 +77,7 @@ int32 through_parameter(int32* a, int32 u) {
         normalize() using { separate(memory(a[u]), memory(a[0])); };
     }
     have a[0] == at(before, a[0]) by {
-        transport_certificate {
-            premise 0: separate(statement(2).footprint, memory(a[0]))
-                => separate(statement(2).footprint, memory(a[0]));
-            preserve 0 => a[0] == at(before, a[0]);
-            conclusion 1;
-        }
+        preserve(separate(statement(2).footprint, memory(a[0])));
     }
     have a[0] == 5 by { normalize() using { a[0] == at(before, a[0]); at(before, a[0]) == 5; }; }
     step();

@@ -67,23 +67,13 @@ void roundtrip(struct node* p, struct node* q) {
                 normalize() using { separate(memory((&q->tag)[0..1]), memory(id->left)); };
             }
             have id->left == at(before_store, id->left) by {
-                transport_certificate {
-                    premise 0: separate(statement(0).footprint, memory(id->left))
-                        => separate(statement(0).footprint, memory(id->left));
-                    preserve 0 => id->left == at(before_store, id->left);
-                    conclusion 1;
-                }
+                preserve(separate(statement(0).footprint, memory(id->left)));
             }
             have separate(statement(0).footprint, memory(id->right)) by {
                 normalize() using { separate(memory((&q->tag)[0..1]), memory(id->right)); };
             }
             have id->right == at(before_store, id->right) by {
-                transport_certificate {
-                    premise 0: separate(statement(0).footprint, memory(id->right))
-                        => separate(statement(0).footprint, memory(id->right));
-                    preserve 0 => id->right == at(before_store, id->right);
-                    conclusion 1;
-                }
+                preserve(separate(statement(0).footprint, memory(id->right)));
             }
             let t = fold(tree(id), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
             step_until(function.exit);

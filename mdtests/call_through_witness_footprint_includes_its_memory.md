@@ -69,20 +69,10 @@ void overwrite(struct node* p, struct node* q) {
         normalize() using { };
     }
     have p->word == at(before_word_0, p->word) by {
-        transport_certificate {
-            premise 0: separate(statement(0).region(0).footprint, memory(p->word))
-                => separate(statement(0).region(0).footprint, memory(p->word));
-            preserve 0 => p->word == at(before_word_0, p->word);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).region(0).footprint, memory(p->word)));
     }
     have *((&p->word) as (int32 **)) == at(before_word_0, *((&p->word) as (int32 **))) by {
-        transport_certificate {
-            premise 0: separate(statement(0).region(0).footprint, memory(p->word))
-                => separate(statement(0).region(0).footprint, memory(p->word));
-            preserve 0 => *((&p->word) as (int32 **)) == at(before_word_0, *((&p->word) as (int32 **)));
-            conclusion 1;
-        }
+        preserve(separate(statement(0).region(0).footprint, memory(p->word)));
     }
     mark before_word_1;
     step();
@@ -90,20 +80,10 @@ void overwrite(struct node* p, struct node* q) {
         normalize() using { };
     }
     have p->word == at(before_word_1, p->word) by {
-        transport_certificate {
-            premise 0: separate(statement(0).region(1).footprint, memory(p->word))
-                => separate(statement(0).region(1).footprint, memory(p->word));
-            preserve 0 => p->word == at(before_word_1, p->word);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).region(1).footprint, memory(p->word)));
     }
     have *((&p->word) as (int32 **)) == at(before_word_1, *((&p->word) as (int32 **))) by {
-        transport_certificate {
-            premise 0: separate(statement(0).region(1).footprint, memory(p->word))
-                => separate(statement(0).region(1).footprint, memory(p->word));
-            preserve 0 => *((&p->word) as (int32 **)) == at(before_word_1, *((&p->word) as (int32 **)));
-            conclusion 1;
-        }
+        preserve(separate(statement(0).region(1).footprint, memory(p->word)));
     }
     mark before_word_2;
     have separate(memory((&next->value)[0..1]), memory(p->word));
@@ -112,20 +92,10 @@ void overwrite(struct node* p, struct node* q) {
         normalize() using { separate(memory((&next->value)[0..1]), memory(p->word)); };
     }
     have p->word == at(before_word_2, p->word) by {
-        transport_certificate {
-            premise 0: separate(statement(1).footprint, memory(p->word))
-                => separate(statement(1).footprint, memory(p->word));
-            preserve 0 => p->word == at(before_word_2, p->word);
-            conclusion 1;
-        }
+        preserve(separate(statement(1).footprint, memory(p->word)));
     }
     have *((&p->word) as (int32 **)) == at(before_word_2, *((&p->word) as (int32 **))) by {
-        transport_certificate {
-            premise 0: separate(statement(1).footprint, memory(p->word))
-                => separate(statement(1).footprint, memory(p->word));
-            preserve 0 => *((&p->word) as (int32 **)) == at(before_word_2, *((&p->word) as (int32 **)));
-            conclusion 1;
-        }
+        preserve(separate(statement(1).footprint, memory(p->word)));
     }
 
     have aligned(saved_next, 8) by known();
@@ -154,20 +124,10 @@ int32 caller(struct node* p, struct node* q) {
         normalize() using { };
     }
     have p->word == at(before_word_0, p->word) by {
-        transport_certificate {
-            premise 0: separate(statement(0).region(0).footprint, memory(p->word))
-                => separate(statement(0).region(0).footprint, memory(p->word));
-            preserve 0 => p->word == at(before_word_0, p->word);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).region(0).footprint, memory(p->word)));
     }
     have *((&p->word) as (int32 **)) == at(before_word_0, *((&p->word) as (int32 **))) by {
-        transport_certificate {
-            premise 0: separate(statement(0).region(0).footprint, memory(p->word))
-                => separate(statement(0).region(0).footprint, memory(p->word));
-            preserve 0 => *((&p->word) as (int32 **)) == at(before_word_0, *((&p->word) as (int32 **)));
-            conclusion 1;
-        }
+        preserve(separate(statement(0).region(0).footprint, memory(p->word)));
     }
     mark before_word_1;
     step();
@@ -175,20 +135,10 @@ int32 caller(struct node* p, struct node* q) {
         normalize() using { };
     }
     have p->word == at(before_word_1, p->word) by {
-        transport_certificate {
-            premise 0: separate(statement(0).region(1).footprint, memory(p->word))
-                => separate(statement(0).region(1).footprint, memory(p->word));
-            preserve 0 => p->word == at(before_word_1, p->word);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).region(1).footprint, memory(p->word)));
     }
     have *((&p->word) as (int32 **)) == at(before_word_1, *((&p->word) as (int32 **))) by {
-        transport_certificate {
-            premise 0: separate(statement(0).region(1).footprint, memory(p->word))
-                => separate(statement(0).region(1).footprint, memory(p->word));
-            preserve 0 => *((&p->word) as (int32 **)) == at(before_word_1, *((&p->word) as (int32 **)));
-            conclusion 1;
-        }
+        preserve(separate(statement(0).region(1).footprint, memory(p->word)));
     }
     mark before_word_2;
     have separate(memory((&next->value)[0..1]), memory(p->word));
@@ -197,20 +147,10 @@ int32 caller(struct node* p, struct node* q) {
         normalize() using { separate(memory((&next->value)[0..1]), memory(p->word)); };
     }
     have p->word == at(before_word_2, p->word) by {
-        transport_certificate {
-            premise 0: separate(statement(1).footprint, memory(p->word))
-                => separate(statement(1).footprint, memory(p->word));
-            preserve 0 => p->word == at(before_word_2, p->word);
-            conclusion 1;
-        }
+        preserve(separate(statement(1).footprint, memory(p->word)));
     }
     have *((&p->word) as (int32 **)) == at(before_word_2, *((&p->word) as (int32 **))) by {
-        transport_certificate {
-            premise 0: separate(statement(1).footprint, memory(p->word))
-                => separate(statement(1).footprint, memory(p->word));
-            preserve 0 => *((&p->word) as (int32 **)) == at(before_word_2, *((&p->word) as (int32 **)));
-            conclusion 1;
-        }
+        preserve(separate(statement(1).footprint, memory(p->word)));
     }
 
     have next->value == 0 by solve();

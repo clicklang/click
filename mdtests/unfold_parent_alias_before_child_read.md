@@ -46,12 +46,7 @@ void probe(struct node *p, struct node *q) {
                 normalize() using { separate(memory(q->next), memory(id->other)); };
             }
             have id->other == at(before_0, id->other) by {
-                transport_certificate {
-                    premise 0: separate(statement(0).footprint, memory(id->other))
-                        => separate(statement(0).footprint, memory(id->other));
-                    preserve 0 => id->other == at(before_0, id->other);
-                    conclusion 1;
-                }
+                preserve(separate(statement(0).footprint, memory(id->other)));
             }
             mark before_1;
             step();
@@ -59,22 +54,11 @@ void probe(struct node *p, struct node *q) {
                 normalize() using { separate(memory(q->tag), memory(id->other)); };
             }
             have id->other == at(before_1, id->other) by {
-                transport_certificate {
-                    premise 0: separate(statement(1).footprint, memory(id->other))
-                        => separate(statement(1).footprint, memory(id->other));
-                    preserve 0 => id->other == at(before_1, id->other);
-                    conclusion 1;
-                }
+                preserve(separate(statement(1).footprint, memory(id->other)));
             }
             have id->other == at(before_0, id->other) by {
-                transport_certificate {
-                    premise 0: id->other == at(before_1, id->other)
-                        => id->other == at(before_1, id->other);
-                    premise 1: at(before_1, id->other) == at(before_0, id->other)
-                        => at(before_1, id->other) == at(before_0, id->other);
-                    transitive 0, 1 => id->other == at(before_0, id->other);
-                    conclusion 2;
-                }
+                rewrite(id->other == at(before_1, id->other));
+                known();
             }
             mark before_2;
             step();
@@ -82,22 +66,11 @@ void probe(struct node *p, struct node *q) {
                 normalize() using { separate(memory(q->other), memory(id->other)); };
             }
             have id->other == at(before_2, id->other) by {
-                transport_certificate {
-                    premise 0: separate(statement(2).footprint, memory(id->other))
-                        => separate(statement(2).footprint, memory(id->other));
-                    preserve 0 => id->other == at(before_2, id->other);
-                    conclusion 1;
-                }
+                preserve(separate(statement(2).footprint, memory(id->other)));
             }
             have id->other == at(before_0, id->other) by {
-                transport_certificate {
-                    premise 0: id->other == at(before_2, id->other)
-                        => id->other == at(before_2, id->other);
-                    premise 1: at(before_2, id->other) == at(before_0, id->other)
-                        => at(before_2, id->other) == at(before_0, id->other);
-                    transitive 0, 1 => id->other == at(before_0, id->other);
-                    conclusion 2;
-                }
+                rewrite(id->other == at(before_2, id->other));
+                known();
             }
 
             let b = fold(frame(p), {model: Tag::At(id, cm)}, {kid: kid});

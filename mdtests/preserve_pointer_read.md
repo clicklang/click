@@ -1,4 +1,4 @@
-# Explicit transport certificate across two stores
+# Explicit explicit preservation proof across two stores
 
 ```c filename=fields.c
 struct cursor { int pos; int len; int *data; };
@@ -42,12 +42,7 @@ void copy_pos(struct cursor *target, struct cursor *source) {
         normalize() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before, source->data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(source->data))
-                => separate(statement(0).footprint, memory(source->data));
-            preserve 0 => source->data == at(before, source->data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(source->data)));
     }
     step() by { known(); }
     mark final;
@@ -55,15 +50,11 @@ void copy_pos(struct cursor *target, struct cursor *source) {
         normalize() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before, source->data) by {
-        transport_certificate {
-            premise 0: separate(statement(1).footprint, memory(source->data))
-                => separate(statement(1).footprint, memory(source->data));
-            preserve 0 => source->data == at(after, source->data);
-            premise 2: at(after, source->data) == at(before, source->data)
-                => at(after, source->data) == at(before, source->data);
-            transitive 1, 2 => source->data == at(before, source->data);
-            conclusion 3;
+        have source->data == at(after, source->data) by {
+            preserve(separate(statement(1).footprint, memory(source->data)));
         }
+        rewrite(source->data == at(after, source->data));
+        known();
     }
     step();
     known();

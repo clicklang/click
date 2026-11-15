@@ -146,31 +146,19 @@ void *fill_range(void *argument) {
                 at(iteration, separate(memory(job->output[index]), memory(job->output)));
             }; }
             have job->output == at(iteration, job->output) by {
-                transport_certificate {
-                    premise 0: at(iteration, separate(loop(0).statement(0).footprint, memory(job->output))) => at(iteration, separate(loop(0).statement(0).footprint, memory(job->output)));
-                    preserve 0 => job->output == at(iteration, job->output);
-                    conclusion 1;
-                }
+                preserve(at(iteration, separate(loop(0).statement(0).footprint, memory(job->output))));
             }
             have at(iteration, separate(loop(0).statement(0).footprint, memory(job->begin))) by { normalize() using {
                 at(iteration, separate(memory(job->output[index]), memory(job->begin)));
             }; }
             have job->begin == at(iteration, job->begin) by {
-                transport_certificate {
-                    premise 0: at(iteration, separate(loop(0).statement(0).footprint, memory(job->begin))) => at(iteration, separate(loop(0).statement(0).footprint, memory(job->begin)));
-                    preserve 0 => job->begin == at(iteration, job->begin);
-                    conclusion 1;
-                }
+                preserve(at(iteration, separate(loop(0).statement(0).footprint, memory(job->begin))));
             }
             have at(iteration, separate(loop(0).statement(0).footprint, memory(job->end))) by { normalize() using {
                 at(iteration, separate(memory(job->output[index]), memory(job->end)));
             }; }
             have job->end == at(iteration, job->end) by {
-                transport_certificate {
-                    premise 0: at(iteration, separate(loop(0).statement(0).footprint, memory(job->end))) => at(iteration, separate(loop(0).statement(0).footprint, memory(job->end)));
-                    preserve 0 => job->end == at(iteration, job->end);
-                    conclusion 1;
-                }
+                preserve(at(iteration, separate(loop(0).statement(0).footprint, memory(job->end))));
             }
             have at(iteration, separate(loop(0).statement(0).footprint, memory(job->value))) by { normalize() using {
                 at(iteration, separate(memory(job->output[index]), memory(job->value)));

@@ -20,12 +20,7 @@ void caller(struct box *q) {
         normalize() using { separate(memory(q->tag), memory(q->data)); };
     }
     have q->data == at(before, q->data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(q->data))
-                => separate(statement(0).footprint, memory(q->data));
-            preserve 0 => q->data == at(before, q->data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(q->data)));
     }
     step();
     known();

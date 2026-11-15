@@ -65,12 +65,7 @@ int32 f(int32 u, int32 w) {
                 normalize() using { separate(memory(buf[u]), memory(buf[0])); };
             }
             have buf[0] == at(before_store, buf[0]) by {
-                transport_certificate {
-                    premise 0: separate(statement(5).footprint, memory(buf[0]))
-                        => separate(statement(5).footprint, memory(buf[0]));
-                    preserve 0 => buf[0] == at(before_store, buf[0]);
-                    conclusion 1;
-                }
+                preserve(separate(statement(5).footprint, memory(buf[0])));
             }
             have buf[0] == 3 by {
                 rewrite(buf[0] == at(before_store, buf[0]));

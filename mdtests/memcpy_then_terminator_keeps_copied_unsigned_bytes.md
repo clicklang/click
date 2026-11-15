@@ -7,7 +7,7 @@ count: `memcpy(dst, src, 4); dst[4] = 0;` and then the copied bytes. The
 requirement, so typed range membership places them by the exact guard fact
 before the separation keeps them apart from the store at `dst[4]`. The
 written proof states the destination frame with a single-statement footprint
-certificate, then transports the copied-byte equality. The omitted proof of
+preservation step, then transports the copied-byte equality. The omitted proof of
 `copy_u_smart` also verifies. The explicit frame avoids relying on the legacy
 quantified read-history route to bridge the store and cached-cell forgetting.
 
@@ -39,11 +39,7 @@ void copy_u(uint8* dst, const uint8* src) {
         have separate(statement(1).footprint, memory(dst[0u64 + k])) by {
             normalize() using { separate(memory(dst[4]), memory(dst[0u64 + k])); };
         }
-        transport_certificate {
-            premise 0: separate(statement(1).footprint, memory(dst[0u64 + k])) => separate(statement(1).footprint, memory(dst[0u64 + k]));
-            preserve 0 => dst[0u64 + k] == at(copied, dst[0u64 + k]);
-            conclusion 1;
-        }
+        preserve(separate(statement(1).footprint, memory(dst[0u64 + k])));
     }
     have bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
         transport(

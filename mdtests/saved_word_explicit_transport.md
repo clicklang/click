@@ -22,12 +22,7 @@ void copy(unsigned long* slot, int32* p) {
         normalize() using {};
     }
     have *(slot as (int32 **)) == at(before, *(slot as (int32 **))) by {
-        transport_certificate {
-            premise 0: separate(statement(0).region(0).footprint, memory(*slot))
-                => separate(statement(0).region(0).footprint, memory(*slot));
-            preserve 0 => *(slot as (int32 **)) == at(before, *(slot as (int32 **)));
-            conclusion 1;
-        }
+        preserve(separate(statement(0).region(0).footprint, memory(*slot)));
     }
     have ((*slot & ~1) as (int32 *)) == p by {
         known();

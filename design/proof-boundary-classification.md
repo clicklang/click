@@ -96,7 +96,7 @@ explicit derivation: `transport(...) using {...}` is classified Simple in
 `src/surface.rs`, but its application can still call `derive_atomic_proposition`.
 Bare `transport(...)`, by contrast, is classified Smart and may discover evidence.
 Expanding the latter into the former is not by itself a search-free guarantee.
-`transport_certificate` is a different operation and must be audited separately.
+`preserve(...)` is a different operation and must be audited separately.
 
 ## The 16 mixed reference records
 

@@ -3596,7 +3596,7 @@ named points, restricted to the byte footprint of resource `A`. The resource
 is interpreted at `before`. Naming this proposition does not establish it:
 a certificate premise must match an existing execution fact. The initial
 implementation supports constant-size memory resources. See
-[transport certificates](../tactics/index.md#transport-certificates).
+[preservation](../tactics/index.md#preservation).
 
 
 Click proposition connectives are words:
@@ -4003,7 +4003,7 @@ to freed memory (`mdtests/an_allocation_result_keeps_its_name_after_reassignment
 A recorded region exposes `R.footprint`, a resource descriptor for its effects:
 writes, mutable call resources, and allocation lifetime changes. It grants no
 ownership. `separate(R.footprint, B)` is the preservation premise consumed by
-[`transport_certificate`](../tactics/index.md#transport-certificates). Effects
+[`preserve(...)`](../tactics/index.md#preservation). Effects
 are recorded during execution; this property does not reconstruct history.
 The current simple separation rule handles one checked transition. Longer
 transports use individual transition footprints and explicit equality composition;

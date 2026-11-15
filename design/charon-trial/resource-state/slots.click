@@ -58,11 +58,7 @@ impl resource_state::Store<u32> for resource_state::Slot {
                     at(before_put, separate(memory(*self.item), memory(self.item)));
                 }; }
                 have at(region(56).exit, self.item) == at(region(56).entry, self.item) by {
-                    transport_certificate {
-                        premise 0: separate(region(56).footprint, memory(self.item)) => separate(region(56).footprint, memory(self.item));
-                        preserve 0 => at(region(56).exit, self.item) == at(region(56).entry, self.item);
-                        conclusion 1;
-                    }
+                    preserve(separate(region(56).footprint, memory(self.item)));
                 }
                 let state = fold(boxed(self.item), { value: Option<u32>::Some(x) }, {});
             }

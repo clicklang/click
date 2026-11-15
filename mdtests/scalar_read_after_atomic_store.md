@@ -49,12 +49,7 @@ int32 later(int32 u) {
                 normalize() using { separate(memory(a[u]), memory(a[0])); };
             }
             have a[0] == at(before_store, a[0]) by {
-                transport_certificate {
-                    premise 0: separate(statement(4).footprint, memory(a[0]))
-                        => separate(statement(4).footprint, memory(a[0]));
-                    preserve 0 => a[0] == at(before_store, a[0]);
-                    conclusion 1;
-                }
+                preserve(separate(statement(4).footprint, memory(a[0])));
             }
             have a[0] == 3 by { normalize() using { a[0] == at(before_store, a[0]); at(before_store, a[0]) == 3; }; }
             known();

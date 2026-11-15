@@ -174,21 +174,13 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->data))); };
             }
             have arena->data == at(opened, arena->data) by {
-                transport_certificate {
-                    premise 0: at(opened, separate(loop(0).statement(0).footprint, memory(arena->data))) => at(opened, separate(loop(0).statement(0).footprint, memory(arena->data)));
-                    preserve 0 => arena->data == at(opened, arena->data);
-                    conclusion 1;
-                }
+                preserve(at(opened, separate(loop(0).statement(0).footprint, memory(arena->data))));
             }
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied))) by {
                 normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied))); };
             }
             have arena->occupied == at(opened, arena->occupied) by {
-                transport_certificate {
-                    premise 0: at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied))) => at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied)));
-                    preserve 0 => arena->occupied == at(opened, arena->occupied);
-                    conclusion 1;
-                }
+                preserve(at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied))));
             }
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->capacity))) by {
                 normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->capacity))); };

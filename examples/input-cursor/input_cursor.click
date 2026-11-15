@@ -152,12 +152,7 @@ int32 input_cursor_clone(
         normalize() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(source->data))
-                => separate(statement(0).footprint, memory(source->data));
-            preserve 0 => source->data == at(before_copy, source->data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(source->data)));
     }
     mark after_pos;
     step();
@@ -165,15 +160,11 @@ int32 input_cursor_clone(
         normalize() using { separate(memory(target->len), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
-        transport_certificate {
-            premise 0: separate(statement(1).footprint, memory(source->data))
-                => separate(statement(1).footprint, memory(source->data));
-            preserve 0 => source->data == at(after_pos, source->data);
-            premise 2: at(after_pos, source->data) == at(before_copy, source->data)
-                => at(after_pos, source->data) == at(before_copy, source->data);
-            transitive 1, 2 => source->data == at(before_copy, source->data);
-            conclusion 3;
+        have source->data == at(after_pos, source->data) by {
+            preserve(separate(statement(1).footprint, memory(source->data)));
         }
+        rewrite(source->data == at(after_pos, source->data));
+        known();
     }
     mark after_len;
     step();
@@ -181,15 +172,11 @@ int32 input_cursor_clone(
         normalize() using { separate(memory(target->data), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
-        transport_certificate {
-            premise 0: separate(statement(2).footprint, memory(source->data))
-                => separate(statement(2).footprint, memory(source->data));
-            preserve 0 => source->data == at(after_len, source->data);
-            premise 2: at(after_len, source->data) == at(before_copy, source->data)
-                => at(after_len, source->data) == at(before_copy, source->data);
-            transitive 1, 2 => source->data == at(before_copy, source->data);
-            conclusion 3;
+        have source->data == at(after_len, source->data) by {
+            preserve(separate(statement(2).footprint, memory(source->data)));
         }
+        rewrite(source->data == at(after_len, source->data));
+        known();
     }
     step();
     have target->data == old(source->data);
