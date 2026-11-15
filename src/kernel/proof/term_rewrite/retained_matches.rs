@@ -79,28 +79,39 @@ impl TermRewrite<'_> {
     }
 
     pub(super) fn reduce_retained_match_in(&mut self, matched: &KernelMatch) -> Option<KernelTerm> {
-        // A retained symbolic match is not a constructor. Do not materialize
-        // its complete algebraic output merely to decline iota reduction.
-        if matches!(matched.arguments[0].node(), KernelTermNode::Match(_)) {
-            return None;
-        }
-        let PureFunctionArgument::Algebraic(scrutinee) = self
-            .fold_integer_bridge
-            .argument(&matched.arguments[0])
-            .ok()?
-        else {
-            return None;
-        };
-        let fields = scrutinee.checked_constructor_fields()?;
-        let AlgebraicTermNode::Constructor { variant, .. } = &scrutinee.node else {
-            return None;
+        let scrutinee = &matched.arguments[0];
+        // Inspect the selected common constructor before the compatibility
+        // boundary for typed replacement fields. Symbolic roots have no iota
+        // reduction and do not need a native expression tree to say so.
+        let native;
+        let common_fields;
+        let (algebraic_type, variant, fields) = match scrutinee.node() {
+            KernelTermNode::Constructor(constructor) => {
+                common_fields = constructor.checked_native_fields(&mut self.fold_integer_bridge)?;
+                (
+                    &constructor.algebraic_type,
+                    &constructor.variant,
+                    common_fields.as_slice(),
+                )
+            }
+            KernelTermNode::Legacy(value) => {
+                let PureFunctionArgument::Algebraic(value) = value.value() else {
+                    return None;
+                };
+                native = value;
+                let fields = native.checked_constructor_fields()?;
+                let AlgebraicTermNode::Constructor { variant, .. } = &native.node else {
+                    return None;
+                };
+                (&native.algebraic_type, variant, fields)
+            }
+            _ => return None,
         };
         let index = matched
             .arms
             .iter()
             .position(|arm| arm.variant == *variant)?;
-        let schema = scrutinee
-            .algebraic_type
+        let schema = algebraic_type
             .variants
             .iter()
             .find(|schema| schema.name == *variant)?;
@@ -222,7 +233,7 @@ impl TermRewrite<'_> {
         Some(KernelTermImport::default().argument(&rewritten))
     }
 
-    /// Exact native source equality, without exporting the retained target.
+    /// Exact native source equality over common constructor and match children.
     /// Native leaves retain AlgebraicTerm's pointer-evidence-insensitive value
     /// equality; arm declarations and order retain the same exact semantics.
     fn retained_algebraic_source_matches(
@@ -240,6 +251,20 @@ impl TermRewrite<'_> {
                 return Some(false);
             }
             match (root.node(), &source.node) {
+                (KernelTermNode::Variable(left), AlgebraicTermNode::Variable(right)) => {
+                    if left != right {
+                        return Some(false);
+                    }
+                }
+                (KernelTermNode::Constructor(_), AlgebraicTermNode::Constructor { .. }) => {
+                    let source = KernelTermImport::default().algebraic(source);
+                    if !root.algebraic_syntax_equal_while(&source, || {
+                        self.visit();
+                        !self.checked_work_exhausted()
+                    })? {
+                        return Some(false);
+                    }
+                }
                 (KernelTermNode::Legacy(value), _) => {
                     if !matches!(value.value(), PureFunctionArgument::Algebraic(value) if value == source)
                     {
@@ -357,11 +382,17 @@ mod tests {
         assert_eq!(KernelTermExport::algebraic_export_count(), exports);
         let result = rewrite.retained_match(&outer).unwrap();
         for child in &result.arguments {
-            let KernelTermNode::Legacy(value) = child.node() else {
-                panic!("exact native replacement boundary");
-            };
-            assert!(
-                matches!(value.value(), PureFunctionArgument::Algebraic(value) if value == &replacement)
+            assert_eq!(
+                child.ty(),
+                &KernelType::Algebraic(replacement.algebraic_type.clone())
+            );
+            assert!(matches!(
+                child.node(),
+                KernelTermNode::Variable(variable) if *variable == Variable(991997)
+            ));
+            assert_eq!(
+                KernelTermExport::default().argument(child),
+                Ok(PureFunctionArgument::Algebraic(replacement.clone()))
             );
         }
         assert_eq!(KernelTermExport::algebraic_export_count(), exports);

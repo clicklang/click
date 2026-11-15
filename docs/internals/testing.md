@@ -697,7 +697,7 @@ first parses the Click library (about 250ms in the gate's build). With
 four (five where one case would be left alone), so a batch parses the library
 once. The batched files are `diagnostic_tests.rs`, `expansion_tests.rs`,
 `surface_syntax.rs`, `contract_tests.rs`, `execution_tests.rs`,
-`loop_tests.rs`, `project_tests.rs`, `transport_certificates.rs` and the
+`loop_tests.rs`, `project_tests.rs`, `preservation.rs` and the
 files under `tactic_tests/`: 1,000 cases in 253 batches.
 
 Each case starts on a fresh 8 MiB-stack thread, retaining thread-local

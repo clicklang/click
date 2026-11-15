@@ -160,7 +160,7 @@ follow it. None of these whole-operation rows is marked complete.
 | Check a write against loans; pay for selected conflict/evidence, not all loans or aliases | `LoanLedger::permits_memory_access_with_assumptions`, called by memory-access checking | `kernel/loans/tests.rs`: `write_barrier_does_not_enumerate_overlapping_loans`, `writes_without_active_memory_loans_do_not_walk_pointer_aliases` | L1: aliases with active loans and symbolic-loan comparisons. Zero-loan and concrete-overlap controls do not finish this operation. |
 | Apply a modular call, transfer resources and finish it; pay for selected contract and effects | `kernel/functions.rs`: `execute_verified_function_applications_with_suspension`, `call_kept_ownership`; `kernel/proof/execution.rs` | source `a_call_ignores_unrelated_owned_objects`; `kernel/functions/stable_view_call_tests.rs`: `returning_one_borrowed_owner_does_not_rebuild_its_memory_block` | C1: resource-family selection and selected-address composite candidates; non-direct member-count preparation is now flat. E1: execution/publication/completion accounting. |
 | Split/join branches and enter/exit loops; pay for explicit arms/interfaces and actual changes | `kernel/api.rs`: `abstract_c_state_for_interface_join_across`; `kernel/loops.rs`; `kernel/proof/execution.rs` | `kernel/loops/contract_exit_join_tests.rs`, `kernel/loops/frame_resource_tests.rs`; branch availability and interface-join controls | J1 coverage gap: fixed-delta joins across growing stable state; loop-head abstraction uses a different policy. Existing growth allowances do not establish ambient independence. |
-| Apply an explicit equality, arithmetic or transport certificate; pay for written nodes/premises | `kernel/proof/{transport_certificate,integer_arithmetic,term_rewrite}.rs` | `kernel/proof/transport_certificate.rs`: history independence, explicit-node linearity, selected resource fields; `kernel/proof/integer_arithmetic/tests.rs`: repeated premise and shared-DAG controls | Coverage gap: map every Surface certificate driver through lowering, premise lookup, application and publication; preserve cold expansion/replay evidence. Do not re-enter discovery during application. |
+| Apply an explicit equality, arithmetic certificate or preservation step; pay for written nodes/premises | `kernel/proof/{preservation,integer_arithmetic,term_rewrite}.rs` | `kernel/proof/preservation.rs`: history independence, explicit-step linearity, selected resource fields; `kernel/proof/integer_arithmetic/tests.rs`: repeated premise and shared-DAG controls | Coverage gap: map every Surface certificate driver through lowering, premise lookup, application and publication; preserve cold expansion/replay evidence. Do not re-enter discovery during application. |
 | Introduce binders, apply logical rules and publish checked results; pay for explicit proof structure | `ProofObject::apply_intro`, `ProofFacts::freshen_integer_forall_body`, proof execution event recording | selected term-rewrite, fact-key and event-publication controls | Q1 deferred nested-quantifier work; E1 deferred/revalidation candidates. A helper's flat lookup says nothing about repeated whole-body copying. |
 
 Test paths in the evidence column are relative to `src/scaling_tests/`.
@@ -186,10 +186,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 75 | 129 |
-| `examples/` | 30 | 371 |
+| `mdtests/` | 72 | 125 |
+| `examples/` | 29 | 369 |
 | `library/` | 0 | 0 |
-| Total | 105 | 500 |
+| Total | 101 | 494 |
 
 The 18 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Sixteen positive fixtures also supply exact input text
@@ -202,11 +202,10 @@ The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
 ### Migration blockers to resolve
 
-- `transport_wide_viewable_range_to_element_definedness.md` has only a pure
-  `viewable` premise, not an initialized input memory clause. The new entry
-  initialization facts do not justify inferring initialized contents from
-  liveness alone. Reduce the legacy rule's initialization assumptions before
-  choosing its explicit replacement.
+- Migrate the negative `transport_wide_viewable_range_to_element_definedness.md`
+  fixture without inferring initialized contents from its pure `viewable`
+  premise. Its legacy rule must remain refused; initializedness needs an
+  initialized input clause, a write, or an explicit definedness premise.
 - The unchanged `rbtree/rbtree-insert` example fails while re-folding its initial
   node, before its legacy transport calls. An explicit `node == identity`
   lookup moves the failure to the packed parent-pointer equality. Repair and

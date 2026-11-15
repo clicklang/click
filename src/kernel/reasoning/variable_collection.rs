@@ -948,7 +948,7 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
         | ProgramStatement::StepValue { expression, .. } => {
             collect_program_expression_bitvector_variables(expression, variables);
         }
-        ProgramStatement::CallAssign { arguments, .. } => {
+        ProgramStatement::CallConstruct { arguments, .. } => {
             for argument in arguments {
                 collect_program_expression_bitvector_variables(argument, variables);
             }

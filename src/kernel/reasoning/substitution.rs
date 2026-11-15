@@ -881,7 +881,7 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
             std::sync::Arc::new(
                 results
                     .iter()
-                    .map(|(call, value)| (*call, s.expression_value(value.value()).into()))
+                    .map(|(call, value)| (*call, s.expression_value(value).into()))
                     .collect(),
             )
         }),
@@ -975,11 +975,11 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             expression: s.program_expression(expression),
             prior_result: *prior_result,
         },
-        ProgramStatement::CallAssign {
+        ProgramStatement::CallConstruct {
             target,
             function_name,
             arguments,
-        } => ProgramStatement::CallAssign {
+        } => ProgramStatement::CallConstruct {
             target: target.clone(),
             function_name: function_name.clone(),
             arguments: arguments
@@ -1008,6 +1008,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             function_name,
             arguments,
             result_type,
+            result_aggregate_layout,
             result_pointee_constant,
             callee,
             ..
@@ -1020,6 +1021,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
                 .map(|argument| s.program_expression(argument))
                 .collect(),
             result_type: *result_type,
+            result_aggregate_layout: result_aggregate_layout.clone(),
             result_pointee_constant: *result_pointee_constant,
             callee: callee.as_ref().map(|callee| Callee {
                 pointer: s.program_expression(&callee.pointer),
@@ -2758,7 +2760,7 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
         | ProgramStatement::StepValue { expression, .. } => {
             collect_program_expression_bound_variables(expression, variables)
         }
-        ProgramStatement::CallAssign { arguments, .. }
+        ProgramStatement::CallConstruct { arguments, .. }
         | ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => {
             for argument in arguments {

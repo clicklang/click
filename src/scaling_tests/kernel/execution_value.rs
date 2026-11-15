@@ -254,3 +254,32 @@ fn retained_pointer_cells_do_not_export_prepared_dags_or_scan_sibling_cells() {
         }
     }
 }
+
+#[test]
+fn boolean_storage_handoffs_do_not_walk_expression_prefixes() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let leaf = KernelTerm::variable(KernelType::Bool, Variable(999510));
+        let mut root = leaf.clone();
+        for index in 0..size {
+            root = KernelTerm::boolean_if([
+                KernelTerm::variable(KernelType::Bool, Variable(999511 + index as u64)),
+                root,
+                leaf.clone(),
+            ]);
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..32 {
+                let value = ExecutionValue::Shared(root.clone());
+                assert!(value.pointer().is_none());
+                let stored = StoredExecutionValue::from(value);
+                assert_eq!(stored.clone().into_value().shared(), Some(&root));
+                let cell = StoredMemoryValue::from(stored.into_value());
+                assert_eq!(cell.into_value().shared(), Some(&root));
+            }
+        });
+        assert_eq!(work, 0, "size={size}");
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}

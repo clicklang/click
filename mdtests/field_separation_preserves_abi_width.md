@@ -46,12 +46,7 @@ void probe(struct node *p, struct node *q) {
                 normalize() using { separate(memory(p->other), memory(q->tag)); };
             }
             have p->other == at(before, p->other) by {
-                transport_certificate {
-                    premise 0: separate(statement(1).footprint, memory(p->other))
-                        => separate(statement(1).footprint, memory(p->other));
-                    preserve 0 => p->other == at(before, p->other);
-                    conclusion 1;
-                }
+                preserve(separate(statement(1).footprint, memory(p->other)));
             }
             mark after_call;
             step();
@@ -59,22 +54,11 @@ void probe(struct node *p, struct node *q) {
                 normalize() using { separate(memory(p->other), memory(q->other)); };
             }
             have p->other == at(after_call, p->other) by {
-                transport_certificate {
-                    premise 0: separate(statement(2).footprint, memory(p->other))
-                        => separate(statement(2).footprint, memory(p->other));
-                    preserve 0 => p->other == at(after_call, p->other);
-                    conclusion 1;
-                }
+                preserve(separate(statement(2).footprint, memory(p->other)));
             }
             have p->other == at(before, p->other) by {
-                transport_certificate {
-                    premise 0: p->other == at(after_call, p->other)
-                        => p->other == at(after_call, p->other);
-                    premise 1: at(after_call, p->other) == at(before, p->other)
-                        => at(after_call, p->other) == at(before, p->other);
-                    transitive 0, 1 => p->other == at(before, p->other);
-                    conclusion 2;
-                }
+                rewrite(p->other == at(after_call, p->other));
+                known();
             }
             step_until(function.exit); solve();
         },

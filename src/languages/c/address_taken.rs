@@ -243,7 +243,6 @@ fn statement_mentioned_names(statement: &CStatement, names: &mut BTreeSet<String
         CStatement::Declare { name, .. }
         | CStatement::DeclareStructValue { name, .. }
         | CStatement::Assign { name, .. }
-        | CStatement::CallAssign { target: name, .. }
         | CStatement::HeapAllocate { target: name, .. } => {
             names.insert(name.clone());
         }
@@ -375,9 +374,7 @@ pub(crate) fn child_statements<'a>(
             ..
         }
         | CStatement::Assign { expression, .. } => expressions.push(expression),
-        CStatement::CallAssign { arguments, .. }
-        | CStatement::Call { arguments, .. }
-        | CStatement::CallResult { arguments, .. } => {
+        CStatement::Call { arguments, .. } | CStatement::CallResult { arguments, .. } => {
             expressions.extend(arguments.iter());
         }
         CStatement::IndirectCall {

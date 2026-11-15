@@ -90,7 +90,15 @@ fn numeric_match_opaque_scrutinee_identity_keeps_exact_roots_and_shared_bodies()
         let mut scrutinee = tests::scrutinee();
         scrutinee.node = AlgebraicTermNode::PureFunctionApplication {
             name: "opaque_model".into(),
-            arguments: vec![],
+            // The call itself is now structural. Keep a genuinely opaque
+            // producer payload in its argument to exercise this boundary.
+            arguments: vec![PureFunctionArgument::Value(ProgramValue::Pointer(
+                PointerValue::new(
+                    Pointer::symbolic(Variable(991984)),
+                    ProgramType::Int32Pointer,
+                )
+                .with_pointee_constant(true),
+            ))],
         };
         let make = || {
             KernelMatch::new(

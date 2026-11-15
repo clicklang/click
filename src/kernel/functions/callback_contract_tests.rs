@@ -989,12 +989,13 @@ fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool)
                     callee: None,
                 }
             } else {
+                let (call, result) = program_call_value(0, callee, vec![argument]);
                 program_seq(
-                    program_call_assign("result", callee, vec![argument]),
+                    call,
                     program_return(if alter_result {
                         crate::kernel::program_expression::int32_literal(0)
                     } else {
-                        crate::kernel::program_expression::variable("result")
+                        result
                     }),
                 )
             },

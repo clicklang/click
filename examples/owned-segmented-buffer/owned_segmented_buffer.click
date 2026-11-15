@@ -162,23 +162,13 @@ int32 owned_segmented_buffer_set_first(
         normalize() using { at(before_store, separate(memory(owner->first_data), memory(owner->first_data[index]))); };
     }
     have owner->first_data == at(before_store, owner->first_data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(owner->first_data))
-                => separate(statement(0).footprint, memory(owner->first_data));
-            preserve 0 => owner->first_data == at(before_store, owner->first_data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(owner->first_data)));
     }
     have separate(statement(0).footprint, memory(owner->second_data)) by {
         normalize() using { at(before_store, separate(memory(owner->second_data), memory(owner->first_data[index]))); };
     }
     have owner->second_data == at(before_store, owner->second_data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(owner->second_data))
-                => separate(statement(0).footprint, memory(owner->second_data));
-            preserve 0 => owner->second_data == at(before_store, owner->second_data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(owner->second_data)));
     }
     step();
     solve();
@@ -230,23 +220,13 @@ int32 owned_segmented_buffer_set_second(
         normalize() using { at(before_store, separate(memory(owner->first_data), memory(owner->second_data[index]))); };
     }
     have owner->first_data == at(before_store, owner->first_data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(owner->first_data))
-                => separate(statement(0).footprint, memory(owner->first_data));
-            preserve 0 => owner->first_data == at(before_store, owner->first_data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(owner->first_data)));
     }
     have separate(statement(0).footprint, memory(owner->second_data)) by {
         normalize() using { at(before_store, separate(memory(owner->second_data), memory(owner->second_data[index]))); };
     }
     have owner->second_data == at(before_store, owner->second_data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(owner->second_data))
-                => separate(statement(0).footprint, memory(owner->second_data));
-            preserve 0 => owner->second_data == at(before_store, owner->second_data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(owner->second_data)));
     }
     step();
     solve();
@@ -334,14 +314,17 @@ int32 owned_segmented_buffer_pipeline(
     step();
     step();
     step();
+    step();
     unfold(owned_segmented_buffer(owner));
     step();
-    have at(region(4).entry, first_data[0]) == at(region(4).entry, first_value) by {
-        rewrite(at(region(4).entry, first_value) == at(region(4).entry, owner->first_data[0]));
-        rewrite(at(region(4).entry, owner->first_data) == at(region(4).entry, first_data));
+    step();
+    have at(statement(4).entry, first_data[0]) == at(statement(4).entry, first_value) by {
+        rewrite(at(statement(4).entry, first_value) == at(statement(4).entry, owner->first_data[0]));
+        rewrite(at(statement(4).entry, owner->first_data) == at(statement(4).entry, first_data));
         normalize();
     }
     have first_data[0] == first_value by { known(); }
+    step();
     step();
     have owner->first_len == first_len by { known(); }
     have owner->second_len == second_len by { known(); }
@@ -350,13 +333,14 @@ int32 owned_segmented_buffer_pipeline(
     have first_data[0] == first_value by { known(); }
     have owner->first_data == first_data by { known(); }
     have owner->second_data == second_data by { known(); }
-    have at(region(5).entry, second_data[0]) == at(region(5).entry, second_value) by {
-        rewrite(at(region(5).entry, second_value) == at(region(5).entry, owner->second_data[0]));
-        rewrite(at(region(5).entry, owner->second_data) == at(region(5).entry, second_data));
+    have at(statement(5).entry, second_data[0]) == at(statement(5).entry, second_value) by {
+        rewrite(at(statement(5).entry, second_value) == at(statement(5).entry, owner->second_data[0]));
+        rewrite(at(statement(5).entry, owner->second_data) == at(statement(5).entry, second_data));
         normalize();
     }
     have second_data[0] == second_value by { known(); }
     fold(owned_segmented_buffer(owner));
+    step();
     step();
     have first_data[0] == first_value by { known(); }
     apply(int32_equality_transitive(c(result), first_data[0], first_value)) using {

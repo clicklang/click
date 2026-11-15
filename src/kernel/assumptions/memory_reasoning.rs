@@ -248,6 +248,39 @@ impl PureFactContext {
             if facts.contains(&exact) {
                 return true;
             }
+            // Allocation bookkeeping and local cleanup have one adjacent
+            // entry. Select its fact by snapshot key, without enumerating
+            // other facts about this address. The edge check below must prove
+            // that cleanup did not retire this cell.
+            let current = crate::kernel::intern_memory_ref(memory);
+            if let Some(step) = current.derivation()
+                && matches!(
+                    step.as_ref(),
+                    crate::kernel::MemoryDerivation::HeapAllocationPending { .. }
+                        | crate::kernel::MemoryDerivation::HeapAllocationFailed { .. }
+                        | crate::kernel::MemoryDerivation::LocalLifetimeEnded { .. }
+                )
+            {
+                let before = step.base();
+                let premise = Proposition::MemoryReadDefined {
+                    memory: before.as_ref().clone(),
+                    pointer: candidate.clone(),
+                    value_type,
+                };
+                if facts.contains(&premise)
+                    && !candidate.blocks_proven_distinct(pointer)
+                    && self.pointers_known_equal(candidate, pointer)
+                    && crate::kernel::memory_provenance::typed_read_has_same_memory_source(
+                        before,
+                        memory,
+                        candidate,
+                        value_type.byte_width(),
+                        self,
+                    )
+                {
+                    return true;
+                }
+            }
             // A snapshot bucket is not a premise list. A selected source must
             // retain its type, address, lifetime, and value-preserving edge.
             if facts.len() != 1 {
@@ -301,8 +334,8 @@ impl PureFactContext {
                 .is_some_and(|(source, kind)| *kind == value_type && evidence_at(source))
     }
 
-    /// A successful typed specification evaluation proves validity. Value
-    /// equalities are deliberately absent from the initialization authority.
+    /// Typed read validity requires initialization as well as a live range.
+    /// Specification evaluation and value equalities alone cannot initialize bytes.
     pub(crate) fn proves_memory_read_defined(
         &self,
         memory: &Memory,
@@ -312,14 +345,60 @@ impl PureFactContext {
         if self.has_memory_read_defined_evidence(memory, pointer, value_type) {
             return true;
         }
-        if memory
-            .known_value(pointer)
-            .is_some_and(|value| value_type.read_cell(&value).is_some())
-            && !memory.is_ended_local_address(pointer)
-            && !memory.is_deallocated_heap_address(pointer, self)
-            && !memory.is_uninitialized_heap_address(pointer, value_type.byte_width(), self)
-        {
+        let initialized_cell = |address: &Pointer| {
+            memory
+                .known_value(address)
+                .is_some_and(|value| value_type.read_cell(&value).is_some())
+                && !memory.is_ended_local_address(address)
+                && !memory.is_deallocated_heap_address(address, self)
+                && !memory.is_uninitialized_heap_address(address, value_type.byte_width(), self)
+        };
+        if initialized_cell(pointer) {
             return true;
+        }
+        // The equality index selects one concrete storage anchor, including
+        // its affine offset. Do not enumerate alternative address spellings.
+        let storage = self.equality_graph.storage_address(pointer);
+        // Viewability establishes an address range, not initialized contents.
+        // A typed read can span several cached cells (for example a pointer
+        // in a struct represented by 32-bit cells). Inspect only its selected
+        // bytes, never the cache or memory history. Specification evaluation
+        // below still checks the typed value, bounds, and lifetime.
+        let initialized_bytes = |address: &Pointer| {
+            let width = value_type.byte_width();
+            if memory.has_initialized_bytes_at(address, width) {
+                return true;
+            }
+            let mut covered = 0;
+            while covered < width {
+                crate::instrumentation::record_deterministic_work(1);
+                let Some(value) = memory.known_value(&address.offset_by_bytes(covered)) else {
+                    return false;
+                };
+                let bytes = value.byte_width();
+                if bytes == 0 {
+                    return false;
+                }
+                covered += bytes.min(width - covered);
+            }
+            true
+        };
+        let canonical = self
+            .equality_graph
+            .canonical_pointer(pointer)
+            .and_then(|coordinate| {
+                Some(Pointer {
+                    block: coordinate.representative,
+                    offset: coordinate.offset.to_offset_term()?,
+                })
+            });
+        if !initialized_bytes(pointer)
+            && (storage == *pointer || !initialized_bytes(&storage))
+            && !canonical.as_ref().is_some_and(|address| {
+                address != pointer && address != &storage && initialized_bytes(address)
+            })
+        {
+            return false;
         }
         // With no range, alias, or allocation evidence, other materialized
         // cells cannot justify this unknown address. This is also the empty

@@ -25,6 +25,10 @@ int32 planned(int32 u) {
     owns g[0..4];
     ensures result == 8 or to_integer(result) == to_integer(old(g[0]) + 1);
 } by {
+    have defined(old(g[0])) by {
+        instantiate(forall (k: int32) { 0 <= k and k < 4 implies defined(old(g[k])) }, 0);
+        known();
+    }
     step();
     step();
     step();

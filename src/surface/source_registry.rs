@@ -427,6 +427,7 @@ impl FunctionSourceRequirements {
 pub(in crate::surface) struct FunctionSourceRegistry {
     functions: PersistentMap<String, FunctionSourceRequirements>,
     claim_entries: ClaimEntryCache,
+    program: Option<crate::kernel::ProgramContractBodies>,
 }
 
 /// One entry/root session per function proof, shared by its clause scripts.
@@ -509,6 +510,7 @@ impl FunctionSourceRegistry {
         Ok(Self {
             functions,
             claim_entries: ClaimEntryCache::default(),
+            program: None,
         })
     }
 
@@ -534,7 +536,20 @@ impl FunctionSourceRegistry {
         Self {
             functions: self.functions.clone(),
             claim_entries: ClaimEntryCache::default(),
+            program: None,
         }
+    }
+
+    pub(in crate::surface) fn with_program(
+        mut self,
+        program: crate::kernel::ProgramContractBodies,
+    ) -> Self {
+        self.program = Some(program);
+        self
+    }
+
+    pub(in crate::surface) fn program(&self) -> Option<&crate::kernel::ProgramContractBodies> {
+        self.program.as_ref()
     }
 
     pub(in crate::surface) fn claim_entries(&self) -> &ClaimEntryCache {

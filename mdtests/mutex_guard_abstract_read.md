@@ -62,6 +62,7 @@ int32 read_counter(struct counter *counter) {
     step();
     let held = fold(holding(counter), { tag: 0 });
     step(read_locked, { h: held, state: state });
+    step();
     unfold(held);
     step();
     step();

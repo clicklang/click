@@ -257,7 +257,7 @@ fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
             pointer: expression,
         } => expression_reads(expression),
         ProgramStatement::Call { arguments, .. }
-        | ProgramStatement::CallAssign { arguments, .. }
+        | ProgramStatement::CallConstruct { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => arguments.iter().any(expression_reads),
         ProgramStatement::Store { pointer, value }
         | ProgramStatement::TypedStore { pointer, value, .. } => {
@@ -305,7 +305,7 @@ fn syntax_statement_reads(statement: &syntax::CStatement) -> bool {
             pointer: expression,
             ..
         } => read(expression),
-        S::Call { arguments, .. } | S::CallAssign { arguments, .. } => arguments.iter().any(read),
+        S::Call { arguments, .. } | S::CallResult { arguments, .. } => arguments.iter().any(read),
         S::Store { pointer, value, .. }
         | S::SequentialStore {
             target: pointer,
@@ -525,12 +525,43 @@ impl SourceExecutionLayout {
                 }
                 _ => {
                     let statement_index = *next_statement_index;
-                    if let ProgramStatement::HeapAllocate { target, .. } = statement {
+                    if let ProgramStatement::CallResult { call, .. } = statement {
+                        layout.call_numbers.insert(statement_index, *call);
+                        layout.step_regions.insert(*call, statement_index);
+                    }
+                    if let ProgramStatement::Call { .. }
+                    | ProgramStatement::CallResult { .. }
+                    | ProgramStatement::CallConstruct { .. } = statement
+                    {
+                        layout.calls.insert(statement_index);
+                    }
+                    if let ProgramStatement::Call {
+                        function_name,
+                        callee: None,
+                        ..
+                    }
+                    | ProgramStatement::CallResult {
+                        function_name,
+                        callee: None,
+                        ..
+                    }
+                    | ProgramStatement::CallConstruct { function_name, .. } = statement
+                    {
+                        layout.call_targets.insert(
+                            statement_index,
+                            crate::surface::call_source_spelling(function_name).to_string(),
+                        );
+                    }
+                    if let ProgramStatement::CallConstruct { target, .. }
+                    | ProgramStatement::HeapAllocate { target, .. } = statement
+                    {
                         layout.call_results.insert(statement_index, target.clone());
+                    }
+                    if matches!(statement, ProgramStatement::HeapAllocate { .. }) {
                         layout.allocation_regions.insert(statement_index);
                     }
                     if let ProgramStatement::Assign { name, .. }
-                    | ProgramStatement::CallAssign { target: name, .. }
+                    | ProgramStatement::CallConstruct { target: name, .. }
                     | ProgramStatement::Update {
                         target: ProgramExpression::Variable(name),
                         ..
@@ -706,14 +737,12 @@ impl SourceExecutionLayout {
                 layout.step_regions.insert(*step, index);
                 layout.prior_steps.insert(*step, name.clone());
             }
-            if let syntax::CStatement::CallAssign { .. }
-            | syntax::CStatement::Call { .. }
-            | syntax::CStatement::CallResult { .. } = statement
+            if let syntax::CStatement::Call { .. } | syntax::CStatement::CallResult { .. } =
+                statement
             {
                 layout.calls.insert(index);
             }
-            if let syntax::CStatement::CallAssign { function_name, .. }
-            | syntax::CStatement::Call {
+            if let syntax::CStatement::Call {
                 function_name,
                 callee: None,
                 ..
@@ -729,9 +758,7 @@ impl SourceExecutionLayout {
                     crate::surface::call_source_spelling(function_name).to_string(),
                 );
             }
-            if let syntax::CStatement::CallAssign { target, .. }
-            | syntax::CStatement::HeapAllocate { target, .. } = statement
-            {
+            if let syntax::CStatement::HeapAllocate { target, .. } = statement {
                 layout.call_results.insert(index, target.clone());
             }
             if matches!(statement, syntax::CStatement::HeapAllocate { .. }) {
@@ -914,7 +941,10 @@ impl SourceExecutionLayout {
                     let statement_index = *next_statement_index;
                     record_site(layout, statement_index, statement, enclosing);
                     if let syntax::CStatement::Assign { name, .. }
-                    | syntax::CStatement::CallAssign { target: name, .. }
+                    | syntax::CStatement::AggregateCopy {
+                        target: syntax::CExpression::Variable(name),
+                        ..
+                    }
                     | syntax::CStatement::Update {
                         target: syntax::CExpression::Variable(name),
                         ..
@@ -1175,9 +1205,35 @@ impl SourceExecutionLayout {
     ) -> Result<usize, String> {
         use crate::surface::{ProgramPointKind, SourcePathStep};
         let data = &self.data;
+        // `call(f, j)` and `call(j)` on their own count the function's
+        // calls, in the order they run.
+        match steps {
+            [SourcePathStep::Call(function, index)] => {
+                let calls = data
+                    .calls
+                    .iter()
+                    .filter(|region| data.call_targets.get(region) == Some(function))
+                    .collect::<Vec<_>>();
+                return calls.get(*index).map(|region| **region).ok_or_else(|| {
+                    format!(
+                        "this function calls `{function}` {} time(s), so it has no `call({function}, {index})`",
+                        calls.len()
+                    )
+                });
+            }
+            [SourcePathStep::AnyCall(index)] => {
+                return data.calls.iter().nth(*index).copied().ok_or_else(|| {
+                    format!(
+                        "this function makes {} call(s), so it has no `call({index})`",
+                        data.calls.len()
+                    )
+                });
+            }
+            _ => {}
+        }
         if data.source_statements.is_empty() {
             return Err(
-                "this function's source records no statements as written; name its points with `region(N)`"
+                "this function's source records no statements as written; name its points with `call(f, j)` or `region(N)`"
                     .into(),
             );
         }
@@ -1375,7 +1431,24 @@ impl SourceExecutionLayout {
     ) -> Option<Vec<crate::surface::SourcePathStep>> {
         use crate::surface::SourcePathStep;
         let data = &self.data;
-        let path = data.region_paths.get(&region)?;
+        // A call with no statement as written is named among the
+        // function's calls.
+        let Some(path) = data.region_paths.get(&region) else {
+            if !data.calls.contains(&region) {
+                return None;
+            }
+            let earlier = data.calls.range(..region);
+            let steps = vec![match data.call_targets.get(&region) {
+                Some(function) => SourcePathStep::Call(
+                    function.clone(),
+                    earlier
+                        .filter(|earlier| data.call_targets.get(earlier) == Some(function))
+                        .count(),
+                ),
+                None => SourcePathStep::AnyCall(earlier.count()),
+            }];
+            return (self.source_path_region(&steps, kind) == Ok(region)).then_some(steps);
+        };
         let mut steps = path
             .iter()
             .map(|index| SourcePathStep::Statement(*index as usize))
@@ -1926,6 +1999,29 @@ mod source_execution_layout_tests {
             native.data.allocation_regions
         );
         assert_eq!(source.data.call_results, native.data.call_results);
+    }
+
+    #[test]
+    fn retained_calls_have_distinct_assignment_points_in_typed_layouts() {
+        let function =
+            syntax::parse_function("int32 f() { int32 x; x=first(); x=second(); return x; }")
+                .unwrap();
+        let typed = function
+            .clone()
+            .with_prelowered_kernel_function(function.to_kernel_function());
+        let source = SourceExecutionLayout::for_function(&function).unwrap();
+        let native = SourceExecutionLayout::for_function(&typed).unwrap();
+        assert_eq!(source.data.call_numbers.len(), 2);
+        assert_eq!(native.data.call_numbers, source.data.call_numbers);
+        assert_eq!(native.data.step_regions, source.data.step_regions);
+        assert_eq!(native.data.call_targets, source.data.call_targets);
+        for (occurrence, (region, call)) in native.data.call_numbers.iter().enumerate() {
+            assert_eq!(native.step_region(*call), Some(*region));
+            assert_eq!(
+                native.assignment_entry("x", occurrence).unwrap(),
+                region + 1
+            );
+        }
     }
 
     #[test]

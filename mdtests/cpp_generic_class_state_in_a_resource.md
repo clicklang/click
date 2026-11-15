@@ -272,21 +272,11 @@ template<class T> Stack<T>::~Stack() {
                     step();
                     have separate(region(1).footprint, memory(this->head)) by { normalize() using {}; }
                     have this->head == at(before_node, this->head) by {
-                        transport_certificate {
-                            premise 0: separate(region(1).footprint, memory(this->head))
-                                => separate(region(1).footprint, memory(this->head));
-                            preserve 0 => this->head == at(before_node, this->head);
-                            conclusion 1;
-                        }
+                        preserve(separate(region(1).footprint, memory(this->head)));
                     }
                     have separate(region(1).footprint, memory(this->head->next)) by { normalize() using {}; }
                     have this->head->next == at(before_node, this->head->next) by {
-                        transport_certificate {
-                            premise 0: separate(region(1).footprint, memory(this->head->next))
-                                => separate(region(1).footprint, memory(this->head->next));
-                            preserve 0 => this->head->next == at(before_node, this->head->next);
-                            conclusion 1;
-                        }
+                        preserve(separate(region(1).footprint, memory(this->head->next)));
                     }
                     have node == this->head by { known(); }
                     step();
@@ -299,12 +289,7 @@ template<class T> Stack<T>::~Stack() {
                         normalize() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
                     }
                     have this->head == at(before_delete, this->head) by {
-                        transport_certificate {
-                            premise 0: separate(region(3).footprint, memory(this->head))
-                                => separate(region(3).footprint, memory(this->head));
-                            preserve 0 => this->head == at(before_delete, this->head);
-                            conclusion 1;
-                        }
+                        preserve(separate(region(3).footprint, memory(this->head)));
                     }
                     have this->head == at(before_node, this->head->next) by { known(); }
                 },

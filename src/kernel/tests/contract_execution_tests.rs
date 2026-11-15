@@ -1595,7 +1595,8 @@ fn verified_function_rule_applies_contract_without_executing_body() {
             applied_tactics: Default::default(),
         });
     let statement = program_seq(
-        program_call_assign(
+        program_call_then_assign(
+            0,
             "result",
             "opaque_helper",
             vec![crate::kernel::program_expression::int32_literal(5)],
@@ -1603,7 +1604,9 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         program_return(crate::kernel::program_expression::variable("result")),
     );
     let execution = prove_symbolic_program_execution_paths_with_environment(
-        ExecutionState::new().with_population_creation_tracking(),
+        ExecutionState::new()
+            .with_population_creation_tracking()
+            .with_local("result", int32(0)),
         statement.clone(),
         PureFactContext::new(),
         environment.clone(),
@@ -1652,7 +1655,9 @@ fn verified_function_rule_applies_contract_without_executing_body() {
     ));
 
     let body_execution = prove_symbolic_program_execution_paths_with_environment(
-        ExecutionState::new().with_population_creation_tracking(),
+        ExecutionState::new()
+            .with_population_creation_tracking()
+            .with_local("result", int32(0)),
         statement,
         PureFactContext::new(),
         environment,
@@ -1713,7 +1718,8 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
         });
     let execution = prove_symbolic_program_execution_paths_with_environment(
         ExecutionState::new().with_population_creation_tracking(),
-        program_call_assign(
+        program_call_then_assign(
+            1,
             "result",
             "pointer_is_null",
             vec![crate::kernel::program_expression::int32_literal(0)],
@@ -1793,7 +1799,8 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
         ExecutionState::new()
             .with_population_creation_tracking()
             .with_memory(Memory::new().with_block("heap", 8).store(stored, int32(0))),
-        program_call_assign(
+        program_call_then_assign(
+            2,
             "result",
             "opaque_alias_probe",
             vec![crate::kernel::program_expression::pointer_value(queried)],
@@ -1854,8 +1861,11 @@ fn opaque_pointer_result_can_alias_its_argument() {
             applied_tactics: Default::default(),
         });
     let execution = prove_symbolic_program_execution_paths_with_environment(
-        ExecutionState::new().with_population_creation_tracking(),
-        program_call_assign(
+        ExecutionState::new()
+            .with_population_creation_tracking()
+            .with_local("result", ProgramValue::pointer(Pointer::null())),
+        program_call_then_assign(
+            3,
             "result",
             "opaque_identity_pointer",
             vec![crate::kernel::program_expression::pointer_value(
@@ -1935,13 +1945,15 @@ fn verified_immutable_calls_allocate_distinct_results() {
             applied_tactics: Default::default(),
         });
     let statement = program_seq(
-        program_call_assign(
+        program_call_then_assign(
+            4,
             "first",
             "opaque_identity",
             vec![crate::kernel::program_expression::int32_literal(5)],
         ),
         program_seq(
-            program_call_assign(
+            program_call_then_assign(
+                5,
                 "second",
                 "opaque_identity",
                 vec![crate::kernel::program_expression::int32_literal(7)],
@@ -1950,7 +1962,10 @@ fn verified_immutable_calls_allocate_distinct_results() {
         ),
     );
     let execution = prove_symbolic_program_execution_paths_with_environment(
-        ExecutionState::new().with_population_creation_tracking(),
+        ExecutionState::new()
+            .with_population_creation_tracking()
+            .with_local("first", int32(0))
+            .with_local("second", int32(0)),
         statement,
         PureFactContext::new(),
         environment,
@@ -2013,8 +2028,8 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
 
     let (first_execution, _) =
         prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
-            ExecutionState::new().with_population_creation_tracking(),
-            program_call_assign("first", "opaque_identity", vec![crate::kernel::program_expression::int32_literal(5)]),
+            ExecutionState::new().with_population_creation_tracking().with_local("first", int32(0)).with_local("second", int32(0)),
+            program_call_then_assign(6, "first", "opaque_identity", vec![crate::kernel::program_expression::int32_literal(5)]),
             PureFactContext::new(),
             environment.clone(),
             ExecutionSemantics::APPLY_VERIFIED_RULES,
@@ -2039,7 +2054,7 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
     let (second_execution, _) =
         prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
             *first_state.clone(),
-            program_call_assign("second", "opaque_identity", vec![crate::kernel::program_expression::int32_literal(7)]),
+            program_call_then_assign(7, "second", "opaque_identity", vec![crate::kernel::program_expression::int32_literal(7)]),
             PureFactContext::new(),
             environment,
             ExecutionSemantics::APPLY_VERIFIED_RULES,
@@ -2331,13 +2346,14 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
     let environment = ExecutionEnvironment::new()
         .with_function(function)
         .with_verified_function_rule(rule);
-    let call_statement = program_call_assign(
-        "call_result",
+    let (call_statement, call_value) = program_call_value(
+        8,
         "modular_maybe_throw",
         vec![crate::kernel::program_expression::int32_literal(0)],
     );
     let call_state = ExecutionState::new()
         .with_population_creation_tracking()
+        .with_local("call_result", int32(0))
         .with_local("after", int32(0));
     let call_root = crate::kernel::proof::ProofFacts::from_ordered(&[]);
     let call_paths = prove_symbolic_program_execution_paths_with_environment(
@@ -2411,7 +2427,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
         exceptional.theorem(),
     ));
     let statement = program_seq(
-        call_statement,
+        program_seq(call_statement, program_assign("call_result", call_value)),
         program_seq(
             program_assign("after", crate::kernel::program_expression::int32_literal(1)),
             program_return(crate::kernel::program_expression::variable("call_result")),
@@ -2488,7 +2504,10 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                     state.locals().get_native("after").as_deref(),
                     Some(&int32(0))
                 );
-                assert!(state.locals().get("call_result").is_none());
+                assert_eq!(
+                    state.locals().get_native("call_result").as_deref(),
+                    Some(&int32(0))
+                );
                 let ProgramValue::Int32(value) = value.clone().into_native() else {
                     panic!("exceptional payload should be int32")
                 };
@@ -5214,7 +5233,8 @@ fn call_requirement_obligations_carry_their_lowering_record() {
         .with_local("n", int32(MachineTerm::Variable(Variable(31_000))));
     let execution = prove_symbolic_program_execution_paths_with_environment(
         state,
-        program_call_assign(
+        program_call_then_assign(
+            9,
             "result",
             "successor_is_positive",
             vec![crate::kernel::program_expression::variable("n")],
@@ -5329,7 +5349,7 @@ fn call_path(
 ) -> SymbolicExecution {
     prove_symbolic_program_execution_paths_with_environment(
         symbolic_caller_state(),
-        program_call_assign("result", callee, vec![argument]),
+        program_call_then_assign(10, "result", callee, vec![argument]),
         PureFactContext::new(),
         environment,
         ExecutionSemantics::APPLY_VERIFIED_RULES,
@@ -6248,7 +6268,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             name,
             function.parameters().to_vec(),
             program_seq(
-                program_call_assign(
+                program_call_construct(
                     C_CONTRACT_RESULT_NAME,
                     callee,
                     vec![crate::kernel::program_expression::variable("input")],
@@ -6424,7 +6444,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
         program_seq(
             program_allocate_aggregate_destination("node", layout),
             program_seq(
-                program_call_assign(
+                program_call_construct(
                     "node",
                     "outer_constructed_node",
                     vec![crate::kernel::program_expression::int32_literal(37)],
@@ -6661,7 +6681,7 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
         program_seq(
             program_allocate_aggregate_destination("node", layout),
             program_seq(
-                program_call_assign(
+                program_call_construct(
                     "node",
                     "parameter_factory",
                     vec![crate::kernel::program_expression::int32_literal(37)],

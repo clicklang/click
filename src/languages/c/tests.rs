@@ -5266,7 +5266,6 @@ fn c_syntax_models_missing_else_and_empty_statements_as_skip() {
             | syntax::CStatement::Assign { .. }
             | syntax::CStatement::Call { .. }
             | syntax::CStatement::CallResult { .. }
-            | syntax::CStatement::CallAssign { .. }
             | syntax::CStatement::IndirectCall { .. }
             | syntax::CStatement::HeapAllocate { .. }
             | syntax::CStatement::HeapFree { .. }
@@ -6461,7 +6460,7 @@ fn c_syntax_accepts_realloc_with_two_arguments() {
 
     fn find_realloc(statement: &syntax::CStatement) -> Option<usize> {
         match statement {
-            syntax::CStatement::CallAssign {
+            syntax::CStatement::CallResult {
                 function_name,
                 arguments,
                 ..
@@ -10325,8 +10324,7 @@ fn c_field_source_ids_survive_expression_rebuilds() {
     .expect("call argument field access should parse");
     fn call_argument(statement: &syntax::CStatement) -> Option<&syntax::CExpression> {
         match statement {
-            syntax::CStatement::CallAssign { arguments, .. }
-            | syntax::CStatement::CallResult { arguments, .. } => arguments.first(),
+            syntax::CStatement::CallResult { arguments, .. } => arguments.first(),
             syntax::CStatement::Seq(first, second) => {
                 call_argument(first).or_else(|| call_argument(second))
             }
@@ -11246,7 +11244,7 @@ fn c_syntax_lowers_aggregate_conditional_call_argument() {
     let debug = format!("{:?}", caller.body());
     assert!(debug.contains("DeclareStructValue"));
     assert!(debug.contains("If {"));
-    assert!(debug.contains("CallAssign"));
+    assert!(debug.contains("CallResult"));
     assert!(!debug.contains("Ternary {"));
 }
 
@@ -11899,7 +11897,7 @@ fn c_function_pointer_signatures_preserve_struct_pointer_tags() {
         signature.parameters()[0].interface_type(),
         crate::languages::interface::InterfaceType::Int32Pointer
     );
-    assert!(format!("{:?}", apply.body()).contains("CallAssign"));
+    assert!(format!("{:?}", apply.body()).contains("CallResult"));
 }
 
 #[test]
@@ -15013,4 +15011,92 @@ fn aggregate_expression_result_members_are_not_source_lvalues() {
             syntax::parse_functions(&source).expect_err("aggregate result member is not an lvalue");
         assert!(error.to_string().contains("not an lvalue"), "{error}");
     }
+}
+
+#[test]
+fn scalar_call_assignment_retains_a_result_between_two_operations() {
+    let function = syntax::parse_function("int32 caller() { int32 x; x = other(); return x; }")
+        .expect("scalar call assignment parses");
+    let body = format!("{:?}", function.body());
+    assert!(body.contains("CallResult {"), "{body}");
+    assert!(body.contains("StepResult {"), "{body}");
+    assert!(body.contains("Assign {"), "{body}");
+    assert!(!body.contains("CallConstruct"), "{body}");
+}
+
+#[test]
+fn aggregate_call_assignment_retains_a_result_before_copying() {
+    let functions = syntax::parse_functions(
+        "struct pair { int32 x; int32 y; }; struct pair make();
+         int32 caller() { struct pair p = make(); p = make(); return p.x; }",
+    )
+    .expect("aggregate call assignments parse");
+    let body = format!("{:?}", functions[0].body());
+    assert_eq!(body.matches("CallResult {").count(), 2, "{body}");
+    assert_eq!(body.matches("AggregateCopy {").count(), 2, "{body}");
+    assert!(!body.contains("CallConstruct"), "{body}");
+}
+
+#[test]
+fn aggregate_call_assignment_rejects_a_different_struct_destination() {
+    let error = syntax::parse_functions(
+        "struct a { int32 x; }; struct b { int32 x; }; struct a make();
+         int32 caller() { struct b p = make(); return p.x; }",
+    )
+    .expect_err("same-sized structs are not interchangeable");
+    assert!(
+        error.message().contains("destination of type `struct a`"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn nested_aggregate_call_result_uses_the_same_explicit_copy() {
+    let functions = syntax::parse_functions(
+        "struct pair { int32 x; int32 y; }; struct pair make();
+         int32 read(struct pair p); int32 caller() { return read(make()); }",
+    )
+    .expect("nested aggregate call parses");
+    let body = format!("{:?}", functions[0].body());
+    assert_eq!(body.matches("CallResult {").count(), 2, "{body}");
+    assert_eq!(body.matches("AggregateCopy {").count(), 1, "{body}");
+    assert!(!body.contains("CallConstruct"), "{body}");
+}
+
+#[test]
+fn realloc_argument_calls_are_separate_retained_operations() {
+    let functions = syntax::parse_functions(
+        "int32 bytes();
+         int32* resize(int32* p) { p = realloc(p, bytes()); return p; }",
+    )
+    .expect("realloc argument calls parse");
+    let mut pending = vec![functions[0].body()];
+    let mut calls = std::collections::BTreeSet::new();
+    let mut reallocation = None;
+    while let Some(statement) = pending.pop() {
+        match statement {
+            syntax::CStatement::Seq(left, right) => pending.extend([left.as_ref(), right.as_ref()]),
+            syntax::CStatement::CallResult {
+                call,
+                function_name,
+                arguments,
+                ..
+            } => {
+                assert!(
+                    calls.insert(*call),
+                    "each retained result has its own identity"
+                );
+                if function_name == "realloc" {
+                    reallocation = Some(arguments);
+                }
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(calls.len(), 2);
+    let arguments = reallocation.expect("a realloc call");
+    assert!(matches!(
+        &arguments[1],
+        syntax::CExpression::StepResult { .. }
+    ));
 }

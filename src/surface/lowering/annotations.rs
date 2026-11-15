@@ -1485,7 +1485,7 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
         | ProgramStatement::Declare { .. }
         | ProgramStatement::DeclareAggregate { .. }
         | ProgramStatement::Assign { .. }
-        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::CallConstruct { .. }
         | ProgramStatement::Call { .. }
         | ProgramStatement::CallResult { .. }
         | ProgramStatement::HeapAllocate { .. }
@@ -7502,6 +7502,18 @@ impl AnnotationLowerer<'_> {
                     });
                 }
                 self.lower_click_function_call_to_algebraic_spec(name, arguments, environment)
+            }
+            // A region result that is no enum value: say why, as a call the
+            // function does not make.
+            ContractExpression::RegionResult(region) => {
+                let snapshots = self
+                    .snapshots
+                    .ok_or("`.result` names a region of a function body being executed")?;
+                snapshots.region_result_value(region)?;
+                Err(format!(
+                    "`{}.result` is not an algebraic value",
+                    diagnostics::describe_code_region_ref(region)
+                ))
             }
             _ => Err("expected an algebraic value".to_string()),
         }

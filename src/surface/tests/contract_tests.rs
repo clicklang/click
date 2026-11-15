@@ -1599,8 +1599,8 @@ fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
     assert!(!caller_expansion.contains("solve();"), "{expanded}");
     assert_eq!(
         caller_expansion.matches("step();").count(),
-        4,
-        "each caller statement should retain one checked step: {expanded}"
+        6,
+        "each call and assignment should retain its own checked step: {expanded}"
     );
     verify_c_sources(&expanded, sources)
         .expect("the rewritten declared-resource call proof should verify normally");

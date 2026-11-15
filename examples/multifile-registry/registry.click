@@ -97,6 +97,7 @@ int32 registry_run() {
     have alpha::record_alpha::batches[0][0] < 1000;
     step();
     step();
+    step();
     have first == 2;
     have counters[0].value == 11;
     have counters[0].value > -1000;
@@ -105,6 +106,7 @@ int32 registry_run() {
     have alpha::calls < 1000;
     have alpha::record_alpha::batches[0][0] > -1000;
     have alpha::record_alpha::batches[0][0] < 1000;
+    step();
     step();
     step();
     have second == 4;
@@ -116,10 +118,13 @@ int32 registry_run() {
     have beta::record_beta::batches[0].value < 1000;
     step();
     step();
+    step();
     have third == 102;
     step();
     step();
+    step();
     have alpha_total == 2;
+    step();
     step();
     step();
     have beta_total == 101;

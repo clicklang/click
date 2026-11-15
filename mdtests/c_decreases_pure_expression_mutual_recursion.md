@@ -62,6 +62,7 @@ int32 even(int32 n) {
         }
         step();
         step();
+        step();
         solve();
     } else {}
     step();
@@ -88,6 +89,7 @@ int32 odd(int32 n) {
                 n > 0;
             };
         }
+        step();
         step();
         step();
         solve();

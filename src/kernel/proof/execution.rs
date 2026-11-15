@@ -3348,14 +3348,19 @@ impl OpenedContractEntry {
 
     /// Start the parent judgment for a function-proof session. Independent
     /// entry/execution APIs do not acquire whole-contract obligations.
-    pub(crate) fn open_contract_root(mut self) -> Result<Self, RuntimeError> {
-        let function = &self.entry.function;
-        if function.opaque_contract_supported() && !function.contract_claims().is_empty() {
-            self.contract_root = Some(
-                crate::kernel::WholeContractRoot::open(self.cases.clone())
-                    .map_err(RuntimeError::FunctionContract)?,
-            );
-        }
+    pub(crate) fn open_contract_root(
+        mut self,
+        program: Option<&crate::kernel::ProgramContractBodies>,
+    ) -> Result<Self, RuntimeError> {
+        self.contract_root = Some(
+            match program {
+                Some(program) => {
+                    crate::kernel::WholeContractRoot::open_in_program(self.cases.clone(), program)
+                }
+                None => crate::kernel::WholeContractRoot::open(self.cases.clone()),
+            }
+            .map_err(RuntimeError::FunctionContract)?,
+        );
         Ok(self)
     }
 
@@ -5829,7 +5834,7 @@ impl CheckedCallOutcomeSplit {
         if !matches!(
             statement,
             ProgramStatement::Call { .. }
-                | ProgramStatement::CallAssign { .. }
+                | ProgramStatement::CallConstruct { .. }
                 | ProgramStatement::CallResult { .. }
         ) || !matches!(normal, StatementOutcome::Normal(_))
             || !matches!(exceptional, StatementOutcome::Throw { .. })

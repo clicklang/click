@@ -256,6 +256,7 @@ int32 owned_string_push_preserves_first(
     step();
     step();
     step();
+    step();
     known();
     known();
     known();
@@ -298,6 +299,7 @@ int32 owned_string_pop_preserves_first(struct owned_string* owner) {
     ensures result == old(owner->data[owner->len - 1]);
     ensures data[0] == old(data[0]);
 } by {
+    step();
     step();
     step();
     step();
@@ -346,6 +348,7 @@ int32 owned_string_pipeline(
     step();
     step();
     step();
+    step();
     have ignored == 0 by {
         known();
     }
@@ -358,27 +361,29 @@ int32 owned_string_pipeline(
     have (owner->len + 1) < owner->cap by {
         rewrite(owner->cap == capacity);
         rewrite(owner->len == 0);
-        have 1 < at(region(2).entry, capacity);
+        have 1 < at(statement(2).entry, capacity);
         solve();
     }
     step();
+    step();
     have owner->len == 1 by {
-        rewrite(owner->len == at(region(3).entry, owner->len + 1));
-        rewrite(at(region(3).entry, owner->len) == at(region(3).entry, 0));
+        rewrite(owner->len == at(statement(3).entry, owner->len + 1));
+        rewrite(at(statement(3).entry, owner->len) == at(statement(3).entry, 0));
         normalize();
     }
     have 0 < owner->len by {
         rewrite(owner->len == 1);
         normalize();
     }
-    have owner->data[at(region(3).entry, owner->len)] == first by {
+    have owner->data[at(statement(3).entry, owner->len)] == first by {
         known();
     }
     have owner->data[0] == first by {
-        rewrite(first == owner->data[at(region(3).entry, owner->len)]);
-        rewrite(at(region(3).entry, owner->len) == at(region(3).entry, 0));
+        rewrite(first == owner->data[at(statement(3).entry, owner->len)]);
+        rewrite(at(statement(3).entry, owner->len) == at(statement(3).entry, 0));
         normalize();
     }
+    step();
     step();
     have 1 <= owner->len by {
         rewrite(owner->len == 1);
@@ -389,15 +394,16 @@ int32 owned_string_pipeline(
         known();
     }
     step();
-    have owner->len == at(region(5).entry, owner->len) - 1 by {
+    step();
+    have owner->len == at(statement(5).entry, owner->len) - 1 by {
         known();
     }
-    have at(region(5).entry, owner->len) == 1 by {
+    have at(statement(5).entry, owner->len) == 1 by {
         known();
     }
-    apply(decremented_one_is_zero(at(region(5).entry, owner->len), owner->len)) using {
-        at(region(5).entry, owner->len) == 1;
-        owner->len == (at(region(5).entry, owner->len) - 1);
+    apply(decremented_one_is_zero(at(statement(5).entry, owner->len), owner->len)) using {
+        at(statement(5).entry, owner->len) == 1;
+        owner->len == (at(statement(5).entry, owner->len) - 1);
     };
     have owner->len == 0 by {
         known();
@@ -408,10 +414,10 @@ int32 owned_string_pipeline(
         known();
     }
     step();
-    have result == at(region(6).entry, observed) by {
+    have result == at(statement(6).entry, observed) by {
         normalize();
     }
-    have at(region(6).entry, observed) == first by {
+    have at(statement(6).entry, observed) == first by {
         known();
     }
     have result == first by {

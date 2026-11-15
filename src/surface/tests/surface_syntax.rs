@@ -144,13 +144,14 @@ fn integer_alias_certificates_preserve_types_and_linear_source_on_expansion() {
         ));
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
-        assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(expanded.contains("known();"), "{expanded}");
         assert!(
             expanded.len() < 400 * (depth + 1),
             "expansion must retain aliases"
         );
-        let rewritten = source.replace("by { solve(); }", &expanded);
-        verify_click_theorems(&rewritten)
+        let rewritten = source.replace("by { solve() using {}; }", &expanded);
+        assert_ne!(rewritten, source, "the expanded proof must be substituted");
+        without_implicit_solve(|| verify_click_theorems(&rewritten))
             .unwrap_or_else(|error| panic!("depth {depth}: {}", error.message()));
     }
 }
@@ -3097,7 +3098,7 @@ theorem false_guard(x: int32) {
         verified[1]
             .proof_tactics()
             .expect("expected true-consequent certificate"),
-        &[ProofTactic::Intro, ProofTactic::Normalize]
+        &[ProofTactic::Intro, ProofTactic::Known]
     );
     assert!(matches!(
         verified[2]

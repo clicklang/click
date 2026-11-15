@@ -40,6 +40,10 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
     requires separate(memory(a[0..n]), memory(b[0..1]));
     ensures result == result;
 } by {
+    have defined(a[i]) by {
+        instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(a[k])) }, i);
+        known();
+    }
     mark before_call;
     let { result: r } = step(child, {});
     have defined(at(before_call, a[i]));

@@ -4264,28 +4264,12 @@ id = "library.theorem.separation::separate_restrict"
 path = "reference/library/index.md#separationseparate_restrict"
 
 [[item]]
-id = "language.word.transport_certificate"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.changes_only"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.transitive"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.changes-only"
 path = "reference/language/index.md#propositions"
-
-[[item]]
-id = "tactic.transport_certificate"
-path = "reference/tactics/index.md#transport-certificates"
-
-[[item]]
-id = "tactic-form.transport-certificate"
-path = "reference/tactics/index.md#transport-certificates"
 
 [[item]]
 id = "language.region-footprint"
@@ -4982,3 +4966,11 @@ path = "reference/library/index.md#separationcontains_rebase"
 [[item]]
 id = "library.theorem.separation::separate_adjacent_ranges"
 path = "reference/library/index.md#separationseparate_adjacent_ranges"
+
+[[item]]
+id = "library.theorem.integer::add_le"
+path = "reference/library/index.md#integeradd_le"
+
+[[item]]
+id = "library.theorem.integer::round_down_le"
+path = "reference/library/index.md#integerround_down_le"

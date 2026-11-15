@@ -174,3 +174,35 @@ fn construction_initialization_lookup_ignores_unrelated_caller_storage() {
         "{work_by_size:?}"
     );
 }
+
+#[test]
+fn aggregate_return_copy_permission_ignores_unrelated_storage() {
+    let mut samples = Vec::new();
+    for count in [4, 32, 256] {
+        let temporary = Pointer::verifier_temporary(Variable(870_201));
+        let mut memory = Memory::new().with_block(temporary.block.clone(), 16);
+        for index in 0..count {
+            memory = memory.with_block(PointerBlock::Heap(880_000 + index), 16);
+        }
+        let state = ExecutionState::new().with_memory(memory);
+        let source = PointerValue::new(temporary, ProgramType::UInt8Pointer);
+        let layout = node_layout();
+        let assumptions = PureFactContext::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(
+                crate::kernel::eval::missing_aggregate_copy_read_resource(
+                    &state,
+                    &source,
+                    &layout,
+                    &assumptions
+                )
+                .is_none()
+            );
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 16),
+        "{samples:?}"
+    );
+}

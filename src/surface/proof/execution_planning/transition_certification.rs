@@ -591,7 +591,7 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
 
 pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStatement) -> bool {
     match statement {
-        ProgramStatement::CallAssign { .. }
+        ProgramStatement::CallConstruct { .. }
         | ProgramStatement::Call { .. }
         | ProgramStatement::CallResult { .. } => true,
         ProgramStatement::Seq(statements) => statements

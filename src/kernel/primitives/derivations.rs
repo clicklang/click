@@ -2015,7 +2015,7 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
                 cost.add_expression(1); // assignment target lvalue
                 cost.add_expression(program_expression_source_steps(expression));
             }
-            ProgramStatement::CallAssign { arguments, .. }
+            ProgramStatement::CallConstruct { arguments, .. }
             | ProgramStatement::Call { arguments, .. }
             | ProgramStatement::CallResult { arguments, .. } => {
                 for argument in arguments {

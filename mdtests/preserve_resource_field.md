@@ -17,12 +17,7 @@ void keep(int *p) {
         normalize() using { separate(memory(*p), m); };
     }
     have m.value == at(statement(0).entry, m.value) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, m)
-                => separate(statement(0).footprint, m);
-            preserve 0 => m.value == at(statement(0).entry, m.value);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, m));
     }
     step();
     known(); known();

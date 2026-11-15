@@ -152,12 +152,7 @@ int32 input_cursor_clone(
         normalize() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
-        transport_certificate {
-            premise 0: separate(statement(0).footprint, memory(source->data))
-                => separate(statement(0).footprint, memory(source->data));
-            preserve 0 => source->data == at(before_copy, source->data);
-            conclusion 1;
-        }
+        preserve(separate(statement(0).footprint, memory(source->data)));
     }
     mark after_pos;
     step();
@@ -165,15 +160,11 @@ int32 input_cursor_clone(
         normalize() using { separate(memory(target->len), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
-        transport_certificate {
-            premise 0: separate(statement(1).footprint, memory(source->data))
-                => separate(statement(1).footprint, memory(source->data));
-            preserve 0 => source->data == at(after_pos, source->data);
-            premise 2: at(after_pos, source->data) == at(before_copy, source->data)
-                => at(after_pos, source->data) == at(before_copy, source->data);
-            transitive 1, 2 => source->data == at(before_copy, source->data);
-            conclusion 3;
+        have source->data == at(after_pos, source->data) by {
+            preserve(separate(statement(1).footprint, memory(source->data)));
         }
+        rewrite(source->data == at(after_pos, source->data));
+        known();
     }
     mark after_len;
     step();
@@ -181,15 +172,11 @@ int32 input_cursor_clone(
         normalize() using { separate(memory(target->data), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
-        transport_certificate {
-            premise 0: separate(statement(2).footprint, memory(source->data))
-                => separate(statement(2).footprint, memory(source->data));
-            preserve 0 => source->data == at(after_len, source->data);
-            premise 2: at(after_len, source->data) == at(before_copy, source->data)
-                => at(after_len, source->data) == at(before_copy, source->data);
-            transitive 1, 2 => source->data == at(before_copy, source->data);
-            conclusion 3;
+        have source->data == at(after_len, source->data) by {
+            preserve(separate(statement(2).footprint, memory(source->data)));
         }
+        rewrite(source->data == at(after_len, source->data));
+        known();
     }
     step();
     have target->data == old(source->data);
@@ -221,7 +208,7 @@ int32 input_cursor_shared_pipeline(
     ensures right->pos == 0;
     ensures result == data[0];
 } by {
-    step_until(region(4));
+    step_until(statement(4));
     have separate(memory(*right), memory(left->data[0..left->len])) by {
         solve() using {
             left->len == length;
@@ -239,6 +226,7 @@ int32 input_cursor_shared_pipeline(
     }
     have left->data == data;
     step();
+    step();
     have left->pos < left->len by { known(); }
     have right->pos < right->len by {
         solve() using {
@@ -255,6 +243,7 @@ int32 input_cursor_shared_pipeline(
     }
     have left->len == length by { known(); }
     step();
+    step();
     have right->len == length by { known(); }
     have left->len == length by { known(); }
     have right->pos == 0 by {
@@ -268,9 +257,10 @@ int32 input_cursor_shared_pipeline(
         };
     }
     apply(incremented_zero_is_one(
-        at(region(5).entry, left->pos),
+        at(statement(5).entry, left->pos),
         left->pos
     ));
+    step();
     step();
     have right_value == right->data[right->pos] by {
         known();
@@ -289,6 +279,5 @@ int32 input_cursor_shared_pipeline(
         right->data[right->pos] == data[0];
     };
     step();
-    fold(input_cursor(left));
     solve();
 }

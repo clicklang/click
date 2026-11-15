@@ -132,6 +132,98 @@ pub(crate) fn collect_boolean_variables(
     }
 }
 
+/// Algebraic argument readers count Integer carriers, including declarations;
+/// an Integer match scrutinee instead asks for free Integer variables.
+pub(super) fn algebraic_integer_variables(root: &KernelTerm, free: bool) -> Variables {
+    let mut result = BTreeSet::new();
+    let mut pending = vec![root];
+    let mut seen = std::collections::HashSet::new();
+    let mut native_seen = SeenTerms::default();
+    let mut summaries = std::collections::HashMap::new();
+    while let Some(term) = pending.pop() {
+        if checked_collection_checkpoint() {
+            break;
+        }
+        if !seen.insert(term.id()) {
+            continue;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        match term.node() {
+            KernelTermNode::AlgebraicIf { arguments } => pending.extend(arguments.iter().rev()),
+            KernelTermNode::AlgebraicCall(call) => {
+                for argument in call.arguments.iter().rev() {
+                    if matches!(argument.ty(), KernelType::Algebraic(_)) {
+                        pending.push(argument);
+                    } else {
+                        result.extend(
+                            common_variables(
+                                argument,
+                                FoldVariableRead::IntegerFree,
+                                &mut summaries,
+                            )
+                            .iter()
+                            .copied(),
+                        );
+                    }
+                }
+            }
+            KernelTermNode::Constructor(constructor) => {
+                pending.extend(constructor.fields.iter().rev())
+            }
+            KernelTermNode::Variable(_) if matches!(term.ty(), KernelType::Algebraic(_)) => {}
+            KernelTermNode::Legacy(value) if matches!(term.ty(), KernelType::Algebraic(_)) => {
+                let PureFunctionArgument::Algebraic(value) = value.value() else {
+                    unreachable!()
+                };
+                if free {
+                    collect_algebraic_free_integer_variables(value, &mut result, &mut native_seen);
+                } else {
+                    collect_algebraic_integer_variables(value, &mut result, &mut native_seen);
+                }
+            }
+            _ if !free && term.ty() == &KernelType::Integer => match term.node() {
+                KernelTermNode::Variable(variable) => {
+                    result.insert(*variable);
+                }
+                KernelTermNode::Legacy(value) => collect_argument(
+                    value.value(),
+                    FoldVariableRead::IntegerFree,
+                    &mut result,
+                    &mut native_seen,
+                ),
+                KernelTermNode::Call { arguments, .. } => pending.extend(
+                    arguments
+                        .iter()
+                        .rev()
+                        .filter(|child| child.ty() == &KernelType::Integer),
+                ),
+                KernelTermNode::Fold(fold) => {
+                    result.insert(fold.accumulator);
+                    if fold.index.ty() == KernelType::Integer {
+                        result.insert(fold.item);
+                    }
+                    pending.extend(fold.arguments.iter().rev());
+                }
+                KernelTermNode::Match(matched) => {
+                    pending.extend(matched.arguments.iter().rev());
+                    pending.extend(matched.arms.iter().flat_map(|arm| &arm.bindings));
+                }
+                _ => pending.extend(term.children().iter().rev()),
+            },
+            _ => result.extend(
+                common_variables(term, FoldVariableRead::IntegerFree, &mut summaries)
+                    .iter()
+                    .copied(),
+            ),
+        }
+    }
+    let mut variables = Variables::default();
+    for variable in result {
+        variables = variables.with_value(variable);
+    }
+    variables
+}
+
 pub(super) fn common_variables(
     root: &KernelTerm,
     mode: FoldVariableRead,
@@ -152,10 +244,23 @@ pub(super) fn common_variables(
             && term.ty() == &KernelType::Bool
             && !matches!(
                 term.node(),
-                KernelTermNode::IntegerCompare { .. } | KernelTermNode::LegacyBool(_)
+                KernelTermNode::IntegerCompare { .. }
+                    | KernelTermNode::AlgebraicEqual { .. }
+                    | KernelTermNode::LegacyBool(_)
             )
         {
             summaries.insert(term.id(), Variables::default());
+            continue;
+        }
+        if mode == FoldVariableRead::IntegerFree
+            && matches!(
+                term.node(),
+                KernelTermNode::Constructor(_)
+                    | KernelTermNode::AlgebraicCall(_)
+                    | KernelTermNode::AlgebraicIf { .. }
+            )
+        {
+            summaries.insert(term.id(), algebraic_integer_variables(term, false));
             continue;
         }
         let mut leaf_variables = BTreeSet::new();
@@ -267,6 +372,23 @@ pub(super) fn common_variables(
                     );
                 }
             }
+            KernelTermNode::AlgebraicRead(read) => match mode {
+                FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
+                    super::retained_pointers::collect_address_variables_with_summaries(
+                        read.parts().1,
+                        mode,
+                        &mut leaf_variables,
+                        summaries,
+                    );
+                }
+                FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders => {}
+                FoldVariableRead::ExpressionFree => collect_machine_leaf(
+                    term.algebraic_read_carrier().expect("algebraic read"),
+                    mode,
+                    &mut leaf_variables,
+                    &mut SeenTerms::default(),
+                ),
+            },
             KernelTermNode::MemoryLoad { address, .. } => match mode {
                 FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
                     super::retained_pointers::collect_address_variables_with_summaries(
@@ -302,6 +424,12 @@ pub(super) fn common_variables(
                     &mut leaf_variables,
                     &mut SeenTerms::default(),
                 ),
+                KernelType::Algebraic(_) => {
+                    if mode == FoldVariableRead::ExpressionFree && collecting_connection_variables()
+                    {
+                        leaf_variables.insert(*variable);
+                    }
+                }
                 KernelType::Bool => {
                     if mode == FoldVariableRead::MachineCapture
                         || (mode == FoldVariableRead::ExpressionFree
@@ -473,6 +601,230 @@ mod tests {
             }
         }
         result
+    }
+
+    #[test]
+    fn algebraic_constructor_readers_keep_free_and_carrier_variable_rules() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut native = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]);
+        native.node = AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields: vec![AlgebraicValue::Integer(IntegerTerm::RangeFold {
+                index: IntegerRangeFoldIndex::Integer {
+                    start: IntegerTerm::constant_i64(0).into(),
+                    end: IntegerTerm::Variable(Variable(999611)).into(),
+                },
+                initial: IntegerTerm::Variable(Variable(999612)).into(),
+                accumulator: Variable(999613),
+                item: Variable(999614),
+                body: IntegerTerm::Variable(Variable(999613)).into(),
+            })],
+        };
+        let other = AlgebraicTerm {
+            algebraic_type: native.algebraic_type.clone(),
+            node: AlgebraicTermNode::Variable(Variable(999615)),
+        };
+        let condition = ConditionTerm::AlgebraicEqual(Box::new(native.clone()), Box::new(other));
+        let guard = KernelTermImport::default().condition(&condition);
+        let root = KernelTermImport::default().algebraic(&native);
+        let argument = PureFunctionArgument::Algebraic(native.clone());
+        for mode in [
+            FoldVariableRead::IntegerFree,
+            FoldVariableRead::ExpressionFree,
+            FoldVariableRead::MachineCapture,
+            FoldVariableRead::IntegerBinders,
+            FoldVariableRead::MachineBinders,
+        ] {
+            let mut expected = BTreeSet::new();
+            collect_argument(&argument, mode, &mut expected, &mut SeenTerms::default());
+            let actual = common_variables(&root, mode, &mut Default::default())
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>();
+            assert_eq!(actual, expected, "{mode:?}");
+            let mut expected = BTreeSet::new();
+            let mut actual = BTreeSet::new();
+            collect_boolean_variables(
+                crate::kernel::BooleanOperandView::Native(&condition),
+                mode,
+                &mut expected,
+            );
+            collect_boolean_variables(
+                crate::kernel::BooleanOperandView::Shared(&guard),
+                mode,
+                &mut actual,
+            );
+            assert_eq!(actual, expected, "algebraic equality {mode:?}");
+        }
+        let mut expected = BTreeSet::new();
+        collect_algebraic_free_integer_variables(&native, &mut expected, &mut SeenTerms::default());
+        let actual = algebraic_integer_variables(&root, true)
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(actual, expected);
+        assert!(!actual.contains(&Variable(999613)));
+        assert!(algebraic_integer_variables(&root, false).contains(&Variable(999613)));
+    }
+
+    #[test]
+    fn algebraic_call_readers_preserve_argument_and_carrier_modes() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let fold = IntegerTerm::RangeFold {
+            index: IntegerRangeFoldIndex::Integer {
+                start: IntegerTerm::constant_i64(0).into(),
+                end: IntegerTerm::Variable(Variable(999711)).into(),
+            },
+            initial: IntegerTerm::Variable(Variable(999712)).into(),
+            accumulator: Variable(999713),
+            item: Variable(999714),
+            body: IntegerTerm::Variable(Variable(999713)).into(),
+        };
+        let mut nested = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]);
+        nested.node = AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields: vec![AlgebraicValue::Integer(fold.clone())],
+        };
+        let native = AlgebraicTerm {
+            algebraic_type: nested.algebraic_type.clone(),
+            node: AlgebraicTermNode::PureFunctionApplication {
+                name: "algebraic_reader_modes".into(),
+                arguments: vec![
+                    PureFunctionArgument::Integer(fold.into()),
+                    PureFunctionArgument::Algebraic(nested),
+                    PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(
+                        Variable(999715),
+                    ))),
+                    PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::intern(
+                        MachineIntegerType::Int32,
+                        MachineTerm::Variable(Variable(999716)),
+                    )),
+                ],
+            },
+        };
+        let conditional = AlgebraicTerm {
+            algebraic_type: native.algebraic_type.clone(),
+            node: AlgebraicTermNode::If {
+                condition: Box::new(ConditionTerm::integer_equal(
+                    IntegerTerm::var(Variable(999717)),
+                    IntegerTerm::constant_i64(0),
+                )),
+                then_term: Box::new(native.clone()),
+                else_term: Box::new(KernelMatch::test_scrutinee(vec![
+                    AlgebraicValueType::Integer,
+                ])),
+            },
+        };
+        let read = AlgebraicTerm {
+            algebraic_type: crate::kernel::TypeParameterName::intern("AlgebraicReaderT")
+                .algebraic_type(),
+            node: AlgebraicTermNode::MemoryLoad {
+                memory: crate::kernel::intern_memory(
+                    Memory::new().with_block("algebraic-reader", 8).store(
+                        Memory::global_pointer("algebraic-reader"),
+                        ProgramValue::UInt64(MachineTerm::Variable(Variable(999741))),
+                    ),
+                ),
+                pointer: Box::new(Pointer {
+                    block: PointerBlock::Symbolic(Variable(999742)),
+                    offset: PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::Variable(Variable(999743)),
+                        4,
+                    ),
+                }),
+            },
+        };
+        for native in [native, conditional, read] {
+            let root = KernelTermImport::default().algebraic(&native);
+            struct Restore(bool);
+            impl Drop for Restore {
+                fn drop(&mut self) {
+                    CONNECTION_VARIABLES.with(|flag| flag.set(self.0));
+                }
+            }
+            for connection in [false, true, false] {
+                let _restore = Restore(CONNECTION_VARIABLES.with(|flag| flag.replace(connection)));
+                for mode in [
+                    FoldVariableRead::IntegerFree,
+                    FoldVariableRead::ExpressionFree,
+                    FoldVariableRead::MachineCapture,
+                    FoldVariableRead::IntegerBinders,
+                    FoldVariableRead::MachineBinders,
+                ] {
+                    let mut expected = BTreeSet::new();
+                    collect_argument(
+                        &PureFunctionArgument::Algebraic(native.clone()),
+                        mode,
+                        &mut expected,
+                        &mut SeenTerms::default(),
+                    );
+                    let actual = common_variables(&root, mode, &mut Default::default())
+                        .iter()
+                        .copied()
+                        .collect::<BTreeSet<_>>();
+                    assert_eq!(actual, expected, "mode={mode:?} connection={connection}");
+                }
+                let mut expected = BTreeSet::new();
+                collect_algebraic_free_integer_variables(
+                    &native,
+                    &mut expected,
+                    &mut SeenTerms::default(),
+                );
+                assert_eq!(
+                    algebraic_integer_variables(&root, true)
+                        .iter()
+                        .copied()
+                        .collect::<BTreeSet<_>>(),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn retained_boolean_call_arguments_preserve_dependency_modes() {
+        use crate::kernel::BooleanOperandView as V;
+        let _session = crate::kernel::VerificationSession::enter();
+        let argument = KernelTermImport::default().condition(&ConditionTerm::BoolIf {
+            condition: Box::new(ConditionTerm::Variable(Variable(999560))),
+            then_condition: Box::new(ConditionTerm::IntegerEqual(
+                IntegerTerm::Variable(Variable(999561)).into(),
+                IntegerTerm::Variable(Variable(999562)).into(),
+            )),
+            else_condition: Box::new(ConditionTerm::BoolLoad(
+                crate::kernel::intern_memory(Memory::new()),
+                Box::new(Pointer::symbolic(Variable(999563))),
+            )),
+        });
+        let application = SharedPureApplication::intern(
+            "boolean_dependency_handoff".into(),
+            vec![argument.boolean_argument_native().unwrap().clone()],
+        );
+        let common =
+            KernelTermImport::default().boolean_call_with_retained(&application, &[Some(argument)]);
+        let native = ConditionTerm::BoolApplication(application);
+        struct Restore(bool);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                CONNECTION_VARIABLES.with(|flag| flag.set(self.0));
+            }
+        }
+        for connection in [false, true, false] {
+            let _restore = Restore(CONNECTION_VARIABLES.with(|flag| flag.replace(connection)));
+            for mode in [
+                FoldVariableRead::IntegerFree,
+                FoldVariableRead::ExpressionFree,
+                FoldVariableRead::MachineCapture,
+                FoldVariableRead::IntegerBinders,
+                FoldVariableRead::MachineBinders,
+            ] {
+                let mut expected = BTreeSet::new();
+                let mut actual = BTreeSet::new();
+                collect_boolean_variables(V::Native(&native), mode, &mut expected);
+                collect_boolean_variables(V::Shared(&common), mode, &mut actual);
+                assert_eq!(actual, expected, "mode={mode:?} connection={connection}");
+            }
+        }
     }
 
     #[test]

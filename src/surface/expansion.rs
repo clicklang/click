@@ -2123,7 +2123,7 @@ fn returning_then_arms(statement: &ProgramStatement) -> BTreeSet<usize> {
             // A throwing call can resume in the enclosing handler before
             // the return this sequence would otherwise reach.
             ProgramStatement::Call { .. }
-            | ProgramStatement::CallAssign { .. }
+            | ProgramStatement::CallConstruct { .. }
             | ProgramStatement::CallResult { .. }
                 if catches_exceptions =>
             {

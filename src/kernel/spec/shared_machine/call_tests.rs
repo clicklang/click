@@ -633,3 +633,148 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
         }
     }
 }
+
+#[test]
+fn actual_boolean_call_results_retain_roots_and_native_handoff_behavior() {
+    let _session = VerificationSession::enter();
+    let call = |arguments| SpecExpression::PureFunctionApplication {
+        name: "produced_boolean_call".into(),
+        arguments,
+        result_type: ProgramType::Bool,
+        pointer_result: None,
+        result_object_class: None,
+        projection: None,
+    };
+    let expression = call(vec![SpecPureFunctionArgument::Value(call_expression(
+        MachineIntegerType::Int32,
+        vec![],
+    ))]);
+    let paths = produced_paths(&expression, false);
+    let root = paths[0].value.shared().expect("retained Boolean call");
+    assert_eq!(root.ty(), &KernelType::Bool);
+    assert_eq!(paths[0].value.program_type(), ProgramType::Bool);
+    let native = paths[0].value.clone().into_native();
+    assert_eq!(
+        native,
+        produced_paths(&expression, true)[0]
+            .value
+            .clone()
+            .into_native()
+    );
+    for expression in [
+        call(vec![SpecPureFunctionArgument::Value(expression.clone())]),
+        SpecExpression::Let {
+            name: "boolean_result".into(),
+            value: Box::new(expression.clone()),
+            body: Box::new(SpecExpression::ProgramExpression(
+                ProgramExpression::Variable("boolean_result".into()),
+            )),
+        },
+        SpecExpression::Cast(Box::new(expression), ProgramType::Bool),
+    ] {
+        assert_eq!(
+            native_results(produced_paths(&expression, false)),
+            native_results(produced_paths(&expression, true))
+        );
+    }
+}
+
+#[test]
+fn boolean_call_handoffs_retain_nested_boolean_arguments() {
+    let _session = VerificationSession::enter();
+    let call = |arguments| SpecExpression::PureFunctionApplication {
+        name: "boolean_handoff".into(),
+        arguments,
+        result_type: ProgramType::Bool,
+        pointer_result: None,
+        result_object_class: None,
+        projection: None,
+    };
+    let inner = call(vec![]);
+    let inner_paths = produced_paths(&inner, false);
+    let expected = inner_paths[0].value.shared().unwrap().clone();
+    let expression = SpecExpression::Let {
+        name: "b".into(),
+        value: Box::new(inner),
+        body: Box::new(call(vec![SpecPureFunctionArgument::Value(
+            SpecExpression::ProgramExpression(ProgramExpression::Variable("b".into())),
+        )])),
+    };
+    let paths = produced_paths(&expression, false);
+    let root = paths[0].value.shared().unwrap();
+    let KernelTermNode::Call { arguments, .. } = root.node() else {
+        panic!()
+    };
+    assert_eq!(arguments, &[expected]);
+    assert_eq!(
+        native_results(paths),
+        native_results(produced_paths(&expression, true))
+    );
+}
+
+#[test]
+fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
+    let _session = VerificationSession::enter();
+    let condition = ConditionTerm::Variable(Variable(999440));
+    let native = ProgramValue::Bool(MachineTerm::bool_cast(
+        MachineIntegerType::UInt8,
+        condition.clone(),
+    ));
+    let left = SpecValue::Shared(KernelTermImport::default().condition(&condition));
+    let right_condition = ConditionTerm::Variable(Variable(999441));
+    let right = SpecValue::Shared(KernelTermImport::default().condition(&right_condition));
+    let guard = Proposition::ConditionIs(ConditionTerm::Variable(Variable(999442)), false);
+    let combined = SpecValue::conditional(&guard, &left, &right, true)
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        combined.shared().unwrap().node(),
+        KernelTermNode::BoolIf { .. }
+    ));
+    assert_eq!(
+        combined.clone().into_native(),
+        conditional_spec_value(
+            &guard,
+            left.clone().into_native(),
+            right.clone().into_native()
+        )
+        .unwrap()
+    );
+    for target in FORMATS
+        .into_iter()
+        .chain([MachineIntegerType::Int128, MachineIntegerType::UInt128])
+    {
+        let cast = cast(&combined, target.program_type()).unwrap();
+        assert!(matches!(cast.node(), KernelTermNode::BoolCast { .. }));
+        let expression = SpecExpression::Cast(
+            Box::new(SpecExpression::Value(native.clone())),
+            target.program_type(),
+        );
+        assert_eq!(
+            native_results(produced_paths(&expression, false)),
+            native_results(produced_paths(&expression, true))
+        );
+    }
+    for right in [
+        right,
+        SpecValue::Native(ProgramValue::Bool(MachineTerm::Variable(Variable(999443)))),
+        SpecValue::Native(ProgramValue::Bool(MachineTerm::bool_cast(
+            MachineIntegerType::UInt8,
+            ConditionTerm::Constant(true),
+        ))),
+        SpecValue::Shared(KernelTermImport::default().condition(&ConditionTerm::Constant(false))),
+        SpecValue::Native(ProgramValue::Int32(MachineTerm::constant(1))),
+    ] {
+        for op in [
+            ComparisonOperator::Equal,
+            ComparisonOperator::NotEqual,
+            ComparisonOperator::LessThan,
+        ] {
+            assert_eq!(
+                left.comparison(op, &right),
+                SpecValue::Native(left.clone().into_native())
+                    .comparison(op, &SpecValue::Native(right.clone().into_native()))
+            );
+        }
+    }
+}

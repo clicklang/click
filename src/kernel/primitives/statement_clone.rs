@@ -140,11 +140,11 @@ impl ProgramStatement {
                 source: source.clone(),
                 prior_result: *prior_result,
             },
-            Self::CallAssign {
+            Self::CallConstruct {
                 target,
                 function_name,
                 arguments,
-            } => Self::CallAssign {
+            } => Self::CallConstruct {
                 target: target.clone(),
                 function_name: function_name.clone(),
                 arguments: arguments.clone(),
@@ -164,6 +164,7 @@ impl ProgramStatement {
                 function_name,
                 arguments,
                 result_type,
+                result_aggregate_layout,
                 result_pointee_constant,
                 callee,
                 ..
@@ -173,6 +174,7 @@ impl ProgramStatement {
                 function_name: function_name.clone(),
                 arguments: arguments.clone(),
                 result_type: *result_type,
+                result_aggregate_layout: result_aggregate_layout.clone(),
                 result_pointee_constant: *result_pointee_constant,
                 callee: callee.clone(),
             },

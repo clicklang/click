@@ -55,6 +55,7 @@ int32 twice(int32* p, int32 flag) {
         owns allocated(s);
     } then {
         step();
+        step();
     } else {
         step();
         unfold(allocated(p));

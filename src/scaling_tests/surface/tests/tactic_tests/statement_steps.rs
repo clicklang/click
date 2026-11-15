@@ -26,14 +26,10 @@ void write(struct job *job, int32 *dest) {
     step() by {{ known(); }}
     mark after_{index};
     have job->output == at(before_{index}, job->output) by {{
-        transport_certificate {{
-            premise 0: changes_only(before_{index}, after_{index}, memory(dest[0..1]))
-                => changes_only(before_{index}, after_{index}, memory(dest[0..1]));
-            premise 1: at(entry, separate(memory(job->output), memory(dest[0..1])))
-                => at(entry, separate(memory(job->output), memory(dest[0..1])));
-            preserve 0, 1 => job->output == at(before_{index}, job->output);
-            conclusion 2;
+        have separate(statement({index}).footprint, memory(job->output)) by {{
+            normalize() using {{ at(entry, separate(memory(job->output), memory(dest[0..1]))); }};
         }}
+        preserve(separate(statement({index}).footprint, memory(job->output)));
     }}
 "#
             ));
@@ -41,14 +37,8 @@ void write(struct job *job, int32 *dest) {
                 click.push_str(&format!(
                     r#"
     have job->output == at(entry, job->output) by {{
-        transport_certificate {{
-            premise 0: job->output == at(before_{index}, job->output)
-                => job->output == at(before_{index}, job->output);
-            premise 1: at(before_{index}, job->output) == at(entry, job->output)
-                => at(before_{index}, job->output) == at(entry, job->output);
-            transitive 0, 1 => job->output == at(entry, job->output);
-            conclusion 2;
-        }}
+        rewrite(job->output == at(before_{index}, job->output));
+        known();
     }}
 "#
                 ));
@@ -130,7 +120,7 @@ int32 caller(int32 a, int32 unrelated) {{
                 .filter(|event| {
                     matches!(event,
                         crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                        if name == "verification statement: call assign"
+                        if name == "verification statement: call"
                     )
                 })
                 .count();
@@ -633,7 +623,7 @@ int32 caller(int32 a, int32* p) {{
                 .filter(|event| {
                     matches!(event,
             crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-            if name == "verification statement: call assign")
+            if name == "verification statement: call")
                 })
                 .count();
             samples.push((callback, size, calls));

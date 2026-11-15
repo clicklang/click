@@ -26,8 +26,8 @@ use crate::kernel::{
     ResourceAccessMode as KernelResourceAccessMode, ResourceContext, ResourceContextValidityError,
     ResourceFact, ResourceFamily, ResourceSnapshot, ResourceSpec, ResourceTransferRole, Sort,
     SpecAlgebraicExpression, SpecExpression, SpecMemory, SpecPredicateArgument, SpecProposition,
-    SpecResource, StatementOutcome, SymbolicExecution, Term, TerminationRefusal,
-    TerminationVerdicts, Theorem, UnsuitableCallback, Variable, VerifiedLoopRule,
+    SpecResource, StatementOutcome, SymbolicExecution, Term, TerminationRefusal, Theorem,
+    UnsuitableCallback, Variable, VerifiedLoopRule,
     VerifiedPureTheorem as KernelVerifiedPureTheorem, abstract_execution_state_for_join,
     assume_universally_quantified_pure_implication, contract_refinement_context, int32,
     loop_invariants_hold_at_entry, loop_preservation_contexts, program_assign,
@@ -235,7 +235,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "consumes",
     "contains",
     "changes_only",
-    "transitive",
     "contract",
     "contradiction",
     "conclusion",
@@ -272,7 +271,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "import",
     "implies",
     "arithmetic_certificate",
-    "transport_certificate",
     "peel",
     "signed_int32",
     "rules",
@@ -4767,7 +4765,9 @@ impl RecordedSnapshots {
                 self.source_layout
                     .as_ref()
                     .and_then(|layout| match layout.call_number(*index) {
-                        Some(call) => state.step_result(call).cloned(),
+                        Some(call) => state
+                            .step_result(call)
+                            .map(|value| value.clone().into_native()),
                         None => layout
                             .call_result_local(*index)
                             .and_then(|local| state.locals().get(local))
@@ -5766,7 +5766,6 @@ pub enum ProofTactic {
     ImplicitSolve,
     SolveUsing(ProofSolveUsing),
     ArithmeticCertificate(ArithmeticCertificate),
-    TransportCertificate(TransportCertificate),
     /// Dev-only proof hole. Closes the enclosing proof unit without checking
     /// anything. Parses only while `verification::with_allow_sorry` is active
     /// (set solely by `click verify --allow-sorry`); every other use is
@@ -6172,11 +6171,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "transport-certificate",
-        syntax: "transport_certificate { premise ...; preserve ...; transitive ...; conclusion N; }",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "arithmetic-certificate",
         syntax: "arithmetic_certificate { premise ...; conclusion N; }",
         class: "simple",
@@ -6385,9 +6379,7 @@ impl ProofTactic {
             }
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
             Self::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
-            Self::Preserve(_) | Self::TransportCertificate(_) => {
-                TacticClass::Simple(SimpleTactic::FactTransport)
-            }
+            Self::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),
             Self::Intro | Self::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
             Self::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
             Self::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
@@ -11295,76 +11287,3 @@ impl Eq for ClickError {}
 
 #[cfg(test)]
 mod tests;
-
-/// Explicit resource transport proof. All references name earlier nodes.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TransportCertificate {
-    pub nodes: Vec<TransportCertificateNode>,
-    pub conclusion: usize,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TransportCertificateNode {
-    Premise {
-        index: usize,
-        proposition: ClickProposition,
-        result: ClickProposition,
-    },
-    Preserve {
-        effect: Option<usize>,
-        separation: usize,
-        result: ClickProposition,
-    },
-    Transitive {
-        left: usize,
-        right: usize,
-        result: ClickProposition,
-    },
-}
-
-impl TransportCertificate {
-    pub(crate) fn map_propositions<E>(
-        &self,
-        mut f: impl FnMut(&ClickProposition) -> Result<ClickProposition, E>,
-    ) -> Result<Self, E> {
-        let nodes = self
-            .nodes
-            .iter()
-            .map(|node| {
-                Ok(match node {
-                    TransportCertificateNode::Premise {
-                        index,
-                        proposition,
-                        result,
-                    } => TransportCertificateNode::Premise {
-                        index: *index,
-                        proposition: f(proposition)?,
-                        result: f(result)?,
-                    },
-                    TransportCertificateNode::Preserve {
-                        effect,
-                        separation,
-                        result,
-                    } => TransportCertificateNode::Preserve {
-                        effect: *effect,
-                        separation: *separation,
-                        result: f(result)?,
-                    },
-                    TransportCertificateNode::Transitive {
-                        left,
-                        right,
-                        result,
-                    } => TransportCertificateNode::Transitive {
-                        left: *left,
-                        right: *right,
-                        result: f(result)?,
-                    },
-                })
-            })
-            .collect::<Result<_, E>>()?;
-        Ok(Self {
-            nodes,
-            conclusion: self.conclusion,
-        })
-    }
-}

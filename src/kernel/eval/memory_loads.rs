@@ -4,7 +4,13 @@ use crate::kernel::MachineCastSpelling;
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 
 fn retained_cell_conversion(source: &ExecutionValue, value: ProgramValue) -> ExecutionValue {
-    if source.shared().is_some() {
+    if source.shared().is_some_and(|root| {
+        root.ty() == &KernelType::Bool || matches!(root.ty(), KernelType::Algebraic(_))
+    }) && value.program_type() == source.program_type()
+    {
+        // Same-type cell conversion leaves Boolean and algebraic values unchanged.
+        source.clone()
+    } else if source.shared().is_some() {
         source.retain_checked_pointer(value)
     } else {
         value.into()
@@ -6762,8 +6768,10 @@ mod tests {
             ProgramType::Int32Pointer,
         );
         // Forget the materialized cell without changing its stored value.
-        // The typed read must recover the complete pointer from its history.
+        // The typed read recovers the complete pointer, while the separately
+        // recorded initialized bytes supply authority to read it.
         let memory = Memory::new()
+            .with_initialized_object(&field, 8)
             .store(field.clone(), stored.clone())
             .without_possible_aliasing_cells(
                 &Pointer::symbolic(Variable(210_291)),

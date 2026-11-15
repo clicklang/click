@@ -1,16 +1,11 @@
-# Transport carries a kept slot cell across a call
+# Explicit separation preserves a kept slot cell across a call
 
-`two_puts` writes `11` through the slot `first`, then lends the pool and the
-slot `second` to a second `put`, and still claims the first cell holds `11`.
-The cell is `pool->data[first->at]`, indexed by a load from the kept slot,
-and `pool->data` is reloaded after the call. `transport` carries the value
-across the call: the call's havoc is separated from the kept slot's range,
-and `put`'s `pool->data == old(pool->data)` relates the two spellings of the
-base. Proving the index loads equal at the two states falls through to the
-memory-resolution order rule, so this catches that rule refusing the two
-loads of `first->at` that the kept slot leaves unchanged. It is the reduced
-form of `call_keeps_region_beside_folded_arena_state.md`, without the folded
-arena state.
+`two_puts` writes `11` through `first`, then lends the pool and `second`
+to another `put`. The proof opens the retained slot, restricts the call's
+resource footprint to its index and data cell, and uses ordinary `preserve`
+steps. The callee's pointer equality relates the two base spellings.
+A local expression binding reads current memory through the saved pointer;
+indexing the historical array reference itself would read historical memory.
 
 ```c filename=transport_carries_a_kept_slot_cell_across_a_call.c
 struct pool {
@@ -33,6 +28,7 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
 ```
 
 ```click
+import click::separation;
 resource pool_slot(s: struct slot*, pool: struct pool*) {
     field at: int32;
     field end: int32;
@@ -75,15 +71,51 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
 } by {
     step(put, { r: a });
     have pool->data[first->at] == 11;
+    let { at: first_at, end: first_end } = unfold(a);
+    have separate(memory(*pool), memory(*first)) by { known(); }
+    have separate(b, memory(*first)) by { known(); }
+    apply(separation::separate_star(memory(*pool), b, memory(*first)));
+    have contains(memory(*first), memory(first->at)) by { normalize(); }
+    apply(separation::contains_refl(memory(*pool) * b));
+    apply(separation::separate_restrict(memory(*pool) * b, memory(*first), memory(*pool) * b, memory(first->at)));
+
+    have separate(memory(*pool), memory(pool->data[first_at..first_end])) by { known(); }
+    have separate(b, memory(pool->data[first_at..first_end])) by { known(); }
+    apply(separation::separate_star(memory(*pool), b, memory(pool->data[first_at..first_end])));
+    apply(separation::contains_element(pool->data, first_at, first_end, first_at));
+    have contains(memory(pool->data[first_at]), memory(*(pool->data + first_at))) by { normalize(); }
+    apply(separation::contains_trans(memory(pool->data[first_at..first_end]), memory(pool->data[first_at]), memory(*(pool->data + first_at))));
+    apply(separation::separate_restrict(memory(*pool) * b, memory(pool->data[first_at..first_end]), memory(*pool) * b, memory(*(pool->data + first_at))));
+    have pool->data[first_at] == 11 by { known(); }
     mark m1;
     step(put, { r: b });
-    have pool->data == at(m1, pool->data);
-    have pool->data[first->at] == 11 by {
-        transport(at(m1, pool->data[first->at]) == 11, pool->data[first->at] == 11) using {
-            at(m1, pool->data[first->at]) == 11;
-            pool->data == at(m1, pool->data);
-        };
+    have contains(memory(*pool) * at(m1, b), statement(1).footprint) by { known(); }
+    apply(separation::contains_refl(memory(first->at)));
+    apply(separation::separate_restrict(memory(*pool) * at(m1, b), memory(first->at), statement(1).footprint, memory(first->at))) using {
+        at(m1, separate(memory(*pool) * b, memory(first->at)));
+        contains(memory(*pool) * at(m1, b), statement(1).footprint);
+        contains(memory(first->at), memory(first->at));
+    };
+    have first->at == at(m1, first->at) by {
+        preserve(separate(statement(1).footprint, memory(first->at)));
     }
+    have pool->data == at(m1, pool->data);
+    apply(separation::contains_refl(memory(at(m1, pool->data + first_at)[0])));
+    apply(separation::separate_restrict(memory(*pool) * at(m1, b), memory(at(m1, pool->data + first_at)[0]), statement(1).footprint, memory(at(m1, pool->data + first_at)[0]))) using {
+        at(m1, separate(memory(*pool) * b, memory(*(pool->data + first_at))));
+        contains(memory(*pool) * at(m1, b), statement(1).footprint);
+        contains(memory(at(m1, pool->data + first_at)[0]), memory(at(m1, pool->data + first_at)[0]));
+    };
+    have (let saved: int32* = at(m1, pool->data + first_at); saved[0]) == at(m1, pool->data[first_at]) by {
+        preserve(separate(statement(1).footprint, memory(at(m1, pool->data + first_at)[0])));
+    }
+    have first->at == first_at by { known(); }
+    have pool->data[first->at] == 11 by {
+        rewrite(first->at == first_at);
+        rewrite(pool->data == at(m1, pool->data));
+        known();
+    }
+    let a = fold(pool_slot(first, pool), { at: first_at, end: first_end });
 }
 ```
 

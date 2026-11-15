@@ -790,7 +790,7 @@ impl<'a> Proof<'a> {
                 )
                 .ok()?;
                 let callee = match statement {
-                    ProgramStatement::CallAssign { function_name, .. }
+                    ProgramStatement::CallConstruct { function_name, .. }
                     | ProgramStatement::Call { function_name, .. }
                     | ProgramStatement::CallResult { function_name, .. } => function_name,
                     _ => return None,
@@ -1394,98 +1394,22 @@ impl<'a> Proof<'a> {
         ))
     }
 
-    /// One explicit footprint-preservation operation, using the same direct
-    /// construction as a certificate's preserve node. No premise discovery.
+    /// One explicit footprint-preservation operation. No premise discovery.
     fn apply_preserve(
         &self,
         separation: &ClickProposition,
     ) -> Result<KernelProofHandle, ClickError> {
-        let result = self
-            .surface_goal()
-            .ok_or_else(|| {
-                self.step_error("preserve requires a spelled read-equality or definedness goal")
-            })?
-            .clone();
-        self.apply_transport_certificate(&TransportCertificate {
-            nodes: vec![
-                TransportCertificateNode::Premise {
-                    index: 0,
-                    proposition: separation.clone(),
-                    result: separation.clone(),
-                },
-                TransportCertificateNode::Preserve {
-                    effect: None,
-                    separation: 0,
-                    result,
-                },
-            ],
-            conclusion: 1,
-        })
-    }
-
-    fn apply_transport_certificate(
-        &self,
-        certificate: &TransportCertificate,
-    ) -> Result<KernelProofHandle, ClickError> {
-        use crate::kernel::proof::transport_certificate::{
-            TransportCertificate as Checked, TransportNode,
-        };
         let _reads = crate::kernel::TransportReadScope::enter();
-        let lower =
-            |p| self.lower_surface_proposition_direct(p, "transport certificate proposition");
-        let nodes = certificate
-            .nodes
-            .iter()
-            .enumerate()
-            .map(|(position, n)| {
-                Ok(match n {
-                    TransportCertificateNode::Premise {
-                        index,
-                        proposition,
-                        result,
-                    } => {
-                        if *index != position {
-                            return Err(self.step_error(
-                                "transport premise index differs from its node position",
-                            ));
-                        }
-                        TransportNode::Premise {
-                            proposition: lower(proposition)?,
-                            result: lower(result)?,
-                        }
-                    }
-                    TransportCertificateNode::Preserve {
-                        effect,
-                        separation,
-                        result,
-                    } => {
-                        let fields = crate::kernel::TransportFieldScope::enter();
-                        let result = lower(result)?;
-                        let field = fields.selected().map_err(|e| self.step_error(e))?;
-                        TransportNode::Preserve {
-                            field,
-                            effect: *effect,
-                            separation: *separation,
-                            result,
-                        }
-                    }
-                    TransportCertificateNode::Transitive {
-                        left,
-                        right,
-                        result,
-                    } => TransportNode::Transitive {
-                        left: *left,
-                        right: *right,
-                        result: lower(result)?,
-                    },
-                })
-            })
-            .collect::<Result<_, ClickError>>()?;
+        let separation =
+            self.lower_surface_proposition_direct(separation, "preserve separation")?;
+        let fields = crate::kernel::TransportFieldScope::enter();
+        let goal = self.surface_goal().ok_or_else(|| {
+            self.step_error("preserve requires a spelled read-equality or definedness goal")
+        })?;
+        self.lower_surface_proposition_direct(goal, "preserve goal")?;
+        let field = fields.selected().map_err(|e| self.step_error(e))?;
         self.state
-            .apply_transport_certificate(&Checked {
-                nodes,
-                conclusion: certificate.conclusion,
-            })
+            .apply_preserve(&separation, field)
             .map_err(|e| self.step_error(e))
     }
 

@@ -350,14 +350,25 @@ pub(super) fn verify_execution_theorem(
         }
     } else {
         syntax::CStatement::Seq(
-            Box::new(syntax::CStatement::CallAssign {
-                target: "result".into(),
+            Box::new(syntax::CStatement::CallResult {
+                aggregate_layout: None,
+                call: 0,
                 function_name: call_name.to_string(),
                 arguments,
+                result_type: None,
+                result_aggregate_layout: None,
+                result_pointee_constant: false,
+                callee: None,
                 site: crate::languages::c::syntax::CSite::NONE,
             }),
             Box::new(syntax::CStatement::Return(
-                syntax::CExpression::Variable("result".into()),
+                syntax::CExpression::StepResult {
+                    step: 0,
+                    origin: crate::kernel::StepOrigin::Call(call_name.to_string()),
+                    interface_type: Some(block.signature().return_type()),
+                    pointee_constant: false,
+                    struct_name: None,
+                },
                 crate::languages::c::syntax::CSite::NONE,
             )),
         )
@@ -377,7 +388,7 @@ pub(super) fn verify_execution_theorem(
         Arc::new(function_source_registry.for_contract_proof()),
         tactics,
     )?;
-    let completed = finish_whole_contract_root(&block, &verified)?
+    let completed = finish_contract_body_root(&block, &verified)?
         .ok_or_else(|| error("the one-call proof did not open a whole-contract root"))?;
     let rule = completed
         .into_rule()

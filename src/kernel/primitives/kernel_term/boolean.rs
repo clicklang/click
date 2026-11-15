@@ -1,10 +1,13 @@
 //! Logical Bool operands of machine conversions. Import/export preserves the
 //! written comparison format, even when fact equality identifies formats.
 use super::*;
+mod call;
 mod comparison;
 mod complete_pointer;
+mod composition;
 mod overflow;
 mod read;
+mod storage;
 pub use complete_pointer::KernelPointerEquality;
 pub use read::KernelBooleanRead;
 mod pointer_comparison;
@@ -113,6 +116,16 @@ impl<'a> BooleanOperandView<'a> {
                 (None, None) => {}
                 _ => return false,
             }
+            match (left.algebraic_equality(), right.algebraic_equality()) {
+                (Some(a), Some(b)) => {
+                    if !a.iter().zip(&b).all(|(a, b)| a.algebraic_syntax_equal(b)) {
+                        return false;
+                    }
+                    continue;
+                }
+                (None, None) => {}
+                _ => return false,
+            }
             match (left.read(), right.read()) {
                 (Some((am, a)), Some((bm, b))) => {
                     if am != bm || !a.syntax_equal(&b) {
@@ -178,29 +191,26 @@ impl<'a> BooleanOperandView<'a> {
     /// bridges; no enclosing Boolean connective reaches this boundary.
     pub(crate) fn identity_leaf(self) -> std::borrow::Cow<'a, ConditionTerm> {
         if let Self::Shared(root) = self
-            && let KernelTermNode::Call { name, arguments } = root.node()
+            && let Some(call) = root.boolean_call_native()
         {
-            let mut export = KernelTermExport::default();
-            let arguments = arguments
-                .iter()
-                .map(|argument| {
-                    if let KernelType::Program(ty) = argument.ty()
-                        && let Some(format) = MachineIntegerType::from_program_type(*ty)
-                        && !matches!(argument.node(), KernelTermNode::Legacy(_))
-                    {
-                        PureFunctionArgument::SharedMachine(
-                            MachineOperandView::Shared(argument).retain(format),
-                        )
-                    } else {
-                        export.argument(argument).expect("Boolean call argument")
-                    }
-                })
-                .collect();
-            return std::borrow::Cow::Owned(ConditionTerm::BoolApplication(
-                SharedPureApplication::intern(name.clone(), arguments),
-            ));
+            return std::borrow::Cow::Borrowed(call);
         }
         self.native()
+    }
+
+    pub(crate) fn algebraic_equality(self) -> Option<[KernelTerm; 2]> {
+        if let Self::Shared(root) = self
+            && let KernelTermNode::AlgebraicEqual { arguments } = root.node()
+        {
+            return Some(arguments.clone());
+        }
+        let ConditionTerm::AlgebraicEqual(a, b) = self.native_leaf()? else {
+            return None;
+        };
+        Some([
+            KernelTermImport::default().algebraic(a),
+            KernelTermImport::default().algebraic(b),
+        ])
     }
 
     pub(crate) fn native_leaf(self) -> Option<&'a ConditionTerm> {
@@ -605,6 +615,9 @@ impl KernelTermImport {
                     arguments: [self.integer(left), self.integer(right)],
                 }
             }
+            Old::AlgebraicEqual(left, right) => Node::AlgebraicEqual {
+                arguments: [self.algebraic(left), self.algebraic(right)],
+            },
             Old::BoolEqual(left, right) => Node::BoolEqual {
                 arguments: [self.condition(left), self.condition(right)],
             },
@@ -619,23 +632,7 @@ impl KernelTermImport {
                     self.condition(else_condition),
                 ],
             },
-            Old::BoolApplication(application) => Node::Call {
-                name: application.name().into(),
-                arguments: application
-                    .arguments()
-                    .iter()
-                    .enumerate()
-                    .map(|(index, arg)| match arg {
-                        PureFunctionArgument::Integer(_) => self.argument(arg),
-                        PureFunctionArgument::Value(integer_c_value!(_))
-                        | PureFunctionArgument::SharedMachine(_) => self.argument(arg),
-                        _ => KernelTerm::legacy_at(
-                            arg.clone(),
-                            LegacyIdentity::ApplicationArgument(application.clone(), index),
-                        ),
-                    })
-                    .collect(),
-            },
+            Old::BoolApplication(application) => return self.boolean_call(application),
             _ => {
                 // Keep the entire condition, including pointer metadata. Do not
                 // key this payload by ConditionTerm's semantic equality.
@@ -718,6 +715,10 @@ impl KernelTermExport {
                     Op::NotEqual => Old::IntegerNotEqual(left, right),
                 }
             }
+            Node::AlgebraicEqual { arguments } => Old::AlgebraicEqual(
+                Box::new(Self::default().algebraic(&arguments[0])?),
+                Box::new(Self::default().algebraic(&arguments[1])?),
+            ),
             Node::BoolEqual { arguments } => Old::BoolEqual(
                 Box::new(Self::condition(&arguments[0])?),
                 Box::new(Self::condition(&arguments[1])?),

@@ -2153,12 +2153,68 @@ pub fn program_assign(name: impl Into<String>, expression: ProgramExpression) ->
     }
 }
 
-pub fn program_call_assign(
+/// Build a value-producing call and the expression naming its result.
+/// The caller allocates `call` uniquely within the function's source layout.
+pub fn program_call_value(
+    call: u32,
+    function_name: impl Into<String>,
+    arguments: Vec<ProgramExpression>,
+) -> (ProgramStatement, ProgramExpression) {
+    let function_name = function_name.into();
+    let result = ProgramExpression::StepResult {
+        step: call,
+        origin: StepOrigin::Call(function_name.clone()),
+    };
+    (
+        ProgramStatement::CallResult {
+            aggregate_layout: None,
+            call,
+            function_name,
+            arguments,
+            result_type: None,
+            result_aggregate_layout: None,
+            result_pointee_constant: false,
+            callee: None,
+        },
+        result,
+    )
+}
+
+/// Two explicit operations: a call retaining its value, then a scalar assignment.
+pub fn program_call_then_assign(
+    call: u32,
     target: impl Into<String>,
     function_name: impl Into<String>,
     arguments: Vec<ProgramExpression>,
 ) -> ProgramStatement {
-    ProgramStatement::CallAssign {
+    let (call, value) = program_call_value(call, function_name, arguments);
+    program_seq(call, program_assign(target, value))
+}
+
+/// A reallocation result followed by its destination assignment.
+pub fn program_reallocate_then_assign(
+    call: u32,
+    target: impl Into<String>,
+    result_type: ProgramType,
+    arguments: Vec<ProgramExpression>,
+) -> ProgramStatement {
+    let (mut operation, value) = program_call_value(call, "realloc", arguments);
+    if let ProgramStatement::CallResult {
+        result_type: expected,
+        ..
+    } = &mut operation
+    {
+        *expected = Some(result_type);
+    }
+    program_seq(operation, program_assign(target, value))
+}
+
+pub fn program_call_construct(
+    target: impl Into<String>,
+    function_name: impl Into<String>,
+    arguments: Vec<ProgramExpression>,
+) -> ProgramStatement {
+    ProgramStatement::CallConstruct {
         target: target.into(),
         function_name: function_name.into(),
         arguments,
@@ -8225,16 +8281,8 @@ pub(crate) fn prove_executed_contract_refinement(
             callee: None,
         }
     } else {
-        ProgramStatement::seq(
-            Arc::new(ProgramStatement::CallAssign {
-                target: "result".into(),
-                function_name: callback.name().to_string(),
-                arguments,
-            }),
-            Arc::new(ProgramStatement::Return(ProgramExpression::Variable(
-                "result".into(),
-            ))),
-        )
+        let (call, result) = program_call_value(0, callback.name(), arguments);
+        program_seq(call, program_return(result))
     };
     if function.body() != &call || function.source_body() != &call {
         return None;
@@ -8432,16 +8480,8 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
             callee: None,
         }
     } else {
-        ProgramStatement::seq(
-            Arc::new(ProgramStatement::CallAssign {
-                target: "result".into(),
-                function_name: callee_name.to_string(),
-                arguments,
-            }),
-            Arc::new(ProgramStatement::Return(ProgramExpression::Variable(
-                "result".into(),
-            ))),
-        )
+        let (call, result) = program_call_value(0, callee_name, arguments);
+        program_seq(call, program_return(result))
     };
     if function.body() != &call || function.source_body() != &call {
         return None;

@@ -40,6 +40,19 @@ int32* uaf_local(int32 fallback[], int32 j) {
     requires j < 1;
     views fallback[0..1];
     ensures defined(result[j]);
+} by {
+    step_until(statement(3));
+    if p == 0 {
+        step_until(function.exit);
+        have j == 0;
+        have defined(result[j]) by {
+            rewrite(j == 0);
+            solve();
+        }
+    } else {
+        step_until(function.exit);
+        solve();
+    }
 }
 ```
 

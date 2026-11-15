@@ -5,6 +5,41 @@
 use super::*;
 
 #[test]
+fn explicit_integer_order_laws_scale_with_related_and_unrelated_facts() {
+    for related in [false, true] {
+        let mut measured = Vec::new();
+        for size in [2usize, 6, 18] {
+            let mut source = String::from(
+                "import click::integer; theorem sum(a: Integer, b: Integer, c: Integer, d: Integer, z: Integer) { requires a <= b; requires c <= d; ",
+            );
+            for index in 1..=size {
+                source.push_str(&if related {
+                    format!("requires a <= b + {index}; ")
+                } else {
+                    format!("requires z <= {index}; ")
+                });
+            }
+            source.push_str("ensures a + c <= b + d by { ");
+            for _ in 0..size {
+                source.push_str("have a + c <= b + d by { apply(integer::add_le(a, b, c, d)) using { a <= b; c <= d; }; } ");
+            }
+            source.push_str("known(); } }");
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::surface::proof::without_implicit_solve(|| verify_c_sources(&source, &[]))
+            });
+            checked.unwrap_or_else(|error| panic!("{related}/{size}: {}", error.message()));
+            measured.push(work);
+        }
+        for pair in measured.windows(2) {
+            assert!(
+                pair[1] <= 5 * pair[0],
+                "explicit arithmetic scanned ambient facts (related={related}): {measured:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn integer_conversion_aliases_preserve_shared_expression_scaling() {
     let mut measured = Vec::new();
     for depth in [8, 16, 32, 64] {

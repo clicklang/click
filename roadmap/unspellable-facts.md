@@ -400,7 +400,7 @@ load authority, exact format/operation keys, dependencies and frame transport.
 Shared arithmetic DAGs remain retained without numeric exports. The CI-quality
 check passed.
 
-8k retains Boolean reads as typed snapshot/shared-address nodes. Producer keys
+8k (merged [PR #2822](https://github.com/clicklang/click/pull/2822)) retains Boolean reads as typed snapshot/shared-address nodes. Producer keys
 keep exact snapshot arenas and address spelling; observation identity preserves
 native memory and address equality. Substitution retains the existing snapshot
 and raw/smart address policies. Variable, capture, binder and memory-dependency
@@ -414,6 +414,214 @@ Validation: all 1,907 selected tests passed on current upstream, including every
 scaling test, Boolean-read substitution and identity parity, dependency widths
 and ordering, resource diagnostics and the intervening MIR temporary tests.
 The CI-quality check passed.
+
+8l (merged [PR #2824](https://github.com/clicklang/click/pull/2824)) produces Boolean pure-call results as common Bool roots. Numeric arguments
+remain shared, and opaque argument descriptors retain exact producer identities.
+A cached selected call reading preserves shared numeric arguments at native
+handoffs. Observation normalization uses native semantic argument identity while
+producer roots retain differing pointer annotations. Execution result type and
+native output support the retained call; the separately scheduled local/call,
+storage and mixed-family argument slices still own those remaining boundaries.
+
+Validation: all 1,869 selected tests passed on the integrated upstream tree,
+including every scaling test, contract completion, Boolean call result production and native handoff parity, exact descriptor and
+semantic observation identity, shared call argument rewrites, Boolean spelling,
+and existing numeric/pointer call producers. The CI-quality check passed.
+
+8m (merged [PR #2828](https://github.com/clicklang/click/pull/2828)) retains Boolean composition and casts through production. Conditional and
+equality constructors preserve the native root reductions; Boolean-to-machine
+casts retain their logical operand and written destination. Raw C Bool words
+still enter through their existing nonzero test, and comparisons with integers
+or ordering operations keep their refusals. Equality's proposition output remains
+an explicit native boundary.
+
+Retained casts participate in the existing conversion readers, graph registration,
+dependency and rewrite policies, and semantic observation normalization. Pointer
+discovery keeps native cast opacity, and exact source matching keeps native
+argument equality. Reading a retained
+local cast emits its original certified range facts through the selected native
+cast descriptor. General output spelling and later local/storage handoffs retain
+their assigned slices; no search or budget policy changes.
+
+Validation: all 2,410 integration tests passed, including every scaling test,
+C frontend and fact-reasoning selections,
+constructor reductions, all integer cast formats, producer parity, observation
+identity, local range-fact preservation, equality rewrites, dependencies and the
+modeled-binary-tree example. The C/C++/Rust integer-language examples and focused
+cast-dispatch regressions passed separately. The CI-quality check passed.
+
+8o (merged [PR #2832](https://github.com/clicklang/click/pull/2832)) retains Boolean roots in local/outcome storage, memory cells and statement
+results, preceding 8n because its local/call handoffs need this storage support.
+Storage identity still uses the original native equality, hash and order rules,
+including comparisons with other value families. The selected Boolean native
+view reuses the existing argument cache; raw C Boolean words remain exact native
+values. Ordinary pointer queries do not materialize Boolean compatibility views.
+
+Same-type Boolean assignments, temporary-result handoffs and memory receipts
+preserve the producer root. A byte write that assembles a wider integer keeps
+that integer result, and changed-type conversions keep their existing behavior.
+General native output and replacement of compatibility keys remain later work.
+Validation: all 1,898 integration tests passed, including every scaling test,
+preservation proofs and memory provenance,
+Boolean storage key agreement, actual statement stores and memory reloads,
+temporary result receipts, byte-view cases and existing pointer handoffs.
+Growing-prefix storage and retrieval perform no operand traversal or numeric
+export. The ordinary example projects and CI-quality check passed.
+
+8n (merged [PR #2834](https://github.com/clicklang/click/pull/2834)) retains logical Boolean arguments through specification call assembly and
+nested Boolean call production. Native argument compatibility borrows the
+selected cached descriptor. Lexical bindings keep their common roots, and
+same-type runtime parameter binding, return conversion, contract-result binding
+and caller result assignment preserve those roots. Raw C Boolean words and
+changed-type conversions keep their original behavior; no refusal or authority
+rule changes. Numeric-result mixed-family call adapters remain assigned to 8ac.
+
+Regressions cover nested call/let argument identity and native output agreement,
+runtime argument and return handoffs, raw-word preservation, and nested-call
+scaling without numeric exports. Dependency-reader agreement covers Boolean
+arguments containing Integer comparisons and memory reads in every collection
+mode, with call-connection collection enabled and disabled. All 1,994 integration
+tests passed, including every scaling test, termination and contract completion,
+Integer conversion checks and ordinary example projects.
+The CI-quality check passed.
+
+8p ([#2835](https://github.com/clicklang/click/pull/2835), merged) represents
+algebraic variables and constructors directly in common roots,
+reusing the prepared constructor payload. Imports retain typed Integer/numeric
+and nested algebraic fields; unmigrated field families retain exact native
+payloads rather than coalescing pointer annotations through value equality.
+Iterative import and explicit export visit source/output nodes once instead of
+copying every boxed prefix.
+
+Constructor observation keys normalize their shared fields through the existing
+native observation rules. Producer roots retain exact metadata. Variable readers
+preserve the distinction between free Integer variables in a match scrutinee and
+Integer carriers, including declarations, in ordinary algebraic arguments.
+The existing algebraic Surface spelling handles these roots at the explicit
+output boundary. Selected constructor source comparison remains a native
+compatibility boundary for the algebraic-equality slice; calls, conditionals,
+reads and execution handoffs retain their separately assigned slices.
+
+Validation: 2,128 selected tests passed, including every scaling test, algebraic
+and retained-match readers/rewrites, Surface synthesis, Rust lowering and the
+full ordinary example projects. `scripts/check.sh --ci-quality` exited 0.
+
+8q ([#2836](https://github.com/clicklang/click/pull/2836), merged) selects common
+constructor variants directly during retained-match reduction.
+The existing schema/type refusals and typed field-replacement policy are retained;
+only the selected fields cross that remaining substitution adapter. Symbolic
+common roots decline reduction without materializing algebraic output.
+
+Pure-function projection now accepts common constructor arguments and returns the
+selected field root without exporting siblings or arithmetic prefixes. Native
+inputs retain their existing projection behavior. Algebraic call-argument and
+runtime enum-carrier activation remain with their assigned call/handoff slices.
+Focused regressions check variant/index/type refusals, exact pointer payloads,
+native/common field-checking parity, and constant selected-field projection work.
+Validation: five focused tests and 2,040 broader tests passed, including all
+scaling tests, algebraic/match checks, Surface synthesis, Rust lowering and full
+ordinary example projects. `scripts/check.sh --ci-quality` exited 0.
+
+8r ([#2837](https://github.com/clicklang/click/pull/2837), merged) retains both
+algebraic equality operands in a typed common condition node.
+Constructor/variable syntax comparisons traverse shared fields and match children,
+with native field equality preserving type, variant, order and pointer-metadata
+semantics. Exact producer payloads remain distinct. Constructor source matching
+uses this comparison instead of exporting the whole common constructor.
+
+Observation-key normalization follows the retained operands, and dependency
+readers preserve the native carrier/binder policies. Existing Surface equality
+spelling and native condition consumers use explicit output adapters. Scoped
+native field substitutions, call/handoff activation and the general raise/lower
+boundary remain assigned to their existing slices. No equality search rules or
+budgets changed. Regressions cover exact payloads, old/new views, operand order,
+native/common observation keys, readers and linear shared-constructor comparison.
+Validation: 2,010 selected tests passed before integration. After incorporating
+upstream call/destination-write retirement, 3,045 tests passed, including every
+scaling test, algebraic/Boolean checks, rewrites/readers, Surface synthesis, call
+and statement checks, language lowering and full ordinary example projects.
+`scripts/check.sh --ci-quality` exited 0 on the integrated tree.
+
+8s ([#2838](https://github.com/clicklang/click/pull/2838), merged) retains
+algebraic pure-call arguments and results as common roots, preserving
+native `Value(machine)` versus `SharedMachine` argument forms. Explicit output
+reconstructs those forms and exact pointer metadata. Syntax comparison, dependency
+readers, observation normalization and existing Surface call spelling understand
+the retained call. Mixed-family descriptor adapters remain assigned to 8ac.
+
+Native algebraic matches now import iteratively so retained match arguments have
+the same observation keys as native inputs. Normalization follows opaque fields
+through algebraic matches while preserving their result type. Recursive call
+evaluation uses smaller helper frames with unchanged expression-step accounting,
+path facts and obligations, including `to_nat` definedness. No search or resource
+limits changed. Five focused regressions passed, covering exact argument forms,
+retained-match keys, reader modes and linear nested-call/match-import work.
+Validation: the broader run passed 2,788 tests, including all other scaling
+checks and full ordinary examples. Its sole failure was a fixture assuming a
+zero-argument algebraic call remained opaque; after giving it an opaque pointer
+argument, that regression and the five focused checks all passed. The quality
+gate exited 0. No production behavior or test limits changed for that adjustment.
+
+8s.1 ([#2839](https://github.com/clicklang/click/pull/2839), merged) retains
+algebraic conditional guards and both branches. Import/export
+preserves written conditional structure, while production keeps the existing
+literal-condition and equal-arm reductions without exporting branch trees.
+Syntax equality, observation normalization, dependency readers and existing
+Surface `if` spelling follow the common children. No fact-dependent lowering,
+obligation rule, refusal or resource limit changed. A small Surface helper keeps
+the general recursive dispatch frame within the existing stack limit.
+
+Conditional parity testing also caught and corrected an 8s argument-identity
+regression: re-creating a SharedMachine carrier from its imported root can change
+its native identity. Calls now preserve that immutable handle for explicit output
+and compare it by its existing ID, while retaining the common child separately.
+Observation carriers and exact producer carriers keep their distinct equality
+policies. Thirteen focused tests passed, including this reproduction, raw/reduced
+native parity, opaque observation keys, readers, nested import/export and actual
+evaluator scaling, and the existing deep-synthesis budget regression.
+Validation: all 2,794 selected tests passed, including every scaling test,
+algebraic/Boolean/call/nat checks, readers/rewrites, Surface synthesis and full
+ordinary example projects. The quality gate exited 0.
+
+8s.2 (merged [PR #2840](https://github.com/clicklang/click/pull/2840)) represents algebraic reads with their abstract type, exact snapshot and
+shared address. Boolean and algebraic reads reuse the same snapshot descriptor,
+keeping producer arena identity separate from native observation equality.
+Import/export, syntax comparison, observation normalization and existing Surface
+read spelling support the common form. Selected algebraic read results retain
+it; broader binding and execution handoffs remain 8t.
+
+Dependency readers preserve the native UInt64 read-carrier policy, including
+stored-load connections and havoc origins. Read resolution, canonical snapshot
+selection and evidence requirements remain unchanged. Fourteen focused tests
+passed, covering snapshot/type identity, native/common keys, all reader modes,
+actual read results, constant-work construction with growing shared addresses,
+and existing Boolean read and algebraic fact-key regressions.
+Validation: all 2,214 broader tests passed, including every scaling test,
+abstract/parameter/memory checks, algebraic and Boolean behavior, readers,
+rewrites, Surface synthesis and full ordinary example projects. The quality
+gate exited 0.
+
+8t retains algebraic roots through specification bindings, constructors and
+selected match fields, algebraic-valued program matches, execution locals,
+arguments, returns, assignments, temporary results and memory cells. Runtime
+enum construction and field selection use common fields directly. Native key
+adapters preserve the existing equality, ordering and hash contracts. A named
+algebraic leaf has a direct compatibility reading without an export walk.
+
+Program-carried parameter arguments and fields retain their distinct native
+argument form at the mixed-family adapter (8ac). Native Integer result readings,
+required-construction records, fact-witness lookup and public native output
+remain explicit compatibility boundaries; this slice does not redesign their
+contracts. Ordinary program conditionals still refuse unequal algebraic arms;
+logical algebraic conditionals retain the separate 8s.1 behavior. No search,
+evidence, budget or language changes are included.
+
+Thirty focused tests passed, including nested constructor binding/selection,
+runtime field refusals, storage key parity, conditional refusal parity and
+constant-work construction around growing shared fields. All 2,540 broader tests
+passed, including argument/return/caller-result retention, program-call result
+parity, every scaling test and the full ordinary example corpus. The quality
+gate exited 0.
 
 ### 8a inventory
 

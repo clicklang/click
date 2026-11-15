@@ -32,6 +32,7 @@ void release(struct root* root, struct node* replacement) {
     consumes incoming: cell(replacement);
     produces root->node;
     produces leaf: cell(root->node);
+    ensures defined(root->node);
     ensures root->node == replacement;
 } by {
     match state.shape {

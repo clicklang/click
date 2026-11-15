@@ -2564,7 +2564,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Extract(_)
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
-            | ProofTactic::TransportCertificate(_) | ProofTactic::ArithmeticCertificate(_)
+            | ProofTactic::ArithmeticCertificate(_)
             | ProofTactic::ArithmeticUsing(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
@@ -2708,7 +2708,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Solve => "solve",
         ProofTactic::ImplicitSolve => "implicit tail",
         ProofTactic::SolveUsing(_) => "solve",
-        ProofTactic::TransportCertificate(_) => "transport_certificate",
         ProofTactic::ArithmeticCertificate(_) => "arithmetic_certificate",
     }
 }

@@ -3562,7 +3562,7 @@ fn statement_contains_internal_throw(statement: &ProgramStatement) -> bool {
         | ProgramStatement::CopyAggregate { .. }
         | ProgramStatement::InitializeScalarArray { .. }
         | ProgramStatement::Assign { .. }
-        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::CallConstruct { .. }
         | ProgramStatement::Call { .. }
         | ProgramStatement::CallResult { .. }
         | ProgramStatement::HeapAllocate { .. }
@@ -4006,10 +4006,6 @@ impl VerifiedLoopRule {
             .loop_invariant_correspondence
             .iterations
             .as_ref()
-    }
-
-    pub(crate) fn loop_index(&self) -> Option<usize> {
-        self.loop_index
     }
 
     pub(crate) fn with_loop_index(mut self, loop_index: usize) -> Self {

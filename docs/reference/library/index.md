@@ -723,6 +723,47 @@ implicit; a sidecar writes `click::result::unwrap_or(r, d)` with no import.
 
 Source: `library/integer.click`, `import click::integer;`. Width-specific order, definedness and `to_integer` lemmas, unsigned wrapping operations, round trips through the `to_*` conversions, and `Integer` truncating-division laws. [Trust](../../concepts/trust.md#the-click-library) says which theorems are kernel standard theorems.
 
+### Foundational integer order axioms
+
+These trusted laws expose addition of inequalities, nonnegative scaling, and
+integer rounding to ordinary `apply(...) using { ... }` proofs. They state
+mathematical Integer laws; machine operations still need their definedness and
+observation bridges. The scaling law is
+[`integer::multiply_order_nonnegative`](#integermultiply_order_nonnegative).
+
+### `integer::add_le`
+
+```click
+axiom add_le(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a <= b;
+    requires c <= d;
+    ensures a + c <= b + d;
+}
+```
+
+**Meaning:** Adds two inequalities. Both input bounds must be explicitly available.
+
+**Kind:** trusted axiom.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::round_down_le`
+
+```click
+axiom round_down_le(value: Integer, bound: Integer, divisor: Integer, remainder: Integer) {
+    requires 0 < divisor;
+    requires remainder < divisor;
+    requires value * divisor <= bound * divisor + remainder;
+    ensures value <= bound;
+}
+```
+
+**Meaning:** Rounds an upper bound down to an integer. A positive divisor and a remainder strictly below it are required; the remainder may be negative.
+
+**Kind:** trusted axiom.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### Order, definedness and conversion lemmas
 
 ### `integer::int32_increment_upper_bound`
@@ -2991,17 +3032,10 @@ theorem upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, u
 ### `integer::multiply_order_nonnegative`
 
 ```click
-theorem multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
+axiom multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
     requires a <= b;
     requires 0 <= factor;
-    ensures a * factor <= b * factor by {
-        arithmetic_certificate rules {
-            premise 0: a <= b => a <= b;
-            premise 1: 0 <= factor => 0 <= factor;
-            integer_multiply_order bounds [0, 1] => a * factor <= b * factor;
-            conclusion 0;
-        }
-    }
+    ensures a * factor <= b * factor;
 }
 ```
 

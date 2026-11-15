@@ -50,6 +50,7 @@ pub(crate) fn shared_machine_syntax_variables(
                 }
                 KernelTermNode::MachineLiteral(_)
                 | KernelTermNode::IntegerToMachine { .. }
+                | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
                 | KernelTermNode::PointerAddress { .. }
                 | KernelTermNode::MemoryLoad { .. }
@@ -120,6 +121,7 @@ pub(crate) fn shared_machine_conversion_leaves(
             matches!(
                 node,
                 KernelTermNode::IntegerToMachine { .. }
+                    | KernelTermNode::BoolCast { .. }
                     | KernelTermNode::Legacy(_)
                     | KernelTermNode::PointerAddress { .. }
                     | KernelTermNode::Call { .. }

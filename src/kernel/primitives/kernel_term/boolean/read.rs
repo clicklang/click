@@ -2,57 +2,13 @@
 //! selected native descriptor is a lazy adapter for remaining native carriers.
 use super::*;
 
-#[derive(Clone, Debug)]
-pub struct KernelBooleanRead {
-    memory: SharedMemory,
-    address: SharedPointerAddress,
-    observation: Option<SharedPointerAddress>,
-}
-impl PartialEq for KernelBooleanRead {
-    fn eq(&self, other: &Self) -> bool {
-        match (&self.observation, &other.observation) {
-            (None, None) => {
-                self.memory.arena_id() == other.memory.arena_id() && self.address == other.address
-            }
-            (Some(a), Some(b)) => self.memory == other.memory && a == b,
-            _ => false,
-        }
-    }
-}
-impl Eq for KernelBooleanRead {}
-impl Hash for KernelBooleanRead {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.observation.is_some().hash(state);
-        if let Some(address) = &self.observation {
-            self.memory.hash(state);
-            address.hash(state);
-        } else {
-            self.memory.arena_id().hash(state);
-            self.address.hash(state);
-        }
-    }
-}
-impl KernelBooleanRead {
-    pub(crate) fn parts(&self) -> (&SharedMemory, &SharedPointerAddress) {
-        (&self.memory, &self.address)
-    }
-    pub(crate) fn observe(&self, address: SharedPointerAddress) -> Self {
-        Self {
-            memory: self.memory.clone(),
-            address: self.address.clone(),
-            observation: Some(address),
-        }
-    }
-}
+pub type KernelBooleanRead = KernelSnapshotRead;
+
 impl KernelTerm {
     pub(crate) fn boolean_read(memory: SharedMemory, address: SharedPointerAddress) -> Self {
         Self::intern(
             KernelType::Bool,
-            KernelTermNode::BoolRead(KernelBooleanRead {
-                memory,
-                address,
-                observation: None,
-            }),
+            KernelTermNode::BoolRead(KernelSnapshotRead::new(memory, address)),
         )
     }
     /// Explicit native read-leaf boundary, shared by diagnostics and stored-cell

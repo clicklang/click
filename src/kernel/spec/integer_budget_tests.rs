@@ -587,6 +587,45 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
 }
 
 #[test]
+fn defined_memory_load_retains_typed_validity_for_an_already_known_cell() {
+    let pointer = Pointer {
+        block: PointerBlock::Concrete("array".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let proposition = SpecProposition::Defined(SpecExpression::MemoryLoad {
+        memory: SpecMemory::Fixed(Memory::new().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        )),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
+            PointerValue::new(pointer, ProgramType::Int32Pointer),
+        ))),
+        value_type: ProgramType::Int32,
+    });
+
+    let paths = lower_spec_proposition_at_state_with_loop_entry_in(
+        &ExecutionState::default(),
+        &proposition,
+        None,
+        &PureFactContext::new(),
+        &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
+    )
+    .expect("a symbolic load should lower to a definedness obligation");
+    assert_eq!(paths.len(), 1);
+    assert!(matches!(
+        &paths[0].proposition,
+        Proposition::MemoryReadDefined {
+            value_type: ProgramType::Int32,
+            ..
+        }
+    ));
+    assert!(!matches!(
+        &paths[0].proposition,
+        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+    ));
+}
+
+#[test]
 fn integer_existential_branch_filters_exact_load_definitions_only() {
     fn contains(proposition: &Proposition, wanted: &Proposition) -> bool {
         if proposition == wanted {

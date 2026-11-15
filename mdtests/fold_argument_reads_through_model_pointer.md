@@ -25,6 +25,7 @@ void put(struct Node* p) {
 } by {
  match n.model { Model::At(id) => {
   unfold(n); step();
+  have defined(id->left) by { rewrite(id == p); normalize(); }
   have id->left == 0;
   let e = fold(empty(id->left), { model: 0 });
   step_until(function.exit); solve();

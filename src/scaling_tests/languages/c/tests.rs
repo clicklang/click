@@ -190,3 +190,81 @@ fn c_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_th
          {samples:?}"
     );
 }
+
+#[test]
+fn scalar_call_assignments_lower_to_linear_explicit_operations() {
+    let mut samples = Vec::new();
+    for count in [16, 64, 256] {
+        let source = format!(
+            "int32 caller() {{ int32 x; {} return x; }}",
+            "x = other();".repeat(count),
+        );
+        let (function, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let function = syntax::parse_function(&source).expect("scalar calls parse");
+            let _kernel = function.to_kernel_function();
+            function
+        });
+        let mut pending = vec![function.body()];
+        let mut calls = 0;
+        let mut assignments = 0;
+        while let Some(statement) = pending.pop() {
+            match statement {
+                syntax::CStatement::Seq(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
+                }
+                syntax::CStatement::CallResult { .. } => calls += 1,
+                syntax::CStatement::Assign { .. } => assignments += 1,
+                _ => {}
+            }
+        }
+        assert_eq!((calls, assignments), (count, count));
+        assert!(work > 0);
+        samples.push(work);
+    }
+    // Each size quadruples its explicit calls and assignments. Leave room
+    // for indexing, but reject quadratic growth in retained results/history.
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] * 6),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn aggregate_call_assignments_lower_to_linear_explicit_operations() {
+    for declaration in ["struct pair make();", ""] {
+        let mut samples = Vec::new();
+        for count in [16, 64, 256] {
+            let source = format!(
+                "struct pair {{ int32 x; int32 y; }}; {declaration}
+             int32 caller() {{ struct pair p; {} return p.x; }}",
+                "p = make();".repeat(count),
+            );
+            let (functions, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let functions = syntax::parse_functions(&source).expect("aggregate calls parse");
+                let _kernel = functions[0].to_kernel_function();
+                functions
+            });
+            let mut pending = vec![functions[0].body()];
+            let (mut calls, mut copies) = (0, 0);
+            while let Some(statement) = pending.pop() {
+                match statement {
+                    syntax::CStatement::Seq(left, right) => {
+                        pending.push(left);
+                        pending.push(right);
+                    }
+                    syntax::CStatement::CallResult { .. } => calls += 1,
+                    syntax::CStatement::AggregateCopy { .. } => copies += 1,
+                    _ => {}
+                }
+            }
+            assert_eq!((calls, copies), (count, count));
+            assert!(work > 0);
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= pair[0] * 6),
+            "{samples:?}"
+        );
+    }
+}
