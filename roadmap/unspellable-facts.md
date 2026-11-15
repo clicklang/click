@@ -468,7 +468,7 @@ temporary result receipts, byte-view cases and existing pointer handoffs.
 Growing-prefix storage and retrieval perform no operand traversal or numeric
 export. The ordinary example projects and CI-quality check passed.
 
-8n retains logical Boolean arguments through specification call assembly and
+8n (merged [PR #2834](https://github.com/clicklang/click/pull/2834)) retains logical Boolean arguments through specification call assembly and
 nested Boolean call production. Native argument compatibility borrows the
 selected cached descriptor. Lexical bindings keep their common roots, and
 same-type runtime parameter binding, return conversion, contract-result binding
@@ -484,6 +484,26 @@ mode, with call-connection collection enabled and disabled. All 1,994 integratio
 tests passed, including every scaling test, termination and contract completion,
 Integer conversion checks and ordinary example projects.
 The CI-quality check passed.
+
+8p represents algebraic variables and constructors directly in common roots,
+reusing the prepared constructor payload. Imports retain typed Integer/numeric
+and nested algebraic fields; unmigrated field families retain exact native
+payloads rather than coalescing pointer annotations through value equality.
+Iterative import and explicit export visit source/output nodes once instead of
+copying every boxed prefix.
+
+Constructor observation keys normalize their shared fields through the existing
+native observation rules. Producer roots retain exact metadata. Variable readers
+preserve the distinction between free Integer variables in a match scrutinee and
+Integer carriers, including declarations, in ordinary algebraic arguments.
+The existing algebraic Surface spelling handles these roots at the explicit
+output boundary. Selected constructor source comparison remains a native
+compatibility boundary for the algebraic-equality slice; calls, conditionals,
+reads and execution handoffs retain their separately assigned slices.
+
+Validation: 2,128 selected tests passed, including every scaling test, algebraic
+and retained-match readers/rewrites, Surface synthesis, Rust lowering and the
+full ordinary example projects. `scripts/check.sh --ci-quality` exited 0.
 
 ### 8a inventory
 

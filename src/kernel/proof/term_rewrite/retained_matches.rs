@@ -370,11 +370,17 @@ mod tests {
         assert_eq!(KernelTermExport::algebraic_export_count(), exports);
         let result = rewrite.retained_match(&outer).unwrap();
         for child in &result.arguments {
-            let KernelTermNode::Legacy(value) = child.node() else {
-                panic!("exact native replacement boundary");
-            };
-            assert!(
-                matches!(value.value(), PureFunctionArgument::Algebraic(value) if value == &replacement)
+            assert_eq!(
+                child.ty(),
+                &KernelType::Algebraic(replacement.algebraic_type.clone())
+            );
+            assert!(matches!(
+                child.node(),
+                KernelTermNode::Variable(variable) if *variable == Variable(991997)
+            ));
+            assert_eq!(
+                KernelTermExport::default().argument(child),
+                Ok(PureFunctionArgument::Algebraic(replacement.clone()))
             );
         }
         assert_eq!(KernelTermExport::algebraic_export_count(), exports);

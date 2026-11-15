@@ -1460,6 +1460,29 @@ impl KernelTermExport {
         if let Some(value) = term.boolean_argument_native() {
             return Ok(value.clone());
         }
+        // A typed variable is already a complete native leaf descriptor.
+        // Reading it does not invoke an expression-tree exporter.
+        if let KernelTermNode::Variable(variable) = term.node() {
+            match term.ty() {
+                KernelType::Program(ty) => {
+                    if let Some(format) = MachineIntegerType::from_program_type(*ty) {
+                        crate::instrumentation::record_deterministic_work(1);
+                        return Ok(PureFunctionArgument::Value(machine::wrap_exact(
+                            format,
+                            MachineTerm::Variable(*variable),
+                        )));
+                    }
+                }
+                KernelType::Algebraic(ty) => {
+                    crate::instrumentation::record_deterministic_work(1);
+                    return Ok(PureFunctionArgument::Algebraic(AlgebraicTerm {
+                        algebraic_type: ty.clone(),
+                        node: AlgebraicTermNode::Variable(*variable),
+                    }));
+                }
+                _ => {}
+            }
+        }
         if let Some(value) = term.legacy_integer() {
             return Ok(PureFunctionArgument::Integer(value));
         }
