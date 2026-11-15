@@ -3979,7 +3979,13 @@ fn evaluate_spec_algebraic_non_call_in(
                     return Err(ExecutionLimit::Paths);
                 }
                 paths.push(SpecAlgebraicPath {
-                    value: (*term).into(),
+                    value: if !budget.machine_result_production_disabled
+                        && matches!(term.node, AlgebraicTermNode::MemoryLoad { .. })
+                    {
+                        AlgebraicResult::Shared(KernelTermImport::default().algebraic(&term))
+                    } else {
+                        (*term).into()
+                    },
                     facts: path.facts,
                     obligations: path.obligations,
                 });

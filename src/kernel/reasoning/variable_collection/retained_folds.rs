@@ -372,6 +372,23 @@ pub(super) fn common_variables(
                     );
                 }
             }
+            KernelTermNode::AlgebraicRead(read) => match mode {
+                FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
+                    super::retained_pointers::collect_address_variables_with_summaries(
+                        read.parts().1,
+                        mode,
+                        &mut leaf_variables,
+                        summaries,
+                    );
+                }
+                FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders => {}
+                FoldVariableRead::ExpressionFree => collect_machine_leaf(
+                    term.algebraic_read_carrier().expect("algebraic read"),
+                    mode,
+                    &mut leaf_variables,
+                    &mut SeenTerms::default(),
+                ),
+            },
             KernelTermNode::MemoryLoad { address, .. } => match mode {
                 FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
                     super::retained_pointers::collect_address_variables_with_summaries(
@@ -698,7 +715,26 @@ mod tests {
                 ])),
             },
         };
-        for native in [native, conditional] {
+        let read = AlgebraicTerm {
+            algebraic_type: crate::kernel::TypeParameterName::intern("AlgebraicReaderT")
+                .algebraic_type(),
+            node: AlgebraicTermNode::MemoryLoad {
+                memory: crate::kernel::intern_memory(
+                    Memory::new().with_block("algebraic-reader", 8).store(
+                        Memory::global_pointer("algebraic-reader"),
+                        ProgramValue::UInt64(MachineTerm::Variable(Variable(999741))),
+                    ),
+                ),
+                pointer: Box::new(Pointer {
+                    block: PointerBlock::Symbolic(Variable(999742)),
+                    offset: PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::Variable(Variable(999743)),
+                        4,
+                    ),
+                }),
+            },
+        };
+        for native in [native, conditional, read] {
             let root = KernelTermImport::default().algebraic(&native);
             struct Restore(bool);
             impl Drop for Restore {

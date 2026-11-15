@@ -562,7 +562,8 @@ zero-argument algebraic call remained opaque; after giving it an opaque pointer
 argument, that regression and the five focused checks all passed. The quality
 gate exited 0. No production behavior or test limits changed for that adjustment.
 
-8s.1 retains algebraic conditional guards and both branches. Import/export
+8s.1 ([#2839](https://github.com/clicklang/click/pull/2839), merged) retains
+algebraic conditional guards and both branches. Import/export
 preserves written conditional structure, while production keeps the existing
 literal-condition and equal-arm reductions without exporting branch trees.
 Syntax equality, observation normalization, dependency readers and existing
@@ -581,6 +582,24 @@ evaluator scaling, and the existing deep-synthesis budget regression.
 Validation: all 2,794 selected tests passed, including every scaling test,
 algebraic/Boolean/call/nat checks, readers/rewrites, Surface synthesis and full
 ordinary example projects. The quality gate exited 0.
+
+8s.2 represents algebraic reads with their abstract type, exact snapshot and
+shared address. Boolean and algebraic reads reuse the same snapshot descriptor,
+keeping producer arena identity separate from native observation equality.
+Import/export, syntax comparison, observation normalization and existing Surface
+read spelling support the common form. Selected algebraic read results retain
+it; broader binding and execution handoffs remain 8t.
+
+Dependency readers preserve the native UInt64 read-carrier policy, including
+stored-load connections and havoc origins. Read resolution, canonical snapshot
+selection and evidence requirements remain unchanged. Fourteen focused tests
+passed, covering snapshot/type identity, native/common keys, all reader modes,
+actual read results, constant-work construction with growing shared addresses,
+and existing Boolean read and algebraic fact-key regressions.
+Validation: all 2,214 broader tests passed, including every scaling test,
+abstract/parameter/memory checks, algebraic and Boolean behavior, readers,
+rewrites, Surface synthesis and full ordinary example projects. The quality
+gate exited 0.
 
 ### 8a inventory
 

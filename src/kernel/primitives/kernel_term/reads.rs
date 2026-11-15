@@ -2,6 +2,56 @@
 //! memory version, follow an alias, or read a stored value.
 use super::*;
 
+#[derive(Clone, Debug)]
+pub struct KernelSnapshotRead {
+    memory: SharedMemory,
+    address: SharedPointerAddress,
+    observation: Option<SharedPointerAddress>,
+}
+impl PartialEq for KernelSnapshotRead {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.observation, &other.observation) {
+            (None, None) => {
+                self.memory.arena_id() == other.memory.arena_id() && self.address == other.address
+            }
+            (Some(a), Some(b)) => self.memory == other.memory && a == b,
+            _ => false,
+        }
+    }
+}
+impl Eq for KernelSnapshotRead {}
+impl Hash for KernelSnapshotRead {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.observation.is_some().hash(state);
+        if let Some(address) = &self.observation {
+            self.memory.hash(state);
+            address.hash(state);
+        } else {
+            self.memory.arena_id().hash(state);
+            self.address.hash(state);
+        }
+    }
+}
+impl KernelSnapshotRead {
+    pub(crate) fn new(memory: SharedMemory, address: SharedPointerAddress) -> Self {
+        Self {
+            memory,
+            address,
+            observation: None,
+        }
+    }
+    pub(crate) fn parts(&self) -> (&SharedMemory, &SharedPointerAddress) {
+        (&self.memory, &self.address)
+    }
+    pub(crate) fn observe(&self, address: SharedPointerAddress) -> Self {
+        Self {
+            memory: self.memory.clone(),
+            address: self.address.clone(),
+            observation: Some(address),
+        }
+    }
+}
+
 impl KernelTermImport {
     pub(super) fn scalar_read(
         &mut self,

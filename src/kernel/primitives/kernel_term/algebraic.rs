@@ -59,9 +59,13 @@ impl KernelTermImport {
                         pending.push(Task::Call(&term.algebraic_type, name, arguments));
                         pending.extend(arguments.iter().rev().map(Task::Argument));
                     }
-                    _ => values.push(KernelTerm::legacy(PureFunctionArgument::Algebraic(
-                        term.clone(),
-                    ))),
+                    AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+                        values.push(KernelTerm::algebraic_read(
+                            term.algebraic_type.clone(),
+                            memory.clone(),
+                            SharedPointerAddress::import(pointer),
+                        ))
+                    }
                 },
                 Task::If(ty, condition) => {
                     let else_term = values.pop().expect("else branch");
@@ -177,6 +181,18 @@ impl KernelTermExport {
                                 .map(Task::Enter),
                         );
                         pending.extend(matched.arguments.iter().rev().map(Task::Enter));
+                    } else if let KernelTermNode::AlgebraicRead(read) = root.node() {
+                        let KernelType::Algebraic(ty) = root.ty() else {
+                            unreachable!()
+                        };
+                        let (memory, address) = read.parts();
+                        values.push(PureFunctionArgument::Algebraic(AlgebraicTerm {
+                            algebraic_type: ty.clone(),
+                            node: AlgebraicTermNode::MemoryLoad {
+                                memory: memory.clone(),
+                                pointer: Box::new(address.export()?),
+                            },
+                        }));
                     } else if let KernelTermNode::AlgebraicIf { arguments } = root.node() {
                         let KernelType::Algebraic(ty) = root.ty() else {
                             unreachable!()
