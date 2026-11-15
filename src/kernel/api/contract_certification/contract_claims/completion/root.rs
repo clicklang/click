@@ -347,7 +347,7 @@ mod tests {
     > {
         let rules = [rule];
         program
-            .complete(crate::kernel::ProgramTerminationInputs {
+            .generate_termination(crate::kernel::ProgramTerminationInputs {
                 partial_rules: &rules,
                 plans: &[],
                 inline_bodies: &[],
@@ -355,7 +355,8 @@ mod tests {
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
             })
-            .map(|completed| completed.into_termination_rules())
+            .and_then(|proof| proof.prove_implicitly())
+            .map(|proof| proof.complete().into_termination_rules())
     }
 
     #[test]

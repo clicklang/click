@@ -3028,14 +3028,14 @@ fn verify_program_in_context(
     {
         assumed_terminating.extend(modeled_thread_runtime_names());
     }
-    let completed_program = program_contracts.complete(crate::kernel::ProgramTerminationInputs {
+    let proved_program = program_contracts.generate_termination(crate::kernel::ProgramTerminationInputs {
         partial_rules: &partial_rules,
         plans: &termination_plans,
         inline_bodies: &inline_bodies,
         assumed_terminating: &assumed_terminating,
         diverging_contracts: &diverging_contracts,
         has_unselected_functions: !unselected_executing_names.is_empty(),
-    }).map_err(|failure| {
+    }).and_then(|proof| proof.prove_implicitly()).map_err(|failure| {
         use crate::kernel::{ProgramContractFailure, ProgramContractGoal};
         match failure {
             ProgramContractFailure::UnfinishedBody(name) => {
@@ -3080,6 +3080,7 @@ fn verify_program_in_context(
             }
         }
     })?;
+    let completed_program = proved_program.complete();
     function_environment = function_environment
         .with_verified_function_termination_rules(completed_program.into_termination_rules());
 
