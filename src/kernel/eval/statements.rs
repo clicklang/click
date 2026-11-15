@@ -806,7 +806,9 @@ fn write_program_lvalue_paths_without_local_reference(
             let retained_direct = value
                 .shared()
                 .filter(|root| {
-                    root.ty() == &KernelType::Bool || matches!(root.ty(), KernelType::Algebraic(_))
+                    root.ty() == &KernelType::Bool
+                        || matches!(root.ty(), KernelType::Algebraic(_))
+                        || FloatOperandView::from_shared(root).is_some()
                 })
                 .cloned();
             let retained_pointer = value
@@ -1071,8 +1073,8 @@ fn write_program_lvalue_paths_without_local_reference(
                 && ExecutionValue::Shared(root.clone()).program_type()
                     == written_value.program_type()
             {
-                // Byte assembly produces an integer. An unchanged Boolean or
-                // algebraic type keeps the original selected producer.
+                // Byte assembly produces an integer. An unchanged Boolean,
+                // algebraic or float type keeps the original selected producer.
                 ExecutionValue::Shared(root)
             } else {
                 match retained_pointer {

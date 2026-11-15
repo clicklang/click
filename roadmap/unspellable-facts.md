@@ -771,6 +771,19 @@ All 2,209 handoff/scaling checks passed; after integrating upstream, 147
 float/loop/fixture checks passed with zero float fact-stability differences.
 Quality checks passed.
 
+8ab retains float roots in memory cells and same-type store/load handoffs.
+Memory keys continue to use the exact native payload, including width, NaN
+bits and signed zero; native views are requested at the existing memory-key
+and access/conversion boundaries. Cell-carrier copies retain shared prefixes
+without exporting them. Tests cover both float widths, exact key parity and
+loads from materialized cells. This changes no alias, ownership, effective-type,
+volatile or byte-reinterpretation rules. The 109 focused float/fixture checks
+passed with zero fact-stability differences; quality checks passed. All 1,997
+selected memory/scaling checks have passing results across the broad, isolated
+and completion runs. The broad run passed 1,939 before the existing conjunction
+selection transport test hit its 30-second limit; it passed unchanged in
+isolation in 12.792s, and the remaining 57 checks passed separately.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes
