@@ -170,3 +170,51 @@ fn shared_read_capture_visits_address_dags_and_nested_read_prefixes_once() {
         }
     }
 }
+
+#[test]
+fn float_arithmetic_reader_summaries_visit_shared_operands_once() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [
+            crate::kernel::KernelFloatType::Float32,
+            crate::kernel::KernelFloatType::Float64,
+        ] {
+            let mut root =
+                KernelTerm::variable(KernelType::Program(format.program_type()), Variable(999935));
+            for _ in 0..size {
+                root = KernelTerm::float_binary(
+                    format,
+                    crate::kernel::FloatBinaryOperator::Add,
+                    [root.clone(), root],
+                )
+                .unwrap();
+            }
+            for mode in [
+                FoldVariableRead::IntegerFree,
+                FoldVariableRead::ExpressionFree,
+                FoldVariableRead::MachineCapture,
+                FoldVariableRead::IntegerBinders,
+                FoldVariableRead::MachineBinders,
+            ] {
+                let mut summaries = Default::default();
+                let (_, cold) = crate::instrumentation::measure_deterministic_work(|| {
+                    common_variables(&root, mode, &mut summaries)
+                });
+                let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
+                    common_variables(&root, mode, &mut summaries)
+                });
+                assert!(
+                    cold <= 30 * size + 100,
+                    "size={size}, mode={mode:?}, work={cold}"
+                );
+                assert!(warm <= 2, "warm={warm}");
+                assert!(
+                    crate::kernel::FloatOperandView::from_shared(&root)
+                        .unwrap()
+                        .native_compat()
+                        .is_none()
+                );
+            }
+        }
+    }
+}
