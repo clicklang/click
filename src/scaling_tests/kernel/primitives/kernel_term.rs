@@ -1120,3 +1120,88 @@ fn common_boolean_identity_visits_shared_connectives_once() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn boolean_substitution_retains_shared_connective_prefixes() {
+    for size in [16, 64, 256] {
+        let variable = Variable(968_000);
+        let mut root = KernelTerm::variable(KernelType::Bool, variable);
+        for _ in 0..size {
+            root = KernelTerm::intern(
+                KernelType::Bool,
+                KernelTermNode::BoolEqual {
+                    arguments: [root.clone(), root],
+                },
+            );
+        }
+        let (mut rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
+                &root,
+                variable,
+                &MachineTerm::constant(1),
+            )
+            .unwrap()
+        });
+        assert!(work <= 12 * (size + 1), "size={size}, work={work}");
+        for _ in 0..size {
+            let KernelTermNode::BoolEqual { arguments } = rewritten.node() else {
+                panic!("unfolded equality")
+            };
+            assert_eq!(arguments[0], arguments[1]);
+            rewritten = arguments[0].clone();
+        }
+        // An Int32 word is not a typed Bool literal. Preserve the native
+        // truth conversion, including its explicit UInt8 comparison.
+        let expected = KernelTermImport::default().condition(&ConditionTerm::truth_of_bool_word(
+            &MachineTerm::constant(1),
+        ));
+        assert_eq!(rewritten, expected);
+    }
+}
+
+#[test]
+fn boolean_substitution_reuses_overlapping_arithmetic_operands() {
+    let mut samples = Vec::new();
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let source = Variable(971_150);
+        let mut word = KernelTerm::variable(KernelType::Program(format.program_type()), source);
+        let factor = KernelTerm::variable(
+            KernelType::Program(format.program_type()),
+            Variable(971_151),
+        );
+        let zero = KernelTermImport::default().machine(format, &MachineTerm::constant(0));
+        let mut condition = KernelTermImport::default().condition(&ConditionTerm::Constant(true));
+        for _ in 0..size {
+            word = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Multiply,
+                [word, factor.clone()],
+            );
+            let atom = KernelTerm::boolean_comparison_raw(
+                format,
+                CompareRelation::LessThan,
+                [word.clone(), zero.clone()],
+            );
+            condition = KernelTerm::boolean_equal_raw([condition, atom]);
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let result =
+                crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
+                    &condition,
+                    source,
+                    &MachineTerm::Variable(Variable(971_152)),
+                )
+                .unwrap();
+            assert_ne!(result, condition);
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|p| p[1] <= 5 * p[0] + 100),
+        "{samples:?}"
+    );
+}

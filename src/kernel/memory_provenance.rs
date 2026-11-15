@@ -6687,6 +6687,7 @@ pub(in crate::kernel) use shared_index_transport::{
     index_syntax_equal as pointer_index_syntax_equal, map_index as map_shared_pointer_index,
     map_index_with_descent as map_shared_pointer_index_with_descent,
     map_index_with_fold as map_shared_pointer_index_with_fold,
+    map_index_with_fold_and_cache as map_shared_machine_substitution_with_cache,
     transported_scaled_index as rebuild_scaled_pointer_index,
 };
 use shared_index_transport::{

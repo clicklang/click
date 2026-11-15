@@ -18,6 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
 mod algebraic_match_tests;
+mod common_boolean;
 #[cfg(test)]
 mod graph_condition_tests;
 #[cfg(test)]
@@ -29,6 +30,7 @@ mod retained_folds;
 #[allow(dead_code)]
 mod retained_matches;
 mod shared_comparison;
+pub(in crate::kernel) use common_boolean::substitute_pointer_boolean_value;
 #[cfg(test)]
 mod shared_source_tests;
 mod shared_wide_syntax;

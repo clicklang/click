@@ -67,6 +67,26 @@ pub(in crate::kernel) fn map_index_with_fold(
     descend: impl Fn(&KernelTerm) -> bool,
     map_fold: impl Fn(&KernelTerm) -> Result<Option<KernelTerm>, ()>,
 ) -> Option<SharedMachineIntegerTerm> {
+    map_index_with_fold_and_cache(
+        value,
+        map_leaf,
+        rebuild,
+        descend,
+        map_fold,
+        &mut HashMap::new(),
+    )
+}
+
+/// Reuse work across roots in one substitution scope. Callers own the memo;
+/// neither snapshots nor substitutions may change while it is reused.
+pub(in crate::kernel) fn map_index_with_fold_and_cache(
+    value: &SharedMachineIntegerTerm,
+    map_leaf: impl Fn(&MachineTerm) -> Option<MachineTerm>,
+    rebuild: impl Fn(&KernelTerm, &[KernelTerm]) -> Option<KernelTerm>,
+    descend: impl Fn(&KernelTerm) -> bool,
+    map_fold: impl Fn(&KernelTerm) -> Result<Option<KernelTerm>, ()>,
+    results: &mut HashMap<u64, KernelTerm>,
+) -> Option<SharedMachineIntegerTerm> {
     let Some(root) = value.shared_operand() else {
         return Some(SharedMachineIntegerTerm::index(
             value.ty(),
@@ -75,7 +95,6 @@ pub(in crate::kernel) fn map_index_with_fold(
     };
     // Authority is local to this invocation: no answer survives a changed
     // snapshot, fact context, registry, or direct-versus-general frame policy.
-    let mut results = HashMap::<u64, KernelTerm>::new();
     let mut pending = vec![(root, false)];
     while let Some((node, finish)) = pending.pop() {
         if crate::instrumentation::deadline_exceeded_with_work(1) {
@@ -159,7 +178,7 @@ pub(in crate::kernel) fn map_index_with_fold(
         };
         results.insert(node.id(), rewritten);
     }
-    SharedMachineIntegerTerm::from_shared(value.ty(), results.remove(&root.id())?)
+    SharedMachineIntegerTerm::from_shared(value.ty(), results.get(&root.id())?.clone())
 }
 // Preserve scale_int32/scale_int64's literal and signed-extension rules.
 // The destination already accepts a retained operand; it is not a native

@@ -5302,6 +5302,93 @@ mod machine_integer_substitution_tests {
     }
 }
 
+// Prepared for the common Boolean producer/handoff slices. Atomic comparison,
+// call and opaque-payload substitution keeps the established native semantics;
+// the surrounding Boolean DAG is reconstructed without exporting its prefixes.
+#[allow(dead_code)]
+pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
+    condition: &KernelTerm,
+    from: Variable,
+    to: &MachineTerm,
+) -> Option<KernelTerm> {
+    let mut machine_results = std::collections::HashMap::new();
+    condition
+        .map_boolean_leaves::<()>(|leaf| {
+            if let crate::kernel::KernelTermNode::BoolCompare {
+                format,
+                relation,
+                arguments,
+            } = leaf.node()
+            {
+                let arguments = arguments.each_ref().map(|argument| {
+                    let operand =
+                        crate::kernel::MachineOperandView::Shared(argument).retain(*format);
+                    crate::kernel::memory_provenance::map_shared_machine_substitution_with_cache(
+                        &operand,
+                        |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
+                        crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
+                        |_| true,
+                        |root| {
+                            let source = MachineTerm::Variable(from);
+                            let mut rewrite =
+                                crate::kernel::proof::term_rewrite::TermRewrite::for_bits(
+                                    &source, to,
+                                );
+                            rewrite.enable_registered_load_resolution();
+                            let result = rewrite.shared_machine_operand(root);
+                            result
+                                .filter(|_| rewrite.refusal().is_none())
+                                .map(Some)
+                                .ok_or(())
+                        },
+                        &mut machine_results,
+                    )
+                    .and_then(|value| value.shared_operand().cloned())
+                });
+                let [Some(left), Some(right)] = arguments else {
+                    return Err(());
+                };
+                let arguments = [left, right];
+                return Ok(
+                    if *format == MachineIntegerType::Int64 && *relation == CompareRelation::Equal {
+                        KernelTerm::boolean_comparison_raw(*format, *relation, arguments)
+                    } else {
+                        KernelTerm::boolean_comparison(*format, *relation, arguments)
+                    },
+                );
+            }
+            let native = crate::kernel::BooleanOperandView::Shared(leaf).identity_leaf();
+            Ok(crate::kernel::KernelTermImport::default().condition(
+                &substitute_bitvector_variable_in_condition(&native, from, to),
+            ))
+        })
+        .ok()
+}
+
+#[allow(dead_code)]
+pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
+    condition: &KernelTerm,
+    from: Variable,
+    to: &Pointer,
+) -> Option<KernelTerm> {
+    if crate::kernel::BooleanOperandView::Shared(condition).is_bool_value_form() {
+        return crate::kernel::proof::term_rewrite::substitute_pointer_boolean_value(
+            condition, from, to,
+        );
+    }
+    if crate::kernel::BooleanOperandView::Shared(condition)
+        .comparison()
+        .is_some()
+    {
+        return Some(condition.clone());
+    }
+    let native = crate::kernel::BooleanOperandView::Shared(condition).native();
+    Some(
+        crate::kernel::KernelTermImport::default()
+            .condition(&substitute_pointer_variable_in_condition(&native, from, to)),
+    )
+}
+
 pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
     condition: &ConditionTerm,
     from: Variable,
