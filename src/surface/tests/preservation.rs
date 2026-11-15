@@ -1708,3 +1708,30 @@ fn local_pointer_memory_observation_uses_its_element_type() {
         }
     }
 }
+
+#[test]
+#[ignore = "nightly: resource-scope preservation migration expansion and cold replay"]
+fn resource_scope_preservation_migrations_expand_and_replay() {
+    for (fixture, claim) in [
+        (
+            "mdtests/solve_chains_equalities_stated_in_a_scope.md",
+            "caller.contract",
+        ),
+        (
+            "mdtests/resource_unfold_binds_scalar_field.md",
+            "claim.contract",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        assert!(!expanded.contains("transport("), "{fixture}: {expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
