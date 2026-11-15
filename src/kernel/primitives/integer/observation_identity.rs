@@ -148,6 +148,18 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 KernelTermNode::Legacy(value) => {
                     KernelTerm::native_observation_leaf(value.value().clone())
                 }
+                KernelTermNode::BoolRead(read) => {
+                    let (_, address) = read.parts();
+                    KernelTerm::intern(
+                        KernelType::Bool,
+                        KernelTermNode::BoolRead(read.observe(
+                            crate::kernel::SharedPointerAddress::new(
+                                address.node().block.observation(),
+                                normalize_offset(&address.node().offset),
+                            ),
+                        )),
+                    )
+                }
                 KernelTermNode::PointerValueEqual(pair) => KernelTerm::intern(
                     KernelType::Bool,
                     KernelTermNode::PointerValueEqual(pair.observe(
