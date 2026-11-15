@@ -7,8 +7,9 @@ from the retired PR #646 implementation. The source baseline is upstream
 output-initializer witness named below; no verifier semantics are changed.
 
 This is a bounded source and regression audit, not a soundness proof or a
-full-language operation census. Test selection and results are recorded below. An existing C++ positive witness and a pointer-field resource fixture are
-refused on this baseline; neither is counted as passing support.
+full-language operation census. Test selection and results are recorded below. An existing C++ positive witness and a pointer-field resource fixture were
+refused on this baseline. The getter repair below supersedes its baseline
+result; the original audit counts remain historical.
 Historical archive passes/failures are not counted as current results.
 
 ## Findings
@@ -35,7 +36,8 @@ Historical archive passes/failures are not counted as current results.
    by themselves establish the combination of a modular unwritten byte-output
    contract, the byte view and the caller's exact typed word observation. That
    composition remains a focused acceptance obligation.
-6. The existing C++ external-backing reference witness fails before its getter
+6. At the original audit baseline, the C++ external-backing reference witness
+   fails before its getter
    call: stable-view planning cannot supply the receiver loan. Its construction
    factory proof-mode check and destroyed-backing rejection both pass. This
    narrows the confirmed failure to that constructed-view call path; it does
@@ -63,7 +65,7 @@ regressions, not an assertion that every operation in the same category works.
 | Construction and copying | `kernel/functions/construction_return.rs`, `languages/cpp/construction.rs` | `aggregate_return_tests`: exact destinations through factories, aliasing without freshness, uninitialized-source rejection, join/substitution and temporary retirement. `record_copy_keeps_self_pointer_value_without_rebasing_it` checks C++ source admission. |
 | Initialization and joins | `surface/lowering/resource_lowering.rs`, shared initialized-memory state | `naming_symbolic_construction_storage_does_not_initialize_it`, `symbolic_construction_initialization_survives_havoc_and_intersects_at_join`; ownership and naming cannot substitute for writes. |
 | Modular initialization | `surface/parser.rs`, `surface/lowering/resource_lowering.rs`, `kernel/functions/call_initialization.rs`, produced-memory transfer in `kernel/functions.rs` | `an_initializer_produces_the_memory_it_initialized.md`, `produces_refuses_memory_the_function_did_not_write.md`, `verified_call_initialization_tests`, and the new `cpp_initializer_produces_written_memory.md`. |
-| Lifetime and backing | `languages/cpp/lifetime.rs`, construction retirement and allocation generations | `cpp_reference_into_destroyed_local_backing_cannot_be_read_offline` passes. `cpp_external_backing_reference_survives_descriptor_destruction_offline` fails at the getter call before destruction; see the reproduction below. Do not claim the positive path from the existence of its test. |
+| Lifetime and backing | `languages/cpp/lifetime.rs`, construction retirement and allocation generations | `cpp_reference_into_destroyed_local_backing_cannot_be_read_offline` passes. `cpp_external_backing_reference_survives_descriptor_destruction_offline` failed at the getter call before destruction on the original baseline and passes after the metadata repair below. Its writable counterpart passes too. |
 | Typed/byte values | `kernel/eval/byte_view.rs`, `kernel/tests/byte_view_tests.rs`, byte-representation design | Complete declared uint32 assembly, partial-write refusals, same-snapshot observations and no byte forging of pointer cells. This is a selected target rule, not arbitrary retyping. |
 | Native type admission | `languages/cpp/schema.rs`, `languages/cpp/validity.rs`, `languages/cpp/scalar.rs`, parameter lowering | Checked record identities and layouts, supported reference/pointer forms, authenticated `std::byte`, restricted casts; `cpp_native_pointer_artifacts_reject_pointee_substitution_offline` and `nested_record_artifacts_reject_wrong_identity_extent_constness_and_cycles`. This is not yet the full interface matrix below. |
 
@@ -73,7 +75,7 @@ otherwise. `design/aggregate-construction.md`,
 `design/pointer-subobject-extents.md`, and
 `docs/internals/byte-representation.md` describe the delivered bounded rules.
 
-## Confirmed current failure: constructed-view receiver loan
+## Constructed-view getter: baseline failure and repair
 
 Run the existing named test, not the entire nightly suite:
 
@@ -92,7 +94,8 @@ pattern is a `View` constructor storing `int* data`, `get() const` returning
 destroyed. `run` views the external `data[0..1]`; the getter views both the
 pointer field and its backing cell.
 
-The test exits unsuccessfully with this planning refusal:
+At the original audit baseline, the test exits unsuccessfully with this
+planning refusal:
 
 ```text
 run.contract tactic 0: step() could not verify C operation:
@@ -105,9 +108,39 @@ The reported context includes the caller's `views data[0]`, the constructed
 `owns view[0..8]`, and the pointer-field equality to `data`. The refusal is at
 the getter call, before local destruction. There is no `goal:` line for a
 specific unproved proposition. Under the tracing procedure this is an
-`unclear-trace` outcome; the loan supplier/identity still needs reduction
-before assigning an internal cause. No new bug file or GitHub issue was filed.
-The active roadmap retains the original witness and this unresolved frontier.
+`unclear-trace` outcome; the internal cause was not yet established. No new bug file or GitHub issue was filed.
+The unchanged witness remains in the test suite. The follow-up below resolves
+this frontier without changing the C++ or contracts.
+
+### Repair: preserve byte identity across object metadata
+
+A follow-up reproduces the failure on upstream `3cd0f9491`. Removing the
+destructor passes, but adding an unrelated local declaration to that passing
+case fails again. Returning only the stored pointer, without reading through
+it, passes. Thus the descriptor field is readable; the missing evidence is
+for reborrowing its external backing after extra declarations, including
+cleanup's compiler-generated captures.
+
+`record_memory_derivation` now retains the predecessor's byte-read identity for
+`BlockDeclared` and `ObjectInitializationRecorded`, as it already does for
+byte-preserving observation/cache transitions. These edges write no values.
+The current snapshot still supplies type, lifetime, initialization and access
+checks. An actual write retains its distinct identity; neither numeric address
+equality nor a metadata transition manufactures a loan or ownership.
+
+The original read-only and writable descriptor-destruction tests now pass,
+including their selected expansion/cold/retained checking and hostile-contract
+controls. The existing destroyed-local-backing rejection still passes. A fast
+kernel regression checks complete pointer designation/address identity across
+both metadata edges, distinct initialization states, absence of read authority,
+and refusal to identify a pointer after an upper-half byte write. The existing
+read-identity production scaling regression now includes declaration and
+initialization metadata at 8/32/128/512 steps; endpoint work remains bounded.
+
+The pre-integration checks pass all 369 selected memory/loan/construction and
+search-boundary tests and all 1,616 active scaling tests. Final integration
+validation is recorded in the fix PR. The whole object-model item remains open;
+this repair does not claim its remaining interface or byte-output evidence.
 
 ## Confirmed current failure: produced resource through a pointer field
 
