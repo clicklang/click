@@ -59,7 +59,7 @@ void graft(int32* p) {
         Shape::Empty => { contradiction(t.model == Shape::Empty); },
         Shape::Node(left, right) => {
             have shape_left(old(t.model)) == left by {
-                rewrite(old(t.model) == Shape::Node(left, right));
+                rewrite(old(t.model), Shape::Node(left, right));
                 unfold(shape_left(Shape::Node(left, right)));
                 normalize();
             }

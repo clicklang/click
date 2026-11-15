@@ -45,7 +45,7 @@ int32 run(int32 value) {
     step(); step();
     branch { step(); step(); solve(); } else {}
     step(); step(); step();
-    have h->target->payload == value by { rewrite(h->target == p); solve(); }
+    have h->target->payload == value by { rewrite(h->target, p); solve(); }
 }
 ```
 

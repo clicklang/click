@@ -57,7 +57,7 @@ void countdown(int32 n) {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },
                 Chain::Link(rest_model) => {
                     have chain_len(c.model) == chain_len(rest_model) + 1 by {
-                        rewrite(c.model == Chain::Link(rest_model));
+                        rewrite(c.model, Chain::Link(rest_model));
                         unfold(chain_len(Chain::Link(rest_model)));
                         normalize();
                     }

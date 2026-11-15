@@ -286,9 +286,9 @@ uint32 contribute_early(struct counter* p) {
         known();
     }
     have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-        rewrite(at(function.entry, to_integer(p->value)) == at(function.entry, (3 - to_integer(count(remaining(p))))));
-        rewrite(to_integer(p->value) == (3 - to_integer(count(remaining(p)))));
-        rewrite(to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1));
+        rewrite(at(function.entry, to_integer(p->value)), at(function.entry, (3 - to_integer(count(remaining(p))))));
+        rewrite(to_integer(p->value), (3 - to_integer(count(remaining(p)))));
+        rewrite(to_integer(count(remaining(p))), (to_integer(old(count(remaining(p)))) - 1));
         normalize();
     }
     known();
@@ -969,9 +969,9 @@ uint32 contribute_branch(struct counter* p, int32 report) {
             known();
         }
         have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-            rewrite(at(function.entry, to_integer(p->value)) == at(function.entry, (3 - to_integer(count(remaining(p))))));
-            rewrite(to_integer(p->value) == (3 - to_integer(count(remaining(p)))));
-            rewrite(to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1));
+            rewrite(at(function.entry, to_integer(p->value)), at(function.entry, (3 - to_integer(count(remaining(p))))));
+            rewrite(to_integer(p->value), (3 - to_integer(count(remaining(p)))));
+            rewrite(to_integer(count(remaining(p))), (to_integer(old(count(remaining(p)))) - 1));
             normalize();
         }
         known();
@@ -1018,9 +1018,9 @@ uint32 contribute_branch(struct counter* p, int32 report) {
             known();
         }
         have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-            rewrite(at(function.entry, to_integer(p->value)) == at(function.entry, (3 - to_integer(count(remaining(p))))));
-            rewrite(to_integer(p->value) == (3 - to_integer(count(remaining(p)))));
-            rewrite(to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1));
+            rewrite(at(function.entry, to_integer(p->value)), at(function.entry, (3 - to_integer(count(remaining(p))))));
+            rewrite(to_integer(p->value), (3 - to_integer(count(remaining(p)))));
+            rewrite(to_integer(count(remaining(p))), (to_integer(old(count(remaining(p)))) - 1));
             normalize();
         }
         known();

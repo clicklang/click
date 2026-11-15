@@ -108,7 +108,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     } else {
                         have k == (j - 1);
                         have to_integer(k) == to_integer(at(region(4).entry, j));
-                        rewrite(k == at(region(4).entry, j));
+                        rewrite(k, at(region(4).entry, j));
                         solve() using {
                             at(region(7).entry, p[(j + 1)]) < at(region(7).entry, tmp);
                         };
@@ -139,7 +139,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     } else {
                         have k == (j - 1);
                         have to_integer(k) == to_integer(at(region(4).entry, j));
-                        rewrite(k == at(region(4).entry, j));
+                        rewrite(k, at(region(4).entry, j));
                         have at(region(9).entry, p[(j + 1)]) >= at(region(9).entry, p[j]);
                         solve() using {
                             at(region(9).entry, p[(j + 1)]) >= at(region(9).entry, p[j]);
@@ -224,7 +224,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     enumerate();
                 }
                 have j == 1 by {
-                    rewrite(at(region(17).entry, j) == at(region(17).entry, 0));
+                    rewrite(at(region(17).entry, j), at(region(17).entry, 0));
                     normalize();
                 }
                 transport(at(before_swap, p[(j + 1)] < p[j]), p[0] < p[1]) using {
@@ -238,7 +238,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 }
                 have all_le_range(p, 0, j, p[j]) by {
                     unfold(all_le_range);
-                    rewrite(j == 1);
+                    rewrite(j, 1);
                     enumerate();
                 }
             } else {
@@ -264,7 +264,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 step();
                 step();
                 have j == 1 by {
-                    rewrite(at(region(17).entry, j) == at(region(17).entry, 0));
+                    rewrite(at(region(17).entry, j), at(region(17).entry, 0));
                     normalize();
                 }
                 transport(at(before_swap, not p[(j + 1)] < p[j]), not p[1] < p[0]) using {
@@ -288,7 +288,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 }
                 have all_le_range(p, 0, j, p[j]) by {
                     unfold(all_le_range);
-                    rewrite(j == 1);
+                    rewrite(j, 1);
                     enumerate();
                 }
             }

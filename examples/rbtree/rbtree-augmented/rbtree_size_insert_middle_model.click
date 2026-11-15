@@ -36,12 +36,12 @@ theorem sized_context_middle_rotation_preserves_inorder(g: struct rb_node*, p: s
         unfold(rb_inorder(RbTree::Empty));
         unfold(rb_inorder(RbTree::Node(m, p, Color::Black, RbTree::Empty, RbTree::Empty)));
         unfold(rb_inorder(RbTree::Node(m, g, Color::Black, RbTree::Empty, RbTree::Empty)));
-        rewrite(rb_inorder(RbTree::Empty) == List::Nil);
+        rewrite(rb_inorder(RbTree::Empty), List::Nil);
         unfold(list::append(List::Nil, List::Cons(m, List::Nil)));
         unfold(list::append(List::Cons(m, List::Nil), List::Cons(g, List::Nil)));
         unfold(list::append(List::Nil, List::Cons(g, List::Nil)));
         apply(list::append_associative(rb_inorder(RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))), List::Cons(p, List::Cons(m, List::Nil)), List::Cons(g, List::Nil)));
-        rewrite(list::append(list::append(rb_inorder(RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))), List::Cons(p, List::Cons(m, List::Nil))), List::Cons(g, List::Nil)) == list::append(rb_inorder(RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))), list::append(List::Cons(p, List::Cons(m, List::Nil)), List::Cons(g, List::Nil))));
+        rewrite(list::append(list::append(rb_inorder(RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))), List::Cons(p, List::Cons(m, List::Nil))), List::Cons(g, List::Nil)), list::append(rb_inorder(RbTree::Node(node, p, Color::Red, sized_shape(left), sized_shape(right))), list::append(List::Cons(p, List::Cons(m, List::Nil)), List::Cons(g, List::Nil))));
         unfold(list::append(List::Cons(p, List::Cons(m, List::Nil)), List::Cons(g, List::Nil)));
         unfold(list::append(List::Cons(m, List::Nil), List::Cons(g, List::Nil)));
         unfold(list::append(List::Nil, List::Cons(g, List::Nil)));

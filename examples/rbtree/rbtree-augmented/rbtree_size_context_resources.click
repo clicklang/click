@@ -88,8 +88,8 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
                 unfold(sized_context_parent(SizedContext::Top, stop)); normalize();
             }
             have sized_parent_is(sub.model, stop) == 1 by {
-                rewrite(stop == sized_context_parent(SizedContext::Top, stop));
-                rewrite(SizedContext::Top == old(path.model));
+                rewrite(stop, sized_context_parent(SizedContext::Top, stop));
+                rewrite(SizedContext::Top, old(path.model));
                 known();
             }
             match sub.model {
@@ -99,7 +99,7 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
                     unfold(sized_plug(SizedContext::Top, SizedTree::Empty));
                     have whole.model == sized_plug(old(path.model), old(sub.model)) by { solve(); }
                     have sized_parent_is(whole.model, stop) == 1 by {
-                        rewrite(whole.model == SizedTree::Empty);
+                        rewrite(whole.model, SizedTree::Empty);
                         unfold(sized_parent_is(SizedTree::Empty, stop)); normalize();
                     }
                 },
@@ -109,8 +109,8 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
                     unfold(sized_plug(SizedContext::Top, SizedTree::Node(node, parent, color, value, left_model, right_model)));
                     have whole.model == sized_plug(old(path.model), old(sub.model)) by { solve(); }
                     have sized_parent_is(whole.model, stop) == 1 by {
-                        rewrite(whole.model == SizedTree::Node(node, parent, color, value, left_model, right_model));
-                        rewrite(SizedTree::Node(node, parent, color, value, left_model, right_model) == old(sub.model));
+                        rewrite(whole.model, SizedTree::Node(node, parent, color, value, left_model, right_model));
+                        rewrite(SizedTree::Node(node, parent, color, value, left_model, right_model), old(sub.model));
                         known();
                     }
                 },
@@ -122,34 +122,34 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
                 unfold(sized_context_parent(SizedContext::Left(node, parent, color, value, sibling_model, up_model), stop)); normalize();
             }
             have sized_parent_is(sub.model, node) == 1 by {
-                rewrite(node == sized_context_parent(SizedContext::Left(node, parent, color, value, sibling_model, up_model), stop));
-                rewrite(SizedContext::Left(node, parent, color, value, sibling_model, up_model) == path.model);
+                rewrite(node, sized_context_parent(SizedContext::Left(node, parent, color, value, sibling_model, up_model), stop));
+                rewrite(SizedContext::Left(node, parent, color, value, sibling_model, up_model), path.model);
                 known();
             }
             let { metadata: metadata, sibling: sibling, up: up } = unfold(path);
             have to_integer(value) == 1 + to_integer(sized_value(old(sub.model))) + to_integer(sized_value(sibling_model)) by {
-                rewrite(sized_value(old(sub.model)) == previous);
+                rewrite(sized_value(old(sub.model)), previous);
                 known();
             }
             let lifted = fold(sized_at(node), { model: SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model) }, { metadata: metadata, left: sub, right: sibling });
             have sized_value(lifted.model) == value by {
-                rewrite(lifted.model == SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model));
+                rewrite(lifted.model, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model));
                 unfold(sized_value(SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model))); normalize();
             }
             have sized_parent_is(lifted.model, sized_context_parent(up.model, stop)) == 1 by {
-                rewrite(lifted.model == SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model));
-                rewrite(up.model == up_model);
+                rewrite(lifted.model, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model));
+                rewrite(up.model, up_model);
                 unfold(sized_parent_is(SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), sized_context_parent(up_model, stop)));
                 normalize() using { parent == sized_context_parent(up_model, stop); };
             }
             apply(sized_context_depth_nonnegative(up_model));
-            have 0 <= sized_context_depth(up.model) by { rewrite(up.model == up_model); known(); }
+            have 0 <= sized_context_depth(up.model) by { rewrite(up.model, up_model); known(); }
             have sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1 by {
-                rewrite(old(path.model) == SizedContext::Left(node, parent, color, value, sibling_model, up_model));
+                rewrite(old(path.model), SizedContext::Left(node, parent, color, value, sibling_model, up_model));
                 unfold(sized_context_depth(SizedContext::Left(node, parent, color, value, sibling_model, up_model))); normalize();
             }
             have sized_context_depth(up.model) < sized_context_depth(old(path.model)) by {
-                rewrite(up.model == up_model);
+                rewrite(up.model, up_model);
                 solve() using { sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1; };
             }
             have sized_plug(SizedContext::Left(node, parent, color, value, sibling_model, up_model), old(sub.model)) == sized_plug(up_model, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model)) by {
@@ -157,8 +157,8 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
             }
             let { whole: whole } = restore_sized_context(node, root, stop, value, { path: up, sub: lifted });
             have whole.model == sized_plug(old(path.model), old(sub.model)) by {
-                rewrite(old(path.model) == SizedContext::Left(node, parent, color, value, sibling_model, up_model));
-                rewrite(sized_plug(SizedContext::Left(node, parent, color, value, sibling_model, up_model), old(sub.model)) == sized_plug(up_model, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model)));
+                rewrite(old(path.model), SizedContext::Left(node, parent, color, value, sibling_model, up_model));
+                rewrite(sized_plug(SizedContext::Left(node, parent, color, value, sibling_model, up_model), old(sub.model)), sized_plug(up_model, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model)));
                 solve();
             }
             have sized_parent_is(whole.model, stop) == 1 by { known(); }
@@ -169,34 +169,34 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
                 unfold(sized_context_parent(SizedContext::Right(node, parent, color, value, sibling_model, up_model), stop)); normalize();
             }
             have sized_parent_is(sub.model, node) == 1 by {
-                rewrite(node == sized_context_parent(SizedContext::Right(node, parent, color, value, sibling_model, up_model), stop));
-                rewrite(SizedContext::Right(node, parent, color, value, sibling_model, up_model) == path.model);
+                rewrite(node, sized_context_parent(SizedContext::Right(node, parent, color, value, sibling_model, up_model), stop));
+                rewrite(SizedContext::Right(node, parent, color, value, sibling_model, up_model), path.model);
                 known();
             }
             let { metadata: metadata, sibling: sibling, up: up } = unfold(path);
             have to_integer(value) == 1 + to_integer(sized_value(sibling_model)) + to_integer(sized_value(old(sub.model))) by {
-                rewrite(sized_value(old(sub.model)) == previous);
+                rewrite(sized_value(old(sub.model)), previous);
                 known();
             }
             let lifted = fold(sized_at(node), { model: SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)) }, { metadata: metadata, left: sibling, right: sub });
             have sized_value(lifted.model) == value by {
-                rewrite(lifted.model == SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)));
+                rewrite(lifted.model, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)));
                 unfold(sized_value(SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)))); normalize();
             }
             have sized_parent_is(lifted.model, sized_context_parent(up.model, stop)) == 1 by {
-                rewrite(lifted.model == SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)));
-                rewrite(up.model == up_model);
+                rewrite(lifted.model, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)));
+                rewrite(up.model, up_model);
                 unfold(sized_parent_is(SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), sized_context_parent(up_model, stop)));
                 normalize() using { parent == sized_context_parent(up_model, stop); };
             }
             apply(sized_context_depth_nonnegative(up_model));
-            have 0 <= sized_context_depth(up.model) by { rewrite(up.model == up_model); known(); }
+            have 0 <= sized_context_depth(up.model) by { rewrite(up.model, up_model); known(); }
             have sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1 by {
-                rewrite(old(path.model) == SizedContext::Right(node, parent, color, value, sibling_model, up_model));
+                rewrite(old(path.model), SizedContext::Right(node, parent, color, value, sibling_model, up_model));
                 unfold(sized_context_depth(SizedContext::Right(node, parent, color, value, sibling_model, up_model))); normalize();
             }
             have sized_context_depth(up.model) < sized_context_depth(old(path.model)) by {
-                rewrite(up.model == up_model);
+                rewrite(up.model, up_model);
                 solve() using { sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1; };
             }
             have sized_plug(SizedContext::Right(node, parent, color, value, sibling_model, up_model), old(sub.model)) == sized_plug(up_model, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model))) by {
@@ -204,8 +204,8 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
             }
             let { whole: whole } = restore_sized_context(node, root, stop, value, { path: up, sub: lifted });
             have whole.model == sized_plug(old(path.model), old(sub.model)) by {
-                rewrite(old(path.model) == SizedContext::Right(node, parent, color, value, sibling_model, up_model));
-                rewrite(sized_plug(SizedContext::Right(node, parent, color, value, sibling_model, up_model), old(sub.model)) == sized_plug(up_model, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model))));
+                rewrite(old(path.model), SizedContext::Right(node, parent, color, value, sibling_model, up_model));
+                rewrite(sized_plug(SizedContext::Right(node, parent, color, value, sibling_model, up_model), old(sub.model)), sized_plug(up_model, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model))));
                 solve();
             }
             have sized_parent_is(whole.model, stop) == 1 by { known(); }
@@ -274,34 +274,34 @@ tactic restore_sized_path(child: struct rb_node*, stop: struct rb_node*, previou
             unfold(sized_path_root(SizedPath::Path(root, context)));
             unfold(sized_path_context(SizedPath::Path(root, context)));
             have sized_path_context(path.model) == context by {
-                rewrite(path.model == SizedPath::Path(root, context));
+                rewrite(path.model, SizedPath::Path(root, context));
                 unfold(sized_path_context(SizedPath::Path(root, context))); normalize();
             }
             let { frames: frames } = unfold(path);
             have sized_parent_is(sub.model, sized_context_parent(frames.model, stop)) == 1 by {
-                rewrite(frames.model == context);
-                rewrite(context == sized_path_context(old(path.model)));
+                rewrite(frames.model, context);
+                rewrite(context, sized_path_context(old(path.model)));
                 known();
             }
             let { whole: repaired } = restore_sized_context(child, root, stop, previous, { path: frames, sub: sub });
             have repaired.model == sized_plug(context, old(sub.model)) by { solve(); }
             have sized_parent_is(sized_plug(context, old(sub.model)), stop) == 1 by {
-                rewrite(sized_plug(context, old(sub.model)) == repaired.model);
+                rewrite(sized_plug(context, old(sub.model)), repaired.model);
                 known();
             }
             let whole = fold(sized_result_at(stop), { model: SizedResult::Tree(root, sized_plug(context, old(sub.model))) }, { tree: repaired });
             unfold(sized_result_root(SizedResult::Tree(root, sized_plug(context, old(sub.model)))));
             unfold(sized_result_tree(SizedResult::Tree(root, sized_plug(context, old(sub.model)))));
             have sized_result_root(whole.model) == sized_path_root(old(path.model)) by {
-                rewrite(whole.model == SizedResult::Tree(root, sized_plug(context, old(sub.model))));
-                rewrite(old(path.model) == SizedPath::Path(root, context));
+                rewrite(whole.model, SizedResult::Tree(root, sized_plug(context, old(sub.model))));
+                rewrite(old(path.model), SizedPath::Path(root, context));
                 unfold(sized_result_root(SizedResult::Tree(root, sized_plug(context, old(sub.model)))));
                 unfold(sized_path_root(SizedPath::Path(root, context)));
                 normalize();
             }
             have sized_result_tree(whole.model) == sized_plug(sized_path_context(old(path.model)), old(sub.model)) by {
-                rewrite(whole.model == SizedResult::Tree(root, sized_plug(context, old(sub.model))));
-                rewrite(old(path.model) == SizedPath::Path(root, context));
+                rewrite(whole.model, SizedResult::Tree(root, sized_plug(context, old(sub.model))));
+                rewrite(old(path.model), SizedPath::Path(root, context));
                 unfold(sized_result_tree(SizedResult::Tree(root, sized_plug(context, old(sub.model)))));
                 unfold(sized_path_context(SizedPath::Path(root, context)));
                 normalize();
@@ -325,7 +325,7 @@ tactic certify_sized_context(child: struct rb_node*, root: struct rb_node*,
             let checked = fold(sized_context_at(child, root, stop, previous), { model: SizedContext::Top });
             have checked.model == old(path.model) by { known(); }
             have sized_context_valid(checked.model, to_integer(previous)) == 1 by {
-                rewrite(checked.model == SizedContext::Top);
+                rewrite(checked.model, SizedContext::Top);
                 unfold(sized_context_valid(SizedContext::Top, to_integer(previous)));
                 normalize();
             }
@@ -333,19 +333,19 @@ tactic certify_sized_context(child: struct rb_node*, root: struct rb_node*,
         SizedContext::Left(node, parent, color, value, sibling_model, up_model) => {
             let { metadata: metadata, sibling: sibling, up: up } = unfold(path);
             apply(sized_context_depth_nonnegative(up_model));
-            have 0 <= sized_context_depth(up.model) by { rewrite(up.model == up_model); known(); }
+            have 0 <= sized_context_depth(up.model) by { rewrite(up.model, up_model); known(); }
             have sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1 by {
-                rewrite(old(path.model) == SizedContext::Left(node, parent, color, value, sibling_model, up_model));
+                rewrite(old(path.model), SizedContext::Left(node, parent, color, value, sibling_model, up_model));
                 unfold(sized_context_depth(SizedContext::Left(node, parent, color, value, sibling_model, up_model))); normalize();
             }
             have sized_context_depth(up.model) < sized_context_depth(old(path.model)) by {
-                rewrite(up.model == up_model);
+                rewrite(up.model, up_model);
                 solve() using { sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1; };
             }
             let { checked: sibling } = certify_size(node->rb_right, { tree: sibling });
             let { checked: up } = certify_sized_context(node, root, stop, value, { path: up });
-            have sized_counts_valid(sibling_model) == 1 by { rewrite(sibling_model == sibling.model); known(); }
-            have sized_context_valid(up_model, to_integer(value)) == 1 by { rewrite(up_model == up.model); known(); }
+            have sized_counts_valid(sibling_model) == 1 by { rewrite(sibling_model, sibling.model); known(); }
+            have sized_context_valid(up_model, to_integer(value)) == 1 by { rewrite(up_model, up.model); known(); }
             have sized_context_valid(SizedContext::Left(node, parent, color, value, sibling_model, up_model), to_integer(previous)) == 1 by {
                 unfold(sized_context_valid(SizedContext::Left(node, parent, color, value, sibling_model, up_model), to_integer(previous)));
                 normalize() using {
@@ -360,19 +360,19 @@ tactic certify_sized_context(child: struct rb_node*, root: struct rb_node*,
         SizedContext::Right(node, parent, color, value, sibling_model, up_model) => {
             let { metadata: metadata, sibling: sibling, up: up } = unfold(path);
             apply(sized_context_depth_nonnegative(up_model));
-            have 0 <= sized_context_depth(up.model) by { rewrite(up.model == up_model); known(); }
+            have 0 <= sized_context_depth(up.model) by { rewrite(up.model, up_model); known(); }
             have sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1 by {
-                rewrite(old(path.model) == SizedContext::Right(node, parent, color, value, sibling_model, up_model));
+                rewrite(old(path.model), SizedContext::Right(node, parent, color, value, sibling_model, up_model));
                 unfold(sized_context_depth(SizedContext::Right(node, parent, color, value, sibling_model, up_model))); normalize();
             }
             have sized_context_depth(up.model) < sized_context_depth(old(path.model)) by {
-                rewrite(up.model == up_model);
+                rewrite(up.model, up_model);
                 solve() using { sized_context_depth(old(path.model)) == sized_context_depth(up_model) + 1; };
             }
             let { checked: sibling } = certify_size(node->rb_left, { tree: sibling });
             let { checked: up } = certify_sized_context(node, root, stop, value, { path: up });
-            have sized_counts_valid(sibling_model) == 1 by { rewrite(sibling_model == sibling.model); known(); }
-            have sized_context_valid(up_model, to_integer(value)) == 1 by { rewrite(up_model == up.model); known(); }
+            have sized_counts_valid(sibling_model) == 1 by { rewrite(sibling_model, sibling.model); known(); }
+            have sized_context_valid(up_model, to_integer(value)) == 1 by { rewrite(up_model, up.model); known(); }
             have sized_context_valid(SizedContext::Right(node, parent, color, value, sibling_model, up_model), to_integer(previous)) == 1 by {
                 unfold(sized_context_valid(SizedContext::Right(node, parent, color, value, sibling_model, up_model), to_integer(previous)));
                 normalize() using {
@@ -384,7 +384,7 @@ tactic certify_sized_context(child: struct rb_node*, root: struct rb_node*,
             let checked = fold(sized_context_at(child, root, stop, previous), { model: SizedContext::Right(node, parent, color, value, sibling_model, up_model) }, { metadata: metadata, sibling: sibling, up: up });
             have checked.model == old(path.model) by { known(); }
             have sized_context_valid(checked.model, to_integer(previous)) == 1 by {
-                rewrite(checked.model == SizedContext::Right(node, parent, color, value, sibling_model, up_model)); known();
+                rewrite(checked.model, SizedContext::Right(node, parent, color, value, sibling_model, up_model)); known();
             }
         },
     }

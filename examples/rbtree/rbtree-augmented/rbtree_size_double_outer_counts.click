@@ -16,16 +16,16 @@ theorem sized_double_outer_right_valid(g: struct rb_node*, node: struct rb_node*
             SizedTree::Node(g, node, Color::Red, demoted, sized_reparent(moved, g), uncle))) == 1 by {
         apply(sized_reparent_observations(moved, g));
         have sized_counts_valid(sized_reparent(moved, g)) == 1 by {
-            rewrite(sized_counts_valid(sized_reparent(moved, g)) == sized_counts_valid(moved)); known();
+            rewrite(sized_counts_valid(sized_reparent(moved, g)), sized_counts_valid(moved)); known();
         }
         have to_integer(demoted) == 1 + to_integer(sized_value(sized_reparent(moved, g))) + to_integer(sized_value(uncle)) by {
-            rewrite(sized_value(sized_reparent(moved, g)) == sized_value(moved)); known();
+            rewrite(sized_value(sized_reparent(moved, g)), sized_value(moved)); known();
         }
         apply(sized_valid_node(g, node, Color::Red, demoted, sized_reparent(moved, g), uncle));
         unfold(sized_value(SizedTree::Node(g, node, Color::Red, demoted, sized_reparent(moved, g), uncle)));
         have to_integer(gv) == 1 + to_integer(sized_value(repaired))
                 + to_integer(sized_value(SizedTree::Node(g, node, Color::Red, demoted, sized_reparent(moved, g), uncle))) by {
-            rewrite(sized_value(SizedTree::Node(g, node, Color::Red, demoted, sized_reparent(moved, g), uncle)) == demoted); known();
+            rewrite(sized_value(SizedTree::Node(g, node, Color::Red, demoted, sized_reparent(moved, g), uncle)), demoted); known();
         }
         apply(sized_valid_node(node, above, Color::Black, gv, repaired,
             SizedTree::Node(g, node, Color::Red, demoted, sized_reparent(moved, g), uncle)));
@@ -46,13 +46,13 @@ theorem sized_double_outer_left_valid(g: struct rb_node*, node: struct rb_node*,
             SizedTree::Node(g, node, Color::Red, demoted, uncle, sized_reparent(moved, g)), repaired)) == 1 by {
         apply(sized_reparent_observations(moved, g));
         have sized_counts_valid(sized_reparent(moved, g)) == 1 by {
-            rewrite(sized_counts_valid(sized_reparent(moved, g)) == sized_counts_valid(moved)); known();
+            rewrite(sized_counts_valid(sized_reparent(moved, g)), sized_counts_valid(moved)); known();
         }
         have to_integer(demoted) == 1 + to_integer(sized_value(uncle)) + to_integer(sized_value(moved)) by {
             solve() using { to_integer(demoted) == 1 + to_integer(sized_value(moved)) + to_integer(sized_value(uncle)); };
         }
         have to_integer(demoted) == 1 + to_integer(sized_value(uncle)) + to_integer(sized_value(sized_reparent(moved, g))) by {
-            rewrite(sized_value(sized_reparent(moved, g)) == sized_value(moved)); known();
+            rewrite(sized_value(sized_reparent(moved, g)), sized_value(moved)); known();
         }
         apply(sized_valid_node(g, node, Color::Red, demoted, uncle, sized_reparent(moved, g)));
         unfold(sized_value(SizedTree::Node(g, node, Color::Red, demoted, uncle, sized_reparent(moved, g))));
@@ -61,7 +61,7 @@ theorem sized_double_outer_left_valid(g: struct rb_node*, node: struct rb_node*,
         }
         have to_integer(gv) == 1 + to_integer(sized_value(SizedTree::Node(g, node, Color::Red, demoted, uncle, sized_reparent(moved, g))))
                 + to_integer(sized_value(repaired)) by {
-            rewrite(sized_value(SizedTree::Node(g, node, Color::Red, demoted, uncle, sized_reparent(moved, g))) == demoted); known();
+            rewrite(sized_value(SizedTree::Node(g, node, Color::Red, demoted, uncle, sized_reparent(moved, g))), demoted); known();
         }
         apply(sized_valid_node(node, above, Color::Black, gv,
             SizedTree::Node(g, node, Color::Red, demoted, uncle, sized_reparent(moved, g)), repaired));

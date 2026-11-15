@@ -17,7 +17,7 @@ theorem nat_successor_exists() {
     ensures exists (next: Nat) { next == Nat::Succ(Nat::Zero) } by {
         obtain (fuel: Nat) { fuel == Nat::Zero }
         witness { next: Nat::Succ(fuel) };
-        rewrite(fuel == Nat::Zero);
+        rewrite(fuel, Nat::Zero);
         normalize();
     }
 }

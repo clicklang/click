@@ -5,8 +5,8 @@ theorem incremented_zero_is_one(before: int32, after: int32) {
     requires after == before + 1;
 
     ensures after == 1 by {
-        rewrite(after == before + 1);
-        rewrite(before == 0);
+        rewrite(after, before + 1);
+        rewrite(before, 0);
         solve();
     }
 }
@@ -163,7 +163,7 @@ int32 input_cursor_clone(
         have source->data == at(after_pos, source->data) by {
             preserve(separate(statement(1).footprint, memory(source->data)));
         }
-        rewrite(source->data == at(after_pos, source->data));
+        rewrite(source->data, at(after_pos, source->data));
         known();
     }
     mark after_len;
@@ -175,15 +175,15 @@ int32 input_cursor_clone(
         have source->data == at(after_len, source->data) by {
             preserve(separate(statement(2).footprint, memory(source->data)));
         }
-        rewrite(source->data == at(after_len, source->data));
+        rewrite(source->data, at(after_len, source->data));
         known();
     }
     step();
     have target->data == old(source->data);
     have target->len == old(source->len);
     have separate(memory(*target), memory(target->data[0..target->len])) by {
-        rewrite(target->data == old(source->data));
-        rewrite(target->len == old(source->len));
+        rewrite(target->data, old(source->data));
+        rewrite(target->len, old(source->len));
         known();
     }
     fold(input_cursor(target));

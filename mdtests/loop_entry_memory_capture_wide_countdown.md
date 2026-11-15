@@ -30,8 +30,8 @@ uint64 inspect(const uint8* p, uint64 n) {
     if 0u64 < n { known(); } else {
      have 0u64 <= n by normalize();
      have 0u64 == n;
-     have n == 0u64 by { rewrite(0u64 == n); normalize(); }
-     have not (n > 0u64) by { rewrite(n == 0u64); normalize(); }
+     have n == 0u64 by { rewrite(0u64, n); normalize(); }
+     have not (n > 0u64) by { rewrite(n, 0u64); normalize(); }
      contradiction(n > 0u64);
     }
    }

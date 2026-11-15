@@ -110,7 +110,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                     }
                     have to_integer((i - 1)) == to_integer(at(region(3).entry, i)) by { normalize(); }
                     have to_integer(k) < to_integer(at(region(3).entry, i)) by {
-                        rewrite(to_integer(at(region(3).entry, i)) == to_integer((i - 1)));
+                        rewrite(to_integer(at(region(3).entry, i)), to_integer((i - 1)));
                         known();
                     }
                     have k != at(region(3).entry, i) by {

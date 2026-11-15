@@ -22,7 +22,7 @@ theorem add_after_countdown_returns_extra(n: int32, extra: int32) {
             have to_integer(n - 1) < to_integer(n);
             apply(ih(n - 1));
             unfold(add_after_countdown(n, extra));
-            rewrite(add_after_countdown(n - 1, extra) == extra);
+            rewrite(add_after_countdown(n - 1, extra), extra);
             normalize();
         }
     }

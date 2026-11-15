@@ -1284,8 +1284,8 @@ fn checked_original_claim_can_close_after_rewrite_but_unrelated_have_cannot() {
             requires x == 1;
             ensures result == 1;
         } by {
-            step_until(function.exit); rewrite(x == 1);
-            have result == 1 by { rewrite(x == 1); normalize(); }
+            step_until(function.exit); rewrite(x, 1);
+            have result == 1 by { rewrite(x, 1); normalize(); }
             known();
         }
     "#;
@@ -1751,8 +1751,8 @@ fn opaque_resource_call_checks_actual_c_arguments_and_call_entry_snapshots() {
             ensures second.revision == old(second.revision);
             ensures result == 1;
         } by { step(Touch, { cell: first }); step(Touch, { cell: first }); step_until(function.exit);
-            rewrite(result == at(region(0).exit, first.revision));
-            rewrite(at(region(0).exit, first.revision) == 1); solve(); }
+            rewrite(result, at(region(0).exit, first.revision));
+            rewrite(at(region(0).exit, first.revision), 1); solve(); }
     "#;
     let c = [(
         "invoke.c",
@@ -1762,7 +1762,7 @@ fn opaque_resource_call_checks_actual_c_arguments_and_call_entry_snapshots() {
     let expanded = verified[0].expanded_proof_source().unwrap();
     verify_c_sources(
         &source.replace(
-            "by { step(Touch, { cell: first }); step(Touch, { cell: first }); step_until(function.exit);\n            rewrite(result == at(region(0).exit, first.revision));\n            rewrite(at(region(0).exit, first.revision) == 1); solve(); }",
+            "by { step(Touch, { cell: first }); step(Touch, { cell: first }); step_until(function.exit);\n            rewrite(result, at(region(0).exit, first.revision));\n            rewrite(at(region(0).exit, first.revision), 1); solve(); }",
             &expanded,
         ),
         &c,

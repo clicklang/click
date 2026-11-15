@@ -90,7 +90,7 @@ int32 sum(int32 a[], int32 n) {
                         have n == 1073741823;
                         known();
                     }
-                    rewrite(n == 1073741823);
+                    rewrite(n, 1073741823);
                     normalize();
                 }
             }
@@ -298,7 +298,7 @@ int32 sum(int32 a[], int32 n) {
                 }
             }
             have to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-                rewrite(to_integer(i) == to_integer((at(region(5).entry, i) + 1)));
+                rewrite(to_integer(i), to_integer((at(region(5).entry, i) + 1)));
                 known();
             }
             have (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
@@ -342,11 +342,11 @@ int32 sum(int32 a[], int32 n) {
     }
     have i == n;
     have n == i by {
-        rewrite(n == i);
+        rewrite(n, i);
         normalize();
     }
     have to_integer(total) == (0..n).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-        rewrite(n == i);
+        rewrite(n, i);
         known();
     }
     step();

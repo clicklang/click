@@ -1747,11 +1747,11 @@ fn cases_eliminates_a_disjunctive_premise() {
             have x <= 2 by {
                 cases {
                     x == 1 => {
-                        rewrite(x == 1);
+                        rewrite(x, 1);
                         normalize();
                     }
                     x == 2 => {
-                        rewrite(x == 2);
+                        rewrite(x, 2);
                         normalize();
                     }
                 }
@@ -1783,11 +1783,11 @@ fn cases_refuses_alternatives_that_do_not_cover_the_premise() {
             have x <= 3 by {
                 cases {
                     x == 1 => {
-                        rewrite(x == 1);
+                        rewrite(x, 1);
                         normalize();
                     }
                     x == 3 => {
-                        rewrite(x == 3);
+                        rewrite(x, 3);
                         normalize();
                     }
                 }
@@ -1816,7 +1816,7 @@ fn cases_checks_each_branch_under_exactly_its_own_disjunct() {
         }
     "#;
     // The branches are swapped: the left branch may only assume `x == 1`,
-    // so its `rewrite(x == 2)` must fail instead of borrowing the other case.
+    // so its `rewrite(x, 2)` must fail instead of borrowing the other case.
     let click_source = r#"
         verifying "keep_small.c";
 
@@ -1828,11 +1828,11 @@ fn cases_checks_each_branch_under_exactly_its_own_disjunct() {
             have x <= 2 by {
                 cases {
                     x == 1 => {
-                        rewrite(x == 2);
+                        rewrite(x, 2);
                         normalize();
                     }
                     x == 2 => {
-                        rewrite(x == 1);
+                        rewrite(x, 1);
                         normalize();
                     }
                 }
@@ -2688,7 +2688,7 @@ fn pure_rewrite_rejects_an_int32_equality_that_is_not_available() {
             requires offset == 0;
 
             ensures base + offset == target by {
-                rewrite(offset == 1);
+                rewrite(offset, 1);
                 known();
             }
         }
@@ -3013,14 +3013,14 @@ theorem three_way(x: int32) {
     ensures x >= 1 by {
         cases {
             x == 1 => {
-                rewrite(x == 1);
+                rewrite(x, 1);
                 normalize();
             }
             x == 2 => {
                 solve();
             }
             x == 3 => {
-                rewrite(x == 3);
+                rewrite(x, 3);
                 normalize();
             }
         }
@@ -3063,7 +3063,7 @@ fn reordered_cases_check_bodies_under_their_written_assumptions() {
         "{}",
         error.message()
     );
-    let corrected = reordered.replacen("rewrite(x == 1);", "rewrite(x == 2);", 1);
+    let corrected = reordered.replacen("rewrite(x, 1);", "rewrite(x, 2);", 1);
     verify_c_sources(&corrected, &[]).expect("reordered exhaustive alternatives work");
 }
 

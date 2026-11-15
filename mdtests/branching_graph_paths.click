@@ -171,8 +171,8 @@ theorem exhausted_zero_entry(left: int32[], right: int32[], before: int32[], aft
                         instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, to);
                         known();
                     }
-                    have after[to] == 0 by { rewrite(after[to] == before[to]); known(); }
-                    have after[k] == 0 by { rewrite(k == to); known(); }
+                    have after[to] == 0 by { rewrite(after[to], before[to]); known(); }
+                    have after[k] == 0 by { rewrite(k, to); known(); }
                     contradiction(after[k] != 0);
                 } else { known(); }
             }

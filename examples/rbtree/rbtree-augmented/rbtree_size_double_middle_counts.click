@@ -63,8 +63,8 @@ theorem sized_double_middle_valid(p: struct rb_node*, node: struct rb_node*, pv:
         have to_integer(pv - 1) == to_integer(pv) - to_integer(1);
         have to_integer(pv - 1) == 1 + to_integer(sized_value(far))
                 + to_integer(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black))) by {
-            rewrite(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)) == sized_value(sized_reparent(middle, p)));
-            rewrite(sized_value(sized_reparent(middle, p)) == sized_value(middle));
+            rewrite(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)), sized_value(sized_reparent(middle, p)));
+            rewrite(sized_value(sized_reparent(middle, p)), sized_value(middle));
             solve() using {
                 to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle));
                 to_integer(pv - 1) == to_integer(pv) - to_integer(1);
@@ -79,8 +79,8 @@ theorem sized_double_middle_valid(p: struct rb_node*, node: struct rb_node*, pv:
         have to_integer(pv) == 1 + to_integer(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1, far,
                     sized_recolor(sized_reparent(middle, p), Color::Black)))) + to_integer(sized_value(SizedTree::Empty)) by {
             rewrite(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1, far,
-                sized_recolor(sized_reparent(middle, p), Color::Black))) == pv - 1);
-            rewrite(sized_value(SizedTree::Empty) == 0);
+                sized_recolor(sized_reparent(middle, p), Color::Black))), pv - 1);
+            rewrite(sized_value(SizedTree::Empty), 0);
             solve() using { to_integer(pv - 1) == to_integer(pv) - to_integer(1); };
         }
         apply(sized_valid_node(node, p, Color::Red, pv,
@@ -106,8 +106,8 @@ theorem sized_mirrored_double_middle_valid(p: struct rb_node*, node: struct rb_n
         have to_integer(pv - 1) == to_integer(pv) - to_integer(1);
         have to_integer(pv - 1) == 1 + to_integer(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)))
                 + to_integer(sized_value(far)) by {
-            rewrite(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)) == sized_value(sized_reparent(middle, p)));
-            rewrite(sized_value(sized_reparent(middle, p)) == sized_value(middle));
+            rewrite(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)), sized_value(sized_reparent(middle, p)));
+            rewrite(sized_value(sized_reparent(middle, p)), sized_value(middle));
             solve() using {
                 to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(middle));
                 to_integer(pv - 1) == to_integer(pv) - to_integer(1);
@@ -123,8 +123,8 @@ theorem sized_mirrored_double_middle_valid(p: struct rb_node*, node: struct rb_n
                 + to_integer(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1,
                     sized_recolor(sized_reparent(middle, p), Color::Black), far))) by {
             rewrite(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1,
-                sized_recolor(sized_reparent(middle, p), Color::Black), far)) == pv - 1);
-            rewrite(sized_value(SizedTree::Empty) == 0);
+                sized_recolor(sized_reparent(middle, p), Color::Black), far)), pv - 1);
+            rewrite(sized_value(SizedTree::Empty), 0);
             solve() using { to_integer(pv - 1) == to_integer(pv) - to_integer(1); };
         }
         apply(sized_valid_node(node, p, Color::Red, pv, SizedTree::Empty,

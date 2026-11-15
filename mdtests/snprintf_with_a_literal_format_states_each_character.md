@@ -46,11 +46,11 @@ int32 render(char buf[], uint32 n) {
         step_until(function.exit);
         have n as uint64 == 42u64 by { solve(); }
         have format::decimal_length(n as uint64) == 2u64 by {
-            rewrite(n as uint64 == 42u64);
+            rewrite(n as uint64, 42u64);
             apply(format::decimal_length_2(42u64));
         }
         have format::decimal_digit(n as uint64, 0u64) == 52u8 by {
-            rewrite(n as uint64 == 42u64);
+            rewrite(n as uint64, 42u64);
             apply(format::pow10_1());
             apply(format::decimal_digit_of_length(42u64, 2u64, 0u64));
             solve() using {
@@ -80,7 +80,7 @@ int32 fraction(char tmp[], uint32 remainder) {
             apply(format::decimal_length_1(5u64));
         }
         have format::padded_length(remainder as uint64, 3u64) == 3u64 by {
-            rewrite(remainder as uint64 == 5u64);
+            rewrite(remainder as uint64, 5u64);
             unfold(format::padded_length(5u64, 3u64));
             solve() using { format::decimal_length(5u64) == 1u64; };
         }

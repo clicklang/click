@@ -132,7 +132,7 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
                 have sized_context_valid(up, to_integer(value)) == 1;
                 have sized_counts_valid(SizedTree::Node(node, parent, color, value, sub, sibling)) == 1 by {
                     unfold(sized_counts_valid(SizedTree::Node(node, parent, color, value, sub, sibling)));
-                    rewrite(sized_value(sub) == previous);
+                    rewrite(sized_value(sub), previous);
                     normalize() using { to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling)); sized_counts_valid(sub) == 1; sized_counts_valid(sibling) == 1; };
                 }
                 have sized_value(SizedTree::Node(node, parent, color, value, sub, sibling)) == value by {
@@ -149,7 +149,7 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
                 have sized_context_valid(up, to_integer(value)) == 1;
                 have sized_counts_valid(SizedTree::Node(node, parent, color, value, sibling, sub)) == 1 by {
                     unfold(sized_counts_valid(SizedTree::Node(node, parent, color, value, sibling, sub)));
-                    rewrite(sized_value(sub) == previous);
+                    rewrite(sized_value(sub), previous);
                     normalize() using { to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous); sized_counts_valid(sub) == 1; sized_counts_valid(sibling) == 1; };
                 }
                 have sized_value(SizedTree::Node(node, parent, color, value, sibling, sub)) == value by {
@@ -216,8 +216,8 @@ theorem sized_plug_same_shape(ctx: SizedContext, before: SizedTree, after: Sized
     ensures sized_shape(sized_plug(ctx, before)) == sized_shape(sized_plug(ctx, after)) by {
         apply(sized_plug_preserves_shape(ctx, before));
         apply(sized_plug_preserves_shape(ctx, after));
-        rewrite(sized_shape(sized_plug(ctx, before)) == plug(sized_context_shape(ctx), sized_shape(before)));
-        rewrite(sized_shape(sized_plug(ctx, after)) == plug(sized_context_shape(ctx), sized_shape(after)));
-        rewrite(sized_shape(before) == sized_shape(after)); known();
+        rewrite(sized_shape(sized_plug(ctx, before)), plug(sized_context_shape(ctx), sized_shape(before)));
+        rewrite(sized_shape(sized_plug(ctx, after)), plug(sized_context_shape(ctx), sized_shape(after)));
+        rewrite(sized_shape(before), sized_shape(after)); known();
     }
 }

@@ -50,7 +50,7 @@ theorem zlib_seeded_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
    adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n) + zlib_byte_integer(bytes[n]);
   };
   have to_integer(n + 1) * to_integer(a0) == to_integer(n) * to_integer(a0) + to_integer(a0) by {
-   rewrite(to_integer(n + 1) == to_integer(n) + to_integer(1));
+   rewrite(to_integer(n + 1), to_integer(n) + to_integer(1));
    arithmetic_certificate rules {
     integer_polynomial_identity bounds [] => (to_integer(n) + 1) * to_integer(a0) == to_integer(n) * to_integer(a0) + to_integer(a0); conclusion 0;
    }
@@ -86,12 +86,12 @@ theorem zlib_seeded_reduced_components(bytes: uint8[], length: int32, a: uint64,
  ensures to_integer(a % 65521u64) == adler_spec_a(bytes, length, to_integer(a0)) by {
   apply(integer::uint64_remainder_to_integer(a, 65521u64));
   unfold(adler_spec_a(bytes, length, to_integer(a0)));
-  rewrite(to_integer(a0) + adler_byte_sum(bytes, length) == to_integer(a)); known();
+  rewrite(to_integer(a0) + adler_byte_sum(bytes, length), to_integer(a)); known();
  }
  ensures to_integer(b % 65521u64) == adler_spec_b(bytes, length, to_integer(a0), to_integer(b0)) by {
   apply(integer::uint64_remainder_to_integer(b, 65521u64));
   unfold(adler_spec_b(bytes, length, to_integer(a0), to_integer(b0)));
-  rewrite(to_integer(b0) + to_integer(length) * to_integer(a0) + adler_weighted_sum(bytes, length, length) == to_integer(b)); known();
+  rewrite(to_integer(b0) + to_integer(length) * to_integer(a0) + adler_weighted_sum(bytes, length, length), to_integer(b)); known();
  }
  ensures a % 65521u64 <= 65520u64 and b % 65521u64 <= 65520u64 by {
   apply(integer::uint64_remainder_to_integer(a, 65521u64));
@@ -125,7 +125,7 @@ theorem zlib_seeded_batch_concat(bytes: uint8[], prefix: int32, length: int32, a
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
   apply(adler_spec_a_concat(bytes, prefix, length, 1));
   have to_integer(a % 65521u64) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, 1)) by {
-   rewrite(adler_spec_a(bytes, prefix, 1) == to_integer(a0)); known();
+   rewrite(adler_spec_a(bytes, prefix, 1), to_integer(a0)); known();
   }
   solve() using {
    to_integer(a % 65521u64) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, 1));
@@ -136,8 +136,8 @@ theorem zlib_seeded_batch_concat(bytes: uint8[], prefix: int32, length: int32, a
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
   apply(adler_spec_b_concat(bytes, prefix, length, 1, 0));
   have to_integer(b % 65521u64) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, 1), adler_spec_b(bytes, prefix, 1, 0)) by {
-   rewrite(adler_spec_a(bytes, prefix, 1) == to_integer(a0));
-   rewrite(adler_spec_b(bytes, prefix, 1, 0) == to_integer(b0)); known();
+   rewrite(adler_spec_a(bytes, prefix, 1), to_integer(a0));
+   rewrite(adler_spec_b(bytes, prefix, 1, 0), to_integer(b0)); known();
   }
   solve() using {
    to_integer(b % 65521u64) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, 1), adler_spec_b(bytes, prefix, 1, 0));
@@ -206,10 +206,10 @@ theorem zlib_native_cursor_join(base: const uint8*, first: uint64, second: uint6
   apply(adler_count_byte_pointer(base, first));
   apply(adler_count_byte_pointer(base + first, second));
   apply(adler_count_byte_pointer(base, first + second));
-  rewrite(base + first + second == base + first + second as uint32 as int32);
-  rewrite(base + first == base + first as uint32 as int32);
-  rewrite(base + (first + second) == base + (first + second) as uint32 as int32);
-  rewrite(to_integer((first + second) as uint32 as int32) == to_integer(first as uint32 as int32 + second as uint32 as int32));
+  rewrite(base + first + second, base + first + second as uint32 as int32);
+  rewrite(base + first, base + first as uint32 as int32);
+  rewrite(base + (first + second), base + (first + second) as uint32 as int32);
+  rewrite(to_integer((first + second) as uint32 as int32), to_integer(first as uint32 as int32 + second as uint32 as int32));
   normalize() using { defined(first as uint32 as int32 + second as uint32 as int32); };
  }
 }
@@ -412,7 +412,7 @@ theorem zlib_scalar_seeded_component_step(bytes: uint8[], n: int32, a: uint64, b
    adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n) + zlib_byte_integer(bytes[n]);
   };
   have to_integer(n + 1) * to_integer(a0) == to_integer(n) * to_integer(a0) + to_integer(a0) by {
-   rewrite(to_integer(n + 1) == to_integer(n) + to_integer(1));
+   rewrite(to_integer(n + 1), to_integer(n) + to_integer(1));
    arithmetic_certificate rules {
     integer_polynomial_identity bounds [] => (to_integer(n) + 1) * to_integer(a0) == to_integer(n) * to_integer(a0) + to_integer(a0); conclusion 0;
    }
@@ -504,10 +504,10 @@ theorem zlib_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, length: int3
   have adler_spec_a(bytes + prefix, length, to_integer(a0)) == adler_spec_a(bytes + prefix, length, to_integer(a0 % 65521u64)) by {
    unfold(adler_spec_a(bytes + prefix, length, to_integer(a0)));
    unfold(adler_spec_a(bytes + prefix, length, to_integer(a0 % 65521u64)));
-   rewrite(to_integer(a0 % 65521u64) == truncating_remainder(to_integer(a0), 65521)); known();
+   rewrite(to_integer(a0 % 65521u64), truncating_remainder(to_integer(a0), 65521)); known();
   }
   have to_integer(a % 65521u64) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, 1)) by {
-   rewrite(adler_spec_a(bytes, prefix, 1) == to_integer(a0 % 65521u64));
+   rewrite(adler_spec_a(bytes, prefix, 1), to_integer(a0 % 65521u64));
    solve() using {
     to_integer(a % 65521u64) == adler_spec_a(bytes + prefix, length, to_integer(a0));
     adler_spec_a(bytes + prefix, length, to_integer(a0)) == adler_spec_a(bytes + prefix, length, to_integer(a0 % 65521u64));
@@ -528,12 +528,12 @@ theorem zlib_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, length: int3
   have adler_spec_b(bytes + prefix, length, to_integer(a0), to_integer(b0)) == adler_spec_b(bytes + prefix, length, to_integer(a0 % 65521u64), to_integer(b0 % 65521u64)) by {
    unfold(adler_spec_b(bytes + prefix, length, to_integer(a0), to_integer(b0)));
    unfold(adler_spec_b(bytes + prefix, length, to_integer(a0 % 65521u64), to_integer(b0 % 65521u64)));
-   rewrite(to_integer(a0 % 65521u64) == truncating_remainder(to_integer(a0), 65521));
-   rewrite(to_integer(b0 % 65521u64) == truncating_remainder(to_integer(b0), 65521)); known();
+   rewrite(to_integer(a0 % 65521u64), truncating_remainder(to_integer(a0), 65521));
+   rewrite(to_integer(b0 % 65521u64), truncating_remainder(to_integer(b0), 65521)); known();
   }
   have to_integer(b % 65521u64) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, 1), adler_spec_b(bytes, prefix, 1, 0)) by {
-   rewrite(adler_spec_a(bytes, prefix, 1) == to_integer(a0 % 65521u64));
-   rewrite(adler_spec_b(bytes, prefix, 1, 0) == to_integer(b0 % 65521u64));
+   rewrite(adler_spec_a(bytes, prefix, 1), to_integer(a0 % 65521u64));
+   rewrite(adler_spec_b(bytes, prefix, 1, 0), to_integer(b0 % 65521u64));
    solve() using {
     to_integer(b % 65521u64) == adler_spec_b(bytes + prefix, length, to_integer(a0), to_integer(b0));
     adler_spec_b(bytes + prefix, length, to_integer(a0), to_integer(b0)) == adler_spec_b(bytes + prefix, length, to_integer(a0 % 65521u64), to_integer(b0 % 65521u64));

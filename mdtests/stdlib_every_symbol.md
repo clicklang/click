@@ -1951,7 +1951,7 @@ theorem check_integer_round_down_le(x: Integer) {
     ensures x <= 2 by {
         have (2 * 2) + 1 == 5 by { normalize(); }
         have x * 2 <= (2 * 2) + 1 by {
-            rewrite((2 * 2) + 1 == 5);
+            rewrite((2 * 2) + 1, 5);
             known();
         }
         apply(integer::round_down_le(x, 2, 2, 1)) using {

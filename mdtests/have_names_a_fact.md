@@ -2,7 +2,7 @@
 
 A `have` may name its fact. Until the end of the enclosing block, the name
 stands for the proposition wherever a proposition is cited whole: in
-`using { name; }`, `rewrite(name)`, `contradiction(name)` and the like. The
+`using { name; }`, `extract(name)`, `contradiction(name)` and the like. The
 name is read as `P` where it is cited, so a named fact proves exactly what
 restating `P` there proves. It is not visible inside its own proof, and a
 nested block or an `if` arm ends its names with the block.
@@ -16,14 +16,14 @@ theorem cite_in_using(x: int32) {
     }
 }
 
-theorem cite_in_rewrite(x: int32, y: int32) {
+theorem named_equalities_support_rewrite(x: int32, y: int32) {
     requires x == 5;
     requires y == x;
     ensures y == 5 by {
         have same: y == x;
-        rewrite(same);
+        rewrite(y, x);
         have five: x == 5;
-        rewrite(five);
+        rewrite(x, 5);
         normalize();
     }
 }

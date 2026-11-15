@@ -17,8 +17,8 @@ theorem selected_branch(c: Color, x: int32, unused: Payload) {
     requires opaque(x) == 1;
     ensures wrapped(c, x, unused) == 1 by {
         unfold(wrapped(c, x, unused));
-        rewrite(c == Color::Black);
-        rewrite(opaque(x) == 1);
+        rewrite(c, Color::Black);
+        rewrite(opaque(x), 1);
         normalize();
     }
 }
@@ -26,7 +26,7 @@ theorem distinct_constructor(c: Color, x: int32) {
     requires c == Color::Red;
     ensures wrapped(c, x, Payload::Empty) == 0 by {
         unfold(wrapped(c, x, Payload::Empty));
-        rewrite(c == Color::Red);
+        rewrite(c, Color::Red);
         normalize() using { };
     }
 }
