@@ -6399,10 +6399,7 @@ impl<'a> TermRewrite<'a> {
                         return MachineTerm::constant(0);
                     }
                 }
-                MachineTerm::PureFunctionApplication {
-                    name: name.clone(),
-                    arguments: rewritten,
-                }
+                MachineTerm::rebuild_pure_application(name.clone(), rewritten)
             }
             MachineTerm::ClickFunctionApplication { name, arguments } => {
                 let mut rewritten = Vec::with_capacity(arguments.len());

@@ -690,6 +690,19 @@ All 347 selected cast, parser, syntax and diagnostic checks passed; cast proof
 fixtures passed, and float fixtures had zero fact-stability differences.
 Quality checks passed.
 
+Before 8x, the approved conversion-normalization prerequisite shares the
+existing numeric float conversion rules between evaluation and native term
+rebuilders. Substitution of `1` into `x as float` now produces the same
+binary32 literal as directly lowering `1 as float`. Equality rewrites,
+checked rewrites, selected memory-resolution paths and checker simplification
+use the same constructor. Only recognized conversions of literal operands
+simplify; unknown applications and invalid float-to-integer constants retain
+their payloads. Definedness obligations and numerical rounding rules are
+unchanged, and symbolic rebuilding does not walk operand prefixes.
+All 1,847 final selected checks passed, including the complete scaling suite;
+float proof fixtures had zero fact-stability differences. The representation
+migration itself remains 8x, followed by 8y–8ad.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes

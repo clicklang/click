@@ -5891,7 +5891,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
             } => {
                 let first = results.len() - argument_count;
                 let arguments = results.split_off(first);
-                results.push(MachineTerm::PureFunctionApplication { name, arguments });
+                results.push(MachineTerm::rebuild_pure_application(name, arguments));
             }
         }
     }
@@ -6983,13 +6983,13 @@ fn transport_framed_atomic_bitvector(
             body: Box::new(transport_framed_atomic_bitvector(body, after, assumptions)?),
         },
         MachineTerm::PureFunctionApplication { name, arguments } => {
-            MachineTerm::PureFunctionApplication {
-                name: name.clone(),
-                arguments: arguments
+            MachineTerm::rebuild_pure_application(
+                name.clone(),
+                arguments
                     .iter()
                     .map(|argument| transport_framed_atomic_bitvector(argument, after, assumptions))
                     .collect::<Option<Vec<_>>>()?,
-            }
+            )
         }
         MachineTerm::BoolCast { to, value } => MachineTerm::BoolCast {
             to: *to,
@@ -7329,7 +7329,7 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
             } => {
                 let first = results.len() - argument_count;
                 let arguments = results.split_off(first);
-                results.push(MachineTerm::PureFunctionApplication { name, arguments });
+                results.push(MachineTerm::rebuild_pure_application(name, arguments));
             }
             ExactLoadNormalizationTask::LeaveLoad(load) => {
                 active_loads.remove(&load);

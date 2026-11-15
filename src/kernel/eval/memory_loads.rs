@@ -4049,7 +4049,7 @@ fn select_scalar_reads(term: &MachineTerm) -> MachineTerm {
             } => {
                 let first = term_results.len() - argument_count;
                 let arguments = term_results.split_off(first);
-                term_results.push(MachineTerm::PureFunctionApplication { name, arguments });
+                term_results.push(MachineTerm::rebuild_pure_application(name, arguments));
             }
             Task::RebuildConditionBinary(op) => {
                 let right = term_results.pop().expect("visited right condition operand");

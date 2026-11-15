@@ -291,10 +291,7 @@ impl MachineTerm {
     }
 
     pub(crate) fn opaque_conversion(name: impl Into<String>, value: Self) -> Self {
-        Self::PureFunctionApplication {
-            name: name.into(),
-            arguments: vec![value],
-        }
+        Self::rebuild_pure_application(name.into(), vec![value])
     }
 
     pub(crate) fn float32_as_const(&self) -> Option<u32> {

@@ -8553,13 +8553,13 @@ fn rewrite_int32_term_by_exact_equality(
             else_term: Box::new(rewrite_int32_term_by_exact_equality(else_term, from, to)),
         },
         MachineTerm::PureFunctionApplication { name, arguments } => {
-            MachineTerm::PureFunctionApplication {
-                name: name.clone(),
-                arguments: arguments
+            MachineTerm::rebuild_pure_application(
+                name.clone(),
+                arguments
                     .iter()
                     .map(|argument| rewrite_int32_term_by_exact_equality(argument, from, to))
                     .collect(),
-            }
+            )
         }
         MachineTerm::ClickFunctionApplication { .. } | MachineTerm::AlgebraicMatch { .. } => {
             term.clone()

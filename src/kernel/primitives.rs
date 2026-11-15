@@ -52,6 +52,7 @@ impl Proposition {
 
 mod bool_sort;
 mod contracts;
+pub(in crate::kernel) mod float_conversion;
 #[cfg(test)]
 mod heap_extent_tests;
 #[cfg(test)]

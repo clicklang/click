@@ -1078,13 +1078,13 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
             rewrite_term(right, from, to),
         ),
         MachineTerm::PureFunctionApplication { name, arguments } => {
-            MachineTerm::PureFunctionApplication {
-                name: name.clone(),
-                arguments: arguments
+            MachineTerm::rebuild_pure_application(
+                name.clone(),
+                arguments
                     .iter()
                     .map(|argument| rewrite_term(argument, from, to))
                     .collect(),
-            }
+            )
         }
         // The memory snapshot is fixed, but its address is an ordinary
         // expression: exact equality substitution is congruent there too.
@@ -1578,13 +1578,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
             };
             match term {
                 MachineTerm::PureFunctionApplication { name, arguments } => {
-                    MachineTerm::PureFunctionApplication {
-                        name: name.clone(),
-                        arguments: arguments
+                    MachineTerm::rebuild_pure_application(
+                        name.clone(),
+                        arguments
                             .iter()
                             .map(|argument| rewrite_term_offset(argument, left, right))
                             .collect(),
-                    }
+                    )
                 }
                 MachineTerm::MemoryLoad(_, pointer, _) => {
                     rewrite_read_address(term, rewrite_pointer(pointer))
@@ -4321,4 +4321,23 @@ mod numeric_address_annotation_tests {
             Pointer::integer_address(MachineTerm::Variable(Variable(998_824))),
         );
     }
+}
+
+#[cfg(test)]
+#[test]
+fn float_conversion_equality_rewrite_normalizes_the_rebuilt_conversion() {
+    let variable = MachineTerm::Variable(Variable(999952));
+    let source = MachineTerm::opaque_conversion("c_int32_to_float32", variable.clone());
+    assert_eq!(
+        rewrite_term(&source, &variable, &MachineTerm::constant(1)),
+        MachineTerm::constant(0x3f800000)
+    );
+    let ordinary = MachineTerm::opaque_conversion("ordinary_call", variable.clone());
+    assert_eq!(
+        rewrite_term(&ordinary, &variable, &MachineTerm::constant(1)),
+        MachineTerm::PureFunctionApplication {
+            name: "ordinary_call".into(),
+            arguments: vec![MachineTerm::constant(1)]
+        }
+    );
 }
