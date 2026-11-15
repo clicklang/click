@@ -1205,3 +1205,70 @@ fn boolean_substitution_reuses_overlapping_arithmetic_operands() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn refused_boolean_transport_does_not_export_shared_guard_prefixes() {
+    for size in [16, 64, 256] {
+        let mut root = KernelTerm::variable(KernelType::Bool, Variable(969_000));
+        for _ in 0..size {
+            root = KernelTerm::intern(
+                KernelType::Bool,
+                KernelTermNode::BoolEqual {
+                    arguments: [root.clone(), root],
+                },
+            );
+        }
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                assert!(
+                    crate::kernel::memory_provenance::transport_framed_common_condition(
+                        &root,
+                        &Memory::new(),
+                        None
+                    )
+                    .is_none()
+                );
+            }
+        });
+        assert!(work <= size, "size={size}, work={work}");
+    }
+}
+
+#[test]
+fn boolean_transport_keeps_shared_arithmetic_operands() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let mut operand = KernelTerm::variable(
+            KernelType::Program(format.program_type()),
+            Variable(972_010),
+        );
+        for _ in 0..size {
+            operand = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [operand.clone(), operand],
+            );
+        }
+        let zero = KernelTermImport::default().machine(format, &MachineTerm::constant(0));
+        let guard =
+            KernelTerm::boolean_comparison_raw(format, CompareRelation::LessThan, [operand, zero]);
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let actual = crate::kernel::memory_provenance::transport_framed_common_condition(
+                &guard,
+                &Memory::new(),
+                None,
+            )
+            .unwrap();
+            assert_eq!(actual, guard);
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|p| p[1] <= p[0] * 5 + 100),
+        "{samples:?}"
+    );
+}

@@ -12,11 +12,14 @@ pub(super) fn transport_framed_index(
     after: &Memory,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<SharedMachineIntegerTerm> {
-    map_index_with_descent(
+    map_index_with_guard(
         value,
         |leaf| transport_framed_atomic_bitvector(leaf, after, assumptions),
         crate::kernel::proof::equality_rewrite::rebuild_transported_machine_node,
         |_| true,
+        |_| Ok(None),
+        |guard| transport_framed_common_condition(guard, after, assumptions),
+        &mut HashMap::new(),
     )
 }
 
@@ -87,6 +90,38 @@ pub(in crate::kernel) fn map_index_with_fold_and_cache(
     map_fold: impl Fn(&KernelTerm) -> Result<Option<KernelTerm>, ()>,
     results: &mut HashMap<u64, KernelTerm>,
 ) -> Option<SharedMachineIntegerTerm> {
+    map_index_with_guard(
+        value,
+        &map_leaf,
+        rebuild,
+        descend,
+        map_fold,
+        |condition| {
+            let guard = MachineTerm::BoolCast {
+                to: MachineIntegerType::UInt8,
+                value: Box::new(crate::kernel::KernelTermExport::condition(condition).ok()?),
+            };
+            let mapped = map_leaf(&guard)?;
+            Some(if mapped == guard {
+                condition.clone()
+            } else {
+                crate::kernel::KernelTermImport::default()
+                    .condition(&ConditionTerm::truth_of_bool_word(&mapped))
+            })
+        },
+        results,
+    )
+}
+
+fn map_index_with_guard(
+    value: &SharedMachineIntegerTerm,
+    map_leaf: impl Fn(&MachineTerm) -> Option<MachineTerm>,
+    rebuild: impl Fn(&KernelTerm, &[KernelTerm]) -> Option<KernelTerm>,
+    descend: impl Fn(&KernelTerm) -> bool,
+    map_fold: impl Fn(&KernelTerm) -> Result<Option<KernelTerm>, ()>,
+    map_guard: impl Fn(&KernelTerm) -> Option<KernelTerm>,
+    results: &mut HashMap<u64, KernelTerm>,
+) -> Option<SharedMachineIntegerTerm> {
     let Some(root) = value.shared_operand() else {
         return Some(SharedMachineIntegerTerm::index(
             value.ty(),
@@ -151,19 +186,7 @@ pub(in crate::kernel) fn map_index_with_fold_and_cache(
                 .map(|child| results[&child.id()].clone())
                 .collect();
             if let KernelTermNode::MachineIf { arguments } = node.node() {
-                let guard = MachineTerm::BoolCast {
-                    to: MachineIntegerType::UInt8,
-                    value: Box::new(
-                        crate::kernel::KernelTermExport::condition(&arguments[0]).ok()?,
-                    ),
-                };
-                let mapped = map_leaf(&guard)?;
-                let condition = if mapped == guard {
-                    arguments[0].clone()
-                } else {
-                    crate::kernel::KernelTermImport::default()
-                        .condition(&ConditionTerm::truth_of_bool_word(&mapped))
-                };
+                let condition = map_guard(&arguments[0])?;
                 let KernelType::Program(ty) = node.ty() else {
                     return None;
                 };

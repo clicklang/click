@@ -282,8 +282,7 @@ view/identity tests, snapshot operand keys and shared load-atom comparisons.
 Regressions cover native/shared format agreement, composite load-authority
 refusal, linear shared-connective identity and growing arithmetic comparison
 prefixes without machine exports. No proof rules, search indexes or budgets
-changed. The 8e draft checkpoint remains unpublished pending its producer
-reconstruction work.
+changed. The following 8d/8e slices reuse this identity support.
 
 8d prepares common Boolean bitvector/pointer substitution for the producer and
 handoff slices. Bitvector substitution preserves raw Boolean connectives and
@@ -304,6 +303,20 @@ integer widths, address and mask rules, fold capture, pointer connective folding
 read snapshots, and shared connective/overlapping arithmetic-prefix scaling.
 All 1,741 selected tests passed, including every scaling test and the substitution
 selections, with pinned importer tools. The CI-quality check passed.
+
+8e connects shared pointer-index transport to a common Boolean guard boundary.
+Common constants, variables, connectives and calls retain the existing refusal
+without exporting the guard DAG; Boolean loads retain their native refusal.
+Primitive comparisons transport shared operands through the existing frame
+reader and the shared equivalent of native comparison constructors. Unchanged
+guards retain their original roots through native-equivalent Boolean identity.
+Selected Integer and opaque condition families keep their existing compatibility
+readers. Other index mappers keep their explicit native guard adapter; the
+numeric Boolean-cast compatibility boundary remains assigned to 8m.
+Native/common transport agreement, snapshots, comparison-constructor behavior,
+constant-work refusal and accepted shared arithmetic transport without exports
+are covered. All 1,673 selected tests passed, including every scaling test and
+the memory-provenance selections, with exit status 0.
 
 ### 8a inventory
 
