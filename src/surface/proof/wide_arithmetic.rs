@@ -7,10 +7,10 @@
 //! restated over its observations by `known`, each sum or difference in
 //! the premises and the goal is shown to stay in range (an unsigned one does
 //! not wrap, a signed one is defined) and then observed term by term by its
-//! in-range identity, the Integer claim is proved by the Integer certificate,
-//! and `known` concludes the goal. Every step is `known` or an
-//! explicit arithmetic certificate, recorded as such, so the expansion is
-//! that explicit script and nothing here is trusted.
+//! in-range identity, the Integer claim is composed with ordinary library
+//! laws, and `known` concludes the goal. Normalization checks type ranges
+//! and the exact operation identities from their two stated bounds. The
+//! checked steps are retained directly for expansion.
 use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::{bits32_constant, int64_constant, uint64_constant};
@@ -467,7 +467,7 @@ thread_local! {
     static BRIDGING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Marks the bridge's own steps. Its Integer claims are certificate steps:
+/// Marks the bridge's own steps. Its Integer claims have crossed the bridge:
 /// the observed goal, `to_integer(a) < to_integer(b)`, reads as the native
 /// goal it came from and would otherwise be bridged again.
 struct BridgeScope;

@@ -8016,8 +8016,6 @@ fn restricted_solve_composes_negated_successor_bound() {
         .expect("restricted successor lower bound should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded restricted successor proof should check");
@@ -8068,7 +8066,8 @@ fn post_execution_solve_unfolds_predicate_goal_explicitly() {
         expand_c_tactic_source_at(click_source, &[("compare_swap2.c", c_source)], line, column);
     let expanded = expanded.expect("post-execution predicate goal should expand");
     assert!(expanded.contains("unfold(sorted_pair);"), "{expanded}");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("click::integer::"), "{expanded}");
     assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     let reverified = { verify_c_sources(&expanded, &[("compare_swap2.c", c_source)]) };
@@ -8769,8 +8768,6 @@ fn smart_solve_transcribes_a_three_edge_signed_order_path() {
         .expect("the retained three-edge order path should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded).expect("the transcribed order path should check");
 }
@@ -8948,8 +8945,6 @@ fn outcome_solve_closes_its_recorded_order_path_by_arithmetic() {
         position.column,
     )
     .expect("the retained outcome theorem path should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");

@@ -1483,7 +1483,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Prove each of `identities`, `to_integer(a op b) == to_integer(a) op
     /// to_integer(b)` or `to_integer((T)x) == to_integer(x)`, spelled from
     /// `written`: its two type-range bounds by selected-premise arithmetic, then the identity
-    /// by `integer_operation_identity` or `integer_cast_identity`. Each
+    /// by `normalize using` those two bounds. Each
     /// operand was found after its operation, so the reverse order proves
     /// the innermost identity first. Returns the proof with the identities
     /// established and their spellings, or the identity that missed.
@@ -1668,9 +1668,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// A bound `target <= a * b` (`lower`) or `a * b <= target` on a product
-    /// of two machine observations, from the operands' type ranges by
-    /// `integer_product_bounds`: each operand's two range bounds as a
-    /// `have`, then the bound by the certificate over those four premises,
+    /// of two machine observations, from the operands' type ranges:
+    /// each operand's two range bounds as a `have`, then the product bound
+    /// by normalization using those four explicit premises,
     /// the shape `click expand` writes. The four corner products of the
     /// ranges are compared with `target` first, so a range that cannot give
     /// the bound costs no step. Reads no fact and no other premise: the work

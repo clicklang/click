@@ -2134,6 +2134,10 @@ have named laws, applied with explicit `using` premises:
 | --- | --- |
 | Add two non-strict Integer bounds | `integer::add_le(a, b, c, d)` |
 | Scale an inequality by a nonnegative factor | `integer::multiply_order_nonnegative(a, b, factor)` |
+| Turn strict order into a successor bound | `integer::lt_step_le(a, b)` |
+| Restore strict order from a successor bound | `integer::step_le_lt(a, b)` |
+| Combine non-strict order with disequality | `integer::le_ne_lt(a, b)` |
+| Move an order to or from a difference | `integer::le_difference(a, b, value)`, `integer::difference_le(a, b, value)` |
 | Round an Integer upper bound | `integer::round_down_le(value, bound, divisor, remainder)` |
 
 Integer composition plans expand their premise, addition, scaling, and
@@ -2143,8 +2147,9 @@ later nodes reuse it. Context-free identities relate the plan's flat affine
 forms to the written operands, so expansion does not re-enter arithmetic
 search. Integer antisymmetry uses `integer::le_antisymmetric`.
 
-Strict Integer premises and goals use the successor-order law; refutation
-opens a negated-goal scope with `intro` and closes its contradiction. Type
+Strict Integer premises and goals use the successor-order law. Linear
+refutations that use the negated goal once become direct compositions;
+other refutations open a negated-goal scope with `intro` and close its contradiction. Type
 ranges normalize directly, as do constant-divisor quotient, shift, and
 remainder bounds. Rounding and endpoint exclusions use ordinary Integer laws.
 Machine operation and cast identities normalize from their explicit Integer

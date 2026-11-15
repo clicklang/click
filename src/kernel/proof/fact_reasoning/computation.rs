@@ -444,7 +444,7 @@ pub(super) fn integer_linear_comparison(condition: &ConditionTerm) -> Option<boo
     })
 }
 
-/// Check one explicitly written intrinsic quotient/shift/remainder bound.
+/// Check an exact type range or one intrinsic quotient/shift/remainder bound.
 /// Only the two operands' fixed bound shapes select observations; no facts,
 /// operand history, or nested operations are searched.
 pub(super) fn integer_operation_bound_comparison(condition: &ConditionTerm) -> Option<bool> {
