@@ -74,9 +74,15 @@ fn descent_step_membership_does_not_compare_growing_measure_tuples() {
             size
         ]);
         let environment = environment(&function);
-        let opened = OpenedDescent::open(&function, &environment)
-            .unwrap()
-            .unwrap();
+        let (opened, opening_work) = crate::instrumentation::measure_deterministic_work(|| {
+            OpenedDescent::inherit(&function, &environment)
+                .unwrap()
+                .unwrap()
+        });
+        assert!(
+            opening_work <= 2,
+            "{size} measure members: {opening_work} inherited-opening work"
+        );
         let step = DescentStep::under(&environment);
         let (result, work) =
             crate::instrumentation::measure_deterministic_work(|| opened.accept(step.as_ref()));

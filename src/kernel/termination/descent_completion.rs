@@ -33,12 +33,34 @@ impl OpenedDescent {
         function: &ProgramFunction,
         environment: &ExecutionEnvironment,
     ) -> Result<Option<Self>, String> {
+        let opened = Self::inherit(function, environment)?;
+        if opened.as_ref().is_some_and(|opened| {
+            !opened
+                .anchor
+                .ranks(function.name(), function.contract_interface())
+        }) {
+            return Err(format!(
+                "opening `{}` requires its declared recursion anchor",
+                function.name()
+            ));
+        }
+        Ok(opened)
+    }
+
+    /// A fragment of this function inherits the context validated at entry.
+    /// Its constructor consumes that native context, not another measure
+    /// declaration to recompare at every loop-preservation opening.
+    pub fn inherit(
+        function: &ProgramFunction,
+        environment: &ExecutionEnvironment,
+    ) -> Result<Option<Self>, String> {
+        charge_termination_work(1);
         if !function.contract_interface().has_call_ranked_recursion() {
             return Ok(None);
         }
         let anchor = environment
             .recursion_anchor_handle()
-            .filter(|anchor| anchor.ranks(function.name(), function.contract_interface()))
+            .filter(|anchor| anchor.function() == function.name())
             .ok_or_else(|| {
                 format!(
                     "opening `{}` requires its declared recursion anchor",
