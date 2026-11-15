@@ -88,7 +88,7 @@ pub(super) fn set_contract_result(
     let value = value.into();
     if value
         .shared()
-        .is_some_and(KernelTerm::is_shared_machine_operand)
+        .is_some_and(|root| root.is_shared_machine_operand() || root.ty() == &KernelType::Bool)
     {
         state.locals.set_retained_typed_with_all_qualifiers(
             C_CONTRACT_RESULT_NAME,
@@ -342,7 +342,8 @@ pub(in crate::kernel) fn coerce_retained_function_return_value(
     if value.shared().is_some()
         && matches!(
             value.program_type(),
-            ProgramType::Int8
+            ProgramType::Bool
+                | ProgramType::Int8
                 | ProgramType::UInt8
                 | ProgramType::Int16
                 | ProgramType::UInt16
@@ -957,7 +958,7 @@ fn bind_program_function_arguments_impl(
                     parameter.name().to_string(),
                     roots.and_then(|roots| roots.get(index)).map_or_else(
                         || ExecutionValue::from(value.clone()),
-                        |source| source.retain_checked_pointer(value.clone()),
+                        |source| source.retain_coerced_argument(value.clone()),
                     ),
                     parameter.program_type(),
                     slot,
@@ -973,7 +974,7 @@ fn bind_program_function_arguments_impl(
                     parameter.name().to_string(),
                     roots.and_then(|roots| roots.get(index)).map_or_else(
                         || ExecutionValue::from(value.clone()),
-                        |source| source.retain_checked_pointer(value.clone()),
+                        |source| source.retain_coerced_argument(value.clone()),
                     ),
                     parameter.program_type(),
                     Memory::value_parameter_pointer(parameter.name()),
@@ -1101,7 +1102,7 @@ pub(super) fn bind_contract_arguments(
                 parameter.name().to_string(),
                 roots.get(index).map_or_else(
                     || ExecutionValue::from(value.clone()),
-                    |source| source.retain_checked_pointer(value.clone()),
+                    |source| source.retain_coerced_argument(value.clone()),
                 ),
                 parameter.program_type(),
                 Memory::value_parameter_pointer(parameter.name()),
@@ -1203,6 +1204,79 @@ mod retained_result_scaling_tests {
 #[cfg(test)]
 mod pointer_argument_tests {
     use super::*;
+
+    #[test]
+    fn boolean_arguments_returns_and_caller_results_keep_roots() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let root = KernelTermImport::default().boolean_call(&SharedPureApplication::intern(
+            "boolean_argument".into(),
+            vec![],
+        ));
+        let source = ExecutionValue::Shared(root.clone());
+        let native = source.clone().into_native();
+        let function = program_function(
+            ProgramType::Bool,
+            "identity",
+            vec![program_parameter("x", ProgramType::Bool)],
+            program_return(crate::kernel::program_expression::variable("x")),
+        );
+        let state = ExecutionState::new();
+        let callee = bind_program_function_arguments_retained(
+            &state,
+            &function,
+            &[native.clone()],
+            &[source.clone()],
+        )
+        .unwrap();
+        let bound = callee.locals.get("x").unwrap();
+        assert_eq!(bound.shared(), Some(&root));
+        let legacy = bind_program_function_arguments(&state, &function, &[native.clone()]).unwrap();
+        assert_eq!(bound, legacy.locals.get("x").unwrap());
+        let returned = coerce_retained_function_return_value(
+            bound.clone(),
+            &function,
+            &mut vec![],
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        assert_eq!(returned.shared(), Some(&root));
+        let mut caller = ExecutionState::new();
+        set_function_result(&mut caller, &function, returned.clone());
+        assert_eq!(
+            caller.locals.get(C_CONTRACT_RESULT_NAME).unwrap().shared(),
+            Some(&root)
+        );
+        crate::kernel::loops::assign_call_result(
+            &mut caller,
+            "received",
+            returned,
+            &mut vec![],
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        assert_eq!(caller.locals.get("received").unwrap().shared(), Some(&root));
+        // Changed-type coercion uses the existing native conversion result.
+        let converted = ProgramValue::Int32(MachineTerm::bool_cast(
+            MachineIntegerType::Int32,
+            ConditionTerm::Constant(true),
+        ));
+        assert_eq!(
+            source
+                .retain_coerced_argument(converted.clone())
+                .into_native(),
+            converted
+        );
+        let raw = ProgramValue::Bool(MachineTerm::Constant {
+            format: MachineIntegerType::UInt8,
+            bits: 2,
+        });
+        assert_eq!(
+            ExecutionValue::Native(raw.clone())
+                .retain_coerced_argument(raw.clone())
+                .into_native(),
+            raw
+        );
+    }
 
     #[test]
     fn pointer_execution_arguments_keep_selected_roots_and_native_bindings() {

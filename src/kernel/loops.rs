@@ -78,7 +78,8 @@ pub(super) fn assign_call_result(
         && value.program_type() == program_type
         && matches!(
             program_type,
-            ProgramType::Int8
+            ProgramType::Bool
+                | ProgramType::Int8
                 | ProgramType::UInt8
                 | ProgramType::Int16
                 | ProgramType::UInt16

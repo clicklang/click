@@ -1450,6 +1450,9 @@ impl KernelTermExport {
         &mut self,
         term: &KernelTerm,
     ) -> Result<PureFunctionArgument, &'static str> {
+        if let Some(value) = term.boolean_argument_native() {
+            return Ok(value.clone());
+        }
         if let Some(value) = term.legacy_integer() {
             return Ok(PureFunctionArgument::Integer(value));
         }

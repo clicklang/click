@@ -450,7 +450,7 @@ identity, local range-fact preservation, equality rewrites, dependencies and the
 modeled-binary-tree example. The C/C++/Rust integer-language examples and focused
 cast-dispatch regressions passed separately. The CI-quality check passed.
 
-8o retains Boolean roots in local/outcome storage, memory cells and statement
+8o (merged [PR #2832](https://github.com/clicklang/click/pull/2832)) retains Boolean roots in local/outcome storage, memory cells and statement
 results, preceding 8n because its local/call handoffs need this storage support.
 Storage identity still uses the original native equality, hash and order rules,
 including comparisons with other value families. The selected Boolean native
@@ -467,6 +467,23 @@ Boolean storage key agreement, actual statement stores and memory reloads,
 temporary result receipts, byte-view cases and existing pointer handoffs.
 Growing-prefix storage and retrieval perform no operand traversal or numeric
 export. The ordinary example projects and CI-quality check passed.
+
+8n retains logical Boolean arguments through specification call assembly and
+nested Boolean call production. Native argument compatibility borrows the
+selected cached descriptor. Lexical bindings keep their common roots, and
+same-type runtime parameter binding, return conversion, contract-result binding
+and caller result assignment preserve those roots. Raw C Boolean words and
+changed-type conversions keep their original behavior; no refusal or authority
+rule changes. Numeric-result mixed-family call adapters remain assigned to 8ac.
+
+Regressions cover nested call/let argument identity and native output agreement,
+runtime argument and return handoffs, raw-word preservation, and nested-call
+scaling without numeric exports. Dependency-reader agreement covers Boolean
+arguments containing Integer comparisons and memory reads in every collection
+mode, with call-connection collection enabled and disabled. All 1,994 integration
+tests passed, including every scaling test, termination and contract completion,
+Integer conversion checks and ordinary example projects.
+The CI-quality check passed.
 
 ### 8a inventory
 
