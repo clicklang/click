@@ -120,4 +120,3 @@ uint32 probe(struct FixtureReader& stream) {
     ensures stream.data == old(stream.data) + 4;
     ensures stream.remaining == old(stream.remaining) - 4u64;
 }
-

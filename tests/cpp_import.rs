@@ -19839,6 +19839,44 @@ int32 probe(struct Sink& sink, int32 input) {
 }
 "#;
     check_return_call_sidecar(&project, &import, source);
+    // Expand each source body, including the temporary-bearing helper,
+    // and replay one proof edit per retained session's source boundary.
+    let sidecar = project.directory.join("arithmetic.click");
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    let labels = import
+        .export()
+        .functions
+        .iter()
+        .chain(&import.export().reachable_functions)
+        .map(|function| {
+            format!(
+                "{}.ensures_0",
+                click::languages::cpp::names::path_name(&function.path)
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut expanded = source.to_owned();
+    let mut rewritten = parsed.with_entry_source(expanded.clone());
+    for label in &labels {
+        let baseline = rewritten;
+        expanded = expand_project_claim_source_by_label(
+            &baseline,
+            &ProgramInputs::program(&import),
+            label,
+        )
+        .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        rewritten = parsed.with_entry_source(expanded.clone());
+        let (session, _) =
+            ProgramVerificationSession::new_program_prepared_project(&baseline, &import).unwrap();
+        let position =
+            project_tactic_source_position(&rewritten, &ProgramInputs::program(&import), label, 0)
+                .unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+    }
+    click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, &import))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
     let false_value = source.replace("ensures result == input;", "ensures result == 7;");
     let sidecar = project.directory.join("false.click");
     fs::write(&sidecar, &false_value).unwrap();

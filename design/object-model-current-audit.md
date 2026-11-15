@@ -369,8 +369,8 @@ at 8/32/128/512 fields and call sites; exact separation lookup scales with
 unrelated facts, same-pair widths and alias history at the same sizes. The
 spelling regression round-trips byte, halfword, int32 and uint64 pointer fields.
 The existing writable-span composition still passes its complete proof modes
-and rejection controls. The separate by-value returned-pointer snapshot
-failure above remains open; neither failure is evidence for restoring the
+and rejection controls. The separate by-value returned-pointer state
+identity failure above remains open; neither failure is evidence for restoring the
 archived universal object model.
 
 ## Native-interface evidence matrix
