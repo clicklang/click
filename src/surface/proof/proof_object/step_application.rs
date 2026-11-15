@@ -3374,20 +3374,20 @@ impl<'a> Proof<'a> {
         }
         let mut locals = state.locals().clone();
         if let Some((name, variable, algebraic_type)) = algebraic_binding {
-            locals.algebraic_values = locals.algebraic_values.with_inserted(
+            locals.set_algebraic_values(locals.algebraic_values.with_inserted(
                 name,
                 crate::kernel::SpecAlgebraicExpression {
                     algebraic_type,
                     node: crate::kernel::SpecAlgebraicExpressionNode::Variable(variable),
                 },
-            );
+            ));
         } else if let Some((name, variable)) = integer_binding {
-            locals.integer_values = locals.integer_values.with_inserted(
+            locals.set_integer_values(locals.integer_values.with_inserted(
                 name,
                 crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::var(
                     variable,
                 )),
-            );
+            ));
         }
         // The kernel's type bounds are born with the introduced name. Record
         // their spellings with this bounded delta, without searching ambient

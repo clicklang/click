@@ -645,3 +645,86 @@ fn nested_fold_match_call_surface_work_ignores_unrelated_locals() {
         }
     }
 }
+
+#[test]
+fn array_argument_snapshot_lookup_ignores_unrelated_recorded_history() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = ProgramValue::pointer(Pointer::symbolic(Variable(981_400)));
+    let cell = Pointer {
+        block: PointerBlock::Concrete("selected-array-memory".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let selected = ExecutionState::new()
+        .with_local("p", pointer.clone())
+        .with_memory(
+            Memory::new()
+                .with_block("selected-array-memory", 4)
+                .store(cell.clone(), int32(1)),
+        );
+    let selector = SnapshotSelector::from(ProgramPointRef {
+        region: CodeRegionRef::Region(0),
+        kind: ProgramPointKind::Exit,
+    });
+    let arguments = [crate::kernel::PureFunctionArgument::ArrayRef {
+        memory: selected.memory().clone(),
+        pointer,
+        element_type: ProgramType::Int32,
+    }];
+    let mut samples = Vec::new();
+    let mut baseline = None;
+    for size in [8, 32, 128, 512] {
+        let mut points = RecordedSnapshots::new();
+        points.insert(selector.clone(), selected.clone());
+        for index in 1..=size {
+            points.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Region(index),
+                    kind: ProgramPointKind::Exit,
+                },
+                selected.clone().with_memory(
+                    Memory::new()
+                        .with_block("selected-array-memory", 4)
+                        .store(cell.clone(), int32(index as u32 + 1)),
+                ),
+            );
+        }
+        let current = selected.clone().with_memory(
+            Memory::new()
+                .with_block("selected-array-memory", 4)
+                .store(cell.clone(), int32(u32::MAX)),
+        );
+        let _points = SynthesisRecordedPointsScope::enter(&points);
+        synthesize_surface_call(
+            "selected",
+            &arguments,
+            ParameterBinding::default(),
+            &current,
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        let ((call, work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                synthesize_surface_call(
+                    "selected",
+                    &arguments,
+                    ParameterBinding::default(),
+                    &current,
+                    &BTreeMap::new(),
+                )
+                .expect("the selected memory is recorded")
+            })
+        });
+        let SurfaceTerm::Call { arguments, .. } = call else {
+            panic!("call")
+        };
+        assert!(
+            matches!(&arguments[0], SurfaceTerm::At { selector: actual, .. } if *actual == selector)
+        );
+        assert_eq!(*baseline.get_or_insert(work), work);
+        samples.push(map_work);
+    }
+    assert!(
+        samples[3] < samples[0] * 4 + 128,
+        "snapshot lookup scanned history: {samples:?}"
+    );
+}
