@@ -4565,8 +4565,6 @@ fn pinned_std_byte_modular_output_initializes_uint32_offline() {
         .replace("produces p[0..4];", "");
     let stale_harness = harness.replace("unsigned int obj;", "unsigned int obj = 0;");
     let stale_source = source
-        .replace("consumes uninitialized(p[0..4]);", "owns p[0..4];")
-        .replace("produces p[0..4];", "")
         .replace("ensures result == 305419896u32;", "ensures result == 0u32;")
         .replace(
             "    step();",
@@ -4596,6 +4594,12 @@ fn pinned_std_byte_modular_output_initializes_uint32_offline() {
         );
         fs::write(root.join("byte.click"), proof).unwrap();
         let project = read_click_project(&root.join("byte.click"), proof).unwrap();
+        if name == "byte-output-stale-word" {
+            let companion =
+                proof.replace("ensures result == 0u32;", "ensures result == 305419896u32;");
+            let positive = project.with_entry_source(companion);
+            verify_program_prepared_project(&positive, &import).unwrap();
+        }
         let error = verify_program_prepared_project(&project, &import).expect_err(name);
         assert_eq!(
             error.kind(),

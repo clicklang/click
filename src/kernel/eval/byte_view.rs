@@ -25,9 +25,9 @@ use super::*;
 /// many bytes minus one below the accessed byte.
 const WIDEST_INTEGER_CELL_BYTES: i64 = 8;
 
-/// A successful read of a declared uint32 observes precisely its four bytes.
-/// The equation names only the selected snapshot; it neither initializes
-/// storage nor transports observations across a write or call.
+/// A completed byte output for a declared uint32 relates its word and bytes.
+/// The equation names only the selected output snapshot; initialization and
+/// authority come from the checked output transfer, not from this equation.
 pub(in crate::kernel) fn declared_uint32_read_representation(
     memory: &Memory,
     pointer: &Pointer,

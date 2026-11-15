@@ -17,9 +17,9 @@ The implementation baseline includes the construction work recorded in
 [Aggregate construction](aggregate-construction.md) and the explicit output
 initialization work in [PR 646](https://github.com/clicklang/click/pull/646).
 The [byte representation record](../docs/internals/byte-representation.md)
-describes current byte behavior; the [shared object-model issue](../roadmap/object-model.md)
-owns the remaining current-master gaps and acceptance checks. The
-[current-master audit](object-model-current-audit.md) separates delivered
+describes current byte behavior. The completed
+[native-interface audit](object-model-current-audit.md#native-interface-evidence-matrix)
+records the bounded entry/call acceptance checks and separates delivered
 mechanisms from historical implementation claims. The
 [C++ issue](../roadmap/cpp-support.md) owns subsequent feature coverage and source
 profiles. This document owns the combined semantic target and stabilization

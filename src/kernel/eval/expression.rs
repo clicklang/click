@@ -3623,18 +3623,6 @@ fn read_retained_lvalue_paths_without_ranges(
                     }
                 };
                 let mut facts = facts;
-                if !lvalue.is_volatile()
-                    && lvalue.value_type == ProgramType::UInt32
-                    && let ExpressionOutcome::Value(_) = &outcome
-                    && let Some(pointer) = state.locals.slot(name)
-                    && let Some(equation) = declared_uint32_read_representation(
-                        &state.memory,
-                        pointer,
-                        budget.program_byte_order(),
-                    )
-                {
-                    facts.push(ExecutionPureFact::certified(equation));
-                }
                 if lvalue.is_volatile()
                     && !SpecificationAccessScope::is_active()
                     && let ExpressionOutcome::Value(value) = &outcome

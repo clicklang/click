@@ -182,15 +182,20 @@ and deterministic work beside unrelated memory.
 
 A modular output contract uses the existing `consumes uninitialized(p[0..4])`
 and `produces p[0..4]` transfer. Its body must write every byte; ownership and
-value postconditions alone do not initialize storage. When the caller reads
-its declared uint32, the successful C read supplies an equation between the
-word and its four little-endian unsigned byte reads at that same snapshot.
-The equation also applies to the synchronized named-local read path. It keeps
-the read's value term unchanged and adds no initialization or authority.
-Four byte postconditions can then establish the exact word without inlining
-the callee. The rule selects the declaration and four reads directly; it does
-not search facts or memory history for byte values. Other scalar types,
-layouts, untyped storage and ended objects do not receive this equation.
+value postconditions alone do not initialize storage. When the selected output
+clause returns all four bytes initialized, the shared call transition supplies
+an equation between the declared uint32 observation and its four little-endian
+unsigned byte reads at that snapshot. The equation keeps load terms unchanged
+and adds no initialization or authority of its own. Four byte postconditions
+can then establish the exact word without inlining the callee.
+
+The rule runs only for an explicit complete four-byte output clause with byte
+stride, no partial value runs, the declared uint32 layout and an installed
+little-endian target. It selects the declaration and five read identities
+(one word, four bytes), with no fact search or unrelated memory scan. Ordinary
+scalar reads produce no extra byte facts and retain their shared expression
+roots. Other scalar types, layouts, untyped storage and ended objects stay
+outside this rule.
 
 `pinned_std_byte_modular_output_initializes_uint32_offline` retains the C++
 `p[i]` stores and the caller's `reinterpret_cast<std::byte*>(&obj)`. It checks
