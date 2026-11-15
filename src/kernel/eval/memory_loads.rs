@@ -4600,10 +4600,23 @@ pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTer
     let MachineTerm::MemoryLoad(origin, original_pointer, original_kind) = bits else {
         return bits.clone();
     };
+    // A native narrow read has its own width. A word or pointer observed
+    // at the same address must not turn this byte/halfword into a wider read.
+    let narrow_bytes = match original_kind {
+        LoadKind::Int8 | LoadKind::UInt8 => Some(1),
+        LoadKind::Int16 | LoadKind::UInt16 => Some(2),
+        _ => None,
+    };
     if let Some((read, typed)) = SCALAR_READ_CACHE.with(|cache| cache.borrow().get(bits).cloned()) {
         let MachineTerm::MemoryLoad(memory, pointer, kind) = &read else {
             unreachable!("cached scalar read")
         };
+        if let Some(bytes) = narrow_bytes {
+            let id = read_observations::record(memory, pointer, *kind, origin, bytes);
+            read_observations::select(id);
+            read_observations::produced(&read, bits);
+            return read;
+        }
         // A conservative, untyped selection is not an observed access width.
         // Once a producer supplies the width, select its version with that
         // width instead of treating the earlier guess as an eight-byte load.
@@ -4643,7 +4656,8 @@ pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTer
     let MachineTerm::MemoryLoad(memory, pointer, kind) = candidate else {
         unreachable!("selected scalar read")
     };
-    let recorded_bytes = recorded_load_access_width(origin, original_pointer)
+    let recorded_bytes = narrow_bytes
+        .or_else(|| recorded_load_access_width(origin, original_pointer))
         .or_else(|| recorded_load_access_width(&memory, &pointer))
         .or_else(|| {
             existing_read_access_width(origin, original_pointer, *original_kind)
@@ -5141,6 +5155,41 @@ mod tests {
             assert_eq!(ordinary, entry);
             assert_eq!(load_variable_registry_len(), before);
         }
+    }
+
+    #[test]
+    fn native_narrow_reads_keep_their_width_beside_word_observations() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_memory(Memory::new());
+        let pointer = Pointer::symbolic(Variable(993151));
+        record_load_access_width(memory.memory(), &pointer, 8);
+        for (kind, bytes) in [
+            (LoadKind::Int8, 1),
+            (LoadKind::UInt8, 1),
+            (LoadKind::Int16, 2),
+            (LoadKind::UInt16, 2),
+        ] {
+            let raw = MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind);
+            for _ in 0..2 {
+                let read = canonical_scalar_read(&raw);
+                assert_eq!(
+                    scalar_read_observation(crate::kernel::MachineOperandView::Legacy(&read))
+                        .unwrap()
+                        .bytes,
+                    bytes,
+                    "{kind:?}: both initial selection and cache hits keep native width"
+                );
+            }
+        }
+        let wide = MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Int32);
+        let read = canonical_scalar_read(&wide);
+        assert_eq!(
+            scalar_read_observation(crate::kernel::MachineOperandView::Legacy(&read))
+                .unwrap()
+                .bytes,
+            8,
+            "the legacy pointer carrier still retains its recorded width"
+        );
     }
 
     #[test]

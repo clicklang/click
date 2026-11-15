@@ -4609,3 +4609,195 @@ fn pinned_std_byte_modular_output_initializes_uint32_offline() {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+fn check_pinned_writable_span_proof(root: &Path, import: &PreparedCppImport, source: &str) {
+    fs::write(root.join("byte.click"), source).unwrap();
+    let project = read_click_project(&root.join("byte.click"), source).unwrap();
+    click::surface::with_proof_trace("probe", || {
+        verify_program_prepared_project(&project, import).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}\n{source}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+    let expanded = expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::program(import),
+        "probe.ensures_0",
+    )
+    .unwrap();
+    let rewritten = project.with_entry_source(expanded.clone());
+    click::surface::without_implicit_solve_for_claim("probe.contract", || {
+        verify_program_prepared_project(&rewritten, import).map_err(|error| error.report())
+    })
+    .unwrap();
+    let (session, _) =
+        ProgramVerificationSession::new_program_prepared_project(&project, import).unwrap();
+    let position = project_tactic_source_position(
+        &rewritten,
+        &ProgramInputs::program(import),
+        "probe.ensures_0",
+        0,
+    )
+    .unwrap();
+    fs::write(root.join("expanded.click"), &expanded).unwrap();
+    click::surface::with_proof_trace("probe", || {
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{}\n{}",
+                    error.report(),
+                    error.trace_context_report().unwrap_or_default()
+                )
+            });
+    });
+}
+
+// A copied span descriptor carries bounds and an address; only the explicit
+// output transfer supplies permission, initialization and the resulting word.
+#[test]
+#[ignore = "nightly: pinned C++ writable-byte span composition"]
+fn pinned_writable_byte_span_modular_output_initializes_uint32_offline() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cpp-byte-output");
+    let harness = fs::read_to_string(fixture.join("span.cpp")).unwrap();
+    let source = fs::read_to_string(fixture.join("span.click")).unwrap();
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "modular-span-byte-output-word",
+        &harness,
+        BYTE_SPAN_DEPENDENCIES,
+    );
+    check_pinned_writable_span_proof(&root, &import, &source);
+    fs::remove_dir_all(root).unwrap();
+
+    let short = harness.replace("*>(&obj), 4)", "*>(&obj), 3)");
+    let short_call = source.replace("    have std_span_size(dst) == 4u64 by { solve(); }\n", "");
+    let short_contract = source.replace("std_span_size(dst) == 4u64", "std_span_size(dst) == 3u64");
+    let no_permission = source
+        .replace(
+            "consumes uninitialized(std_span_data(dst)[0..4]);",
+            "views std_span_data(dst)[0..4];",
+        )
+        .replace("produces std_span_data(dst)[0..4];", "");
+    let missing_byte = harness.replace("dst[3] = static_cast<std::byte>(18);", "");
+    for (name, cpp, proof, refusal) in [
+        (
+            "span-output-short-call",
+            short.as_str(),
+            short_call.as_str(),
+            "precondition clause 1 of `fill`",
+        ),
+        (
+            "span-output-short-index",
+            short.as_str(),
+            short_contract.as_str(),
+            "operator[]",
+        ),
+        (
+            "span-output-no-permission",
+            harness.as_str(),
+            no_permission.as_str(),
+            "missing resource fact",
+        ),
+        (
+            "span-output-missing-byte",
+            missing_byte.as_str(),
+            source.as_str(),
+            "has not initialized every byte",
+        ),
+    ] {
+        let (root, import) =
+            pinned_span_fixture_with_exact_dependencies(name, cpp, BYTE_SPAN_DEPENDENCIES);
+        fs::write(root.join("byte.click"), proof).unwrap();
+        let project = read_click_project(&root.join("byte.click"), proof).unwrap();
+        let error = verify_program_prepared_project(&project, &import).expect_err(name);
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{name}: {error}"
+        );
+        let rendered = error.report();
+        let report = display_source_names(&rendered);
+        assert!(report.contains(refusal), "{name}: {report}");
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "nightly: pinned C++ expired writable-byte span"]
+fn pinned_writable_byte_span_output_requires_live_backing_offline() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cpp-byte-output");
+    let harness = fs::read_to_string(fixture.join("span-dead.cpp")).unwrap();
+    let source = fs::read_to_string(fixture.join("span-dead.click")).unwrap();
+    // Copying descriptor metadata out is valid even when its backing expires.
+    // Observing its size cannot manufacture permission for a subsequent write.
+    let observer = harness.replace("fill(dst);\n    return 0;", "return dst.size();");
+    let fill_start = source.find("void fill(").unwrap();
+    let fill_end = source.find("void expire(").unwrap();
+    let observer_source = source
+        .replace(&source[fill_start..fill_end], "")
+        .replace("ensures result == 0u32;", "ensures result == 4u32;");
+    let escaped_owner = source.replace(
+        "void expire(std::span<std::byte>& dst) {",
+        "void expire(std::span<std::byte>& dst) {\n    produces uninitialized(std_span_data(dst)[0..4]);",
+    );
+    for (name, cpp, proof, refusal) in [
+        (
+            "expired-span-metadata",
+            observer.as_str(),
+            observer_source.as_str(),
+            None,
+        ),
+        (
+            "expired-span-write",
+            harness.as_str(),
+            source.as_str(),
+            Some("missing resource fact"),
+        ),
+        (
+            "expired-span-owner",
+            harness.as_str(),
+            escaped_owner.as_str(),
+            Some("expire.produces_0"),
+        ),
+    ] {
+        let (root, import) =
+            pinned_span_fixture_with_exact_dependencies(name, cpp, BYTE_SPAN_DEPENDENCIES);
+        fs::write(root.join("byte.click"), proof).unwrap();
+        let project = read_click_project(&root.join("byte.click"), proof).unwrap();
+        let result = verify_program_prepared_project(&project, &import);
+        if let Some(refusal) = refusal {
+            let error = result.expect_err(name);
+            let rendered = error.report();
+            let report = display_source_names(&rendered);
+            assert!(report.contains(refusal), "{name}: {report}");
+            assert_eq!(
+                error.kind(),
+                click::surface::ClickErrorKind::Proof,
+                "{name}: {error}"
+            );
+        } else {
+            result.unwrap_or_else(|error| panic!("{name}: {}", error.report()));
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+// libstdc++ stores the dynamic extent in a nested record. Its copied
+// parameter precondition must have the same explicit spelling in every mode.
+#[test]
+#[ignore = "nightly: pinned C++ nested span parameter precondition"]
+fn pinned_span_nested_parameter_precondition_expands_offline() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cpp-byte-output");
+    let harness = fs::read_to_string(fixture.join("span-size.cpp")).unwrap();
+    let source = fs::read_to_string(fixture.join("span-size.click")).unwrap();
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "span-nested-parameter",
+        &harness,
+        BYTE_SPAN_DEPENDENCIES,
+    );
+    check_pinned_writable_span_proof(&root, &import, &source);
+    fs::remove_dir_all(root).unwrap();
+}

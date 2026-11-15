@@ -155,8 +155,11 @@ implementation:
   byte-output composition witness. That small composition is now checked in
   the [object-model audit](../design/object-model-current-audit.md#modular-byte-output-composition):
   `consumes uninitialized(...)` and initialized `produces` establish the exact
-  uint32 across proof modes. The selected writable span/serialization path
-  still needs its own unchanged-source witness.
+  uint32 across proof modes. The [writable-byte span composition](../design/object-model-current-audit.md#writable-byte-span-composition)
+  now constructs a span over caller storage, copies it into a modular fill,
+  and proves that exact word, with bounds, permission and expired-backing
+  controls. The actual Bitcoin cursor/serialization helpers still need their
+  own unchanged-source witnesses.
   Plain `owns` still requires initialized input and does not express an
   initializer.
 

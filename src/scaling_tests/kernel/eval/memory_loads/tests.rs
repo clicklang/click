@@ -2305,3 +2305,38 @@ fn immediate_pointer_store_readability_does_not_walk_history() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn narrow_read_selection_ignores_unrelated_wide_observations() {
+    let mut samples = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = intern_memory_ref(&Memory::new());
+        let pointer = Pointer::symbolic(Variable(995_000));
+        record_load_access_width(memory.memory(), &pointer, 8);
+        for i in 0..size {
+            record_load_access_width(
+                memory.memory(),
+                &Pointer::symbolic(Variable(996_000 + i)),
+                8,
+            );
+        }
+        let raw = MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::UInt8);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..2 {
+                let read = canonical_scalar_read(&raw);
+                assert_eq!(
+                    scalar_read_observation(crate::kernel::MachineOperandView::Legacy(&read))
+                        .unwrap()
+                        .bytes,
+                    1,
+                );
+            }
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work <= samples[0] * 2 + 64),
+        "{samples:?}"
+    );
+}

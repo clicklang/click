@@ -12286,7 +12286,13 @@ fn produced_memory_initialization(
         if extent == Some(0) {
             continue;
         }
-        let start = range.start_pointer();
+        // Transfer checking established this output's authority and bounds.
+        // Mark the same checked bytes at their unique concrete storage
+        // anchor, so a descriptor-held alias initializes the original object.
+        // This is one indexed address-class lookup, never an alias search.
+        let start = assumptions
+            .equality_graph
+            .storage_address(&range.start_pointer());
         if segment.is_uninitialized() {
             memory = memory.with_uninitialized_object(
                 start,
