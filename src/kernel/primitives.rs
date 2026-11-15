@@ -71,8 +71,8 @@ mod integer;
 pub(crate) use integer::WeakIntegerTerm;
 mod kernel_term;
 pub(crate) use kernel_term::{
-    KernelFold, KernelFoldIndex, KernelMatch, KernelTermExport, KernelTermImport,
-    clear_integer_bridge_memo,
+    BooleanOperandView, KernelFold, KernelFoldIndex, KernelMatch, KernelTermExport,
+    KernelTermImport, clear_integer_bridge_memo,
 };
 // Prepared rewrite interface for the following scoped consumers.
 pub use kernel_term::{
