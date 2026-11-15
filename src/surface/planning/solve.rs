@@ -4,6 +4,27 @@ use crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equalit
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::*;
 
+pub(in crate::surface) fn computes_with_known(goal: &Proposition) -> bool {
+    match goal {
+        Proposition::And(left, right) => computes_with_known(left) && computes_with_known(right),
+        Proposition::Or(left, right) => computes_with_known(left) || computes_with_known(right),
+        _ => crate::kernel::proof::fact_reasoning::computes_leaf(goal),
+    }
+}
+
+/// Choose a goal-local closer without enlarging `known`'s checking rules.
+/// The broad legacy normalization fallback remains explicit when computation
+/// alone cannot close the goal.
+pub(in crate::surface) fn plan_context_free_closer(goal: &Proposition) -> Option<ProofTactic> {
+    if computes_with_known(goal) {
+        Some(ProofTactic::Known)
+    } else if normalizes_context_free(goal) {
+        Some(ProofTactic::Normalize)
+    } else {
+        None
+    }
+}
+
 /// The single explicit-certificate search shared by every smart-simplification
 /// construction path. Both the fixed-state proof `solve() using` chain and the
 /// post-execution outcome planner must call through here, so a named simple
@@ -120,8 +141,8 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
             tactics.push(ProofTactic::Known);
             return true;
         }
-        if normalizes_context_free(&current) {
-            tactics.push(ProofTactic::Normalize);
+        if let Some(closer) = plan_context_free_closer(&current) {
+            tactics.push(closer);
             return true;
         }
         if let Some(suffix) = closer(&current) {
