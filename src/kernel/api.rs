@@ -4778,6 +4778,8 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
         statement,
         loop_evidence,
     } = statement.into();
+    let loop_evidence =
+        loop_evidence.map(|evidence| evidence.executed_under(execution_semantics.loops));
     let mut variables = statement_kernel_variables(&state, &statement, &assumptions, &environment);
     let execution = execute_execution_statement_verification_paths(
         &state,
@@ -4882,6 +4884,8 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
         statement,
         loop_evidence,
     } = statement.into();
+    let loop_evidence =
+        loop_evidence.map(|evidence| evidence.executed_under(LoopSemantics::ApplyVerifiedRules));
     let Some(while_loop) = crate::kernel::loops::WhileLoop::of(&statement) else {
         return (
             SymbolicExecution {

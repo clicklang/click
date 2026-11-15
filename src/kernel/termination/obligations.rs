@@ -78,6 +78,15 @@ impl TerminationObligations {
             })
         };
         let mut levels = BTreeMap::<usize, Vec<String>>::new();
+        let retained_exits = partial_rules
+            .iter()
+            .filter_map(|rule| {
+                charge_termination_work(1);
+                rule.concrete_loop_exits
+                    .as_ref()
+                    .map(|exits| (rule.function.name(), exits))
+            })
+            .collect::<BTreeMap<_, _>>();
         let mut function_goals = BTreeMap::new();
         let mut callbacks = Vec::new();
         let mut makes_pointer_calls = false;
@@ -141,10 +150,14 @@ impl TerminationObligations {
                 &function.source_body
             };
             let mut loop_indices = Vec::new();
-            visit_loop_obligations(loop_body, &mut 0, &mut |index| {
-                loop_indices.push(index);
-                Ok(())
-            })?;
+            if let Some(exits) = retained_exits.get(name.as_str()) {
+                loop_indices.extend(0..exits.count);
+            } else {
+                visit_loop_obligations(loop_body, &mut 0, &mut |index| {
+                    loop_indices.push(index);
+                    Ok(())
+                })?;
+            }
             if let Some(plan) = plans.get(name) {
                 let addressed = std::cell::OnceCell::new();
                 let owned = loop_rules

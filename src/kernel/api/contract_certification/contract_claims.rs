@@ -3524,6 +3524,7 @@ pub fn program_verified_function_rule(
             proofs.iter().map(|proof| proof.pointer_result.as_deref()),
         ),
         function,
+        concrete_loop_exits: None,
         loop_semantics,
         checked_callees: crate::kernel::termination::merge_checked_callees(
             proofs.iter().map(|proof| proof.checked_callees.as_ref()),
@@ -3591,6 +3592,7 @@ pub(crate) fn program_recursive_function_contract_hypothesis(
             pointer_result: None,
             function,
             // A hypothesis certified nothing, so it says nothing about loops.
+            concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),

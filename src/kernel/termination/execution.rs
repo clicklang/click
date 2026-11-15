@@ -165,20 +165,9 @@ impl TerminationObligations {
             .ruled
             .get(name.as_str())
             .map(|index| &self.partial_rules[*index])
+            && let Some(exits) = &rule.concrete_loop_exits
         {
-            let ruled_loops = verified_loop_rules
-                .get(name)
-                .map(|rules| {
-                    rules
-                        .iter()
-                        .filter_map(|rule| {
-                            rule.loop_evidence.as_ref().map(|evidence| evidence.index)
-                        })
-                        .collect::<BTreeSet<_>>()
-                })
-                .unwrap_or_default();
-            let executed = loops_executed_to_exit(function, rule.loop_semantics(), &ruled_loops);
-            unranked.retain(|index| !executed.contains(index));
+            unranked.retain(|index| !exits.contains(index));
         }
         if let Some(index) = unranked.first() {
             // An unranked loop is the function's own defect, so it is
