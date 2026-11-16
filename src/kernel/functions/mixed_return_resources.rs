@@ -849,7 +849,7 @@ impl ConstructedReturnBodies {
             &context,
             support,
             definitions,
-            state.memory(),
+            &state.program_point(),
             assumptions,
             Some(selected),
         )?;
@@ -1081,7 +1081,7 @@ pub(super) fn project_return_resource_cores(
                         .unchecked_with_fact(support.clone()),
                     support,
                     definitions,
-                    post_state.memory(),
+                    &post_state.program_point(),
                     assumptions,
                 )
                 .map(|(_, children, _)| children)

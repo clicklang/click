@@ -1846,7 +1846,7 @@ impl CheckedResourceRewrite {
             &singleton,
             selected,
             std::slice::from_ref(definition),
-            before_state.memory(),
+            &before_state.program_point(),
             assumptions,
         )
         .ok_or("cannot instantiate authority transfer wrapper")?;
@@ -2282,7 +2282,7 @@ impl CheckedResourceRewrite {
                     &singleton,
                     selected,
                     std::slice::from_ref(definition),
-                    before_state.memory(),
+                    &before_state.program_point(),
                     assumptions,
                 )
                 .ok_or("member body access cannot instantiate its private body")?;
@@ -2738,7 +2738,7 @@ fn checked_borrowing_fold_hold(
         &temporary,
         selected,
         function.composite_resource_definitions(),
-        before_state.memory(),
+        &before_state.program_point(),
         assumptions,
     )
     .ok_or("a loan hold's composite body could not be instantiated")?;
@@ -2977,7 +2977,7 @@ impl CheckedResourceObservation {
                     &temporary,
                     &definition_authority,
                     function.composite_resource_definitions(),
-                    after_state.memory(),
+                    &after_state.program_point(),
                     assumptions,
                 )
                 .ok_or("the observed composite body could not be instantiated")?;
@@ -5414,7 +5414,7 @@ fn interface_resources_guard_heap_frees(
                     .unchecked_with_fact(resource.clone()),
                 resource,
                 function.composite_resource_definitions(),
-                arm_states[arm_index].memory(),
+                &arm_states[arm_index].program_point(),
                 arm_facts[arm_index].assumptions(),
             )
             .is_some_and(|expanded| {

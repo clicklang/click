@@ -1997,7 +1997,7 @@ fn viewed_expansion_transports_only_the_selected_occurrence_dependency() {
             &parent,
             &head,
             &definitions,
-            &memory,
+            &crate::kernel::ProgramPoint::of_memory(&memory),
             &facts,
             Some(selected),
         )
@@ -2077,7 +2077,7 @@ fn selected_view_expansion_keeps_raw_child_bindings_through_adjacent_normalizati
         &context,
         &head,
         &definitions,
-        &memory,
+        &crate::kernel::ProgramPoint::of_memory(&memory),
         &facts,
         Some(selected),
     )

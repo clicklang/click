@@ -524,7 +524,7 @@ fn population_transfer_frontier<'a>(
                     &singleton,
                     &fact,
                     std::slice::from_ref(definition),
-                    memory,
+                    &crate::kernel::ProgramPoint::of_memory(memory),
                     assumptions,
                 )
                 .ok_or_else(|| {
@@ -7723,7 +7723,7 @@ fn expand_composites_for_frame(
             &expanded,
             &head,
             std::slice::from_ref(definition),
-            memory,
+            &crate::kernel::ProgramPoint::of_memory(memory),
             assumptions,
         )?;
         let opaque = next.contains_exact_representation(&head);
@@ -10295,7 +10295,7 @@ fn candidate_planning_resources(
                     &resources,
                     &composite,
                     definitions,
-                    memory,
+                    &crate::kernel::ProgramPoint::of_memory(memory),
                     assumptions,
                 )
                 .filter(|expanded| supported(expanded, requirement))
@@ -10503,7 +10503,7 @@ pub(super) fn checked_one_level_frontier(
         &singleton,
         head,
         definitions,
-        caller_state.memory(),
+        &caller_state.program_point(),
         assumptions,
     )?;
     Some(children)
@@ -11931,7 +11931,7 @@ fn prepare_contract_resource_transfer_unexplained(
                     &singleton,
                     owned,
                     interface.composite_resource_definitions(),
-                    caller_state.memory(),
+                    &caller_state.program_point(),
                     assumptions,
                 ) else {
                     return Ok(Err(RuntimeError::FunctionContract(
@@ -12338,7 +12338,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 &singleton,
                 &composite,
                 interface.composite_resource_definitions(),
-                callee_state.memory(),
+                &callee_state.program_point(),
                 assumptions,
             ) {
                 callee_resources =
@@ -13564,7 +13564,7 @@ fn produced_composite_frontier_conflict<'a>(
                 &singleton,
                 produced,
                 definitions,
-                memory,
+                &crate::kernel::ProgramPoint::of_memory(memory),
                 assumptions,
             ) else {
                 continue;
@@ -15607,17 +15607,11 @@ pub(super) fn expand_composite_resource_fact(
     context: &ResourceContext,
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
-    expand_composite_resource_fact_with_children(
-        context,
-        composite,
-        definitions,
-        memory,
-        assumptions,
-    )
-    .map(|(expanded, _, _)| expanded)
+    expand_composite_resource_fact_with_children(context, composite, definitions, at, assumptions)
+        .map(|(expanded, _, _)| expanded)
 }
 
 /// The kernel's own one-level expansion of a viewed composite, packaged as
@@ -15643,7 +15637,7 @@ pub(crate) fn checked_composite_projection_evidence(
         &head,
         viewed,
         definitions,
-        memory,
+        &crate::kernel::ProgramPoint::of_memory(memory),
         assumptions,
     )?;
     CompositeProjectionEvidence::from_checked_expansion(viewed.clone(), children)
@@ -15653,10 +15647,10 @@ pub(super) fn expand_composite_resource_fact_with_children(
     context: &ResourceContext,
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<ResourceFact>, Vec<ResourceFact>)> {
-    construct_composite_resource_body(context, composite, definitions, memory, assumptions, None)
+    construct_composite_resource_body(context, composite, definitions, at, assumptions, None)
         .map(|body| (body.expanded, body.children, body.raw_children))
 }
 
@@ -15689,10 +15683,11 @@ fn construct_composite_resource_body(
     context: &ResourceContext,
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
     selected: Option<ResourceOccurrenceId>,
 ) -> Option<CompositeBodyConstruction> {
+    let memory = at.memory();
     let Resource::Composite { name, arguments } = composite.resource() else {
         return None;
     };
@@ -15766,9 +15761,7 @@ fn construct_composite_resource_body(
             })
             .unwrap_or_else(|| context.clone().without_exact_representation(composite))?
     };
-    let mut state = ExecutionState::new()
-        .with_memory(memory.clone())
-        .with_resource_context(expansion_base.clone());
+    let mut state = ExecutionState::at_point(at).with_resource_context(expansion_base.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_program_value()?;
         if parameter.program_type() != argument.program_type() {
@@ -16293,7 +16286,7 @@ pub(super) fn expose_composite_resource_fact(
                 &context,
                 composite,
                 definitions,
-                memory,
+                &crate::kernel::ProgramPoint::of_memory(memory),
                 assumptions,
             )?;
             if expanded == context {
@@ -16539,7 +16532,7 @@ pub(super) fn jointly_consume_returned_resource_units(
                 &singleton,
                 required,
                 interface.composite_resource_definitions(),
-                state.memory(),
+                &state.program_point(),
                 assumptions,
             )?;
             if !unit && expanded.facts().iter().any(ResourceFact::is_own) {
@@ -16850,7 +16843,7 @@ fn consume_resource_fact_definitionally(
                     &required_context,
                     required,
                     definitions,
-                    memory,
+                    &crate::kernel::ProgramPoint::of_memory(memory),
                     assumptions,
                 )
             },
@@ -16888,7 +16881,7 @@ fn consume_resource_fact_definitionally(
                         available,
                         composite,
                         definitions,
-                        memory,
+                        &crate::kernel::ProgramPoint::of_memory(memory),
                         assumptions,
                     )
                 },
@@ -18525,7 +18518,7 @@ fn resource_clause_supply_with_fact(
             &expansion_context,
             &composite,
             definitions,
-            memory,
+            &crate::kernel::ProgramPoint::of_memory(memory),
             assumptions,
         ) else {
             continue;
