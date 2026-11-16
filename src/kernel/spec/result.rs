@@ -181,13 +181,21 @@ impl SpecValue {
         if let (Some((format, left)), Some((right_format, right))) =
             (self.machine(), right.machine())
             && format == right_format
-            && matches!(
+            && (matches!(
                 format,
                 MachineIntegerType::Int32
                     | MachineIntegerType::UInt32
                     | MachineIntegerType::Int64
                     | MachineIntegerType::UInt64
-            )
+            ) || (matches!(
+                format,
+                MachineIntegerType::Int8
+                    | MachineIntegerType::UInt8
+                    | MachineIntegerType::Int16
+                    | MachineIntegerType::UInt16
+            ) && !matches!(op, ComparisonOperator::Equal | ComparisonOperator::NotEqual)
+                && left.literal().is_some()
+                && right.literal().is_some()))
         {
             let relation = match op {
                 ComparisonOperator::Equal | ComparisonOperator::NotEqual => CompareRelation::Equal,

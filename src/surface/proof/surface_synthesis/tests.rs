@@ -6629,3 +6629,157 @@ fn machine_arithmetic_round_trips_after_checked_rewrite() {
         failures.join(", ")
     );
 }
+
+fn assert_narrow_comparison_round_trip(
+    proposition: &Proposition,
+    format: MachineIntegerType,
+    state: &ExecutionState,
+    lower: impl Fn(&ClickProposition) -> Proposition,
+) {
+    let Proposition::ConditionIs(ConditionTerm::Compare { format: actual, .. }, _) = proposition
+    else {
+        panic!("expected a retained {format:?} comparison: {proposition:?}")
+    };
+    assert_eq!(*actual, format);
+    let raised = synthesize_surface_proposition(proposition, ParameterBinding::default(), state)
+        .expect("a narrow comparison has an exact typed spelling");
+    let text = crate::surface::printing::source_click_proposition(&raised);
+    let parsed = parser::parse(&format!(
+        "theorem probe() {{ requires {text}; ensures true; }}"
+    ))
+    .unwrap();
+    let Requirement::Proposition(written) = &parsed.theorem_definitions()[0].requires()[0] else {
+        panic!()
+    };
+    assert_eq!(lower(written), *proposition, "{format:?}: {text}");
+}
+
+#[test]
+fn narrow_comparisons_round_trip_after_checked_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    use crate::kernel::proof::ProofFacts;
+    for (source, source_spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for (target, spelling) in [
+            (T::Int8, "int8"),
+            (T::UInt8, "uint8"),
+            (T::Int16, "int16"),
+            (T::UInt16, "uint16"),
+        ] {
+            for operator in ["<", "<=", ">", ">="] {
+                for bound in [5, 100] {
+                    let _session = crate::kernel::VerificationSession::enter();
+                    let x = source.value_from_term(MachineTerm::Variable(Variable(999702)));
+                    let state = ExecutionState::new().with_local("x", x.clone());
+                    let values = BTreeMap::from([("x".to_string(), x)]);
+                    let empty = BTreeMap::new();
+                    let lower = |surface: &ClickProposition| {
+                        crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+                            surface, &PureFactContext::new(), ContractEnvironment::new(&values, &empty),
+                            FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+                            SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
+                            FixedStateLoweringOptions::default(),
+                        ).unwrap().0
+                    };
+                    let input = parser::parse(&format!("theorem probe() {{ requires x == (9 as {}); ensures to_integer(x as {spelling}) {operator} {bound}; }}", source_spelling)).unwrap();
+                    let theorem = &input.theorem_definitions()[0];
+                    let Requirement::Proposition(equality) = &theorem.requires()[0] else {
+                        panic!()
+                    };
+                    let Ensure::Proposition(goal) = theorem.ensures()[0].ensure() else {
+                        panic!()
+                    };
+                    let equality = lower(equality);
+                    let produced = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+                        .check_equality_rewrite(&lower(goal), &equality)
+                        .unwrap()
+                        .proposition()
+                        .clone();
+                    assert_narrow_comparison_round_trip(&produced, target, &state, lower);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn narrow_comparison_literals_preserve_format_polarity_and_builtin_truth() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int8, "int8"),
+        (T::UInt8, "uint8"),
+        (T::Int16, "int16"),
+        (T::UInt16, "uint16"),
+    ] {
+        let (min, max) = format.format().bounds();
+        for (left, right, less) in [(min.clone(), max.clone(), true), (max, min, false)] {
+            for (operator, holds) in [("<", less), ("<=", less), (">", !less), (">=", !less)] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let state = ExecutionState::new();
+                let input = parser::parse(&format!("theorem probe() {{ requires ({left} as {spelling}) {operator} ({right} as {spelling}); ensures true; }}")).unwrap();
+                let Requirement::Proposition(written) =
+                    &input.theorem_definitions()[0].requires()[0]
+                else {
+                    panic!()
+                };
+                let Proposition::ConditionIs(condition, true) =
+                    relower_written_proposition(written, &state).unwrap()
+                else {
+                    panic!()
+                };
+                for truth in [true, false] {
+                    let proposition = Proposition::ConditionIs(condition.clone(), truth);
+                    assert_narrow_comparison_round_trip(&proposition, format, &state, |p| {
+                        relower_written_proposition(p, &state).unwrap()
+                    });
+                    assert_eq!(
+                        crate::kernel::reasoning::path_facts::solve_builtin_prop(&proposition),
+                        holds == truth
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn narrow_symbolic_comparisons_keep_their_existing_normal_forms() {
+    use crate::kernel::MachineIntegerType as T;
+    for format in [T::Int8, T::UInt8, T::Int16, T::UInt16] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state = ExecutionState::new()
+            .with_local(
+                "a",
+                format.value_from_term(MachineTerm::Variable(Variable(999703))),
+            )
+            .with_local(
+                "b",
+                format.value_from_term(MachineTerm::Variable(Variable(999704))),
+            );
+        for operator in ["<", "<=", ">", ">=", "=="] {
+            // Symbolic Integer observations keep their existing canonical
+            // direction. Test facts the source actually produces, separately
+            // from the newly retained closed comparisons above.
+            let parsed = parser::parse(&format!("theorem probe() {{ requires to_integer(a) {operator} to_integer(b); ensures true; }}")).unwrap();
+            let Requirement::Proposition(written) = &parsed.theorem_definitions()[0].requires()[0]
+            else {
+                panic!()
+            };
+            let Proposition::ConditionIs(condition, true) =
+                relower_written_proposition(written, &state).unwrap()
+            else {
+                panic!()
+            };
+            for truth in [true, false] {
+                let proposition = Proposition::ConditionIs(condition.clone(), truth);
+                assert_narrow_comparison_round_trip(&proposition, format, &state, |p| {
+                    relower_written_proposition(p, &state).unwrap()
+                });
+            }
+        }
+    }
+}
