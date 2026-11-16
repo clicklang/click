@@ -337,12 +337,16 @@ C-expression handoffs preserve supported pointer producer roots. Removing a
 constructor field's `const` qualifier now updates metadata through the existing
 pointer payload API, preserving the address, call/read producer, historical memory,
 other qualifiers, extents and object/local-reference evidence. Native nominal
-object-class refinement remains an explicit checker boundary.
+object-class refinement remains an explicit checker boundary. Explicit pointer
+casts still run the existing metadata rules before retaining their result: even
+a same-type `void*` cast clears the selected extent, while byte-to-byte casts
+preserve it.
 
 Validation: exact producer/payload parity and unchanged facts/obligations passed.
 Qualifier updates on growing pointer indices take constant work with zero machine
-exports. All 2,017 API, specification, execution-value and scaling tests, quality
-checks and all 575 regular pointer fixtures passed; the audit reported zero fact
+exports. All 2,129 API, specification, execution-value, expression and scaling
+tests passed, including the reproduced cast regression and retained/native extent
+parity. Quality checks and all 575 regular pointer fixtures passed; the audit reported zero fact
 stability differences. A broad fixture selector also selected 23 nightly cases;
 the ten failures were identical before 9o and were left outside this task.
 

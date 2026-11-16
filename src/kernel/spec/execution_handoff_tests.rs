@@ -534,3 +534,57 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
         assert_eq!(actual.value.into_native(), old.value.into_native());
     }
 }
+
+#[test]
+fn explicit_pointer_cast_lowering_keeps_native_extent_rules() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for (source, target, keeps_extent) in [
+        (ProgramType::VoidPointer, ProgramType::VoidPointer, false),
+        (ProgramType::Int32Pointer, ProgramType::UInt8Pointer, false),
+        (ProgramType::Int8Pointer, ProgramType::UInt8Pointer, true),
+    ] {
+        let pointer = PointerValue::new(Pointer::symbolic(Variable(999940)), source)
+            .with_pointee_constant(true)
+            .with_extent(Some(SubobjectExtent {
+                start: Pointer::symbolic(Variable(999940)),
+                width: MachineTerm::constant(4),
+            }));
+        let expression = SpecExpression::Cast(
+            Box::new(SpecExpression::Value(ProgramValue::Pointer(pointer))),
+            target,
+        );
+        let evaluate = |disabled| {
+            let mut execution = ExecutionBudget::new();
+            let mut budget = SpecEvaluation::logical(&mut execution);
+            budget.machine_result_production_disabled = disabled;
+            evaluate_spec_expression_paths_with_bindings_in(
+                &ExecutionState::new(),
+                &expression,
+                &PureFactContext::new(),
+                &BTreeMap::new(),
+                &mut budget,
+            )
+            .unwrap()
+            .pop()
+            .unwrap()
+        };
+        let actual = evaluate(false);
+        let old = evaluate(true);
+        let ProgramValue::Pointer(expected) = old.value.into_native() else {
+            panic!()
+        };
+        assert_eq!(expected.extent().is_some(), keeps_extent);
+        assert!(
+            actual
+                .value
+                .shared()
+                .unwrap()
+                .pointer_payload()
+                .unwrap()
+                .same_source_payload(&SharedPointerValue::import(&expected))
+        );
+        assert_eq!(actual.facts, old.facts);
+        assert_eq!(actual.obligations, old.obligations);
+        assert_eq!(actual.value.into_native(), ProgramValue::Pointer(expected));
+    }
+}
