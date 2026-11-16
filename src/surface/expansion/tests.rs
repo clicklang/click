@@ -2264,8 +2264,8 @@ fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
         .expect("the expansion naming the field should verify");
 }
 
-/// `arithmetic` on a `uint64` goal expands to the bridge steps it took,
-/// and the expansion verifies with no `arithmetic()` left to plan. A
+/// `solve() using` on a `uint64` goal expands to the bridge steps it took,
+/// and the expansion verifies with no `solve()` left to plan. A
 /// comparison and its observed reading are one fact, so an order premise is
 /// carried by `known()`; type ranges and each sum's in-range identity use
 /// `known()` after the two exact-result Integer
