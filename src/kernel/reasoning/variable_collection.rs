@@ -5896,6 +5896,16 @@ fn remembered_memory_variables(memory: &SharedMemory) -> Option<VariableCounts> 
     SHARED_MEMORY_VARIABLES.with(|table| table.borrow().get(&memory.arena_id()).cloned())
 }
 
+/// Read an already prepared state's variable index without walking its memory.
+/// Missing metadata leaves the caller on its existing checked path.
+pub(in crate::kernel) fn indexed_memory_contains_variable(
+    memory: &SharedMemory,
+    variable: Variable,
+) -> Option<bool> {
+    crate::instrumentation::record_deterministic_work(1);
+    Some(remembered_memory_variables(memory)?.contains_key(&variable))
+}
+
 /// Establish the input state's index once, before individual C steps.
 pub(in crate::kernel) fn prepare_memory_variable_index(memory: &Memory) {
     let shared = crate::kernel::intern_memory_ref(memory);

@@ -1741,14 +1741,22 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
         return equivalent;
     }
     // A supported structural mismatch is definitive; do not substitute or
-    // search to turn it into an equivalence. Loads and unsupported fragments
-    // retain the existing one-binder, memory-aware structural check below.
+    // search to turn it into an equivalence. Loaded bodies use the state-aware
+    // key below; unsupported fragments retain the existing structural check.
     if let (Some(left_key), Some(right_key)) = (
         super::fact_keys::memory_free_quantified_key(left),
         super::fact_keys::memory_free_quantified_key(right),
     ) {
         return left_key == right_key
             && super::fact_keys::predicate_states_share_storage(left, right);
+    }
+    // The memory-free key deliberately excludes reads. For supported loaded
+    // bodies use the same comparison identities with exact retained states,
+    // rather than requiring native and shared comparison nodes to be equal.
+    if let Some(equivalent) =
+        super::fact_keys::selected_state_quantified_alpha_equivalent(left, right)
+    {
+        return equivalent;
     }
     match (left, right) {
         (
@@ -4384,3 +4392,7 @@ pub(crate) fn holds_by_lookup_or_decision(
         _ => false,
     }
 }
+
+#[cfg(test)]
+#[path = "loaded_quantifier_tests.rs"]
+mod loaded_quantifier_tests;
