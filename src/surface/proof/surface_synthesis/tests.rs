@@ -6155,3 +6155,46 @@ fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
         });
     }
 }
+
+#[test]
+fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
+    use crate::kernel::{
+        AlgebraicTermNode, AlgebraicValue, KernelMatch, KernelTermExport, KernelTermImport,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(999981);
+    let names = BTreeMap::from([(variable, "item".into())]);
+    let state = ExecutionState::new();
+    let word = MachineTerm::Variable(variable);
+    for value in [
+        ProgramValue::Int32(word.clone()),
+        ProgramValue::UInt32(word.clone()),
+        ProgramValue::Int64(word.clone()),
+        ProgramValue::UInt64(word.clone()),
+        ProgramValue::Int8(word.clone()),
+        ProgramValue::UInt8(word.clone()),
+        ProgramValue::Int16(word.clone()),
+        ProgramValue::UInt16(word.clone()),
+        ProgramValue::Bool(word),
+        int32(7),
+        ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
+    ] {
+        let mut native =
+            KernelMatch::test_scrutinee(vec![crate::kernel::AlgebraicValueType::Program(
+                value.program_type(),
+            )]);
+        native.node = AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields: vec![AlgebraicValue::Program(value)],
+        };
+        let expected =
+            synthesize_surface_algebraic(&native, ParameterBinding::default(), &state, &names);
+        let root = KernelTermImport::default().algebraic(&native);
+        let exports = KernelTermExport::algebraic_export_count();
+        assert_eq!(
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &names),
+            expected
+        );
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+    }
+}

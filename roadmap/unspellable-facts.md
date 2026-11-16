@@ -164,6 +164,8 @@ audit collects this evidence; it does not defer testing until 9z.
 
 ### 9b common raising entry point
 
+Delivered in [PR #2934](https://github.com/clicklang/click/pull/2934).
+
 The shared dispatcher already handles supported numeric and float operations;
 this slice removes the native root clone/re-intern from its Integer adapter.
 Integer comparison operands and legacy call arguments now pass their existing
@@ -173,6 +175,26 @@ following slices. No source spelling, proof rule or budget changes.
 
 Validation: 1,837 selected Surface synthesis and scaling tests passed;
 `scripts/check.sh --ci-quality` passed.
+
+### 9c direct constructor raising
+
+Shared constructors now raise their ordered fields directly instead of exporting
+an algebraic tree and walking it again. Program-parameter envelopes retain their
+algebraic spelling; int32 expressions use the shared dispatcher. Named scalar
+fields and existing refusals retain the native boundary's policy. Pointer fields
+reuse the same root-view cast logic as native constructors, without changing
+saved narrow views. Variable/read leaves remain assigned to 9d.
+
+Native/shared scalar spelling and refusal comparisons cover the field policy.
+Deterministic flat and nested constructor cases cover increasing size and assert
+that constructor trees are not exported (the nested case permits the remaining
+named-variable leaf adapter). The algebraic fixture fact-stability audit reports
+zero differences. Run work-measurement scaling tests without the audit environment:
+the audit performs extra lowering and changes those measurements.
+
+Validation on the integrated binding-ID base: 1,845 Surface/scaling tests,
+`scripts/check.sh --ci-quality`, and the algebraic fixture filter passed;
+the separate fact-stability report contains zero differences.
 
 ## Chunk 3: machine-valued pure-function results
 

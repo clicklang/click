@@ -3314,6 +3314,105 @@ pub(super) fn raise_kernel_term(
     raise_kernel_term_dispatch(term, parameter_binding, state, bound_variables)
 }
 
+// Constructor fields retain their existing spelling policy independently of
+// call arguments: pointer fields can need a root-view cast, and non-int32
+// scalar fields currently require a named variable.
+fn raise_constructor_field(
+    term: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::{KernelTermNode as Node, KernelType};
+    let term = match term.node() {
+        Node::ProgramParameter { operand } => operand,
+        _ => term,
+    };
+    if matches!(term.ty(), KernelType::Algebraic(_)) {
+        // The native constructor-field boundary does not spell conditional
+        // algebraic fields. Keep that admission policy in this migration.
+        if matches!(term.node(), Node::AlgebraicIf { .. }) {
+            return None;
+        }
+        return raise_kernel_term(term, parameter_binding, state, bound_variables);
+    }
+    if let Some(ProgramValue::Pointer(pointer)) = term.pointer_native() {
+        return raise_constructor_pointer(pointer, parameter_binding, state, bound_variables);
+    }
+    if term.ty() == &KernelType::Program(ProgramType::Int32) {
+        return raise_kernel_term(term, parameter_binding, state, bound_variables);
+    }
+    let variable = match (term.ty(), term.node()) {
+        (
+            KernelType::Program(
+                ProgramType::Bool
+                | ProgramType::Int8
+                | ProgramType::UInt8
+                | ProgramType::Int16
+                | ProgramType::UInt16
+                | ProgramType::UInt32
+                | ProgramType::Int64
+                | ProgramType::UInt64,
+            ),
+            Node::Variable(variable),
+        ) => *variable,
+        _ => match term.boolean_native()? {
+            ProgramValue::Bool(MachineTerm::Variable(variable)) => *variable,
+            _ => return None,
+        },
+    };
+    bound_variables
+        .get(&variable)
+        .map(|name| {
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone().into()))
+        })
+        .or_else(|| {
+            synthesize_surface_bitvector(
+                &MachineTerm::Variable(variable),
+                parameter_binding,
+                state,
+                bound_variables,
+            )
+        })
+}
+
+fn raise_constructor_pointer(
+    pointer: &crate::kernel::PointerValue,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)
+        .or_else(|| synthesize_loaded_pointer_value(pointer, parameter_binding, state))
+        .map(|expression| {
+            // Constructors implicitly retag object pointers
+            // without widening their views. An explicit cast
+            // is needed only for a checked root view; adding
+            // it to a saved narrow view would change the value.
+            if pointer.program_type() == ProgramType::VoidPointer
+                && pointer.extent_is_known()
+                && pointer.extent().is_none()
+            {
+                ContractExpression::CUnary {
+                    lowered: ProgramExpression::Cast {
+                        expression: Box::new(ProgramExpression::Value(ProgramValue::Pointer(
+                            pointer.clone(),
+                        ))),
+                        target_type: ProgramType::VoidPointer,
+                        integer_mode: crate::kernel::IntegerCastMode::Standard,
+                        pointee_struct: None,
+                        pointee_volatile: false,
+                        pointee_constant: false,
+                        explicit_qualification: false,
+                    },
+                    operand: Box::new(expression),
+                }
+            } else {
+                expression
+            }
+        })
+}
+
 fn raise_integer_operation(
     operator: crate::kernel::KernelIntegerOperator,
     arguments: &[crate::kernel::KernelTerm],
@@ -3370,7 +3469,18 @@ fn raise_kernel_term_dispatch(
         Node::Match(matched) => {
             matches::raise_match(matched, parameter_binding, state, bound_variables)?
         }
-        Node::Constructor(_) | Node::AlgebraicRead(_) => {
+        Node::Constructor(constructor) => SurfaceTerm::AlgebraicConstructor {
+            algebraic_type: surface_algebraic_type(&constructor.algebraic_type)?,
+            variant: constructor.variant.clone(),
+            arguments: constructor
+                .fields
+                .iter()
+                .map(|field| {
+                    raise_constructor_field(field, parameter_binding, state, bound_variables)
+                })
+                .collect::<Option<Vec<_>>>()?,
+        },
+        Node::AlgebraicRead(_) => {
             let argument = crate::kernel::KernelTermExport::default()
                 .argument(term)
                 .ok()?;
@@ -6867,42 +6977,12 @@ fn synthesize_surface_algebraic(
                         bound_variables,
                     ),
                     crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
-                        synthesize_surface_pointer_expression(
+                        raise_constructor_pointer(
                             pointer,
                             parameter_binding,
                             state,
                             bound_variables,
                         )
-                        .or_else(|| {
-                            synthesize_loaded_pointer_value(pointer, parameter_binding, state)
-                        })
-                        .map(|expression| {
-                            // Constructors implicitly retag object pointers
-                            // without widening their views. An explicit cast
-                            // is needed only for a checked root view; adding
-                            // it to a saved narrow view would change the value.
-                            if pointer.program_type() == ProgramType::VoidPointer
-                                && pointer.extent_is_known()
-                                && pointer.extent().is_none()
-                            {
-                                ContractExpression::CUnary {
-                                    lowered: ProgramExpression::Cast {
-                                        expression: Box::new(ProgramExpression::Value(
-                                            ProgramValue::Pointer(pointer.clone()),
-                                        )),
-                                        target_type: ProgramType::VoidPointer,
-                                        integer_mode: crate::kernel::IntegerCastMode::Standard,
-                                        pointee_struct: None,
-                                        pointee_volatile: false,
-                                        pointee_constant: false,
-                                        explicit_qualification: false,
-                                    },
-                                    operand: Box::new(expression),
-                                }
-                            } else {
-                                expression
-                            }
-                        })
                     }
                     crate::kernel::AlgebraicValue::Program(ProgramValue::Int32(value)) => {
                         synthesize_surface_bitvector(
