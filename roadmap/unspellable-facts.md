@@ -251,6 +251,20 @@ Validation: all 1,860 Surface/scaling tests and quality checks passed, including
 nested mixed-family calls and exact pointer-name admission/refusal. Pure-pointer
 call fixtures passed with zero fact-stability differences.
 
+### 9h common fold raising
+
+The native machine-fold entry now uses the existing typed fold importer and
+common renderer. Shared and native inputs therefore use the same child rendering
+and typed binder scopes. This preserves the native Int32 range-fold profile;
+no fold syntax, evaluation or result-family admission changes are introduced.
+
+Validation: all 1,850 Surface/scaling tests and quality checks passed, including
+nested fold/match/call scope scaling. The alpha-equivalence fixture passed with
+zero fact-stability differences. A broader range-fold filter passed nine fixtures
+and incidentally included the nightly-only `integer_sum_range_fold.md`, which
+failed on memory-transport evidence; that nightly failure is outside this slice's
+validation per the user's instruction to leave nightly failures aside.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
