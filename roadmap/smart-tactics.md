@@ -195,10 +195,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 27 | 65 |
+| `mdtests/` | 25 | 56 |
 | `examples/` | 26 | 321 |
 | `library/` | 0 | 0 |
-| Total | 53 | 386 |
+| Total | 51 | 377 |
 
 The 12 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text
@@ -222,7 +222,6 @@ pattern is understood but the complete family has not yet been validated.
 
 | ID | Work | Confidence |
 | --- | --- | --- |
-| 10 | Remaining array mdtests, including bubble-sort | Medium; check baselines |
 | 11 | Remaining loop-frame mdtests | Medium |
 | 12 | Remaining call and branching-graph mdtests | Medium |
 | 13 | Named-root aliased-pointer baseline diagnosis/repair | Uncertain |
