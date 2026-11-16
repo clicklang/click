@@ -2857,9 +2857,13 @@ impl CheckedResourceObservation {
                 .owned_quantity_term()
                 .ok_or("count observation requires owned member quantity")?;
             let nonnegative = Proposition::ConditionIs(
-                crate::kernel::ConditionTerm::signed_less_equal(
-                    MachineTerm::constant(0),
-                    quantity.clone(),
+                crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+                    MachineIntegerType::Int32,
+                    CompareRelation::LessEqual,
+                    [
+                        crate::kernel::MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                        crate::kernel::MachineOperandView::Legacy(quantity),
+                    ],
                 ),
                 true,
             );

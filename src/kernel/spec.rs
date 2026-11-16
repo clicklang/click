@@ -5575,12 +5575,6 @@ fn lower_spec_disjunction_at_state_in(
         assumptions,
         budget,
     )? {
-        // Intrinsic truth leaves no case for the right side, even when the
-        // retained comparison is not represented as a Boolean constant.
-        if constant_spec_condition_value(&left_path.proposition) == Some(true) {
-            paths.push(left_path);
-            continue;
-        }
         // The right side matters only where the left fails, as with
         // `implies`: it is lowered assuming the left's negation and its
         // obligations are owed only there. A guard such as
@@ -5601,6 +5595,20 @@ fn lower_spec_disjunction_at_state_in(
             &right_assumptions,
             budget,
         )?;
+        // Preserve a defined disjunction even when its left side is true:
+        // its logical structure still belongs to the proof. An intrinsically
+        // undefined right side need not denote anything when the left holds.
+        if constant_spec_condition_value(&left_path.proposition) == Some(true)
+            && right_paths.iter().all(|path| {
+                path.obligations.iter().any(|obligation| {
+                    obligation.evaluation_domain
+                        && constant_spec_condition_value(obligation.proposition()) == Some(false)
+                })
+            })
+        {
+            paths.push(left_path);
+            continue;
+        }
         if right_paths.is_empty() {
             return Err(ExecutionLimit::DisjunctionRightUndefined);
         }

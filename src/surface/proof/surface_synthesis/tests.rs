@@ -6415,6 +6415,19 @@ fn closed_machine_orders_round_trip_after_checked_rewrite() {
 }
 
 #[test]
+fn closed_machine_order_keeps_a_defined_right_disjunct() {
+    let file = parser::parse(
+        "theorem probe() { requires 64u64 >= 64u64 or (1u64 << 1u64) == 2u64; ensures true; }",
+    )
+    .unwrap();
+    let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+        panic!("requirement")
+    };
+    let lowered = relower_written_proposition(written, &ExecutionState::new()).unwrap();
+    assert!(matches!(lowered, Proposition::Or(..)));
+}
+
+#[test]
 fn closed_machine_order_short_circuits_undefined_right_operand() {
     let file = parser::parse(
         "theorem probe() { requires 64u64 >= 64u64 or (1u64 << 64u64) == 2u64; ensures true; }",
