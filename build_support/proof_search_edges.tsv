@@ -682,7 +682,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_pred
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_signed_definedness_bounds	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_signed_definedness_bounds	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_definedness_by_bounds	driver	3
-src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	driver	9
+src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	driver	5
 src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_signed_definedness_bounds	1
 src/surface/proof/driver/claims.rs	driver	::apply_post_execution_arithmetic_using	apply_specialized_composition	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	apply_specialized_composition	1
@@ -707,7 +707,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_equality_from
 src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::apply_integer_composition	driver	9
 src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::apply_integer_composition	try_direct_logical_closure	1
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	driver	10
-src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	driver	3
+src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	driver	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	try_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_product_bound_using	driver	3
@@ -740,3 +740,18 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_machine_bridge_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_conditional_bridge_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_machine_bridge_using	1
+
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_integer_algebra	1
+src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_integer_algebra	1
+src/surface/proof/smart_closures/integer_algebra.rs	search	ProofSearch::try_integer_algebra	driver	3
+src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	try_integer_algebra	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_integer_algebra	try_integer_algebra	1
+
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_quotient_shift_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_quotient_shift_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_quotient_shift_using	1
+src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_quotient_shift_using	1
+src/surface/proof/smart_closures/quotient_shifts.rs	search	ProofSearch::try_quotient_shift_using	driver	13
+src/surface/proof/smart_closures/quotient_shifts.rs	search	ProofSearch::try_quotient_shift_using	try_integer_composition_using	1
+src/surface/proof/smart_closures/quotient_shifts.rs	search	ProofSearch::try_quotient_shift_using	try_integer_algebra	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_integer_algebra	1

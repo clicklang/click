@@ -4311,3 +4311,21 @@ proof, introduce a function absent from the generated scope, or replace a
 missing premise. Establish that premise in a `have` proof or use `solve()` to
 plan the required steps. The checked example is
 `mdtests/termination_ordinary_proof_steps.md`.
+
+### Explicit Integer algebra expansion
+
+Coefficient algebra and polynomial identities selected by `solve()` expand
+to applications of Integer distributivity, associativity, commutativity and
+sign laws, followed by explicit rewrites and `known()` additive or numeric
+leaves. Calls, reads, folds, and machine observations remain opaque operands.
+Polynomial discovery uses the existing tactic budget and a 4096-step output
+bound; it does not run inside `known()`. Supporting library proofs use
+ordinary tactics.
+
+Nonnegative quotient shifts use `integer::nonnegative_quotient_shift`: for
+`d != 0`, `1 <= d`, `0 <= x` and `0 <= k`,
+`truncating_quotient(x + d*k,d) == truncating_quotient(x,d)+k`.
+Automatic selection currently uses positive literal divisors and proves each
+sign guard from the selected premises. Missing selected guards are refused.
+
+Checked example: [`explicit_integer_algebra_laws.md`](https://github.com/clicklang/click/blob/master/mdtests/explicit_integer_algebra_laws.md).

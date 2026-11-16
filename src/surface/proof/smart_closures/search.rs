@@ -28,6 +28,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return search_input.driver().apply_step(ProofStep::Known);
         }
         if let Some(premises) = &premises
+            && let Some(closed) = Self::try_quotient_shift_using(search_input, premises)?
+        {
+            return Ok(closed);
+        }
+        if let Some(closed) = Self::try_integer_algebra(search_input)? {
+            return Ok(closed);
+        }
+        if let Some(premises) = &premises
             && let Some(closed) = Self::try_conditional_bridge_using(search_input, premises)?
         {
             return Ok(closed);
@@ -258,6 +266,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_arithmetic_using");
+        if let Some(closed) = Self::try_quotient_shift_using(search_input, premises)? {
+            return Ok(closed);
+        }
         if let Some(closed) = Self::try_conditional_bridge_using(search_input, premises)? {
             return Ok(closed);
         }
@@ -2629,6 +2640,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) =
             attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Known))?
         {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
+        if let Some(proof) = Self::try_integer_algebra(search_input)? {
             scope.succeed();
             return Ok(Some(proof));
         }
@@ -10156,6 +10171,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_solve_closure_before_arithmetic");
+        if let Ok(Some(closed)) = Self::try_quotient_shift_using(search_input, surfaces) {
+            return Some(closed);
+        }
         if let Ok(Some(closed)) = Self::try_conditional_bridge_using(search_input, surfaces) {
             return Some(closed);
         }

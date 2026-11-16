@@ -1,5 +1,7 @@
 //! Smart closure search and linear script interpretation.
+mod integer_algebra;
 mod integer_composition;
+mod quotient_shifts;
 mod signed_intervals;
 mod specialized;
 use crate::kernel::MachineCastSpelling;

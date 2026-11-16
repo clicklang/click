@@ -7641,25 +7641,24 @@ fn describe_let_type(click_type: &ClickType) -> String {
     .to_string()
 }
 
-/// Keep generated let bindings source-printable for long left-associated
-/// addition chains. The binding value is a top-level expression, so flattening
-/// only `+` nodes preserves precedence while avoiding artificial nesting.
+/// Keep long left-associated sums shallow without changing their grouping.
+/// Right operands retain parentheses: explicit rewrites target exact terms.
 fn describe_let_value(value: &ContractExpression) -> String {
     if !matches!(value, ContractExpression::Add(_, _)) {
         return describe_contract_expression(value);
     }
-    let mut pending = vec![value];
-    let mut terms = Vec::new();
-    while let Some(expression) = pending.pop() {
-        match expression {
-            ContractExpression::Add(left, right) => {
-                pending.push(right);
-                pending.push(left);
-            }
-            expression => terms.push(describe_contract_expression(expression)),
-        }
+    let mut left = value;
+    let mut rights = Vec::new();
+    while let ContractExpression::Add(first, second) = left {
+        rights.push(second.as_ref());
+        left = first;
     }
-    terms.join(" + ")
+    let mut output = describe_contract_expression(left);
+    for right in rights.into_iter().rev() {
+        output.push_str(" + ");
+        output.push_str(&describe_contract_expression(right));
+    }
+    output
 }
 
 pub(super) fn describe_binary_contract_expression(

@@ -3,6 +3,19 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    /// Expand a mathematical identity inside its owned have body.
+    pub(in crate::surface::proof) fn try_integer_algebra(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_integer_algebra(&self.proof.body)?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Run only the ordinary Integer emitter in a selected have body.
     pub(in crate::surface::proof) fn try_integer_composition_using(
         &self,

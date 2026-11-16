@@ -1604,6 +1604,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn typed_let_source_preserves_right_associated_sums() {
+        let source = "theorem grouping(a:Integer,b:Integer,c:Integer) { requires (let value:Integer=a+(b+c);value)==a+(b+c); ensures true; }";
+        let parsed = parser::parse(source).unwrap();
+        let Requirement::Proposition(original) = &parsed.function_blocks()[0].requires()[0] else {
+            panic!("expected a requirement");
+        };
+        let written = source_click_proposition(original);
+        let reparsed = parser::parse(&format!(
+            "theorem grouping(a:Integer,b:Integer,c:Integer) {{ requires {written}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(roundtrip) = &reparsed.function_blocks()[0].requires()[0]
+        else {
+            panic!("expected a requirement");
+        };
+        assert_eq!(original, roundtrip, "{written}");
+    }
+
+    #[test]
     fn negative_int64_source_barrier_does_not_change_diagnostic_spelling() {
         let word = |n| {
             ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(

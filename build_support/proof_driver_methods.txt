@@ -70,3 +70,5 @@ observe_step
 apply_ordinary_transport_steps
 try_integer_composition_using
 try_product_bound_using
+
+try_integer_algebra

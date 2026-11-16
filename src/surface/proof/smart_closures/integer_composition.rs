@@ -821,16 +821,17 @@ fn run_scope<'a>(
                 scope = scope.join_nested(closed)?;
             }
             ProofStep::Normalize => {
-                let step = if scope
+                if scope
                     .body()
                     .goal()
                     .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)
                 {
-                    ProofStep::Known
+                    scope = scope.driver().apply_step(ProofStep::Known)?;
+                } else if let Some(closed) = scope.driver().try_integer_algebra()? {
+                    scope = closed;
                 } else {
-                    ProofStep::Normalize
-                };
-                scope = scope.driver().apply_step(step)?;
+                    scope = scope.driver().apply_step(ProofStep::Normalize)?;
+                }
             }
             step => scope = scope.driver().apply_step(step.clone())?,
         }

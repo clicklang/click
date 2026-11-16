@@ -1,3 +1,48 @@
+// Explicit multiplicative laws used by ordinary algebra expansion.
+axiom multiply_commutative(a: Integer, b: Integer) {
+    ensures a * b == b * a;
+}
+
+axiom multiply_negate(a: Integer, b: Integer) {
+    ensures a * -b == -(a * b);
+}
+
+axiom multiply_add(a: Integer, b: Integer, c: Integer) {
+    ensures (a + b) * c == a * c + b * c;
+}
+
+axiom multiply_associative(a: Integer, b: Integer, c: Integer) {
+    ensures (a * b) * c == a * (b * c);
+}
+
+theorem multiply_add_left(a: Integer, b: Integer, c: Integer) {
+    ensures a * (b + c) == a * b + a * c by {
+        apply(integer::multiply_commutative(a, b + c));
+        apply(integer::multiply_add(b, c, a));
+        apply(integer::multiply_commutative(b, a));
+        apply(integer::multiply_commutative(c, a));
+        known();
+    }
+}
+
+theorem negate_as_product(a: Integer) {
+    ensures -a == -1 * a by {
+        apply(integer::multiply_negate(a, 1));
+        apply(integer::multiply_commutative(-1, a));
+        have a * 1 == a by known();
+        known();
+    }
+}
+
+theorem multiply_swap_front(a: Integer, b: Integer, c: Integer) {
+    ensures a * (b * c) == b * (a * c) by {
+        apply(integer::multiply_associative(a, b, c));
+        apply(integer::multiply_commutative(a, b));
+        apply(integer::multiply_associative(b, a, c));
+        known();
+    }
+}
+
 // Foundational Integer order laws, available through ordinary explicit application.
 axiom add_le(a: Integer, b: Integer, c: Integer, d: Integer) {
     requires a <= b;
@@ -4211,12 +4256,6 @@ theorem nonpositive_dividend_remainder(n: Integer, d: Integer) {
 }
 
 
-theorem multiply_add(a: Integer, b: Integer, c: Integer) {
-    ensures (a + b) * c == a * c + b * c by {
-        normalize();
-    }
-}
-
 theorem floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
     requires 0 < d;
     requires n == q * d + r;
@@ -4291,14 +4330,6 @@ theorem ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, v
             solve() using { n == q * d + r; 1 - d <= r; };
         }
     }
-}
-
-axiom multiply_commutative(a: Integer, b: Integer) {
-    ensures a * b == b * a;
-}
-
-axiom multiply_negate(a: Integer, b: Integer) {
-    ensures a * -b == -(a * b);
 }
 
 
@@ -6055,4 +6086,96 @@ theorem remainder_negate_divisor(n: Integer, d: Integer) {
     requires d != 0;
     requires -d != 0;
     ensures truncating_remainder(n, d) == truncating_remainder(n, -d);
+}
+
+// Reconstruct a nonnegative truncating quotient from its explicit remainder.
+theorem nonnegative_quotient_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= n;
+    requires 0 <= r;
+    requires r <= d - 1;
+    requires n == q * d + r;
+    ensures truncating_quotient(n, d) == q by {
+        have q * d + 0 <= q * d + r by {
+            apply(integer::add_le(q * d, q * d, 0, r)) using { q * d <= q * d; 0 <= r; };
+        }
+        have q * d == q * d + 0 by known();
+        have q * d <= n by {
+            apply(integer::le_substitute(q * d + 0, q * d + r, q * d, n)) using {
+                q * d + 0 <= q * d + r; q * d == q * d + 0; n == q * d + r;
+            };
+        }
+        have q <= truncating_quotient(n, d) by {
+            apply(integer::positive_divisor_quotient_lower(n, d, q)) using { d != 0; 1 <= d; q * d <= n; };
+        }
+        have q * d + r <= q * d + (d - 1) by {
+            apply(integer::add_le(q * d, q * d, r, d - 1)) using { q * d <= q * d; r <= d - 1; };
+        }
+        have n <= q * d + (d - 1) by {
+            apply(integer::le_substitute(q * d + r, q * d + (d - 1), n, q * d + (d - 1))) using {
+                q * d + r <= q * d + (d - 1); n == q * d + r; q * d + (d - 1) == q * d + (d - 1);
+            };
+        }
+        have truncating_quotient(n, d) <= q by {
+            apply(integer::positive_divisor_quotient_upper_rounded(n, d, q)) using {
+                d != 0; 1 <= d; 0 <= n; n <= q * d + (d - 1);
+            };
+        }
+        apply(integer::le_antisymmetric(truncating_quotient(n, d), q)) using {
+            truncating_quotient(n, d) <= q; q <= truncating_quotient(n, d); d != 0;
+        };
+    }
+}
+
+theorem nonnegative_quotient_shift(x: Integer, d: Integer, k: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= x;
+    requires 0 <= k;
+    ensures truncating_quotient(x + d * k, d) == truncating_quotient(x, d) + k by {
+        have 0 <= d by { apply(integer::le_transitive(0, 1, d)) using { 0 <= 1; 1 <= d; }; }
+        have 0 * d <= k * d by {
+            apply(integer::multiply_order_nonnegative(0, k, d)) using { 0 <= k; 0 <= d; };
+        }
+        have 0 * d == 0 by known();
+        have d * k == k * d by { apply(integer::multiply_commutative(d, k)); }
+        have 0 <= d * k by {
+            apply(integer::le_substitute(0 * d, k * d, 0, d * k)) using { 0 * d <= k * d; 0 == 0 * d; d * k == k * d; };
+        }
+        have 0 + 0 <= x + d * k by {
+            apply(integer::add_le(0, x, 0, d * k)) using { 0 <= x; 0 <= d * k; };
+        }
+        have 0 + 0 == 0 by known();
+        have 0 <= x + d * k by known();
+        have x == truncating_quotient(x, d) * d + truncating_remainder(x, d) by {
+            apply(integer::truncation_identity(x, d)) using { d != 0; };
+        }
+        have 0 <= truncating_remainder(x, d) by {
+            apply(integer::nonnegative_dividend_remainder(x, d)) using { d != 0; 0 <= x; };
+        }
+        have 0 < d by { apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; }; }
+        have truncating_remainder(x, d) <= d - 1 by {
+            apply(integer::positive_divisor_remainder_upper(x, d)) using { d != 0; 0 < d; };
+        }
+        have x + d * k == (truncating_quotient(x, d) * d + truncating_remainder(x, d)) + d * k by {
+            apply(integer::equal_add(x, truncating_quotient(x, d) * d + truncating_remainder(x, d), d * k, d * k)) using {
+                x == truncating_quotient(x, d) * d + truncating_remainder(x, d); d * k == d * k; d != 0;
+            };
+        }
+        have (truncating_quotient(x, d) + k) * d == truncating_quotient(x, d) * d + k * d by {
+            apply(integer::multiply_add(truncating_quotient(x, d), k, d)) using { d != 0; };
+        }
+        have (truncating_quotient(x, d) * d + truncating_remainder(x, d)) + d * k == (truncating_quotient(x, d) + k) * d + truncating_remainder(x, d) by {
+            rewrite((truncating_quotient(x, d) + k) * d, truncating_quotient(x, d) * d + k * d);
+            rewrite(d * k, k * d);
+            known();
+        }
+        have x + d * k == (truncating_quotient(x, d) + k) * d + truncating_remainder(x, d) by known();
+        apply(integer::nonnegative_quotient_from_remainder(x + d * k, d, truncating_quotient(x, d) + k, truncating_remainder(x, d))) using {
+            d != 0; 1 <= d; 0 <= x + d * k;
+            0 <= truncating_remainder(x, d); truncating_remainder(x, d) <= d - 1;
+            x + d * k == (truncating_quotient(x, d) + k) * d + truncating_remainder(x, d);
+        };
+    }
 }

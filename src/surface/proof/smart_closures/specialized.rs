@@ -137,7 +137,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        if matches!(node, IntegerQuotientShift { .. }) {
+            return Self::try_quotient_shift_using(proof, &premises);
+        }
         let scope = proof.driver().open_have(result.clone())?;
+        if polynomial {
+            let Some(closed) = scope.driver().try_integer_algebra()? else {
+                return Ok(None);
+            };
+            return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
+        }
+
         if !polynomial {
             // Select a rule using only its explicit inputs. Ordinary normalize
             // may use the ambient equality graph; restricted solve must not
@@ -168,36 +178,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
         }
-        if !polynomial {
-            return Ok(None);
-        }
-        let mut body = scope;
-        // Each rewrite runs under the ordinary smart work budget and the
-        // explicit rewrite-count bound below. Each distribution is written
-        // and checked separately. Never
-        // put a cross product of monomials in a simple normalization check.
-        for _ in 0..4096 {
-            let Some(ClickProposition::Comparison { left, right, .. }) = body.body().surface_goal()
-            else {
-                return Ok(None);
-            };
-            let Some((from, to)) = distribution(left).or_else(|| distribution(right)) else {
-                let closed = body.driver().apply_step(ProofStep::Normalize)?;
-                return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
-            };
-            let equality = ClickProposition::Comparison {
-                left: from,
-                operator: ComparisonOperator::Equal,
-                right: to,
-            };
-            let nested = body.driver().open_have(equality.clone())?;
-            let checked = nested.driver().apply_step(ProofStep::Normalize)?;
-            body = body.join_nested(checked)?;
-            body = body.driver().apply_step(ProofStep::Rewrite(equality))?;
-            if body.is_complete() {
-                return Ok(Some(body.join()?.driver().apply_step(ProofStep::Known)?));
-            }
-        }
+
         Ok(None)
     }
 }

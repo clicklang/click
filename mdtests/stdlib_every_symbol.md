@@ -2241,6 +2241,19 @@ theorem check_remainder_negate_divisor(n: Integer, d: Integer) {
     }
 }
 
+
+theorem use_multiply_associative(a:Integer,b:Integer,c:Integer) { ensures (a*b)*c==a*(b*c) by {apply(integer::multiply_associative(a,b,c));} }
+theorem use_multiply_add_left(a:Integer,b:Integer,c:Integer) { ensures a*(b+c)==a*b+a*c by {apply(integer::multiply_add_left(a,b,c));} }
+theorem use_negate_as_product(a:Integer) { ensures -a == -1*a by {apply(integer::negate_as_product(a));} }
+theorem use_multiply_swap_front(a:Integer,b:Integer,c:Integer) { ensures a*(b*c)==b*(a*c) by {apply(integer::multiply_swap_front(a,b,c));} }
+theorem use_nonnegative_quotient_from_remainder(n:Integer,d:Integer,q:Integer,r:Integer) {
+ requires d!=0;requires 1<=d;requires 0<=n;requires 0<=r;requires r<=d-1;requires n==q*d+r;
+ ensures truncating_quotient(n,d)==q by {apply(integer::nonnegative_quotient_from_remainder(n,d,q,r)) using {d!=0;1<=d;0<=n;0<=r;r<=d-1;n==q*d+r;};}
+}
+theorem use_nonnegative_quotient_shift(x:Integer,d:Integer,k:Integer) {
+ requires d!=0;requires 1<=d;requires 0<=x;requires 0<=k;
+ ensures truncating_quotient(x+d*k,d)==truncating_quotient(x,d)+k by {apply(integer::nonnegative_quotient_shift(x,d,k)) using {d!=0;1<=d;0<=x;0<=k;};}
+}
 ```
 
 ```expect

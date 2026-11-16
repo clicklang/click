@@ -27,7 +27,7 @@ are longer-term work, after those priorities (maintainer, 2026-10-14 and
 | Smart planning and proof search | No | Part of `src/surface` | `src/surface/planning`, `src/surface/proof/smart_*` |
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
-| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 188 theorems, 41 of them kernel standard, in 8,835 lines | `library/` |
+| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 192 theorems, 41 of them kernel standard, in 8,958 lines | `library/` |
 | Library models: contracts for code Click does not verify | Yes: assumptions | Eight families, each reported by `click verify` ([Library models](#library-models)) | `library/c/`, `src/languages/c/`, `src/languages/cpp/standard_library.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
@@ -119,11 +119,11 @@ call to one is checked against its [library model](#library-models). See
 
 ## The Click library
 
-The `library/` modules declare 188 theorems. `verify_standard_library`
+The `library/` modules declare 192 theorems. `verify_standard_library`
 checks each one, in one of two ways; the gate runs it
 (`standard_library_theorems_are_proved_by_their_own_entry_point`):
 
-- **147 are proved.** Their written or default proofs are checked like any
+- **151 are proved.** Their written or default proofs are checked like any
   other proof. They include the `int32` increment, predecessor, order and
   definedness lemmas, the in-range `+` and `-` observation laws at `int32`,
   `int64`, `uint32` and `uint64`, the `uint32` and `uint64` product laws,
@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 15 `axiom`s, which are trusted, not proved.
+The library also declares 17 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -171,9 +171,10 @@ runs `core`'s code over them. Another is `integer::uint32_difference_decreases_a
 as integers, because neither `bound - value` nor `(bound - 1) - value`
 wraps.
 
-Two elementary Integer multiplication axioms in `library/integer.click`,
-`multiply_commutative` and `multiply_negate`, state `a * b == b * a` and
-`a * -b == -(a * b)`. They expose these mathematical identities as named
+Four elementary Integer multiplication axioms in `library/integer.click`,
+`multiply_commutative`, `multiply_negate`, `multiply_add`, and
+`multiply_associative`, state commutativity, sign propagation, distributivity,
+and associativity. They expose these mathematical identities as named
 library applications. Product interval bounds and multiplication order for
 nonpositive factors are proved from these equations and the existing order
 laws. The independent BigInt oracle checks the new declarations across
@@ -280,3 +281,10 @@ the remainder. Their constructors read only the two explicit Integer operands.
 The signed, arbitrary-width BigInt oracle checks both laws. Named positive-divisor
 quotient bounds and interval bounds are ordinary proofs from truncation,
 remainder, rounding, and order laws; they add no interval axioms.
+
+Distributivity (`multiply_add`) and multiplication associativity
+(`multiply_associative`) are explicit Integer axioms. Distributivity previously
+used normalization as its proof. Their declarations have independent signed
+arbitrary-width BigInt oracle checks. Coefficient and polynomial expansions
+apply these laws and derived orientation/sign lemmas; quotient shifts are
+proved from truncation, remainder bounds, and ordinary order laws.

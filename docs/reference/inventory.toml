@@ -5033,3 +5033,27 @@ path = "reference/library/index.md#integerquotient_negate_divisor"
 [[item]]
 id = "library.theorem.integer::remainder_negate_divisor"
 path = "reference/library/index.md#integerremainder_negate_divisor"
+
+[[item]]
+id = "library.theorem.integer::multiply_associative"
+path = "reference/library/index.md#integermultiply_associative"
+
+[[item]]
+id = "library.theorem.integer::multiply_add_left"
+path = "reference/library/index.md#integermultiply_add_left"
+
+[[item]]
+id = "library.theorem.integer::negate_as_product"
+path = "reference/library/index.md#integernegate_as_product"
+
+[[item]]
+id = "library.theorem.integer::multiply_swap_front"
+path = "reference/library/index.md#integermultiply_swap_front"
+
+[[item]]
+id = "library.theorem.integer::nonnegative_quotient_from_remainder"
+path = "reference/library/index.md#integernonnegative_quotient_from_remainder"
+
+[[item]]
+id = "library.theorem.integer::nonnegative_quotient_shift"
+path = "reference/library/index.md#integernonnegative_quotient_shift"
