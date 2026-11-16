@@ -48,5 +48,5 @@ int32 f(struct cell* root) {
 ```
 
 ```expect
-fail: unproved obligation: `at(statement(4).exit, "guarded.c"::f.local(2)->value) == old(child.number)`
+fail: unproved obligation: `at(statement(4).exit, selected->value) == old(child.number)`
 ```

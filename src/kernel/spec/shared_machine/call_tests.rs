@@ -319,7 +319,6 @@ fn call_expression(format: MachineIntegerType, arguments: Vec<SpecExpression>) -
         result_type: format.program_type(),
         pointer_result: None,
         result_object_class: None,
-        projection: None,
     }
 }
 
@@ -583,7 +582,6 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
                 arguments: BTreeSet::from([0]),
             })),
             result_object_class: Some(class.clone()),
-            projection: None,
         };
         let expression = call(call(SpecExpression::Value(ProgramValue::Pointer(pointer))));
         let retained = produced_paths(&expression, false);
@@ -643,7 +641,6 @@ fn actual_boolean_call_results_retain_roots_and_native_handoff_behavior() {
         result_type: ProgramType::Bool,
         pointer_result: None,
         result_object_class: None,
-        projection: None,
     };
     let expression = call(vec![SpecPureFunctionArgument::Value(call_expression(
         MachineIntegerType::Int32,
@@ -688,7 +685,6 @@ fn boolean_call_handoffs_retain_nested_boolean_arguments() {
         result_type: ProgramType::Bool,
         pointer_result: None,
         result_object_class: None,
-        projection: None,
     };
     let inner = call(vec![]);
     let inner_paths = produced_paths(&inner, false);

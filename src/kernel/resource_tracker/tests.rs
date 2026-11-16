@@ -1695,3 +1695,85 @@ fn boolean_reads_report_only_the_one_byte_cell() {
     assert_eq!(native.len(), 1);
     assert_eq!(shared, native);
 }
+
+/// A state at `block`'s cell 0 holding each value of `values` in turn, one
+/// recorded store per step; the state after each store.
+fn path_of_stores(start: &ExecutionState, stores: &[(&str, u32)]) -> Vec<ExecutionState> {
+    let mut state = start.clone();
+    let mut states = Vec::new();
+    for (name, value) in stores {
+        let memory = state.memory().clone().store(
+            at(block(name), 0),
+            ProgramValue::Int32(MachineTerm::constant(*value)),
+        );
+        state = state.with_memory(memory);
+        states.push(state.clone());
+    }
+    states
+}
+
+fn start_with(names: &[&str]) -> ExecutionState {
+    let memory = names.iter().fold(Memory::new(), |memory, name| {
+        memory.with_block(block(name), 4)
+    });
+    ExecutionState::default().with_memory(memory)
+}
+
+fn version_on_path(state: &ExecutionState, name: &str) -> Option<ProgramPointId> {
+    cell_version_on_path(state.path_link(), &at(block(name), 0), 4).and_then(|point| point.id())
+}
+
+/// The walk crosses steps that write other objects and stops at the store to
+/// the cell.
+#[test]
+fn a_path_version_is_the_point_after_the_last_store_to_the_cell() {
+    let start = start_with(&["slot", "other"]);
+    let states = path_of_stores(&start, &[("slot", 1), ("other", 2), ("other", 3)]);
+    assert_eq!(
+        version_on_path(&states[2], "slot"),
+        states[0].program_point().id()
+    );
+    assert_eq!(
+        version_on_path(&states[2], "other"),
+        states[2].program_point().id()
+    );
+}
+
+/// Two paths that end in one interned memory are each named on their own
+/// path, where the arena keeps only the first path's history.
+#[test]
+fn two_paths_to_equal_memory_name_a_cell_on_their_own_paths() {
+    let start = start_with(&["slot", "other"]);
+    let left = path_of_stores(&start, &[("slot", 1), ("other", 9)]);
+    let right = path_of_stores(&start, &[("slot", 1), ("other", 9)]);
+    assert_eq!(left[1].program_point(), right[1].program_point());
+    assert_eq!(
+        version_on_path(&left[1], "slot"),
+        left[0].program_point().id()
+    );
+    assert_eq!(
+        version_on_path(&right[1], "slot"),
+        right[0].program_point().id()
+    );
+}
+
+/// A join is crossed back to its split when neither arm writes the cell, and
+/// is the version point when one does.
+#[test]
+fn a_join_is_crossed_only_when_both_arms_leave_the_cell() {
+    let start = path_of_stores(&start_with(&["slot", "other"]), &[("slot", 1)]);
+    let split = &start[0];
+    let left = path_of_stores(split, &[("other", 2)]);
+    let right = path_of_stores(split, &[("other", 3)]);
+    let mut joined = left[0].clone();
+    joined.join_program_points(&left[0], &right[0], split.path_link());
+    assert_eq!(version_on_path(&joined, "slot"), split.program_point().id());
+
+    let writes = path_of_stores(split, &[("slot", 4)]);
+    let mut joined = left[0].clone();
+    joined.join_program_points(&left[0], &writes[0], split.path_link());
+    assert_eq!(
+        version_on_path(&joined, "slot"),
+        joined.program_point().id()
+    );
+}

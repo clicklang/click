@@ -67,5 +67,5 @@ int32 walk(int32 n) {
 ```
 
 ```expect
-fail: stopped inside the loop body: the frontier is at statement 5, `"walk.c"::walk.local(0) = ("walk.c"::walk.local(0) - 1)`, after tactic 1 `step`; still ahead on this path: the body's end. Already complete: 1 at a `break`
+fail: stopped inside the loop body: the frontier is at statement 5, `i = (i - 1)`, after tactic 1 `step`; still ahead on this path: the body's end. Already complete: 1 at a `break`
 ```

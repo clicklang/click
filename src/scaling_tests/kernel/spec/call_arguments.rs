@@ -54,7 +54,6 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
                 ProgramType::UInt32,
                 None,
                 None,
-                None,
                 &PureFactContext::new(),
                 &mut SpecEvaluation::logical(&mut execution),
             )
@@ -91,7 +90,6 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
                 ProgramType::Int32Pointer,
                 Some(&origins),
                 None,
-                None,
                 &PureFactContext::new(),
                 &mut SpecEvaluation::logical(&mut execution),
             )
@@ -127,7 +125,6 @@ fn retained_constant_call_arguments_keep_existing_decision_identity() {
         "retained_steps",
         &[argument],
         ProgramType::Int32,
-        None,
         None,
         None,
         &PureFactContext::new(),

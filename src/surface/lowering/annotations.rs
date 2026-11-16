@@ -1017,10 +1017,21 @@ impl KernelLoopPaths {
             paths: &mut Vec<Option<Vec<KernelLoopStep>>>,
         ) {
             match statement {
-                ProgramStatement::Loop { body, .. } => {
+                ProgramStatement::Loop {
+                    test, update, body, ..
+                } => {
                     paths.push(Some(path.clone()));
                     // A loop inside another is not one a walk lowers alone.
-                    paths.extend(std::iter::repeat_n(None, count_kernel_loops(body)));
+                    paths.extend(std::iter::repeat_n(
+                        None,
+                        count_kernel_loops(body)
+                            + test
+                                .as_ref()
+                                .map_or(0, |test| count_kernel_loops(&test.statement))
+                            + update
+                                .as_ref()
+                                .map_or(0, |update| count_kernel_loops(update)),
+                    ));
                 }
                 ProgramStatement::Seq(statements) => {
                     for (index, statement) in statements.iter().enumerate() {
@@ -1459,15 +1470,16 @@ fn c_loop_by_index(statement: &syntax::CStatement, target: usize) -> Option<&syn
             syntax::CStatement::Seq(first, second) => {
                 find(first, target, next).or_else(|| find(second, target, next))
             }
-            syntax::CStatement::While { body, .. }
-            | syntax::CStatement::DoWhile { body, .. }
-            | syntax::CStatement::For { body, .. } => {
+            syntax::CStatement::While { test, body, .. }
+            | syntax::CStatement::DoWhile { test, body, .. }
+            | syntax::CStatement::For { test, body, .. } => {
                 let index = *next;
                 *next += 1;
                 if index == target {
                     Some(statement)
                 } else {
                     find(body, target, next)
+                        .or_else(|| test.as_ref().and_then(|test| find(test, target, next)))
                 }
             }
             syntax::CStatement::If {
@@ -1497,13 +1509,32 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
     #[cfg(test)]
     LOOP_LOOKUP_NODES.with(|count| count.set(count.get() + 1));
     match statement {
-        ProgramStatement::Loop { body, .. } => {
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
             let loop_index = *next_loop_index;
             *next_loop_index += 1;
             if loop_index == target {
                 Some(statement)
             } else {
-                kernel_loop_by_index(body, target, next_loop_index)
+                test.as_ref()
+                    .filter(|test| test.position == crate::kernel::LoopTestPosition::BeforeBody)
+                    .and_then(|test| kernel_loop_by_index(&test.statement, target, next_loop_index))
+                    .or_else(|| kernel_loop_by_index(body, target, next_loop_index))
+                    .or_else(|| {
+                        update.as_ref().and_then(|update| {
+                            kernel_loop_by_index(update, target, next_loop_index)
+                        })
+                    })
+                    .or_else(|| {
+                        test.as_ref()
+                            .filter(|test| {
+                                test.position == crate::kernel::LoopTestPosition::AfterBody
+                            })
+                            .and_then(|test| {
+                                kernel_loop_by_index(&test.statement, target, next_loop_index)
+                            })
+                    })
             }
         }
         ProgramStatement::Seq(statements) => statements
@@ -1546,7 +1577,7 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
         | ProgramStatement::Assert { .. }
         | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. } => None,
-        ProgramStatement::ForStep { .. } | ProgramStatement::EndAutomaticLifetimes { .. } => None,
+        ProgramStatement::EndAutomaticLifetimes { .. } => None,
     }
 }
 
@@ -1573,13 +1604,20 @@ fn c_loops_by_index(statement: &syntax::CStatement) -> Vec<Option<syntax::CState
                 walk(first, found);
                 walk(second, found);
             }
-            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
+            syntax::CStatement::While { test, body, .. }
+            | syntax::CStatement::DoWhile { test, body, .. } => {
                 found.push(Some(statement.clone()));
                 walk(body, found);
+                if let Some(test) = test {
+                    walk(test, found);
+                }
             }
-            syntax::CStatement::For { body, .. } => {
+            syntax::CStatement::For { test, body, .. } => {
                 found.push(None);
                 walk(body, found);
+                if let Some(test) = test {
+                    walk(test, found);
+                }
             }
             syntax::CStatement::If {
                 then_branch,
@@ -1610,14 +1648,22 @@ fn kernel_loop_replaced(
     replacement: &ProgramStatement,
 ) -> Option<ProgramStatement> {
     match statement {
-        ProgramStatement::Loop { body, .. } => {
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
             let index = *next;
             *next += 1;
             if index == target {
                 return Some(replacement.clone());
             }
             // A loop inside another is not one a walk lowers alone.
-            *next += count_kernel_loops(body);
+            *next += count_kernel_loops(body)
+                + test
+                    .as_ref()
+                    .map_or(0, |test| count_kernel_loops(&test.statement))
+                + update
+                    .as_ref()
+                    .map_or(0, |update| count_kernel_loops(update));
             None
         }
         ProgramStatement::Seq(statements) => {
@@ -1661,7 +1707,17 @@ fn kernel_loop_replaced(
 /// The loops `kernel_loop_by_index` numbers in `statement`.
 fn count_kernel_loops(statement: &ProgramStatement) -> usize {
     match statement {
-        ProgramStatement::Loop { body, .. } => 1 + count_kernel_loops(body),
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
+            1 + count_kernel_loops(body)
+                + test
+                    .as_ref()
+                    .map_or(0, |test| count_kernel_loops(&test.statement))
+                + update
+                    .as_ref()
+                    .map_or(0, |update| count_kernel_loops(update))
+        }
         ProgramStatement::Seq(statements) => statements
             .iter()
             .map(|statement| count_kernel_loops(statement))
@@ -2999,8 +3055,18 @@ fn collect_local_pointer_element_types(
                 else_branch,
                 ..
             } => pending.extend([then_branch.as_ref(), else_branch.as_ref()]),
-            ProgramStatement::Loop { body, .. } => pending.push(body),
-            ProgramStatement::ForStep { step, .. } => pending.push(step),
+            ProgramStatement::Loop {
+                test, update, body, ..
+            } => {
+                pending.push(body);
+                if let Some(test) = test {
+                    pending.push(&test.statement);
+                }
+                if let Some(update) = update {
+                    pending.push(update);
+                }
+            }
+
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => pending.extend([try_body.as_ref(), handler.as_ref()]),
@@ -3704,6 +3770,8 @@ impl AnnotationLowerer<'_> {
                 )
             }
             ProgramStatement::Loop {
+                test,
+                update,
                 condition,
                 invariant,
                 invariant_checks,
@@ -3718,7 +3786,34 @@ impl AnnotationLowerer<'_> {
             } => {
                 self.next_statement_index();
                 let index = self.next_loop_index();
+                let mut lowered_test = None;
+                if let Some(test) = test
+                    .as_ref()
+                    .filter(|test| test.position == crate::kernel::LoopTestPosition::BeforeBody)
+                {
+                    lowered_test = Some(crate::kernel::LoopTestRegion {
+                        statement: std::sync::Arc::new(
+                            self.lower_kernel_statement(&test.statement)?,
+                        ),
+                        position: test.position,
+                    });
+                }
                 let body = self.lower_kernel_statement(body)?;
+                let update = update
+                    .as_ref()
+                    .map(|step| self.lower_kernel_statement(step).map(std::sync::Arc::new))
+                    .transpose()?;
+                if let Some(test) = test
+                    .as_ref()
+                    .filter(|test| test.position == crate::kernel::LoopTestPosition::AfterBody)
+                {
+                    lowered_test = Some(crate::kernel::LoopTestRegion {
+                        statement: std::sync::Arc::new(
+                            self.lower_kernel_statement(&test.statement)?,
+                        ),
+                        position: test.position,
+                    });
+                }
                 let (measures, structural) = self.loop_measure_clauses(index, None)?;
                 if (!ranking_measures.is_empty() || structural_measure.is_some())
                     && (!measures.is_empty() || structural.is_some())
@@ -3732,6 +3827,8 @@ impl AnnotationLowerer<'_> {
                 let mut resources = resource_specs.clone();
                 resources.extend(self.loop_resource_specs(index));
                 ProgramStatement::Loop {
+                    test: lowered_test,
+                    update,
                     condition: condition.clone(),
                     invariant: invariant.clone(),
                     invariant_checks: checks,
@@ -3799,15 +3896,35 @@ impl AnnotationLowerer<'_> {
                 self.lower_statement(second, control_targets)?,
             ),
             syntax::CStatement::While {
-                condition, body, ..
+                test,
+                condition,
+                body,
+                ..
             }
             | syntax::CStatement::DoWhile {
-                condition, body, ..
+                test,
+                condition,
+                body,
+                ..
             } => {
                 let statement_index = self.next_statement_index();
                 let loop_index = self.next_loop_index();
                 self.begin_loop_record(statement_index, loop_index);
+                let post_test = matches!(statement, syntax::CStatement::DoWhile { .. });
+                let mut lowered_test = if !post_test {
+                    test.as_ref()
+                        .map(|test| self.lower_statement(test, control_targets))
+                        .transpose()?
+                } else {
+                    None
+                };
                 let lowered_body = self.lower_statement(body, control_targets)?;
+                if post_test {
+                    lowered_test = test
+                        .as_ref()
+                        .map(|test| self.lower_statement(test, control_targets))
+                        .transpose()?;
+                }
                 let invariant_checks = self.loop_invariant_checks(loop_index)?;
                 let effect_checks = self.loop_frame_checks(loop_index)?;
                 let resource_specs = self.loop_resource_specs(loop_index);
@@ -3826,6 +3943,10 @@ impl AnnotationLowerer<'_> {
                         effect_checks,
                         lowered_body,
                     )
+                    .with_optional_loop_test(
+                        lowered_test,
+                        crate::kernel::LoopTestPosition::AfterBody,
+                    )
                     .with_loop_resource_specs(resource_specs)
                     .with_loop_ranking_measures(ranking_measures)
                     .with_loop_structural_measure(structural_measure)
@@ -3837,12 +3958,17 @@ impl AnnotationLowerer<'_> {
                         effect_checks,
                         lowered_body,
                     )
+                    .with_optional_loop_test(
+                        lowered_test,
+                        crate::kernel::LoopTestPosition::BeforeBody,
+                    )
                     .with_loop_resource_specs(resource_specs)
                     .with_loop_ranking_measures(ranking_measures)
                     .with_loop_structural_measure(structural_measure)
                 }
             }
             syntax::CStatement::For {
+                test,
                 initializer,
                 condition,
                 step,
@@ -3853,6 +3979,10 @@ impl AnnotationLowerer<'_> {
                 let statement_index = self.next_statement_index();
                 let loop_index = self.next_loop_index();
                 self.begin_loop_record(statement_index, loop_index);
+                let lowered_test = test
+                    .as_ref()
+                    .map(|test| self.lower_statement(test, control_targets))
+                    .transpose()?;
                 let lowered_body = self.lower_statement(body, control_targets)?;
                 let lowered_step = self.lower_statement(step, control_targets)?;
                 let invariant_checks = self.loop_invariant_checks(loop_index)?;
@@ -3873,7 +4003,12 @@ impl AnnotationLowerer<'_> {
                         Vec::new(),
                         invariant_checks,
                         effect_checks,
-                        crate::kernel::program_for_body_with_step(lowered_body, lowered_step),
+                        lowered_body,
+                    )
+                    .with_loop_update(lowered_step)
+                    .with_optional_loop_test(
+                        lowered_test,
+                        crate::kernel::LoopTestPosition::BeforeBody,
                     )
                     .with_loop_resource_specs(resource_specs)
                     .with_loop_ranking_measures(ranking_measures)
@@ -9688,12 +9823,6 @@ impl AnnotationLowerer<'_> {
                 .cloned()
                 .flatten(),
             result_object_class: definition.return_object_class().cloned(),
-            projection: self
-                .spec_definitions
-                .functions
-                .projections
-                .get(generic_instance_source_name(definition.name()))
-                .cloned(),
         })
     }
 
@@ -9807,22 +9936,7 @@ impl AnnotationLowerer<'_> {
                     Some(element_type) => element_type.to_kernel_type(),
                     None => self.contract_array_element_type(expression, environment),
                 };
-                let mut pointer =
-                    self.lower_contract_expression_to_spec(expression, environment)?;
-                // A read through a slice built at the call, such as a
-                // subslice, keeps the call it reads through, and with it
-                // its spelling `bytes[1..3][1]`.
-                if let ContractExpression::Call { arguments, .. } = expression
-                    && let SpecExpression::PureFunctionApplication { projection, .. } = &mut pointer
-                    && projection.as_ref().is_some_and(|projection| {
-                        matches!(
-                            arguments.get(projection.argument_index()),
-                            Some(ContractExpression::AlgebraicConstructor { .. })
-                        )
-                    })
-                {
-                    *projection = None;
-                }
+                let pointer = self.lower_contract_expression_to_spec(expression, environment)?;
                 Ok(SpecArrayRef {
                     memory: environment.current_memory.clone(),
                     pointer,

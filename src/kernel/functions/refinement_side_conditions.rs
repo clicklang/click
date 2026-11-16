@@ -1032,11 +1032,22 @@ pub(super) fn statement_writes_aggregate_parameter(
             statement_writes_aggregate_parameter(try_body, parameter_name, writes, unknown_write);
             statement_writes_aggregate_parameter(handler, parameter_name, writes, unknown_write);
         }
-        ProgramStatement::ForStep { step, .. } => {
-            statement_writes_aggregate_parameter(step, parameter_name, writes, unknown_write);
-        }
-        ProgramStatement::Loop { body, .. } => {
+
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
             statement_writes_aggregate_parameter(body, parameter_name, writes, unknown_write);
+            if let Some(test) = test {
+                statement_writes_aggregate_parameter(
+                    &test.statement,
+                    parameter_name,
+                    writes,
+                    unknown_write,
+                );
+            }
+            if let Some(update) = update {
+                statement_writes_aggregate_parameter(update, parameter_name, writes, unknown_write);
+            }
         }
         ProgramStatement::Switch { cases, .. } => {
             for case in cases {

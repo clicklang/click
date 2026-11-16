@@ -1,9 +1,9 @@
 # Calls in do-while conditions run after the body
 
 The condition of a `do ... while` executes after the first body pass and after
-an iteration reaches `continue`. The lowering uses an unconditional iteration
-shell, placing the checked call prefix after normal body completion and before
-each `continue` that targets this loop.
+an iteration reaches `continue`. The loop owns one shared checked post-test;
+both body completion and `continue` leave the body scopes and transfer there.
+The test is never copied into a continue's enclosing switch or branch.
 
 ```c filename=call_in_do_while_condition.c
 int32 call_in_do_while_condition() {

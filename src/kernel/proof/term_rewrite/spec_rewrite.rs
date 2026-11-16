@@ -1271,7 +1271,6 @@ impl<'a> TermRewrite<'a> {
                 result_type,
                 pointer_result,
                 result_object_class,
-                projection,
             } => SpecExpression::PureFunctionApplication {
                 name: name.clone(),
                 arguments: arguments
@@ -1281,7 +1280,6 @@ impl<'a> TermRewrite<'a> {
                 result_type: *result_type,
                 pointer_result: pointer_result.clone(),
                 result_object_class: result_object_class.clone(),
-                projection: projection.clone(),
             },
             SpecExpression::LoopEntryState(value) => {
                 SpecExpression::LoopEntryState(Box::new(self.rewrite_spec_expression(value)?))

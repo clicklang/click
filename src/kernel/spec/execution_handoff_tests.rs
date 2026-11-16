@@ -766,7 +766,6 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
             result_type,
             pointer_result: None,
             result_object_class: None,
-            projection: None,
         };
         let evaluate = |disabled| {
             let mut execution = ExecutionBudget::new();

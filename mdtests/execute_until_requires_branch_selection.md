@@ -22,5 +22,5 @@ int32 execute_until_unresolved_branch(int32 flag) {
 ```
 
 ```expect
-fail: could not prove that the next C `if` condition `"execute_until_unresolved_branch.c"::execute_until_unresolved_branch.parameter(0)` is one exact truth value
+fail: could not prove that the next C `if` condition `flag` is one exact truth value
 ```

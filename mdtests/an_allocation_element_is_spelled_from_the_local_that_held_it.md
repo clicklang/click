@@ -31,5 +31,5 @@ int32 f(int32 k) {
 ```
 
 ```expect
-fail: goal: at(statement(4).exit, "an_allocation_element_is_spelled_from_the_local_that_held_it.c"::f.local(2)) == 0
+fail: goal: at(statement(4).exit, r) == 0
 ```

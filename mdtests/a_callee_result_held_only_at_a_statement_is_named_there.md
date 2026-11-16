@@ -18,5 +18,5 @@ int32 caller() { ensures result == 200; }
 ```
 
 ```expect
-fail: left side evaluated to at(statement(0).exit, "a_callee_result_held_only_at_a_statement_is_named_there.c"::caller.local(0)) + 1, right side evaluated to 200
+fail: left side evaluated to at(statement(0).exit, r) + 1, right side evaluated to 200
 ```

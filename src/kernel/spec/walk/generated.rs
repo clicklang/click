@@ -190,7 +190,6 @@ impl Gen {
                 result_type: ProgramType::Int32,
                 pointer_result: None,
                 result_object_class: None,
-                projection: None,
             },
             11 => SpecExpression::PointerOffset {
                 pointer: Box::new(self.expr(d)),

@@ -668,6 +668,8 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     pure_facts: &PureFactList,
     enclosing_states: &RecordedStates,
     body: &ProgramStatement,
+    update: Option<&Arc<ProgramStatement>>,
+    test: Option<&crate::kernel::LoopTestRegion>,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<AutomaticLoopBody, ClickError> {
     let claim_label = environment.frontier_loop_source.claim_label.clone();
@@ -675,12 +677,23 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     let loop_body_statement_index = source_layout.loop_body_entry(loop_index).ok_or_else(|| {
         ClickError::new(format!("`{claim_label}` has no source loop({loop_index})"))
     })?;
+    let continuation =
+        crate::kernel::program_loop_continuation(update.map(|update| update.as_ref()), test);
     let frontier = ExecutionFrontier {
         position: FrontierPosition::StatementEntry {
-            remaining: body.clone().into(),
+            remaining: Arc::new(crate::kernel::program_loop_pass(
+                body,
+                update.map(|update| update.as_ref()),
+                test,
+            )),
         },
         region: ExecutionRegionKind::LoopBody,
         in_loop_body: true,
+        loop_update: continuation.as_ref().and_then(|update| {
+            source_layout
+                .loop_update_entry(loop_index)
+                .map(|index| (update.clone(), index))
+        }),
         natural_backedge_target: source_layout.natural_loop_target(loop_index),
         natural_exit_target: source_layout.natural_exit_target(loop_index),
         execution_start_state: Some(preservation.state().clone()),
@@ -916,6 +929,8 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     structural_measure: Option<&str>,
     condition: &ProgramExpression,
     body: &ProgramStatement,
+    update: Option<&Arc<ProgramStatement>>,
+    test: Option<&crate::kernel::LoopTestRegion>,
     do_while: bool,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<LoopPreservationProofResult, ClickError> {
@@ -969,12 +984,23 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         ClickError::new(format!("`{claim_label}` has no source loop({loop_index})"))
     })?;
     let invariant_surfaces = loop_invariant_surfaces(environment, loop_index, &claim_label)?;
+    let continuation =
+        crate::kernel::program_loop_continuation(update.map(|update| update.as_ref()), test);
     let frontier = ExecutionFrontier {
         position: FrontierPosition::StatementEntry {
-            remaining: body.clone().into(),
+            remaining: Arc::new(crate::kernel::program_loop_pass(
+                body,
+                update.map(|update| update.as_ref()),
+                test,
+            )),
         },
         region: ExecutionRegionKind::LoopBody,
         in_loop_body: true,
+        loop_update: continuation.as_ref().and_then(|update| {
+            source_layout
+                .loop_update_entry(loop_index)
+                .map(|index| (update.clone(), index))
+        }),
         natural_backedge_target: source_layout.natural_loop_target(loop_index),
         natural_exit_target: source_layout.natural_exit_target(loop_index),
         execution_start_state: Some(preservation.state().clone()),

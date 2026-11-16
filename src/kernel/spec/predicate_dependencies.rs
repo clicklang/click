@@ -96,7 +96,6 @@ mod tests {
                 result_type: ProgramType::Int32,
                 pointer_result: None,
                 result_object_class: None,
-                projection: None,
             });
             assert_eq!(observes_resource_state(&body), expected);
         }

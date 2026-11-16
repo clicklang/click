@@ -44,5 +44,5 @@ int32 two_reads(int16* q, int16 y) {
 ```
 
 ```expect
-fail: unproved obligation: `"two_byte_stores_do_not_make_two_wide_reads_equal.c"::two_reads.local(1) == "two_byte_stores_do_not_make_two_wide_reads_equal.c"::two_reads.local(2)`
+fail: unproved obligation: `d1 == d2`
 ```
