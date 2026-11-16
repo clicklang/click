@@ -25,7 +25,7 @@ imports with `import click::...;`, and the modules those import:
 | `cpp/as_writable_bytes.click` | appended to a C++ sidecar when an import calls it | The `std::as_writable_bytes<T, N>` contract, a function template written out at each called instance |
 | `rust/vec.click` | `import click::rust::vec;` | The primitive type `Vec<T>`, its bodyless operations and their trusted axioms |
 | `rust/slice.click` | `import click::rust::slice;` | `Slice<T>`, a Rust slice as its data pointer and length |
-| `rust/core.click` | appended to a Rust sidecar when an import calls one of its methods | The `Vec`, `slice::swap`, `Option`/`Result` unwrapping, slice-value, `SliceIter` and `ChunksExact` contracts, as generic `extern fn` blocks written out at each called type; a block no call names is dropped |
+| `rust/core.click` | appended to a Rust sidecar when an import calls one of its methods | The `Vec`, `slice::swap` and `Option`/`Result` unwrapping contracts, as generic `extern fn` blocks written out at each called type; a block no call names is dropped |
 | `rust/integers.click` | the line of each integer method an import calls is appended to its Rust sidecar | One-line `extern fn` contracts of the integer core methods, `u32::min`, each stating its result with the function of the same path in `rust/<type>.click` |
 
 Each declaration is in one layer, which sets its trust:

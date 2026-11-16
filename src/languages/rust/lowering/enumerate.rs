@@ -1,8 +1,8 @@
-//! An enumerated slice iterator is the slice iterator's state, re-based at
-//! the element it stood at when enumerated: the index it yields is how far
-//! it has advanced, `length - remaining`, and `iter.len()` reads what is
-//! left. Its `Option` holds the yielded element's address and
-//! `{name}_index`.
+//! An enumerated slice iterator is `core`'s `Enumerate { iter, count }`:
+//! the slice iterator's fields and `<it>_count`, how many elements it has
+//! yielded. Its `next` yields the slice iterator's element with the index
+//! `count`, then counts it. Its `Option` holds the yielded element's address
+//! and `<option>_index`.
 use super::*;
 
 impl Context<'_> {
@@ -16,10 +16,7 @@ impl Context<'_> {
         if !self.enumerated.insert(name.into()) {
             return Err("enumerated iterator identity collision".into());
         }
-        if !option {
-            return Ok(storage);
-        }
-        let field = format!("{name}_index");
+        let field = format!("{name}_{}", if option { "index" } else { "count" });
         if !self.locals.insert(field.clone()) {
             return Err("enumerated iterator identity collision".into());
         }
@@ -37,8 +34,8 @@ impl Context<'_> {
         }
     }
 
-    /// `target = source.enumerate()`: the slice iterator's state, re-based at
-    /// the element it stands at, so it has yielded no value yet.
+    /// `target = source.enumerate()`: the slice iterator, which has yielded
+    /// nothing yet as an enumeration.
     pub(super) fn enumerate_initialize(
         &mut self,
         target: &str,
@@ -48,16 +45,11 @@ impl Context<'_> {
         if self.enumerated.contains(source) {
             return Err("enumerate requires a slice iterator".into());
         }
-        let base = format!("{target}_base");
-        let length = format!("{target}_length");
         Ok(program_seq(
             self.shared_array_move(target, source)?,
-            program_seq(
-                program_assign(&base, super::shared_arrays::shared_array_position(target)),
-                program_assign(
-                    &length,
-                    crate::kernel::program_expression::variable(format!("{target}_remaining")),
-                ),
+            program_assign(
+                format!("{target}_count"),
+                crate::kernel::program_expression::uint64_literal(0),
             ),
         ))
     }
@@ -69,11 +61,17 @@ impl Context<'_> {
     ) -> Result<ProgramStatement, String> {
         self.enumerated_iterator(target)?;
         self.enumerated_iterator(source)?;
-        self.shared_array_move(target, source)
+        Ok(program_seq(
+            self.shared_array_move(target, source)?,
+            program_assign(
+                format!("{target}_count"),
+                crate::kernel::program_expression::variable(format!("{source}_count")),
+            ),
+        ))
     }
 
-    /// The slice iterator's `next`, which also records the yielded value's
-    /// index, how far the iterator has advanced.
+    /// The slice iterator's `next`, which also yields the index `count` and
+    /// counts the element.
     pub(super) fn enumerate_next(
         &self,
         iterator: &str,
@@ -83,12 +81,11 @@ impl Context<'_> {
         if !self.enumerated.contains(option) || !self.shared_array_options.contains_key(option) {
             return Err("unknown enumerated iterator Option".into());
         }
-        let yielded = program_assign(
-            format!("{option}_index"),
-            crate::kernel::program_expression::subtract(
-                crate::kernel::program_expression::variable(format!("{iterator}_length")),
-                crate::kernel::program_expression::variable(format!("{iterator}_remaining")),
-            ),
+        use crate::kernel::program_expression::{add, uint64_literal, variable};
+        let count = format!("{iterator}_count");
+        let yielded = program_seq(
+            program_assign(format!("{option}_index"), variable(&count)),
+            program_assign(&count, add(variable(&count), uint64_literal(1))),
         );
         self.shared_array_next_with(iterator, option, yielded)
     }

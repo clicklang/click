@@ -462,7 +462,7 @@ fn library_module_path(identity: &str) -> String {
 /// `uint32` is to the kernel: each has no definition, only the library's
 /// bodyless functions over it and the axioms relating them. Only a library
 /// module declares one, and only one listed here.
-pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec", "SliceIter"];
+pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec"];
 
 /// The name a loop's invariants and proof read its pass count by: the number
 /// of passes the loop has completed.
@@ -475,8 +475,9 @@ pub(crate) fn loop_iterations_spelling(index: usize) -> String {
 
 /// The Rust accessors a proof reads a loop's iterator through, as written
 /// after `iter.`: a call such as `len()` or a public field such as `start`.
-pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 11] = [
+pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 12] = [
     "len()",
+    "count",
     "as_slice()",
     "start",
     "end",
@@ -498,38 +499,15 @@ pub(crate) fn rust_iterator_accessors(
 ) -> &'static [&'static str] {
     match kind {
         crate::languages::interface::RustIteratorKind::Slice => &["len()", "as_slice()"],
-        crate::languages::interface::RustIteratorKind::Enumerate => &["len()"],
+        crate::languages::interface::RustIteratorKind::Enumerate => {
+            &["len()", "as_slice()", "count"]
+        }
         crate::languages::interface::RustIteratorKind::Range => &["start", "end", "len()"],
         crate::languages::interface::RustIteratorKind::RangeInclusive => &["start()", "end()"],
         crate::languages::interface::RustIteratorKind::Chunks => {
             &["v", "v.len()", "rem", "rem.len()", "chunk_size", "len()"]
         }
-        crate::languages::interface::RustIteratorKind::SliceLibrary(_) => &[],
     }
-}
-
-/// The local that holds loop iterator `iterator`'s value, when it is a value
-/// of a Click library type: a proof names it `iter` and reads it with that
-/// type's methods.
-pub(crate) fn rust_library_iterator(
-    iterator: &crate::languages::interface::RustLoopIterator,
-) -> Option<&str> {
-    matches!(
-        iterator.kind,
-        crate::languages::interface::RustIteratorKind::SliceLibrary(_)
-    )
-    .then_some(iterator.local.as_str())
-}
-
-/// The Click type of a library-valued loop iterator: `SliceIter` at the
-/// slice's element type.
-pub(crate) fn rust_library_iterator_type(
-    iterator: &crate::languages::interface::RustLoopIterator,
-) -> Option<ClickType> {
-    let crate::languages::interface::RustIteratorKind::SliceLibrary(name) = iterator.kind else {
-        return None;
-    };
-    generics::primitive_instance_value_type(&ClickType::Program(InterfaceType::Parameter(name)))
 }
 
 /// `iter.<accessor>` of `iterator`, read from the state the importer keeps
@@ -542,16 +520,12 @@ pub(crate) fn rust_iterator_method(
     let variable =
         |suffix: &str| ProgramExpression::Variable(format!("{}_{suffix}", iterator.local).into());
     let expression = match (iterator.kind, accessor) {
-        (K::Slice | K::Enumerate, "len()") => variable("remaining"),
-        // The remaining elements start `length - remaining` into the slice
-        // the iterator was built from.
-        (K::Slice, "as_slice()") => ProgramExpression::Add(
-            Box::new(variable("base")),
-            Box::new(ProgramExpression::Subtract(
-                Box::new(variable("length")),
-                Box::new(variable("remaining")),
-            )),
-        ),
+        // A slice iterator is the slice it still covers: `iter.as_slice()`
+        // reads as a slice parameter does, its data, and `iter.len()` is
+        // its length. An enumeration also counts what it has yielded.
+        (K::Slice | K::Enumerate, "len()") => variable("len"),
+        (K::Slice | K::Enumerate, "as_slice()") => variable("ptr"),
+        (K::Enumerate, "count") => variable("count"),
         (K::Range, "start") => variable("start"),
         (K::Range, "end") => variable("end"),
         (K::RangeInclusive, "start()") => variable("start"),
@@ -579,7 +553,6 @@ pub(crate) fn rust_iterator_method(
                     K::Range => "range",
                     K::RangeInclusive => "inclusive range",
                     K::Chunks => "`chunks_exact`",
-                    K::SliceLibrary(_) => "slice",
                 },
                 match rust_iterator_accessors(iterator.kind) {
                     [] => " (it has none yet)".to_string(),
@@ -610,14 +583,6 @@ pub(crate) fn rust_iterator_spelling(
 ) -> Option<String> {
     iterators.iter().enumerate().find_map(|(index, iterator)| {
         let iterator = iterator.as_ref()?;
-        // A library-valued iterator is its own local.
-        if rust_library_iterator(iterator) == Some(name) {
-            return Some(if current == Some(index) {
-                "iter".to_string()
-            } else {
-                format!("loop({index}).iter")
-            });
-        }
         rust_iterator_accessors(iterator.kind)
             .iter()
             .find_map(|accessor| {
@@ -651,14 +616,6 @@ pub(crate) fn loop_iterator_bindings(
     else {
         return Vec::new();
     };
-    if let Some(local) = rust_library_iterator(&iterator) {
-        return vec![(
-            "iter".to_string(),
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                (local.to_string()).into(),
-            )),
-        )];
-    }
     rust_iterator_accessors(iterator.kind)
         .iter()
         .filter_map(|accessor| {
@@ -782,10 +739,6 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/rust/slice.click",
         include_str!("../library/rust/slice.click"),
-    ),
-    (
-        "library/rust/slice_iter.click",
-        include_str!("../library/rust/slice_iter.click"),
     ),
 ];
 

@@ -2579,14 +2579,6 @@ id = "library.rust.Result::unwrap_or"
 path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
 
 [[item]]
-id = "library.rust.SliceIter::iter"
-path = "reference/library/index.md#sliceitert-methods"
-
-[[item]]
-id = "library.rust.SliceIter::next"
-path = "reference/library/index.md#sliceitert-methods"
-
-[[item]]
 id = "library.rust.Vec::index"
 path = "reference/library/index.md#vect-methods"
 
@@ -4778,34 +4770,6 @@ path = "reference/library/index.md#slicefrom_raw_parts"
 [[item]]
 id = "library.function.slice::subslice_len"
 path = "reference/library/index.md#slicesubslice_len"
-
-[[item]]
-id = "library.type.SliceIter"
-path = "reference/library/index.md#sliceiter"
-
-[[item]]
-id = "library.function.slice_iter::iter"
-path = "reference/library/index.md#slice_iteriter"
-
-[[item]]
-id = "library.function.slice_iter::as_slice"
-path = "reference/library/index.md#slice_iteras_slice"
-
-[[item]]
-id = "library.function.slice_iter::len"
-path = "reference/library/index.md#slice_iterlen"
-
-[[item]]
-id = "library.function.slice_iter::after_next"
-path = "reference/library/index.md#slice_iterafter_next"
-
-[[item]]
-id = "library.theorem.slice_iter::as_slice_iter"
-path = "reference/library/index.md#slice_iteras_slice_iter"
-
-[[item]]
-id = "library.theorem.slice_iter::len_as_slice"
-path = "reference/library/index.md#slice_iterlen_as_slice"
 
 [[item]]
 id = "library.type.Vec"

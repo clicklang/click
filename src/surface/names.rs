@@ -314,7 +314,6 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/rust/usize.click",
     "library/rust/vec.click",
     "library/rust/slice.click",
-    "library/rust/slice_iter.click",
 ];
 
 /// Whether the library declaration `name` in module `identity` is known to

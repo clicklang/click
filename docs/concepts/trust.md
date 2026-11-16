@@ -158,15 +158,15 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 15 `axiom`s, which are trusted, not proved.
+The library also declares 13 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
 ([Rust vectors](../reference/library/index.md#rust-vectors)). Finite
 sequences of fewer than 2^64 values satisfy them all, so they are consistent.
-Two in `library/rust/slice_iter.click` describe Rust's slice iterator.
-A `chunks_exact` iterator needs none: the importer holds it as its own
-fields and runs `core`'s code over them. Another is `integer::uint32_difference_decreases_after_increment`: under
+Rust's iterators need none: the importer holds a slice iterator as the
+slice it still covers and a `chunks_exact` iterator as its own fields, and
+runs `core`'s code over them. Another is `integer::uint32_difference_decreases_after_increment`: under
 `value < bound`, `(0 - value) + (bound - 1)` is below `(0 - value) + bound`
 as integers, because neither `bound - value` nor `(bound - 1) - value`
 wraps.
@@ -206,7 +206,7 @@ proved. Each family is an assumption in the same sense:
 | Allocator | `allocator` | `malloc`, `calloc`, `realloc` and `free` behave as the kernel's allocation model: a fresh block or null, released once | Built in, as a language primitive: the C front end and the kernel (`allocation` resource), documented in [heap allocation](../reference/language/c.md#heap-allocation) |
 | Formatted output | `snprintf` | One contract per `snprintf` format a program uses, written from the format ([formatted output](../reference/language/c.md#formatted-output)) | `src/languages/c/formatted_output.rs` |
 | C++ standard library | `C++ std` | The catalog contract of each `std::span`, `std::array` and `std::as_writable_bytes` function an import calls | `library/cpp/span.click` (`std::span<T>` and static-extent `std::span<T, N>`), `library/cpp/array.click` (`std::array<T, N>`, its `const` and mutable overloads), and `library/cpp/as_writable_bytes.click` (`std::as_writable_bytes<T, N>`), Click templates written out at each called element type and extent; `src/languages/cpp/standard_library.rs` keeps only the name table |
-| Rust core library | `Rust core` | The contract of each core method an import calls: integer methods (`u32::min`), `Vec`, slice, slice-iterator operations, and `Option`/`Result` unwrapping ([core library methods](../reference/rust.md#core-library-methods)), with the 9 `axiom`s above | `library/rust/core.click` (`Vec`, `slice::swap<T>`, `Option`/`Result` unwrapping, and `SliceIter<T>` contracts, generic `extern fn` blocks written out at each called type, with only a name table in `src/languages/rust/standard_library.rs`) and `library/rust/integers.click` (one `extern fn` per integer method and type, stating its result with the specification function of the same path in `library/rust/<type>.click`; only the called methods' lines are appended) |
+| Rust core library | `Rust core` | The contract of each core method an import calls: integer methods (`u32::min`), `Vec`, slice, and `Option`/`Result` unwrapping ([core library methods](../reference/rust.md#core-library-methods)), with the 7 `axiom`s above | `library/rust/core.click` (`Vec`, `slice::swap<T>`, `Option`/`Result` unwrapping contracts, generic `extern fn` blocks written out at each called type, with only a name table in `src/languages/rust/standard_library.rs`) and `library/rust/integers.click` (one `extern fn` per integer method and type, stating its result with the specification function of the same path in `library/rust/<type>.click`; only the called methods' lines are appended) |
 | Verifier primitive | `primitive` | `__click_constant_p_unknown`, the value of `__builtin_constant_p`, is 0 or 1 ([verifier primitives](../reference/language/index.md#verifier-primitives)): it stands for a compiler decision, not a library function | `library/c/builtins.click` |
 | Thread runtime | `runtime` | The selected `modeled-pthread` specification: create/join, shared mutex calls and one-shot atomic publication obey it | `src/languages/c/thread_runtime.rs` |
 

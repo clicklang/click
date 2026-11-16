@@ -7,7 +7,7 @@
 //! `library/rust/integers.click`, `u32::min`, each stating its result with
 //! the library's specification function of the same path. This file keeps
 //! only the name tables.
-use super::schema::{RustExport, Type};
+use super::schema::RustExport;
 use std::collections::BTreeSet;
 
 /// The `core_method` of `<[T]>::swap`, whose contract states its effect on
@@ -39,8 +39,6 @@ const LIBRARY_FUNCTIONS: &[(&[&str], &str)] = &[
     (&["Result", "unwrap"], CORE_LIBRARY),
     (&["Result", "expect"], CORE_LIBRARY),
     (&["Result", "unwrap_or"], CORE_LIBRARY),
-    (&["SliceIter", "iter"], CORE_LIBRARY),
-    (&["SliceIter", "next"], CORE_LIBRARY),
 ];
 
 /// The Click library file that states the integer core methods, one
@@ -123,129 +121,6 @@ pub(super) const RESULT_UNWRAP_OR: &str = "click::result::unwrap_or";
 /// panics on at `None`.
 pub(super) const OPTION_UNWRAP: &str = "option::unwrap";
 
-/// Declares the external functions a library slice iterator's operations
-/// call, when the export reads its slice iterators through the library.
-/// A `chunks_exact` iterator needs none: it is held as its own fields.
-pub(super) fn declare_iterator_operations(export: &mut RustExport) {
-    if export.library_iterators {
-        declare_slice_iter_operations(export);
-    }
-}
-
-/// The prefix of the `core_method` of each slice iterator operation the
-/// library-iterator model calls, `SliceIter::new`.
-pub(super) const SLICE_ITER: &str = "SliceIter::";
-
-/// The name of the external function for the slice iterator operation
-/// `operation` over elements spelled `element`: `SliceIter::next::<u8>`.
-pub(super) fn slice_iter_function(operation: &str, element: &str) -> String {
-    let mut name = super::names::qualified_name(["SliceIter", operation]);
-    super::names::push_type_argument(&mut name, element);
-    name
-}
-
-/// The importer's name for Rust `Option<&element>`, the library's
-/// `spec enum Option<T>` at a reference to `element`: the value a slice
-/// iterator's `next()` returns.
-pub(super) fn option_reference_name(element: &str) -> String {
-    super::names::option_type_name(&format!("&{element}"))
-}
-
-/// Declares a slice iterator's operations as Rust has them, once for each
-/// element type the export iterates over: `<[T]>::iter`, which builds the
-/// iterator, and `Iterator::next`, which takes it by `&mut` and returns an
-/// `Option<&T>`. Each is a call whose contract is stated over the library's
-/// `SliceIter`, as `Vec`'s methods are over `Vec`. The `Option<&T>` is
-/// declared as an instance of the library's `Option`.
-fn declare_slice_iter_operations(export: &mut RustExport) {
-    use super::schema::{Enum, Function, Place, Span, Variant};
-    let mut elements: Vec<Type> = Vec::new();
-    for function in &export.functions {
-        for local in function.mir.iter().flat_map(|mir| &mir.locals) {
-            if let Type::SharedArrayIterator { element } = &local.value_type
-                && !elements.contains(element)
-            {
-                elements.push(element.as_ref().clone());
-            }
-        }
-    }
-    for element in elements {
-        let Some(spelling) = element.scalar_name() else {
-            continue;
-        };
-        let reference = Type::Reference {
-            mutable: false,
-            pointee: Box::new(element.clone()),
-        };
-        let option = option_reference_name(spelling);
-        if !export.enums.iter().any(|declared| declared.name == option) {
-            export.enums.push(Enum {
-                name: option.clone(),
-                generic: Some("Option".into()),
-                arguments: vec![reference.clone()],
-                variants: vec![
-                    Variant {
-                        name: "None".into(),
-                        field_names: Vec::new(),
-                        fields: Vec::new(),
-                    },
-                    Variant {
-                        name: "Some".into(),
-                        field_names: Vec::new(),
-                        fields: vec![reference.clone()],
-                    },
-                ],
-            });
-        }
-        let iterator = || Type::SharedArrayIterator {
-            element: Box::new(element.clone()),
-        };
-        let operations: [(&str, Vec<(&str, Type)>, Type); 2] = [
-            (
-                "iter",
-                vec![("p", reference.clone()), ("n", Type::Usize)],
-                iterator(),
-            ),
-            (
-                "next",
-                vec![(
-                    "it",
-                    Type::Reference {
-                        mutable: true,
-                        pointee: Box::new(iterator()),
-                    },
-                )],
-                Type::Enum {
-                    name: option.clone(),
-                },
-            ),
-        ];
-        for (operation, parameters, return_type) in operations {
-            export.functions.push(Function {
-                sites: Vec::new(),
-                name: slice_iter_function(operation, spelling),
-                return_type,
-                parameters: parameters
-                    .into_iter()
-                    .map(|(name, value_type)| Place {
-                        name: name.into(),
-                        value_type,
-                        span: Span { line: 1, column: 1 },
-                    })
-                    .collect(),
-                body: vec![],
-                mir: None,
-                external: true,
-                captures: 0,
-                implements: None,
-                instance_of: None,
-                core_method: Some(format!("{SLICE_ITER}{operation}")),
-                span: Span { line: 1, column: 1 },
-            });
-        }
-    }
-}
-
 /// The `extern fn` contracts of the core methods `export` calls, with the
 /// name of each function they declare: the Click library files stating the
 /// library's generic functions an import's core methods are instances of,
@@ -281,7 +156,7 @@ pub(super) fn contracts(export: &RustExport) -> (String, BTreeSet<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::languages::rust::schema::{Function, Place, Span};
+    use crate::languages::rust::schema::{Function, Place, Span, Type};
     use std::collections::BTreeSet;
 
     /// The library's core-method module of each integer type.
@@ -374,7 +249,6 @@ mod tests {
             span: span.clone(),
         };
         let export = RustExport {
-            library_iterators: false,
             schema: super::super::schema::SCHEMA,
             compiler_commit: String::new(),
             target: String::new(),
