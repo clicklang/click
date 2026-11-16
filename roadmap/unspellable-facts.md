@@ -134,6 +134,8 @@ Already-shared numeric/float operations and fold/match producers are reused.
 
 ### 9a live boundary inventory
 
+Delivered in [PR #2930](https://github.com/clicklang/click/pull/2930).
+
 | Location / entry point | Live boundary and assigned work |
 | --- | --- |
 | `src/surface/proof/surface_synthesis.rs`: `raise_kernel_term`, `raise_kernel_term_dispatch` | Existing common dispatcher and bounded integer recursion are the foundation for 9b. Constructor/read/variable argument exports belong to 9c–9d; condition exports to 9e–9f. Existing numeric and float operation renderers stay shared. |
@@ -159,6 +161,18 @@ include deterministic scaling coverage and run all scaling tests. Preserve
 exact producer metadata separately from observation equality, historical memory
 identity, float bits, lexical binding and existing source spellings. The closure
 audit collects this evidence; it does not defer testing until 9z.
+
+### 9b common raising entry point
+
+The shared dispatcher already handles supported numeric and float operations;
+this slice removes the native root clone/re-intern from its Integer adapter.
+Integer comparison operands and legacy call arguments now pass their existing
+`SharedIntegerTerm` carrier into the session-aware importer, then use
+`raise_kernel_term`. Family-specific leaf policies remain explicit for the
+following slices. No source spelling, proof rule or budget changes.
+
+Validation: 1,837 selected Surface synthesis and scaling tests passed;
+`scripts/check.sh --ci-quality` passed.
 
 ## Chunk 3: machine-valued pure-function results
 

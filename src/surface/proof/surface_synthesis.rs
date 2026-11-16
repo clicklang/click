@@ -3146,12 +3146,14 @@ pub(super) fn integer_typed_expression(value: ContractExpression) -> ContractExp
 /// `to_integer` around each observation and named truncating operations.
 /// Opaque specification applications retain their source boundary.
 fn synthesize_surface_integer(
-    term: &crate::kernel::IntegerTerm,
+    term: &crate::kernel::SharedIntegerTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
-    let term = crate::kernel::KernelTermImport::default().integer(&term.clone().into());
+    // Keep the carrier's bridge identity: a native clone and re-intern here
+    // discards the caller's shared handoff before reaching the common renderer.
+    let term = crate::kernel::KernelTermImport::default().integer(term);
     raise_kernel_term(&term, parameter_binding, state, bound_variables)
 }
 
