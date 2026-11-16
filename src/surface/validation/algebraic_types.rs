@@ -3365,6 +3365,7 @@ fn require_scalar_return_leaf(
                     _ => None,
                 };
                 let scope = types.scope();
+                let mut algebraic_bindings = BTreeMap::new();
                 for (index, binding) in arm.bindings.iter().enumerate() {
                     let value = fields
                         .and_then(|(definition, application, fields)| {
@@ -3374,10 +3375,31 @@ fn require_scalar_return_leaf(
                             instantiate_field_type(definition, application, field)
                         })
                         .transpose()?;
+                    if let Some(ClickType::Algebraic(algebraic_type)) = &value {
+                        algebraic_bindings.insert(
+                            binding.clone(),
+                            ContractExpression::AlgebraicVariable {
+                                name: binding.clone(),
+                                algebraic_type: algebraic_type.clone(),
+                                binder_index: index,
+                            },
+                        );
+                    }
                     types.bind(binding, value);
                 }
+                // The scalar condition checker has only C carriers. Keep
+                // constructor-bound algebraic values typed in the selected arm,
+                // as the algebraic validation pass does.
+                let arm_body = if algebraic_bindings.is_empty() {
+                    std::borrow::Cow::Borrowed(&arm.body)
+                } else {
+                    std::borrow::Cow::Owned(
+                        substitute_contract_expression(&arm.body, &algebraic_bindings)
+                            .map_err(ClickError::new)?,
+                    )
+                };
                 let checked = require_scalar_return_value(
-                    &arm.body,
+                    &arm_body,
                     expected,
                     types,
                     click_functions,
