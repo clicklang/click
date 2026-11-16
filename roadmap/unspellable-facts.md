@@ -302,6 +302,20 @@ certificate work remains linear and independent of unrelated bindings. All 1,786
 annotation-lowering and scaling tests and quality checks passed. Integer
 certificate fixtures passed with zero fact-stability differences.
 
+### 9m Boolean lowering
+
+Specification values, resource fields, call results and C-expression handoffs now
+retain the existing admitted logical Boolean roots. They reuse the exact argument
+import policy: raw C words, widths, variable carriers and constant-cast syntax
+keep their native representation. Retention does not apply the nonzero truth
+conversion to those payloads. Facts and obligations remain separately scoped.
+
+Validation: logical roots and native carriers retain exact values, facts and
+obligations across enabled/disabled retention. Growing logical expressions have
+linear deterministic work. All 2,013 API, specification, execution-value and
+scaling tests and quality checks passed. Boolean fixtures passed with zero
+fact-stability differences; C expression admission remains unchanged.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

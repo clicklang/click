@@ -6809,6 +6809,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     SpecValue::from(value.clone())
                         .retain_algebraic_result()
                         .retain_float_result()
+                        .retain_boolean_result()
                 },
                 facts: vec![].into(),
                 obligations: vec![],
@@ -6821,6 +6822,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 SpecValue::from(value.clone())
                     .retain_algebraic_result()
                     .retain_float_result()
+                    .retain_boolean_result()
             },
             facts: Vec::new().into(),
             obligations: Vec::new(),
@@ -7146,7 +7148,17 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             spec_execution_value_paths_in(
                 paths.into_iter().map(|path| {
                     path.map_value(|value| {
-                        if retain_results && (value.machine().is_some() || value.float().is_some())
+                        let value = if retain_results {
+                            value.retain_boolean_result()
+                        } else {
+                            value
+                        };
+                        if retain_results
+                            && (value.machine().is_some()
+                                || value.float().is_some()
+                                || value
+                                    .shared()
+                                    .is_some_and(|root| root.ty() == &KernelType::Bool))
                         {
                             value
                         } else {
@@ -7897,7 +7909,10 @@ fn evaluate_spec_pure_function_application_paths_in(
                 value: if result_type.is_pointer() && !budget.machine_result_production_disabled {
                     value.retain_pointer_result()
                 } else if !budget.machine_result_production_disabled {
-                    value.retain_algebraic_result().retain_float_result()
+                    value
+                        .retain_algebraic_result()
+                        .retain_float_result()
+                        .retain_boolean_result()
                 } else {
                     value
                 },
@@ -8721,7 +8736,10 @@ fn spec_execution_value_paths_in(
                 value: if budget.machine_result_production_disabled {
                     value
                 } else {
-                    value.retain_algebraic_result().retain_float_result()
+                    value
+                        .retain_algebraic_result()
+                        .retain_float_result()
+                        .retain_boolean_result()
                 },
                 facts: path.facts,
                 obligations: path.obligations,
