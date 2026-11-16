@@ -516,3 +516,70 @@ fn fixed_contract_result_is_separate_from_lexical_result_in_old_states() {
         );
     }
 }
+
+#[test]
+fn common_integer_comparisons_keep_operands_and_native_fact_shape() {
+    use crate::kernel::{ConditionTerm, IntegerTerm, KernelTermNode, SpecIntegerExpression};
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(999995);
+    let bindings = crate::persistent::PersistentMap::default().with_inserted(
+        "x".into(),
+        SpecIntegerExpression::Term(IntegerTerm::Variable(variable)),
+    );
+    let left = SurfaceTerm::Add(
+        Box::new(SurfaceTerm::Binding("x".into())),
+        Box::new(SurfaceTerm::IntegerLiteral("1".into())),
+    );
+    let right = SurfaceTerm::Binding("x".into());
+    let a: crate::kernel::SharedIntegerTerm = IntegerTerm::Add(
+        IntegerTerm::Variable(variable).into(),
+        IntegerTerm::constant_i64(1).into(),
+    )
+    .into();
+    let b: crate::kernel::SharedIntegerTerm = IntegerTerm::Variable(variable).into();
+    for (operator, expected) in [
+        (
+            ComparisonOperator::Equal,
+            ConditionTerm::IntegerEqual(a.clone(), b.clone()),
+        ),
+        (
+            ComparisonOperator::NotEqual,
+            ConditionTerm::IntegerNotEqual(a.clone(), b.clone()),
+        ),
+        (
+            ComparisonOperator::LessThan,
+            ConditionTerm::IntegerLessThan(a.clone(), b.clone()),
+        ),
+        (
+            ComparisonOperator::LessEqual,
+            ConditionTerm::IntegerLessEqual(a.clone(), b.clone()),
+        ),
+        (
+            ComparisonOperator::GreaterThan,
+            ConditionTerm::IntegerGreaterThan(a.clone(), b.clone()),
+        ),
+        (
+            ComparisonOperator::GreaterEqual,
+            ConditionTerm::IntegerGreaterEqual(a.clone(), b.clone()),
+        ),
+    ] {
+        let root = lower_surface_integer_comparison(&left, operator, &right, &bindings).unwrap();
+        let KernelTermNode::IntegerCompare { arguments, .. } = root.node() else {
+            panic!()
+        };
+        assert!(matches!(
+            arguments[0].node(),
+            KernelTermNode::IntegerOperation { .. }
+        ));
+        assert!(matches!(arguments[1].node(), KernelTermNode::Variable(v) if *v == variable));
+        let source = ClickProposition::Comparison {
+            left: left.clone(),
+            operator,
+            right: right.clone(),
+        };
+        assert_eq!(
+            lower_integer_arithmetic_proposition(&source, &bindings).unwrap(),
+            Proposition::ConditionIs(expected, true)
+        );
+    }
+}

@@ -3299,7 +3299,6 @@ pub(in crate::surface) fn lower_integer_arithmetic_proposition(
     proposition: &ClickProposition,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
 ) -> Result<Proposition, String> {
-    use crate::kernel::{ConditionTerm, IntegerComparisonOperator, SpecIntegerExpression};
     check_integer_lowering_work(1)?;
     match proposition {
         ClickProposition::Comparison {
@@ -3307,43 +3306,10 @@ pub(in crate::surface) fn lower_integer_arithmetic_proposition(
             operator,
             right,
         } => {
-            let SpecIntegerExpression::Term(left) =
-                lower_contract_integer_to_spec(left, integer_values)?
-            else {
-                return Err(
-                    "machine-backed Integer expressions are not yet certificate atoms".into(),
-                );
-            };
-            let SpecIntegerExpression::Term(right) =
-                lower_contract_integer_to_spec(right, integer_values)?
-            else {
-                return Err(
-                    "machine-backed Integer expressions are not yet certificate atoms".into(),
-                );
-            };
-            check_integer_lowering_work(
-                integer_root_work(&left).saturating_add(integer_root_work(&right)),
-            )?;
-            let condition = match integer_comparison_operator(*operator)? {
-                IntegerComparisonOperator::Equal => {
-                    ConditionTerm::IntegerEqual(left.into(), right.into())
-                }
-                IntegerComparisonOperator::NotEqual => {
-                    ConditionTerm::IntegerNotEqual(left.into(), right.into())
-                }
-                IntegerComparisonOperator::LessThan => {
-                    ConditionTerm::IntegerLessThan(left.into(), right.into())
-                }
-                IntegerComparisonOperator::LessEqual => {
-                    ConditionTerm::IntegerLessEqual(left.into(), right.into())
-                }
-                IntegerComparisonOperator::GreaterThan => {
-                    ConditionTerm::IntegerGreaterThan(left.into(), right.into())
-                }
-                IntegerComparisonOperator::GreaterEqual => {
-                    ConditionTerm::IntegerGreaterEqual(left.into(), right.into())
-                }
-            };
+            let root = lower_surface_integer_comparison(left, *operator, right, integer_values)?;
+            // Propositions still store native condition descriptors. This is the
+            // explicit output boundary, after both operands have stayed shared.
+            let condition = crate::kernel::KernelTermExport::condition(&root)?;
             Ok(Proposition::ConditionIs(condition, true))
         }
         ClickProposition::Not(body) => Ok(Proposition::Not(Box::new(
@@ -3384,6 +3350,8 @@ fn integer_constant_spelling(expression: &ContractExpression) -> Option<String> 
     value(expression).map(|value| value.to_string())
 }
 
+/// Explicit compatibility result for remaining theorem and deferred-expression
+/// consumers. Certificate comparisons use the common-root entry point below.
 pub(in crate::surface) fn lower_contract_integer_to_spec(
     expression: &SurfaceTerm,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
@@ -3395,8 +3363,35 @@ pub(in crate::surface) fn lower_contract_integer_to_spec(
     ))
 }
 
-/// Lower a mathematical Integer expression through indexed lexical bindings.
-/// Neither facts nor unrelated bindings are traversed.
+/// Lower one mathematical comparison directly from its typed common operands.
+pub(in crate::surface) fn lower_surface_integer_comparison(
+    left: &SurfaceTerm,
+    operator: ComparisonOperator,
+    right: &SurfaceTerm,
+    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+) -> Result<crate::kernel::KernelTerm, String> {
+    let left = lower_surface_integer_term(left, integer_values)?;
+    let right = lower_surface_integer_term(right, integer_values)?;
+    check_integer_lowering_work(
+        integer_kernel_root_work(&left).saturating_add(integer_kernel_root_work(&right)),
+    )?;
+    crate::kernel::KernelTerm::integer_comparison(
+        integer_comparison_operator(operator)?,
+        [left, right],
+    )
+    .map_err(str::to_owned)
+}
+
+fn integer_kernel_root_work(term: &crate::kernel::KernelTerm) -> usize {
+    match term.node() {
+        crate::kernel::KernelTermNode::IntegerLiteral(value) => value.bits() as usize + 1,
+        _ => 1,
+    }
+}
+
+/// Arithmetic certificate operands remain typed common roots.
+/// Bindings are looked up by name; neither facts nor unrelated bindings are
+/// traversed. Native condition storage is an explicit final output adapter.
 pub(in crate::surface) fn lower_surface_integer_term(
     expression: &SurfaceTerm,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
@@ -3410,14 +3405,8 @@ pub(in crate::surface) fn lower_surface_integer_term(
         locals: &crate::persistent::PersistentMap<String, crate::kernel::KernelTerm>,
         importer: &mut crate::kernel::KernelTermImport,
     ) -> Result<crate::kernel::KernelTerm, String> {
-        use crate::kernel::{
-            KernelIntegerOperator as Op, KernelTerm, KernelTermNode, SpecIntegerExpression,
-        };
+        use crate::kernel::{KernelIntegerOperator as Op, KernelTerm, SpecIntegerExpression};
         check_integer_lowering_work(1)?;
-        let root_work = |term: &KernelTerm| match term.node() {
-            KernelTermNode::IntegerLiteral(value) => value.bits() as usize + 1,
-            _ => 1,
-        };
         if let Some(reduced) = lambdas::reduce_head(expression)? {
             return lower(&reduced, integer_values, locals, importer);
         }
@@ -3433,7 +3422,7 @@ pub(in crate::surface) fn lower_surface_integer_term(
             }
             SurfaceTerm::Binding(name) => {
                 if let Some(value) = locals.get(name) {
-                    check_integer_lowering_work(root_work(value))?;
+                    check_integer_lowering_work(integer_kernel_root_work(value))?;
                     return Ok(value.clone());
                 }
                 let value = integer_values
@@ -3457,7 +3446,7 @@ pub(in crate::surface) fn lower_surface_integer_term(
                     );
                 }
                 let value = lower(inner, integer_values, locals, importer)?;
-                check_integer_lowering_work(root_work(&value))?;
+                check_integer_lowering_work(integer_kernel_root_work(&value))?;
                 KernelTerm::integer_operation(Op::Negate, vec![value]).map_err(Into::into)
             }
             SurfaceTerm::Add(left, right)
@@ -3471,9 +3460,9 @@ pub(in crate::surface) fn lower_surface_integer_term(
                     _ => Op::Multiply,
                 };
                 let work = if operator == Op::Multiply {
-                    root_work(&left).saturating_mul(root_work(&right))
+                    integer_kernel_root_work(&left).saturating_mul(integer_kernel_root_work(&right))
                 } else {
-                    root_work(&left).saturating_add(root_work(&right))
+                    integer_kernel_root_work(&left).saturating_add(integer_kernel_root_work(&right))
                 };
                 check_integer_lowering_work(work)?;
                 KernelTerm::integer_operation(operator, vec![left, right]).map_err(Into::into)

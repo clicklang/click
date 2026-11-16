@@ -289,6 +289,19 @@ machine exports. All 2,000 API, specification and scaling tests and quality
 checks passed. Selected integer read-back and freed-pointer conversion fixtures
 passed with zero fact-stability differences.
 
+### 9k Integer comparison lowering
+
+Certificate comparisons now lower their operands directly into a typed common
+comparison root. The native condition is constructed only at the final proposition
+storage boundary. The intermediate `SpecIntegerExpression` result/export cycle is
+removed from this path. The compatibility helper remains for theorem, witness,
+search and deferred-expression consumers until those callers migrate.
+
+Validation: all six comparison operators retain the existing native fact shape;
+certificate work remains linear and independent of unrelated bindings. All 1,786
+annotation-lowering and scaling tests and quality checks passed. Integer
+certificate fixtures passed with zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
