@@ -298,8 +298,8 @@ removed from this path. The compatibility helper remains for theorem, witness,
 search and deferred-expression consumers until those callers migrate.
 
 Validation: all six comparison operators retain the existing native fact shape;
-certificate work remains linear and independent of unrelated bindings. All 1,865
-Surface, annotation-lowering and scaling tests and quality checks passed. Integer
+certificate work remains linear and independent of unrelated bindings. All 1,786
+annotation-lowering and scaling tests and quality checks passed. Integer
 certificate fixtures passed with zero fact-stability differences.
 
 ## Chunk 3: machine-valued pure-function results

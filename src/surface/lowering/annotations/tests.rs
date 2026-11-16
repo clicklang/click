@@ -578,7 +578,7 @@ fn common_integer_comparisons_keep_operands_and_native_fact_shape() {
             right: right.clone(),
         };
         assert_eq!(
-            lower_integer_certificate_proposition(&source, &bindings).unwrap(),
+            lower_integer_arithmetic_proposition(&source, &bindings).unwrap(),
             Proposition::ConditionIs(expected, true)
         );
     }
