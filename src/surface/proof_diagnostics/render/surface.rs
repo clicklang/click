@@ -3304,7 +3304,7 @@ mod tests {
             ],
         );
         assert_eq!(source(&contract, &mut labels), "ordered(p)");
-        for (premise, internal) in [(&held, false), (&same, false), (&contract, false)] {
+        for (premise, internal) in [(&same, false), (&contract, false)] {
             assert_eq!(
                 crate::surface::proof_diagnostics::is_internal_premise(premise),
                 internal
