@@ -20,6 +20,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_normalization_closure");
         if let Some(premises) = &premises
+            && let Some(closed) = Self::try_division_bound_using(search_input, premises)?
+        {
+            return Ok(closed);
+        }
+        if let Some(premises) = &premises
+            && let Some(closed) = Self::try_multiply_order_using(search_input, premises)?
+        {
+            return Ok(closed);
+        }
+        if let Some(premises) = &premises
             && let Some(closed) = Self::try_product_bound_using(search_input, premises)?
         {
             return Ok(closed);
@@ -278,6 +288,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_signed_interval_using");
+        if let Some(closed) = Self::try_division_bound_using(search_input, premises)? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = Self::try_multiply_order_using(search_input, premises)? {
+            return Ok(Some(closed));
+        }
         if let Some(closed) = Self::try_product_bound_using(search_input, premises)? {
             return Ok(Some(closed));
         }

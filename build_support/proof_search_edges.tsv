@@ -715,3 +715,13 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalizati
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	try_product_bound_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_product_bound_from_ranges	try_product_bound_using	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_product_bound_using	try_product_bound_using	1
+src/surface/proof/smart_closures/multiplication.rs	search	ProofSearch::try_multiply_order_using	driver	4
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_multiply_order_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	try_multiply_order_using	1
+src/surface/proof/smart_closures/division.rs	search	ProofSearch::apply_division_steps	driver	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_division_bound_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	try_division_bound_using	1
+src/surface/proof/smart_closures/division.rs	search	ProofSearch::try_division_bound_using	apply_division_steps	2
+src/surface/proof/smart_closures/division.rs	search	ProofSearch::apply_division_steps	apply_division_have	1
+src/surface/proof/smart_closures/division.rs	search	ProofSearch::apply_division_have	apply_division_have	1
+src/surface/proof/smart_closures/division.rs	search	ProofSearch::apply_division_have	driver	3

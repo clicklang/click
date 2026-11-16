@@ -760,7 +760,7 @@ theorem step_le_lt(a: Integer, b: Integer) {
         if a < b {
             known();
         } else {
-            have b <= a by { normalize() using { not (a < b); }; }
+            have b <= a by { known(); }
             have a + 1 + b <= b + a by {
                 apply(integer::add_le(a + 1, b, b, a)) using { a + 1 <= b; b <= a; };
             }
@@ -784,7 +784,7 @@ theorem le_ne_lt(a: Integer, b: Integer) {
         if a < b {
             known();
         } else {
-            have b <= a by { normalize() using { not (a < b); }; }
+            have b <= a by { known(); }
             have a == b by {
                 apply(integer::le_antisymmetric(a, b)) using { a <= b; b <= a; };
             }
@@ -805,7 +805,7 @@ theorem le_substitute(a: Integer, b: Integer, c: Integer, d: Integer) {
     requires a <= b;
     requires c == a;
     requires d == b;
-    ensures c <= d by { normalize() using { a <= b; c == a; d == b; }; }
+    ensures c <= d by { rewrite(c, a); rewrite(d, b); known(); }
 }
 ```
 
@@ -822,7 +822,7 @@ theorem equal_substitute(a: Integer, b: Integer, c: Integer, d: Integer) {
     requires a == b;
     requires c == a;
     requires d == b;
-    ensures c == d by { normalize() using { a == b; c == a; d == b; }; }
+    ensures c == d by { rewrite(c, a); rewrite(d, b); known(); }
 }
 ```
 
@@ -895,7 +895,7 @@ evaluate to `true`.
 theorem equal_add(a: Integer, b: Integer, c: Integer, d: Integer) {
     requires a == b;
     requires c == d;
-    ensures a + c == b + d by { normalize() using { a == b; c == d; }; }
+    ensures a + c == b + d by { rewrite(a, b); rewrite(c, d); known(); }
 }
 ```
 
@@ -910,7 +910,7 @@ evaluate to `true`.
 ```click
 theorem equal_multiply(a: Integer, b: Integer, factor: Integer) {
     requires a == b;
-    ensures a * factor == b * factor by { normalize() using { a == b; }; }
+    ensures a * factor == b * factor by { rewrite(a, b); known(); }
 }
 ```
 
@@ -6629,9 +6629,86 @@ theorem ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, v
 theorem positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) {
     requires d != 0;
     requires 1 <= d;
-    requires bound * d <= n;
+    requires (bound * d) <= n;
     ensures bound <= truncating_quotient(n, d) by {
-        normalize() using { bound * d <= n; 1 <= d; };
+        have 0 < d by {
+            have 0 + 1 <= d by {
+                known();
+            }
+            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+        }
+        have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
+            apply(integer::truncation_identity(n, d)) using { d != 0; };
+        }
+        have n + -(truncating_remainder(n, d)) == (truncating_quotient(n, d) * d) by {
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have -(truncating_quotient(n, d) * d) == -n + truncating_remainder(n, d) by {
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
+            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have truncating_remainder(n, d) <= (d - 1) by {
+            apply(integer::positive_divisor_remainder_upper(n, d)) using { d != 0; 0 < d; };
+        }
+        have -(d - 1) <= -(truncating_remainder(n, d)) by {
+            apply(integer::negate_order(truncating_remainder(n, d), (d - 1))) using { truncating_remainder(n, d) <= (d - 1); d != 0; };
+        }
+        have (bound * d) + -(d - 1) <= n + -(truncating_remainder(n, d)) by {
+            apply(integer::add_le((bound * d), n, -(d - 1), -(truncating_remainder(n, d)))) using { (bound * d) <= n; -(d - 1) <= -(truncating_remainder(n, d)); d != 0; };
+        }
+        have (bound * d) - (d - 1) <= (truncating_quotient(n, d) * d) by {
+            have (bound * d) - (d - 1) == (bound * d) + -(d - 1) by {
+                known();
+            }
+            have (truncating_quotient(n, d) * d) == n + -(truncating_remainder(n, d)) by {
+                known();
+            }
+            apply(integer::le_substitute((bound * d) + -(d - 1), n + -(truncating_remainder(n, d)), (bound * d) - (d - 1), (truncating_quotient(n, d) * d))) using { (bound * d) + -(d - 1) <= n + -(truncating_remainder(n, d)); (bound * d) - (d - 1) == (bound * d) + -(d - 1); (truncating_quotient(n, d) * d) == n + -(truncating_remainder(n, d)); d != 0; };
+        }
+        have -(truncating_quotient(n, d) * d) <= -((bound * d) - (d - 1)) by {
+            apply(integer::negate_order((bound * d) - (d - 1), (truncating_quotient(n, d) * d))) using { (bound * d) - (d - 1) <= (truncating_quotient(n, d) * d); d != 0; };
+        }
+        have -(truncating_quotient(n, d)) * d == -(truncating_quotient(n, d) * d) by {
+            apply(integer::negate_multiply(truncating_quotient(n, d), d)) using { d != 0; };
+        }
+        have -bound * d == -(bound * d) by {
+            apply(integer::negate_multiply(bound, d));
+        }
+        have -(truncating_quotient(n, d)) * d <= -bound * d + (d - 1) by {
+            have -(truncating_quotient(n, d)) * d == -(truncating_quotient(n, d) * d) by {
+                rewrite(-(truncating_quotient(n, d)) * d, -(truncating_quotient(n, d) * d));
+                known();
+            }
+            have -bound * d + (d - 1) == -((bound * d) - (d - 1)) by {
+                rewrite(-bound * d, -(bound * d));
+                known();
+            }
+            apply(integer::le_substitute(-(truncating_quotient(n, d) * d), -((bound * d) - (d - 1)), -(truncating_quotient(n, d)) * d, -bound * d + (d - 1))) using { -(truncating_quotient(n, d) * d) <= -((bound * d) - (d - 1)); -(truncating_quotient(n, d)) * d == -(truncating_quotient(n, d) * d); -bound * d + (d - 1) == -((bound * d) - (d - 1)); d != 0; };
+        }
+        have 0 < d by {
+            have 0 + 1 <= d by {
+                known();
+            }
+            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+        }
+        have (d - 1) < d by {
+            known();
+        }
+        have -(truncating_quotient(n, d)) <= -bound by {
+            apply(integer::round_down_le(-(truncating_quotient(n, d)), -bound, d, (d - 1))) using { 0 < d; (d - 1) < d; -(truncating_quotient(n, d)) * d <= -bound * d + (d - 1); d != 0; };
+        }
+        have -(-bound) <= -(-(truncating_quotient(n, d))) by {
+            apply(integer::negate_order(-(truncating_quotient(n, d)), -bound)) using { -(truncating_quotient(n, d)) <= -bound; d != 0; };
+        }
+        have bound == -(-bound) by {
+            known();
+        }
+        have truncating_quotient(n, d) == -(-(truncating_quotient(n, d))) by {
+            known();
+        }
+        apply(integer::le_substitute(-(-bound), -(-(truncating_quotient(n, d))), bound, truncating_quotient(n, d))) using { -(-bound) <= -(-(truncating_quotient(n, d))); bound == -(-bound); truncating_quotient(n, d) == -(-(truncating_quotient(n, d))); d != 0; };
     }
 }
 ```
@@ -6643,9 +6720,63 @@ theorem positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) 
 theorem positive_divisor_quotient_upper(n: Integer, d: Integer, bound: Integer) {
     requires d != 0;
     requires 1 <= d;
-    requires n <= bound * d;
+    requires n <= (bound * d);
     ensures truncating_quotient(n, d) <= bound by {
-        normalize() using { n <= bound * d; 1 <= d; };
+        have 0 < d by {
+            have 0 + 1 <= d by {
+                known();
+            }
+            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+        }
+        have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
+            apply(integer::truncation_identity(n, d)) using { d != 0; };
+        }
+        have n + -(truncating_remainder(n, d)) == (truncating_quotient(n, d) * d) by {
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have -(truncating_quotient(n, d) * d) == -n + truncating_remainder(n, d) by {
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
+            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have 1 - d <= truncating_remainder(n, d) by {
+            apply(integer::positive_divisor_remainder_lower(n, d)) using { d != 0; 0 < d; };
+        }
+        have -(truncating_remainder(n, d)) <= (d - 1) by {
+            have -(truncating_remainder(n, d)) <= -(1 - d) by {
+                apply(integer::negate_order(1 - d, truncating_remainder(n, d))) using { 1 - d <= truncating_remainder(n, d); d != 0; };
+            }
+            have -(truncating_remainder(n, d)) == -(truncating_remainder(n, d)) by {
+                known();
+            }
+            have (d - 1) == -(1 - d) by {
+                known();
+            }
+            apply(integer::le_substitute(-(truncating_remainder(n, d)), -(1 - d), -(truncating_remainder(n, d)), (d - 1))) using { -(truncating_remainder(n, d)) <= -(1 - d); -(truncating_remainder(n, d)) == -(truncating_remainder(n, d)); (d - 1) == -(1 - d); d != 0; };
+        }
+        have n + -(truncating_remainder(n, d)) <= (bound * d) + (d - 1) by {
+            apply(integer::add_le(n, (bound * d), -(truncating_remainder(n, d)), (d - 1))) using { n <= (bound * d); -(truncating_remainder(n, d)) <= (d - 1); d != 0; };
+        }
+        have (truncating_quotient(n, d) * d) <= (bound * d) + (d - 1) by {
+            have (truncating_quotient(n, d) * d) == n + -(truncating_remainder(n, d)) by {
+                known();
+            }
+            have (bound * d) + (d - 1) == (bound * d) + (d - 1) by {
+                known();
+            }
+            apply(integer::le_substitute(n + -(truncating_remainder(n, d)), (bound * d) + (d - 1), (truncating_quotient(n, d) * d), (bound * d) + (d - 1))) using { n + -(truncating_remainder(n, d)) <= (bound * d) + (d - 1); (truncating_quotient(n, d) * d) == n + -(truncating_remainder(n, d)); (bound * d) + (d - 1) == (bound * d) + (d - 1); d != 0; };
+        }
+        have 0 < d by {
+            have 0 + 1 <= d by {
+                known();
+            }
+            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+        }
+        have (d - 1) < d by {
+            known();
+        }
+        apply(integer::round_down_le(truncating_quotient(n, d), bound, d, (d - 1))) using { 0 < d; (d - 1) < d; (truncating_quotient(n, d) * d) <= (bound * d) + (d - 1); d != 0; };
     }
 }
 ```
@@ -7068,6 +7199,866 @@ theorem product_upper_bound(x: Integer, y: Integer, lo_x: Integer, hi_x: Integer
 }
 ```
 
+### `integer::add_right_order`
+
+```click
+theorem add_right_order(a: Integer, b: Integer, c: Integer) {
+    requires a <= b;
+    ensures a + c <= b + c by {
+        apply(integer::add_le(a, b, c, c)) using { a <= b; c <= c; };
+    }
+}
+```
+
+### `integer::subtract_right_order`
+
+```click
+theorem subtract_right_order(a: Integer, b: Integer, c: Integer) {
+    requires a <= b;
+    ensures a - c <= b - c by {
+        have a + -c <= b + -c by {
+            apply(integer::add_right_order(a, b, -c)) using { a <= b; };
+        }
+        have a - c == a + -c by {
+            known();
+        }
+        have b - c == b + -c by {
+            known();
+        }
+        apply(integer::le_substitute(a + -c, b + -c, a - c, b - c)) using { a + -c <= b + -c; a - c == a + -c; b - c == b + -c; };
+    }
+}
+```
+
+### `integer::subtract_left_order`
+
+```click
+theorem subtract_left_order(a: Integer, b: Integer, c: Integer) {
+    requires a <= b;
+    ensures c - b <= c - a by {
+        have -b <= -a by {
+            apply(integer::negate_order(a, b)) using { a <= b; };
+        }
+        have -b + c <= -a + c by {
+            apply(integer::add_right_order(-b, -a, c)) using { -b <= -a; };
+        }
+        have c - b == -b + c by {
+            known();
+        }
+        have c - a == -a + c by {
+            known();
+        }
+        apply(integer::le_substitute(-b + c, -a + c, c - b, c - a)) using { -b + c <= -a + c; c - b == -b + c; c - a == -a + c; };
+    }
+}
+```
+
+### `integer::negate_multiply`
+
+```click
+theorem negate_multiply(a: Integer, b: Integer) {
+    ensures -a * b == -(a * b) by {
+        have b * -a == -(b * a) by {
+            apply(integer::multiply_negate(b, a));
+        }
+        have -a * b == b * -a by {
+            apply(integer::multiply_commutative(-a, b));
+        }
+        have a * b == b * a by {
+            apply(integer::multiply_commutative(a, b));
+        }
+        rewrite(-a * b, b * -a);
+        rewrite(a * b, b * a);
+        known();
+    }
+}
+```
+
+### `integer::equal_negate`
+
+```click
+theorem equal_negate(a: Integer, b: Integer) {
+    requires a == b;
+    ensures -a == -b by {
+        rewrite(a, b);
+        known();
+    }
+}
+```
+
+### `integer::sum_commute`
+
+```click
+theorem sum_commute(a: Integer, b: Integer, c: Integer) {
+    requires a == b + c;
+    ensures a == c + b by {
+        have c + b == b + c by {
+            known();
+        }
+        rewrite(c + b, b + c);
+        known();
+    }
+}
+```
+
+### `integer::sum_difference`
+
+```click
+theorem sum_difference(a: Integer, b: Integer, c: Integer) {
+    requires a == b + c;
+    ensures a + -c == b by {
+        have a + -c == (b + c) + -c by {
+            apply(integer::equal_add(a, b + c, -c, -c)) using { a == b + c; -c == -c; };
+        }
+        have b == (b + c) + -c by {
+            known();
+        }
+        rewrite(b, (b + c) + -c);
+        known();
+    }
+    ensures -b == -a + c by {
+        have a + -c == b by {
+            have a + -c == (b + c) + -c by {
+                apply(integer::equal_add(a, b + c, -c, -c)) using { a == b + c; -c == -c; };
+            }
+            have b == (b + c) + -c by {
+                known();
+            }
+            rewrite(b, (b + c) + -c);
+            known();
+        }
+        have -(a + -c) == -b by {
+            apply(integer::equal_negate(a + -c, b)) using { a + -c == b; };
+        }
+        have -a + c == -(a + -c) by {
+            known();
+        }
+        rewrite(-a + c, -(a + -c));
+        known();
+    }
+}
+```
+
+### `integer::positive_divisor_quotient_upper_rounded`
+
+```click
+theorem positive_divisor_quotient_upper_rounded(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= n;
+    requires n <= (bound * d) + (d - 1);
+    ensures truncating_quotient(n, d) <= bound by {
+        have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
+            apply(integer::truncation_identity(n, d)) using { d != 0; };
+        }
+        have n + -(truncating_remainder(n, d)) == (truncating_quotient(n, d) * d) by {
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have -(truncating_quotient(n, d) * d) == -n + truncating_remainder(n, d) by {
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
+            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have 0 <= truncating_remainder(n, d) by {
+            apply(integer::nonnegative_dividend_remainder(n, d)) using { d != 0; 0 <= n; };
+        }
+        have 0 + (truncating_quotient(n, d) * d) <= truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
+            apply(integer::add_le(0, truncating_remainder(n, d), (truncating_quotient(n, d) * d), (truncating_quotient(n, d) * d))) using { 0 <= truncating_remainder(n, d); (truncating_quotient(n, d) * d) <= (truncating_quotient(n, d) * d); d != 0; };
+        }
+        have (truncating_quotient(n, d) * d) <= n by {
+            have (truncating_quotient(n, d) * d) == 0 + (truncating_quotient(n, d) * d) by {
+                known();
+            }
+            have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
+                known();
+            }
+            apply(integer::le_substitute(0 + (truncating_quotient(n, d) * d), truncating_remainder(n, d) + (truncating_quotient(n, d) * d), (truncating_quotient(n, d) * d), n)) using { 0 + (truncating_quotient(n, d) * d) <= truncating_remainder(n, d) + (truncating_quotient(n, d) * d); (truncating_quotient(n, d) * d) == 0 + (truncating_quotient(n, d) * d); n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d); d != 0; };
+        }
+        have (truncating_quotient(n, d) * d) <= (bound * d) + (d - 1) by {
+            apply(integer::le_transitive((truncating_quotient(n, d) * d), n, (bound * d) + (d - 1))) using { (truncating_quotient(n, d) * d) <= n; n <= (bound * d) + (d - 1); d != 0; };
+        }
+        have 0 < d by {
+            have 0 + 1 <= d by {
+                known();
+            }
+            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+        }
+        have (d - 1) < d by {
+            known();
+        }
+        apply(integer::round_down_le(truncating_quotient(n, d), bound, d, (d - 1))) using { 0 < d; (d - 1) < d; (truncating_quotient(n, d) * d) <= (bound * d) + (d - 1); d != 0; };
+    }
+}
+```
+
+### `integer::positive_divisor_quotient_lower_rounded`
+
+```click
+theorem positive_divisor_quotient_lower_rounded(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires n <= 0;
+    requires (bound * d) - (d - 1) <= n;
+    ensures bound <= truncating_quotient(n, d) by {
+        have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
+            apply(integer::truncation_identity(n, d)) using { d != 0; };
+        }
+        have n + -(truncating_remainder(n, d)) == (truncating_quotient(n, d) * d) by {
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have -(truncating_quotient(n, d) * d) == -n + truncating_remainder(n, d) by {
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
+            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have truncating_remainder(n, d) <= 0 by {
+            apply(integer::nonpositive_dividend_remainder(n, d)) using { d != 0; n <= 0; };
+        }
+        have truncating_remainder(n, d) + (truncating_quotient(n, d) * d) <= 0 + (truncating_quotient(n, d) * d) by {
+            apply(integer::add_le(truncating_remainder(n, d), 0, (truncating_quotient(n, d) * d), (truncating_quotient(n, d) * d))) using { truncating_remainder(n, d) <= 0; (truncating_quotient(n, d) * d) <= (truncating_quotient(n, d) * d); d != 0; };
+        }
+        have n <= (truncating_quotient(n, d) * d) by {
+            have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
+                known();
+            }
+            have (truncating_quotient(n, d) * d) == 0 + (truncating_quotient(n, d) * d) by {
+                known();
+            }
+            apply(integer::le_substitute(truncating_remainder(n, d) + (truncating_quotient(n, d) * d), 0 + (truncating_quotient(n, d) * d), n, (truncating_quotient(n, d) * d))) using { truncating_remainder(n, d) + (truncating_quotient(n, d) * d) <= 0 + (truncating_quotient(n, d) * d); n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d); (truncating_quotient(n, d) * d) == 0 + (truncating_quotient(n, d) * d); d != 0; };
+        }
+        have (bound * d) - (d - 1) <= (truncating_quotient(n, d) * d) by {
+            apply(integer::le_transitive((bound * d) - (d - 1), n, (truncating_quotient(n, d) * d))) using { (bound * d) - (d - 1) <= n; n <= (truncating_quotient(n, d) * d); d != 0; };
+        }
+        have -(truncating_quotient(n, d) * d) <= -((bound * d) - (d - 1)) by {
+            apply(integer::negate_order((bound * d) - (d - 1), (truncating_quotient(n, d) * d))) using { (bound * d) - (d - 1) <= (truncating_quotient(n, d) * d); d != 0; };
+        }
+        have -(truncating_quotient(n, d)) * d == -(truncating_quotient(n, d) * d) by {
+            apply(integer::negate_multiply(truncating_quotient(n, d), d)) using { d != 0; };
+        }
+        have -bound * d == -(bound * d) by {
+            apply(integer::negate_multiply(bound, d));
+        }
+        have -(truncating_quotient(n, d)) * d <= -bound * d + (d - 1) by {
+            have -(truncating_quotient(n, d)) * d == -(truncating_quotient(n, d) * d) by {
+                rewrite(-(truncating_quotient(n, d)) * d, -(truncating_quotient(n, d) * d));
+                known();
+            }
+            have -bound * d + (d - 1) == -((bound * d) - (d - 1)) by {
+                rewrite(-bound * d, -(bound * d));
+                known();
+            }
+            apply(integer::le_substitute(-(truncating_quotient(n, d) * d), -((bound * d) - (d - 1)), -(truncating_quotient(n, d)) * d, -bound * d + (d - 1))) using { -(truncating_quotient(n, d) * d) <= -((bound * d) - (d - 1)); -(truncating_quotient(n, d)) * d == -(truncating_quotient(n, d) * d); -bound * d + (d - 1) == -((bound * d) - (d - 1)); d != 0; };
+        }
+        have 0 < d by {
+            have 0 + 1 <= d by {
+                known();
+            }
+            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+        }
+        have (d - 1) < d by {
+            known();
+        }
+        have -(truncating_quotient(n, d)) <= -bound by {
+            apply(integer::round_down_le(-(truncating_quotient(n, d)), -bound, d, (d - 1))) using { 0 < d; (d - 1) < d; -(truncating_quotient(n, d)) * d <= -bound * d + (d - 1); d != 0; };
+        }
+        have -(-bound) <= -(-(truncating_quotient(n, d))) by {
+            apply(integer::negate_order(-(truncating_quotient(n, d)), -bound)) using { -(truncating_quotient(n, d)) <= -bound; d != 0; };
+        }
+        have bound == -(-bound) by {
+            known();
+        }
+        have truncating_quotient(n, d) == -(-(truncating_quotient(n, d))) by {
+            known();
+        }
+        apply(integer::le_substitute(-(-bound), -(-(truncating_quotient(n, d))), bound, truncating_quotient(n, d))) using { -(-bound) <= -(-(truncating_quotient(n, d))); bound == -(-bound); truncating_quotient(n, d) == -(-(truncating_quotient(n, d))); d != 0; };
+    }
+}
+```
+
+### `integer::nonnegative_dividend_remainder_upper`
+
+```click
+theorem nonnegative_dividend_remainder_upper(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= n;
+    ensures truncating_remainder(n, d) <= n by {
+        have 0 < d by {
+            have 0 + 1 <= d by {
+                known();
+            }
+            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+        }
+        have 0 <= d by {
+            apply(integer::lt_le(0, d)) using { 0 < d; };
+        }
+        have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
+            apply(integer::truncation_identity(n, d)) using { d != 0; };
+        }
+        have n + -(truncating_remainder(n, d)) == (truncating_quotient(n, d) * d) by {
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have -(truncating_quotient(n, d) * d) == -n + truncating_remainder(n, d) by {
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
+            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have 0 * d == 0 by {
+            known();
+        }
+        have 0 * d <= n by {
+            rewrite(0 * d, 0);
+            known();
+        }
+        have 0 <= truncating_quotient(n, d) by {
+            apply(integer::positive_divisor_quotient_lower(n, d, 0)) using { d != 0; 1 <= d; 0 * d <= n; };
+        }
+        have 0 * d <= (truncating_quotient(n, d) * d) by {
+            apply(integer::multiply_order_nonnegative(0, truncating_quotient(n, d), d)) using { 0 <= truncating_quotient(n, d); 0 <= d; d != 0; };
+        }
+        have 0 <= (truncating_quotient(n, d) * d) by {
+            rewrite(0, 0 * d);
+            known();
+        }
+        have 0 + truncating_remainder(n, d) <= (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
+            apply(integer::add_le(0, (truncating_quotient(n, d) * d), truncating_remainder(n, d), truncating_remainder(n, d))) using { 0 <= (truncating_quotient(n, d) * d); truncating_remainder(n, d) <= truncating_remainder(n, d); d != 0; };
+        }
+        have truncating_remainder(n, d) == 0 + truncating_remainder(n, d) by {
+            known();
+        }
+        have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
+            known();
+        }
+        apply(integer::le_substitute(0 + truncating_remainder(n, d), (truncating_quotient(n, d) * d) + truncating_remainder(n, d), truncating_remainder(n, d), n)) using { 0 + truncating_remainder(n, d) <= (truncating_quotient(n, d) * d) + truncating_remainder(n, d); truncating_remainder(n, d) == 0 + truncating_remainder(n, d); n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+    }
+}
+```
+
+### `integer::nonpositive_dividend_remainder_lower`
+
+```click
+theorem nonpositive_dividend_remainder_lower(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires n <= 0;
+    ensures n <= truncating_remainder(n, d) by {
+        have 0 < d by {
+            have 0 + 1 <= d by {
+                known();
+            }
+            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+        }
+        have 0 <= d by {
+            apply(integer::lt_le(0, d)) using { 0 < d; };
+        }
+        have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
+            apply(integer::truncation_identity(n, d)) using { d != 0; };
+        }
+        have n + -(truncating_remainder(n, d)) == (truncating_quotient(n, d) * d) by {
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have -(truncating_quotient(n, d) * d) == -n + truncating_remainder(n, d) by {
+            apply(integer::sum_difference(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have n == truncating_remainder(n, d) + (truncating_quotient(n, d) * d) by {
+            apply(integer::sum_commute(n, (truncating_quotient(n, d) * d), truncating_remainder(n, d))) using { n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); d != 0; };
+        }
+        have 0 * d == 0 by {
+            known();
+        }
+        have n <= 0 * d by {
+            rewrite(0 * d, 0);
+            known();
+        }
+        have truncating_quotient(n, d) <= 0 by {
+            apply(integer::positive_divisor_quotient_upper(n, d, 0)) using { d != 0; 1 <= d; n <= 0 * d; };
+        }
+        have (truncating_quotient(n, d) * d) <= 0 * d by {
+            apply(integer::multiply_order_nonnegative(truncating_quotient(n, d), 0, d)) using { truncating_quotient(n, d) <= 0; 0 <= d; d != 0; };
+        }
+        have (truncating_quotient(n, d) * d) <= 0 by {
+            rewrite(0, 0 * d);
+            known();
+        }
+        have (truncating_quotient(n, d) * d) + truncating_remainder(n, d) <= 0 + truncating_remainder(n, d) by {
+            apply(integer::add_le((truncating_quotient(n, d) * d), 0, truncating_remainder(n, d), truncating_remainder(n, d))) using { (truncating_quotient(n, d) * d) <= 0; truncating_remainder(n, d) <= truncating_remainder(n, d); d != 0; };
+        }
+        have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
+            known();
+        }
+        have truncating_remainder(n, d) == 0 + truncating_remainder(n, d) by {
+            known();
+        }
+        apply(integer::le_substitute((truncating_quotient(n, d) * d) + truncating_remainder(n, d), 0 + truncating_remainder(n, d), n, truncating_remainder(n, d))) using { (truncating_quotient(n, d) * d) + truncating_remainder(n, d) <= 0 + truncating_remainder(n, d); n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); truncating_remainder(n, d) == 0 + truncating_remainder(n, d); d != 0; };
+    }
+}
+```
+
+### `integer::quotient_upper_interval_nonnegative`
+
+```click
+theorem quotient_upper_interval_nonnegative(n: Integer, d: Integer, numerator_bound: Integer, endpoint: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= bound;
+    requires endpoint <= d;
+    requires n <= numerator_bound;
+    requires numerator_bound <= bound * endpoint + (endpoint - 1);
+    ensures truncating_quotient(n, d) <= bound by {
+        have bound * endpoint <= bound * d by {
+            have endpoint * bound <= d * bound by {
+                apply(integer::multiply_order_nonnegative(endpoint, d, bound)) using { endpoint <= d; 0 <= bound; };
+            }
+            have bound * endpoint == endpoint * bound by {
+                apply(integer::multiply_commutative(bound, endpoint));
+            }
+            have bound * d == d * bound by {
+                apply(integer::multiply_commutative(bound, d));
+            }
+            have bound * endpoint == endpoint * bound by {
+                rewrite(bound * endpoint, endpoint * bound);
+                known();
+            }
+            have bound * d == d * bound by {
+                rewrite(bound * d, d * bound);
+                known();
+            }
+            apply(integer::le_substitute(endpoint * bound, d * bound, bound * endpoint, bound * d)) using { endpoint * bound <= d * bound; bound * endpoint == endpoint * bound; bound * d == d * bound; };
+        }
+        have endpoint - 1 <= d - 1 by {
+            apply(integer::subtract_right_order(endpoint, d, 1)) using { endpoint <= d; };
+        }
+        have bound * endpoint + (endpoint - 1) <= bound * d + (d - 1) by {
+            apply(integer::add_le(bound * endpoint, bound * d, endpoint - 1, d - 1)) using { bound * endpoint <= bound * d; endpoint - 1 <= d - 1; };
+        }
+        have numerator_bound <= bound * d + (d - 1) by {
+            apply(integer::le_transitive(numerator_bound, bound * endpoint + (endpoint - 1), bound * d + (d - 1))) using { numerator_bound <= bound * endpoint + (endpoint - 1); bound * endpoint + (endpoint - 1) <= bound * d + (d - 1); };
+        }
+        have n <= bound * d + (d - 1) by {
+            apply(integer::le_transitive(n, numerator_bound, bound * d + (d - 1))) using { n <= numerator_bound; numerator_bound <= bound * d + (d - 1); };
+        }
+        if n <= 0 {
+            have 0 * d == 0 by {
+                known();
+            }
+            have n <= 0 * d by {
+                rewrite(0 * d, 0);
+                known();
+            }
+            have truncating_quotient(n, d) <= 0 by {
+                apply(integer::positive_divisor_quotient_upper(n, d, 0)) using { d != 0; 1 <= d; n <= 0 * d; };
+            }
+            apply(integer::le_transitive(truncating_quotient(n, d), 0, bound)) using { truncating_quotient(n, d) <= 0; 0 <= bound; d != 0; };
+        } else {
+            have 0 < n by {
+                known();
+            }
+            have 0 <= n by {
+                apply(integer::lt_le(0, n)) using { 0 < n; };
+            }
+            apply(integer::positive_divisor_quotient_upper_rounded(n, d, bound)) using { d != 0; 1 <= d; 0 <= n; n <= bound * d + (d - 1); };
+        }
+    }
+}
+```
+
+### `integer::quotient_lower_interval_nonpositive`
+
+```click
+theorem quotient_lower_interval_nonpositive(n: Integer, d: Integer, numerator_bound: Integer, endpoint: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires bound <= 0;
+    requires endpoint <= d;
+    requires numerator_bound <= n;
+    requires bound * endpoint - (endpoint - 1) <= numerator_bound;
+    ensures bound <= truncating_quotient(n, d) by {
+        have bound * d <= bound * endpoint by {
+            have d * bound <= endpoint * bound by {
+                apply(integer::multiply_order_nonpositive(endpoint, d, bound)) using { endpoint <= d; bound <= 0; };
+            }
+            have bound * d == d * bound by {
+                apply(integer::multiply_commutative(bound, d));
+            }
+            have bound * endpoint == endpoint * bound by {
+                apply(integer::multiply_commutative(bound, endpoint));
+            }
+            have bound * d == d * bound by {
+                rewrite(bound * d, d * bound);
+                known();
+            }
+            have bound * endpoint == endpoint * bound by {
+                rewrite(bound * endpoint, endpoint * bound);
+                known();
+            }
+            apply(integer::le_substitute(d * bound, endpoint * bound, bound * d, bound * endpoint)) using { d * bound <= endpoint * bound; bound * d == d * bound; bound * endpoint == endpoint * bound; };
+        }
+        have endpoint - 1 <= d - 1 by {
+            apply(integer::subtract_right_order(endpoint, d, 1)) using { endpoint <= d; };
+        }
+        have -(d - 1) <= -(endpoint - 1) by {
+            apply(integer::negate_order(endpoint - 1, d - 1)) using { endpoint - 1 <= d - 1; };
+        }
+        have bound * d + -(d - 1) <= bound * endpoint + -(endpoint - 1) by {
+            apply(integer::add_le(bound * d, bound * endpoint, -(d - 1), -(endpoint - 1))) using { bound * d <= bound * endpoint; -(d - 1) <= -(endpoint - 1); };
+        }
+        have bound * d - (d - 1) <= bound * endpoint - (endpoint - 1) by {
+            have bound * d - (d - 1) == bound * d + -(d - 1) by {
+                known();
+            }
+            have bound * endpoint - (endpoint - 1) == bound * endpoint + -(endpoint - 1) by {
+                known();
+            }
+            apply(integer::le_substitute(bound * d + -(d - 1), bound * endpoint + -(endpoint - 1), bound * d - (d - 1), bound * endpoint - (endpoint - 1))) using { bound * d + -(d - 1) <= bound * endpoint + -(endpoint - 1); bound * d - (d - 1) == bound * d + -(d - 1); bound * endpoint - (endpoint - 1) == bound * endpoint + -(endpoint - 1); };
+        }
+        have bound * d - (d - 1) <= numerator_bound by {
+            apply(integer::le_transitive(bound * d - (d - 1), bound * endpoint - (endpoint - 1), numerator_bound)) using { bound * d - (d - 1) <= bound * endpoint - (endpoint - 1); bound * endpoint - (endpoint - 1) <= numerator_bound; };
+        }
+        have bound * d - (d - 1) <= n by {
+            apply(integer::le_transitive(bound * d - (d - 1), numerator_bound, n)) using { bound * d - (d - 1) <= numerator_bound; numerator_bound <= n; };
+        }
+        if 0 <= n {
+            have 0 * d == 0 by {
+                known();
+            }
+            have 0 * d <= n by {
+                rewrite(0 * d, 0);
+                known();
+            }
+            have 0 <= truncating_quotient(n, d) by {
+                apply(integer::positive_divisor_quotient_lower(n, d, 0)) using { d != 0; 1 <= d; 0 * d <= n; };
+            }
+            apply(integer::le_transitive(bound, 0, truncating_quotient(n, d))) using { bound <= 0; 0 <= truncating_quotient(n, d); d != 0; };
+        } else {
+            have n < 0 by {
+                known();
+            }
+            have n <= 0 by {
+                apply(integer::lt_le(n, 0)) using { n < 0; };
+            }
+            apply(integer::positive_divisor_quotient_lower_rounded(n, d, bound)) using { d != 0; 1 <= d; n <= 0; bound * d - (d - 1) <= n; };
+        }
+    }
+}
+```
+
+### `integer::quotient_upper_interval_negative`
+
+```click
+theorem quotient_upper_interval_negative(n: Integer, d: Integer, numerator_bound: Integer, endpoint: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires bound <= 0;
+    requires d <= endpoint;
+    requires n <= numerator_bound;
+    requires numerator_bound <= bound * endpoint;
+    ensures truncating_quotient(n, d) <= bound by {
+        have bound * endpoint <= bound * d by {
+            have endpoint * bound <= d * bound by {
+                apply(integer::multiply_order_nonpositive(d, endpoint, bound)) using { d <= endpoint; bound <= 0; };
+            }
+            have bound * endpoint == endpoint * bound by {
+                apply(integer::multiply_commutative(bound, endpoint));
+            }
+            have bound * d == d * bound by {
+                apply(integer::multiply_commutative(bound, d));
+            }
+            have bound * endpoint == endpoint * bound by {
+                rewrite(bound * endpoint, endpoint * bound);
+                known();
+            }
+            have bound * d == d * bound by {
+                rewrite(bound * d, d * bound);
+                known();
+            }
+            apply(integer::le_substitute(endpoint * bound, d * bound, bound * endpoint, bound * d)) using { endpoint * bound <= d * bound; bound * endpoint == endpoint * bound; bound * d == d * bound; };
+        }
+        have n <= bound * endpoint by {
+            apply(integer::le_transitive(n, numerator_bound, bound * endpoint)) using { n <= numerator_bound; numerator_bound <= bound * endpoint; };
+        }
+        have n <= bound * d by {
+            apply(integer::le_transitive(n, bound * endpoint, bound * d)) using { n <= bound * endpoint; bound * endpoint <= bound * d; };
+        }
+        apply(integer::positive_divisor_quotient_upper(n, d, bound)) using { d != 0; 1 <= d; n <= bound * d; };
+    }
+}
+```
+
+### `integer::quotient_lower_interval_positive`
+
+```click
+theorem quotient_lower_interval_positive(n: Integer, d: Integer, numerator_bound: Integer, endpoint: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 <= bound;
+    requires d <= endpoint;
+    requires numerator_bound <= n;
+    requires bound * endpoint <= numerator_bound;
+    ensures bound <= truncating_quotient(n, d) by {
+        have bound * d <= bound * endpoint by {
+            have d * bound <= endpoint * bound by {
+                apply(integer::multiply_order_nonnegative(d, endpoint, bound)) using { d <= endpoint; 0 <= bound; };
+            }
+            have bound * d == d * bound by {
+                apply(integer::multiply_commutative(bound, d));
+            }
+            have bound * endpoint == endpoint * bound by {
+                apply(integer::multiply_commutative(bound, endpoint));
+            }
+            have bound * d == d * bound by {
+                rewrite(bound * d, d * bound);
+                known();
+            }
+            have bound * endpoint == endpoint * bound by {
+                rewrite(bound * endpoint, endpoint * bound);
+                known();
+            }
+            apply(integer::le_substitute(d * bound, endpoint * bound, bound * d, bound * endpoint)) using { d * bound <= endpoint * bound; bound * d == d * bound; bound * endpoint == endpoint * bound; };
+        }
+        have bound * d <= numerator_bound by {
+            apply(integer::le_transitive(bound * d, bound * endpoint, numerator_bound)) using { bound * d <= bound * endpoint; bound * endpoint <= numerator_bound; };
+        }
+        have bound * d <= n by {
+            apply(integer::le_transitive(bound * d, numerator_bound, n)) using { bound * d <= numerator_bound; numerator_bound <= n; };
+        }
+        apply(integer::positive_divisor_quotient_lower(n, d, bound)) using { d != 0; 1 <= d; bound * d <= n; };
+    }
+}
+```
+
+### `integer::remainder_lower_from_dividend`
+
+```click
+theorem remainder_lower_from_dividend(n: Integer, d: Integer, numerator_bound: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires numerator_bound <= n;
+    requires bound <= numerator_bound;
+    requires bound <= 0;
+    ensures bound <= truncating_remainder(n, d) by {
+        if n <= 0 {
+            have n <= truncating_remainder(n, d) by {
+                apply(integer::nonpositive_dividend_remainder_lower(n, d)) using { d != 0; 1 <= d; n <= 0; };
+            }
+            have bound <= n by {
+                apply(integer::le_transitive(bound, numerator_bound, n)) using { bound <= numerator_bound; numerator_bound <= n; };
+            }
+            apply(integer::le_transitive(bound, n, truncating_remainder(n, d))) using { bound <= n; n <= truncating_remainder(n, d); d != 0; };
+        } else {
+            have 0 < n by {
+                known();
+            }
+            have 0 <= n by {
+                apply(integer::lt_le(0, n)) using { 0 < n; };
+            }
+            have 0 <= truncating_remainder(n, d) by {
+                apply(integer::nonnegative_dividend_remainder(n, d)) using { d != 0; 0 <= n; };
+            }
+            apply(integer::le_transitive(bound, 0, truncating_remainder(n, d))) using { bound <= 0; 0 <= truncating_remainder(n, d); d != 0; };
+        }
+    }
+}
+```
+
+### `integer::remainder_lower_from_divisor`
+
+```click
+theorem remainder_lower_from_divisor(n: Integer, d: Integer, endpoint: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires d <= endpoint;
+    requires bound <= 1 - endpoint;
+    ensures bound <= truncating_remainder(n, d) by {
+        have 0 < d by {
+            have 0 + 1 <= d by {
+                known();
+            }
+            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+        }
+        have 1 - d <= truncating_remainder(n, d) by {
+            apply(integer::positive_divisor_remainder_lower(n, d)) using { d != 0; 0 < d; };
+        }
+        have 1 - endpoint <= 1 - d by {
+            apply(integer::subtract_left_order(d, endpoint, 1)) using { d <= endpoint; };
+        }
+        have bound <= 1 - d by {
+            apply(integer::le_transitive(bound, 1 - endpoint, 1 - d)) using { bound <= 1 - endpoint; 1 - endpoint <= 1 - d; };
+        }
+        apply(integer::le_transitive(bound, 1 - d, truncating_remainder(n, d))) using { bound <= 1 - d; 1 - d <= truncating_remainder(n, d); d != 0; };
+    }
+}
+```
+
+### `integer::remainder_upper_from_dividend`
+
+```click
+theorem remainder_upper_from_dividend(n: Integer, d: Integer, numerator_bound: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires n <= numerator_bound;
+    requires numerator_bound <= bound;
+    requires 0 <= bound;
+    ensures truncating_remainder(n, d) <= bound by {
+        if 0 <= n {
+            have truncating_remainder(n, d) <= n by {
+                apply(integer::nonnegative_dividend_remainder_upper(n, d)) using { d != 0; 1 <= d; 0 <= n; };
+            }
+            have n <= bound by {
+                apply(integer::le_transitive(n, numerator_bound, bound)) using { n <= numerator_bound; numerator_bound <= bound; };
+            }
+            apply(integer::le_transitive(truncating_remainder(n, d), n, bound)) using { truncating_remainder(n, d) <= n; n <= bound; d != 0; };
+        } else {
+            have n < 0 by {
+                known();
+            }
+            have n <= 0 by {
+                apply(integer::lt_le(n, 0)) using { n < 0; };
+            }
+            have truncating_remainder(n, d) <= 0 by {
+                apply(integer::nonpositive_dividend_remainder(n, d)) using { d != 0; n <= 0; };
+            }
+            apply(integer::le_transitive(truncating_remainder(n, d), 0, bound)) using { truncating_remainder(n, d) <= 0; 0 <= bound; d != 0; };
+        }
+    }
+}
+```
+
+### `integer::remainder_upper_from_divisor`
+
+```click
+theorem remainder_upper_from_divisor(n: Integer, d: Integer, endpoint: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires d <= endpoint;
+    requires endpoint - 1 <= bound;
+    ensures truncating_remainder(n, d) <= bound by {
+        have 0 < d by {
+            have 0 + 1 <= d by {
+                known();
+            }
+            apply(integer::step_le_lt(0, d)) using { 0 + 1 <= d; };
+        }
+        have truncating_remainder(n, d) <= d - 1 by {
+            apply(integer::positive_divisor_remainder_upper(n, d)) using { d != 0; 0 < d; };
+        }
+        have d - 1 <= endpoint - 1 by {
+            apply(integer::subtract_right_order(d, endpoint, 1)) using { d <= endpoint; };
+        }
+        have truncating_remainder(n, d) <= endpoint - 1 by {
+            apply(integer::le_transitive(truncating_remainder(n, d), d - 1, endpoint - 1)) using { truncating_remainder(n, d) <= d - 1; d - 1 <= endpoint - 1; d != 0; };
+        }
+        apply(integer::le_transitive(truncating_remainder(n, d), endpoint - 1, bound)) using { truncating_remainder(n, d) <= endpoint - 1; endpoint - 1 <= bound; d != 0; };
+    }
+}
+```
+
+### `integer::small_remainder_interval`
+
+```click
+theorem small_remainder_interval(n: Integer, d: Integer, lo_n: Integer, hi_n: Integer, endpoint: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires endpoint <= d;
+    requires lo_n <= n;
+    requires n <= hi_n;
+    requires 1 - endpoint <= lo_n;
+    requires hi_n <= endpoint - 1;
+    ensures truncating_remainder(n, d) == n by {
+        have 0 * endpoint - (endpoint - 1) <= lo_n by {
+            have 0 * endpoint - (endpoint - 1) == 1 - endpoint by {
+                known();
+            }
+            rewrite(0 * endpoint - (endpoint - 1), 1 - endpoint);
+            known();
+        }
+        have hi_n <= 0 * endpoint + (endpoint - 1) by {
+            have 0 * endpoint + (endpoint - 1) == endpoint - 1 by {
+                known();
+            }
+            rewrite(0 * endpoint + (endpoint - 1), endpoint - 1);
+            known();
+        }
+        have 0 <= truncating_quotient(n, d) by {
+            apply(integer::quotient_lower_interval_nonpositive(n, d, lo_n, endpoint, 0)) using { d != 0; 1 <= d; 0 <= 0; endpoint <= d; lo_n <= n; 0 * endpoint - (endpoint - 1) <= lo_n; };
+        }
+        have truncating_quotient(n, d) <= 0 by {
+            apply(integer::quotient_upper_interval_nonnegative(n, d, hi_n, endpoint, 0)) using { d != 0; 1 <= d; 0 <= 0; endpoint <= d; n <= hi_n; hi_n <= 0 * endpoint + (endpoint - 1); };
+        }
+        have truncating_quotient(n, d) == 0 by {
+            apply(integer::le_antisymmetric(truncating_quotient(n, d), 0)) using { truncating_quotient(n, d) <= 0; 0 <= truncating_quotient(n, d); d != 0; };
+        }
+        have n == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
+            apply(integer::truncation_identity(n, d)) using { d != 0; };
+        }
+        have truncating_remainder(n, d) == (truncating_quotient(n, d) * d) + truncating_remainder(n, d) by {
+            rewrite(truncating_quotient(n, d), 0);
+            known();
+        }
+        have (truncating_quotient(n, d) * d) + truncating_remainder(n, d) == n by {
+            known();
+        }
+        apply(integer::equal_substitute((truncating_quotient(n, d) * d) + truncating_remainder(n, d), n, truncating_remainder(n, d), n)) using { (truncating_quotient(n, d) * d) + truncating_remainder(n, d) == n; truncating_remainder(n, d) == (truncating_quotient(n, d) * d) + truncating_remainder(n, d); n == n; d != 0; };
+    }
+}
+```
+
+### `integer::nonzero_from_one`
+
+```click
+theorem nonzero_from_one(d: Integer) {
+    requires 1 <= d;
+    let one: Integer = 1;
+    ensures d != 0 by {
+        if d == 0 {
+            have one <= 0 by {
+                apply(integer::le_substitute(one, d, one, 0)) using { one <= d; one == one; 0 == d; };
+            }
+            contradiction(one <= 0);
+        } else { known(); }
+    }
+}
+```
+
+### `integer::nonzero_from_negative_one`
+
+```click
+theorem nonzero_from_negative_one(d: Integer) {
+    requires d <= -1;
+    let zero: Integer = 0;
+    ensures d != 0 by {
+        if d == 0 {
+            have zero <= -1 by {
+                apply(integer::le_substitute(d, -1, zero, -1)) using { d <= -1; zero == d; -1 == -1; };
+            }
+            contradiction(zero <= -1);
+        } else { known(); }
+    }
+}
+```
+
+### `integer::quotient_negate_divisor`
+
+```click
+theorem quotient_negate_divisor(n: Integer, d: Integer) {
+    requires d != 0;
+    requires -d != 0;
+    ensures truncating_quotient(n, d) == -truncating_quotient(n, -d);
+}
+```
+
+### `integer::remainder_negate_divisor`
+
+```click
+theorem remainder_negate_divisor(n: Integer, d: Integer) {
+    requires d != 0;
+    requires -d != 0;
+    ensures truncating_remainder(n, d) == truncating_remainder(n, -d);
+}
+```
+
 ### `integer::scaled_product_bounds`
 
 ```click
@@ -7079,18 +8070,40 @@ theorem scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lo
     requires 0 <= amount;
     requires amount <= size;
     ensures lower * size <= value * amount by {
-        apply(integer::multiply_order_nonnegative(lower, value, amount));
-        have lower * size <= lower * amount by {
-            normalize() using { amount <= size; lower <= 0; };
+        have lower * amount <= value * amount by {
+            apply(integer::multiply_order_nonnegative(lower, value, amount)) using { lower <= value; 0 <= amount; };
         }
-        solve() using { lower * size <= lower * amount; lower * amount <= value * amount; };
+        have size * lower <= amount * lower by {
+            apply(integer::multiply_order_nonpositive(amount, size, lower)) using { amount <= size; lower <= 0; };
+        }
+        have lower * size == size * lower by { apply(integer::multiply_commutative(lower, size)); }
+        have lower * amount == amount * lower by { apply(integer::multiply_commutative(lower, amount)); }
+        have lower * size <= lower * amount by {
+            rewrite(lower * size, size * lower);
+            rewrite(lower * amount, amount * lower);
+            known();
+        }
+        apply(integer::le_transitive(lower * size, lower * amount, value * amount)) using {
+            lower * size <= lower * amount; lower * amount <= value * amount;
+        };
     }
     ensures value * amount <= upper * size by {
-        apply(integer::multiply_order_nonnegative(value, upper, amount));
-        have upper * amount <= upper * size by {
-            normalize() using { amount <= size; 0 <= upper; };
+        have value * amount <= upper * amount by {
+            apply(integer::multiply_order_nonnegative(value, upper, amount)) using { value <= upper; 0 <= amount; };
         }
-        solve() using { value * amount <= upper * amount; upper * amount <= upper * size; };
+        have amount * upper <= size * upper by {
+            apply(integer::multiply_order_nonnegative(amount, size, upper)) using { amount <= size; 0 <= upper; };
+        }
+        have upper * amount == amount * upper by { apply(integer::multiply_commutative(upper, amount)); }
+        have upper * size == size * upper by { apply(integer::multiply_commutative(upper, size)); }
+        have upper * amount <= upper * size by {
+            rewrite(upper * amount, amount * upper);
+            rewrite(upper * size, size * upper);
+            known();
+        }
+        apply(integer::le_transitive(value * amount, upper * amount, upper * size)) using {
+            value * amount <= upper * amount; upper * amount <= upper * size;
+        };
     }
 }
 ```

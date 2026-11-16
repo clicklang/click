@@ -54,6 +54,27 @@ pub(super) fn integer_conversion_argument<'a>(
 mod tests {
     use super::*;
 
+    fn library_declarations(source: &str, names: &[&str]) -> String {
+        let mut result = String::new();
+        for name in names {
+            let start = source.find(&format!("theorem {name}(")).unwrap();
+            let body = start + source[start..].find('{').unwrap();
+            let mut depth = 1;
+            let mut end = body + 1;
+            while depth != 0 {
+                match source.as_bytes()[end] {
+                    b'{' => depth += 1,
+                    b'}' => depth -= 1,
+                    _ => {}
+                }
+                end += 1;
+            }
+            result.push_str(&source[start..end]);
+            result.push('\n');
+        }
+        result
+    }
+
     #[test]
     fn integer_order_axioms_apply_without_certificates_or_search() {
         let source = r#"
@@ -104,17 +125,204 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    fn divisor_sign_identities_require_their_explicit_nonzero_guard() {
+        for (name, goal) in [
+            (
+                "quotient_negate_divisor",
+                "truncating_quotient(n, d) == -truncating_quotient(n, -d)",
+            ),
+            (
+                "remainder_negate_divisor",
+                "truncating_remainder(n, d) == truncating_remainder(n, -d)",
+            ),
+        ] {
+            let source = format!(
+                "import click::integer; theorem sign(n: Integer, d: Integer) {{ requires d != 0; requires -d != 0;
+                ensures {goal} by {{ apply(integer::{name}(n, d)) using {{ d != 0; -d != 0; }}; }} }}"
+            );
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&source, &[]))
+                .unwrap();
+            assert!(
+                verify_c_sources(
+                    &source.replace("using { d != 0; -d != 0; }", "using {}"),
+                    &[]
+                )
+                .is_err()
+            );
+            assert!(verify_c_sources(&source.replace(goal, "false"), &[]).is_err());
+        }
+    }
+
+    #[test]
+    #[ignore = "nightly: signed quotient/remainder interval expansion and replay"]
+    fn division_intervals_expand_without_normalization() {
+        let lib = include_str!("../../library/integer.click");
+        let local = &lib[lib
+            .find("// Ordinary proofs for explicit quotient")
+            .unwrap()
+            ..lib.find("theorem quotient_negate_divisor(").unwrap()];
+        // The two bare divisor-sign declarations have independent kernel/oracle
+        // checks. Every derived interval helper must replay without search.
+        let mut foundation = String::new();
+        for name in [
+            "positive_divisor_quotient_lower",
+            "positive_divisor_quotient_upper",
+            "step_le_lt",
+            "le_substitute",
+            "equal_substitute",
+            "equal_add",
+            "equal_multiply",
+            "add_right_order",
+            "subtract_right_order",
+            "subtract_left_order",
+            "negate_multiply",
+            "equal_negate",
+            "sum_commute",
+            "sum_difference",
+        ] {
+            let start = lib.find(&format!("theorem {name}(")).unwrap();
+            let body = start + lib[start..].find('{').unwrap();
+            let mut depth = 1;
+            let mut end = body + 1;
+            while depth != 0 {
+                match lib.as_bytes()[end] {
+                    b'{' => depth += 1,
+                    b'}' => depth -= 1,
+                    _ => {}
+                }
+                end += 1;
+            }
+            foundation.push_str(&lib[start..end]);
+            foundation.push('\n');
+        }
+        crate::surface::proof::without_implicit_solve(|| {
+            verify_c_sources(
+                &format!("import click::integer;\n{foundation}\n{local}"),
+                &[],
+            )
+        })
+        .unwrap();
+        for (ln, un, ld, ud) in [
+            (-8i64, 9, 2, 5),
+            (-8, 9, -5, -2),
+            (2, 3, 5, 8),
+            (-3, -2, -8, -5),
+            (2, 9, 1, 3),
+            (-9, -2, 1, 4),
+        ] {
+            for remainder in [false, true] {
+                let mut values = Vec::new();
+                for n in ln..=un {
+                    for d in ld..=ud {
+                        values.push(if remainder { n % d } else { n / d });
+                    }
+                }
+                let (min, max) = (*values.iter().min().unwrap(), *values.iter().max().unwrap());
+                // The legacy interval envelope can be weaker than enumeration
+                // for remainders. Choose its own valid envelope, not a tighter
+                // completeness claim for the search strategy.
+                let (min, max) = if remainder && ln.abs().max(un.abs()) >= ld.abs().min(ud.abs()) {
+                    let m = ld.abs().max(ud.abs()) - 1;
+                    (
+                        if ln < 0 { -(-ln).min(m) } else { 0 },
+                        if un > 0 { un.min(m) } else { 0 },
+                    )
+                } else {
+                    (min, max)
+                };
+                for (lower, bound) in [(true, min), (false, max)] {
+                    let op = if remainder {
+                        "truncating_remainder"
+                    } else {
+                        "truncating_quotient"
+                    };
+                    let goal = if lower {
+                        format!("{bound} <= value")
+                    } else {
+                        format!("value <= {bound}")
+                    };
+                    let source=format!("theorem interval(n: Integer, d: Integer) {{
+                        requires {ln} <= n; requires n <= {un}; requires {ld} <= d; requires d <= {ud}; requires d != 0;
+                        let value: Integer = {op}(n, d);
+                        ensures {goal} by {{ solve() using {{ {ln} <= n; n <= {un}; {ld} <= d; d <= {ud}; }}; }}
+                    }}");
+                    verify_c_sources(&source, &[])
+                        .unwrap_or_else(|error| panic!("{source}\n{}", error.message()));
+                    let expanded =
+                        expand_c_claim_source_by_label(&source, &[], "interval.ensures_0").unwrap();
+                    assert!(!expanded.contains("normalize("), "{expanded}");
+                    crate::surface::proof::without_implicit_solve(|| {
+                        verify_c_sources(&expanded, &[])
+                    })
+                    .unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "nightly: multiply-order sign/orientation expansion and replay"]
+    fn multiplication_order_expands_without_normalization() {
+        for (sign, goals) in [
+            (
+                "0 <= k",
+                ["a * k <= b * k", "k * a <= k * b", "k * a <= b * k"],
+            ),
+            (
+                "k <= 0",
+                ["b * k <= a * k", "k * b <= k * a", "k * b <= a * k"],
+            ),
+        ] {
+            for goal in goals {
+                let source = format!(
+                    "theorem order(a: Integer, b: Integer, k: Integer) {{
+                    requires a <= b; requires {sign};
+                    ensures {goal} by {{ solve() using {{ a <= b; {sign}; }}; }}
+                }}"
+                );
+                verify_c_sources(&source, &[]).unwrap();
+                let expanded =
+                    expand_c_claim_source_by_label(&source, &[], "order.ensures_0").unwrap();
+                assert!(!expanded.contains("normalize("), "{expanded}");
+                assert!(expanded.contains("::multiply_order_non"), "{expanded}");
+                crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+                    .unwrap();
+                for selected in ["a <= b;", &format!("{sign};")] {
+                    let mut omitted = source.clone();
+                    let i = omitted.rfind(selected).unwrap();
+                    omitted.replace_range(i..i + selected.len(), "");
+                    assert!(verify_c_sources(&omitted, &[]).is_err());
+                }
+            }
+        }
+        let lib = include_str!("../../library/integer.click");
+        let source = &lib[lib.find("theorem scaled_product_bounds(").unwrap()
+            ..lib.find("theorem product_lower_bound(").unwrap()];
+        crate::surface::proof::without_implicit_solve(|| {
+            verify_c_sources(&format!("import click::integer;\n{source}"), &[])
+        })
+        .unwrap();
+    }
+
+    #[test]
     #[ignore = "nightly: expansion and replay across interval sign quadrants"]
     fn product_bounds_expand_to_explicit_library_applications() {
         check_product_bound_refusals();
         let library = include_str!("../../library/integer.click");
-        let order = &library[library.find("theorem negate_order(").unwrap()
-            ..library.find("theorem scaled_product_bounds(").unwrap()];
-        let products = &library[library.find("theorem product_lower_bound(").unwrap()
-            ..library
-                .find("// Unsigned 32-bit product and remainder laws")
-                .unwrap()];
-        let ordinary = format!("import click::integer;\n{order}\n{products}");
+        let ordinary = format!(
+            "import click::integer;\n{}",
+            library_declarations(
+                library,
+                &[
+                    "negate_order",
+                    "le_transitive",
+                    "lt_le",
+                    "multiply_order_nonpositive",
+                    "product_lower_bound",
+                    "product_upper_bound"
+                ]
+            )
+        );
         crate::surface::proof::without_implicit_solve(|| verify_c_sources(&ordinary, &[])).unwrap();
         for (lo_x, hi_x, lo_y, hi_y) in [
             (2, 3, 4, 5),

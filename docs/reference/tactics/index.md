@@ -3381,6 +3381,31 @@ step.
 
 **Checked examples:** [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`obtain_requires_the_written_existential_body.md`](https://github.com/clicklang/click/blob/master/mdtests/obtain_requires_the_written_existential_body.md)
 
+## Integer multiplication order and division intervals
+
+`solve() using { a <= b; 0 <= k; }` proves `a * k <= b * k` by
+explicit application of `integer::multiply_order_nonnegative`. A nonpositive
+factor reverses the order and uses `integer::multiply_order_nonpositive`.
+Commuted operands name their commutativity equations separately. The library
+`scaled_product_bounds` proof uses these laws and explicit transitivity.
+
+For Integer `truncating_quotient(n, d)` and `truncating_remainder(n, d)`,
+selected constant lower/upper bounds on `n` and `d` can prove a constant
+result bound when the divisor interval excludes zero. Expansion states the
+numerical endpoint conditions with `known()`, proves the nonzero divisor
+from the selected interval, and applies ordinary quotient/remainder lemmas.
+Positive-divisor quotient bounds also accept `n <= bound * d` or
+`bound * d <= n` together with `1 <= d`, including symbolic bounds.
+Negative divisor intervals use the two explicit divisor-sign laws.
+Remainder proofs retain both the dividend and divisor envelopes and the case
+where the dividend's magnitude is smaller than every divisor's magnitude.
+
+These expansions and their derived library proofs contain no `normalize()`
+or implicit solving. Selection runs under the existing `solve` budgets;
+replay checks only the written arguments and premises. Missing bounds, a
+zero-crossing divisor interval, and false result bounds do not justify the
+interval route. Native machine definedness remains a separate obligation.
+
 ## Exact integer product bounds
 
 Use `solve() using { L <= x; x <= U; M <= y; y <= N; }` to prove
