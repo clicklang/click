@@ -2230,7 +2230,7 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
     };
     let exceptional_payload = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            C_EXCEPTIONAL_RESULT_NAME,
+            CONTRACT_EXCEPTION,
         )),
         operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(int32(7)),
@@ -2309,7 +2309,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
     };
     let exceptional_ensure = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            C_EXCEPTIONAL_RESULT_NAME,
+            CONTRACT_EXCEPTION,
         )),
         operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(int32(7)),
@@ -2565,7 +2565,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
     .with_int32_exceptional_outcome()
     .with_exceptional_ensures(vec![SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            C_EXCEPTIONAL_RESULT_NAME,
+            CONTRACT_EXCEPTION,
         )),
         operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(int32(7)),
@@ -2801,7 +2801,7 @@ fn exceptional_postconditions_apply_only_to_throw_outcomes() {
 fn false_or_missing_exceptional_postconditions_do_not_certify() {
     let wrong_payload = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            C_EXCEPTIONAL_RESULT_NAME,
+            CONTRACT_EXCEPTION,
         )),
         operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(int32(8)),

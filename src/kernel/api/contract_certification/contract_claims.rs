@@ -1583,7 +1583,7 @@ fn prepare_closing_path(
     post_state.population_effects = raw_exit_state.population_effects.clone();
     if exceptional {
         post_state.locals.set_typed(
-            C_EXCEPTIONAL_RESULT_NAME.to_string(),
+            CONTRACT_EXCEPTION,
             value.clone().into_native(),
             ProgramType::Int32,
         );
@@ -2706,7 +2706,7 @@ fn exceptional_goals_at_entry(
         .with_memory(throw_state.memory().clone());
     post_state.observed_population_families = throw_state.observed_population_families.clone();
     post_state.locals.set_typed(
-        C_EXCEPTIONAL_RESULT_NAME.to_string(),
+        CONTRACT_EXCEPTION,
         value.clone().into_native(),
         ProgramType::Int32,
     );

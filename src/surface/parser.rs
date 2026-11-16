@@ -200,9 +200,9 @@ impl SourceBindingIndex {
         match binding {
             crate::kernel::BindingName::Local(id) => self.declarations.get(id),
             crate::kernel::BindingName::Static(id) => self.statics.get(id),
-            crate::kernel::BindingName::Named(_) | crate::kernel::BindingName::ContractResult => {
-                None
-            }
+            crate::kernel::BindingName::Named(_)
+            | crate::kernel::BindingName::ContractResult
+            | crate::kernel::BindingName::ContractException => None,
         }
     }
 }
@@ -14421,6 +14421,7 @@ impl Parser {
     /// still reads the surrounding state.
     fn binding_struct_name(&self, binding: &crate::kernel::BindingName) -> Option<&String> {
         match binding {
+            crate::kernel::BindingName::ContractException => None,
             crate::kernel::BindingName::ContractResult => self
                 .names
                 .struct_params
@@ -14448,6 +14449,7 @@ impl Parser {
     }
     fn binding_is_aggregate(&self, binding: &crate::kernel::BindingName) -> bool {
         match binding {
+            crate::kernel::BindingName::ContractException => false,
             crate::kernel::BindingName::ContractResult => {
                 self.names.aggregate_objects.contains_key("result")
             }
@@ -16361,14 +16363,17 @@ impl Parser {
 
     #[inline(never)]
     fn parse_contract_non_match_primary(&mut self) -> Result<ContractExpression, ClickError> {
-        // Exact result storage identities. Naming one grants no access rights.
-        if self.peek_ident() == Some("result")
+        // Exact outcome storage identities. Naming one grants no access rights.
+        if matches!(self.peek_ident(), Some("result" | "exception"))
             && self.tokens.get(self.position + 1) == Some(&Token::Dot)
             && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(name)) if name == "storage")
             && self.tokens.get(self.position + 3) == Some(&Token::LParen)
         {
+            let exceptional = self.peek_ident() == Some("exception");
             self.position += 4;
-            let block = if self.peek() == Some(&Token::RParen) {
+            let block = if exceptional {
+                crate::kernel::PointerBlock::ContractException
+            } else if self.peek() == Some(&Token::RParen) {
                 crate::kernel::PointerBlock::ContractResult
             } else {
                 let kind = self.expect_ident("return storage kind `frame`")?;

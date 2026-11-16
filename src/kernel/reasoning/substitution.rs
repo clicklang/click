@@ -3115,6 +3115,7 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
             variables.insert(*variable);
         }
         PointerBlock::ContractResult
+        | PointerBlock::ContractException
         | PointerBlock::AggregateReturn { .. }
         | PointerBlock::StaticObject { .. }
         | PointerBlock::AutomaticLocal { .. }

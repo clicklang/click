@@ -4911,11 +4911,9 @@ fn exceptional_direct_function_path(
 
     let payload = symbolic_call_result(ProgramType::Int32, payload_identity);
     let mut post_state = entry_state.clone().with_memory(memory.clone());
-    post_state.locals.set_typed(
-        C_EXCEPTIONAL_RESULT_NAME.to_string(),
-        payload.clone(),
-        ProgramType::Int32,
-    );
+    post_state
+        .locals
+        .set_typed(CONTRACT_EXCEPTION, payload.clone(), ProgramType::Int32);
     let post_contract_state =
         with_contract_interface_argument_views(&post_state, interface, argument_values);
     add_verified_function_ensure_facts_selected_with_interface(

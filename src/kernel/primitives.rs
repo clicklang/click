@@ -2514,6 +2514,7 @@ impl PointerValue {
                 pointer.block,
                 PointerBlock::AggregateReturn { .. }
                     | PointerBlock::ContractResult
+                    | PointerBlock::ContractException
                     | PointerBlock::StaticObject { .. }
                     | PointerBlock::AutomaticLocal { .. }
                     | PointerBlock::Concrete(_)
@@ -3040,6 +3041,8 @@ pub enum PointerBlock {
     AggregateReturn {
         frame: u64,
     },
+    /// Value-only bookkeeping slot for a thrown payload, never C storage.
+    ContractException,
 }
 
 impl std::hash::Hash for PointerBlock {
@@ -3053,6 +3056,7 @@ impl std::hash::Hash for PointerBlock {
                 frame.hash(state);
             }
             Self::ContractResult => 13u64.hash(state),
+            Self::ContractException => 15u64.hash(state),
             Self::StaticObject { binding } => {
                 12u64.hash(state);
                 binding.hash(state);
@@ -3183,7 +3187,7 @@ impl PointerBlock {
                     }
             }
             Self::AggregateReturn { .. } => prefix == "local:" || prefix == "local:frame:",
-            Self::ContractResult => prefix == "local:",
+            Self::ContractResult | Self::ContractException => prefix == "local:",
             Self::Concrete(name) => name.starts_with(prefix),
             Self::StringLiteral { .. } => prefix == "string:",
             _ => false,
@@ -3195,6 +3199,7 @@ impl PointerBlock {
             Self::Concrete(name) => name.strip_prefix(prefix),
             Self::AggregateReturn { .. }
             | Self::ContractResult
+            | Self::ContractException
             | Self::StaticObject { .. }
             | Self::AutomaticLocal { .. }
             | Self::StringLiteral { .. }
@@ -3306,6 +3311,7 @@ impl PointerBlock {
                     right,
                     Self::AggregateReturn { .. }
                         | Self::ContractResult
+                        | Self::ContractException
                         | Self::StaticObject { .. }
                         | Self::AutomaticLocal { .. }
                         | Self::Concrete(_)
@@ -3330,12 +3336,14 @@ impl PointerBlock {
                     self,
                     Self::AggregateReturn { .. }
                         | Self::ContractResult
+                        | Self::ContractException
                         | Self::AutomaticLocal { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(
                     other,
                     Self::AggregateReturn { .. }
                         | Self::ContractResult
+                        | Self::ContractException
                         | Self::AutomaticLocal { .. }
                         | Self::StaticObject { .. }
                         | Self::Concrete(_)
@@ -3344,6 +3352,7 @@ impl PointerBlock {
                     other,
                     Self::AggregateReturn { .. }
                         | Self::ContractResult
+                        | Self::ContractException
                         | Self::AutomaticLocal { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(self, Self::Concrete(_)))
@@ -3406,6 +3415,7 @@ impl std::fmt::Display for PointerBlock {
         match self {
             Self::AggregateReturn { frame } => write!(formatter, "result.storage(frame, {frame})"),
             Self::ContractResult => formatter.write_str("result.storage()"),
+            Self::ContractException => formatter.write_str("exception.storage()"),
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
             Self::AutomaticLocal { binding, instance } => {
                 write!(formatter, "{binding}.storage({instance})")
@@ -6906,10 +6916,8 @@ pub(crate) fn program_local_source_name(name: impl Into<BindingName>) -> Binding
     name.into()
 }
 
-/// Kernel-only binding used while lowering an exceptional postcondition.
-/// A future surface syntax may choose its own binder spelling and lower it to
-/// this name, just as ordinary postconditions lower their result binding.
-pub(crate) const C_EXCEPTIONAL_RESULT_NAME: &str = "__click_exception";
+/// The thrown payload is independent of every program/proof identifier.
+pub(crate) const CONTRACT_EXCEPTION: BindingName = BindingName::ContractException;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct FunctionSpecification {

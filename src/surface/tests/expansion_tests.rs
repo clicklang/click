@@ -22690,6 +22690,46 @@ fn original_arena_alloc_expands_without_transport_and_rechecks() {
 }
 
 #[test]
+#[ignore = "nightly: exceptional claims, routed throws, and grouped outcomes expand and cold replay"]
+fn typed_contract_exceptions_expand_and_recheck() {
+    for (fixture, claim) in [
+        (
+            "execute_splits_a_throwing_call_inside_a_c_if",
+            "inside.exceptional_ensures_0",
+        ),
+        (
+            "grouped_proof_closes_claims_across_two_throwing_calls",
+            "caller.exceptional_ensures_0",
+        ),
+        (
+            "grouped_proof_closes_normal_and_exceptional_claims",
+            "caller.exceptional_ensures_0",
+        ),
+        (
+            "outcomes_routes_a_throw_that_leaves_the_function",
+            "caller.exceptional_ensures_0",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{fixture}: {error:?}"));
+        assert!(
+            !expanded.contains("__click_exception"),
+            "{fixture}: {expanded}"
+        );
+        let grouped_claim = format!("{}.contract", claim.split_once('.').unwrap().0);
+        without_implicit_solve_for_claim(&grouped_claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error:?}\n{expanded}"));
+    }
+}
+
+#[test]
 #[ignore = "nightly: scalar, pointer, and aggregate contract-result expansion and cold replay"]
 fn typed_contract_results_expand_and_recheck() {
     for (fixture, claim) in [
