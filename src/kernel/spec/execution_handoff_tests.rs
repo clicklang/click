@@ -406,3 +406,131 @@ fn algebraic_lowering_retains_program_envelopes_and_handoff_roots() {
         }
     }
 }
+
+#[test]
+fn pointer_lowering_keeps_producers_and_complete_metadata() {
+    use std::sync::Arc;
+    let _session = crate::kernel::VerificationSession::enter();
+    let class = crate::kernel::effective_type::CAccessClass::Scalar(
+        crate::kernel::effective_type::CScalarClass::Int,
+    );
+    let source = PointerValue::new(
+        Pointer::symbolic(Variable(999982)),
+        ProgramType::VoidPointer,
+    )
+    .with_address(Pointer::symbolic(Variable(999981)))
+    .with_opaque_extent(Some(Arc::new(Pointer::symbolic(Variable(999983)))))
+    .with_pointee_volatile(true)
+    .with_pointee_constant(true)
+    .with_extent(Some(SubobjectExtent {
+        start: Pointer::symbolic(Variable(999984)),
+        width: MachineTerm::Variable(Variable(999985)),
+    }))
+    .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(class, 3, 999986, false)))
+    .with_local_reference(crate::kernel::loans::LocalScalarReference::fresh_for_payload_test());
+    let payload = SharedPointerValue::import(&source);
+    let memory = intern_memory(Memory::new());
+    let address = SharedPointerAddress::import(&Memory::global_pointer("pointer-slot"));
+    let roots = [
+        KernelTerm::shared_pointer_value(payload.clone()),
+        KernelTerm::shared_pointer_call(
+            KernelTerm::checked_call(
+                KernelType::Program(source.program_type()),
+                "pointer_source".into(),
+                vec![],
+            ),
+            payload.clone(),
+        ),
+        KernelTerm::shared_pointer_read(payload.clone(), memory.clone(), address.clone()),
+    ];
+    for root in roots {
+        let field = AlgebraicFieldResult::from_program(SpecValue::Shared(root.clone()))
+            .without_pointer_constant()
+            .into_kernel();
+        let expected = SharedPointerValue::import(&source.clone().with_pointee_constant(false));
+        assert!(
+            field
+                .pointer_payload()
+                .unwrap()
+                .same_source_payload(&expected)
+        );
+        assert_eq!(
+            field.pointer_payload().unwrap().node().address,
+            payload.node().address
+        );
+        assert_eq!(
+            field.pointer_payload().unwrap().node().designation,
+            payload.node().designation
+        );
+        match (root.node(), field.node()) {
+            (KernelTermNode::PointerValue { .. }, KernelTermNode::PointerValue { .. }) => {}
+            (
+                KernelTermNode::PointerCall { call: a, .. },
+                KernelTermNode::PointerCall { call: b, .. },
+            ) => assert_eq!(a, b),
+            (
+                KernelTermNode::PointerRead {
+                    memory: a,
+                    address: p,
+                    ..
+                },
+                KernelTermNode::PointerRead {
+                    memory: b,
+                    address: q,
+                    ..
+                },
+            ) => {
+                assert_eq!(a, b);
+                assert_eq!(p, q);
+            }
+            _ => panic!("pointer producer changed"),
+        }
+        assert_eq!(
+            AlgebraicFieldResult::from_program(SpecValue::Shared(field.clone()))
+                .without_pointer_constant()
+                .into_kernel(),
+            field
+        );
+        let mut state = ExecutionState::new();
+        state.locals.set_retained_typed_with_all_qualifiers(
+            "p",
+            SpecValue::Shared(root.clone()),
+            source.program_type(),
+            false,
+            true,
+            false,
+            true,
+        );
+        let expression = SpecExpression::ProgramExpression(ProgramExpression::Variable("p".into()));
+        let evaluate = |disabled| {
+            let mut budget = ExecutionBudget::new();
+            let mut evaluation = SpecEvaluation::logical(&mut budget);
+            evaluation.machine_result_production_disabled = disabled;
+            evaluate_spec_expression_paths_with_bindings_in(
+                &state,
+                &expression,
+                &PureFactContext::new(),
+                &BTreeMap::new(),
+                &mut evaluation,
+            )
+            .unwrap()
+            .pop()
+            .unwrap()
+        };
+        let actual = evaluate(false);
+        assert_eq!(actual.value.shared(), Some(&root));
+        assert!(
+            actual
+                .value
+                .shared()
+                .unwrap()
+                .pointer_payload()
+                .unwrap()
+                .same_source_payload(&payload)
+        );
+        let old = evaluate(true);
+        assert_eq!(actual.facts, old.facts);
+        assert_eq!(actual.obligations, old.obligations);
+        assert_eq!(actual.value.into_native(), old.value.into_native());
+    }
+}

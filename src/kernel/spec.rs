@@ -6807,6 +6807,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     value.clone().into()
                 } else {
                     SpecValue::from(value.clone())
+                        .retain_pointer_result()
                         .retain_algebraic_result()
                         .retain_float_result()
                         .retain_boolean_result()
@@ -6820,6 +6821,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 value.clone().into()
             } else {
                 SpecValue::from(value.clone())
+                    .retain_pointer_result()
                     .retain_algebraic_result()
                     .retain_float_result()
                     .retain_boolean_result()
@@ -7158,6 +7160,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                 || value.float().is_some()
                                 || value.shared().is_some_and(|root| {
                                     matches!(root.ty(), KernelType::Bool | KernelType::Algebraic(_))
+                                        || root.pointer_payload().is_some()
                                         || matches!(
                                             root.node(),
                                             KernelTermNode::ProgramParameter { .. }
