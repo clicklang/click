@@ -9155,10 +9155,12 @@ impl Parser {
         }
 
         self.expect(Token::LParen)?;
-        let legacy_binder = self.peek() == Some(&Token::Pipe)
+        // An untyped item binder is contextual sugar for a predicate lambda.
+        // A typed literal or another expression is an ordinary predicate value.
+        let untyped_binder = self.peek() == Some(&Token::Pipe)
             && matches!(self.peek_next(), Some(Token::Ident(_)))
             && self.tokens.get(self.position + 2) == Some(&Token::Pipe);
-        if !legacy_binder {
+        if !untyped_binder {
             let predicate = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
             return Ok(lambdas::range_proposition(
@@ -17338,12 +17340,12 @@ impl Parser {
         self.expect(Token::LParen)?;
         let initial = self.parse_contract_expression()?;
         self.expect(Token::Comma)?;
-        // The old unannotated two-name spelling remains contextual sugar.
+        // The untyped two-name spelling is contextual lambda sugar.
         // A typed literal or any other expression is an ordinary step value.
-        let legacy_binder = self.peek() == Some(&Token::Pipe)
+        let untyped_binder = self.peek() == Some(&Token::Pipe)
             && matches!(self.peek_next(), Some(Token::Ident(_)))
             && self.tokens.get(self.position + 2) == Some(&Token::Comma);
-        if !legacy_binder {
+        if !untyped_binder {
             let step = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
             return Ok(lambdas::range_fold(start, end, initial, step));

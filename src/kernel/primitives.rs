@@ -13177,11 +13177,18 @@ pub enum Proposition {
         parent: Box<Resource>,
         child: Box<Resource>,
     },
+    /// Internal write bound for a recorded transition, using constant byte
+    /// counts. Listed ranges may conservatively include bytes that were not
+    /// written. Preservation proofs use recorded region footprints; allocation
+    /// lifetime effects are recorded separately.
     MemoryMutatesOnly {
         before: Memory,
         after: Memory,
         writes: Vec<(Pointer, u32)>,
     },
+    /// Internal write bound expressed as [`MemoryRange`] descriptors, including
+    /// symbolic extents. Like [`Self::MemoryMutatesOnly`], this bounds possible
+    /// writes rather than claiming that every listed cell changed.
     MemoryEffectSummary {
         before: Memory,
         after: Memory,
@@ -14645,16 +14652,16 @@ pub struct PureFactContext {
         PointerBlock,
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<Proposition>>,
     >,
-    /// The `ResourceContains` facts, filed by their parent: a memory
-    /// range under its base block, any other resource under itself. A
-    /// containment walk reads the facts under the resource it has reached,
-    /// not every proposition fact.
     /// The memory effect facts (`MemoryEffectSummary`, `MemoryMutatesOnly`,
     /// `HeapAllocationFreed`), filed under both of their memories, so a load
     /// comparison between two states reads the effects naming one of
     /// them, not every proposition fact.
     pub(super) memory_effect_facts:
         crate::persistent::PersistentMap<Memory, crate::persistent::PersistentSet<Proposition>>,
+    /// The `ResourceContains` facts, filed by their parent: a memory
+    /// range under its base block, any other resource under itself. A
+    /// containment walk reads the facts under the resource it has reached,
+    /// not every proposition fact.
     pub(super) resource_contains_facts: crate::persistent::PersistentMap<
         super::assumptions::ResourceContainsKey,
         crate::persistent::PersistentSet<Proposition>,
