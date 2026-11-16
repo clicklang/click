@@ -28,13 +28,11 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
             ),
         )
     };
-    // Reflexive equalities retain the trivial lowering this certificate-identity
-    // test needs; closed order comparisons remain explicit proof obligations.
     let checks = [0, 1].map(|value| {
         LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(value))),
-                operator: ComparisonOperator::Equal,
+                operator: ComparisonOperator::LessEqual,
                 right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(value))),
             },
             None,
@@ -188,7 +186,7 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
-                operator: ComparisonOperator::Equal,
+                operator: ComparisonOperator::LessEqual,
                 right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
             },
             None,
@@ -270,7 +268,7 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         let changed_checks = vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
-                operator: ComparisonOperator::Equal,
+                operator: ComparisonOperator::LessEqual,
                 right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
             },
             None,
