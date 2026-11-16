@@ -4665,7 +4665,7 @@ impl CheckedExecutionBranch {
         // The arms reach equal states by different routes; the join is a new
         // point reached from both.
         let mut joined_state = arms[0].reached_state().clone();
-        joined_state.join_reached_points(arms[0].reached_state(), arms[1].reached_state());
+        joined_state.join_program_points(arms[0].reached_state(), arms[1].reached_state());
         Ok(Self {
             split,
             arms: [then_arm, else_arm],
@@ -11546,7 +11546,7 @@ impl ExecutionProofCore {
         )?;
         let interface_effect_facts = branch.interface_effect_facts().clone();
         let mut joined_state = branch.joined_state().clone();
-        joined_state.join_reached_points(arms[0].reached_state(), arms[1].reached_state());
+        joined_state.join_program_points(arms[0].reached_state(), arms[1].reached_state());
         // The kernel recomputed the abstraction, so it also knows where the
         // abstraction left the counter. Installing that mark here is what
         // makes the successor's counter kernel-owned: a caller cannot take

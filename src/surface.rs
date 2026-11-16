@@ -3601,9 +3601,9 @@ struct RecordedStates {
     /// `region(N)` point it is recorded at.
     source_layout: Option<lowering::SourceExecutionLayout>,
     /// The name of each recorded point, by the identity of the point its
-    /// state's path reached there ([`crate::kernel::reached_point`]): a
+    /// state's path reached there ([`crate::kernel::ProgramPoint`]): a
     /// direct lookup, independent of what the memory there holds.
-    point_names: imbl::HashMap<crate::kernel::reached_point::ProgramPointId, ProgramPointSelector>,
+    point_names: imbl::HashMap<crate::kernel::program_point::ProgramPointId, ProgramPointSelector>,
     /// The newest recorded point whose memory reads each set of program
     /// bytes, keyed by the memory's read identity. A load registered in a
     /// memory other than the one being spelled is looked up here and
@@ -4578,7 +4578,7 @@ impl RecordedStates {
     #[cfg_attr(not(test), allow(dead_code))]
     fn point_name(
         &self,
-        id: crate::kernel::reached_point::ProgramPointId,
+        id: crate::kernel::program_point::ProgramPointId,
     ) -> Option<&ProgramPointSelector> {
         self.point_names.get(&id)
     }
@@ -4879,7 +4879,7 @@ impl RecordedStates {
             .insert(selector.clone(), self.effect_log.len());
         let prior = self.get(&selector).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), Some(&state));
-        if let Some(id) = state.reached_point().id() {
+        if let Some(id) = state.program_point_id() {
             self.point_names.insert(id, selector.clone());
         }
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
@@ -4963,7 +4963,7 @@ impl RecordedStates {
             self.record_read_event_values(*index, std::iter::empty());
         }
 
-        if let Some(id) = prior.as_ref().and_then(|state| state.reached_point().id())
+        if let Some(id) = prior.as_ref().and_then(|state| state.program_point_id())
             && self.point_names.get(&id) == Some(&selector)
         {
             self.point_names.remove(&id);

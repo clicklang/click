@@ -2618,7 +2618,7 @@ fn recorded_points_are_named_by_the_point_each_path_reached() {
     let mut states = RecordedStates::default();
     states.insert(ProgramPointSelector::Mark("left".into()), left.clone());
     states.insert(ProgramPointSelector::Mark("right".into()), right.clone());
-    let name = |state: &ExecutionState| states.point_name(state.reached_point().id().unwrap());
+    let name = |state: &ExecutionState| states.point_name(state.program_point_id().unwrap());
     assert_eq!(
         name(&left),
         Some(&ProgramPointSelector::Mark("left".into()))
