@@ -1157,7 +1157,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             then_branch: Box::new(walk_execution_statement(then_branch, s)),
             else_branch: Box::new(walk_execution_statement(else_branch, s)),
         },
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition,
             invariant,
             invariant_checks,
@@ -1169,7 +1169,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             do_while,
             backedge_target,
             natural_exit_target,
-        } => ProgramStatement::While {
+        } => ProgramStatement::Loop {
             structural_measure: structural_measure.clone(),
             condition: s.program_expression(condition),
             ranking_measures: ranking_measures
@@ -1969,7 +1969,7 @@ mod resource_frame_substitution_tests {
                 Box::new(MachineTerm::constant(1)),
             ),
         );
-        let statement = ProgramStatement::While {
+        let statement = ProgramStatement::Loop {
             condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
@@ -1987,7 +1987,7 @@ mod resource_frame_substitution_tests {
             from,
             &MachineTerm::constant(4),
         );
-        let ProgramStatement::While { effect_checks, .. } = substituted else {
+        let ProgramStatement::Loop { effect_checks, .. } = substituted else {
             panic!("substitution changed the statement shape");
         };
         let actual = effect_checks[0]
@@ -2013,7 +2013,7 @@ mod resource_frame_substitution_tests {
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         );
-        let statement = ProgramStatement::While {
+        let statement = ProgramStatement::Loop {
             condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
@@ -2028,7 +2028,7 @@ mod resource_frame_substitution_tests {
         };
         let substituted =
             substitute_pointer_variable_in_execution_statement(&statement, from, &replacement);
-        let ProgramStatement::While { effect_checks, .. } = substituted else {
+        let ProgramStatement::Loop { effect_checks, .. } = substituted else {
             panic!("substitution changed the statement shape");
         };
         assert_eq!(
@@ -2821,7 +2821,7 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
             collect_execution_statement_bound_variables(then_branch, variables);
             collect_execution_statement_bound_variables(else_branch, variables);
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition,
             invariant,
             invariant_checks,

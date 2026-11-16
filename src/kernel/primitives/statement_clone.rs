@@ -26,7 +26,7 @@ impl Clone for ProgramStatement {
                     pending.push((then_branch, then_target));
                 }
                 (Self::ForStep { step, .. }, Self::ForStep { step: target, .. })
-                | (Self::While { body: step, .. }, Self::While { body: target, .. }) => {
+                | (Self::Loop { body: step, .. }, Self::Loop { body: target, .. }) => {
                     pending.push((step, target));
                 }
                 (
@@ -275,7 +275,7 @@ impl ProgramStatement {
                 then_branch: Box::new(Self::Skip),
                 else_branch: Box::new(Self::Skip),
             },
-            Self::While {
+            Self::Loop {
                 condition,
                 invariant,
                 invariant_checks,
@@ -287,7 +287,7 @@ impl ProgramStatement {
                 backedge_target,
                 natural_exit_target,
                 body: _,
-            } => Self::While {
+            } => Self::Loop {
                 condition: condition.clone(),
                 invariant: invariant.clone(),
                 invariant_checks: invariant_checks.clone(),

@@ -32,7 +32,7 @@ impl ShapeHead {
         match statement {
             ProgramStatement::Seq(statements) => Self::Sequence(statements.len()),
             ProgramStatement::If { condition, .. } => Self::If(condition.clone()),
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 condition,
                 do_while,
                 backedge_target,
@@ -69,7 +69,7 @@ fn children_all(
     mut visit: impl FnMut(&ProgramStatement) -> bool,
 ) -> bool {
     match statement {
-        ProgramStatement::While { body, .. } => visit(body),
+        ProgramStatement::Loop { body, .. } => visit(body),
         ProgramStatement::Seq(statements) => statements.iter().all(|child| visit(child)),
         ProgramStatement::If {
             then_branch,
@@ -138,7 +138,7 @@ impl LoopSourceIndex {
     }
     fn collect(&mut self, statement: &ProgramStatement) {
         let start = self.shape.len();
-        let loop_index = if matches!(statement, ProgramStatement::While { .. }) {
+        let loop_index = if matches!(statement, ProgramStatement::Loop { .. }) {
             let index = self.loops.len();
             self.loops.push(start..start);
             Some(index)
@@ -228,7 +228,7 @@ fn nested_loop_modes(
     ) {
         charge_termination_work(1);
         let mut descendants = routes;
-        if let ProgramStatement::While {
+        if let ProgramStatement::Loop {
             invariant,
             invariant_checks,
             effect_checks,
@@ -320,7 +320,7 @@ impl ProgramFunction {
                 self.name()
             )));
         }
-        let ProgramStatement::While {
+        let ProgramStatement::Loop {
             ranking_measures,
             structural_measure,
             ..
@@ -544,7 +544,7 @@ pub(super) mod tests {
                 .contains("nonexistent loop 1")
         );
         let mut different = source.clone();
-        let ProgramStatement::While { condition, .. } = &mut different else {
+        let ProgramStatement::Loop { condition, .. } = &mut different else {
             unreachable!()
         };
         *condition = int32_literal(1);
@@ -586,7 +586,7 @@ pub(super) mod tests {
         );
         let function = function(body);
         let mut annotated = source;
-        let ProgramStatement::While {
+        let ProgramStatement::Loop {
             ranking_measures, ..
         } = &mut annotated
         else {
@@ -602,7 +602,7 @@ pub(super) mod tests {
         let source = loop_statement();
         let function = function(source.clone());
         let mut annotated = source.clone();
-        let ProgramStatement::While {
+        let ProgramStatement::Loop {
             ranking_measures, ..
         } = &mut annotated
         else {
