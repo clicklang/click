@@ -3566,6 +3566,10 @@ struct RecordedStates {
     /// statements as written, such as `statement(2).exit`, is spelled as the
     /// `region(N)` point it is recorded at.
     source_layout: Option<lowering::SourceExecutionLayout>,
+    /// The name of each recorded point, by the identity of the point its
+    /// state's path reached there ([`crate::kernel::reached_point`]): a
+    /// direct lookup, independent of what the memory there holds.
+    point_names: imbl::HashMap<crate::kernel::reached_point::ProgramPointId, ProgramPointSelector>,
     /// The newest recorded point whose memory reads each set of program
     /// bytes, keyed by the memory's read identity. A load registered in a
     /// memory other than the one being spelled is looked up here and
@@ -3665,6 +3669,7 @@ impl Default for RecordedStates {
             }),
             loop_labels: None,
             source_layout: None,
+            point_names: imbl::HashMap::new(),
             memory_points: imbl::OrdMap::new(),
             value_points: crate::persistent::PersistentMap::default(),
             pointer_points: crate::persistent::PersistentMap::default(),
@@ -4533,6 +4538,16 @@ impl RecordedStates {
         }
     }
 
+    /// The name of the recorded point a path reached, by that point's
+    /// identity.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn point_name(
+        &self,
+        id: crate::kernel::reached_point::ProgramPointId,
+    ) -> Option<&ProgramPointSelector> {
+        self.point_names.get(&id)
+    }
+
     fn get_exact<K: RecordedStateKey + ?Sized>(&self, key: &K) -> Option<&ExecutionState> {
         let mut node = self.version.root.as_deref();
         while let Some(current) = node {
@@ -4825,6 +4840,9 @@ impl RecordedStates {
             .insert(selector.clone(), self.effect_log.len());
         let prior = self.get(&selector).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), Some(&state));
+        if let Some(id) = state.reached_point().id() {
+            self.point_names.insert(id, selector.clone());
+        }
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
             self.memory_points
                 .insert(memory.read_identity(), selector.clone());
@@ -4906,6 +4924,11 @@ impl RecordedStates {
             self.record_read_event_values(*index, std::iter::empty());
         }
 
+        if let Some(id) = prior.as_ref().and_then(|state| state.reached_point().id())
+            && self.point_names.get(&id) == Some(&selector)
+        {
+            self.point_names.remove(&id);
+        }
         if let Some(memory) = prior
             .as_ref()
             .and_then(|state| crate::kernel::interned_storage_of(state.memory()))

@@ -368,12 +368,12 @@ fn release_store(
                     assumptions,
                 )
             });
-        next.memory = state.memory.clone().with_call_memory_havoc(
+        next.set_memory_directly(state.memory.clone().with_call_memory_havoc(
             budget.allocate_kernel_variable()?,
             &ranges,
             assumptions,
             kept.as_ref(),
-        );
+        ));
     }
     Ok(Ok(next))
 }
