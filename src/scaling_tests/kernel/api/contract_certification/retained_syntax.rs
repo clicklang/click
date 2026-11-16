@@ -133,3 +133,51 @@ fn integer_conversion_certification_keeps_native_refusal_without_exporting_the_o
         assert!(Comparison::default().machine(Operand::Shared(&root), Operand::Shared(&root)));
     }
 }
+
+#[test]
+fn logical_argument_refusals_do_not_convert_growing_boolean_or_algebraic_trees() {
+    use crate::kernel::{AlgebraicTermNode, AlgebraicType};
+    let mut previous = None;
+    for depth in [8, 32, 128] {
+        let _session = VerificationSession::enter();
+        let atom = ConditionTerm::Variable(Variable(995955));
+        let mut condition = atom.clone();
+        let variable = AlgebraicTerm {
+            algebraic_type: AlgebraicType::parameter("T".into()),
+            node: AlgebraicTermNode::Variable(Variable(995956)),
+        };
+        let mut algebraic = variable.clone();
+        for _ in 0..depth {
+            condition = ConditionTerm::BoolIf {
+                condition: Box::new(atom.clone()),
+                then_condition: Box::new(condition),
+                else_condition: Box::new(ConditionTerm::Constant(false)),
+            };
+            algebraic = AlgebraicTerm {
+                algebraic_type: variable.algebraic_type.clone(),
+                node: AlgebraicTermNode::If {
+                    condition: Box::new(atom.clone()),
+                    then_term: Box::new(algebraic),
+                    else_term: Box::new(variable.clone()),
+                },
+            };
+        }
+        let boolean = crate::kernel::KernelTermImport::default().condition(&condition);
+        let root = crate::kernel::KernelTermImport::default().algebraic(&algebraic);
+        let native = A::Value(ProgramValue::Bool(MachineTerm::bool_cast(
+            MachineIntegerType::UInt8,
+            condition,
+        )));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(!Comparison::default().call_argument(
+                CallArgument::Shared(&boolean),
+                CallArgument::Native(&native),
+            ));
+            assert!(!Comparison::default().mixed_algebraic(&root, &algebraic));
+        });
+        if let Some(previous) = previous {
+            assert_eq!(work, previous, "refusal must not walk the logical payload");
+        }
+        previous = Some(work);
+    }
+}
