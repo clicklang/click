@@ -945,7 +945,7 @@ fn charon_nested_chunks_and_array_slices_check_bytes_bounds_and_claims() {
         ),
         (
             "nested",
-            CHARON_NESTED_SIDECAR.replace("views bytes[0..8];", ""),
+            CHARON_NESTED_SIDECAR.replace("views bytes[0..8];", "views bytes[0..0];"),
         ),
         (
             "nested",
@@ -1087,7 +1087,10 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         ),
         (
             "walk",
-            CHARON_CHUNK_SIDECAR.replace("    views bytes[0..bytes.len()];\n", ""),
+            CHARON_CHUNK_SIDECAR.replace(
+                "    views bytes[0..bytes.len()];\n",
+                "    views bytes[0..0];\n",
+            ),
         ),
         (
             "tail_byte",
@@ -1227,11 +1230,17 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
         ),
         (
             &["read", "guarded_read"][..],
-            CHARON_SLICE_SIDECAR.replace("    views bytes[0..bytes.len()];\n", ""),
+            CHARON_SLICE_SIDECAR.replace(
+                "    views bytes[0..bytes.len()];\n",
+                "    views bytes[0..0];\n",
+            ),
         ),
         (
             &["write", "alias", "write_read"][..],
-            CHARON_SLICE_SIDECAR.replace("    owns bytes[0..bytes.len()];\n", ""),
+            CHARON_SLICE_SIDECAR.replace(
+                "    owns bytes[0..bytes.len()];\n",
+                "    views bytes[0..0];\n",
+            ),
         ),
     ] {
         assert!(
@@ -1486,7 +1495,7 @@ fn charon_arrays_compose_with_resolved_conversion_and_drop() {
         ),
         (
             &["guarded_array", "increment", "empty_array"][..],
-            CHARON_ARRAY_SIDECAR.replace("    owns value[0..1];\n", ""),
+            CHARON_ARRAY_SIDECAR.replace("    owns value[0..1];\n", "    views value[0..0];\n"),
         ),
         (
             &["increment", "empty_array"][..],
@@ -1615,7 +1624,7 @@ fn charon_chunk_view_loop_reborrows_shared_subslices_at_symbolic_heads() {
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(CHUNK_VIEW_LOOP_PROOF, &prepared).unwrap();
     for (before, after) in [
-        ("views bytes[0..16];", ""),
+        ("views bytes[0..16];", "views bytes[0..0];"),
         ("views bytes[0..4];", "views bytes[0..17];"),
         // The chunk iterator's `v` stands where its length says, not a
         // chunk further on.
@@ -1767,7 +1776,7 @@ fn charon_chunk_lane_results_survive_local_stores_at_symbolic_heads() {
             "have to_integer(lanes.lanes[3]) == to_integer(chunk[3] as int32)",
             "have to_integer(lanes.lanes[3]) == to_integer(chunk[3] as int32) + 1",
         ),
-        ("views bytes[0..16];", ""),
+        ("views bytes[0..16];", "views bytes[0..0];"),
     ] {
         let invalid = CHUNK_LANE_PROOF.replace(before, after);
         assert_ne!(invalid, CHUNK_LANE_PROOF);
@@ -1820,7 +1829,7 @@ fn charon_loop_array_copy_survives_symbolic_heads() {
             "have array[3] == chunk[3]",
             "have array[3] == chunk[3] + 1u32",
         ),
-        ("views bytes[0..16];", ""),
+        ("views bytes[0..16];", "views bytes[0..0];"),
     ] {
         let invalid = LOOP_ARRAY_COPY_PROOF.replace(before, after);
         assert_ne!(invalid, LOOP_ARRAY_COPY_PROOF);
@@ -1897,7 +1906,7 @@ fn charon_borrowed_loop_checks_restoration_bounds_and_ranking() {
             "invariant 0 <= i and i < n;",
         ),
         CHARON_LOOP_SIDECAR.replace("decreases n - i;", "decreases i;"),
-        CHARON_LOOP_SIDECAR.replace("    owns value[0..1];\n", ""),
+        CHARON_LOOP_SIDECAR.replace("    owns value[0..1];\n", "    views value[0..0];\n"),
         CHARON_LOOP_SIDECAR.replace("step_until(loop(0))", "step_until(loop(99))"),
     ] {
         assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
@@ -1983,7 +1992,7 @@ fn charon_trial_checks_arithmetic_and_owned_cleanup_through_shared_engine() {
             "fn guarded_increment(x: u16, value: &mut i32, early: bool) -> u16 {",
         ),
         CHARON_SIDECAR.replace("value[0] == old(value[0])", "value[0] == 7"),
-        CHARON_SIDECAR.replace("    owns value[0..1];\n", ""),
+        CHARON_SIDECAR.replace("    owns value[0..1];\n", "    views value[0..0];\n"),
     ] {
         assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
@@ -2101,16 +2110,18 @@ fn assert_native_boundary_proof(source: &str, sidecar: &str) {
     let false_claim = sidecar.replacen("ensures ", "ensures 0 == 1; ensures ", 1);
     assert_ne!(false_claim, sidecar);
     assert!(ProgramVerificationSession::new_program_prepared(&false_claim, &prepared).is_err());
-    for permission in [
-        "owns bytes[0..1];",
-        "owns *p;",
-        "views bytes[0..2];",
-        "owns *bytes;",
+    // A reference parameter's type grants authority when no clause names
+    // it, so a contract that grants none names an empty range.
+    for (permission, none) in [
+        ("owns bytes[0..1];", "views bytes[0..0];"),
+        ("owns *p;", "views p[0..0];"),
+        ("views bytes[0..2];", "views bytes[0..0];"),
+        ("owns *bytes;", "views bytes[0..0];"),
     ] {
         if sidecar.contains(permission) {
             assert!(
                 ProgramVerificationSession::new_program_prepared(
-                    &sidecar.replace(permission, ""),
+                    &sidecar.replace(permission, none),
                     &prepared
                 )
                 .is_err()
@@ -4046,10 +4057,15 @@ fn rust_sidecar_references_in_rust_syntax_verify() {
         )
         .is_err()
     );
-    // A store through the reference needs `owns`, not `views`.
+    // A written clause states the parameter's authority in place of the
+    // derived one, and a store through the reference needs `owns`, not
+    // `views`.
     assert!(
         ProgramVerificationSession::new_program_prepared(
-            &sidecar.replace("owns *value;", "views *value;"),
+            &sidecar.replace(
+                "fn set_seven(value: &mut i32) {",
+                "fn set_seven(value: &mut i32) {\n    views *value;"
+            ),
             &prepared
         )
         .is_err()
@@ -4221,7 +4237,7 @@ fn rust_split_at_metadata_and_reads_verify() {
             "ensures result == bytes[mid];",
             "ensures result == bytes[0];",
         ),
-        sidecar.replace("views bytes[0..bytes.len()];", ""),
+        sidecar.replace("views bytes[0..bytes.len()];", "views bytes[0..0];"),
     ] {
         assert!(ProgramVerificationSession::new_program_prepared(&incorrect, &prepared).is_err());
     }
@@ -4637,7 +4653,7 @@ fn rust_fixed_array_access_requires_memory_authority() {
         (
             "pub fn read(bytes: &[u8; 4]) -> u8 { bytes[0] }",
             "fn read(bytes: &[u8; 4]) -> u8",
-            "",
+            "views bytes[1..4];",
         ),
         (
             "pub fn write(words: &mut [u32; 3]) { words[1] = 7; }",
@@ -4652,6 +4668,11 @@ fn rust_fixed_array_access_requires_memory_authority() {
         };
         let p = gate_fixtures::project(fixture, source);
         let prepared = p.prepared().unwrap();
+        // With no clause, the reference's type grants the access.
+        let derived = format!("verifying \"borrow.rs\"; {signature} {{ ensures 1 == 1; }}");
+        ProgramVerificationSession::new_program_prepared(&derived, &prepared).unwrap();
+        // A written clause states the authority instead, and must cover the
+        // access.
         let sidecar =
             format!("verifying \"borrow.rs\"; {signature} {{ {resources} ensures 1 == 1; }}");
         let error = ProgramVerificationSession::new_program_prepared(&sidecar, &prepared)
@@ -4664,11 +4685,13 @@ fn rust_fixed_array_access_requires_memory_authority() {
             error.message()
         );
         assert!(
-            error.message().contains(if resources.is_empty() {
-                "views"
-            } else {
-                "owns"
-            }),
+            error
+                .message()
+                .contains(if resources.starts_with("views bytes") {
+                    "views"
+                } else {
+                    "owns"
+                }),
             "{}",
             error.message()
         );
@@ -5329,7 +5352,9 @@ fn rust_empty_slice_iterator_needs_no_read_authority() {
         };
         let p = gate_fixtures::project(fixture, &source);
         let prepared = p.prepared().unwrap();
-        let sidecar = "verifying \"borrow.rs\"; fn empty(bytes: &[u8]) -> i32 { requires bytes.len() == 0u64; ensures result == 0; }";
+        // The contract names an empty range, so it grants no authority in
+        // place of the slice's.
+        let sidecar = "verifying \"borrow.rs\"; fn empty(bytes: &[u8]) -> i32 { requires bytes.len() == 0u64; views bytes[0..0]; ensures result == 0; }";
         ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
         assert!(
             ProgramVerificationSession::new_program_prepared(
@@ -5535,7 +5560,7 @@ fn rust_slice_iter_reference_sum_verifies_and_expands() {
                 "ensures to_integer(result) + 1 == old(prefix",
             ),
             sidecar.replace("requires bytes.len() <= 1000u64;", ""),
-            sidecar.replace("views bytes[0..bytes.len()];", ""),
+            sidecar.replace("views bytes[0..bytes.len()];", "views bytes[0..0];"),
             sidecar.replace(
                 "decreases iter.len();",
                 "decreases bytes.len() - iter.len();",
@@ -5589,7 +5614,7 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
     ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     for invalid in [
         sidecar.replace("requires size != 0u64;", ""),
-        sidecar.replace("views bytes[0..5];", ""),
+        sidecar.replace("views bytes[0..5];", "views bytes[0..0];"),
         sidecar.replace("result == bytes[4]", "result == bytes[3]"),
     ] {
         assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
@@ -5712,7 +5737,7 @@ fn check_chunks_loop_claims(by_reference: bool) {
             "ensures result == bytes.len() % 4u64;",
             "ensures result == bytes.len() % 4u64 + 1u64;",
         ),
-        sidecar.replace("views bytes[0..bytes.len()];", ""),
+        sidecar.replace("views bytes[0..bytes.len()];", "views bytes[0..0];"),
         sidecar.replace(
             "invariant iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());",
             "invariant iter.v == bytes + ((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64);",
@@ -6057,7 +6082,7 @@ fn rust_u16_accumulator_fields_and_references_preserve_authority() {
         sidecar.replace("ensures state.a == 254;", "ensures state.a == 255;"),
         sidecar.replace("owns state.a;", "views state.a;"),
         sidecar.replace("owns state.b;", ""),
-        sidecar.replace("views *value;", ""),
+        sidecar.replace("views *value;", "views value[0..0];"),
         sidecar.replace(
             "ensures state.b == old(state.b);",
             "ensures state.b != old(state.b);",
