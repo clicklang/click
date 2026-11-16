@@ -43,6 +43,7 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    "consumed_scalar_transfer_mixes_with_a_borrowed_return.md", // 0.67s focused: two-parameter call and caller return
     "integer_migration_routes.md", // 0.9s: signed/native routes and rounding
     "aggregate_expression_results_are_named_by_their_source_steps.md", // 1.61s focused
     "aggregate_result_storage_ends_at_the_statement_exit.md", // 0.82s focused in parallel
