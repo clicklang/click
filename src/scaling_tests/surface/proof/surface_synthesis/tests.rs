@@ -773,7 +773,7 @@ fn shared_constructor_spelling_visits_fields_without_exporting_the_tree() {
 }
 
 #[test]
-fn nested_shared_constructors_export_only_the_named_leaf() {
+fn nested_shared_constructors_and_named_leaf_do_not_export() {
     use crate::kernel::{
         AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, KernelMatch, KernelTermExport,
         KernelTermImport,
@@ -808,7 +808,7 @@ fn nested_shared_constructors_export_only_the_named_leaf() {
             )
         });
         assert!(surface.is_some(), "{size} nested constructors");
-        assert!(KernelTermExport::algebraic_export_count() - exports <= 1);
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
         assert!(work <= 64 * size + 64, "{size} constructors: {work} work");
     }
 }

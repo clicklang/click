@@ -6198,3 +6198,46 @@ fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
         assert_eq!(KernelTermExport::algebraic_export_count(), exports);
     }
 }
+
+#[test]
+fn shared_algebraic_reads_and_variables_raise_without_tree_exports() {
+    use crate::kernel::{
+        AlgebraicTerm, AlgebraicTermNode, KernelTermExport, KernelTermImport, TypeParameterName,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = TypeParameterName::intern("ReadBoundary");
+    let state = ExecutionState::new();
+    let pointer = Pointer::symbolic(Variable(999983));
+    let parameters = vec![crate::languages::interface::ImportedParameter::new(
+        InterfaceType::ParameterPointer(ty),
+        "p".into(),
+        None,
+    )];
+    let arguments = vec![ProgramExpression::Value(ProgramValue::typed_pointer(
+        pointer.clone(),
+        ProgramType::ParameterPointer(ty),
+    ))];
+    let binding = ParameterBinding::new(&parameters, &arguments);
+    let variable = Variable(999984);
+    let names = BTreeMap::from([(variable, "value".into())]);
+    for node in [
+        AlgebraicTermNode::Variable(variable),
+        AlgebraicTermNode::MemoryLoad {
+            memory: crate::kernel::intern_memory_ref(state.memory()),
+            pointer: Box::new(pointer.clone()),
+        },
+    ] {
+        let native = AlgebraicTerm {
+            algebraic_type: ty.algebraic_type(),
+            node,
+        };
+        let expected = synthesize_surface_algebraic(&native, binding, &state, &names).unwrap();
+        let root = KernelTermImport::default().algebraic(&native);
+        let exports = KernelTermExport::algebraic_export_count();
+        assert_eq!(
+            raise_kernel_term(&root, binding, &state, &names),
+            Some(expected)
+        );
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+    }
+}
