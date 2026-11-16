@@ -66,7 +66,14 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have call(0).result == old(std_span_data(dst)) + 0 by { known(); }
     step();
     step() by { known(); }
-    have this->data == old(this->data) by { solve(); }
+    have separate(memory(at(call(0).exit, call(0).result)[0]), memory(this->data)) by { solve(); }
+    have separate(region(5).footprint, memory(this->data)) by {
+        normalize() using { separate(memory(at(call(0).exit, call(0).result)[0]), memory(this->data)); };
+    }
+    have at(region(5).exit, this->data) == at(region(5).entry, this->data) by {
+        preserve(separate(region(5).footprint, memory(this->data)));
+    }
+    have this->data == old(this->data) by { known(); }
     have separate(memory(at(call(0).exit, call(0).result)[0]), memory(this->remaining)) by { solve(); }
     have separate(region(5).footprint, memory(this->remaining)) by {
         normalize() using { separate(memory(at(call(0).exit, call(0).result)[0]), memory(this->remaining)); };
@@ -119,7 +126,14 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have call(1).result == old(std_span_data(dst)) + 1 by { known(); }
     step();
     step() by { known(); }
-    have this->data == old(this->data) by { solve(); }
+    have separate(memory(at(call(1).exit, call(1).result)[0]), memory(this->data)) by { solve(); }
+    have separate(region(11).footprint, memory(this->data)) by {
+        normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(this->data)); };
+    }
+    have at(region(11).exit, this->data) == at(region(11).entry, this->data) by {
+        preserve(separate(region(11).footprint, memory(this->data)));
+    }
+    have this->data == old(this->data) by { known(); }
     have separate(memory(at(call(1).exit, call(1).result)[0]), memory(this->remaining)) by { solve(); }
     have separate(region(11).footprint, memory(this->remaining)) by {
         normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(this->remaining)); };
@@ -184,7 +198,14 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have call(2).result == old(std_span_data(dst)) + 2 by { known(); }
     step();
     step() by { known(); }
-    have this->data == old(this->data) by { solve(); }
+    have separate(memory(at(call(2).exit, call(2).result)[0]), memory(this->data)) by { solve(); }
+    have separate(region(17).footprint, memory(this->data)) by {
+        normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(this->data)); };
+    }
+    have at(region(17).exit, this->data) == at(region(17).entry, this->data) by {
+        preserve(separate(region(17).footprint, memory(this->data)));
+    }
+    have this->data == old(this->data) by { known(); }
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(this->remaining)) by { solve(); }
     have separate(region(17).footprint, memory(this->remaining)) by {
         normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(this->remaining)); };
@@ -261,7 +282,14 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have call(3).result == old(std_span_data(dst)) + 3 by { known(); }
     step();
     step() by { known(); }
-    have this->data == old(this->data) by { solve(); }
+    have separate(memory(at(call(3).exit, call(3).result)[0]), memory(this->data)) by { solve(); }
+    have separate(region(23).footprint, memory(this->data)) by {
+        normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(this->data)); };
+    }
+    have at(region(23).exit, this->data) == at(region(23).entry, this->data) by {
+        preserve(separate(region(23).footprint, memory(this->data)));
+    }
+    have this->data == old(this->data) by { known(); }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(this->remaining)) by { solve(); }
     have separate(region(23).footprint, memory(this->remaining)) by {
         normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(this->remaining)); };
