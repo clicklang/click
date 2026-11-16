@@ -41,7 +41,7 @@ fn entry() -> ExecutionState {
     .state
 }
 fn head(entry: &ExecutionState, identity: u64) -> ExecutionState {
-    let (state, _) = prepare_direct_loop_guard(
+    let (state, _, _) = prepare_direct_loop_guard(
         entry,
         entry,
         &spec(),
@@ -209,7 +209,8 @@ fn direct_loop_guard_has_the_existing_conditional_clause_spelling() {
     );
     assert!(source.starts_with("if "), "{source}");
     assert!(source.contains("owns mutex_guard("), "{source}");
-    let sidecar = format!("void example(int32* mutex) {{}} by {{ loop {{ {source} }} }}");
+    let sidecar =
+        format!("void example(int32* mutex) {{ ensures true; }} by {{ loop {{ {source} }} }}");
     crate::surface::parse(&sidecar)
         .expect("the typed carrier uses the existing conditional clause syntax");
     assert!(
@@ -324,7 +325,7 @@ fn direct_loop_guard_keeps_negated_conditions_as_boolean_terms() {
         .unwrap();
     let condition = spec().guard().unwrap().clone();
     let spec = spec().with_guard(SpecProposition::Not(Box::new(condition)));
-    let (head, _) = prepare_direct_loop_guard(
+    let (head, _, _) = prepare_direct_loop_guard(
         locked.state(),
         locked.state(),
         &spec,

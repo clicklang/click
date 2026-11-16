@@ -6210,8 +6210,8 @@ pub(super) fn prepare_loop_top_state(
             rebound_failures.push(message);
         }
     }
-    // A direct conditional clause uses the same ordinary folded ownership
-    // internally; its field captures the head expression, not a mutable local.
+    // A direct conditional clause owns a typed occurrence whose condition
+    // captures the head expression, independently of later local mutations.
     let mut ordinary_specs = Vec::new();
     let mut direct_carriers = Vec::new();
     let mut direct_mutexes = Vec::new();
@@ -6225,12 +6225,8 @@ pub(super) fn prepare_loop_top_state(
                 identity,
                 assumptions,
             ) {
-                Ok((updated, mutex)) => {
-                    let instance = updated
-                        .resources()
-                        .owned_instance(identity)
-                        .expect("checked direct loop preparation installs its carrier");
-                    direct_carriers.push(ResourceFact::own(Resource::Instance(instance.clone())));
+                Ok((updated, mutex, carrier)) => {
+                    direct_carriers.push(carrier);
                     direct_mutexes.push(mutex);
                     top_state = updated;
                 }

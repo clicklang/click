@@ -184,7 +184,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     spec: &ResourceSpec,
     identity: Variable,
     assumptions: &PureFactContext,
-) -> Result<(ExecutionState, Pointer), String> {
+) -> Result<(ExecutionState, Pointer, ResourceFact), String> {
     let mutex = source_mutex(entry, spec, assumptions)?;
     // A previous loop may have left an empty or held carrier at its exit.
     // Retire it only by the same checked ownership exchange as a runtime use.
@@ -272,9 +272,9 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
         .direct_loop_carriers = ledger
         .storage
         .direct_loop_carriers
-        .with_inserted(mutex.clone(), carrier);
+        .with_inserted(mutex.clone(), carrier.clone());
     state.mutex_ledger = Some(ledger);
-    Ok((state, mutex))
+    Ok((state, mutex, fact(&carrier)))
 }
 
 pub(in crate::kernel) fn select_direct_loop_guards(
