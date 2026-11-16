@@ -9723,9 +9723,16 @@ impl ExecutionState {
         self.point = self.point.after();
     }
 
-    /// The point this state's path has reached.
-    pub(crate) fn reached_point(&self) -> &super::reached_point::ReachedPoint {
-        &self.point
+    /// The point this state stands at on its path.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn program_point(&self) -> super::ProgramPoint {
+        super::ProgramPoint::of_state(&self.memory, &self.point)
+    }
+
+    /// The identity of the point this state stands at, without interning its
+    /// memory.
+    pub(crate) fn program_point_id(&self) -> Option<super::program_point::ProgramPointId> {
+        self.point.id()
     }
 
     /// Replace memory without the resource invalidation of
@@ -9744,8 +9751,8 @@ impl ExecutionState {
     }
 
     /// Stand this state at a new point reached from both arms of a join.
-    pub(crate) fn join_reached_points(&mut self, left: &Self, right: &Self) {
-        self.point = super::reached_point::ReachedPoint::joining(&left.point, &right.point);
+    pub(crate) fn join_program_points(&mut self, left: &Self, right: &Self) {
+        self.point = super::program_point::PathLink::joining(&left.point, &right.point);
     }
 
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {

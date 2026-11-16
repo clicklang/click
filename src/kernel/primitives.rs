@@ -63,7 +63,8 @@ pub(in crate::kernel) mod float_conversion;
 mod heap_extent_tests;
 #[cfg(test)]
 mod memory_construction_tests;
-pub(crate) mod reached_point;
+pub(crate) mod program_point;
+pub use program_point::ProgramPoint;
 mod statement_clone;
 #[cfg(test)]
 pub(crate) use contracts::memory_range_byte_count_guards;
@@ -9251,50 +9252,6 @@ pub struct MemoryBlock {
     pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
-/// A program point: a node a proof path reached, which Surface names with
-/// `at(point, ...)`. A memory read is lowered to its version point, the point
-/// back to which the recorded steps show the cell unchanged, and holds that
-/// point.
-///
-/// For now a point is identified by the interned memory state there. That is
-/// an implementation detail callers must not rely on.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct ProgramPoint(SharedMemory);
-
-impl ProgramPoint {
-    pub fn at(memory: &SharedMemory) -> Self {
-        Self(memory.clone())
-    }
-
-    /// The point a `Memory` value stands at, interning it first. Callers
-    /// that already hold an interned state use [`ProgramPoint::at`].
-    pub(crate) fn of_memory(memory: &Memory) -> Self {
-        Self(intern_memory(memory.clone()))
-    }
-
-    pub(crate) fn shared_memory(&self) -> &SharedMemory {
-        &self.0
-    }
-
-    /// The interned memory state this point stands for, by value.
-    pub(crate) fn into_shared_memory(self) -> SharedMemory {
-        self.0
-    }
-
-    pub(crate) fn memory(&self) -> &Memory {
-        self.0.memory()
-    }
-
-    /// True when this point is later in the recorded history than `other`.
-    /// Memory state ids strictly increase along derivation edges, so comparing
-    /// them orders two points of one arena without walking.
-    pub(crate) fn is_later_than(&self, other: &Self) -> bool {
-        let (arena, id) = self.0.arena_id();
-        let (other_arena, other_id) = other.0.arena_id();
-        arena == other_arena && id > other_id
-    }
-}
-
 /// An interned, immutable memory state for embedding inside terms.
 ///
 /// Equality and hashing are O(1) via the arena identity and a precomputed
@@ -10369,8 +10326,8 @@ pub struct ExecutionState {
     pub(super) locals: LocalEnvironment,
     pub(super) memory: Memory,
     /// The point this state's path has reached; not part of equality
-    /// ([`reached_point::ReachedPoint`]).
-    pub(super) point: reached_point::ReachedPoint,
+    /// ([`program_point::PathLink`]).
+    pub(super) point: program_point::PathLink,
     pub(super) resources: ResourceContext,
     /// Active stable-view authority. `None` is the canonical empty ledger so
     /// independently constructed states retain ordinary structural equality.
