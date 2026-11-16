@@ -491,9 +491,10 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     "requires this->m_feerate.base.size != 0 implies to_integer(this->m_feerate.base.fee) <= 9223372036854775807;",
                     "",
                 ),
-                "CFeeRateGetFeePerKMissingSizeGuard" => {
-                    ("requires this->m_feerate.base.size > 0;", "")
-                }
+                "CFeeRateGetFeePerKMissingSizeGuard" => (
+                    "requires this->m_feerate.base.size > 0;",
+                    "requires this->m_feerate.base.size == 0; requires this->m_feerate.base.fee == 0i64;",
+                ),
                 "CFeeRateGetFeePerKMissingFeeAuthority" => ("views this->m_feerate.base.fee;", ""),
                 "CFeeRateGetFeePerKMissingLowerFit" => (
                     "requires -9223372036854775808 * to_integer(this->m_feerate.base.size) <= to_integer(this->m_feerate.base.fee) * 1000;",
@@ -512,10 +513,18 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             let root_signature = format!("int64 {selected}(");
             let (helpers, root_source) = source.split_once(&root_signature).unwrap();
             assert!(root_source.contains(from), "missing mutation {name}");
-            let hostile = format!(
+            let mut hostile = format!(
                 "{helpers}{root_signature}{}",
                 root_source.replacen(from, to, 1)
             );
+            if name == "CFeeRateGetFeePerKMissingSizeGuard" {
+                // The strict result-fit bound also excludes zero size. Remove
+                // it so the zero-sized witness reaches the callee's domain check.
+                hostile = hostile.replace(
+                    "requires to_integer(this->m_feerate.base.fee) * 1000 < 9223372036854775808 * to_integer(this->m_feerate.base.size);",
+                    "",
+                );
+            }
             let parsed = read_click_project(&sidecar, &hostile).unwrap();
             if name == "CFeeRateGetFeeNativeFeeBounds" {
                 verify_program_prepared_project(&parsed, &import)
