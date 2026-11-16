@@ -562,6 +562,7 @@ pub(super) struct ConstructedReturnBodies(
 
 pub(in crate::kernel) struct ConstructedReturnBody {
     pub(super) frontier: Vec<ResourceFact>,
+    viewed_children: Vec<(ResourceFact, ResourceOccurrenceId)>,
     expansion: Vec<ResourceFact>,
     // Only these descriptions still need a new separation argument. The
     // transfer producer has already established separation for the others.
@@ -682,8 +683,7 @@ impl ConstructedReturnBodies {
                 match child.term() {
                     ResourceTerm::Memory(_) | ResourceTerm::Token { .. } => true,
                     ResourceTerm::Composite { name, .. } => {
-                        !child.is_view()
-                            && child.quantity() == &ResourceQuantity::One
+                        child.quantity() == &ResourceQuantity::One
                             && Self::supports(name, definitions, supported, active)
                     }
                     _ => false,
@@ -709,7 +709,7 @@ impl ConstructedReturnBodies {
         let (singleton, inserted) = ResourceContext::new_with_equalities(assumptions)
             .unchecked_with_facts_and_occurrences([support.clone()]);
         let mut transfers = Vec::new();
-        let (context, frontier) = Self::open(
+        let (context, frontier, viewed_children) = Self::open(
             singleton,
             support,
             inserted[0].1,
@@ -740,6 +740,7 @@ impl ConstructedReturnBodies {
             .to_vec();
         Some(ConstructedReturnBody {
             frontier,
+            viewed_children,
             expansion: context.normalized(assumptions).facts().to_vec(),
             boundary,
             transfers,
@@ -760,7 +761,11 @@ impl ConstructedReturnBodies {
         planned: bool,
         borrowed: bool,
         transfers: &mut Vec<CompositeChildTransfer>,
-    ) -> Option<(ResourceContext, Vec<ResourceFact>)> {
+    ) -> Option<(
+        ResourceContext,
+        Vec<ResourceFact>,
+        Vec<(ResourceFact, ResourceOccurrenceId)>,
+    )> {
         let Resource::Composite { name, .. } = support.resource() else {
             return None;
         };
@@ -779,7 +784,7 @@ impl ConstructedReturnBodies {
             Some(selected),
         )?;
         if !body.opened {
-            return Some((body.expanded, Vec::new()));
+            return Some((body.expanded, Vec::new(), Vec::new()));
         }
         let parameters = definition
             .parameters()
@@ -787,11 +792,20 @@ impl ConstructedReturnBodies {
             .map(ProgramParameter::binding_name)
             .collect::<BTreeSet<_>>();
         let mut context = body.expanded;
+        let mut viewed_children = Vec::new();
         for (index, (fact, child_source)) in body.occurrences.into_iter().enumerate() {
             let spec = &definition.contains()[index];
             path.push(index);
-            let fixed_borrow = borrowed && fixed_memory_shape(spec, &parameters).is_some();
-            let origin = if fixed_borrow {
+            if fact.is_view() {
+                viewed_children.push((fact.clone(), child_source));
+            }
+            let fixed_borrow =
+                fact.is_own() && borrowed && fixed_memory_shape(spec, &parameters).is_some();
+            // A view remains a view even when its definition contains owns.
+            // Neither its declaration nor a fresh backing block grants custody.
+            let origin = if fact.is_view() {
+                ReturnOwnershipOrigin::Description
+            } else if fixed_borrow {
                 ReturnOwnershipOrigin::EntryBorrow
             } else if let Some(plan) = composition.consumed_children()
                 && planned
@@ -826,7 +840,7 @@ impl ConstructedReturnBodies {
                     }
                     _ => false,
                 };
-                (context, _) = Self::open(
+                (context, _, _) = Self::open(
                     context,
                     &fact,
                     child_source,
@@ -837,13 +851,13 @@ impl ConstructedReturnBodies {
                     assumptions,
                     path,
                     planned,
-                    borrowed && invariant_arguments,
+                    borrowed && invariant_arguments && fact.is_own(),
                     transfers,
                 )?;
             }
             path.pop();
         }
-        Some((context, body.children))
+        Some((context, body.children, viewed_children))
     }
 
     pub(super) fn for_return(
@@ -890,12 +904,55 @@ impl PreparedReturnComposition {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::kernel) struct ProducedBorrowingPiece {
+    pub(super) support: super::super::loans::EscapingComposite,
+    pub(super) piece: ResourceFact,
+    // Legacy one-level expansion has no occurrence record. Constructed bodies
+    // always carry the actual child identity, never a description-based rank.
+    #[allow(dead_code)]
+    pub(super) sources: Option<Arc<Vec<ResourceOccurrenceId>>>,
+}
+
 pub(super) struct ProjectedReturnResource {
     pub(super) support: ResourceFact,
     pub(super) destination: ResourceOccurrenceId,
     pub(super) expansion: Vec<ResourceFact>,
     pub(super) projected: Vec<ResourceFact>,
     pub(super) frontier: Option<Vec<ResourceFact>>,
+    pub(super) viewed_children: Option<Vec<(ResourceFact, ResourceOccurrenceId)>>,
+}
+
+impl ProjectedReturnResource {
+    pub(super) fn constructed_borrowing_pieces(&self) -> Option<Vec<ProducedBorrowingPiece>> {
+        let children = self.viewed_children.as_ref()?;
+        // Normalization may merge adjacent or equal views. Keep the producer's
+        // raw identities as one shared group, alongside its normalized views;
+        // do not recover an individual source by matching descriptions.
+        let sources = Arc::new(
+            children
+                .iter()
+                .map(|(_, source)| *source)
+                .collect::<Vec<_>>(),
+        );
+        let support = super::super::loans::EscapingComposite {
+            head: self.support.clone(),
+            occurrence: self.destination,
+        };
+        Some(
+            self.frontier
+                .as_ref()
+                .expect("a constructed body carries its frontier")
+                .iter()
+                .filter(|piece| piece.is_view())
+                .map(|piece| ProducedBorrowingPiece {
+                    support: support.clone(),
+                    piece: piece.clone(),
+                    sources: Some(sources.clone()),
+                })
+                .collect(),
+        )
+    }
 }
 
 /// Read each owned output by its selected source identity. Equal descriptions
@@ -953,6 +1010,7 @@ pub(super) fn project_return_resource_cores(
                 destination: destination_occurrence,
                 expansion,
                 projected,
+                viewed_children: body.map(|body| body.viewed_children.clone()),
                 frontier: body.map(|body| body.frontier.clone()).or_else(|| {
                     matches!(
                         support.resource(),
@@ -968,7 +1026,7 @@ pub(super) fn project_return_resource_cores(
 #[cfg(test)]
 mod fresh_allocation_tests;
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 #[cfg(test)]
 mod scaling_tests {
