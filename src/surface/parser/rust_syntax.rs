@@ -1202,6 +1202,14 @@ impl Parser {
                 // Outside a loop, `iter` is the program's own name.
                 return Ok(None);
             }
+            // A crate's own iterator is the program's local `iter`, a struct
+            // whose fields a proof reads as written.
+            let user_iterator = self.rust_loop_iterators.iter().flatten().any(|iterator| {
+                iterator.kind == crate::languages::interface::RustIteratorKind::User
+            });
+            if accessor.is_none() && user_iterator {
+                return Ok(None);
+            }
             let Some((accessor, width)) = accessor else {
                 return Err(self.error(
                     "inside a loop, `iter` is the loop's iterator, read through Rust's own \
