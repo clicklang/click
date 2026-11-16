@@ -48,7 +48,7 @@ void caller(int32 *left, int32 *visited, int32 n) {
             };
         }
         have left[k] == old(left[k]) by {
-            preserve(separate(statement(0).footprint, memory(left[k])));
+            preserve(memory(left[k]), statement(0));
         }
         known();
     }

@@ -42,11 +42,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
-            let Some(extracted) = attempt::candidate_outcome(
-                with_guard
-                    .driver()
-                    .apply_step(ProofStep::Extract(surface_consequent.clone())),
-            )?
+            let Some(extracted) = attempt::candidate_outcome(Self::publish_selected_fact(
+                &with_guard,
+                &(surface_consequent.clone()),
+            ))?
             else {
                 continue;
             };
@@ -133,7 +132,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 super::smart_closures::observed_native_arithmetic(consequent, surface_consequent);
             let extracted = with_guard
                 .driver()
-                .apply_step(ProofStep::Extract(surface_consequent.clone()))
+                .apply_step(ProofStep::ApplyFactUsing {
+                    fact: surface.clone(),
+                    premises: vec![surface_guard.as_ref().clone()],
+                })
                 .ok()?;
             if extracted.focused_discharged() {
                 return Some(extracted);

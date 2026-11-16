@@ -3357,10 +3357,16 @@ fn plan_explicit_discharged_implication_consequent(
                 break;
             }
             if consequent.as_ref() == goal || condition_polarity_equivalent(consequent, goal) {
-                return Some(vec![
-                    ProofTactic::Extract(surface_consequent.as_ref().clone()),
-                    ProofTactic::Known,
-                ]);
+                let (premises, _) = crate::surface::proof::driver::fact_application_parts(surface);
+                let (remaining, _) =
+                    crate::surface::proof::driver::fact_application_parts(surface_consequent);
+                let mut tactics = vec![ProofTactic::Intro; remaining.len()];
+                tactics.push(ProofTactic::ApplyFactUsing {
+                    fact: surface.clone(),
+                    premises,
+                });
+                tactics.push(ProofTactic::Known);
+                return Some(tactics);
             }
             current = (consequent, surface_consequent);
         }

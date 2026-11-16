@@ -4328,7 +4328,7 @@ void arena_free(struct region* region) {
             normalize() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
         }
         have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
-            preserve(separate(statement(5).footprint, memory(arena->occupied[k])));
+            preserve(memory(arena->occupied[k]), statement(5));
         }
         rewrite(region->arena, arena);
         known();
@@ -4383,7 +4383,7 @@ void arena_free(struct region* region) {
             normalize() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
         }
         have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
-            preserve(separate(statement(5).footprint, memory(arena->occupied[k])));
+            preserve(memory(arena->occupied[k]), statement(5));
         }
         rewrite(region->arena, arena);
         known();
@@ -4421,7 +4421,7 @@ void arena_free(struct region* region) {
             normalize() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
         }
         have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
-            preserve(separate(statement(5).footprint, memory(arena->occupied[k])));
+            preserve(memory(arena->occupied[k]), statement(5));
         }
         rewrite(region->arena, arena);
         known();

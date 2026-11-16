@@ -642,7 +642,7 @@ fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
     assert_eq!(closed.completed_proposition().unwrap().proposition(), &goal);
     assert!(matches!(
         closed.certificate().steps(),
-        [ProofStep::Extract(_)]
+        [ProofStep::Have { proposition, .. }, ProofStep::Known] if proposition == &pairs[0].1
     ));
     assert!(root.certificate().steps().is_empty());
     let rechecked = root
@@ -767,11 +767,9 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 crate::kernel::search::ProofSearch::try_typed_atomic_solve_closure(&(stale))
                     .expect("the entry-anchored spelling of the old leaf should extract it");
             assert!(anchored.is_complete());
-            assert_eq!(
-                anchored.certificate().steps(),
-                &[ProofStep::Extract(anchored_surface)],
-                "the stale spelling must not be extracted, only its entry-anchored form"
-            );
+            assert!(matches!(anchored.certificate().steps(),
+                [ProofStep::Have { proposition, .. }, ProofStep::Known] if proposition == &anchored_surface
+            ), "only the entry-anchored premise may be retained");
             let rechecked = stale
                 .driver()
                 .try_authoritative_linear_script(&anchored.certificate().to_proof_tactics())
@@ -803,7 +801,9 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 crate::kernel::search::ProofSearch::try_typed_atomic_solve_closure(&(exact))
                     .expect("the exact selected leaf should extract and close the goal");
             assert!(closed.is_complete());
-            assert_eq!(closed.certificate().steps(), &[ProofStep::Extract(surface)]);
+            assert!(matches!(closed.certificate().steps(),
+                [ProofStep::Have { proposition, .. }, ProofStep::Known] if proposition == &surface
+            ));
             assert!(sibling.certificate().steps().is_empty());
         })
         .expect("the atomic extraction small-stack test should start")

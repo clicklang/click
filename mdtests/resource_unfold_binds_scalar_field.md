@@ -171,7 +171,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
             }
             have occupied[k] == at(before_store, occupied[k]) by {
-                preserve(separate(statement(3).footprint, memory(occupied[k])));
+                preserve(memory(occupied[k]), statement(3));
             }
             known();
         } else {
@@ -213,7 +213,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
         }
         have occupied[k] == at(before_store, occupied[k]) by {
-            preserve(separate(statement(3).footprint, memory(occupied[k])));
+            preserve(memory(occupied[k]), statement(3));
         }
         known();
     }

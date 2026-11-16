@@ -2325,6 +2325,43 @@ impl ProofFacts {
         })
     }
 
+    /// Sources for an expandable implication application. The capability
+    /// keeps candidate enumeration out of checked operations.
+    pub(crate) fn implication_sources_for_search(
+        &self,
+        required: &Proposition,
+        _permission: crate::SearchPermission,
+    ) -> Vec<Proposition> {
+        let ordinary = self
+            .implications_by_consequent
+            .get(&memory_erased_proposition_key(required));
+        let quantified = quantified_equivalence_index_key(required)
+            .and_then(|key| self.implications_by_quantified_consequent.get(&key));
+        ordinary
+            .into_iter()
+            .chain(quantified)
+            .flat_map(|bucket| bucket.iter())
+            .take(64)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .filter(|candidate| {
+                candidate.consequent == *required
+                    || quantified_binder_equivalent(required, &candidate.consequent)
+            })
+            .map(|candidate| {
+                candidate.antecedents.iter().rev().fold(
+                    candidate
+                        .whole
+                        .as_ref()
+                        .unwrap_or(&candidate.consequent)
+                        .clone(),
+                    |rest, antecedent| {
+                        Proposition::Implies(Box::new(antecedent.clone()), Box::new(rest))
+                    },
+                )
+            })
+            .collect()
+    }
+
     /// Availability of one premise a `using` list names.
     ///
     /// A listed premise that holds with no facts at all — a ground constant

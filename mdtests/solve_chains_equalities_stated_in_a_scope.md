@@ -76,7 +76,7 @@ int32 caller(int32* occ, int32* other, int32 n) {
             };
         }
         have occ[k] == at(b, occ[k]) by {
-            preserve(separate(statement(1).footprint, memory(occ[k])));
+            preserve(memory(occ[k]), statement(1));
         }
         have contains(memory(other[0..1]), statement(0).footprint) by { known(); }
         have separate(statement(0).footprint, memory(occ[k])) by {
@@ -87,7 +87,7 @@ int32 caller(int32* occ, int32* other, int32 n) {
             };
         }
         have at(b, occ[k]) == at(a, occ[k]) by {
-            preserve(separate(statement(0).footprint, memory(occ[k])));
+            preserve(memory(occ[k]), statement(0));
         }
         have at(a, occ[k]) == 0 by {
             instantiate(forall (j: int32) {

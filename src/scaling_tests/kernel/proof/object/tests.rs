@@ -614,10 +614,14 @@ fn known_computation_work_is_linear_in_shared_integer_terms() {
 #[test]
 fn apply_fact_uses_only_selected_implication_and_evidence() {
     type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
-    let atom = |name: String| Proposition::Predicate { name, arguments: vec![] };
+    let atom = |name: String| Proposition::Predicate {
+        name,
+        arguments: vec![],
+    };
     let antecedent = atom("selected_antecedent".into());
     let conclusion = atom("selected_conclusion".into());
-    let implication = Proposition::Implies(Box::new(antecedent.clone()), Box::new(conclusion.clone()));
+    let implication =
+        Proposition::Implies(Box::new(antecedent.clone()), Box::new(conclusion.clone()));
     let mut samples = Vec::new();
     for size in [4, 16, 64, 256] {
         let mut facts = vec![antecedent.clone(), implication.clone()];
@@ -630,24 +634,126 @@ fn apply_fact_uses_only_selected_implication_and_evidence() {
                 Box::new(conclusion.clone()),
             ));
         }
-        let root: TestProof = ProofObject::root((), ProofBranch::new(
-            ProofObligation::Proposition(PropositionObligation::new(conclusion.clone(), ())),
-            ProofBranchState { facts: ProofFacts::from_ordered(&facts), execution: None },
-        ));
+        let root: TestProof = ProofObject::root(
+            (),
+            ProofBranch::new(
+                ProofObligation::Proposition(PropositionObligation::new(conclusion.clone(), ())),
+                ProofBranchState {
+                    facts: ProofFacts::from_ordered(&facts),
+                    execution: None,
+                },
+            ),
+        );
         let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                assert!(root.apply_fact(&implication, std::slice::from_ref(&antecedent)).unwrap().is_complete());
+                assert!(
+                    root.apply_fact(&implication, std::slice::from_ref(&antecedent))
+                        .unwrap()
+                        .is_complete()
+                );
                 assert!(root.apply_fact(&implication, &[]).is_err());
-                assert!(root.apply_fact(&implication, &[atom("missing".into())]).is_err());
-                let missing = Proposition::Implies(Box::new(atom("missing".into())), Box::new(conclusion.clone()));
-                assert!(root.apply_fact(&missing, std::slice::from_ref(&antecedent)).is_err());
-                assert!(!root.is_complete(), "application must leave the persistent input unchanged");
+                assert!(
+                    root.apply_fact(&implication, &[atom("missing".into())])
+                        .is_err()
+                );
+                let missing = Proposition::Implies(
+                    Box::new(atom("missing".into())),
+                    Box::new(conclusion.clone()),
+                );
+                assert!(
+                    root.apply_fact(&missing, std::slice::from_ref(&antecedent))
+                        .is_err()
+                );
+                assert!(
+                    !root.is_complete(),
+                    "application must leave the persistent input unchanged"
+                );
             })
         });
         samples.push((work, maps));
     }
-    assert!(samples.iter().all(|(work, _)| *work <= samples[0].0 * 3 + 16), "work: {samples:?}");
+    assert!(
+        samples
+            .iter()
+            .all(|(work, _)| *work <= samples[0].0 * 3 + 16),
+        "work: {samples:?}"
+    );
     for pair in samples.windows(2) {
-        assert!(pair[1].1 <= pair[0].1 * 2 + 16, "persistent work: {samples:?}");
+        assert!(
+            pair[1].1 <= pair[0].1 * 2 + 16,
+            "persistent work: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn known_quantified_identity_uses_selected_keys() {
+    type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
+    let quantified = |binder, index| Proposition::ForAll {
+        var: Variable(binder),
+        sort: crate::kernel::Sort::ProgramInt32,
+        body: Box::new(Proposition::Predicate {
+            name: "quantified_identity".into(),
+            arguments: vec![
+                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::Variable(
+                    Variable(binder),
+                ))),
+                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::constant(
+                    index,
+                ))),
+            ],
+        }),
+        name: Default::default(),
+    };
+    let mut samples = Vec::new();
+    for size in [4u32, 16, 64, 256] {
+        let mut facts = vec![quantified(1, 0)];
+        for index in 1..=size {
+            facts.push(quantified(1, index));
+            facts.push(Proposition::Predicate {
+                name: format!("unrelated_{index}"),
+                arguments: vec![],
+            });
+        }
+        let facts = ProofFacts::from_ordered(&facts);
+        let root = |goal| -> TestProof {
+            ProofObject::root(
+                (),
+                ProofBranch::new(
+                    ProofObligation::Proposition(PropositionObligation::new(goal, ())),
+                    ProofBranchState {
+                        facts: facts.clone(),
+                        execution: None,
+                    },
+                ),
+            )
+        };
+        let hit = root(quantified(999, 0));
+        let miss = root(quantified(999, 9999));
+        let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(
+                    hit.apply_known(PropositionKnownContext::Materialized)
+                        .ok()
+                        .unwrap()
+                        .is_complete()
+                );
+                assert!(
+                    miss.apply_known(PropositionKnownContext::Materialized)
+                        .is_err()
+                );
+            })
+        });
+        samples.push((work, maps));
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].0 <= pair[0].0 * 2 + 16,
+            "identity work: {samples:?}"
+        );
+        assert!(
+            pair[1].1 <= pair[0].1 * 2 + 16,
+            "identity map work: {samples:?}"
+        );
     }
 }

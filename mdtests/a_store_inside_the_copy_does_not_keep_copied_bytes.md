@@ -49,7 +49,7 @@ void copy_n(char* dst, const char* src, uint64 n) {
         } by {
             intro(); intro();
             have separate(statement(1).footprint, memory((dst as (uint8 *))[k])) by { known(); }
-            preserve(separate(statement(1).footprint, memory((dst as (uint8 *))[k])));
+            preserve(memory((dst as (uint8 *))[k]), statement(1));
         }
         known();
     }

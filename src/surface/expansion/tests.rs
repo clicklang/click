@@ -2931,7 +2931,7 @@ theorem set_one_is_make_positive() {
         .find("theorem set_one_is_make_positive")
         .expect("expanded source should retain the theorem")..];
     assert!(theorem.contains("intro();"), "{theorem}");
-    assert!(theorem.contains("extract("), "{theorem}");
+    assert!(!theorem.contains("extract("), "{theorem}");
     assert!(!theorem.contains("solve();"), "{theorem}");
     verify_c_sources(&expanded, &sources)
         .expect("expanded contract-refinement theorem should re-verify with its C target");
@@ -4079,4 +4079,68 @@ fn apply_fact_c_frontier_and_outcome_expansion_rechecks_without_search() {
         without_implicit_solve(|| verify_c_sources(&expanded, &sources))
             .unwrap_or_else(|error| panic!("{body}: {error}\n{expanded}"));
     }
+}
+
+#[test]
+fn solve_expands_disjunction_projection_to_cases_without_extract() {
+    let source = r#"
+        theorem demo(x: int32, y: int32) {
+            requires (x > 0 and y == 1) or ((x > 0 and y == 2) or (x > 0 and y == 3));
+            ensures x > 0 by solve();
+        }
+    "#;
+    verify_click_theorems(source).unwrap();
+    let expanded = expand_pure_theorem_source(source, &[], "demo", 0).unwrap();
+    assert!(expanded.contains("cases {"), "{expanded}");
+    assert!(!expanded.contains("extract("), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let invalid = expanded.replace("x > 0 and y == 3", "x < 0 and y == 3");
+    assert!(without_implicit_solve(|| verify_click_theorems(&invalid)).is_err());
+}
+
+#[test]
+fn solve_expands_partial_implication_with_explicit_fact_application() {
+    let source = r#"
+        theorem demo(x: int32, y: int32, z: int32) {
+            requires x > 0;
+            requires x > 0 implies y > 0 implies z > 0;
+            ensures y > 0 implies z > 0 by solve();
+        }
+    "#;
+    verify_click_theorems(source).unwrap();
+    let expanded = expand_pure_theorem_source(source, &[], "demo", 0).unwrap();
+    assert!(expanded.contains("apply("), "{expanded}");
+    assert!(!expanded.contains("extract("), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let missing = expanded.replace("requires x > 0;", "");
+    assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+}
+
+#[test]
+fn solve_expands_excluded_middle_to_if_without_extract() {
+    let source = "theorem demo(make: Bool) { ensures make or not make by solve(); }";
+    verify_click_theorems(source).unwrap();
+    let expanded = expand_pure_theorem_source(source, &[], "demo", 0).unwrap();
+    assert!(expanded.contains("if make"), "{expanded}");
+    assert!(!expanded.contains("extract("), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: memory disjunction expansion and cold replay"]
+fn solve_expands_refuted_memory_disjunction_without_extract() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/sequence-transform");
+    let source = std::fs::read_to_string(root.join("sequence_transform.click")).unwrap();
+    let c = std::fs::read_to_string(root.join("sequence_transform.c")).unwrap();
+    let sources = [("sequence_transform.c", c.as_str())];
+    verify_c_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c_claim_source_by_label(&source, &sources, "sequence_contains3.ensures_1").unwrap();
+    assert!(!expanded.contains("extract("), "{expanded}");
+    without_implicit_solve_for_claim("sequence_contains3.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .unwrap();
 }

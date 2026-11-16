@@ -8249,9 +8249,7 @@ impl AnnotationLowerer<'_> {
         {
             let instance = state
                 .resource_instance_at_path(*identity, &[])
-                .ok_or_else(|| {
-                    format!("resource instance `{name}` is not owned at this snapshot")
-                })?;
+                .ok_or_else(|| format!("resource instance `{name}` is not owned at this state"))?;
             return Ok(SpecResource::Value(Resource::Instance(instance.clone())));
         }
         if let Some(snapshot) = self.point_environment(selector, environment)? {
@@ -8265,7 +8263,7 @@ impl AnnotationLowerer<'_> {
                 let old = environment.old_state(&self.entry_values, self.entry_state.memory())?;
                 self.lower_resource_subject_to_spec(resource, &old)
             }
-            _ => Err("`at(...)` resources require a recorded snapshot".into()),
+            _ => Err("`at(...)` resources require a recorded state".into()),
         }
     }
 

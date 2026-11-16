@@ -4,13 +4,13 @@
 //! or a return keeps its no-overflow condition as the antecedent of the
 //! equality it states: `defined(old(st.live) + result) implies st.live ==
 //! old(st.live) + result`. The kernel does not harvest such a consequent on
-//! its own; the checked `extract` rule does once the guard is an available
-//! fact. This closer selects the guarded comparisons whose consequent shares
+//! its own; explicit implication application does once the guard is an
+//! available fact. This closer selects the guarded comparisons whose consequent shares
 //! an operand with the goal, proves each guard with an ordinary nested
 //! `solve` (the bounded overflow-interval reasoning decides it from the
-//! operands' bounds), extracts the consequent, and continues the closure.
+//! operands' bounds), applies the implication, and continues the closure.
 //! Expansion therefore renders the discharge as `have defined(..) by { .. }`
-//! followed by `extract(..)`. An implication under an ordinary condition is
+//! followed by `apply(fact) using { .. }`. An implication under an ordinary condition is
 //! not selected here: its antecedent is never proved by a nested search. The
 //! direct logical closure applies one only when its antecedent is already
 //! exactly available (`try_discharged_consequent_closure`).

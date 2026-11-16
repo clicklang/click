@@ -168,7 +168,7 @@ fn mirrored_implication_consequents_expand_to_checked_extraction() {
             );
             verify_click_theorems(&source).unwrap_or_else(|error| panic!("{goal}: {error}"));
             let expanded = expand_c_claim_source_by_label(&source, &[], "bound.ensures_0").unwrap();
-            assert!(expanded.contains("extract("), "{expanded}");
+            assert!(!expanded.contains("extract("), "{expanded}");
             without_implicit_solve(|| verify_click_theorems(&expanded))
                 .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
             let missing_guard = expanded.replace("requires enabled;", "");
@@ -4245,17 +4245,17 @@ fn serialized_loop_premises_reject_a_changed_state_or_polarity() {
     let expanded = expand_function_proof_source(source, &sources, "fill_tail").unwrap();
     verify_c_sources(&expanded, &sources).expect("serialized loop proof must reverify");
 
-    let original = "extract(at(loop(0).exit, i) <= at(loop(0).exit, n));";
+    let original = "have at(loop(0).exit, i) <= at(loop(0).exit, n) by {";
     assert!(expanded.contains(original), "{expanded}");
     for corrupted in [
         expanded.replacen(
             original,
-            "extract(at(region(3).entry, i) <= at(loop(0).exit, n));",
+            "have at(region(3).entry, i) <= at(loop(0).exit, n) by {",
             1,
         ),
         expanded.replacen(
             original,
-            "extract(not at(loop(0).exit, i) <= at(loop(0).exit, n));",
+            "have not at(loop(0).exit, i) <= at(loop(0).exit, n) by {",
             1,
         ),
     ] {
@@ -7358,8 +7358,8 @@ fn restricted_solve_after_unfold_expands_explicit_conjunction_extraction() {
     verify_c_sources(click_source, &[]).expect("conjunction elimination should verify");
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("conjunction elimination should have an explicit expansion");
-    assert!(expanded.contains("extract(x == y);"), "{expanded}");
-    assert!(expanded.contains("extract(y == z);"), "{expanded}");
+    assert!(expanded.contains("have x == y by"), "{expanded}");
+    assert!(expanded.contains("have y == z by"), "{expanded}");
     assert!(expanded.contains("normalize() using"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -14529,8 +14529,8 @@ fn source_expander_extracts_unfolded_conjuncts_inside_have() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("restricted solve should extract its unfolded conjunct premises");
-    assert!(expanded.contains("extract(x == y);"), "{expanded}");
-    assert!(expanded.contains("extract(y == z);"), "{expanded}");
+    assert!(expanded.contains("have x == y by"), "{expanded}");
+    assert!(expanded.contains("have y == z by"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
@@ -21325,6 +21325,7 @@ fn explicit_and_implicit_entry_witnesses_expand_without_search() {
             let expanded = expand_c_claim_source_by_label(&source, &sources, "outer.ensures_0")
                 .unwrap_or_else(|error| panic!("{fixture}, {step}: {error}"));
             assert!(expanded.contains("witness {"), "{expanded}");
+            assert!(!expanded.contains("extract("), "{expanded}");
             without_implicit_solve_for_claim("outer.contract", || {
                 verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
             })

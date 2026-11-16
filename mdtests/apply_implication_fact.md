@@ -13,6 +13,15 @@ theorem named_fact(x: int32, y: int32) {
     }
 }
 
+theorem named_fact_explicit(x: int32, y: int32) {
+    requires x > 0;
+    requires x > 0 implies y > 0;
+    ensures y > 0 by {
+        have h: x > 0 implies y > 0 by known();
+        apply(h) using { x > 0; };
+    }
+}
+
 theorem explicit_chain(x: int32, y: int32, z: int32) {
     requires x > 0;
     requires y > 0;

@@ -33,3 +33,36 @@ pub(crate) fn universal_candidates(
 mod operation_guard;
 #[cfg(test)]
 pub(crate) use operation_guard::{FastOperationScope, record_discovery};
+
+/// Select explicit implication sources from the consequent's indexed bucket.
+pub(crate) fn implication_candidates(
+    facts: &crate::kernel::proof::ProofFacts,
+    goal: &crate::kernel::Proposition,
+) -> Vec<crate::kernel::Proposition> {
+    facts.implication_sources_for_search(goal, SearchPermission::new())
+}
+
+/// Project only disjunctions connected to the requested fact. Search, rather
+/// than the simple checker, owns enumeration of a potentially growing bucket.
+pub(crate) fn connected_disjunction_candidates(
+    context: &crate::kernel::PureFactContext,
+    goal: &crate::kernel::Proposition,
+) -> Vec<crate::kernel::Proposition> {
+    #[cfg(test)]
+    record_discovery("connected_disjunction_candidates");
+    let keys = crate::kernel::reasoning::variable_collection::collect_atomic_connection_keys(goal);
+    let mut seen = std::collections::HashSet::new();
+    let mut selected = Vec::new();
+    for key in keys {
+        for source in context.disjunctions_connected_to(&key) {
+            crate::instrumentation::record_deterministic_work(1);
+            if seen.insert(source as *const crate::kernel::Proposition) {
+                selected.push(source.clone());
+                if selected.len() == 64 {
+                    return selected;
+                }
+            }
+        }
+    }
+    selected
+}

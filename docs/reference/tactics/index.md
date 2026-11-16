@@ -93,7 +93,8 @@ when the default misses or when a proof must not search.
   arm or iteration proves; a proof `if` before the C splits the paths that
   return differently, each arm stepping to exit.
 - **Closing a proposition: `solve`, `known`, `normalize`,
-  `arithmetic_certificate`, `extract`.** Letting the script end, so that the
+  `arithmetic_certificate`, `apply(fact) using {...}`.** Letting the script end,
+  so that the
   implicit closer closes the goal, is the default, and `solve()` closes the
   first open goal where a script continues after it. Write
   `solve() using { ... }` for a goal that follows from named facts, an
@@ -1105,7 +1106,7 @@ step is still checked.
 | `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
 | `known()` | simple | Expansion output | Close a goal from available facts or goal-local computation. | [Reference](#available-facts) |
-| `extract(P)` | simple | Expansion output | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
+| `extract(P)` | simple | Specialized | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
@@ -1349,16 +1350,16 @@ for `x <= 100` false), so `a and b implies c` closes where the curried
 
 A goal that is one conjunct of an implication's consequent, `c == 2` from
 `a != 0` and `a != 0 implies (b == 1 and c == 2)`, is closed once the
-antecedent is an available fact: the closer extracts the whole consequent,
-spelled as the implication is written, and the goal is then a proper
-conjunct; expansion writes the `extract`
+antecedent is an available fact: expansion applies the implication with
+`apply(fact) using { ... }`, retains its whole conclusion, and closes the
+selected conjunct with `known()`
 ([`solve_closes_a_conjunct_of_a_discharged_consequent.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_closes_a_conjunct_of_a_discharged_consequent.md)).
 
 A comparison held only under a definedness guard (`defined(e) implies a == b`,
 as a call postcondition over partial arithmetic lowers) whose consequent names a
-goal operand is used once a nested `solve` proves the guard: the closer extracts
-the consequent and rewrites the goal with an equality or closes from the new
-fact.
+goal operand is used once a nested `solve` proves the guard: the closer applies
+the implication with explicit evidence and rewrites the goal with an equality
+or closes from the new fact.
 
 An `int32` or `int64` definedness goal `defined(a + b)` or `defined(a - b)` is
 closed by the checked `int32_defined` or `int64_defined` certificate rule,
@@ -1584,8 +1585,10 @@ simple leaf.
 
 **Form:** `extract(P)`
 
-**Expansion output.** `click expand` writes it; by hand, write it to state one
-conjunct or consequent of a fact before a step that needs it spelled. It adds
+**Specialized.** Retained for handwritten proofs. Solver expansion uses
+`have P by { known(); }`, explicit implication application, `cases`, or
+`if` instead. This tactic states one conjunct or consequent of an available fact.
+It adds
 `P` as a fact and closes the goal when the goal is then a fact. Written steps
 after a closing `extract` are still checked, and they see all of `P`
 ([`extract_before_more_steps_keeps_the_whole_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_before_more_steps_keeps_the_whole_fact.md)).
@@ -2743,6 +2746,7 @@ premises by `known()`'s rules. Ambient facts do not fill missing evidence.
 Conjunctions and quantified conclusions are retained whole. Later written
 steps see the established conclusion, as after theorem application.
 
+<!-- verified-example: mdtests/apply_implication_fact.md -->
 ```click
 have h: x > 0 implies y > 0 by known();
 apply(h) using { x > 0; };

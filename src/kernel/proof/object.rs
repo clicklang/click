@@ -1028,6 +1028,17 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .ok_or(PropositionCloseError::NotProposition)?;
         let proposition = goal.proposition();
         let available = |proposition: &Proposition| {
+            // Re-lowering a quoted quantified fact freshens its binders.
+            // Its exact typed identity already has a persistent index,
+            // including memory-reading forms outside the older equivalence
+            // index. This recognizes the held fact without any search.
+            if matches!(
+                proposition,
+                Proposition::ForAll { .. } | Proposition::Exists { .. } | Proposition::Implies(..)
+            ) && facts.contains_quantified_identity(proposition)
+            {
+                return true;
+            }
             if let Some(outcome) = goal.outcome.as_deref() {
                 facts.pure_known_available(proposition)
                     || facts.available_across_effects(proposition, &*outcome.core.effect_facts)
