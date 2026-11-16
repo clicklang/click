@@ -275,6 +275,20 @@ machine exports; existing typed-ID, name-capture, nested-result and selected-bod
 scaling regressions passed. All 1,992 Surface, rewrite and scaling tests and quality checks
 passed. Algebraic Integer match fixtures passed with zero fact-stability differences.
 
+### 9j common lowering result interface
+
+Scalar, Integer, algebraic, field and call-argument evaluator paths now share a
+typed result container with separately scoped facts and obligations. Mapping a
+result moves that context unchanged. The retained expression-capture API exposes
+a common root without exporting its tree; the native API remains an explicit
+compatibility output and now moves its selected result rather than cloning it.
+
+Validation: typed root/native value parity and exact preservation of conversion
+obligations and path facts; growing arithmetic capture has linear work and zero
+machine exports. All 2,013 specification, Surface and scaling tests and quality
+checks passed. Selected integer read-back and freed-pointer conversion fixtures
+passed with zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
