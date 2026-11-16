@@ -1751,3 +1751,19 @@ fn resource_scope_preservation_migrations_expand_and_replay() {
         .unwrap();
     }
 }
+
+#[test]
+#[ignore = "nightly: saved-range observation expansion and cold replay"]
+fn saved_memory_observation_expands_and_replays() {
+    let (mut source, sources) = mdtest_sources("mdtests/observe_saved_pointer_memory_range.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    for claim in ["update.contract", "update_byte.contract"] {
+        source = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    }
+    assert!(source.contains("observe(at("), "{source}");
+    assert!(!source.contains("transport("), "{source}");
+    without_implicit_solve(|| verify_c_sources(&source, &sources)).unwrap();
+}

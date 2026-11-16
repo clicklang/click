@@ -1630,6 +1630,7 @@ fn expand_declared_resource_tactic(
         tactic @ (ProofTactic::UnfoldResource(_)
         | ProofTactic::UnfoldWitnesses { .. }
         | ProofTactic::ObserveResource(_)
+        | ProofTactic::ObserveSavedMemory { .. }
         | ProofTactic::FoldResource(_)
         | ProofTactic::ConstructResource(_)
         | ProofTactic::Iterated(_)) => {
@@ -2418,9 +2419,8 @@ fn expand_declared_resource_tactic_with_resources(
                 expand_declared_resource_clause(resource, resource_definitions)?,
             )))
         }
-        tactic @ ProofTactic::Iterated(IteratedTactic::Take(_) | IteratedTactic::Give(_)) => {
-            Ok(tactic)
-        }
+        tactic @ (ProofTactic::Iterated(IteratedTactic::Take(_) | IteratedTactic::Give(_))
+        | ProofTactic::ObserveSavedMemory { .. }) => Ok(tactic),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }
 }

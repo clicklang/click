@@ -4233,7 +4233,7 @@ unchanged, and profiling charges one application.
 
 ### Observing resources
 
-**Form:** `observe(resource)` or `observe(p[lo..hi])`
+**Form:** `observe(resource)`, `observe(p[lo..hi])`, or `observe(at(point, p)[lo..hi])`
 
 For an explicitly selected memory range, `observe(p[lo..hi])` adds
 `viewable(p[lo..hi])` at the current program state. The exact range must be
@@ -4241,6 +4241,14 @@ held as a unit owner or view. This form also works at function exit and
 inside a `have` proof with a concrete program state. It performs indexed
 permission lookups, without looking for a covering range or following
 history. The held resources do not change.
+
+A saved range selects the pointer value at a recorded point; its bounds are
+evaluated in the surrounding state. `observe(at(point, p)[lo..hi])` establishes
+current `viewable(memory(at(point, p)[lo..hi]))`. `observe(old(p)[lo..hi])` uses
+the entry pointer. Both use the same exact permission lookup as a current range;
+they do not search intervening writes or change the selected resource.
+See [`observe_saved_pointer_memory_range.md`](https://github.com/clicklang/click/blob/master/mdtests/observe_saved_pointer_memory_range.md)
+and its [missing-permission refusal](https://github.com/clicklang/click/blob/master/mdtests/observe_saved_pointer_memory_requires_ownership.md).
 
 This establishes live storage, not initialized contents or any stored value.
 To restrict the resulting fact to a smaller range, use `separation::contains_subrange`
