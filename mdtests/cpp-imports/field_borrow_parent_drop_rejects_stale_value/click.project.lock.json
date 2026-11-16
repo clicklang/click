@@ -50,7 +50,7 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
           "name": "clang"
         },
         "sources": {
@@ -58,9 +58,9 @@
             "artifact": {
               "bytes": 19165,
               "path": ".click/fixture/field_drop.cpp.click-cpp.json",
-              "sha256": "9ccac3df873400a942468d413214f01bfc52b11d0822b4027f7dfb0a2082447a"
+              "sha256": "be6463b24da42dd2def7c233e76da13d53b2d78ad7b846d5c7deb085f051ff3b"
             },
-            "identity": "4cf476550cf93f760f503aba400aaef1bb3ae7e0280204c906808cb4a793dbce",
+            "identity": "1e296ea02aabf26c5e8a19de78fdfaab8cba1824976f287797780eaf9a883825",
             "inputs": {
               "$unit/field_drop.cpp": "06ff84357ed52897d0699d93a68cdee16c6e20c3ef8648a5b9407c54ed8f6274"
             }

@@ -866,6 +866,13 @@ pub enum CppCallArgument {
         value_type: CppType,
         span: CppSpan,
     },
+    /// A resolved trivial prvalue constructed for a by-value argument.
+    Construct {
+        callee: CppFunctionReference,
+        arguments: Vec<CppCallArgument>,
+        value_type: CppType,
+        span: CppSpan,
+    },
 }
 
 /// A pure condition retains its existing expression encoding. A call is a
@@ -3743,7 +3750,7 @@ impl CppStatement {
             Self::ReturnConstruct { callee, arguments, value_type, cleanups, span }
             | Self::ReturnAggregateCall { callee, arguments, value_type, cleanups, span } => {
                 validate_call_in_context(callee, arguments, span, places, records, logical_source,
-                    matches!(self, Self::ReturnConstruct { .. }))?;
+                    matches!(self, Self::ReturnConstruct { .. }), false)?;
                 if !matches!(value_type, CppType::Record { is_const: false, .. }) || !cleanups.is_empty() {
                     return Err("C++ construction returns require a mutable record result and no exit cleanup".into());
                 }
@@ -3867,11 +3874,9 @@ impl CppStatement {
                 require_bool(condition.value_type(), false, "while condition")?;
                 validate_loop_body(body, places, records, logical_source)
             }
-            Self::Call {
-                callee,
-                arguments,
-                span,
-            } => validate_call(callee, arguments, span, places, records, logical_source),
+            Self::Call { callee, arguments, span } => validate_call_in_context(
+                callee, arguments, span, places, records, logical_source, false, true,
+            ),
         }
     }
 }
@@ -4108,6 +4113,7 @@ fn validate_call(
         records,
         logical_source,
         false,
+        false,
     )
 }
 
@@ -4122,7 +4128,14 @@ fn validate_call_in_context(
     records: &RecordIndex<'_>,
     logical_source: &str,
     returned_construction: bool,
+    record_temporaries: bool,
 ) -> Result<(), String> {
+    let has_record_temporaries = arguments.iter().any(CppCallArgument::is_record_temporary);
+    if has_record_temporaries && !record_temporaries {
+        return Err(
+            "C++ record temporaries require one nonthrowing statement call full expression".into(),
+        );
+    }
     let observer_values = returned_construction && arguments.iter().any(|argument|
         matches!(argument, CppCallArgument::Value { value } if value.contains_observer()));
     if observer_values
@@ -4136,7 +4149,12 @@ fn validate_call_in_context(
     }
     let nested_calls = arguments
         .iter()
-        .filter(|argument| matches!(argument, CppCallArgument::Call { .. }))
+        .filter(|argument| {
+            matches!(
+                argument,
+                CppCallArgument::Call { .. } | CppCallArgument::Construct { .. }
+            )
+        })
         .count();
     let isolated = arguments
         .iter()
@@ -4147,15 +4165,20 @@ fn validate_call_in_context(
         .unwrap_or(false);
     if nested_calls > 1
         || (nested_calls == 1
-            && arguments.iter().any(|argument| match argument {
-                CppCallArgument::Call { .. } => false,
-                CppCallArgument::Value { value } => {
-                    !stable_scalar_argument(value, places)
-                        && !(isolated && field_scalar_argument(value))
-                }
-                CppCallArgument::Reference { .. } => true,
-                CppCallArgument::RecordCopy { .. } => false,
-            }))
+            && arguments
+                .iter()
+                .enumerate()
+                .any(|(index, argument)| match argument {
+                    CppCallArgument::Call { .. } | CppCallArgument::Construct { .. } => false,
+                    CppCallArgument::Value { value } => {
+                        !stable_scalar_argument(value, places)
+                            && !(isolated && field_scalar_argument(value))
+                    }
+                    CppCallArgument::Reference { place } => {
+                        !has_record_temporaries || index != 0 || !place.projections.is_empty()
+                    }
+                    CppCallArgument::RecordCopy { .. } => has_record_temporaries,
+                }))
     {
         return Err("nested C++ call arguments require one call and order-independent scalar siblings to preserve evaluation order".into());
     }
@@ -4183,6 +4206,7 @@ fn scalar_only_arguments(arguments: &[CppCallArgument]) -> bool {
         match argument {
             CppCallArgument::Value { value } => Scalar::of(value.value_type()).is_some(),
             CppCallArgument::Call { .. }
+            | CppCallArgument::Construct { .. }
             | CppCallArgument::Reference { .. }
             | CppCallArgument::RecordCopy { .. } => false,
         }
@@ -4274,6 +4298,17 @@ fn checked_boolean_condition(
 }
 
 impl CppCallArgument {
+    pub(super) fn is_record_temporary(&self) -> bool {
+        matches!(
+            self,
+            Self::Construct { .. }
+                | Self::Call {
+                    value_type: CppType::Record { .. },
+                    ..
+                }
+        )
+    }
+
     fn validate(
         &self,
         places: &ValidationPlaces<'_>,
@@ -4320,10 +4355,53 @@ impl CppCallArgument {
                 value_type,
                 span,
             } => {
+                if let CppType::Record {
+                    declaration_id,
+                    name,
+                    is_const: false,
+                } = value_type
+                {
+                    validate_trivial_record_value(records, declaration_id, name)?;
+                    return validate_call_in_context(
+                        callee,
+                        arguments,
+                        span,
+                        places,
+                        records,
+                        logical_source,
+                        false,
+                        true,
+                    );
+                }
                 if require_scalar_integer(value_type, "nested-call value").is_err()
                     && require_object_pointer_value(value_type, "nested-call value").is_err()
                 {
                     require_bool(value_type, false, "nested-call value")?;
+                }
+                validate_call(callee, arguments, span, places, records, logical_source)
+            }
+            Self::Construct {
+                callee,
+                arguments,
+                value_type,
+                span,
+            } => {
+                let CppType::Record {
+                    declaration_id,
+                    name,
+                    is_const: false,
+                } = value_type
+                else {
+                    return Err(
+                        "C++ temporary construction requires a mutable trivial record".into(),
+                    );
+                };
+                validate_trivial_record_value(records, declaration_id, name)?;
+                if arguments
+                    .iter()
+                    .any(|argument| !matches!(argument, Self::Value { .. }))
+                {
+                    return Err("C++ temporary constructor arguments require pure values".into());
                 }
                 validate_call(callee, arguments, span, places, records, logical_source)
             }
@@ -4734,11 +4812,11 @@ impl CppExpression {
             } => {
                 span.validate(logical_source)?;
                 pointer.validate(places, records, logical_source)?;
-                require_native_object_pointer(pointer.value_type(), "dereference operand")?;
                 let CppType::Pointer { pointee } = pointer.value_type() else {
-                    unreachable!("validated native pointer")
+                    return Err("C++ dereference requires a native object pointer".into());
                 };
-                if !same_scalar_type(pointee, value_type) {
+                require_native_pointer_element(pointee, true, "dereference operand")?;
+                if !same_scalar_type(&super::scalar::scalar_value_type(pointee), value_type) {
                     return Err("C++ dereference must preserve the native pointee type".into());
                 }
                 Ok(())
@@ -4811,7 +4889,7 @@ impl CppExpression {
                 span,
             } => {
                 span.validate(logical_source)?;
-                require_native_pointer_element(pointee, false, "pointer arithmetic pointee")?;
+                require_native_pointer_element(pointee, true, "pointer arithmetic pointee")?;
                 left.validate(places, records, logical_source)?;
                 right.validate(places, records, logical_source)?;
                 let result_type = self.value_type();
@@ -5359,6 +5437,20 @@ fn validate_reachable_calls(
                 observer,
                 ..
             } => {
+                if arguments.iter().any(CppCallArgument::is_record_temporary) {
+                    if !target.declared_noexcept {
+                        return Err(
+                            "C++ record temporary calls require a nonthrowing callee".into()
+                        );
+                    }
+                    if arguments
+                        .iter()
+                        .any(|argument| matches!(argument, CppCallArgument::Reference { .. }))
+                        && !matches!(target.function_kind, CppFunctionKind::Method { .. })
+                    {
+                        return Err("C++ record temporary calls permit only a direct method receiver reference".into());
+                    }
+                }
                 if observer && !target.declared_noexcept {
                     return Err("C++ expression observers require nonthrowing callees".into());
                 }
@@ -6022,6 +6114,20 @@ fn collect_ordinary_call<'a>(
 
 fn collect_nested_calls<'a>(arguments: &'a [CppCallArgument], calls: &mut Vec<CollectedCall<'a>>) {
     for argument in arguments {
+        if let CppCallArgument::Construct {
+            callee,
+            arguments,
+            value_type,
+            ..
+        } = argument
+        {
+            calls.push(CollectedCall::ReturnedConstructor {
+                callee,
+                arguments,
+                value_type,
+            });
+            collect_nested_calls(arguments, calls);
+        }
         if let CppCallArgument::Value { value } = argument {
             collect_expression_calls(value, calls);
         }
@@ -6083,8 +6189,13 @@ fn validate_argument_types(
             (CppCallArgument::RecordCopy { value_type, .. }, CppType::Record { .. }) => {
                 value_type == parameter_type
             }
-            (CppCallArgument::Call { value_type, .. }, expected) => {
+            (
+                CppCallArgument::Call { value_type, .. }
+                | CppCallArgument::Construct { value_type, .. },
+                expected,
+            ) => {
                 same_scalar_type(value_type, expected)
+                    || matches!((value_type, expected), (CppType::Record { .. }, CppType::Record { .. }) if value_type == expected)
             }
             (
                 CppCallArgument::Value { value },
@@ -6682,7 +6793,7 @@ impl CppCallArgument {
             Self::Reference { place } | Self::RecordCopy { place, .. } => {
                 place.declaration_id == declaration_id
             }
-            Self::Call { arguments, .. } => arguments
+            Self::Call { arguments, .. } | Self::Construct { arguments, .. } => arguments
                 .iter()
                 .any(|argument| argument.references_place(declaration_id)),
         }
@@ -6697,7 +6808,7 @@ impl CppCallArgument {
             Self::Value { value } => {
                 value.validate_constant_references(logical_source, constants, referenced_constants)
             }
-            Self::Call { arguments, .. } => {
+            Self::Call { arguments, .. } | Self::Construct { arguments, .. } => {
                 for argument in arguments {
                     argument.validate_constant_references(
                         logical_source,

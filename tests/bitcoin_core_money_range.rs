@@ -4801,3 +4801,61 @@ fn pinned_span_nested_parameter_precondition_expands_offline() {
     check_pinned_writable_span_proof(&root, &import, &source);
     fs::remove_dir_all(root).unwrap();
 }
+
+// Bitcoin's serialization body and endian conversion are unchanged. The
+// fixture reader is selected for body verification; it does not model SpanReader.
+#[test]
+#[ignore = "nightly: pinned Bitcoin read32 cursor execution and remaining byte-value refusal"]
+fn pinned_bitcoin_read32_executes_cursor_but_byte_values_are_not_yet_verified_offline() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cpp-byte-output");
+    let harness = fs::read_to_string(fixture.join("bitcoin-read32.cpp")).unwrap();
+    let source = fs::read_to_string(fixture.join("bitcoin-read32.click")).unwrap();
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "bitcoin-read32-composition",
+        &harness,
+        &[
+            "bitcoin-src/src/serialize.h",
+            "bitcoin-src/src/compat/endian.h",
+            "sysroot/usr/include/c++/12/cstddef",
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+            "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h",
+            "sysroot/usr/include/x86_64-linux-gnu/bits/types.h",
+        ],
+    );
+    assert_eq!(
+        sha256(&fs::read(root.join("bitcoin-src/src/serialize.h")).unwrap()),
+        "87a273aa8cb9aeea82cd8038bb85284a5782c8abc35f8c826eb60f1a01e06775"
+    );
+    assert!(
+        import
+            .export()
+            .reachable_functions
+            .iter()
+            .any(|function| { function.path == ["ser_readdata32<FixtureReader>"] })
+    );
+    fs::write(root.join("byte.click"), &source).unwrap();
+    let project = read_click_project(&root.join("byte.click"), &source).unwrap();
+    // All four byte stores and both cursor updates execute. The strong
+    // byte-value postconditions remain open; this is not serialization coverage.
+    // In particular this must never regress to an uninitialized source read.
+    let error = verify_program_prepared_project(&project, &import)
+        .expect_err("promote to ordinary/expanded/cold/retained verification when repaired");
+    assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+    let report = error.report();
+    assert!(report.contains("FixtureReader"), "{report}");
+    assert!(
+        !report.contains("read of uninitialized storage"),
+        "{report}"
+    );
+    assert!(report.contains("verification budget exhausted"), "{report}");
+    assert!(
+        report.contains("statement 26"),
+        "reader must reach its exit: {report}"
+    );
+    assert!(
+        report.contains("goal:") && report.contains("2))"),
+        "third byte's value remains open: {report}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
