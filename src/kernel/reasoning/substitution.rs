@@ -8126,6 +8126,9 @@ fn substitute_pointer_variable_in_spec_proposition(
             end: substitute_pointer_variable_in_spec_expression(end, from, to),
             element_width: *element_width,
         },
+        SpecProposition::MutexHeld(expression) => SpecProposition::MutexHeld(Box::new(
+            substitute_pointer_variable_in_spec_expression(expression, from, to),
+        )),
         SpecProposition::Defined(expression) => SpecProposition::Defined(
             substitute_pointer_variable_in_spec_expression(expression, from, to),
         ),
