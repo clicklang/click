@@ -10,9 +10,11 @@ fn assert_only_integer_arithmetic_leaves(source: &str) {
         if token.text != "arithmetic_certificate" {
             continue;
         }
-        assert_eq!(tokens[index + 1].text, "{", "{source}");
+        let rules = tokens[index + 1].text == "rules";
+        let open = index + if rules { 2 } else { 1 };
+        assert_eq!(tokens[open].text, "{", "{source}");
         let mut depth = 1;
-        let mut end = index + 2;
+        let mut end = open + 1;
         while depth != 0 {
             match tokens[end].text.as_str() {
                 "{" => depth += 1,
@@ -21,35 +23,63 @@ fn assert_only_integer_arithmetic_leaves(source: &str) {
             }
             end += 1;
         }
-        let body = &tokens[index + 2..end - 1];
-        assert!(
-            matches!(
-                body[0].text.as_str(),
-                "trivial" | "type_range" | "operation_bound"
-            ),
-            "{source}"
-        );
-        assert_eq!(body[1].text, "=>", "{source}");
-        // Result expressions may contain let-bound semicolons. Only a
-        // top-level separator ends the single certificate node.
+        let body = &tokens[open + 1..end - 1];
+        // Ignore separators inside a result expression's let or match.
         let mut nested = 0;
-        let separator = body
-            .iter()
-            .position(|token| {
-                match token.text.as_str() {
-                    "(" | "[" | "{" => nested += 1,
-                    ")" | "]" | "}" => nested -= 1,
-                    ";" if nested == 0 => return true,
-                    _ => {}
+        let mut start = 0;
+        let mut statements = Vec::new();
+        for (index, token) in body.iter().enumerate() {
+            match token.text.as_str() {
+                "(" | "[" | "{" => nested += 1,
+                ")" | "]" | "}" => nested -= 1,
+                ";" if nested == 0 => {
+                    statements.push(
+                        body[start..index]
+                            .iter()
+                            .map(|token| token.text.as_str())
+                            .collect::<Vec<_>>(),
+                    );
+                    start = index + 1;
                 }
-                false
-            })
-            .expect("one node result");
-        let tail = body[separator + 1..]
-            .iter()
-            .map(|token| token.text.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(tail, ["conclusion", "0", ";"], "{source}");
+                _ => {}
+            }
+        }
+        assert_eq!(start, body.len(), "{source}");
+        if rules {
+            assert_eq!(statements.len(), 4, "{source}");
+            assert!(
+                statements[0].starts_with(&["premise", "0", ":"]),
+                "{source}"
+            );
+            assert!(
+                statements[1].starts_with(&["premise", "1", ":"]),
+                "{source}"
+            );
+            assert!(
+                statements[2].starts_with(&[
+                    "integer_operation_identity",
+                    "bounds",
+                    "[",
+                    "0",
+                    ",",
+                    "1",
+                    "]",
+                    "=>"
+                ]),
+                "{source}"
+            );
+        } else {
+            assert_eq!(statements.len(), 2, "{source}");
+            assert!(
+                matches!(
+                    statements[0][0],
+                    "trivial" | "type_range" | "operation_bound"
+                ),
+                "{source}"
+            );
+            assert_eq!(statements[0][1], "=>", "{source}");
+        }
+        assert_eq!(statements.last().unwrap(), &["conclusion", "0"], "{source}");
     }
 }
 

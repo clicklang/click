@@ -1633,8 +1633,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Prove each of `identities`, `to_integer(a op b) == to_integer(a) op
     /// to_integer(b)` or `to_integer((T)x) == to_integer(x)`, spelled from
     /// `written`: its two type-range bounds by selected-premise arithmetic, then the identity
-    /// by `normalize using` those two bounds. Each
-    /// operand was found after its operation, so the reverse order proves
+    /// by an explicit operation-identity certificate over those two bounds
+    /// (casts keep their compatibility route). Each operand was found after its operation, so the reverse order proves
     /// the innermost identity first. Returns the proof with the identities
     /// established and their spellings, or the identity that missed.
     pub(in crate::surface::proof) fn prove_operation_identities(
@@ -1825,7 +1825,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             let identity_surface = identity.clone();
             let scope = proof.driver().open_have(identity.clone())?;
-            let step = ProofStep::NormalizeUsing(vec![lower, upper]);
+            // Integer-to-word conversions and ordinary C casts are distinct.
+            // Only an actual machine operation uses this certificate family.
+            let step = if crate::kernel::machine_integer::identity::mathematical(observed).is_some()
+            {
+                super::super::wide_arithmetic::operation_identity(lower, upper, identity)
+            } else {
+                ProofStep::NormalizeUsing(vec![lower, upper])
+            };
             let closed = match scope.driver().apply_step(step) {
                 Ok(closed) => closed,
                 Err(_) => return Ok(Err(failed.clone())),
