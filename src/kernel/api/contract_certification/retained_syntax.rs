@@ -130,26 +130,18 @@ impl Comparison {
                 pending.push((av, bv));
                 continue;
             }
-            if matches!(left, Operand::Shared(root) if matches!(root.node(), N::FloatCall(_)))
-                || matches!(right, Operand::Shared(root) if matches!(root.node(), N::FloatCall(_)))
-            {
-                fn call(view: Operand<'_>) -> Option<(&str, Vec<CallArgument<'_>>)> {
-                    match view {
-                        Operand::Shared(root) => match root.node() {
-                            N::FloatCall(call) => Some((
-                                &call.name,
-                                call.arguments.iter().map(CallArgument::Shared).collect(),
-                            )),
-                            _ => None,
-                        },
-                        Operand::Legacy(MachineTerm::ClickFunctionApplication {
-                            name,
-                            arguments,
-                        }) => Some((name, arguments.iter().map(CallArgument::Native).collect())),
-                        _ => None,
-                    }
-                }
-                let (Some((an, aa)), Some((bn, ba))) = (call(left), call(right)) else {
+            // Common machine calls use the same argument reader as retained
+            // float calls. Do not build a native call merely to compare it.
+            let retained_call = |view| {
+                matches!(view, Operand::Shared(root)
+                if matches!(root.node(), N::FloatCall(_))
+                    || matches!(root.node(), N::Call { .. })
+                        && matches!(root.ty(), KernelType::Program(ty)
+                            if MachineIntegerType::from_program_type(*ty).is_some()))
+            };
+            if retained_call(left) || retained_call(right) {
+                let (Some((an, aa)), Some((bn, ba))) = (numeric_call(left), numeric_call(right))
+                else {
                     return false;
                 };
                 if an != bn
@@ -162,6 +154,14 @@ impl Comparison {
                     return false;
                 }
                 continue;
+            }
+            // Native Integer-to-machine syntax is not admitted by this
+            // comparison route. Keep that refusal without exporting its Integer
+            // operand; the shared/shared identity shortcut above is unchanged.
+            if [left, right].into_iter().any(|view| {
+                matches!(view, Operand::Shared(root) if matches!(root.node(), N::IntegerToMachine { .. }))
+            }) {
+                return false;
             }
             // Float atoms have a bounded native reading. Compound float syntax
             // keeps the native certification refusal until its own reader moves.
@@ -408,19 +408,41 @@ impl Comparison {
         {
             return self.call_argument(left, Native(value.value()));
         }
-        // These argument carriers retain their established native admission
-        // policy (including parameter-value refusal) at this selected boundary.
+        // Only literals and raw C Boolean variables have an admitted word
+        // reading here. Other logical roots become native BoolCast syntax,
+        // which this route refuses; do not export their condition to refuse it.
         if let Shared(root) = left
-            && let Some(argument) = root
-                .pointer_argument_native()
-                .or_else(|| root.boolean_argument_native())
+            && matches!(
+                root.ty(),
+                KernelType::Bool | KernelType::Program(ProgramType::Bool)
+            )
+        {
+            let Some(word) = boolean_argument_word(root) else {
+                return false;
+            };
+            return self.call_argument(Native(&A::Value(ProgramValue::Bool(word))), right);
+        }
+        if let Shared(root) = right
+            && matches!(
+                root.ty(),
+                KernelType::Bool | KernelType::Program(ProgramType::Bool)
+            )
+        {
+            let Some(word) = boolean_argument_word(root) else {
+                return false;
+            };
+            return self.call_argument(left, Native(&A::Value(ProgramValue::Bool(word))));
+        }
+        // Complete pointer arguments retain their established native admission
+        // policy at this selected boundary.
+
+        if let Shared(root) = left
+            && let Some(argument) = root.pointer_argument_native()
         {
             return self.call_argument(Native(argument), right);
         }
         if let Shared(root) = right
-            && let Some(argument) = root
-                .pointer_argument_native()
-                .or_else(|| root.boolean_argument_native())
+            && let Some(argument) = root.pointer_argument_native()
         {
             return self.call_argument(left, Native(argument));
         }
@@ -430,7 +452,7 @@ impl Comparison {
                 self.common_algebraic(a, b)
             }
             (Shared(a), Native(A::Algebraic(b))) | (Native(A::Algebraic(b)), Shared(a)) => {
-                self.common_algebraic(a, &crate::kernel::KernelTermImport::default().algebraic(b))
+                self.mixed_algebraic(a, b)
             }
             (Shared(a), Shared(b))
                 if a.ty() == b.ty()
@@ -454,6 +476,30 @@ impl Comparison {
                     _ => false,
                 }
             }
+            _ => false,
+        }
+    }
+
+    fn mixed_algebraic(&mut self, shared: &KernelTerm, native: &AlgebraicTerm) -> bool {
+        use crate::kernel::AlgebraicTermNode as T;
+        crate::instrumentation::record_deterministic_work(1);
+        if shared.ty() != &KernelType::Algebraic(native.algebraic_type.clone()) {
+            return false;
+        }
+        match (shared.node(), &native.node) {
+            (N::Variable(a), T::Variable(b)) => a == b,
+            (N::AlgebraicCall(_), T::PureFunctionApplication { .. })
+            | (N::AlgebraicRead(_), T::MemoryLoad { .. }) => {
+                // Mixed call admission already compares imported arguments as
+                // common roots, including their exact shared identities. Keep
+                // that policy at this selected adapter, not native Eq/Ord.
+                self.common_algebraic(
+                    shared,
+                    &crate::kernel::KernelTermImport::default().algebraic(native),
+                )
+            }
+            // Constructors, matches and conditionals are not admitted here.
+            // Refusal must not import all their fields, arms or branches.
             _ => false,
         }
     }
@@ -549,6 +595,43 @@ impl Comparison {
     }
 }
 
+fn boolean_argument_word(root: &KernelTerm) -> Option<MachineTerm> {
+    if let Some(value) = crate::kernel::BooleanOperandView::Shared(root).constant() {
+        return Some(MachineTerm::bool_cast(
+            MachineIntegerType::UInt8,
+            ConditionTerm::Constant(value),
+        ));
+    }
+    if root.ty() == &KernelType::Program(ProgramType::Bool)
+        && let N::Variable(variable) = root.node()
+    {
+        return Some(MachineTerm::Variable(*variable));
+    }
+    None
+}
+
+fn numeric_call(view: Operand<'_>) -> Option<(&str, Vec<CallArgument<'_>>)> {
+    match view {
+        Operand::Shared(root) => match root.node() {
+            N::FloatCall(call) => Some((
+                &call.name,
+                call.arguments.iter().map(CallArgument::Shared).collect(),
+            )),
+            N::Call { name, arguments }
+                if matches!(root.ty(), KernelType::Program(ty)
+                    if MachineIntegerType::from_program_type(*ty).is_some()) =>
+            {
+                Some((name, arguments.iter().map(CallArgument::Shared).collect()))
+            }
+            _ => None,
+        },
+        Operand::Legacy(MachineTerm::ClickFunctionApplication { name, arguments }) => {
+            Some((name, arguments.iter().map(CallArgument::Native).collect()))
+        }
+        _ => None,
+    }
+}
+
 fn numeric_conversion(view: Operand<'_>) -> Option<((ProgramType, ProgramType), Operand<'_>)> {
     match view {
         Operand::Shared(root) => match root.node() {
@@ -576,6 +659,113 @@ fn numeric_conversion(view: Operand<'_>) -> Option<((ProgramType, ProgramType), 
 mod tests {
     use super::*;
     use crate::kernel::{KernelTermExport, VerificationSession};
+
+    #[test]
+    fn boolean_argument_certification_keeps_literal_raw_word_and_logical_admission() {
+        let _session = VerificationSession::enter();
+        let mut cases = Vec::new();
+        for condition in [
+            ConditionTerm::Constant(false),
+            ConditionTerm::Constant(true),
+            ConditionTerm::Variable(Variable(999983)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(MachineTerm::Variable(Variable(999983))),
+                right: Box::new(MachineTerm::constant(4)),
+            },
+            ConditionTerm::BoolIf {
+                condition: Box::new(ConditionTerm::Variable(Variable(999983))),
+                then_condition: Box::new(ConditionTerm::Constant(true)),
+                else_condition: Box::new(ConditionTerm::Constant(false)),
+            },
+        ] {
+            let root = crate::kernel::KernelTermImport::default().condition(&condition);
+            let native = A::Value(ProgramValue::Bool(MachineTerm::bool_cast(
+                MachineIntegerType::UInt8,
+                condition,
+            )));
+            cases.push((root, native));
+        }
+        cases.push((
+            KernelTerm::variable(KernelType::Program(ProgramType::Bool), Variable(999983)),
+            A::Value(ProgramValue::Bool(MachineTerm::Variable(Variable(999983)))),
+        ));
+        let raw = A::Value(ProgramValue::Bool(MachineTerm::Constant {
+            format: MachineIntegerType::UInt8,
+            bits: 2,
+        }));
+        cases.push((
+            crate::kernel::KernelTermImport::default().argument(&raw),
+            raw,
+        ));
+        for (root, native) in cases {
+            let expected = Comparison::default().argument(&native, &native);
+            let exports = KernelTermExport::machine_export_count();
+            for (left, right) in [
+                (CallArgument::Shared(&root), CallArgument::Native(&native)),
+                (CallArgument::Native(&native), CallArgument::Shared(&root)),
+                (CallArgument::Shared(&root), CallArgument::Shared(&root)),
+            ] {
+                assert_eq!(Comparison::default().call_argument(left, right), expected);
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    #[test]
+    fn mixed_algebraic_call_certification_preserves_imported_argument_identity() {
+        use crate::kernel::{AlgebraicTermNode, AlgebraicType, IntegerTerm};
+        let _session = VerificationSession::enter();
+        let native = AlgebraicTerm {
+            algebraic_type: AlgebraicType::parameter("T".into()),
+            node: AlgebraicTermNode::PureFunctionApplication {
+                name: "identity_boundary".into(),
+                arguments: vec![A::Value(ProgramValue::Int32(
+                    MachineTerm::IntegerToMachine {
+                        destination: MachineIntegerType::Int32,
+                        value: IntegerTerm::Variable(Variable(999982)).into(),
+                    },
+                ))],
+            },
+        };
+        let shared = crate::kernel::KernelTermImport::default().algebraic(&native);
+        // The existing mixed route uses common argument identity; the native
+        // syntax route still refuses this conversion. Consolidation keeps both.
+        assert!(!algebraic_equal(&native, &native));
+        assert!(Comparison::default().mixed_algebraic(&shared, &native));
+    }
+
+    #[test]
+    fn retained_numeric_calls_keep_native_admission_without_argument_exports() {
+        let _session = VerificationSession::enter();
+        let variable = MachineTerm::Variable(Variable(999984));
+        for argument in [
+            A::Value(ProgramValue::Float32(variable.clone())),
+            A::Value(ProgramValue::Float64(variable.clone())),
+            A::Value(ProgramValue::Float32(MachineTerm::Float32Negate(Box::new(
+                variable,
+            )))),
+        ] {
+            let native = MachineTerm::ClickFunctionApplication {
+                name: "numeric_boundary".into(),
+                arguments: vec![argument],
+            };
+            let root = crate::kernel::KernelTermImport::default()
+                .machine(MachineIntegerType::Int32, &native);
+            assert!(matches!(root.node(), N::Call { .. }));
+            let expected =
+                Comparison::default().machine(Operand::Legacy(&native), Operand::Legacy(&native));
+            let exports = KernelTermExport::float_export_count();
+            for (left, right) in [
+                (Operand::Shared(&root), Operand::Legacy(&native)),
+                (Operand::Legacy(&native), Operand::Shared(&root)),
+            ] {
+                assert_eq!(Comparison::default().machine(left, right), expected);
+            }
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+        }
+    }
 
     #[test]
     fn retained_float_conversions_keep_native_certification_admission() {

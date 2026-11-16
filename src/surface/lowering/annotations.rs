@@ -988,7 +988,7 @@ impl KernelLoopPaths {
             paths: &mut Vec<Option<Vec<KernelLoopStep>>>,
         ) {
             match statement {
-                ProgramStatement::While { body, .. } => {
+                ProgramStatement::Loop { body, .. } => {
                     paths.push(Some(path.clone()));
                     // A loop inside another is not one a walk lowers alone.
                     paths.extend(std::iter::repeat_n(None, count_kernel_loops(body)));
@@ -1041,7 +1041,7 @@ impl KernelLoopPaths {
             #[cfg(test)]
             KERNEL_LOOP_REPLACEMENT_STEPS.with(|count| count.set(count.get() + 1));
             let Some((step, path)) = path.split_first() else {
-                return matches!(statement, ProgramStatement::While { .. })
+                return matches!(statement, ProgramStatement::Loop { .. })
                     .then(|| replacement.clone());
             };
             match (step, statement) {
@@ -1098,7 +1098,7 @@ impl KernelLoopPaths {
                 _ => return None,
             };
         }
-        matches!(statement, ProgramStatement::While { .. }).then_some(statement)
+        matches!(statement, ProgramStatement::Loop { .. }).then_some(statement)
     }
 }
 
@@ -1468,7 +1468,7 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
     #[cfg(test)]
     LOOP_LOOKUP_NODES.with(|count| count.set(count.get() + 1));
     match statement {
-        ProgramStatement::While { body, .. } => {
+        ProgramStatement::Loop { body, .. } => {
             let loop_index = *next_loop_index;
             *next_loop_index += 1;
             if loop_index == target {
@@ -1581,7 +1581,7 @@ fn kernel_loop_replaced(
     replacement: &ProgramStatement,
 ) -> Option<ProgramStatement> {
     match statement {
-        ProgramStatement::While { body, .. } => {
+        ProgramStatement::Loop { body, .. } => {
             let index = *next;
             *next += 1;
             if index == target {
@@ -1632,7 +1632,7 @@ fn kernel_loop_replaced(
 /// The loops `kernel_loop_by_index` numbers in `statement`.
 fn count_kernel_loops(statement: &ProgramStatement) -> usize {
     match statement {
-        ProgramStatement::While { body, .. } => 1 + count_kernel_loops(body),
+        ProgramStatement::Loop { body, .. } => 1 + count_kernel_loops(body),
         ProgramStatement::Seq(statements) => statements
             .iter()
             .map(|statement| count_kernel_loops(statement))
@@ -2967,7 +2967,7 @@ fn collect_local_pointer_element_types(
                 else_branch,
                 ..
             } => pending.extend([then_branch.as_ref(), else_branch.as_ref()]),
-            ProgramStatement::While { body, .. } => pending.push(body),
+            ProgramStatement::Loop { body, .. } => pending.push(body),
             ProgramStatement::ForStep { step, .. } => pending.push(step),
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
@@ -3664,7 +3664,7 @@ impl AnnotationLowerer<'_> {
                     self.lower_kernel_statement(else_branch)?,
                 )
             }
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 condition,
                 invariant,
                 invariant_checks,
@@ -3692,7 +3692,7 @@ impl AnnotationLowerer<'_> {
                 effects.extend(self.loop_frame_checks(index)?);
                 let mut resources = resource_specs.clone();
                 resources.extend(self.loop_resource_specs(index));
-                ProgramStatement::While {
+                ProgramStatement::Loop {
                     condition: condition.clone(),
                     invariant: invariant.clone(),
                     invariant_checks: checks,

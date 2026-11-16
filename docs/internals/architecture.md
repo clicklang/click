@@ -6,6 +6,11 @@ orchestration. Both the specification language and each target language have
 frontend stages such as parsing, validation, and lowering; *frontend* names a stage, not either
 language's role.
 
+The shared kernel loop node is `ProgramStatement::Loop`: it represents structured
+loops and checked natural cycles. Source ASTs retain their language-specific
+`While` forms; `program_while` and `program_do_while` construct the corresponding
+pre-test and post-test forms of the shared node.
+
 ## Repository map
 
 | Path | Responsibility |

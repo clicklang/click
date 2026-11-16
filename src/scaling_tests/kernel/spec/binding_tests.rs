@@ -98,3 +98,51 @@ fn selected_let_lookup_does_not_scan_other_lexical_values() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn fold_binding_handoffs_keep_growing_accumulator_roots_without_exports() {
+    let mut previous = None;
+    for size in [8, 32, 128] {
+        let _session = VerificationSession::enter();
+        let state = ExecutionState::new();
+        let atom = KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(992430));
+        let mut root = atom.clone();
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::UInt64,
+                MachineBinaryOp::Add,
+                [root, atom.clone()],
+            );
+        }
+        let mut values = crate::persistent::PersistentMap::default();
+        for index in 0..size {
+            values.insert(format!("other_{index}"), atom.clone());
+        }
+        values.insert("seed".into(), root.clone());
+        values.insert("v".into(), atom.clone());
+        values.insert("i".into(), atom);
+        let expression = SpecExpression::RangeFold {
+            start: Box::new(SpecExpression::Value(int32(0))),
+            end: Box::new(SpecExpression::Value(int32(2))),
+            initial: Box::new(name("seed")),
+            accumulator: "v".into(),
+            item: "i".into(),
+            body: Box::new(name("v")),
+        };
+        let scope = SpecScope {
+            values: Some(&values),
+            ..SpecScope::unbound(&state, None)
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let (path, work) =
+            crate::instrumentation::measure_deterministic_work(|| evaluate(scope, &expression));
+        assert_eq!(path.value.shared(), Some(&root));
+        assert!(path.facts.is_empty() && path.obligations.is_empty());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        if let Some(previous) = previous {
+            assert_eq!(work, previous, "fold handoff must not walk the accumulator");
+        }
+        previous = Some(work);
+        assert_eq!(values.get(&"seed".to_owned()), Some(&root));
+    }
+}

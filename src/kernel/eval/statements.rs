@@ -3471,7 +3471,7 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<Bi
         }
         // Nested scopes retire their own declarations.
         ProgramStatement::If { .. }
-        | ProgramStatement::While { .. }
+        | ProgramStatement::Loop { .. }
         | ProgramStatement::Switch { .. }
         | ProgramStatement::TryCatchInt32 { .. }
         // Everything else declares nothing.
@@ -3830,7 +3830,7 @@ pub(in crate::kernel) fn execute_statement_paths_with_prefix(
 fn is_annotated_loop(statement: &ProgramStatement) -> bool {
     matches!(
         statement,
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             invariant_checks,
             effect_checks,
             ranking_measures,
@@ -3877,7 +3877,7 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
         ProgramStatement::Store { .. } => "verification statement: store",
         ProgramStatement::TypedStore { .. } => "verification statement: typed store",
         ProgramStatement::Update { .. } => "verification statement: update",
-        ProgramStatement::While { .. } => "verification statement: while",
+        ProgramStatement::Loop { .. } => "verification statement: loop",
         ProgramStatement::Switch { .. } => "verification statement: switch",
         ProgramStatement::If { .. } => "verification statement: if",
         ProgramStatement::Seq(_) => "verification statement: sequence",
@@ -4028,7 +4028,7 @@ fn execute_execution_statement_leaf_paths(
             ProgramStatement::Call { .. }
                 | ProgramStatement::CallConstruct { .. }
                 | ProgramStatement::CallResult { .. }
-                | ProgramStatement::While { .. }
+                | ProgramStatement::Loop { .. }
                 | ProgramStatement::ForStep { .. }
                 | ProgramStatement::CopyAggregate { .. }
                 | ProgramStatement::InitializeScalarArray { .. }
@@ -4989,7 +4989,7 @@ fn execute_execution_statement_leaf_paths(
             }
             paths
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition,
             invariant,
             invariant_checks: _,
@@ -5020,7 +5020,7 @@ fn execute_execution_statement_leaf_paths(
             };
             match abstracted {
                 Some(paths) => paths,
-                None => execute_program_while_paths(
+                None => execute_program_loop_paths(
                     state,
                     condition,
                     invariant,
@@ -5391,7 +5391,7 @@ pub(in crate::kernel) fn assertion_truthiness_obligation(
     }
 }
 
-pub(in crate::kernel) fn execute_program_while_paths(
+pub(in crate::kernel) fn execute_program_loop_paths(
     state: &ExecutionState,
     condition: &ProgramExpression,
     invariant: &[Proposition],

@@ -331,11 +331,24 @@ the one the text names.
   choosing a term by known provenance. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
-Closed native order comparisons at 32 and 64 bits retain their comparison
+Closed native order comparisons at 8, 16, 32, and 64 bits retain their comparison
 node, format, and literal operands during logical lowering. Their truth is
 established by checking, including when exact rewriting removed the last
 variable before the comparison was printed. This does not change literal
 arithmetic evaluation or the existing equality normal forms.
+
+Generated comparison operands that are negative `int64` literals keep an explicit
+`as int64` cast, including under `old` and `at`. Their printed unary minus would
+otherwise reparse as mathematical Integer arithmetic and change the comparison
+family. Authored and diagnostic spellings keep the ordinary negative literal.
+
+Closed narrow native comparisons spell both operands with explicit `int8`,
+`uint8`, `int16`, or `uint16` casts. This preserves their format after a checked rewrite
+exposes literal operands: converting those literals to mathematical Integer
+observations would erase the width and signedness. Closed narrow logical orders retain that native format. Symbolic comparisons
+keep their existing observation spelling, and mixed-format comparisons and
+executed C keep their existing integer promotions. Literal order truth is checked without
+changing the retained comparison, including after quantified substitution.
 
 Checked machine equality rewriting evaluates a 32-bit division, remainder, or right
 shift when its operands are literals, using logical
