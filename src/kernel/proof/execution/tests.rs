@@ -3317,3 +3317,76 @@ fn opened_contract_entry_selects_premises_before_body_execution() {
         "invalid argument binding fails before a body proof exists"
     );
 }
+
+#[test]
+fn branch_interface_comparisons_retain_exact_shared_source_authority() {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{
+        ConditionTerm, KernelTermExport, KernelTermImport, MachineBinaryOp, MachineOperandView,
+    };
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = |id| MachineTerm::Variable(Variable(id));
+        let expression = MachineTerm::Binary {
+            format,
+            op: MachineBinaryOp::Add,
+            left: Box::new(variable(919001)),
+            right: Box::new(variable(919002)),
+        };
+        let root = KernelTermImport::default()
+            .machine_arithmetic(format, &expression)
+            .unwrap();
+        let right = variable(919003);
+        let observed = |relation| {
+            condition_for_operand_views(
+                format,
+                relation,
+                [
+                    MachineOperandView::Shared(&root),
+                    MachineOperandView::Legacy(&right),
+                ],
+            )
+        };
+        for relation in [
+            CompareRelation::Equal,
+            CompareRelation::LessThan,
+            CompareRelation::GreaterEqual,
+        ] {
+            for truth in [false, true] {
+                let source = Proposition::ConditionIs(
+                    ConditionTerm::machine_compare(
+                        format,
+                        relation,
+                        expression.clone(),
+                        right.clone(),
+                    ),
+                    truth,
+                );
+                let goal = Proposition::ConditionIs(observed(relation), truth);
+                let empty = ProofFacts::default();
+                let facts = empty.with_fact(source.clone());
+                let exports = KernelTermExport::machine_export_count();
+                assert!(checked_branch_fact_is_available(&facts, &goal));
+                assert!(!checked_branch_fact_is_available(&empty, &goal));
+                assert!(!checked_branch_fact_is_available(
+                    &facts,
+                    &Proposition::ConditionIs(observed(relation), !truth)
+                ));
+                assert!(facts.contains(&source));
+                assert!(!facts.contains(&goal));
+                if relation == CompareRelation::LessThan && truth {
+                    assert!(!checked_branch_fact_is_available(
+                        &facts,
+                        &Proposition::ConditionIs(observed(CompareRelation::LessEqual), true)
+                    ));
+                }
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
+        }
+    }
+}
