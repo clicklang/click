@@ -76,8 +76,8 @@ impl AlgebraicResult {
     }
 }
 
-/// A selected constructor field. Program-carried parameters keep their native
-/// field form at the mixed-family boundary; logical algebraic fields retain roots.
+/// A selected constructor field. Program-carried parameters retain their typed
+/// envelope around the shared algebraic root; logical fields keep the bare root.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum AlgebraicFieldResult {
     Native(AlgebraicValue),
@@ -87,10 +87,11 @@ pub(super) enum AlgebraicFieldResult {
 impl AlgebraicFieldResult {
     pub(super) fn from_program(value: SpecValue) -> Self {
         match value {
-            SpecValue::Shared(root) if !matches!(root.ty(), KernelType::Algebraic(_)) => {
-                Self::Shared(root)
+            SpecValue::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => {
+                Self::Shared(KernelTerm::program_parameter(root))
             }
-            value => Self::Native(AlgebraicValue::Program(value.into_native())),
+            SpecValue::Shared(root) => Self::Shared(root),
+            SpecValue::Native(value) => Self::Native(AlgebraicValue::Program(value)),
         }
     }
     pub(super) fn from_algebraic(value: AlgebraicResult) -> Self {
@@ -131,19 +132,31 @@ impl AlgebraicFieldResult {
             _ => None,
         }
     }
-    pub(super) fn without_pointer_constant(mut self) -> Self {
+    pub(super) fn without_pointer_constant(self) -> Self {
         match self {
             Self::Native(AlgebraicValue::Program(value)) => Self::Native(AlgebraicValue::Program(
                 value.with_pointer_pointee_constant(false),
             )),
-            Self::Shared(ref root) if matches!(root.ty(), KernelType::Program(ty) if ty.is_pointer()) =>
-            {
-                if let Some(value) = self.program_mut() {
-                    *value = value.clone().with_pointer_pointee_constant(false);
+            Self::Shared(root) if matches!(root.ty(), KernelType::Program(ty) if ty.is_pointer()) => {
+                if let Some(pointer) = root.pointer_payload() {
+                    let payload = pointer.node();
+                    let volatile = payload.qualifiers.as_ref().is_some_and(|q| q.volatile);
+                    Self::Shared(root.with_pointer_payload(
+                        pointer.with_binding_type_and_qualifiers(
+                            payload.program_type,
+                            volatile,
+                            false,
+                        ),
+                    ))
+                } else {
+                    Self::Native(AlgebraicValue::Program(
+                        SpecValue::Shared(root)
+                            .into_native()
+                            .with_pointer_pointee_constant(false),
+                    ))
                 }
-                self
             }
-            _ => self,
+            value => value,
         }
     }
     pub(super) fn into_kernel(self) -> KernelTerm {
@@ -183,32 +196,5 @@ impl AlgebraicFieldResult {
             ),
             _ => None,
         }
-    }
-    pub(super) fn bind(
-        &self,
-        name: &BindingName,
-        state: &mut ExecutionState,
-        algebraic: &mut BTreeMap<BindingName, AlgebraicTerm>,
-        values: &mut crate::persistent::PersistentMap<BindingName, KernelTerm>,
-    ) {
-        match self {
-            Self::Shared(root) if matches!(root.node(), KernelTermNode::Legacy(_)) => self
-                .clone()
-                .into_native_result()
-                .bind(name, state, algebraic, values),
-            Self::Shared(root) if root.ty() != &KernelType::Integer => {
-                values.insert(name.to_owned(), root.clone());
-            }
-            Self::Shared(_) | Self::Native(AlgebraicValue::Integer(_)) => {}
-            Self::Native(AlgebraicValue::Program(value)) => {
-                super::bindings::bind_value(name, value.clone().into(), state, values);
-            }
-            Self::Native(AlgebraicValue::Algebraic(value)) => {
-                algebraic.insert(name.to_owned(), value.clone());
-            }
-        }
-    }
-    fn into_native_result(self) -> Self {
-        Self::Native(self.into_native())
     }
 }

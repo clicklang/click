@@ -72,104 +72,6 @@ impl PreparedContractEntryCases {
     }
 }
 
-/// Consume executions produced by this opened entry. Their root premises and
-/// entry representation were fixed by the producer; no premise authorization,
-/// resource rebasing, or execution-metadata reconstruction occurs here.
-#[cfg(test)]
-fn execution_from_owned_contract_entry(
-    entry: &Arc<PreparedContractEntryCases>,
-    artifacts: &[CheckedFunctionExecution],
-) -> FunctionContractExecution {
-    let selected = artifacts
-        .iter()
-        .filter(|artifact| {
-            crate::instrumentation::record_deterministic_work(1);
-            artifact
-                .entry_authority
-                .as_ref()
-                .is_some_and(|authority| Arc::ptr_eq(authority.cases(), entry))
-        })
-        .collect::<Vec<_>>();
-    if selected.is_empty() {
-        return FunctionContractExecution::failed(
-            "the contract has no execution produced by its opened entry".into(),
-        );
-    }
-    execution_from_bound_contract_entry(entry, &selected)
-}
-
-/// Package the explicit outputs of this root's own completed strategies.
-/// Their entry binding was fixed when the ordinary proof opened them.
-#[cfg(test)]
-fn execution_from_bound_contract_entry(
-    entry: &Arc<PreparedContractEntryCases>,
-    selected: &[&CheckedFunctionExecution],
-) -> FunctionContractExecution {
-    let cases = entry
-        .cases
-        .iter()
-        .map(|_| {
-            selected
-                .iter()
-                .map(|checked| {
-                    crate::instrumentation::record_deterministic_work(1);
-                    ContractPathSet {
-                        closed_exit_obligations: checked.closed_exit_obligations.clone(),
-                        boundary_transfers: vec![
-                            checked.boundary_transfer().cloned();
-                            checked.execution.paths.len()
-                        ],
-                        paths: checked.execution.paths.clone(),
-                        checked_resource_claims: checked.checked_resource_claims.clone(),
-                        checked_resource_transitions: checked.checked_resource_transitions.clone(),
-                        deferred_contract_exits: checked.deferred_contract_exits.clone(),
-                        deferred_contract_exit_errors: checked
-                            .deferred_contract_exit_errors
-                            .clone(),
-                        checked_returned_resources: checked.checked_returned_resources.clone(),
-                        completion_origin_state: Some(checked.state.clone()),
-                        completion_path_origins: checked
-                            .execution
-                            .paths
-                            .iter()
-                            .map(|path| path.theorem.clone())
-                            .collect(),
-                    }
-                })
-                .collect()
-        })
-        .collect::<Vec<_>>();
-    let mut checked_call_events = crate::kernel::proof::CheckedCallEvents::default();
-    let mut applied_tactics = BTreeSet::new();
-    for artifact in selected {
-        checked_call_events.extend(&artifact.checked_call_events);
-        applied_tactics.extend(artifact.applied_tactics.iter().cloned());
-    }
-    FunctionContractExecution {
-        pointer_result: super::super::object_types::execution_pointer_result(&cases),
-        cases,
-        reuse_diagnostic: None,
-        reuse_unauthorized_premise: None,
-        reuse_entry_resources: vec![],
-        reuse_context_facts: vec![],
-        checked_call_events,
-        loop_semantics: if selected
-            .iter()
-            .all(|artifact| artifact.execution_semantics.loops == LoopSemantics::ApplyVerifiedRules)
-        {
-            LoopSemantics::ApplyVerifiedRules
-        } else {
-            LoopSemantics::Verify
-        },
-        applied_tactics,
-        checked_callees: super::super::termination::merge_checked_callees(
-            selected
-                .iter()
-                .map(|artifact| artifact.checked_callees.as_ref()),
-        ),
-    }
-}
-
 pub(crate) fn prepare_function_contract_entry_cases(
     entry: ContractEntry,
     byte_order: Proposition,
@@ -3914,7 +3816,10 @@ mod prepared_entry_cases_tests {
 #[cfg(test)]
 mod entry_authority_tests {
     use super::*;
-    use crate::kernel::proof::OpenedContractEntry;
+    use crate::kernel::proof::{
+        FunctionOutcomeObligation, OpenedContractEntry, OutcomeProofState, ProofBranch,
+        ProofBranchState, ProofFacts, ProofObject, ProofObligation,
+    };
 
     pub(super) fn checked_execution(
         unrelated: usize,
@@ -4017,20 +3922,51 @@ mod entry_authority_tests {
         );
     }
 
+    type ExecutionProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
+
+    fn execution_proof(execution: &CheckedFunctionExecution) -> ExecutionProof {
+        let core = execution.open_outcome(0).unwrap();
+        let goal = FunctionOutcomeObligation::new(0, Arc::new(OutcomeProofState::new(core, ())));
+        ProofObject::root(
+            (),
+            ProofBranch::new(
+                ProofObligation::FunctionOutcome(goal),
+                ProofBranchState {
+                    facts: ProofFacts::default(),
+                    unfolded_predicates: Default::default(),
+                    execution: None,
+                },
+            ),
+        )
+    }
+
+    fn open_execution(
+        root: &WholeContractRoot,
+        execution: CheckedFunctionExecution,
+    ) -> Result<ContractExecutionOwner, String> {
+        let proof = execution_proof(&execution);
+        proof.open_contract_execution(
+            execution,
+            Some(root),
+            std::iter::once(proof.focused_branch()),
+        )
+    }
+
     #[test]
-    fn owned_admission_requires_the_producer_entry_identity() {
+    fn ordinary_execution_opening_requires_the_producer_entry_identity() {
         let (entry, checked) = checked_execution(0, None).unwrap();
         let (foreign, _) = checked_execution(0, None).unwrap();
         assert_eq!(entry.function, foreign.function);
         assert_ne!(entry, foreign);
-        let admitted = execution_from_owned_contract_entry(&entry, std::slice::from_ref(&checked));
-        assert_eq!(admitted.cases.len(), 1);
-        assert_eq!(admitted.cases[0][0].paths.len(), 1);
+        let root = WholeContractRoot::open(entry).unwrap();
+        let foreign = WholeContractRoot::open(foreign).unwrap();
+        assert!(open_execution(&root, checked.clone()).is_ok());
+        assert!(open_execution(&foreign, checked).is_err());
         assert!(
-            execution_from_owned_contract_entry(&foreign, &[checked])
-                .cases
-                .is_empty()
+            root.finish().is_err(),
+            "opening supplies no completed evidence"
         );
+        assert!(foreign.finish().is_err());
     }
 
     #[test]
@@ -4057,11 +3993,18 @@ mod entry_authority_tests {
             checked.mode,
         );
         assert!(independent.entry_authority.is_none());
+        let root = WholeContractRoot::open(entry).unwrap();
+        let proof = execution_proof(&checked);
         assert!(
-            execution_from_owned_contract_entry(&entry, &[independent])
-                .cases
-                .is_empty()
+            proof
+                .open_contract_execution(
+                    independent,
+                    Some(&root),
+                    std::iter::once(proof.focused_branch()),
+                )
+                .is_err()
         );
+        assert!(root.finish().is_err());
     }
 
     mod scaling_tests {
