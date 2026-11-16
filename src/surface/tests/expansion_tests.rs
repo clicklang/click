@@ -22657,8 +22657,8 @@ fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
 }
 
 #[test]
-#[ignore = "nightly: original arena allocation loops expansion and replay"]
-fn original_arena_alloc_loops_expand_without_transport_and_recheck() {
+#[ignore = "nightly: original arena allocation expansion and replay"]
+fn original_arena_alloc_expands_without_transport_and_rechecks() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let sidecar = std::fs::read_to_string(root.join("examples/arena/arena_cells.click")).unwrap();
     let definitions = sidecar.split("verifying \"arena_init.c\";").next().unwrap();
@@ -22683,26 +22683,7 @@ fn original_arena_alloc_loops_expand_without_transport_and_recheck() {
     let sources = [("arena_alloc.c", c.as_str())];
     let expanded =
         expand_c_claim_source_by_label(&source, &sources, "arena_alloc.contract").unwrap();
-    for loop_name in ["find_first_free_run", "mark_free_run"] {
-        let marker = format!("loop as {loop_name} {{");
-        let body = expanded.split(&marker).nth(1).unwrap();
-        let mut depth = 1usize;
-        let end = body
-            .char_indices()
-            .find_map(|(index, ch)| {
-                match ch {
-                    '{' => depth += 1,
-                    '}' => depth -= 1,
-                    _ => {}
-                }
-                (depth == 0).then_some(index)
-            })
-            .unwrap();
-        assert!(
-            !body[..end].contains("transport("),
-            "{loop_name}: {expanded}"
-        );
-    }
+    assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
@@ -22731,4 +22712,37 @@ fn typed_contract_results_expand_and_recheck() {
         })
         .unwrap_or_else(|error| panic!("{fixture}: {error:?}\n{expanded}"));
     }
+}
+
+#[test]
+#[ignore = "nightly: original arena pipeline expansion and replay"]
+fn original_arena_pipeline_return_expands_without_transport_and_rechecks() {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/arena");
+    let source = std::fs::read_to_string(directory.join("arena_cells.click")).unwrap();
+    let mut sources = std::fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "c"))
+        .map(|path| {
+            let name = path.file_name().unwrap().to_str().unwrap().to_string();
+            (name, std::fs::read_to_string(path).unwrap())
+        })
+        .collect::<Vec<_>>();
+    sources.sort_by(|left, right| left.0.cmp(&right.0));
+    let refs = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c_claim_source_by_label(&source, &refs, "arena_pipeline.contract").unwrap();
+    let pipeline = expanded.split("int32 arena_pipeline(").nth(1).unwrap();
+    let first_return_arm = pipeline.split("} else {").next().unwrap();
+    assert!(
+        !first_return_arm.contains("transport("),
+        "{first_return_arm}"
+    );
+    without_implicit_solve_for_claim("arena_pipeline.contract", || {
+        verify_c_sources(&expanded, &refs).map_err(|error| error.report())
+    })
+    .unwrap();
 }
