@@ -67,7 +67,6 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
             | ProofTactic::UnfoldWitnesses { .. }
             | ProofTactic::UnfoldProposition(_)
             | ProofTactic::UnfoldFunction(_)
-            | ProofTactic::PeelFunction { .. }
             | ProofTactic::ObserveResource(_)
             | ProofTactic::ApplyFact(_)
             | ProofTactic::ApplyFactUsing { .. }

@@ -1118,7 +1118,6 @@ step is still checked.
 | `apply(theorem(args))` | smart | Core | Apply a theorem, looking up its premises. | [Reference](#theorem-application) |
 | `apply(theorem(args)) using { P; ... }` | simple | Expansion output | Apply a theorem using written premises. | [Reference](#theorem-application-with-selected-premises) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
-| `peel(function(args)) using { P; ... }` | simple | Specialized | Legacy fold spelling; use ordinary `unfold`. | [Reference](#peeling-a-pure-function) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
 | `induct(n) as ih` | simple | Core | Introduce strong induction on a nonnegative `int32` or a `uint64`. | [Reference](#scalar-induction) |
 | `induct(xs) as ih { Type::Variant(fields) => { ... } ... }` | control | Core | Prove constructor cases with recursive hypotheses. | [Reference](#algebraic-induction) |
@@ -2735,7 +2734,8 @@ names are in scope, and:
   predecessor-range guard also selects the append form, including `Integer`
   index folds. Any missing law guards
   are ordinary obligations, proved by the implicit solver and retained by expansion.
-  The append form has the same endpoint restrictions as `peel` below. When the
+  The append form requires the end to be a function parameter that its start,
+  initial value, and body do not read. When the
   range case is undecided (including no available predecessor guard), or that
   form cannot name a predecessor call, ordinary
   unfolding retains the raw defining equation; split the range case or prove
@@ -2749,7 +2749,8 @@ names are in scope, and:
 - A call whose arguments mention a quantifier's binder before it is
   introduced: `intro()` first.
 - More than one layer: `unfold` again at the exposed call.
-- A `using` list: `unfold` takes none; write `peel(f(args)) using { ... }`.
+- A `using` list: state supporting facts before `unfold`; its remaining guards
+  are ordinary obligations.
 
 The refreshed goal can also come out further simplified, as the lowering of
 the rewritten goal does: `n + k - k` over `int32` reduced to `n` in one probe.
@@ -2764,74 +2765,7 @@ count mismatch fails; an argument that does not lower at this point fails with
 replay needs no implicit solver. Profiling charges the arguments, one body
 layer, and any implicit guard proofs.
 
-**Checked examples:** [`unfold_fold_integer_callback_uses_ordinary_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_integer_callback_uses_ordinary_obligations.md), [`unfold_fold_empty_uses_ordinary_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_empty_uses_ordinary_obligations.md), [`unfold_fold_int32_uses_ordinary_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_int32_uses_ordinary_obligations.md), [`pure_function_unfold.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_function_unfold.md), [`unfold_rewrites_each_occurrence_of_the_exact_call.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_rewrites_each_occurrence_of_the_exact_call.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`a_step_after_an_unfold_that_closed_the_goal_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_after_an_unfold_that_closed_the_goal_is_refused.md), [`unfold_function_after_integer_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_after_integer_intro.md), [`unfold_function_integer_shadow.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_integer_shadow.md), [`unfold_using_names_peel.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_using_names_peel.md)
-
-### Peeling a pure function
-
-**Form:** `peel(function(args)) using { P; ... }`
-
-Legacy compatibility syntax. Proofs and examples use ordinary
-`unfold(function(args))`; the parser and its dedicated compatibility fixtures
-remain until the legacy tactic is removed.
-
-**Specialized.** Write it to open one step of a range-fold function, such as a
-sum over an array prefix, in an induction over its end. The single produced
-fact is a range-fold law stated over the call itself, and the goal is
-refreshed through it, so a range fact about a whole array range is provable by
-the existing `induct(hi)`.
-
-**Accepts** an `Integer`-valued pure function whose body is exactly
-`(lo..hi).fold(initial, |acc, k| { ... })`, a call of it, and a `using` list
-whose every premise is an available fact (as written or in an equivalent
-operand spelling). The listed premises select the law, empty first:
-
-- Empty range: listed `hi <= lo` (or `lo >= hi`), at the call's arguments,
-  gives `f(args) == initial`.
-- Append last cell: listed `lo <= hi - 1` and `hi - 1 < 2147483647` give
-  `f(.., hi) == f(.., hi - 1) + <body at acc = f(.., hi - 1), k = hi - 1>`.
-  For a `uint64` range the guards are `lo <= hi - 1u64` and
-  `hi - 1u64 < 18446744073709551615u64`. This form needs the fold's end to be
-  a parameter of the function that its start, initial value, and body do not
-  read.
-- Constant endpoints: the kernel has already reduced the fold, so the result
-  is the defining equation as reduced (over `0..0`, `f(args) == initial`);
-  the list is still required and checked for availability but selects
-  nothing.
-- The goal's occurrences of the call are replaced by the law's right side,
-  and the goal closes when the result is an available fact.
-
-**Outside it**, with what to write instead:
-
-- A guard in another form, such as `hi < lo` or `hi == lo` for the empty
-  range, or `lo < hi` for the append form: prove the exact guard first with
-  `have hi <= lo by solve() using { ... };` and list it.
-- A missing `using` list: write one; `unfold` takes no list.
-- A fold whose end is an expression such as `n + 1`, or whose body reads the
-  end parameter: only the empty-range law applies; restate the function with
-  the end as its own parameter.
-- An `int32`-valued fold: state the function as `Integer`-valued.
-- A refreshed goal that became reflexive, including when the goal was the law
-  itself: it stays open; close it with `solve()` or `normalize()`.
-
-`peel` of an `Integer`-valued function whose body is not a fold currently gives
-its defining equation, as `unfold` would. That is not guaranteed.
-
-**Failure, checking, and tools:**
-
-The step is a derived use of the two kernel fold laws: the raw defining
-equation and its predecessor instance are the law's own premises and stay
-inside the step. Every guard must be an exact listed premise; nothing is
-searched. A list that selects neither law is refused with what each form still
-wants ("The empty-range equation needs `hi <= lo`; the append-last-cell
-equation needs `to_integer(hi - 1) < 2147483647`"). A guard over machine `+`,
-`-` or `*` is named by its observation, which lowers to the native guard;
-the spelling `hi - 1 < 2147483647` is exact Integer arithmetic, a different
-proposition. Expansion writes ordinary `unfold(f(args))`, using the already
-established guards without retaining `peel` or its `using` list. The expanded
-step checks those guards without implicit solving. Profiling charges one law
-instance.
-
-**Checked examples:** [`legacy_peel_syntax.md`](https://github.com/clicklang/click/blob/master/mdtests/legacy_peel_syntax.md), [`peel_requires_its_using_list.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_requires_its_using_list.md), [`peel_using_names_its_missing_premise.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_using_names_its_missing_premise.md)
+**Checked examples:** [`unfold_fold_integer_callback_uses_ordinary_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_integer_callback_uses_ordinary_obligations.md), [`unfold_fold_empty_uses_ordinary_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_empty_uses_ordinary_obligations.md), [`unfold_fold_int32_uses_ordinary_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_int32_uses_ordinary_obligations.md), [`pure_function_unfold.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_function_unfold.md), [`unfold_rewrites_each_occurrence_of_the_exact_call.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_rewrites_each_occurrence_of_the_exact_call.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`a_step_after_an_unfold_that_closed_the_goal_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_after_an_unfold_that_closed_the_goal_is_refused.md), [`unfold_function_after_integer_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_after_integer_intro.md), [`unfold_function_integer_shadow.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_integer_shadow.md), [`unfold_rejects_using_list.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_rejects_using_list.md)
 
 ### Constructor matches
 

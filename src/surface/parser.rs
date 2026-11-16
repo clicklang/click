@@ -11024,7 +11024,7 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 if self.peek_ident() == Some("using") {
                     return Err(self.error(
-                        "`unfold` takes no `using` list; write `peel(f(args)) using { ... }` to open a range fold by the law its guards select",
+                        "`unfold` takes no `using` list; its guards are ordinary proof obligations",
                     ));
                 }
                 if self.peek_ident() == Some("as") {
@@ -11033,29 +11033,6 @@ impl Parser {
                     ));
                 }
                 tactic
-            }
-            "peel" => {
-                self.expect(Token::LParen)?;
-                if !(matches!(self.peek(), Some(Token::Ident(_)))
-                    && self.peek_next() == Some(&Token::LParen))
-                {
-                    return Err(
-                        self.error("`peel` requires a pure-function application, `peel(f(args))`")
-                    );
-                }
-                let (name, arguments) = self.parse_call_arguments("function name")?;
-                self.expect(Token::RParen)?;
-                if self.peek_ident() != Some("using") {
-                    return Err(self.error(
-                        "`peel` requires a `using { ... }` list naming the guard that decides the range",
-                    ));
-                }
-                let premises = self.parse_exact_premises()?;
-                self.skip_redundant_semicolon();
-                return Ok(ProofTactic::PeelFunction {
-                    application: ClickFunctionApplication { name, arguments },
-                    premises,
-                });
             }
             "apply" => {
                 self.expect(Token::LParen)?;
@@ -17922,7 +17899,6 @@ mod tactic_classification_tests {
         ("step-until", "step_until(label);"),
         ("unfold-predicate", "unfold(predicate(x));"),
         ("unfold-function", "unfold(f(x));"),
-        ("peel-function", "peel(f(x)) using { x == 1; };"),
         ("unfold-resource", "unfold(reference(p));"),
         ("fold-resource", "fold(reference(p));"),
         ("take-element", "take(base[0..n]);"),

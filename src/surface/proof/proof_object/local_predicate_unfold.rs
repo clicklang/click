@@ -17,13 +17,10 @@ impl Proof<'_> {
             && definitions.predicates.get(name).is_none()
             && definitions.functions.get(name).is_some()
         {
-            return self.apply_function_unfold(
-                &ClickFunctionApplication {
-                    name: name.clone(),
-                    arguments: arguments.clone(),
-                },
-                None,
-            );
+            return self.apply_function_unfold(&ClickFunctionApplication {
+                name: name.clone(),
+                arguments: arguments.clone(),
+            });
         }
         let mut names = BTreeSet::new();
         crate::surface::validation::collect_called_predicates(target, &mut names);

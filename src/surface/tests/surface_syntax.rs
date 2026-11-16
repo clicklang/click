@@ -1180,69 +1180,15 @@ fn parses_and_prints_pure_function_unfold() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_07")]
-fn parses_and_prints_pure_function_unfold_with_guards() {
-    let source = r#"
-        function icount(lo: int32, hi: int32) -> Integer {
-            (lo..hi).fold(0, |acc, k| { acc + to_integer(k) })
-        }
-
-        theorem icount_empty(lo: int32, hi: int32) {
-            requires hi <= lo;
-            ensures icount(lo, hi) == 0 by {
-                peel(icount(lo, hi)) using {
-                    hi <= lo;
-                }
-                normalize();
-            }
-        }
-    "#;
-    let file = parse(source).expect("a guarded pure-function unfold should parse");
-    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
-        panic!("expected an explicit theorem proof");
-    };
-    assert!(matches!(
-        &tactics[0],
-        ProofTactic::PeelFunction { application, premises }
-            if application.name == "icount" && premises.len() == 1
-    ));
-    let printed = super::printing::format_partial_tactic_sequence(tactics);
-    assert!(
-        printed.contains("peel(icount(lo, hi)) using {"),
-        "{printed}"
-    );
-
-    // `peel` selects a range-fold law from the function's declaration, so it
-    // takes a pure-function application and nothing else.
-    let predicate_form = r#"
-        predicate nonnegative(x: int32) { x >= 0 }
-
-        theorem guarded_predicate_peel(x: int32) {
-            requires nonnegative(x);
-            ensures x >= 0 by {
-                peel(nonnegative) using {
-                    nonnegative(x);
-                }
-                solve();
-            }
-        }
-    "#;
-    let error = parse(predicate_form).expect_err("`peel` needs a pure-function application");
-    assert!(
-        error
-            .message()
-            .contains("`peel` requires a pure-function application"),
-        "{}",
-        error.message()
-    );
-
-    // The retired spelling names its replacement.
-    let error = parse(&source.replace("peel(", "unfold("))
-        .expect_err("`unfold` no longer takes a `using` list");
-    assert!(
-        error.message().contains("write `peel(f(args)) using"),
-        "{}",
-        error.message()
-    );
+fn rejects_removed_fold_tactic_syntax() {
+    for tactic in ["peel(total(n));", "peel(total(n)) using { n <= 0; };"] {
+        let source = format!(
+            "function total(n: int32) -> Integer {{ (0..n).fold(0, |acc, k| {{ acc + 1 }}) }} \
+             theorem empty(n: int32) {{ requires n <= 0; ensures total(n) == 0 by {{ {tactic} }} }}"
+        );
+        let error = parse(&source).expect_err("the retired tactic has no compatibility alias");
+        assert!(error.message().contains("unknown tactic `peel`"), "{error}");
+    }
 }
 
 #[test]
@@ -5339,7 +5285,7 @@ test_batches! {
     surface_syntax_batch_07: [
         parses_and_prints_structural_induction_arms,
         parses_and_prints_pure_function_unfold,
-        parses_and_prints_pure_function_unfold_with_guards,
+        rejects_removed_fold_tactic_syntax,
         parses_and_prints_arithmetic_certificates,
     ],
     surface_syntax_batch_09: [

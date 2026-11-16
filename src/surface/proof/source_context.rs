@@ -44,7 +44,6 @@ impl SourceContext {
                     | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
-                    | ProofTactic::PeelFunction { .. }
                     | ProofTactic::Witness(_)
                     | ProofTactic::LetSatisfy(_)
                     | ProofTactic::Choose(_)
@@ -75,7 +74,6 @@ impl SourceContext {
                     | ProofTactic::TransportUsing { .. }
                     | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
-                    | ProofTactic::PeelFunction { .. }
                     | ProofTactic::UnfoldResource(_)
                     | ProofTactic::UnfoldWitnesses { .. }
                     | ProofTactic::FoldResource(_)
@@ -91,7 +89,6 @@ impl SourceContext {
                     | ProofTactic::ConstructResource(_)
                     | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
-                    | ProofTactic::PeelFunction { .. }
                     | ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::Choose(_)

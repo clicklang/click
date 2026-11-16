@@ -677,21 +677,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 format_click_function_application(application)
             ),
         ),
-        ProofTactic::PeelFunction {
-            application,
-            premises,
-        } => {
-            line(
-                output,
-                &prefix,
-                &format!(
-                    "peel({}) using {{",
-                    format_click_function_application(application)
-                ),
-            );
-            write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "};");
-        }
         ProofTactic::UnfoldResource(resource @ ResourceClause::Named { binding, .. })
             if binding.child_bindings.is_some() =>
         {

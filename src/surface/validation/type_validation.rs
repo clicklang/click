@@ -3168,7 +3168,6 @@ fn validate_pure_theorem_tactics(
             }
             ProofTactic::UnfoldProposition(_)
             | ProofTactic::UnfoldFunction(_)
-            | ProofTactic::PeelFunction { .. }
             | ProofTactic::Induct { .. }
             | ProofTactic::ApplyInduction { .. }
             | ProofTactic::ApplyInductionUsing { .. }
@@ -3282,7 +3281,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::ExecuteUntil(_) => "step_until",
         ProofTactic::UnfoldProposition(_)
         | ProofTactic::UnfoldFunction(_)
-        | ProofTactic::PeelFunction { .. }
         | ProofTactic::UnfoldResource(_)
         | ProofTactic::UnfoldWitnesses { .. } => "unfold",
         ProofTactic::FoldResource(_) => "fold",

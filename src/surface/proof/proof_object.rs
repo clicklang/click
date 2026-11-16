@@ -3750,7 +3750,6 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Choose(_) => "choose",
         ProofStep::UnfoldProposition(_)
         | ProofStep::UnfoldFunction(_)
-        | ProofStep::PeelFunction { .. }
         | ProofStep::UnfoldResource(_)
         | ProofStep::UnfoldWitnesses { .. } => "unfold",
         ProofStep::FoldResource(_) => "fold",

@@ -1392,7 +1392,7 @@ the caller's fast paths remain separate obligations. See the
 [checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_multiply_order.md).
 
 
-When `peel` removes the final Integer fold application from a goal, ordinary
+When `unfold` removes the final Integer fold application from a goal, ordinary
 source lowering may reduce its spelling to `true` while the kernel retains
 an Integer comparison such as `0 - 0 == 0` or `0 <= 0`.
 Ordinary normalization checks that retained constant comparison directly,

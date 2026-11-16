@@ -73,11 +73,6 @@ path = "mdtests/pure_function_unfold.md"
 needle = "unfold(clamp_nonpositive(n));"
 
 [[form]]
-id = "peel-function"
-path = "mdtests/legacy_peel_syntax.md"
-needle = "peel(tally(lo, hi)) using {"
-
-[[form]]
 id = "unfold-resource"
 path = "mdtests/composite_resource_composes_token.md"
 needle = "unfold(live_server(fd, state));"

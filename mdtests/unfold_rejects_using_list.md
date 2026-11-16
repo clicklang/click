@@ -1,7 +1,7 @@
-# unfold takes no using list
+# Unfold rejects a using list
 
-Opening a range fold by the law its guards select is `peel`. The earlier
-spelling, `unfold(f(args)) using { ... }`, is refused with the replacement.
+Ordinary `unfold` uses facts from the current proof context and emits normal
+obligations for missing guards. It does not take a tactic-specific premise list.
 
 ```click
 function icount(p: int32[], lo: int32, hi: int32) -> Integer {
@@ -20,5 +20,5 @@ theorem icount_empty(p: int32[], lo: int32, hi: int32) {
 ```
 
 ```expect
-fail: `unfold` takes no `using` list; write `peel(f(args)) using { ... }`
+fail: `unfold` takes no `using` list; its guards are ordinary proof obligations
 ```

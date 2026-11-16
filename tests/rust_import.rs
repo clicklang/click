@@ -1313,38 +1313,6 @@ fn charon_refused_panic_check_names_its_condition() {
 }
 
 #[cfg(not(feature = "fast-gate"))]
-/// Under Integer specification arithmetic a native guard written `a - b < c` is an
-/// exact Integer comparison, so a `peel` refusal names each guard by its
-/// Integer reading of the machine operands, which lowers to the guard itself.
-#[test]
-fn peel_refusal_names_a_guard_spelling_integer_arithmetic_reads_as_native() {
-    let source = include_str!("../examples/rust-iter-references/sum.rs");
-    let sidecar = include_str!("../examples/rust-iter-references/sum.click")
-        .replace("sum.rs", "borrow.rs")
-        .replace(
-            "                    to_integer(bytes.len() - iter.len()) < to_integer(18446744073709551615u64);\n",
-            "                    (bytes.len() - iter.len()) < 18446744073709551615u64;\n",
-        );
-    assert!(sidecar.contains("(bytes.len() - iter.len()) < 18446744073709551615u64;"));
-    let p = Project::new(source);
-    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    p.refresh().unwrap();
-    let output = p.cli(&["verify"]);
-    assert!(!output.status.success());
-    let error = String::from_utf8(output.stderr).unwrap();
-    assert!(
-        error.contains("found no listed guard that decides the range"),
-        "{error}"
-    );
-    assert!(
-        error.contains(
-            "the append-last-cell equation needs `to_integer(bytes.len() - iter.len()) < 18446744073709551615`"
-        ),
-        "{error}"
-    );
-}
-
-#[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn charon_slice_failure_has_a_focused_trace() {

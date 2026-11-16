@@ -505,12 +505,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 driver_proof.apply_local_predicate_unfold(target)
             }
             ProofStep::UnfoldFunction(application) => {
-                driver_proof.apply_function_unfold(application, None)
+                driver_proof.apply_function_unfold(application)
             }
-            ProofStep::PeelFunction {
-                application,
-                premises,
-            } => driver_proof.apply_function_unfold(application, Some(premises)),
             ProofStep::UnfoldResource(resource) => {
                 // Resolve proof bindings before either the execution or
                 // outcome path interprets ordinary resource arguments.
@@ -577,14 +573,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let application = match &step {
             ProofStep::ApplyTheoremUsing { application, .. } => Some(application.clone()),
             _ => None,
-        };
-        // Successful peel checking has established every listed guard.
-        // Record its ordinary unfolding, which checks those same guards
-        // from the retained facts. Normalize only checked provenance: source
-        // certificates must still validate their legacy using lists.
-        let step = match step {
-            ProofStep::PeelFunction { application, .. } => ProofStep::UnfoldFunction(application),
-            step => step,
         };
         let applied = Proof {
             site: driver_proof.site.clone(),

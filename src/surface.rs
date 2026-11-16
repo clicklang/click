@@ -263,7 +263,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "if",
     "import",
     "implies",
-    "peel",
     "rust",
     "in",
     "induct",
@@ -5749,12 +5748,6 @@ pub enum ProofTactic {
     ExecuteUntil(CodeRegionRef),
     UnfoldProposition(ClickProposition),
     UnfoldFunction(ClickFunctionApplication),
-    /// `peel(f(args)) using { ... }`: the same defining equation, plus
-    /// the range-fold law the listed guards select, stated over `f(args)`.
-    PeelFunction {
-        application: ClickFunctionApplication,
-        premises: Vec<ClickProposition>,
-    },
     UnfoldResource(ResourceClause),
     /// `let { witness: name, ... } = unfold(resource)` on a declared
     /// resource: the unfold, with each named `let ... where` witness of the
@@ -6104,11 +6097,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "peel-function",
-        syntax: "peel(function(args)) using { P; ... }",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "unfold-resource",
         syntax: "unfold(resource(args))",
         class: "simple",
@@ -6449,9 +6437,7 @@ impl ProofTactic {
             }
             Self::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
             Self::UnfoldProposition(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
-            Self::UnfoldFunction(_) | Self::PeelFunction { .. } => {
-                TacticClass::Simple(SimpleTactic::UnfoldFunction)
-            }
+            Self::UnfoldFunction(_) => TacticClass::Simple(SimpleTactic::UnfoldFunction),
             Self::UnfoldResource(_) | Self::UnfoldWitnesses { .. } => {
                 TacticClass::Simple(SimpleTactic::UnfoldResource)
             }

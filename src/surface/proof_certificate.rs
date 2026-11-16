@@ -61,12 +61,6 @@ pub enum ProofStep {
     UserTactic(CallBinderTransport),
     UnfoldProposition(ClickProposition),
     UnfoldFunction(ClickFunctionApplication),
-    /// `peel(f(args)) using { ... }`: the same defining equation, plus
-    /// the range-fold law the listed guards select, stated over `f(args)`.
-    PeelFunction {
-        application: ClickFunctionApplication,
-        premises: Vec<ClickProposition>,
-    },
     UnfoldResource(ResourceClause),
     /// `let { witness: name, ... } = unfold(resource)` on a declared
     /// resource: the unfold, with each named `let ... where` witness of the
@@ -724,13 +718,6 @@ impl ProofStep {
             ProofTactic::UserTactic(application) => Self::UserTactic(application.clone()),
             ProofTactic::UnfoldProposition(target) => Self::UnfoldProposition(target.clone()),
             ProofTactic::UnfoldFunction(application) => Self::UnfoldFunction(application.clone()),
-            ProofTactic::PeelFunction {
-                application,
-                premises,
-            } => Self::PeelFunction {
-                application: application.clone(),
-                premises: premises.clone(),
-            },
             ProofTactic::UnfoldResource(resource) => Self::UnfoldResource(resource.clone()),
             ProofTactic::UnfoldWitnesses { resource, names } => Self::UnfoldWitnesses {
                 resource: resource.clone(),
@@ -856,13 +843,6 @@ impl ProofStep {
             Self::UserTactic(application) => ProofTactic::UserTactic(application.clone()),
             Self::UnfoldProposition(target) => ProofTactic::UnfoldProposition(target.clone()),
             Self::UnfoldFunction(application) => ProofTactic::UnfoldFunction(application.clone()),
-            Self::PeelFunction {
-                application,
-                premises,
-            } => ProofTactic::PeelFunction {
-                application: application.clone(),
-                premises: premises.clone(),
-            },
             Self::UnfoldResource(resource) => ProofTactic::UnfoldResource(resource.clone()),
             Self::UnfoldWitnesses { resource, names } => ProofTactic::UnfoldWitnesses {
                 resource: resource.clone(),
@@ -1153,9 +1133,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         | ProofStep::StepCall(_) => TacticClass::Simple(SimpleTactic::StatementTransition),
         ProofStep::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
         ProofStep::UnfoldProposition(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
-        ProofStep::UnfoldFunction(_) | ProofStep::PeelFunction { .. } => {
-            TacticClass::Simple(SimpleTactic::UnfoldFunction)
-        }
+        ProofStep::UnfoldFunction(_) => TacticClass::Simple(SimpleTactic::UnfoldFunction),
         ProofStep::UnfoldResource(_) | ProofStep::UnfoldWitnesses { .. } => {
             TacticClass::Simple(SimpleTactic::UnfoldResource)
         }
