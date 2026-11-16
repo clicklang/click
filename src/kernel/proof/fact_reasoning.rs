@@ -196,6 +196,9 @@ pub(crate) fn normalize_using_conditions(
             || matches!(right.as_ref(), Resource::Footprint(_)))
     {
         let mut selected = PureFactContext::new();
+        // Keep the checked address congruence used by ordinary normalization.
+        // Resource authority below still comes only from the written premises.
+        selected.equality_graph = facts.assumptions().equality_graph.clone();
         for (index, premise) in premises.iter().enumerate() {
             if !facts.available(premise) && !crate::kernel::proposition_holds_without_facts(premise)
             {
@@ -1758,78 +1761,78 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
     {
         return equivalent;
     }
-    match (left, right) {
+    let (left_var, left_sort, left_body, right_var, right_sort, right_body) = match (left, right) {
         (
             Proposition::ForAll {
-                var: left_var,
-                sort: left_sort,
-                body: left_body,
+                var: lv,
+                sort: ls,
+                body: lb,
                 ..
             },
             Proposition::ForAll {
-                var: right_var,
-                sort: right_sort,
-                body: right_body,
+                var: rv,
+                sort: rs,
+                body: rb,
                 ..
             },
-        ) => {
-            left_sort == right_sort
-                && match left_sort {
-                    Sort::Algebraic(ty) => {
-                        crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
-                            left_body,
-                            *left_var,
-                            &AlgebraicTerm {
-                                algebraic_type: ty.clone(),
-                                node: AlgebraicTermNode::Variable(*right_var),
-                            },
-                        ) == **right_body
-                    }
-                    _ => {
-                        substitute_int32_variable_in_proposition(
-                            left_body,
-                            *left_var,
-                            MachineTerm::Variable(*right_var),
-                        ) == **right_body
-                    }
-                }
-        }
-        (
+        )
+        | (
             Proposition::Exists {
-                var: left_var,
-                sort: left_sort,
-                body: left_body,
+                var: lv,
+                sort: ls,
+                body: lb,
                 ..
             },
             Proposition::Exists {
-                var: right_var,
-                sort: right_sort,
-                body: right_body,
+                var: rv,
+                sort: rs,
+                body: rb,
                 ..
             },
-        ) => {
-            left_sort == right_sort
-                && match left_sort {
-                    Sort::Algebraic(ty) => {
-                        crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
-                            left_body,
-                            *left_var,
-                            &AlgebraicTerm {
-                                algebraic_type: ty.clone(),
-                                node: AlgebraicTermNode::Variable(*right_var),
-                            },
-                        ) == **right_body
-                    }
-                    _ => {
-                        substitute_int32_variable_in_proposition(
-                            left_body,
-                            *left_var,
-                            MachineTerm::Variable(*right_var),
-                        ) == **right_body
-                    }
-                }
+        ) => (*lv, ls, lb.as_ref(), *rv, rs, rb.as_ref()),
+        _ => return false,
+    };
+    if left_sort != right_sort {
+        return false;
+    }
+    if left_var == right_var {
+        return left_body == right_body;
+    }
+    // Neither binder name is necessarily fresh in the other body: it can
+    // already occur freely inside a retained memory state. Compare both
+    // substitutions at a name absent from both bodies and their binders.
+    // This legacy path retains its state traversal; indexed fast paths above
+    // do not collect variables or substitute retained states.
+    let mut reserved = crate::kernel::proposition_variables(left);
+    reserved.extend(crate::kernel::proposition_variables(right));
+    let fresh = KernelVariableGenerator::fresh_for(0, reserved).next();
+    match left_sort {
+        Sort::Algebraic(ty) => {
+            let replacement = AlgebraicTerm {
+                algebraic_type: ty.clone(),
+                node: AlgebraicTermNode::Variable(fresh),
+            };
+            crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
+                left_body,
+                left_var,
+                &replacement,
+            ) == crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
+                right_body,
+                right_var,
+                &replacement,
+            )
         }
-        _ => false,
+        _ => {
+            substitute_int32_variable_in_proposition(
+                left_body,
+                left_var,
+                MachineTerm::Variable(fresh),
+            ) == substitute_int32_variable_in_proposition(
+                right_body,
+                right_var,
+                MachineTerm::Variable(fresh),
+            )
+        }
     }
 }
 
@@ -2117,6 +2120,79 @@ mod tests {
         Memory, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm, ProgramValue, Resource,
         Variable, intern_memory, load_variable_for_cell_with_origin,
     };
+
+    fn footprint_alias_fixture() -> (Proposition, Proposition, Proposition) {
+        use crate::kernel::{ExecutionPureFact, ExecutionState};
+        let actual = Pointer::symbolic(Variable(96_140));
+        let named = Pointer::symbolic(Variable(96_141));
+        let kept = Pointer::symbolic(Variable(96_142));
+        let before = ExecutionState::new();
+        let after = before.clone().with_memory(
+            before
+                .memory()
+                .clone()
+                .store(actual.clone(), crate::kernel::uint8(1u32)),
+        );
+        let effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
+            before: before.memory().clone(),
+            after: after.memory().clone(),
+            writes: vec![(actual.clone(), 1)],
+        });
+        let footprint = Resource::Footprint(crate::kernel::RegionFootprint::transition(
+            "byte store".into(),
+            &before,
+            &after,
+            &vec![effect],
+        ));
+        let range = |pointer, bytes: u32| {
+            Resource::Memory(MemoryRange::new_with_element_width(
+                pointer,
+                0u32.into(),
+                bytes.into(),
+                1,
+            ))
+        };
+        let separation = Proposition::ResourceSeparate {
+            left: Box::new(range(named.clone(), 1)),
+            right: Box::new(range(kept.clone(), 8)),
+        };
+        let goal = Proposition::ResourceSeparate {
+            left: Box::new(footprint),
+            right: Box::new(range(kept, 8)),
+        };
+        (
+            goal,
+            separation,
+            Proposition::ConditionIs(ConditionTerm::pointer_equal(actual, named), true),
+        )
+    }
+
+    #[test]
+    fn footprint_normalization_uses_scoped_addresses_but_only_selected_separation() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (goal, separation, alias) = footprint_alias_fixture();
+        let parent = ProofFacts::from_ordered(std::slice::from_ref(&separation));
+        let branch = parent.with_fact(alias);
+        assert!(
+            normalize_using_conditions(&goal, std::slice::from_ref(&separation), &branch).is_ok()
+        );
+        assert!(normalize_using_conditions(&goal, &[], &branch).is_err());
+        assert!(
+            normalize_using_conditions(&goal, std::slice::from_ref(&separation), &parent).is_err()
+        );
+        let mut short = separation.clone();
+        let Proposition::ResourceSeparate { right, .. } = &mut short else {
+            unreachable!()
+        };
+        **right = Resource::Memory(MemoryRange::new_with_element_width(
+            Pointer::symbolic(Variable(96_142)),
+            0u32.into(),
+            4u32.into(),
+            1,
+        ));
+        let branch = branch.with_fact(short.clone());
+        assert!(normalize_using_conditions(&goal, &[short], &branch).is_err());
+    }
 
     #[test]
     fn context_free_normalization_checks_uint64_constant_disequality() {

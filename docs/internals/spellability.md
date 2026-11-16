@@ -131,7 +131,7 @@ identity is independent of equality-graph classes: constructing `1 + 1`
 does not construct `2`. Nodes retain their result type, and checked arithmetic
 constructors reject the wrong operand type or arity.
 
-Specification-side Integer certificate arithmetic (`lower_surface_integer_term`)
+Specification-side Integer arithmetic (`lower_integer_arithmetic_proposition`)
 and ordinary Integer arithmetic on existing values construct the shared tree.
 Ordinary negation, addition, subtraction, multiplication, and constant-nonzero-
 divisor quotient/remainder use the same constructor. Expressions still requiring
@@ -414,7 +414,7 @@ Masked uint64 tag expressions retain their full numeric term. Exact tag-bound
 lookups may produce a separate equality removing the masked tag; addition also
 requires the word's low bits proved clear, so no carry reaches address bits.
 Those facts accompany evaluation instead of replacing its result. Explicit
-arithmetic certificates must conclude the full written goal (after explicit
+ordinary arithmetic proofs must conclude the full written goal (after explicit
 rewrites), rather than depend on tag removal during lowering.
 
 `CLICK_FACT_STABILITY=<path>` lowers each checked proof proposition again

@@ -120,7 +120,7 @@ pub enum ProofStep {
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
-    ArithmeticCertificate(ArithmeticCertificate),
+
     Intro,
     IntroAs(String),
     Enumerate,
@@ -789,9 +789,7 @@ impl ProofStep {
             ProofTactic::Normalize => Self::Normalize,
             ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
             ProofTactic::ArithmeticUsing(premises) => Self::ArithmeticUsing(premises.clone()),
-            ProofTactic::ArithmeticCertificate(certificate) => {
-                Self::ArithmeticCertificate(certificate.clone())
-            }
+
             ProofTactic::Intro => Self::Intro,
             ProofTactic::IntroAs(name) => Self::IntroAs(name.clone()),
             ProofTactic::Enumerate => Self::Enumerate,
@@ -957,9 +955,7 @@ impl ProofStep {
             Self::Normalize => ProofTactic::Normalize,
             Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
             Self::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(premises.clone()),
-            Self::ArithmeticCertificate(certificate) => {
-                ProofTactic::ArithmeticCertificate(certificate.clone())
-            }
+
             Self::Intro => ProofTactic::Intro,
             Self::IntroAs(name) => ProofTactic::IntroAs(name.clone()),
             Self::Enumerate => ProofTactic::Enumerate,
@@ -1185,7 +1181,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
             TacticClass::Simple(SimpleTactic::Normalize)
         }
         ProofStep::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
-        ProofStep::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
+
         ProofStep::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),
         ProofStep::Intro | ProofStep::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
         ProofStep::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
@@ -1234,9 +1230,8 @@ pub(crate) fn validate_certificate_step(
 ) -> Result<(), CertificateError> {
     {
         path.push(CertificatePathSegment::Tactic(index));
-        // ArithmeticUsing remains accepted by the source-tactic constructor
-        // as a smart request, but generated certificate steps must already
-        // carry the checked structural ArithmeticCertificate provenance.
+        // Smart requests can be temporary source-constructor inputs, but
+        // retained proofs contain only their ordinary expanded steps.
         let result = match certificate_step_class(step) {
             tactic_class @ (TacticClass::Smart(_) | TacticClass::Sorry) => Err(CertificateError {
                 tactic_class,

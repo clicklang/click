@@ -129,6 +129,7 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
             },
         )?;
     let application_context = TheoremApplicationContext {
+        parameters: parameter_binding,
         values: &values,
         array_refs: &array_refs,
         algebraic_values,

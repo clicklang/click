@@ -28,6 +28,18 @@ int32 f(int32 a) {
     have call(twice, 1).result == statement(1).call(twice, 0).result;
     have call(twice, 0).result == a + a;
     have call(1).result == call(twice, 1).result;
+    have to_integer(b) == to_integer(call(twice, 0).result) + 1 by {
+        normalize() using {
+            -2147483648 <= to_integer(call(twice, 0).result) + 1;
+            to_integer(call(twice, 0).result) + 1 <= 2147483647;
+        };
+    }
+    have to_integer(c) == to_integer(call(twice, 1).result) + 1 by {
+        normalize() using {
+            -2147483648 <= to_integer(call(twice, 1).result) + 1;
+            to_integer(call(twice, 1).result) + 1 <= 2147483647;
+        };
+    }
 }
 ```
 

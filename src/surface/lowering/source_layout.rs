@@ -109,7 +109,8 @@ struct SourceExecutionLayoutData {
     /// result is the state's call result of that number while its statement
     /// runs.
     call_numbers: BTreeMap<usize, u32>,
-    aggregate_results: BTreeMap<usize, BTreeMap<String, crate::kernel::AggregateField>>,
+    aggregate_results:
+        BTreeMap<usize, std::sync::Arc<BTreeMap<String, crate::kernel::AggregateField>>>,
     full_expression_ends: BTreeSet<usize>,
     /// The region of each step whose result its statement reads, by the
     /// step's number: a call step, or an assignment step keeping its
@@ -327,6 +328,21 @@ fn record_assignment(layout: &mut SourceExecutionLayoutData, local: &str, index:
         .push(index);
 }
 
+type AggregateResultFields = std::sync::Arc<BTreeMap<String, crate::kernel::AggregateField>>;
+
+fn aggregate_result_fields(layout: &crate::kernel::AggregateLayout) -> AggregateResultFields {
+    std::sync::Arc::new(
+        layout
+            .fields()
+            .iter()
+            .map(|field| {
+                crate::instrumentation::record_deterministic_work(1);
+                (field.name().to_string(), field.clone())
+            })
+            .collect(),
+    )
+}
+
 impl SourceExecutionLayout {
     pub(in crate::surface) fn for_function(
         function: &crate::languages::interface::ImportedFunction,
@@ -418,6 +434,7 @@ impl SourceExecutionLayout {
             statement: &ProgramStatement,
             next_statement_index: &mut usize,
             layout: &mut SourceExecutionLayoutData,
+            aggregate_objects: &mut BTreeMap<crate::kernel::BindingName, AggregateResultFields>,
         ) -> Result<usize, ClickError> {
             if kernel_statement_reads(statement) {
                 layout.reads.push(*next_statement_index);
@@ -426,12 +443,13 @@ impl SourceExecutionLayout {
                 ProgramStatement::Seq(statements) => {
                     let last = statements.len() - 1;
                     for statement in statements.iter().take(last) {
-                        visit(statement, next_statement_index, layout)?;
+                        visit(statement, next_statement_index, layout, aggregate_objects)?;
                     }
                     visit(
                         statements.get(last).expect("a last statement"),
                         next_statement_index,
                         layout,
+                        aggregate_objects,
                     )
                 }
                 ProgramStatement::If {
@@ -442,9 +460,11 @@ impl SourceExecutionLayout {
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
                     let then_statement_index = *next_statement_index;
-                    let then_last = visit(then_branch, next_statement_index, layout)?;
+                    let then_last =
+                        visit(then_branch, next_statement_index, layout, aggregate_objects)?;
                     let else_statement_index = *next_statement_index;
-                    let else_last = visit(else_branch, next_statement_index, layout)?;
+                    let else_last =
+                        visit(else_branch, next_statement_index, layout, aggregate_objects)?;
                     let continuation_node = *next_statement_index;
                     layout.statements.insert(
                         statement_index,
@@ -475,7 +495,7 @@ impl SourceExecutionLayout {
                     *next_statement_index += 1;
                     let loop_index = layout.loop_bodies.len();
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
-                    visit(body, next_statement_index, layout)?;
+                    visit(body, next_statement_index, layout, aggregate_objects)?;
                     layout.statements.insert(
                         statement_index,
                         SourceStatementRegion {
@@ -494,9 +514,11 @@ impl SourceExecutionLayout {
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
                     let try_statement_index = *next_statement_index;
-                    let try_last = visit(try_body, next_statement_index, layout)?;
+                    let try_last =
+                        visit(try_body, next_statement_index, layout, aggregate_objects)?;
                     let handler_statement_index = *next_statement_index;
-                    let handler_last = visit(handler, next_statement_index, layout)?;
+                    let handler_last =
+                        visit(handler, next_statement_index, layout, aggregate_objects)?;
                     let continuation_node = *next_statement_index;
                     layout.statements.insert(
                         statement_index,
@@ -525,6 +547,34 @@ impl SourceExecutionLayout {
                 }
                 _ => {
                     let statement_index = *next_statement_index;
+                    if let ProgramStatement::DeclareAggregate {
+                        name,
+                        layout: declared,
+                        ..
+                    } = statement
+                    {
+                        aggregate_objects
+                            .insert(name.binding().clone(), aggregate_result_fields(declared));
+                    }
+                    if let ProgramStatement::CallConstruct { target, .. } = statement {
+                        let fields = aggregate_objects.get(target).ok_or_else(|| {
+                            ClickError::new(format!(
+                                "construction result `{target}` has no declared aggregate layout"
+                            ))
+                        })?;
+                        layout
+                            .aggregate_results
+                            .insert(statement_index, fields.clone());
+                    }
+                    if let ProgramStatement::CallResult {
+                        aggregate_layout: Some(result),
+                        ..
+                    } = statement
+                    {
+                        layout
+                            .aggregate_results
+                            .insert(statement_index, aggregate_result_fields(&result.layout));
+                    }
                     if let ProgramStatement::CallResult { call, .. } = statement {
                         layout.call_numbers.insert(statement_index, *call);
                         layout.step_regions.insert(*call, statement_index);
@@ -581,7 +631,27 @@ impl SourceExecutionLayout {
                 }
             }
         }
-        visit(function.body(), &mut next_statement_index, &mut layout)?;
+        let mut aggregate_objects = BTreeMap::new();
+        for parameter in function.parameters() {
+            if let Some(value) = parameter.aggregate_layout() {
+                aggregate_objects.insert(
+                    parameter.binding_name().clone(),
+                    aggregate_result_fields(value),
+                );
+            }
+        }
+        if let Some(value) = function.return_aggregate_layout() {
+            aggregate_objects.insert(
+                crate::kernel::CONTRACT_RESULT,
+                aggregate_result_fields(value),
+            );
+        }
+        visit(
+            function.body(),
+            &mut next_statement_index,
+            &mut layout,
+            &mut aggregate_objects,
+        )?;
         // The statements as written its front end says each region comes
         // from, which name them as C's do.
         if let Some(sites) = imported.source_sites() {
@@ -621,7 +691,27 @@ impl SourceExecutionLayout {
                 .collect::<Vec<_>>();
             layout.loop_paths.extend(loops);
         }
-        collect_kernel_automatic_exits(function.body(), &mut layout);
+        // A construction return already contains the completed result in the
+        // caller's destination. Retire private value parameters at its checked
+        // return boundary, so preservation names the same transition as the
+        // published outcome. Copy returns still need their source objects when
+        // the kernel materializes the returned copy.
+        let return_parameters = if function.contract_interface().aggregate_return_mode()
+            == crate::kernel::AggregateReturnMode::Construction
+        {
+            function
+                .parameters()
+                .iter()
+                .filter_map(|parameter| {
+                    parameter
+                        .aggregate_layout()
+                        .map(|_| parameter.binding_name().clone())
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        collect_kernel_automatic_exits(function.body(), return_parameters, &mut layout);
         Ok(Self {
             data: std::sync::Arc::new(layout),
         })
@@ -731,14 +821,9 @@ impl SourceExecutionLayout {
                         .unwrap_or(index),
                     _ => index,
                 };
-                layout.aggregate_results.insert(
-                    owner,
-                    value_layout
-                        .fields()
-                        .iter()
-                        .map(|field| (field.name().to_string(), field.clone()))
-                        .collect(),
-                );
+                layout
+                    .aggregate_results
+                    .insert(owner, aggregate_result_fields(&value_layout));
             }
             if let syntax::CStatement::CallResult { call, .. } = statement {
                 layout.call_numbers.insert(index, *call);
@@ -1208,6 +1293,7 @@ impl SourceExecutionLayout {
         region: usize,
         field: &str,
     ) -> Option<&crate::kernel::AggregateField> {
+        crate::instrumentation::record_deterministic_work(1);
         self.data.aggregate_results.get(&region)?.get(field)
     }
 
@@ -1758,6 +1844,7 @@ pub(in crate::surface) fn collect_program_expression_referenced_bindings<N: Refe
 /// here. Walking scope spines visits declarations once per containing scope.
 fn collect_kernel_automatic_exits(
     source: &ProgramStatement,
+    return_parameters: Vec<crate::kernel::BindingName>,
     layout: &mut SourceExecutionLayoutData,
 ) {
     fn declarations(s: &ProgramStatement, names: &mut Vec<crate::kernel::BindingName>) {
@@ -1784,11 +1871,12 @@ fn collect_kernel_automatic_exits(
         scopes: &mut Vec<(Vec<crate::kernel::BindingName>, Option<usize>)>,
         loop_head: Option<usize>,
         layout: &mut SourceExecutionLayoutData,
+        return_parameters: &[crate::kernel::BindingName],
     ) -> Vec<usize> {
         let mut names = Vec::new();
         declarations(s, &mut names);
         scopes.push((names, loop_head));
-        let tails = visit(s, index, scopes, layout);
+        let tails = visit(s, index, scopes, layout, return_parameters);
         let (names, _) = scopes.pop().unwrap();
         for tail in &tails {
             layout
@@ -1804,11 +1892,12 @@ fn collect_kernel_automatic_exits(
         index: &mut usize,
         scopes: &mut Vec<(Vec<crate::kernel::BindingName>, Option<usize>)>,
         layout: &mut SourceExecutionLayoutData,
+        return_parameters: &[crate::kernel::BindingName],
     ) -> Vec<usize> {
         if let ProgramStatement::Seq(statements) = s {
             let mut tails = Vec::new();
             for statement in statements.iter() {
-                tails = visit(statement, index, scopes, layout);
+                tails = visit(statement, index, scopes, layout, return_parameters);
             }
             return tails;
         }
@@ -1821,8 +1910,22 @@ fn collect_kernel_automatic_exits(
                 ..
             } => {
                 let mut tails = vec![head];
-                tails.extend(scope(then_branch, index, scopes, None, layout));
-                tails.extend(scope(else_branch, index, scopes, None, layout));
+                tails.extend(scope(
+                    then_branch,
+                    index,
+                    scopes,
+                    None,
+                    layout,
+                    return_parameters,
+                ));
+                tails.extend(scope(
+                    else_branch,
+                    index,
+                    scopes,
+                    None,
+                    layout,
+                    return_parameters,
+                ));
                 tails
             }
             ProgramStatement::TryCatchInt32 {
@@ -1833,15 +1936,29 @@ fn collect_kernel_automatic_exits(
             } => {
                 let mut tails = vec![head];
                 if *cleanup_unwind {
-                    tails.extend(visit(try_body, index, scopes, layout));
+                    tails.extend(visit(try_body, index, scopes, layout, return_parameters));
                 } else {
-                    tails.extend(scope(try_body, index, scopes, None, layout));
+                    tails.extend(scope(
+                        try_body,
+                        index,
+                        scopes,
+                        None,
+                        layout,
+                        return_parameters,
+                    ));
                 }
-                tails.extend(scope(handler, index, scopes, None, layout));
+                tails.extend(scope(
+                    handler,
+                    index,
+                    scopes,
+                    None,
+                    layout,
+                    return_parameters,
+                ));
                 tails
             }
             ProgramStatement::While { body, .. } => {
-                scope(body, index, scopes, Some(head), layout);
+                scope(body, index, scopes, Some(head), layout, return_parameters);
                 vec![head]
             }
             ProgramStatement::Break
@@ -1860,6 +1977,9 @@ fn collect_kernel_automatic_exits(
                         break;
                     }
                 }
+                if matches!(s, ProgramStatement::Return(_)) {
+                    names.extend(return_parameters.iter().cloned());
+                }
                 layout.automatic_abrupt_exits.insert(head, names);
                 vec![head]
             }
@@ -1868,7 +1988,7 @@ fn collect_kernel_automatic_exits(
             _ => vec![head],
         }
     }
-    visit(source, &mut 0, &mut Vec::new(), layout);
+    visit(source, &mut 0, &mut Vec::new(), layout, &return_parameters);
     for (at, head) in std::mem::take(&mut layout.automatic_break_heads) {
         let exited = layout
             .automatic_exits
@@ -2309,6 +2429,131 @@ mod source_execution_layout_tests {
                 .map(|region| region.continuation_node),
             Some(4096)
         );
+    }
+
+    fn construction_result_function(
+        fields: usize,
+        calls: usize,
+        unrelated: usize,
+    ) -> crate::languages::interface::ImportedFunction {
+        use crate::kernel::*;
+        let layout = AggregateLayout::new(
+            (fields * 8) as u32,
+            8,
+            (0..fields)
+                .map(|i| {
+                    AggregateField::new(
+                        format!("nested.field_{i}"),
+                        (i * 8) as u32,
+                        ProgramType::UInt64,
+                    )
+                })
+                .collect(),
+        );
+        let mut body = program_allocate_aggregate_destination("built", layout);
+        for i in 0..unrelated {
+            body = program_seq(
+                body,
+                program_declare(format!("other_{i}"), ProgramType::Int32),
+            );
+        }
+        for _ in 0..calls {
+            body = program_seq(body, program_call_construct("built", "factory", vec![]));
+        }
+        body = program_seq(
+            body,
+            program_return(crate::kernel::program_expression::int32_literal(0)),
+        );
+        syntax::parse_function("int32 source() { return 0; }")
+            .unwrap()
+            .with_prelowered_kernel_function(program_function(
+                ProgramType::Int32,
+                "source",
+                vec![],
+                body,
+            ))
+    }
+
+    fn record_parameter_return_function(
+        parameters: usize,
+        construction: bool,
+    ) -> crate::languages::interface::ImportedFunction {
+        use crate::kernel::*;
+        let record = AggregateLayout::new(
+            8,
+            8,
+            vec![AggregateField::new("value", 0, ProgramType::UInt64)],
+        );
+        let arguments = (0..parameters)
+            .map(|index| {
+                program_parameter_with_aggregate_layout(
+                    format!("arg_{index}"),
+                    ProgramType::VoidPointer,
+                    record.clone(),
+                )
+            })
+            .chain([program_parameter("raw", ProgramType::Int32Pointer)])
+            .collect();
+        let body = program_seq(
+            ProgramStatement::Goto {
+                target: ControlTargetId(1),
+            },
+            program_return(crate::kernel::program_expression::variable(CONTRACT_RESULT)),
+        );
+        let function = program_function(ProgramType::VoidPointer, "source", arguments, body);
+        let function = if construction {
+            function.with_construction_return(record)
+        } else {
+            function.with_return_aggregate_layout(record)
+        };
+        syntax::parse_function("void* source() { return 0; }")
+            .unwrap()
+            .with_prelowered_kernel_function(function)
+    }
+
+    #[test]
+    fn construction_returns_retire_record_parameters_but_copy_returns_and_gotos_do_not() {
+        for construction in [false, true] {
+            let function = record_parameter_return_function(2, construction);
+            let layout = SourceExecutionLayout::for_function(&function).unwrap();
+            assert!(
+                layout.automatic_exits(0, true).is_empty(),
+                "a goto stays in the function"
+            );
+            let retired = layout.automatic_exits(1, true);
+            if construction {
+                assert_eq!(retired, &["arg_0".into(), "arg_1".into()]);
+            } else {
+                assert!(
+                    retired.is_empty(),
+                    "a copied return may still read its source parameter"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn construction_call_results_keep_nested_field_names_and_share_layouts() {
+        let function = construction_result_function(4, 2, 0);
+        let layout = SourceExecutionLayout::for_function(&function).unwrap();
+        assert!(!layout.is_aggregate_result(0));
+        for region in [1, 2] {
+            assert!(layout.is_aggregate_result(region));
+            let field = layout
+                .aggregate_result_field(region, "nested.field_3")
+                .unwrap();
+            assert_eq!(field.offset_bytes(), 24);
+            assert_eq!(field.program_type(), crate::kernel::ProgramType::UInt64);
+            assert!(
+                layout
+                    .aggregate_result_field(region, "nested.missing")
+                    .is_none()
+            );
+        }
+        assert!(std::sync::Arc::ptr_eq(
+            &layout.data.aggregate_results[&1],
+            &layout.data.aggregate_results[&2]
+        ));
     }
 
     #[cfg(test)]

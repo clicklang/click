@@ -637,6 +637,12 @@ impl<'a> Proof<'a> {
                     context.parameter_binding,
                     context.fixed_state,
                     context.spec_definitions,
+                    &algebraic_values_for_surface_proposition(
+                        &surface,
+                        &BTreeMap::new(),
+                        self.local_algebraic_values(),
+                    ),
+                    &self.local_integer_values(),
                 )
                 .map(|(proposition, introductions)| (proposition, Some(introductions)))
                 .map_err(|message| {
@@ -658,6 +664,12 @@ impl<'a> Proof<'a> {
                     view.parameter_binding,
                     view.fixed_state,
                     view.spec_definitions,
+                    &algebraic_values_for_surface_proposition(
+                        &surface,
+                        &BTreeMap::new(),
+                        self.local_algebraic_values(),
+                    ),
+                    &self.local_integer_values(),
                 )
                 .map(|(proposition, introductions)| (proposition, Some(introductions)))
                 .map_err(|message| {

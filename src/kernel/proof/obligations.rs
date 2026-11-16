@@ -647,6 +647,31 @@ impl OutcomeClaimGoals {
         self.claims.get(key)?.target.as_ref()
     }
 
+    /// Compatibility data for execution-only consumers, copied from the
+    /// resource evidence held by this completed outcome. This projects the
+    /// selected claims; it does not run their resource checks again.
+    pub(in crate::kernel) fn resource_projection(
+        &self,
+        assumptions: &crate::kernel::PureFactContext,
+    ) -> (
+        Vec<FunctionContractClaimKey>,
+        crate::kernel::ResourceContext,
+    ) {
+        let mut keys = Vec::new();
+        let mut returned = crate::kernel::ResourceContext::new_with_equalities(assumptions);
+        for (key, goal) in self.claims.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let ClaimGoalState::Closed(ClaimGoalEvidence::Resource(receipt)) = &goal.state {
+                keys.push(key.clone());
+                if receipt.contributes_returned_resources {
+                    returned = returned
+                        .unchecked_with_facts(receipt.returned_resources.facts().iter().cloned());
+                }
+            }
+        }
+        (keys, returned)
+    }
+
     /// The evidence that closed `key`. A vacuous or open claim has none.
     pub(crate) fn evidence(&self, key: &FunctionContractClaimKey) -> Option<&ClaimGoalEvidence> {
         crate::instrumentation::record_deterministic_work(1);
@@ -780,6 +805,65 @@ mod outcome_claim_goal_tests {
             ],
             is_exceptional,
         )
+    }
+
+    #[test]
+    fn resource_projection_keeps_checked_keys_but_only_returns_new_owners() {
+        let outcome = outcome();
+        let owned = crate::kernel::ResourceFact::own(crate::kernel::Resource::Token {
+            name: "returned".into(),
+            arguments: Vec::new().into(),
+        });
+        let borrowed = crate::kernel::ResourceFact::View(crate::kernel::Resource::Token {
+            name: "borrowed".into(),
+            arguments: Vec::new().into(),
+        });
+        let initial = OutcomeClaimGoals::open(
+            [
+                (
+                    FunctionContractClaimKey::Ensure(0),
+                    Some(Target::EnsureResource(0)),
+                ),
+                (
+                    FunctionContractClaimKey::Ensure(1),
+                    Some(Target::EnsureResource(1)),
+                ),
+                (
+                    FunctionContractClaimKey::ExceptionalEnsure(0),
+                    Some(Target::ExceptionalEnsureProposition(0)),
+                ),
+            ],
+            false,
+        );
+        let mut closed = initial.clone();
+        for (index, fact, contributes) in [(0, owned.clone(), true), (1, borrowed, false)] {
+            closed = closed
+                .close(
+                    &FunctionContractClaimKey::Ensure(index),
+                    ClaimGoalEvidence::Resource(ClaimResourceReceipt {
+                        returned_resources: ResourceContext::new().unchecked_with_fact(fact),
+                        contributes_returned_resources: contributes,
+                        defers_resource_transition: false,
+                    }),
+                    &outcome.identity,
+                )
+                .unwrap();
+        }
+        let assumptions = crate::kernel::PureFactContext::new();
+        let (keys, resources) = closed.resource_projection(&assumptions);
+        assert_eq!(
+            keys,
+            [
+                FunctionContractClaimKey::Ensure(0),
+                FunctionContractClaimKey::Ensure(1)
+            ]
+        );
+        assert_eq!(resources, ResourceContext::new().unchecked_with_fact(owned));
+        let (keys, resources) = initial.resource_projection(&assumptions);
+        assert!(
+            keys.is_empty() && resources.facts().is_empty(),
+            "a projection does not close or mutate its source goals"
+        );
     }
 
     /// Claims open in contract order, a claim about the other kind of

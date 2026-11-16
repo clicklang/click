@@ -12,7 +12,7 @@ use super::*;
 use crate::kernel::FloatCondition;
 use crate::kernel::proof::arithmetic_special::signed_definedness_operands;
 use crate::kernel::proof::integer_arithmetic::{
-    IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticCertificate, IntegerArithmeticNode,
+    IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticNode, IntegerArithmeticPlan,
     integer_affine_claim,
 };
 use crate::kernel::proof::signed_arithmetic::{
@@ -470,6 +470,49 @@ pub(super) fn observed_native_surface_comparison(
     kernel: &Proposition,
     written: &ClickProposition,
 ) -> ClickProposition {
+    // Expose a literal proposition lambda's comparison while retaining its
+    // typed argument bindings on each operand. This is the same beta
+    // reduction ordinary proposition lowering performs.
+    fn comparison_value(expression: &ContractExpression) -> Option<ClickProposition> {
+        let expression = lambdas::reduce_head_fully(expression).ok()?;
+        match expression.as_ref() {
+            ContractExpression::Proposition(proposition) => Some(proposition.as_ref().clone()),
+            ContractExpression::Let {
+                name,
+                click_type,
+                value,
+                body,
+            } => {
+                let ClickProposition::Comparison {
+                    left,
+                    operator,
+                    right,
+                } = comparison_value(body)?
+                else {
+                    return None;
+                };
+                let bind = |body| ContractExpression::Let {
+                    name: name.clone(),
+                    click_type: click_type.clone(),
+                    value: value.clone(),
+                    body: Box::new(body),
+                };
+                Some(ClickProposition::Comparison {
+                    left: bind(left),
+                    operator,
+                    right: bind(right),
+                })
+            }
+            _ => None,
+        }
+    }
+    let exposed;
+    let written = if let ClickProposition::Value(expression) = written {
+        exposed = comparison_value(expression);
+        exposed.as_ref().unwrap_or(written)
+    } else {
+        written
+    };
     let negated;
     let kernel = match kernel {
         Proposition::Not(inner) => match inner.as_ref() {
@@ -587,205 +630,6 @@ pub(super) fn observed_native_surface_comparison(
     observed(written, &observe)
 }
 
-pub(in crate::surface::proof) fn integer_plan_to_surface_certificate(
-    plan: &IntegerArithmeticCertificate,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    surface_goal: &ClickProposition,
-) -> Option<IntegerCertificate> {
-    integer_plan_to_surface_certificate_with_ranges(plan, premise_pairs, surface_goal, &[])
-}
-
-/// As [`integer_plan_to_surface_certificate`], spelling each type-range
-/// node by the matching entry of `ranges`: the machine observation, whether
-/// the bound is the upper one, and its written bound.
-pub(in crate::surface::proof) fn integer_plan_to_surface_certificate_with_ranges(
-    plan: &IntegerArithmeticCertificate,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    surface_goal: &ClickProposition,
-    ranges: &[SpelledBound],
-) -> Option<IntegerCertificate> {
-    let anchored_goal = surface_comparison_with_anchored_operands(surface_goal);
-    let surface_goal = &anchored_goal;
-    let mut source_indices = BTreeMap::new();
-    let mut node_surfaces = Vec::with_capacity(plan.nodes.len());
-    let mut nodes = Vec::with_capacity(plan.nodes.len());
-    for (node_index, node) in plan.nodes.iter().enumerate() {
-        let (surface, certificate_node) = match node {
-            IntegerArithmeticNode::Premise { index, .. } => {
-                let (kernel, written) = premise_pairs.get(*index)?;
-                let surface = observed_native_surface_comparison(kernel, written);
-                let source_index = {
-                    let next = source_indices.len();
-                    *source_indices.entry(*index).or_insert(next)
-                };
-                // The source and its result keep the written spelling, except
-                // that native arithmetic is spelled by the observations it
-                // compares; either lowers to the available fact itself, and
-                // the kernel reads a native result as the Integer claim the
-                // node uses. Later nodes combine the observed spelling.
-                let printed = observed_native_arithmetic(kernel, written);
-                let certificate = IntegerCertificateNode::Premise {
-                    index: source_index,
-                    proposition: printed.clone(),
-                    result: printed,
-                };
-                (
-                    surface_comparison_with_anchored_operands(&surface),
-                    certificate,
-                )
-            }
-            IntegerArithmeticNode::Scale {
-                source,
-                coefficient,
-                ..
-            } => {
-                let source_surface = node_surfaces.get(*source)?;
-                let surface = integer_certificate_surface_scale(source_surface, coefficient)?;
-                let certificate = IntegerCertificateNode::Scale {
-                    source: *source,
-                    coefficient: surface_signed_integer_literal(coefficient),
-                    result: surface.clone(),
-                };
-                (surface, certificate)
-            }
-            IntegerArithmeticNode::Add { left, right, .. } => {
-                let left_surface = node_surfaces.get(*left)?;
-                let right_surface = node_surfaces.get(*right)?;
-                let surface = integer_certificate_surface_add(left_surface, right_surface)?;
-                let certificate = IntegerCertificateNode::Add {
-                    left: *left,
-                    right: *right,
-                    result: surface.clone(),
-                };
-                (surface, certificate)
-            }
-            IntegerArithmeticNode::EqualityToLessEqual {
-                source, reverse, ..
-            } => {
-                let source_surface = node_surfaces.get(*source)?;
-                let surface = integer_surface_equality_to_less_equal(source_surface, *reverse)?;
-                let certificate = IntegerCertificateNode::EqualityToLessEqual {
-                    source: *source,
-                    reverse: *reverse,
-                    result: surface.clone(),
-                };
-                (surface, certificate)
-            }
-            IntegerArithmeticNode::EqualityFromBounds { lower, upper, .. } => {
-                // The kernel compares normalized affine bounds. Their source
-                // spellings need not be syntactic opposites (for example,
-                // b <= x and not (b + 1 <= x)). At the conclusion, retain
-                // the caller's equality; certificate checking recomputes it.
-                let surface = if node_index == plan.conclusion {
-                    surface_goal.clone()
-                } else {
-                    let lower_surface = node_surfaces.get(*lower)?;
-                    let upper_surface = node_surfaces.get(*upper)?;
-                    integer_surface_equality_from_bounds(lower_surface, upper_surface)?
-                };
-                let certificate = IntegerCertificateNode::EqualityFromBounds {
-                    lower: *lower,
-                    upper: *upper,
-                    result: surface.clone(),
-                };
-                (surface, certificate)
-            }
-            IntegerArithmeticNode::Trivial { result } => {
-                let surface = if node_index == plan.conclusion {
-                    surface_goal.clone()
-                } else {
-                    integer_surface_trivial(result)?
-                };
-                let certificate = IntegerCertificateNode::Trivial {
-                    result: surface.clone(),
-                };
-                (surface, certificate)
-            }
-            IntegerArithmeticNode::NegatedGoal { .. } => {
-                let surface = integer_surface_negated_goal(surface_goal)?;
-                let certificate = IntegerCertificateNode::NegatedGoal {
-                    result: surface.clone(),
-                };
-                (surface, certificate)
-            }
-            IntegerArithmeticNode::TypeRange { value, upper, .. } => {
-                let surface = spelled_bound(ranges, BoundSource::TypeRange, value, *upper)?;
-                let certificate = IntegerCertificateNode::TypeRange {
-                    result: surface.clone(),
-                };
-                (
-                    surface_comparison_with_anchored_operands(&surface),
-                    certificate,
-                )
-            }
-            IntegerArithmeticNode::OperationBound { value, upper, .. } => {
-                let surface = spelled_bound(ranges, BoundSource::Operation, value, *upper)?;
-                let certificate = IntegerCertificateNode::OperationBound {
-                    result: surface.clone(),
-                };
-                (
-                    surface_comparison_with_anchored_operands(&surface),
-                    certificate,
-                )
-            }
-            IntegerArithmeticNode::ExcludedTypeBound { index, .. } => {
-                let (_, written) = premise_pairs.get(*index)?;
-                let surface = ranges
-                    .iter()
-                    .find(|(source, ..)| *source == BoundSource::Excluded(*index))?
-                    .3
-                    .clone();
-                let source_index = {
-                    let next = source_indices.len();
-                    *source_indices.entry(*index).or_insert(next)
-                };
-                let certificate = IntegerCertificateNode::ExcludedTypeBound {
-                    index: source_index,
-                    proposition: written.clone(),
-                    result: surface.clone(),
-                };
-                (
-                    surface_comparison_with_anchored_operands(&surface),
-                    certificate,
-                )
-            }
-            IntegerArithmeticNode::StrictFromDisequal {
-                bound, disequal, ..
-            } => {
-                let (_, written) = premise_pairs.get(*disequal)?;
-                let (left, _, right) =
-                    integer_surface_non_strict_parts(node_surfaces.get(*bound)?)?;
-                let surface = ClickProposition::Comparison {
-                    left,
-                    operator: ComparisonOperator::LessThan,
-                    right,
-                };
-                let source_index = {
-                    let next = source_indices.len();
-                    *source_indices.entry(*disequal).or_insert(next)
-                };
-                let certificate = IntegerCertificateNode::StrictFromDisequal {
-                    bound: *bound,
-                    index: source_index,
-                    proposition: written.clone(),
-                    result: surface.clone(),
-                };
-                (surface, certificate)
-            }
-            // A divided bound has no general source spelling derived from
-            // its source's spelling; planners that divide spell the result
-            // from their own atom table.
-            IntegerArithmeticNode::Divide { .. } => return None,
-        };
-        node_surfaces.push(surface);
-        nodes.push(certificate_node);
-    }
-    Some(IntegerCertificate {
-        nodes,
-        conclusion: plan.conclusion,
-    })
-}
-
 /// The spelling `bounds` gives the node with this source, value, and
 /// direction.
 fn spelled_bound(
@@ -854,11 +698,7 @@ fn integer_surface_non_strict_parts(
     })
 }
 
-/// The `Integer` certificate's spelling of a scaled bound. `c * l < c * r`
-/// is the kernel's scaled claim only for `c == 1`; otherwise the strict
-/// bound is scaled in its non-strict form. The `signed_int32` family keeps
-/// [`integer_surface_scale`], whose checker reads the `c * l < c * r` shape.
-fn integer_certificate_surface_scale(
+fn integer_plan_surface_scale(
     proposition: &ClickProposition,
     coefficient: &BigInt,
 ) -> Option<ClickProposition> {
@@ -876,11 +716,7 @@ fn integer_certificate_surface_scale(
     )
 }
 
-/// The `Integer` certificate's spelling of a sum. One strict addend carries
-/// the claim's `+ 1`, so `l1 + l2 < r1 + r2` spells the sum; two strict
-/// addends carry `+ 2`, which a single `<` cannot, so both are added in
-/// their non-strict form.
-fn integer_certificate_surface_add(
+fn integer_plan_surface_add(
     left: &ClickProposition,
     right: &ClickProposition,
 ) -> Option<ClickProposition> {
@@ -1040,22 +876,6 @@ fn surface_expression_is_constant(expression: &ContractExpression) -> bool {
         }
         _ => false,
     }
-}
-
-/// The integer negation of a goal `l <= r` is `r < l`, and of `l < r` is
-/// `r <= l`. An equality goal has no single-bound negation.
-fn integer_surface_negated_goal(goal: &ClickProposition) -> Option<ClickProposition> {
-    let (left, operator, right) = integer_surface_ordered_parts(goal)?;
-    let operator = match operator {
-        ComparisonOperator::LessEqual => ComparisonOperator::LessThan,
-        ComparisonOperator::LessThan => ComparisonOperator::LessEqual,
-        _ => return None,
-    };
-    Some(ClickProposition::Comparison {
-        left: right,
-        operator,
-        right: left,
-    })
 }
 
 fn integer_surface_equality_to_less_equal(
@@ -1619,26 +1439,6 @@ fn identity_operands(
     }
 }
 
-/// The machine observations in `goal` and `premises` whose type ranges a
-/// refutation may use, each once.
-fn integer_surface_trivial(claim: &IntegerAffineClaim) -> Option<ClickProposition> {
-    if !claim.terms.is_empty() {
-        return None;
-    }
-    let operator = match claim.relation {
-        IntegerAffineRelation::LessEqual if claim.constant <= BigInt::zero() => {
-            ComparisonOperator::LessEqual
-        }
-        IntegerAffineRelation::Equal if claim.constant.is_zero() => ComparisonOperator::Equal,
-        _ => return None,
-    };
-    Some(ClickProposition::Comparison {
-        left: surface_signed_integer_literal(&claim.constant),
-        operator,
-        right: ContractExpression::IntegerLiteral("0".into()),
-    })
-}
-
 fn kernel_upper_bound_split_candidate(
     proposition: &Proposition,
 ) -> Option<(Variable, crate::kernel::SharedMachineIntegerTerm)> {
@@ -2003,68 +1803,12 @@ impl<'a> Proof<'a> {
                 .is_some_and(|(left, right)| left == right)
     }
 
-    /// The explicit arithmetic certificate proving `goal` from exactly the
-    /// recorded premises spelled `listed`, planned from their kernel forms:
-    /// the certificate `arithmetic() using` the listed premises expands to.
-    fn arithmetic_certificate_from_recorded(
+    pub(super) fn signed_plan_to_surface(
         &self,
-        goal: &Proposition,
-        listed: &[ClickProposition],
-        premise_pairs: &[(Proposition, ClickProposition)],
-    ) -> Option<ProofTactic> {
-        let pairs = listed
-            .iter()
-            .map(|surface| {
-                premise_pairs
-                    .iter()
-                    .find(|(_, recorded)| recorded == surface)
-                    .cloned()
-            })
-            .collect::<Option<Vec<_>>>()?;
-        let kernels = pairs
-            .iter()
-            .map(|(kernel, _)| kernel.clone())
-            .collect::<Vec<_>>();
-        // A fixed-state goal may have no source form; its conclusion is then
-        // spelled from the premises' own operands, as a theorem's would be.
-        let spelled = self
-            .surface_goal()
-            .is_none()
-            .then(|| spell_signed_goal(goal, &pairs))
-            .flatten();
-        let surface_goal = self.surface_goal().or(spelled.as_ref())?;
-        crate::surface::checking::arithmetic_plans(goal, &kernels, true).find_map(|plan| {
-            match plan {
-                ArithmeticPlan::IntegerAffine(plan) => {
-                    integer_plan_to_surface_certificate(&plan, &pairs, surface_goal)
-                        .map(ArithmeticCertificate::integer)
-                }
-                ArithmeticPlan::SignedInt32(plan) => self
-                    .signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)
-                    .map(|certificate| ArithmeticCertificate {
-                        family: ArithmeticCertificateFamily::SignedInt32(certificate),
-                    }),
-                // A definedness goal is the `int32_defined` rule over the
-                // premises bounding its operands.
-                ArithmeticPlan::Special(plan) => Some(special_plan_to_surface_certificate(
-                    &plan,
-                    &pairs
-                        .iter()
-                        .map(|(_, surface)| surface.clone())
-                        .collect::<Vec<_>>(),
-                    surface_goal,
-                )),
-            }
-            .map(ProofTactic::ArithmeticCertificate)
-        })
-    }
-
-    pub(super) fn signed_plan_to_surface_certificate(
-        &self,
-        plan: &crate::kernel::proof::signed_arithmetic::SignedArithmeticCertificate,
+        plan: &crate::kernel::proof::signed_arithmetic::SignedArithmeticPlan,
         premise_pairs: &[(Proposition, ClickProposition)],
         surface_goal: &ClickProposition,
-    ) -> Option<SignedInt32Certificate> {
+    ) -> Option<SignedIntervalPlan> {
         let weakening_source = match plan.nodes.get(plan.conclusion) {
             Some(SignedArithmeticNode::Add { left, right, .. })
                 if matches!(
@@ -2171,6 +1915,48 @@ impl<'a> Proof<'a> {
             collect_signed_surface_proposition_terms(surface, &mut terms);
         }
         let term = |term: &crate::kernel::MachineTerm| self.signed_surface_term(term, &terms);
+        let generated_goal;
+        let surface_goal = if integer_surface_ordered_parts(
+            &surface_comparison_with_anchored_operands(surface_goal),
+        )
+        .is_none()
+        {
+            let Proposition::ConditionIs(condition, true) = self.goal()? else {
+                return None;
+            };
+            let view =
+                crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+            if view.negated || view.relation != crate::kernel::CompareRelation::LessEqual {
+                return None;
+            }
+            // An implicit resource extent has no written comparison. Its two
+            // operands are still explicit source terms of this plan.
+            let native = |operand| ContractExpression::CUnary {
+                operand: Box::new(operand),
+                lowered: ProgramExpression::Cast {
+                    expression: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
+                    target_type: view.format.program_type(),
+                    integer_mode: crate::kernel::IntegerCastMode::CConversion,
+                    pointee_struct: None,
+                    pointee_volatile: false,
+                    pointee_constant: false,
+                    explicit_qualification: false,
+                },
+            };
+            let operands = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view().retain(view.format));
+            generated_goal = Some(ClickProposition::Comparison {
+                left: native(term(operands[0].value())?),
+                operator: ComparisonOperator::LessEqual,
+                right: native(term(operands[1].value())?),
+            });
+            generated_goal.as_ref()?
+        } else {
+            generated_goal = None;
+            surface_goal
+        };
         let interval =
             |value: crate::kernel::proof::signed_arithmetic::SignedArithmeticInterval| {
                 SignedInt32Interval {
@@ -2263,10 +2049,8 @@ impl<'a> Proof<'a> {
                     source,
                     coefficient,
                     result,
-                } => {
-                    integer_certificate_surface_scale(surfaces.get(*source)?.as_ref()?, coefficient)
-                        .or_else(|| claim_surface(result))
-                }
+                } => integer_plan_surface_scale(surfaces.get(*source)?.as_ref()?, coefficient)
+                    .or_else(|| claim_surface(result)),
                 SignedArithmeticNode::Add {
                     left,
                     right,
@@ -2299,7 +2083,7 @@ impl<'a> Proof<'a> {
                             if weakening_source == Some(surfaces.len()) {
                                 integer_surface_transitive(left_surface, right_surface)
                             } else {
-                                integer_certificate_surface_add(left_surface, right_surface)
+                                integer_plan_surface_add(left_surface, right_surface)
                             }
                         })
                     }
@@ -2357,6 +2141,9 @@ impl<'a> Proof<'a> {
                 _ => None,
             };
             surfaces.push(value);
+        }
+        if let Some(goal) = &generated_goal {
+            surfaces[plan.conclusion] = Some(goal.clone());
         }
         for (node_index, node) in plan.nodes.iter().enumerate() {
             let r = |index: usize| mapped[index];
@@ -2622,7 +2409,7 @@ impl<'a> Proof<'a> {
             };
             generated.push(surface_node);
         }
-        Some(SignedInt32Certificate {
+        Some(SignedIntervalPlan {
             nodes: generated,
             conclusion: *mapped.get(plan.conclusion)?,
         })
@@ -2817,7 +2604,7 @@ impl<'a> Proof<'a> {
     /// and cited facts' written observations.
     fn spell_refutation(
         &self,
-        certificate: &IntegerArithmeticCertificate,
+        certificate: &IntegerArithmeticPlan,
         premises: &[Proposition],
         candidates: &[Proposition],
         spelled: &[(Proposition, ClickProposition)],
@@ -2848,7 +2635,15 @@ impl<'a> Proof<'a> {
             Vec::with_capacity(premises.len());
         for premise in premises {
             if !candidates.contains(premise) {
-                pairs.push(None);
+                // Keep the actual native fact as the composition input. The
+                // emitter states its observed and ordered forms with explicit
+                // normalization; a synthesized reversed reading is not itself
+                // an exact available premise.
+                let source = candidates
+                    .iter()
+                    .find(|candidate| integer_readings_of_native_fact(candidate).contains(premise))
+                    .and_then(resolve);
+                pairs.push(source);
                 continue;
             }
             if let Some(pair) = spelled.iter().find(|(fact, _)| fact == premise) {
@@ -3137,7 +2932,7 @@ impl<'a> Proof<'a> {
     /// `None` when one has no such spelling.
     fn spell_type_ranges(
         &self,
-        certificate: &IntegerArithmeticCertificate,
+        certificate: &IntegerArithmeticPlan,
         written: &[ContractExpression],
     ) -> Result<Vec<SpelledBound>, crate::kernel::IntegerTerm> {
         let wanted: Vec<(&crate::kernel::IntegerTerm, bool)> = certificate
@@ -3190,7 +2985,7 @@ impl<'a> Proof<'a> {
     /// `to_integer(a)`. Work is one spelling per bound node.
     fn spell_derived_bounds(
         &self,
-        certificate: &IntegerArithmeticCertificate,
+        certificate: &IntegerArithmeticPlan,
         premises: &[Proposition],
         written: &[ContractExpression],
     ) -> Option<Vec<SpelledBound>> {
@@ -3946,32 +3741,8 @@ fn normalization_refutes(proposition: &Proposition) -> bool {
     ))
 }
 
-fn direct_logical_candidates(
-    goal: Option<&Proposition>,
-    surface_goal: Option<&ClickProposition>,
-) -> Vec<ProofStep> {
-    let mut steps = vec![ProofStep::Known];
-    // Arithmetic identities belong to the explicit arithmetic checker.
-    // Select by the goal's shape only; no coefficient work is paid when
-    // known closes first. Other normalization families keep their route.
-    if matches!(
-        goal,
-        Some(Proposition::ConditionIs(
-            crate::kernel::integer_comparison_condition!(_, _),
-            _
-        ))
-    ) && let Some(surface) = surface_goal
-    {
-        steps.push(ProofStep::ArithmeticCertificate(
-            ArithmeticCertificate::integer(IntegerCertificate {
-                nodes: vec![IntegerCertificateNode::Trivial {
-                    result: surface.clone(),
-                }],
-                conclusion: 0,
-            }),
-        ));
-    }
-    steps.push(ProofStep::Normalize);
+fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
+    let mut steps = vec![ProofStep::Known, ProofStep::Normalize];
     // Without a proposition goal every candidate is refused alike; keep the
     // complete list so the recorded refusals are unchanged.
     if matches!(goal, Some(Proposition::ForAll { .. }) | None) {
@@ -5629,20 +5400,6 @@ fn operation_identities_order_dependencies_with_multiple_roots() {
 mod search;
 
 impl<'a> Proof<'a> {
-    /// The written type-range bounds an `arithmetic() using` plan cites,
-    /// spelled from the goal's and the listed premises' written
-    /// observations; `None` when one has no spelling.
-    pub(in crate::surface::proof) fn listed_premise_type_ranges(
-        &self,
-        certificate: &IntegerArithmeticCertificate,
-        premise_pairs: &[(Proposition, ClickProposition)],
-        surface_goal: &ClickProposition,
-    ) -> Option<Vec<SpelledBound>> {
-        let written = written_integer_observations(
-            std::iter::once(surface_goal).chain(premise_pairs.iter().map(|(_, surface)| surface)),
-        );
-        self.spell_type_ranges(certificate, &written).ok()
-    }
     /// The recorded spellings premises are read from: a pure theorem's
     /// requirements, a fixed-state proof's or outcome's recorded lowerings,
     /// or the execution frontier's.

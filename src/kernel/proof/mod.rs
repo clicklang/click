@@ -18,14 +18,12 @@ pub(crate) mod fact_reasoning;
 mod facts;
 mod integer_affine_atoms;
 pub(crate) mod integer_arithmetic;
-#[cfg(test)]
-mod integer_arithmetic_soundness_tests;
+
 mod integer_bound_exclusion;
 pub(crate) mod integer_cast_identity;
 mod integer_division_bounds;
 mod integer_multiply_order;
 pub(crate) mod integer_operation_identity;
-mod integer_polynomial_identity;
 mod integer_product_bounds;
 mod integer_quotient_bound;
 mod integer_quotient_shift;

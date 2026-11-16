@@ -40,8 +40,8 @@ work expands into simple tactics:
   does not invent witnesses or chain applications. Successful search discards
   failed alternatives' explanations.
   Integer composition expands to ordinary `have`, `apply(...) using`, and
-  explicit normalization steps. Arithmetic families still awaiting migration
-  use `arithmetic_certificate`.
+  explicit normalization steps. Signed intervals, definedness, and specialized
+  arithmetic likewise expand to ordinary proof steps.
 - The *implicit tail* ends every proof script, including the empty script of
   an omitted proof. It runs the C that is left, splitting at each C branch the
   facts do not decide into paths that each run to function exit, then closes

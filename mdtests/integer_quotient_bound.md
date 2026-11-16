@@ -10,12 +10,7 @@ theorem checked_quotient_lower(n: Integer, d: Integer, bound: Integer) {
     requires 1 <= d;
     requires bound * d <= n;
     ensures bound <= truncating_quotient(n, d) by {
-        arithmetic_certificate rules {
-            premise 0: bound * d <= n => bound * d <= n;
-            premise 1: 1 <= d => 1 <= d;
-            integer_quotient_bound bounds [0, 1] => bound <= truncating_quotient(n, d);
-            conclusion 0;
-        }
+        solve() using { bound * d <= n; 1 <= d; };
     }
 }
 
@@ -24,12 +19,7 @@ theorem checked_quotient_upper(n: Integer, d: Integer, bound: Integer) {
     requires 1 <= d;
     requires n <= bound * d;
     ensures truncating_quotient(n, d) <= bound by {
-        arithmetic_certificate rules {
-            premise 0: n <= bound * d => n <= bound * d;
-            premise 1: 1 <= d => 1 <= d;
-            integer_quotient_bound bounds [0, 1] => truncating_quotient(n, d) <= bound;
-            conclusion 0;
-        }
+        solve() using { n <= bound * d; 1 <= d; };
     }
 }
 

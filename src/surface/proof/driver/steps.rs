@@ -417,7 +417,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             return driver_proof.driver().apply_bare_statement_step(step);
         }
 
-        let mut provenance_step = step.clone();
+        let provenance_step = step.clone();
         let checked_proposition_successor = match &step {
             ProofStep::CheckTerminationLocal(function) => Some(
                 driver_proof.apply_termination_check(crate::kernel::TerminationCheck::Local(
@@ -441,20 +441,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::NormalizeUsing(premises) => {
                 Some(driver_proof.apply_normalize_using(premises))
             }
-            ProofStep::ArithmeticUsing(premises) => Some(
-                driver_proof
-                    .apply_arithmetic_using_with_certificate(premises)
-                    .map(|(handle, certificate)| {
-                        if let Some(certificate) = certificate {
-                            provenance_step = ProofStep::ArithmeticCertificate(certificate);
-                        }
-                        handle
-                    }),
-            ),
-            ProofStep::Preserve(separation) => Some(driver_proof.apply_preserve(separation)),
-            ProofStep::ArithmeticCertificate(certificate) => {
-                Some(driver_proof.apply_arithmetic_certificate(certificate))
+            ProofStep::ArithmeticUsing(_) => {
+                return Err(driver_proof
+                    .step_error("arithmetic search must expand into ordinary proof steps"));
             }
+            ProofStep::Preserve(separation) => Some(driver_proof.apply_preserve(separation)),
+
             ProofStep::Intro => Some(driver_proof.apply_intro(None)),
             ProofStep::IntroAs(name) => Some(driver_proof.apply_intro(Some(name))),
             ProofStep::Enumerate => Some(driver_proof.apply_enumerate()),

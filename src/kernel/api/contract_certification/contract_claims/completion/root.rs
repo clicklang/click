@@ -282,29 +282,6 @@ impl CompletedContractExecution {
     pub(crate) fn execution(&self) -> &Arc<CheckedFunctionExecution> {
         &self.execution
     }
-    pub(crate) fn with_checked_resource_claims(
-        mut self,
-        claims: Vec<Vec<FunctionContractClaimKey>>,
-    ) -> Self {
-        self.execution =
-            Arc::new(Arc::unwrap_or_clone(self.execution).with_checked_resource_claims(claims));
-        self
-    }
-    pub(crate) fn with_checked_resource_transitions(mut self, transitions: Vec<bool>) -> Self {
-        self.execution = Arc::new(
-            Arc::unwrap_or_clone(self.execution).with_checked_resource_transitions(transitions),
-        );
-        self
-    }
-    pub(crate) fn with_checked_returned_resources(
-        mut self,
-        resources: Vec<ResourceContext>,
-    ) -> Self {
-        self.execution = Arc::new(
-            Arc::unwrap_or_clone(self.execution).with_checked_returned_resources(resources),
-        );
-        self
-    }
     pub(crate) fn publish(self, preferred: bool) {
         if let Some(root) = self.root {
             root.publish(self.execution, preferred, self.loop_rules);

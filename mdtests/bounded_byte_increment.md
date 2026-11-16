@@ -22,12 +22,7 @@ int64 next(uint8 byte) {
         solve() using { (byte as uint32) <= 255u32; byte < 255; };
     }
     have result <= 255i64 by {
-        arithmetic_certificate rules {
-            premise 0: (byte as uint32) <= 255u32 => (byte as uint32) <= 255u32;
-            premise 1: byte < 255 => byte < 255;
-            unsigned_sum_bound bounds [0, 1] => result <= 255i64;
-            conclusion 0;
-        }
+        solve() using { (byte as uint32) <= 255u32; byte < 255; };
     }
     solve();
 }

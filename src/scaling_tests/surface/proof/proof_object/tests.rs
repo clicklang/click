@@ -2685,7 +2685,8 @@ fn fixed_state_application_proves_premises_and_replays_explicitly() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let definitions = SpecDefinitions::new(&predicates, &functions);
-    let theorems = TheoremEnvironment::new(file.theorem_definitions());
+    let theorem_definitions = proof_theorem_definitions(&file).unwrap();
+    let theorems = TheoremEnvironment::new(&theorem_definitions);
     let value = ProgramValue::Int32(MachineTerm::Variable(Variable(8_900_000)));
     let state = ExecutionState::new().with_local("x", value.clone());
     let arguments = vec![ProgramExpression::Value(value)];

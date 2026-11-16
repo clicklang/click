@@ -66,7 +66,7 @@ use super::machine_integer::definedness::{
 #[cfg(test)]
 use super::machine_integer::modular::wrapped_equality_of_integer_equality;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
-pub(in crate::kernel) use condition_reasoning::held_order_at;
+
 pub(in crate::kernel) use condition_reasoning::narrowed_cast_identity;
 pub(in crate::kernel) use condition_reasoning::order_view_at_format;
 

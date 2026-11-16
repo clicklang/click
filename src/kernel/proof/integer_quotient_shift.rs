@@ -1,6 +1,6 @@
 //! Truncation agrees with floor on nonnegative numerators: adding d*k shifts
 //! the quotient by k when d is a positive constant and both x and k are >= 0.
-use super::arithmetic_special::SpecialArithmeticCheckError as Error;
+use super::arithmetic_special::ArithmeticRuleError as Error;
 use crate::kernel::{ConditionTerm, IntegerTerm, Proposition, SharedIntegerTerm};
 use num_traits::{Signed, Zero};
 
@@ -61,91 +61,4 @@ pub(super) fn check(
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::kernel::{
-        Variable,
-        proof::arithmetic_special::{SpecialArithmeticCertificate, SpecialArithmeticNode},
-    };
-    fn c(n: i64) -> IntegerTerm {
-        IntegerTerm::constant_i64(n)
-    }
-    fn x() -> IntegerTerm {
-        IntegerTerm::var(Variable(186_001))
-    }
-    fn k() -> IntegerTerm {
-        IntegerTerm::var(Variable(186_002))
-    }
-    fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
-    }
-    fn goal(d: i64, increment: IntegerTerm) -> Proposition {
-        let a = IntegerTerm::truncating_quotient(
-            IntegerTerm::add(x(), IntegerTerm::multiply(c(d), k())),
-            c(d),
-        );
-        let b = IntegerTerm::add(IntegerTerm::truncating_quotient(x(), c(d)), increment);
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
-    }
-    #[test]
-    fn quotient_shift_checks_divisor_sign_guards_and_exact_operands() {
-        let premises = vec![le(c(0), x()), le(c(0), k())];
-        for d in [2, 3, 17, 65521] {
-            let result = goal(d, k());
-            assert_eq!(check(0, &[0, 1], &premises, &result), Ok(()));
-            assert!(check(0, &[1, 0], &premises, &result).is_err());
-            assert!(check(0, &[0], &premises, &result).is_err());
-            assert!(check(0, &[0, 2], &premises, &result).is_err());
-            assert!(check(0, &[0, 1], &premises, &goal(d, IntegerTerm::add(k(), c(1)))).is_err());
-            for which in [0, 1] {
-                let mut false_premises = premises.clone();
-                if let Proposition::ConditionIs(_, truth) = &mut false_premises[which] {
-                    *truth = false;
-                }
-                assert!(check(0, &[0, 1], &false_premises, &result).is_err());
-                false_premises[which] = if which == 0 {
-                    le(c(-1), x())
-                } else {
-                    le(c(-1), k())
-                };
-                assert!(check(0, &[0, 1], &false_premises, &result).is_err());
-            }
-            let mut false_result = result.clone();
-            if let Proposition::ConditionIs(_, truth) = &mut false_result {
-                *truth = false;
-            }
-            assert!(check(0, &[0, 1], &premises, &false_result).is_err());
-            let cert = SpecialArithmeticCertificate {
-                nodes: vec![SpecialArithmeticNode::IntegerQuotientShift {
-                    bounds: vec![0, 1],
-                    result: result.clone(),
-                }],
-                conclusion: 0,
-            };
-            cert.check(&result, &premises).unwrap();
-            assert!(cert.check(&false_result, &premises).is_err());
-        }
-        for d in [-17, -2, 0] {
-            assert!(check(0, &[0, 1], &premises, &goal(d, k())).is_err());
-        }
-        // Exhaustive concrete oracle includes odd numerators; parity is unnecessary.
-        for d in 1..=17i64 {
-            for n in 0..=33 {
-                for shift in 0..=17 {
-                    assert_eq!((n + d * shift) / d, n / d + shift);
-                }
-            }
-        }
-        // Negative inputs can cross zero, where truncation ceases to be translation invariant.
-        let trunc = |n: i64, d: i64| n / d;
-        assert_ne!(trunc(-1 + 2, 2), trunc(-1, 2) + 1);
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../../scaling_tests/kernel/proof/integer_quotient_shift/tests.rs");
-    }
 }

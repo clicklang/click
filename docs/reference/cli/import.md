@@ -915,7 +915,8 @@ positions and locked declaration metadata even when fields do not mention
 the enum. Other enum template arguments remain refused. A class template
 also takes `unsigned char` as a type argument, as in `std::span<unsigned char>`;
 integral template values remain 32/64-bit. The library contract
-for `std::as_writable_bytes(std::span<int>)` preserves the backing address and
+for dynamic-extent `std::as_writable_bytes(std::span<int>)` and
+`std::as_writable_bytes(std::span<unsigned int>)` preserves the backing address and
 returns four times the native element count, without granting backing authority.
 Supported `const` and `constexpr` native integer locals now use shared scalar
 construction: allocate, initialize once, and freeze the object while retaining
@@ -1212,7 +1213,7 @@ scalar profile.
 
 The `wide-narrowing` fixture proves when existing C++ modulo casts preserve
 full mathematical values. The explicit `integer_cast_identity` `rules`
-arithmetic certificate consumes two named constant-endpoint bounds on the
+ordinary arithmetic proof consumes two named constant-endpoint bounds on the
 source observation, checking both against the destination range. Both signed
 and unsigned 128-bit values narrow to signed/unsigned 32/64-bit results.
 The rule also checks native quotient/remainder narrowing under their existing
@@ -1220,7 +1221,7 @@ definedness guards and stated result bounds. Out-of-range casts still wrap;
 missing range premises, false results, and undefined operands are refused.
 Modular caller framing, offline loading, expansion, and retained audit have
 coverage. This adds proof support without changing the schema or trusting
-conversion bounds. See [Integer certificates](../../internals/mathematical-integers.md#range-checked-modulo-cast-identities).
+conversion bounds. See [Integer cast identities](../../internals/mathematical-integers.md#range-checked-modulo-cast-identities).
 
 Operand intervals can now supply the quotient/remainder narrowing bounds through
 an explicit `integer_division_bounds` certificate. The separate
@@ -2490,9 +2491,10 @@ reference. Expansion retains the field and its subscripts, and a failed
 resource-clause evaluation names that place.
 
 The library also states dynamic-extent
-`std::as_writable_bytes(std::span<int>)`. It returns a byte view of the
+`std::as_writable_bytes(std::span<int>)` and
+`std::as_writable_bytes(std::span<unsigned int>)`. Both return a byte view of the
 same storage: its data is `std_span_data(input) as (uint8 *)` and its native uint64
-length is `std_span_size(input) * sizeof(int)`, `4u64`. It copies no backing bytes, requires no
+length is `std_span_size(input) * 4u64` on the pinned ABI. The conversion copies no backing bytes, requires no
 backing ownership, and establishes no backing initialization or write permission.
 The integer-to-byte pointer cast preserves allocation identity and lifetime.
 Both const-reference and by-value callers have ordinary, expanded and retained

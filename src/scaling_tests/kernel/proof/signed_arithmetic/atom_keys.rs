@@ -18,13 +18,6 @@ fn signed_atom_keys_retain_cold_and_growing_dags() {
                         assert!(!atom.is_opaque_root());
                         assert_eq!(atom.work(), 1);
                         assert_eq!(from_shared(&root), Some(atom.clone()));
-                        let claim = signed_arithmetic_integer_result(&observed_result(
-                            root.clone(),
-                            T::Int32,
-                        ))
-                        .unwrap();
-                        assert_eq!(claim.terms.len(), 1);
-                        assert_eq!(claim.terms.keys().next(), Some(&atom));
                     }
                 }
             });

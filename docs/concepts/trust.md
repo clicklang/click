@@ -132,7 +132,7 @@ checks each one, in one of two ways; the gate runs it
   `integer_cast_identity`, which reads `to_integer(to_T(z))` as `z` under
   `T`'s range at every format), and the Rust names of three product
   lemmas (`u32::multiply_to_integer`), each with a pinned proof of explicit
-  steps (`known()`, `normalize()`, `arithmetic_certificate`, and
+  steps (`known()`, `normalize()`, and
   `apply` of earlier library theorems).
 - **39 are kernel standard theorems.** They have no proof. The check is
   only that the declaration's parameters, premises and conclusion match the
@@ -172,7 +172,7 @@ as integers, because neither `bound - value` nor `(bound - 1) - value`
 wraps.
 
 Five foundational Integer order axioms in `library/integer.click` expose
-rules that arithmetic certificates already used: `add_le` adds two
+rules that ordinary arithmetic proofs already used: `add_le` adds two
 inequalities; `multiply_order_nonnegative` preserves order when scaling by a
 nonnegative factor; `round_down_le` concludes `value <= bound` from
 `0 < divisor`, `remainder < divisor`, and

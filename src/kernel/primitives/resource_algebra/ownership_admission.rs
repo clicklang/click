@@ -47,7 +47,7 @@ impl ResourceContext {
     /// owners or validating either side again. Tokens add and views duplicate.
     pub(in crate::kernel) fn admit_returned_flat_body(
         &self,
-        body: &crate::kernel::functions::FlatReturnBody,
+        body: &crate::kernel::functions::ConstructedReturnBody,
         assumptions: &PureFactContext,
     ) -> FlatBodyAdmission {
         #[cfg(test)]

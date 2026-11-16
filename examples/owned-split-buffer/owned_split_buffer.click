@@ -250,10 +250,7 @@ int32 owned_split_buffer_pipeline(
     have owner->len == length by { known(); }
     have owner->data == data by { known(); }
     have 1 < length by {
-        arithmetic_certificate {
-            premise 0: at(function.entry, 2 <= length) => at(function.entry, 2 <= length);
-            conclusion 0;
-        }
+        solve() using { at(function.entry, 2 <= length); };
     }
     have 1 < owner->len by {
         known();

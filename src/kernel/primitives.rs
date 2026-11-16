@@ -15130,7 +15130,7 @@ pub struct ContractPathSet {
     /// is valid only when this records the conditional-effect selection error
     /// that caused the deferral.
     pub(super) deferred_contract_exit_errors: Vec<Option<RuntimeError>>,
-    /// Resource facts independently checked by the surface proof for each
+    /// Resource facts projected from native outcome completions for each
     /// path. Deferred exit resolution composes these facts into the body
     /// outcome before applying the remaining conditional boundary effect.
     pub(super) checked_returned_resources: Vec<ResourceContext>,
@@ -15238,7 +15238,7 @@ pub struct CheckedFunctionExecution {
     /// is valid only when this records the conditional-effect selection error
     /// that caused the deferral.
     pub(super) deferred_contract_exit_errors: Vec<Option<RuntimeError>>,
-    /// Resource facts independently checked by the surface proof for each
+    /// Resource facts projected from native outcome completions for each
     /// path. Deferred exit resolution composes these facts into the body
     /// outcome before applying the remaining conditional boundary effect.
     pub(super) checked_returned_resources: Vec<ResourceContext>,
@@ -15327,33 +15327,6 @@ impl FunctionContractExecution {
 }
 
 impl CheckedFunctionExecution {
-    pub(crate) fn with_checked_resource_claims(
-        &self,
-        checked_resource_claims: Vec<Vec<FunctionContractClaimKey>>,
-    ) -> Self {
-        let mut checked = self.clone();
-        checked.checked_resource_claims = checked_resource_claims;
-        checked
-    }
-
-    pub(crate) fn with_checked_resource_transitions(
-        &self,
-        checked_resource_transitions: Vec<bool>,
-    ) -> Self {
-        let mut checked = self.clone();
-        checked.checked_resource_transitions = checked_resource_transitions;
-        checked
-    }
-
-    pub(crate) fn with_checked_returned_resources(
-        &self,
-        checked_returned_resources: Vec<ResourceContext>,
-    ) -> Self {
-        let mut checked = self.clone();
-        checked.checked_returned_resources = checked_returned_resources;
-        checked
-    }
-
     pub fn paths(&self) -> &[SymbolicExecutionPath] {
         self.execution.paths()
     }

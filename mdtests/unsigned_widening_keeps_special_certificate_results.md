@@ -1,28 +1,20 @@
 # Unsigned widening retains a certificate's exact conclusion
 
-The bounded certificate comparison includes the unsigned zero extension.
-A positive Integer observation excludes zero in either inequality spelling.
+Arithmetic search expands to ordinary proof steps, with the selected premises
+stated explicitly in `solve() using { ... }`.
 
 ```click
 import click::integer;
 theorem positive_is_nonzero(x: int32) {
     requires 1 <= to_integer(x as uint32 as uint64);
     ensures not (to_integer(x as uint32 as uint64) == 0) by {
-        arithmetic_certificate rules {
-            premise 0: 1 <= to_integer(x as uint32 as uint64) => 1 <= to_integer(x as uint32 as uint64);
-            integer_bound_exclusion bounds [0] => not (to_integer(x as uint32 as uint64) == 0);
-            conclusion 0;
-        }
+        solve() using { 1 <= to_integer(x as uint32 as uint64); };
     }
 }
 theorem widened_positive_is_unequal_to_zero(x: int32) {
     requires 1 <= to_integer(x as uint32 as uint64);
     ensures to_integer(x as uint32 as uint64) != 0 by {
-        arithmetic_certificate rules {
-            premise 0: 1 <= to_integer(x as uint32 as uint64) => 1 <= to_integer(x as uint32 as uint64);
-            integer_bound_exclusion bounds [0] => to_integer(x as uint32 as uint64) != 0;
-            conclusion 0;
-        }
+        solve() using { 1 <= to_integer(x as uint32 as uint64); };
     }
 }
 ```

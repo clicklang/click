@@ -2,7 +2,7 @@
 
 Recording a conjunction as a fact also records each of its leaf conjuncts,
 so every tactic may cite a leaf directly: `known()` closes `x <= 5`,
-and an arithmetic certificate names `x <= 100` as a premise, with no
+and an explicit arithmetic proof names `x <= 100` as a premise, with no
 `have`. A conjunct that is itself a conjunction is not a leaf, so it is
 not recorded as a fact; `known()` still closes it from its leaves, and
 `have` adds it when a `using` list must cite it whole. See
@@ -35,17 +35,7 @@ int32 inc(int32 x) {
     ensures result >= 1 by {
         step_until(function.exit);
         have result >= 1 by {
-            arithmetic_certificate signed_int32 {
-                premise 0: x <= 100 => x <= 100;
-                premise 1: x >= 0 => x >= 0;
-                interval_from_affine 1 (x) (0) (2147483647);
-                interval_from_affine 0 (x) (-2147483648) (100);
-                interval_intersect 2, 3 (0) (100);
-                interval_atom (1) (1) (1);
-                interval_add_bounded 4, 5 (1) (101);
-                affine_conclusion 1 6 => result >= 1;
-                conclusion 7;
-            }
+            solve() using { x <= 100; x >= 0; };
         }
         known();
     }

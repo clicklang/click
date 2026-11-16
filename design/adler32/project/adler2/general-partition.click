@@ -39,12 +39,7 @@ theorem adler_u64_index_observation(value: uint64) {
  requires 0 <= to_integer(value);
  requires to_integer(value) <= 2147483647;
  ensures to_integer(value as uint32 as int32) == to_integer(value) and (0 <= value as uint32 as int32 and value as uint32 as int32 <= 2147483647) by {
-  have to_integer(value as uint32 as int32) == to_integer(value) by { arithmetic_certificate rules {
-   premise 0: 0 <= to_integer(value) => 0 <= to_integer(value);
-   premise 1: to_integer(value) <= 2147483647 => to_integer(value) <= 2147483647;
-   integer_cast_identity bounds [0, 1] => to_integer(value as uint32 as int32) == to_integer(value);
-   conclusion 0;
-  } }
+  have to_integer(value as uint32 as int32) == to_integer(value) by { solve() using { 0 <= to_integer(value); to_integer(value) <= 2147483647; }; }
   have 0 <= to_integer(value as uint32 as int32) by { rewrite(to_integer(value as uint32 as int32), to_integer(value)); known(); }
   both { known(); } and { both { known(); } and { normalize(); } }
  }

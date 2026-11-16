@@ -1,8 +1,8 @@
 # Explicit tag arithmetic establishes a logical pointer comparison
 
-Explicit color bounds retain the pointer representation through the C store.
-The proof checks the word and mask equations with certificates, then recovers
-the original pointer. No smart arithmetic dispatch is needed.
+Arithmetic search expands to ordinary proof steps, with the selected premises
+stated explicitly in `solve() using { ... }`.
+
 ```c filename=roundtrip.c
 struct node { unsigned long word; };
 void tag(struct node *n, struct node *p, int32 color) {
@@ -25,19 +25,11 @@ void tag(struct node* n, struct node* p, int32 color) {
     step();
     have n->word == address(p) + 1 by {
         rewrite(color, 1);
-        arithmetic_certificate rules {
-            premise 0: aligned(p, 8) => aligned(p, 8);
-            pointer_word_from_alignment alignments [0] => (address(p) | 1) == address(p) + 1;
-            conclusion 0;
-        }
+        solve() using { aligned(p, 8); };
     }
     have (n->word & ~3) == address(p) by {
         rewrite(color, 1);
-        arithmetic_certificate rules {
-            premise 0: aligned(p, 8) => aligned(p, 8);
-            pointer_word_from_alignment alignments [0] => ((address(p) | 1) & ~3) == address(p);
-            conclusion 0;
-        }
+        solve() using { aligned(p, 8); };
     }
     have ((n->word & ~3) as (struct node *)) == p by {
         known();

@@ -3182,7 +3182,6 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Known
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
-            | ProofTactic::ArithmeticCertificate(_)
             | ProofTactic::ArithmeticUsing(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
@@ -3201,8 +3200,8 @@ fn validate_pure_theorem_tactics(
             // decide it. The smart `transport(P, Q)` form still does not
             // belong here, because it selects its premises from a fixed
             // state's ambient facts.
-            | ProofTactic::TransportUsing { .. }
-            | ProofTactic::SolveUsing(_) => {}
+             |  ProofTactic::TransportUsing { .. }
+             |  ProofTactic::SolveUsing(_) => {}
             ProofTactic::Match(proof_match) => {
                 for arm in &proof_match.arms {
                     validate_pure_theorem_tactics(theorem_name, &arm.tactics)?;
@@ -3330,7 +3329,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Solve => "solve",
         ProofTactic::ImplicitSolve => "implicit tail",
         ProofTactic::SolveUsing(_) => "solve",
-        ProofTactic::ArithmeticCertificate(_) => "arithmetic_certificate",
     }
 }
 

@@ -113,16 +113,6 @@ path = "mdtests/pure_induction_countdown_explicit.md"
 needle = "apply(ih(n - 1)) using {"
 
 [[form]]
-id = "arithmetic-certificate"
-path = "mdtests/arithmetic_certificate_surface.md"
-needle = "arithmetic_certificate {"
-
-[[form]]
-id = "arithmetic-certificate-signed-int32"
-path = "mdtests/signed_int32_certificate_composition.md"
-needle = "arithmetic_certificate signed_int32 {"
-
-[[form]]
 id = "apply-fact"
 path = "mdtests/apply_implication_fact.md"
 needle = "apply(h);"

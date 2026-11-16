@@ -43,14 +43,7 @@ theorem adler_tail_a_next(k: Integer, a: Integer, byte: Integer) {
  requires byte <= 255;
  ensures a + byte <= 328365 by {
   apply(adler_tail_ceiling_before_next(k)) using { k <= 2; };
-  arithmetic_certificate {
-   premise 0: a <= adler_tail_a_ceiling(k) => a <= adler_tail_a_ceiling(k);
-   premise 1: adler_tail_a_ceiling(k) <= 328110 => adler_tail_a_ceiling(k) <= 328110;
-   premise 2: byte <= 255 => byte <= 255;
-   add 0, 1 => a <= 328110;
-   add 3, 2 => a + byte <= 328365;
-   conclusion 4;
-  }
+  solve() using { a <= adler_tail_a_ceiling(k); adler_tail_a_ceiling(k) <= 328110; byte <= 255; };
  }
  ensures a + byte <= adler_tail_a_ceiling(k + 1) by {
   apply(adler_tail_ceiling_increments(k));
@@ -66,14 +59,7 @@ theorem adler_tail_b_next(k: Integer, a: Integer, b: Integer, byte: Integer) {
  ensures b + a + byte <= 2492061 by {
   apply(adler_tail_ceiling_before_next(k)) using { k <= 2; };
   apply(adler_tail_a_next(k, a, byte)) using { k <= 2; a <= adler_tail_a_ceiling(k); byte <= 255; };
-  arithmetic_certificate {
-   premise 0: b <= adler_tail_b_ceiling(k) => b <= adler_tail_b_ceiling(k);
-   premise 1: adler_tail_b_ceiling(k) <= 2163696 => adler_tail_b_ceiling(k) <= 2163696;
-   premise 2: a + byte <= 328365 => a + byte <= 328365;
-   add 0, 1 => b <= 2163696;
-   add 3, 2 => b + a + byte <= 2492061;
-   conclusion 4;
-  }
+  solve() using { b <= adler_tail_b_ceiling(k); adler_tail_b_ceiling(k) <= 2163696; a + byte <= 328365; };
  }
  ensures b + a + byte <= adler_tail_b_ceiling(k + 1) by {
   apply(adler_tail_a_next(k, a, byte)) using { k <= 2; a <= adler_tail_a_ceiling(k); byte <= 255; };

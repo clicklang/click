@@ -18,11 +18,7 @@ impl adler2::Adler32 {
 
      apply(adler_spec_one(bytes));
      apply(adler_byte_bounds(bytes[0]));
-     have to_integer((bytes[0] as u32)) == to_integer((bytes[0] as i32)) by { arithmetic_certificate rules {
-     premise 0: 0 <= to_integer((bytes[0] as i32)) => 0 <= to_integer((bytes[0] as i32));
-     premise 1: to_integer((bytes[0] as i32)) <= 255 => to_integer((bytes[0] as i32)) <= 255;
-     integer_cast_identity bounds [0, 1] => to_integer((bytes[0] as u32)) == to_integer((bytes[0] as i32)); conclusion 0;
-     } }
+     have to_integer((bytes[0] as u32)) == to_integer((bytes[0] as i32)) by { solve() using { 0 <= to_integer((bytes[0] as i32)); to_integer((bytes[0] as i32)) <= 255; }; }
      have 0 <= to_integer((bytes[0] as u32)) by solve() using { 0 <= to_integer((bytes[0] as i32)); to_integer((bytes[0] as u32)) == to_integer((bytes[0] as i32)); };
      have to_integer((bytes[0] as u32)) <= 255 by solve() using { to_integer((bytes[0] as i32)) <= 255; to_integer((bytes[0] as u32)) == to_integer((bytes[0] as i32)); };
      have to_integer(1u32) + to_integer((bytes[0] as u32)) <= 4294967295 by solve() using { to_integer((bytes[0] as u32)) <= 255; };
@@ -315,15 +311,7 @@ impl adler2::Adler32 {
      have to_integer(1u32 + old((bytes[0] as u32))) == to_integer(1u32) + to_integer(old((bytes[0] as u32)));
      have to_integer(a) == to_integer(1u32 + old((bytes[0] as u32))) by solve() using { a == 1u32 + old((bytes[0] as u32)); };
      have to_integer(a) <= 256 by {
-     arithmetic_certificate {
-     premise 0: to_integer(a) == to_integer(1u32 + old((bytes[0] as u32))) => to_integer(a) == to_integer(1u32 + old((bytes[0] as u32)));
-     premise 1: to_integer(1u32 + old((bytes[0] as u32))) == to_integer(1u32) + to_integer(old((bytes[0] as u32))) => to_integer(1u32 + old((bytes[0] as u32))) == to_integer(1u32) + to_integer(old((bytes[0] as u32)));
-     add 0, 1 => to_integer(a) + to_integer(1u32 + old((bytes[0] as u32))) == to_integer(1u32 + old((bytes[0] as u32))) + (to_integer(1u32) + to_integer(old((bytes[0] as u32))));
-     less_equal_from_equal 2 => to_integer(a) + to_integer(1u32 + old((bytes[0] as u32))) <= to_integer(1u32 + old((bytes[0] as u32))) + (to_integer(1u32) + to_integer(old((bytes[0] as u32))));
-     premise 2: to_integer(old((bytes[0] as u32))) <= 255 => to_integer(old((bytes[0] as u32))) <= 255;
-     add 4, 3 => to_integer(old((bytes[0] as u32))) + (to_integer(a) + to_integer(1u32 + old((bytes[0] as u32)))) <= 255 + (to_integer(1u32 + old((bytes[0] as u32))) + (to_integer(1u32) + to_integer(old((bytes[0] as u32)))));
-     conclusion 5;
-     }
+     solve() using { to_integer(a) == to_integer(1u32 + old((bytes[0] as u32))); to_integer(1u32 + old((bytes[0] as u32))) == to_integer(1u32) + to_integer(old((bytes[0] as u32))); to_integer(old((bytes[0] as u32))) <= 255; };
      }
      have to_integer(b) == 393126 by solve() using { b == 393126u32; };
      have to_integer(b) + to_integer(a) <= 4294967295 by solve() using { to_integer(b) == 393126; to_integer(a) <= 256; };
@@ -379,16 +367,8 @@ impl adler2::Adler32 {
      have to_integer(__rust_mir_151) <= 65535 by solve() using { to_integer(__rust_mir_151) < 65521; };
      mark reduced_b;
      step_until(function.exit);
-     have to_integer(self.a) == to_integer(at(reduced_a, __rust_mir_149)) by { arithmetic_certificate rules {
-     premise 0: 0 <= to_integer(at(reduced_a, __rust_mir_149)) => 0 <= to_integer(at(reduced_a, __rust_mir_149));
-     premise 1: to_integer(at(reduced_a, __rust_mir_149)) <= 65535 => to_integer(at(reduced_a, __rust_mir_149)) <= 65535;
-     integer_cast_identity bounds [0, 1] => to_integer(self.a) == to_integer(at(reduced_a, __rust_mir_149)); conclusion 0;
-     } }
-     have to_integer(self.b) == to_integer(at(reduced_b, __rust_mir_151)) by { arithmetic_certificate rules {
-     premise 0: 0 <= to_integer(at(reduced_b, __rust_mir_151)) => 0 <= to_integer(at(reduced_b, __rust_mir_151));
-     premise 1: to_integer(at(reduced_b, __rust_mir_151)) <= 65535 => to_integer(at(reduced_b, __rust_mir_151)) <= 65535;
-     integer_cast_identity bounds [0, 1] => to_integer(self.b) == to_integer(at(reduced_b, __rust_mir_151)); conclusion 0;
-     } }
+     have to_integer(self.a) == to_integer(at(reduced_a, __rust_mir_149)) by { solve() using { 0 <= to_integer(at(reduced_a, __rust_mir_149)); to_integer(at(reduced_a, __rust_mir_149)) <= 65535; }; }
+     have to_integer(self.b) == to_integer(at(reduced_b, __rust_mir_151)) by { solve() using { 0 <= to_integer(at(reduced_b, __rust_mir_151)); to_integer(at(reduced_b, __rust_mir_151)) <= 65535; }; }
      have bytes[0] == old(bytes[0]) by solve() using {};
      have old(adler_spec_a(bytes, 1, 1)) == truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521) by known();
      have old(adler_spec_b(bytes, 1, 1, 0)) == truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521) by known();

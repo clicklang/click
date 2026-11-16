@@ -1730,7 +1730,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
             expanded_path.display().to_string(),
             source_path.display().to_string(),
         ])
-        .expect("click expand should emit the checked arithmetic certificate");
+        .expect("click expand should emit the ordinary arithmetic proof");
         let expanded = fs::read_to_string(&expanded_path).unwrap();
         assert!(expanded.contains("normalize() using {"), "{expanded}");
         assert!(!expanded.contains("solve() using"), "{expanded}");

@@ -71,66 +71,16 @@ fn integer_solve_expansion_rechecks_without_smart_search() {
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
         if parameters.contains("y: Integer") {
-            assert_only_integer_arithmetic_leaves(&expanded);
+            assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
             assert!(expanded.contains("le_antisymmetric"), "{expanded}");
         } else {
-            assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-            assert!(!expanded.contains("normalize("), "{expanded}");
+            assert!(expanded.contains("normalize();"), "{expanded}");
         }
         assert!(!expanded.contains("solve"), "{expanded}");
         let rechecked = source.replace(&format!("by {{ {proof} }}"), &expanded);
         verify_click_theorems(&rechecked)
             .unwrap_or_else(|error| panic!("{rechecked}: {}", error.message()));
     }
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_00")]
-fn integer_source_certificates_reject_missing_facts_and_tampered_nodes() {
-    for (requires, claim, nodes, conclusion, diagnostic) in [
-        (
-            "",
-            "x <= y",
-            "premise 0: x <= y => x <= y;",
-            0,
-            "not exactly available",
-        ),
-        (
-            "requires x <= y;",
-            "x <= y",
-            "premise 2147483647: x <= y => x <= y;",
-            0,
-            "indices must be contiguous",
-        ),
-        (
-            "requires x <= y;",
-            "x < y",
-            "premise 0: x <= y => x < y;",
-            0,
-            "node 0 does not state what its rule derives",
-        ),
-        (
-            "requires x <= y;",
-            "y <= x",
-            "premise 0: x <= y => x <= y; scale 0 by -1 => y <= x;",
-            1,
-            "node 1 uses an invalid coefficient",
-        ),
-        (
-            "requires x <= y;",
-            "x <= y",
-            "premise 0: x <= y => x <= y; add 0, 9 => x <= y;",
-            1,
-            "node 9 is referenced but is not an earlier node",
-        ),
-    ] {
-        let source = format!(
-            "theorem tamper(x: Integer, y: Integer) {{ {requires} ensures {claim} by {{ arithmetic_certificate {{ {nodes} conclusion {conclusion}; }} }} }}"
-        );
-        let error = verify_click_theorems(&source).expect_err("tampered evidence must fail");
-        assert!(error.message().contains(diagnostic), "{}", error.message());
-    }
-    verify_click_theorems("theorem zero_premises() { ensures 0 == 0 by { arithmetic_certificate { trivial => 0 == 0; conclusion 0; } } }").unwrap();
 }
 
 #[test]
@@ -1342,196 +1292,6 @@ fn parses_and_prints_arithmetic_certificates() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_08")]
-fn arithmetic_certificate_is_the_only_integer_family_spelling() {
-    let source = |spelling: &str| {
-        format!(
-            "theorem certificate_spelling(n: Integer) {{ ensures n == n by {{ {spelling} {{ trivial => 0 <= 1; conclusion 0; }} }} }}"
-        )
-    };
-    let file = parse(&source("arithmetic_certificate"))
-        .expect("arithmetic certificate spelling should parse");
-    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
-        panic!("expected an explicit theorem proof");
-    };
-    assert!(matches!(
-        tactics.as_slice(),
-        [ProofTactic::ArithmeticCertificate(ArithmeticCertificate {
-            family: ArithmeticCertificateFamily::Integer(_),
-        })]
-    ));
-    let printed = super::printing::format_partial_tactic_sequence(tactics);
-    assert!(printed.contains("arithmetic_certificate {"), "{printed}");
-    parse(&source("integer_certificate")).expect_err("the retired alias should not parse");
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_08")]
-fn integer_certificate_refutation_and_division_round_trip() {
-    let source = r#"
-        theorem refutation_forms(x: Integer) {
-            requires 2 * x <= 5;
-            ensures x <= 2 by {
-                arithmetic_certificate {
-                    premise 0: 2 * x <= 5 => 2 * x <= 5;
-                    negated_goal => 2 < x;
-                    divide 0 by 2 => x <= 2;
-                    conclusion 2;
-                }
-            }
-        }
-    "#;
-    let file = parse(source).expect("integer certificate should parse");
-    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
-        panic!("expected an explicit theorem proof");
-    };
-    let ProofTactic::ArithmeticCertificate(ArithmeticCertificate {
-        family: ArithmeticCertificateFamily::Integer(certificate),
-    }) = &tactics[0]
-    else {
-        panic!("expected the Integer family");
-    };
-    assert!(matches!(
-        certificate.nodes.as_slice(),
-        [
-            IntegerCertificateNode::Premise { .. },
-            IntegerCertificateNode::NegatedGoal { .. },
-            IntegerCertificateNode::Divide { source: 0, .. },
-        ]
-    ));
-    let printed = super::printing::format_partial_tactic_sequence(tactics);
-    assert!(printed.contains("negated_goal => "), "{printed}");
-    assert!(printed.contains("divide 0 by 2 => "), "{printed}");
-    let reprinted = format!(
-        "theorem refutation_forms(x: Integer) {{\n    requires 2 * x <= 5;\n    ensures x <= 2 by {{\n{printed}\n    }}\n}}\n"
-    );
-    let reparsed = parse(&reprinted).expect("printed certificate should parse again");
-    let SourceProof::Script(again) = reparsed.theorem_definitions()[0].ensures()[0].proof() else {
-        panic!("expected an explicit theorem proof");
-    };
-    assert_eq!(again, tactics);
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_08")]
-fn signed_int32_arithmetic_certificate_round_trips_every_step_spelling() {
-    let source = r#"
-        theorem signed_certificate_forms(n: int32) {
-            ensures n == n by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: n == n => n == n;
-                    scale 0 by 1 => n == n;
-                    add 1, 2 => n == n;
-                    less_equal_from_equal 3 => n <= n;
-                    less_equal_from_equal 3 reverse => n <= n;
-                    equal_from_bounds 4, 5 => n == n;
-                    trivial => n == n;
-                    interval_from_affine 0 (n) 0 2147483647;
-                    interval_atom (n) 0 2147483647;
-                    defined 9 (n + 1);
-                    interval_add 8, 9 10 -2147483648 2147483647;
-                    interval_add_bounded 8, 9 -2147483648 2147483647;
-                    interval_subtract 8, 9 10 -2147483648 2147483647;
-                    interval_multiply 8, 9 10 -2147483648 2147483647;
-                    interval_remainder 8 3 10 -2 2;
-                    interval_shift_left 8 1 10 -2147483648 2147483647;
-                    interval_arithmetic_shift_right 8 1 -2147483648 2147483647;
-                    interval_bitwise_and 8 255 0 255;
-                    interval_compare 8, 9 le => n <= n;
-                    affine_conclusion 3 8 => n == n;
-                    less_than_from_not_equal 4, 5 => n < n;
-                    conclusion 19;
-                }
-            }
-        }
-    "#;
-    let file = parse(source).expect("signed_int32 certificate should parse");
-    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
-        panic!("expected an explicit theorem proof");
-    };
-    let ProofTactic::ArithmeticCertificate(certificate) = &tactics[0] else {
-        panic!("expected an arithmetic certificate");
-    };
-    let ArithmeticCertificateFamily::SignedInt32(certificate) = &certificate.family else {
-        panic!("expected the signed_int32 family");
-    };
-    assert_eq!(certificate.nodes.len(), 21);
-    assert!(
-        certificate
-            .nodes
-            .iter()
-            .any(|node| matches!(node, SignedArithmeticStep::IntervalAddBounded { .. }))
-    );
-    assert!(
-        certificate
-            .nodes
-            .iter()
-            .any(|node| matches!(node, SignedArithmeticStep::StrictFromDisequal { .. }))
-    );
-    assert!(
-        certificate
-            .nodes
-            .iter()
-            .any(|node| matches!(node, SignedArithmeticStep::AffineConclusion { .. }))
-    );
-
-    let printed = super::printing::format_partial_tactic_sequence(tactics);
-    assert!(
-        printed.contains("arithmetic_certificate signed_int32 {"),
-        "{printed}"
-    );
-    assert!(printed.contains("interval_add_bounded"), "{printed}");
-    assert!(printed.contains("affine_conclusion"), "{printed}");
-    assert!(
-        printed.contains("less_than_from_not_equal 4, 5 =>"),
-        "{printed}"
-    );
-    let reparsed = parse(&format!(
-        "theorem signed_certificate_forms(n: int32) {{ ensures n == n by {{ {printed} }} }}"
-    ))
-    .expect("printed signed_int32 certificate should reparse");
-    assert_eq!(
-        reparsed.theorem_definitions()[0].ensures()[0].proof(),
-        file.theorem_definitions()[0].ensures()[0].proof()
-    );
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_08")]
-fn signed_int32_pair_affine_conclusion_round_trips_and_preserves_refs() {
-    let source = r#"
-        theorem signed_pair_certificate(n: int32) {
-            ensures n == n by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: n == n => n == n;
-                    interval_atom (n) (-2147483648) (2147483647);
-                    interval_atom (0) (0) (0);
-                    affine_conclusion_pair 0 1 2 => n == n;
-                    conclusion 3;
-                }
-            }
-        }
-    "#;
-    let file = parse(source).expect("pair affine certificate should parse");
-    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
-        panic!("expected an explicit theorem proof");
-    };
-    let printed = super::printing::format_partial_tactic_sequence(tactics);
-    assert!(
-        printed.contains("affine_conclusion_pair 0 1 2"),
-        "{printed}"
-    );
-    let reparsed = parse(&format!(
-        "theorem signed_pair_certificate(n: int32) {{ ensures n == n by {{ {printed} }} }}"
-    ))
-    .expect("printed pair affine certificate should reparse");
-    assert_eq!(
-        reparsed.theorem_definitions()[0].ensures()[0].proof(),
-        file.theorem_definitions()[0].ensures()[0].proof()
-    );
-}
-
-#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_09")]
 fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
     let source = r#"
@@ -1550,7 +1310,7 @@ fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("compound arithmetic should expand");
-    assert_only_integer_arithmetic_leaves(&expanded);
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
 
     let rechecked_source = source.replace(
         "by {\n                solve() using {\n                    0 <= n;\n                    n <= 100;\n                }\n            }",
@@ -1569,433 +1329,6 @@ fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_09")]
-fn signed_int32_direct_compound_interval_is_publicly_checked() {
-    let source = r#"
-        theorem signed_direct_compound(n: int32) {
-            requires defined(n + 1);
-            requires 0 <= to_integer(n + 1);
-            ensures 0 <= to_integer(n + 1) by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: 0 <= to_integer(n + 1) => 0 <= to_integer(n + 1);
-                    interval_from_affine_direct 0 (n + 1) 0 2147483647;
-                    affine_conclusion 0 1 => 0 <= to_integer(n + 1);
-                    conclusion 2;
-                }
-            }
-        }
-    "#;
-    verify_click_theorems(source).expect("direct compound interval should verify");
-    let printed = super::printing::format_partial_tactic_sequence(
-        match parse(source).unwrap().theorem_definitions()[0].ensures()[0].proof() {
-            SourceProof::Script(tactics) => tactics,
-            _ => panic!("expected an explicit theorem proof"),
-        },
-    );
-    assert!(printed.contains("interval_from_affine_direct"), "{printed}");
-    assert!(printed.contains("affine_conclusion 0 1"), "{printed}");
-    let reparsed = parse(&format!(
-        "theorem signed_direct_compound(n: int32) {{ requires 0 <= n + 1; ensures 0 <= n + 1 by {{ {printed} }} }}"
-    ))
-    .expect("printed direct compound certificate should reparse");
-    assert_eq!(
-        reparsed.theorem_definitions()[0].ensures()[0].proof(),
-        parse(source).unwrap().theorem_definitions()[0].ensures()[0].proof()
-    );
-    let tampered = source.replace("0 2147483647", "0 2147483646");
-    verify_click_theorems(&tampered)
-        .expect_err("tampering with direct compound endpoints must be rejected");
-    let out_of_range = source.replace("0 2147483647", "0 2147483648");
-    verify_click_theorems(&out_of_range)
-        .expect_err("out-of-range signed interval endpoints must be rejected");
-    let wrong_carrier = source.replace(
-        "premise 0: 0 <= to_integer(n + 1) => 0 <= to_integer(n + 1);",
-        "premise 0: 0 <= to_integer(n + 1) => ((n + 1) as uint32) <= 2u32;",
-    );
-    assert_ne!(wrong_carrier, source);
-    verify_click_theorems(&wrong_carrier)
-        .expect_err("unsigned conversion must not masquerade as signed certificate evidence");
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_09")]
-fn signed_int32_interval_intersect_round_trips() {
-    let source = r#"
-        theorem signed_intersect_forms(n: int32) {
-            ensures n == n by {
-                arithmetic_certificate signed_int32 {
-                    interval_atom (n) (-10) (10);
-                    interval_atom (n) (0) (20);
-                    interval_intersect 0, 1 (0) (10);
-                    conclusion 2;
-                }
-            }
-        }
-    "#;
-    let file = parse(source).expect("interval intersection should parse");
-    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
-        panic!("expected an explicit theorem proof");
-    };
-    let printed = super::printing::format_partial_tactic_sequence(tactics);
-    assert!(printed.contains("interval_intersect"), "{printed}");
-    let reparsed = parse(&format!(
-        "theorem signed_intersect_forms(n: int32) {{ ensures n == n by {{ {printed} }} }}"
-    ))
-    .expect("printed interval intersection should reparse");
-    assert_eq!(
-        reparsed.theorem_definitions()[0].ensures()[0].proof(),
-        file.theorem_definitions()[0].ensures()[0].proof()
-    );
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_09")]
-fn signed_int32_arithmetic_certificate_applies_and_rejects_tampering() {
-    let source = r#"
-        theorem signed_certificate_direct(x: int32) {
-            requires x <= 1;
-            ensures x <= 1 by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: x <= 1 => x <= 1;
-                    conclusion 0;
-                }
-            }
-        }
-    "#;
-    verify_click_theorems(source).expect("a checked signed_int32 certificate should apply");
-
-    let tampered = source.replace("premise 0: x <= 1 => x <= 1", "premise 0: x <= 1 => x <= 2");
-    let error = verify_click_theorems(&tampered).expect_err("tampered result must be rejected");
-    assert!(
-        error.message().contains("signed_int32") || error.message().contains("certificate"),
-        "{error:?}"
-    );
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_10")]
-fn signed_certificates_refuse_integer_propositions_and_integer_ones_read_machine_comparisons() {
-    let integer_in_machine = r#"
-        theorem integer_in_machine(x: Integer) {
-            requires x == x;
-            ensures x == x by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: x == x => x == x;
-                    conclusion 0;
-                }
-            }
-        }
-    "#;
-    assert!(
-        verify_click_theorems(integer_in_machine).is_err(),
-        "a mathematical Integer proposition must not enter signed_int32"
-    );
-
-    let machine_in_integer = r#"
-        theorem machine_in_integer(x: int32) {
-            requires x == x;
-            ensures x == x by {
-                arithmetic_certificate {
-                    premise 0: x == x => x == x;
-                    conclusion 0;
-                }
-            }
-        }
-    "#;
-    // A machine comparison is the Integer comparison of its operands' exact
-    // observations, one fact in one form, so it enters an Integer
-    // certificate as written.
-    verify_click_theorems(machine_in_integer)
-        .expect("a machine comparison is read as its Integer observation");
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_10")]
-fn integer_certificate_can_follow_a_checked_int32_to_integer_bridge() {
-    let source = r#"import click::integer;
-
-        theorem bridge_then_integer_arithmetic(x: int32) {
-            requires 0 <= x;
-            ensures 0 <= to_integer(x) + 1 by {
-                have to_integer(0) <= to_integer(x) by {
-                    apply(integer::int32_less_equal_to_integer(0, x));
-                }
-                arithmetic_certificate {
-                    premise 0: to_integer(0) <= to_integer(x) => to_integer(0) <= to_integer(x);
-                    trivial => to_integer(x) + 1 >= to_integer(x);
-                    add 0, 1 => 0 <= to_integer(x) + 1;
-                    conclusion 2;
-                }
-            }
-        }
-    "#;
-    let verified =
-        verify_click_theorems(source).expect("bridge and Integer certificate should verify");
-    let expanded = verified[0]
-        .expanded_proof_source()
-        .expect("bridge and Integer certificate should expand");
-    assert!(
-        expanded.contains("click::integer::int32_less_equal_to_integer"),
-        "{expanded}"
-    );
-    assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
-    let rechecked = format!(
-        "import click::integer;\ntheorem bridge_then_integer_arithmetic(x: int32) {{\n            requires 0 <= x;\n            ensures 0 <= to_integer(x) + 1 {expanded}\n        }}"
-    );
-    let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_click_theorems(&rechecked)
-    });
-    result.expect("expanded bridge and Integer certificate should recheck");
-    assert_eq!(planning, 0, "explicit composition must not invoke planning");
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_10")]
-fn signed_int32_certificate_rejects_duplicate_premises_and_forward_nodes() {
-    let duplicate = r#"
-        theorem signed_certificate_duplicate(x: int32) {
-            requires x <= 1;
-            ensures x <= 1 by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: x <= 1 => x <= 1;
-                    premise 0: x <= 1 => x <= 1;
-                    conclusion 0;
-                }
-            }
-        }
-    "#;
-    let (duplicate_result, duplicate_planning) =
-        crate::surface::proof::count_planning_statement_transitions(|| {
-            verify_click_theorems(duplicate)
-        });
-    assert_eq!(
-        duplicate_planning, 0,
-        "explicit certificate rejection must not invoke planning"
-    );
-    let duplicate_error = duplicate_result
-        .expect_err("duplicate signed certificate premise indices must be rejected");
-    assert!(
-        duplicate_error
-            .message()
-            .contains("declared more than once"),
-        "{duplicate_error:?}"
-    );
-
-    let forward = r#"
-        theorem signed_certificate_forward(x: int32) {
-            requires x <= 1;
-            ensures x <= 1 by {
-                arithmetic_certificate signed_int32 {
-                    scale 1 by 1 => x <= 1;
-                    premise 0: x <= 1 => x <= 1;
-                    conclusion 0;
-                }
-            }
-        }
-    "#;
-    let (forward_result, forward_planning) =
-        crate::surface::proof::count_planning_statement_transitions(|| {
-            verify_click_theorems(forward)
-        });
-    assert_eq!(
-        forward_planning, 0,
-        "explicit certificate rejection must not invoke planning"
-    );
-    let forward_error =
-        forward_result.expect_err("forward signed certificate node references must be rejected");
-    assert!(
-        forward_error.message().contains("out of range")
-            || forward_error.message().contains("forward"),
-        "{forward_error:?}"
-    );
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_10")]
-fn special_arithmetic_certificate_round_trips_and_rejects_bad_premises() {
-    let source = r#"
-        theorem special_certificate_forms(p: int32) {
-            ensures aligned(p, 8) by {
-                arithmetic_certificate rules {
-                    premise 0: aligned(p, 8) => aligned(p, 8);
-                    pointer_alignment premise 0 => aligned(p, 8);
-                    conclusion 0;
-                }
-            }
-        }
-    "#;
-    let file = parse(source).expect("rules certificate should parse");
-    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
-        panic!("expected an explicit theorem proof");
-    };
-    assert!(matches!(
-        &tactics[0],
-        ProofTactic::ArithmeticCertificate(ArithmeticCertificate {
-            family: ArithmeticCertificateFamily::Special(_)
-        })
-    ));
-    let printed = super::printing::format_partial_tactic_sequence(tactics);
-    assert!(
-        printed.contains("arithmetic_certificate rules {"),
-        "{printed}"
-    );
-    assert_eq!(
-        parse(&format!(
-            "theorem special_certificate_forms(p: int32) {{ ensures aligned(p, 8) by {{ {printed} }} }}"
-        ))
-        .expect("printed rules certificate should reparse")
-        .theorem_definitions()[0]
-            .ensures()[0]
-            .proof(),
-        file.theorem_definitions()[0].ensures()[0].proof()
-    );
-
-    let duplicate = source.replace(
-        "premise 0: aligned(p, 8) => aligned(p, 8);",
-        "premise 0: aligned(p, 8) => aligned(p, 8); premise 0: aligned(p, 8) => aligned(p, 8);",
-    );
-    assert!(parse(&duplicate).is_err());
-    let gap = source.replace("premise 0:", "premise 2:");
-    assert!(parse(&gap).is_err());
-    let mismatch = source.replace("=> aligned(p, 8);", "=> aligned(p, 16);");
-    assert!(parse(&mismatch).is_err());
-
-    let direct = source.replace(
-        "pointer_alignment premise 0 => aligned(p, 8);",
-        "pointer_word_from_alignment alignments [0] => aligned(p, 8);",
-    );
-    let direct_file = parse(&direct).expect("direct tagged-word node should parse");
-    let direct_printed = super::printing::format_partial_tactic_sequence(
-        match direct_file.theorem_definitions()[0].ensures()[0].proof() {
-            SourceProof::Script(tactics) => tactics,
-            _ => panic!("expected an explicit theorem proof"),
-        },
-    );
-    assert!(direct_printed.contains("pointer_word_from_alignment"));
-    parse(&format!(
-        "theorem special_certificate_forms(p: int32) {{ ensures aligned(p, 8) by {{ {direct_printed} }} }}"
-    ))
-    .expect("direct tagged-word node should round-trip");
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_11")]
-fn special_certificate_accepts_deep_identity_and_rejects_late_mismatch() {
-    let nested = format!("{}aligned(p, 8)", "aligned(p, 8) and ".repeat(260),);
-    let source = format!(
-        "theorem deep_special_certificate(p: int32) {{ ensures aligned(p, 8) by {{\
-            arithmetic_certificate rules {{\
-                premise 0: {nested} => {nested};\
-                pointer_alignment premise 0 => aligned(p, 8);\
-                conclusion 0;\
-            }}\
-        }} }}"
-    );
-    let parsed =
-        parse(&source).expect("deep identical certificate premises should parse iteratively");
-    std::mem::forget(parsed);
-    let late = nested.rfind("aligned(p, 8)").unwrap();
-    let mismatch = format!(
-        "{}aligned(p, 16){}",
-        &nested[..late],
-        &nested[late + "aligned(p, 8)".len()..]
-    );
-    let mismatch_source = source.replacen(&nested, &mismatch, 1);
-    assert!(
-        parse(&mismatch_source).is_err(),
-        "a late deep premise mismatch must reject without recursive equality"
-    );
-
-    let call_mismatch = r#"
-        theorem special_call_mismatch(p: int32) {
-            ensures aligned(p, 8) by {
-                arithmetic_certificate rules {
-                    premise 0: first(p) => second(p);
-                    pointer_alignment premise 0 => aligned(p, 8);
-                    conclusion 0;
-                }
-            }
-        }
-    "#;
-    assert!(
-        parse(call_mismatch).is_err(),
-        "`rules` premise token comparison must reject differing call names"
-    );
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_11")]
-fn integer_product_bounds_round_trip_reverify_and_reject_unavailable_or_altered_bounds() {
-    let source = r#"
-        theorem product_bounds(x: Integer, y: Integer) {
-            requires -2 <= x;
-            requires x <= 3;
-            requires -4 <= y;
-            requires y <= 5;
-            ensures x * y <= 15 by {
-                arithmetic_certificate rules {
-                    premise 0: -2 <= x => -2 <= x;
-                    premise 1: x <= 3 => x <= 3;
-                    premise 2: -4 <= y => -4 <= y;
-                    premise 3: y <= 5 => y <= 5;
-                    integer_product_bounds bounds [0, 1, 2, 3] => x * y <= 15;
-                    conclusion 0;
-                }
-            }
-        }
-    "#;
-    let file = parse(source).unwrap();
-    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
-        panic!("expected a certificate script");
-    };
-    let printed = super::printing::format_partial_tactic_sequence(tactics);
-    assert!(printed.contains("integer_product_bounds bounds [0, 1, 2, 3]"));
-    let round_trip = parse(&format!(
-        "theorem product_bounds(x: Integer, y: Integer) {{ ensures x * y <= 15 by {{ {printed} }} }}"
-    )).unwrap();
-    assert_eq!(
-        round_trip.theorem_definitions()[0].ensures()[0].proof(),
-        file.theorem_definitions()[0].ensures()[0].proof()
-    );
-    let (verified, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_click_theorems(source)
-    });
-    let verified = verified.expect("explicit product range should verify");
-    assert_eq!(planning, 0);
-    let expanded = verified[0]
-        .expanded_proof_source()
-        .expect("certificate should expand");
-    let start = source.find("by {").unwrap();
-    let rechecked = format!("{}{}\n}}", &source[..start], expanded);
-    let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_click_theorems(&rechecked)
-    });
-    result.expect("expanded product certificate should independently reverify");
-    assert_eq!(planning, 0);
-    for tampered in [
-        source.replace("requires x <= 3;", ""),
-        source.replace("requires y <= 5;", "requires y <= 6;"),
-        source.replace("bounds [0, 1, 2, 3]", "bounds [0, 1, 2]"),
-        source.replace("bounds [0, 1, 2, 3]", "bounds [0, 1, 2, 4]"),
-        source.replace("bounds [0, 1, 2, 3]", "bounds [1, 0, 2, 3]"),
-        source.replace("x * y <= 15", "x * y <= 14"),
-        source.replace("=> x * y <= 15", "=> x * y <= 16"),
-        source.replace("-2 <= x", "-2 < x"),
-        source.replace("x * y <= 15", "x + y <= 15"),
-        // A machine product is not the Integer product. Under Integer-default
-        // arithmetic `x * y <= 15` over int64 operands reads as the Integer
-        // product of their observations, so the machine product is written
-        // as its exact observation.
-        source
-            .replace("x: Integer, y: Integer", "x: int64, y: int64")
-            .replace("x * y <= 15", "to_integer(x * y) <= 15"),
-    ] {
-        assert_ne!(tampered, source);
-        verify_click_theorems(&tampered).expect_err("altered range evidence must reject");
-    }
-}
-
-#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_11")]
 fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
     let source = r#"
@@ -2008,7 +1341,7 @@ fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("float reflexivity should expand");
-    assert_only_integer_arithmetic_leaves(&expanded);
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert_eq!(
         expanded.matches("isfinite(value);").count(),
         1,
@@ -2036,7 +1369,7 @@ fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("smart arithmetic should expand");
-    assert_only_integer_arithmetic_leaves(&expanded);
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         expanded.contains("normalize"),
         "ordinary interval normalization expected: {expanded}"
@@ -2092,7 +1425,7 @@ fn integer_arithmetic_uses_checked_unified_certificate_without_replanning() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("Integer arithmetic should expand");
-    assert_only_integer_arithmetic_leaves(&expanded);
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     let rechecked = source.replace("by { solve() using { x == 1; } }", &expanded);
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
@@ -2122,7 +1455,7 @@ fn integer_arithmetic_using_proves_a_chain_longer_than_three_premises() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("the chain proof should expand");
-    assert_only_integer_arithmetic_leaves(&expanded);
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
     let rechecked = source.replace(
         "by {\n                solve() using { a <= b; b < c; c <= d; d <= e; }\n            }",
@@ -2175,7 +1508,7 @@ fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("definedness proof should expand");
-    assert_only_integer_arithmetic_leaves(&expanded);
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("defined"), "{expanded}");
     let rechecked = source.replace(
         "by {\n                solve() using {\n                    0 <= a;\n                    0 <= b;\n                    defined(a + b);\n                }\n            }",
@@ -2212,7 +1545,7 @@ fn signed_arithmetic_smart_planner_handles_deep_supported_terms_iteratively() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("deep arithmetic should expand");
-    assert_only_integer_arithmetic_leaves(&expanded);
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
     crate::surface::without_implicit_solve(|| verify_click_theorems(&rechecked))
         .expect("deep ordinary expansion should replay without search");
@@ -2318,7 +1651,7 @@ fn pure_solve_exposes_an_explicit_arithmetic_certificate() {
 
     let verified = verify_click_theorems(source).expect("solve theorem should verify");
     let expanded = verified[0].expanded_proof_source().unwrap();
-    assert_only_integer_arithmetic_leaves(&expanded);
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
 }
 
@@ -5271,40 +4604,6 @@ fn state_read_alignment_fact_renders_as_aligned() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_32")]
-fn integer_cast_identity_round_trips_and_cannot_establish_an_unrelated_integer_equality() {
-    let source = r#"
-        theorem unrelated_cast(x: Integer, y: Integer) {
-            requires -5 <= x;
-            requires x <= 5;
-            ensures x == y by {
-                arithmetic_certificate rules {
-                    premise 0: -5 <= x => -5 <= x;
-                    premise 1: x <= 5 => x <= 5;
-                    integer_cast_identity bounds [0, 1] => x == y;
-                    conclusion 0;
-                }
-            }
-        }
-    "#;
-    let file = parse(source).unwrap();
-    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
-        panic!("expected certificate script");
-    };
-    let printed = super::printing::format_partial_tactic_sequence(tactics);
-    assert!(printed.contains("integer_cast_identity bounds [0, 1]"));
-    let round_trip = parse(&format!(
-        "theorem unrelated_cast(x: Integer, y: Integer) {{ ensures x == y by {{ {printed} }} }}"
-    ))
-    .unwrap();
-    assert_eq!(
-        round_trip.theorem_definitions()[0].ensures()[0].proof(),
-        file.theorem_definitions()[0].ensures()[0].proof()
-    );
-    assert!(verify_click_theorems(source).is_err());
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_32")]
 fn inline_callback_identity_rejects_ambiguous_translation_units() {
     let source = r#"
         verifying "alpha.c";
@@ -6000,7 +5299,6 @@ test_batches! {
         integer_parameter_preserves_machine_literal_and_cast_behavior,
         integer_constant_aliases_stay_shared_before_a_tactic_starts,
         integer_solve_expansion_rechecks_without_smart_search,
-        integer_source_certificates_reject_missing_facts_and_tampered_nodes,
     ],
     surface_syntax_batch_01: [
         integer_alias_certificates_preserve_types_and_linear_source_on_expansion,
@@ -6044,27 +5342,10 @@ test_batches! {
         parses_and_prints_pure_function_unfold_with_guards,
         parses_and_prints_arithmetic_certificates,
     ],
-    surface_syntax_batch_08: [
-        arithmetic_certificate_is_the_only_integer_family_spelling,
-        integer_certificate_refutation_and_division_round_trip,
-        signed_int32_arithmetic_certificate_round_trips_every_step_spelling,
-        signed_int32_pair_affine_conclusion_round_trips_and_preserves_refs,
-    ],
     surface_syntax_batch_09: [
         signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal,
-        signed_int32_direct_compound_interval_is_publicly_checked,
-        signed_int32_interval_intersect_round_trips,
-        signed_int32_arithmetic_certificate_applies_and_rejects_tampering,
-    ],
-    surface_syntax_batch_10: [
-        signed_certificates_refuse_integer_propositions_and_integer_ones_read_machine_comparisons,
-        integer_certificate_can_follow_a_checked_int32_to_integer_bridge,
-        signed_int32_certificate_rejects_duplicate_premises_and_forward_nodes,
-        special_arithmetic_certificate_round_trips_and_rejects_bad_premises,
     ],
     surface_syntax_batch_11: [
-        special_certificate_accepts_deep_identity_and_rejects_late_mismatch,
-        integer_product_bounds_round_trip_reverify_and_reject_unavailable_or_altered_bounds,
         float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks,
         signed_arithmetic_smart_planner_expands_to_ordinary_proof,
     ],
@@ -6189,7 +5470,6 @@ test_batches! {
         state_read_alignment_fact_renders_as_aligned,
     ],
     surface_syntax_batch_32: [
-        integer_cast_identity_round_trips_and_cannot_establish_an_unrelated_integer_equality,
         inline_callback_identity_rejects_ambiguous_translation_units,
         a_rust_sidecar_writes_click_types_in_rust,
         rust_integer_casts_read_historical_operands,

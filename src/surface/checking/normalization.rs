@@ -1145,30 +1145,6 @@ mod tests {
     }
 
     #[test]
-    fn integer_solve_planner_emits_explicit_bound_certificate() {
-        let x = IntegerTerm::Variable(Variable(71));
-        let y = IntegerTerm::Variable(Variable(72));
-        let lower = Proposition::ConditionIs(
-            ConditionTerm::IntegerLessEqual(x.clone().into(), y.clone().into()),
-            true,
-        );
-        let upper = Proposition::ConditionIs(
-            ConditionTerm::IntegerLessEqual(y.clone().into(), x.clone().into()),
-            true,
-        );
-        let goal = Proposition::ConditionIs(ConditionTerm::IntegerEqual(x.into(), y.into()), true);
-        let certificate = plan_arithmetic(
-            ArithmeticEngine::IntegerAffine,
-            &goal,
-            &[lower.clone(), upper.clone()],
-        )
-        .and_then(ArithmeticPlan::integer_affine)
-        .expect("opposite integer bounds should produce a certificate");
-        certificate
-            .check(&goal, &[lower, upper])
-            .expect("the planned certificate should pass the kernel checker");
-    }
-    #[test]
     fn integer_observation_rewrite_requires_an_available_machine_equality() {
         let memory = crate::kernel::intern_memory(Memory::new().with_block("rewrite-cell", 4));
         let pointer = Pointer {

@@ -25,12 +25,7 @@ theorem left_multiply_order(factor: Integer, a: Integer, b: Integer) {
     requires a <= b;
     requires 0 <= factor;
     ensures factor * a <= factor * b by {
-        arithmetic_certificate rules {
-            premise 0: a <= b => a <= b;
-            premise 1: 0 <= factor => 0 <= factor;
-            integer_multiply_order bounds [0, 1] => factor * a <= factor * b;
-            conclusion 0;
-        }
+        solve() using { a <= b; 0 <= factor; };
     }
 }
 

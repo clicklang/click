@@ -86,362 +86,79 @@ void checkout(struct pool* pool, struct payload* p) {
             known();
         }
         have defined((pool->checked_out + 1)) by {
-            arithmetic_certificate rules {
-                premise 0: at(function.entry, pool->checked_out) < at(function.entry, 2147483647) =>
-                    at(function.entry, pool->checked_out) < at(function.entry, 2147483647);
-                int32_defined bounds [0] => defined((pool->checked_out + 1));
-                conclusion 0;
-            }
+            solve() using { at(function.entry, pool->checked_out) < at(function.entry, 2147483647); };
         }
         unfold(slot(pool));
         step();
         fold(item(pool, p));
         have to_integer(pool->capacity) == (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
             have -2147483648 <= (to_integer(old(pool->checked_out)) + 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(pool->checked_out)) + 1) < -2147483648;
-                    premise 0: 0 <= to_integer(old(pool->checked_out)) => 0 <=
-                        to_integer(old(pool->checked_out));
-                    add 0, 1 => (to_integer(old(pool->checked_out)) + 1 + 0) < (-2147483648 +
-                        to_integer(old(pool->checked_out)));
-                    conclusion 2;
-                }
+                solve() using { 0 <= to_integer(old(pool->checked_out)); };
             }
             have (to_integer(old(pool->checked_out)) + 1) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(old(pool->checked_out)) + 1);
-                    premise 0: to_integer(old(pool->checked_out)) < 2147483647 =>
-                        to_integer(old(pool->checked_out)) < 2147483647;
-                    add 0, 1 => (2147483647 + 1 + (to_integer(old(pool->checked_out)) + 1)) <=
-                        (to_integer(old(pool->checked_out)) + 1 + 2147483647);
-                    conclusion 2;
-                }
+                solve() using { to_integer(old(pool->checked_out)) < 2147483647; };
             }
             have to_integer(pool->checked_out) == (to_integer(old(pool->checked_out)) + 1) by {
-                arithmetic_certificate rules {
-                    premise 0: -2147483648 <= (to_integer(old(pool->checked_out)) + 1) =>
-                        -2147483648 <= (to_integer(old(pool->checked_out)) + 1);
-                    premise 1: (to_integer(old(pool->checked_out)) + 1) <= 2147483647 =>
-                        (to_integer(old(pool->checked_out)) + 1) <= 2147483647;
-                    integer_operation_identity bounds [0, 1] => to_integer(pool->checked_out) ==
-                        (to_integer(old(pool->checked_out)) + 1);
-                    conclusion 0;
-                }
+                solve() using { -2147483648 <= (to_integer(old(pool->checked_out)) + 1); (to_integer(old(pool->checked_out)) + 1) <= 2147483647; };
             }
             have -2147483648 <= (to_integer(old(count(slot(pool)))) - 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(count(slot(pool)))) - 1) < -2147483648;
-                    premise 0: 1 <= to_integer(old(count(slot(pool)))) => 1 <=
-                        to_integer(old(count(slot(pool))));
-                    add 0, 1 => ((to_integer(old(count(slot(pool)))) - 1) + 1) < (-2147483648 +
-                        to_integer(old(count(slot(pool)))));
-                    conclusion 2;
-                }
+                solve() using { 1 <= to_integer(old(count(slot(pool)))); };
             }
             have (to_integer(old(count(slot(pool)))) - 1) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(old(count(slot(pool)))) - 1);
-                    type_range => to_integer(old(count(slot(pool)))) <= 2147483647;
-                    add 0, 1 => (2147483647 + to_integer(old(count(slot(pool))))) <
-                        ((to_integer(old(count(slot(pool)))) - 1) + 2147483647);
-                    conclusion 2;
-                }
+                solve() using {  };
             }
             have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1) by {
-                arithmetic_certificate rules {
-                    premise 0: -2147483648 <= (to_integer(old(count(slot(pool)))) - 1) =>
-                        -2147483648 <= (to_integer(old(count(slot(pool)))) - 1);
-                    premise 1: (to_integer(old(count(slot(pool)))) - 1) <= 2147483647 =>
-                        (to_integer(old(count(slot(pool)))) - 1) <= 2147483647;
-                    integer_operation_identity bounds [0, 1] => to_integer(count(slot(pool))) ==
-                        (to_integer(old(count(slot(pool)))) - 1);
-                    conclusion 0;
-                }
+                solve() using { -2147483648 <= (to_integer(old(count(slot(pool)))) - 1); (to_integer(old(count(slot(pool)))) - 1) <= 2147483647; };
             }
             have to_integer(pool->capacity) <= (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(pool->checked_out) + to_integer(count(slot(pool))))
-                        < to_integer(pool->capacity);
-                    premise 0: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) =>
-                        at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool)))));
-                    less_equal_from_equal 1 => at(function.entry, to_integer(pool->capacity)) <=
-                        at(function.entry, (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool)))));
-                    premise 1: to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
-                        + 1) => to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
-                        + 1);
-                    less_equal_from_equal 3 reverse => (to_integer(old(pool->checked_out)) + 1) <=
-                        to_integer(pool->checked_out);
-                    premise 2: to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
-                        - 1) => to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
-                        - 1);
-                    less_equal_from_equal 5 reverse => (to_integer(old(count(slot(pool)))) - 1) <=
-                        to_integer(count(slot(pool)));
-                    add 0, 2 => (to_integer(pool->checked_out) + to_integer(count(slot(pool))) +
-                        at(function.entry, to_integer(pool->capacity))) <
-                        (to_integer(pool->capacity) + at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))));
-                    add 7, 4 => (to_integer(pool->checked_out) + to_integer(count(slot(pool))) +
-                        at(function.entry, to_integer(pool->capacity)) +
-                        (to_integer(old(pool->checked_out)) + 1)) < (to_integer(pool->capacity) +
-                        at(function.entry, (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool))))) + to_integer(pool->checked_out));
-                    add 8, 6 => (to_integer(pool->checked_out) + to_integer(count(slot(pool))) +
-                        at(function.entry, to_integer(pool->capacity)) +
-                        (to_integer(old(pool->checked_out)) + 1) +
-                        (to_integer(old(count(slot(pool)))) - 1)) < (to_integer(pool->capacity) +
-                        at(function.entry, (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool))))) + to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool))));
-                    conclusion 9;
-                }
+                solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
+                        + 1); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
+                        - 1); };
             }
             have (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <= to_integer(pool->capacity) by {
-                arithmetic_certificate {
-                    negated_goal => to_integer(pool->capacity) < (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool))));
-                    premise 0: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) =>
-                        at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool)))));
-                    less_equal_from_equal 1 reverse => at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) <=
-                        at(function.entry, to_integer(pool->capacity));
-                    premise 1: to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
-                        + 1) => to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
-                        + 1);
-                    less_equal_from_equal 3 => to_integer(pool->checked_out) <=
-                        (to_integer(old(pool->checked_out)) + 1);
-                    premise 2: to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
-                        - 1) => to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
-                        - 1);
-                    less_equal_from_equal 5 => to_integer(count(slot(pool))) <=
-                        (to_integer(old(count(slot(pool)))) - 1);
-                    add 0, 2 => (to_integer(pool->capacity) + at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool)))))) <
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))) +
-                        at(function.entry, to_integer(pool->capacity)));
-                    add 7, 4 => (to_integer(pool->capacity) + at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                        to_integer(pool->checked_out)) < (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool))) + at(function.entry,
-                        to_integer(pool->capacity)) + (to_integer(old(pool->checked_out)) + 1));
-                    add 8, 6 => (to_integer(pool->capacity) + at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                        to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))) +
-                        at(function.entry, to_integer(pool->capacity)) +
-                        (to_integer(old(pool->checked_out)) + 1) +
-                        (to_integer(old(count(slot(pool)))) - 1));
-                    conclusion 9;
-                }
+                solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
+                        + 1); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
+                        - 1); };
             }
-            arithmetic_certificate {
-                premise 0: to_integer(pool->capacity) <= (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool)))) => to_integer(pool->capacity) <=
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))));
-                premise 1: (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <=
-                    to_integer(pool->capacity) => (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool)))) <= to_integer(pool->capacity);
-                equal_from_bounds 0, 1 => to_integer(pool->capacity) ==
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))));
-                conclusion 2;
-            }
+            solve() using { to_integer(pool->capacity) <= (to_integer(pool->checked_out) +
+                    to_integer(count(slot(pool)))); (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <=
+                    to_integer(pool->capacity); };
         }
     }
     step();
     known();
     have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1) by {
         have -2147483648 <= (to_integer(old(count(slot(pool)))) - 1) by {
-            arithmetic_certificate {
-                negated_goal => (to_integer(old(count(slot(pool)))) - 1) < -2147483648;
-                premise 0: 1 <= to_integer(old(count(slot(pool)))) => 1 <=
-                    to_integer(old(count(slot(pool))));
-                add 0, 1 => ((to_integer(old(count(slot(pool)))) - 1) + 1) < (-2147483648 +
-                    to_integer(old(count(slot(pool)))));
-                conclusion 2;
-            }
+            solve() using { 1 <= to_integer(old(count(slot(pool)))); };
         }
         have (to_integer(old(count(slot(pool)))) - 1) <= 2147483647 by {
-            arithmetic_certificate {
-                negated_goal => 2147483647 < (to_integer(old(count(slot(pool)))) - 1);
-                type_range => to_integer(old(count(slot(pool)))) <= 2147483647;
-                add 0, 1 => (2147483647 + to_integer(old(count(slot(pool))))) <
-                    ((to_integer(old(count(slot(pool)))) - 1) + 2147483647);
-                conclusion 2;
-            }
+            solve() using {  };
         }
         have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1) by {
-            arithmetic_certificate rules {
-                premise 0: -2147483648 <= (to_integer(old(count(slot(pool)))) - 1) => -2147483648 <=
-                    (to_integer(old(count(slot(pool)))) - 1);
-                premise 1: (to_integer(old(count(slot(pool)))) - 1) <= 2147483647 =>
-                    (to_integer(old(count(slot(pool)))) - 1) <= 2147483647;
-                integer_operation_identity bounds [0, 1] => to_integer(count(slot(pool))) ==
-                    (to_integer(old(count(slot(pool)))) - 1);
-                conclusion 0;
-            }
+            solve() using { -2147483648 <= (to_integer(old(count(slot(pool)))) - 1); (to_integer(old(count(slot(pool)))) - 1) <= 2147483647; };
         }
         known();
     }
     have to_integer(count(item(pool, _))) == (to_integer(old(count(item(pool, _)))) + 1) by {
         have to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) + 1) by {
-            arithmetic_certificate {
-                negated_goal => (to_integer(old(count(item(pool, _)))) + 1) <
-                    to_integer(count(item(pool, _)));
-                premise 0: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) =>
-                    at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool)))));
-                less_equal_from_equal 1 => at(function.entry, to_integer(pool->capacity)) <=
-                    at(function.entry, (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool)))));
-                premise 1: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+            solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer((pool->checked_out + 1)) + to_integer((old(count(slot(pool))) -
-                    1)))) => at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer((pool->checked_out + 1)) + to_integer((old(count(slot(pool))) -
-                    1))));
-                less_equal_from_equal 3 reverse => at(function.entry, (to_integer((pool->checked_out
-                    + 1)) + to_integer((old(count(slot(pool))) - 1)))) <= at(function.entry,
-                    to_integer(pool->capacity));
-                premise 2: to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1)
-                    => to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1);
-                less_equal_from_equal 5 reverse => (to_integer(old(count(slot(pool)))) - 1) <=
-                    to_integer(count(slot(pool)));
-                premise 3: to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
-                    _)))) => to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
-                    _))));
-                less_equal_from_equal 7 => to_integer(old(pool->checked_out)) <=
-                    to_integer(old(count(item(pool, _))));
-                premise 4: to_integer(pool->checked_out) == to_integer(count(item(pool, _))) =>
-                    to_integer(pool->checked_out) == to_integer(count(item(pool, _)));
-                less_equal_from_equal 9 reverse => to_integer(count(item(pool, _))) <=
-                    to_integer(pool->checked_out);
-                add 0, 2 => (to_integer(old(count(item(pool, _)))) + 1 + at(function.entry,
-                    to_integer(pool->capacity))) < (to_integer(count(item(pool, _))) +
-                    at(function.entry, (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool))))));
-                add 11, 4 => (to_integer(old(count(item(pool, _)))) + 1 + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    + 1)) + to_integer((old(count(slot(pool))) - 1))))) <
-                    (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                    at(function.entry, to_integer(pool->capacity)));
-                add 12, 6 => (to_integer(old(count(item(pool, _)))) + 1 + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    + 1)) + to_integer((old(count(slot(pool))) - 1)))) +
-                    (to_integer(old(count(slot(pool)))) - 1)) < (to_integer(count(item(pool, _))) +
-                    at(function.entry, (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool))))) + at(function.entry, to_integer(pool->capacity))
-                    + to_integer(count(slot(pool))));
-                add 13, 8 => (to_integer(old(count(item(pool, _)))) + 1 + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    + 1)) + to_integer((old(count(slot(pool))) - 1)))) +
-                    (to_integer(old(count(slot(pool)))) - 1) + to_integer(old(pool->checked_out))) <
-                    (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                    at(function.entry, to_integer(pool->capacity)) + to_integer(count(slot(pool))) +
-                    to_integer(old(count(item(pool, _)))));
-                add 14, 10 => (to_integer(old(count(item(pool, _)))) + 1 + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    + 1)) + to_integer((old(count(slot(pool))) - 1)))) +
-                    (to_integer(old(count(slot(pool)))) - 1) + to_integer(old(pool->checked_out)) +
-                    to_integer(count(item(pool, _)))) < (to_integer(count(item(pool, _))) +
-                    at(function.entry, (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool))))) + at(function.entry, to_integer(pool->capacity))
-                    + to_integer(count(slot(pool))) + to_integer(old(count(item(pool, _)))) +
-                    to_integer(pool->checked_out));
-                premise 5: to_integer(pool->checked_out) == to_integer(old(pool->checked_out) + 1) => to_integer(pool->checked_out) == to_integer(old(pool->checked_out) + 1);
-                less_equal_from_equal 16 => to_integer(pool->checked_out) <= to_integer(old(pool->checked_out) + 1);
-                add 15, 17 => to_integer(pool->checked_out) < to_integer(pool->checked_out);
-                conclusion 18;
-            }
+                    1)))); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1); to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
+                    _)))); to_integer(pool->checked_out) == to_integer(count(item(pool, _))); to_integer(pool->checked_out) == to_integer(old(pool->checked_out) + 1); };
         }
         have (to_integer(old(count(item(pool, _)))) + 1) <= to_integer(count(item(pool, _))) by {
-            arithmetic_certificate {
-                negated_goal => to_integer(count(item(pool, _))) < (to_integer(old(count(item(pool,
-                    _)))) + 1);
-                premise 0: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) =>
-                    at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool)))));
-                less_equal_from_equal 1 reverse => at(function.entry, (to_integer(pool->checked_out)
-                    + to_integer(count(slot(pool))))) <= at(function.entry,
-                    to_integer(pool->capacity));
-                premise 1: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+            solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer((pool->checked_out + 1)) + to_integer((old(count(slot(pool))) -
-                    1)))) => at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer((pool->checked_out + 1)) + to_integer((old(count(slot(pool))) -
-                    1))));
-                less_equal_from_equal 3 => at(function.entry, to_integer(pool->capacity)) <=
-                    at(function.entry, (to_integer((pool->checked_out + 1)) +
-                    to_integer((old(count(slot(pool))) - 1))));
-                premise 2: to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1)
-                    => to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1);
-                less_equal_from_equal 5 => to_integer(count(slot(pool))) <=
-                    (to_integer(old(count(slot(pool)))) - 1);
-                premise 3: to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
-                    _)))) => to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
-                    _))));
-                less_equal_from_equal 7 reverse => to_integer(old(count(item(pool, _)))) <=
-                    to_integer(old(pool->checked_out));
-                premise 4: to_integer(pool->checked_out) == to_integer(count(item(pool, _))) =>
-                    to_integer(pool->checked_out) == to_integer(count(item(pool, _)));
-                less_equal_from_equal 9 => to_integer(pool->checked_out) <=
-                    to_integer(count(item(pool, _)));
-                add 0, 2 => (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool)))))) <
-                    (to_integer(old(count(item(pool, _)))) + 1 + at(function.entry,
-                    to_integer(pool->capacity)));
-                add 11, 4 => (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                    at(function.entry, to_integer(pool->capacity))) <
-                    (to_integer(old(count(item(pool, _)))) + 1 + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    + 1)) + to_integer((old(count(slot(pool))) - 1)))));
-                add 12, 6 => (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                    at(function.entry, to_integer(pool->capacity)) + to_integer(count(slot(pool))))
-                    < (to_integer(old(count(item(pool, _)))) + 1 + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    + 1)) + to_integer((old(count(slot(pool))) - 1)))) +
-                    (to_integer(old(count(slot(pool)))) - 1));
-                add 13, 8 => (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                    at(function.entry, to_integer(pool->capacity)) + to_integer(count(slot(pool))) +
-                    to_integer(old(count(item(pool, _))))) < (to_integer(old(count(item(pool, _))))
-                    + 1 + at(function.entry, to_integer(pool->capacity)) + at(function.entry,
-                    (to_integer((pool->checked_out + 1)) + to_integer((old(count(slot(pool))) -
-                    1)))) + (to_integer(old(count(slot(pool)))) - 1) +
-                    to_integer(old(pool->checked_out)));
-                add 14, 10 => (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                    at(function.entry, to_integer(pool->capacity)) + to_integer(count(slot(pool))) +
-                    to_integer(old(count(item(pool, _)))) + to_integer(pool->checked_out)) <
-                    (to_integer(old(count(item(pool, _)))) + 1 + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    + 1)) + to_integer((old(count(slot(pool))) - 1)))) +
-                    (to_integer(old(count(slot(pool)))) - 1) + to_integer(old(pool->checked_out)) +
-                    to_integer(count(item(pool, _))));
-                premise 5: to_integer(pool->checked_out) == to_integer(old(pool->checked_out) + 1) => to_integer(pool->checked_out) == to_integer(old(pool->checked_out) + 1);
-                less_equal_from_equal 16 reverse => to_integer(old(pool->checked_out) + 1) <= to_integer(pool->checked_out);
-                add 15, 17 => to_integer(pool->checked_out) < to_integer(pool->checked_out);
-                conclusion 18;
-            }
+                    1)))); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1); to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
+                    _)))); to_integer(pool->checked_out) == to_integer(count(item(pool, _))); to_integer(pool->checked_out) == to_integer(old(pool->checked_out) + 1); };
         }
-        arithmetic_certificate {
-            premise 0: to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) +
-                1) => to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) +
-                1);
-            premise 1: (to_integer(old(count(item(pool, _)))) + 1) <= to_integer(count(item(pool,
-                _))) => (to_integer(old(count(item(pool, _)))) + 1) <= to_integer(count(item(pool,
-                _)));
-            equal_from_bounds 0, 1 => to_integer(count(item(pool, _))) ==
-                (to_integer(old(count(item(pool, _)))) + 1);
-            conclusion 2;
-        }
+        solve() using { to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) +
+                1); (to_integer(old(count(item(pool, _)))) + 1) <= to_integer(count(item(pool,
+                _))); };
     }
     have to_integer(pool->checked_out) == (to_integer(old(pool->checked_out)) + 1) by {
         known();
@@ -477,43 +194,11 @@ void give_back(struct pool* pool, struct payload* p) {
         }
         have defined((count(slot(pool)) + 1)) by {
             have (to_integer(count(slot(pool))) + to_integer(1)) >= -2147483648 by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(count(slot(pool))) + to_integer(1)) < -2147483648;
-                    premise 0: 0 <= to_integer(count(slot(pool))) => 0 <=
-                        to_integer(count(slot(pool)));
-                    add 0, 1 => (to_integer(count(slot(pool))) + to_integer(1) + 0) < (-2147483648 +
-                        to_integer(count(slot(pool))));
-                    conclusion 2;
-                }
+                solve() using { 0 <= to_integer(count(slot(pool))); };
             }
             have (to_integer(count(slot(pool))) + to_integer(1)) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(count(slot(pool))) + to_integer(1));
-                    premise 0: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) =>
-                        at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool)))));
-                    less_equal_from_equal 1 reverse => at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) <=
-                        at(function.entry, to_integer(pool->capacity));
-                    premise 1: 1 <= to_integer(pool->checked_out) => 1 <=
-                        to_integer(pool->checked_out);
-                    type_range => to_integer(at(function.entry, to_integer(pool->capacity))) <=
-                        2147483647;
-                    add 0, 2 => (2147483647 + at(function.entry, (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool)))))) < (to_integer(count(slot(pool))) +
-                        to_integer(1) + at(function.entry, to_integer(pool->capacity)));
-                    add 5, 3 => (2147483647 + at(function.entry, (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool))))) + 1) < (to_integer(count(slot(pool))) +
-                        to_integer(1) + at(function.entry, to_integer(pool->capacity)) +
-                        to_integer(pool->checked_out));
-                    add 6, 4 => (2147483647 + at(function.entry, (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool))))) + 1 + to_integer(at(function.entry,
-                        to_integer(pool->capacity)))) < (to_integer(count(slot(pool))) +
-                        to_integer(1) + at(function.entry, to_integer(pool->capacity)) +
-                        to_integer(pool->checked_out) + 2147483647);
-                    conclusion 7;
-                }
+                solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); 1 <= to_integer(pool->checked_out); };
             }
             known();
         }
@@ -522,172 +207,45 @@ void give_back(struct pool* pool, struct payload* p) {
         step();
         fold(slot(pool));
         have 0 <= pool->checked_out by {
-            arithmetic_certificate signed_int32 {
-                premise 0: at(function.entry, 1) <= at(function.entry, pool->checked_out) =>
-                    at(function.entry, 1) <= at(function.entry, pool->checked_out);
-                interval_from_affine 0 (at(function.entry, pool->checked_out)) (1) (2147483647);
-                interval_atom (1) (1) (1);
-                interval_subtract 1, 2 1 (0) (2147483646);
-                affine_conclusion 0 3 => (0 as int32) <= (pool->checked_out as int32);
-                conclusion 4;
-            }
+            solve() using { at(function.entry, 1) <= at(function.entry, pool->checked_out); };
         }
         have to_integer(pool->checked_out) == to_integer(count(item(pool, _))) by {
             known();
         }
         have to_integer(pool->capacity) == (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
             have -2147483648 <= (to_integer(old(pool->checked_out)) - 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(pool->checked_out)) - 1) < -2147483648;
-                    premise 0: 0 <= to_integer(old(pool->checked_out)) => 0 <=
-                        to_integer(old(pool->checked_out));
-                    add 0, 1 => ((to_integer(old(pool->checked_out)) - 1) + 0) < (-2147483648 +
-                        to_integer(old(pool->checked_out)));
-                    conclusion 2;
-                }
+                solve() using { 0 <= to_integer(old(pool->checked_out)); };
             }
             have (to_integer(old(pool->checked_out)) - 1) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(old(pool->checked_out)) - 1);
-                    type_range => to_integer(old(pool->checked_out)) <= 2147483647;
-                    add 0, 1 => (2147483647 + to_integer(old(pool->checked_out))) <
-                        ((to_integer(old(pool->checked_out)) - 1) + 2147483647);
-                    conclusion 2;
-                }
+                solve() using {  };
             }
             have to_integer(pool->checked_out) == (to_integer(old(pool->checked_out)) - 1) by {
-                arithmetic_certificate rules {
-                    premise 0: -2147483648 <= (to_integer(old(pool->checked_out)) - 1) =>
-                        -2147483648 <= (to_integer(old(pool->checked_out)) - 1);
-                    premise 1: (to_integer(old(pool->checked_out)) - 1) <= 2147483647 =>
-                        (to_integer(old(pool->checked_out)) - 1) <= 2147483647;
-                    integer_operation_identity bounds [0, 1] => to_integer(pool->checked_out) ==
-                        (to_integer(old(pool->checked_out)) - 1);
-                    conclusion 0;
-                }
+                solve() using { -2147483648 <= (to_integer(old(pool->checked_out)) - 1); (to_integer(old(pool->checked_out)) - 1) <= 2147483647; };
             }
             have -2147483648 <= (to_integer(old(count(slot(pool)))) + 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(count(slot(pool)))) + 1) < -2147483648;
-                    premise 0: 0 <= to_integer(old(count(slot(pool)))) => 0 <=
-                        to_integer(old(count(slot(pool))));
-                    add 0, 1 => (to_integer(old(count(slot(pool)))) + 1 + 0) < (-2147483648 +
-                        to_integer(old(count(slot(pool)))));
-                    conclusion 2;
-                }
+                solve() using { 0 <= to_integer(old(count(slot(pool)))); };
             }
             have (to_integer(old(count(slot(pool)))) + 1) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(old(count(slot(pool)))) + 1);
-                    premise 0: to_integer((to_integer(old(count(slot(pool)))) + 1)) <= 2147483647 =>
-                        to_integer((to_integer(old(count(slot(pool)))) + 1)) <= 2147483647;
-                    add 0, 1 => (2147483647 + to_integer((to_integer(old(count(slot(pool)))) + 1)))
-                        < (to_integer(old(count(slot(pool)))) + 1 + 2147483647);
-                    conclusion 2;
-                }
+                solve() using { to_integer((to_integer(old(count(slot(pool)))) + 1)) <= 2147483647; };
             }
             have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1) by {
-                arithmetic_certificate rules {
-                    premise 0: -2147483648 <= (to_integer(old(count(slot(pool)))) + 1) =>
-                        -2147483648 <= (to_integer(old(count(slot(pool)))) + 1);
-                    premise 1: (to_integer(old(count(slot(pool)))) + 1) <= 2147483647 =>
-                        (to_integer(old(count(slot(pool)))) + 1) <= 2147483647;
-                    integer_operation_identity bounds [0, 1] => to_integer(count(slot(pool))) ==
-                        (to_integer(old(count(slot(pool)))) + 1);
-                    conclusion 0;
-                }
+                solve() using { -2147483648 <= (to_integer(old(count(slot(pool)))) + 1); (to_integer(old(count(slot(pool)))) + 1) <= 2147483647; };
             }
             have to_integer(pool->capacity) <= (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(pool->checked_out) + to_integer(count(slot(pool))))
-                        < to_integer(pool->capacity);
-                    premise 0: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) =>
-                        at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool)))));
-                    less_equal_from_equal 1 => at(function.entry, to_integer(pool->capacity)) <=
-                        at(function.entry, (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool)))));
-                    premise 1: to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
-                        - 1) => to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
-                        - 1);
-                    less_equal_from_equal 3 reverse => (to_integer(old(pool->checked_out)) - 1) <=
-                        to_integer(pool->checked_out);
-                    premise 2: to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
-                        + 1) => to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
-                        + 1);
-                    less_equal_from_equal 5 reverse => (to_integer(old(count(slot(pool)))) + 1) <=
-                        to_integer(count(slot(pool)));
-                    add 0, 2 => (to_integer(pool->checked_out) + to_integer(count(slot(pool))) +
-                        at(function.entry, to_integer(pool->capacity))) <
-                        (to_integer(pool->capacity) + at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))));
-                    add 7, 4 => (to_integer(pool->checked_out) + to_integer(count(slot(pool))) +
-                        at(function.entry, to_integer(pool->capacity)) +
-                        (to_integer(old(pool->checked_out)) - 1)) < (to_integer(pool->capacity) +
-                        at(function.entry, (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool))))) + to_integer(pool->checked_out));
-                    add 8, 6 => (to_integer(pool->checked_out) + to_integer(count(slot(pool))) +
-                        at(function.entry, to_integer(pool->capacity)) +
-                        (to_integer(old(pool->checked_out)) - 1) +
-                        (to_integer(old(count(slot(pool)))) + 1)) < (to_integer(pool->capacity) +
-                        at(function.entry, (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool))))) + to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool))));
-                    conclusion 9;
-                }
+                solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
+                        - 1); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
+                        + 1); };
             }
             have (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <= to_integer(pool->capacity) by {
-                arithmetic_certificate {
-                    negated_goal => to_integer(pool->capacity) < (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool))));
-                    premise 0: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) =>
-                        at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool)))));
-                    less_equal_from_equal 1 reverse => at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) <=
-                        at(function.entry, to_integer(pool->capacity));
-                    premise 1: to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
-                        - 1) => to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
-                        - 1);
-                    less_equal_from_equal 3 => to_integer(pool->checked_out) <=
-                        (to_integer(old(pool->checked_out)) - 1);
-                    premise 2: to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
-                        + 1) => to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
-                        + 1);
-                    less_equal_from_equal 5 => to_integer(count(slot(pool))) <=
-                        (to_integer(old(count(slot(pool)))) + 1);
-                    add 0, 2 => (to_integer(pool->capacity) + at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool)))))) <
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))) +
-                        at(function.entry, to_integer(pool->capacity)));
-                    add 7, 4 => (to_integer(pool->capacity) + at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                        to_integer(pool->checked_out)) < (to_integer(pool->checked_out) +
-                        to_integer(count(slot(pool))) + at(function.entry,
-                        to_integer(pool->capacity)) + (to_integer(old(pool->checked_out)) - 1));
-                    add 8, 6 => (to_integer(pool->capacity) + at(function.entry,
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                        to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <
-                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))) +
-                        at(function.entry, to_integer(pool->capacity)) +
-                        (to_integer(old(pool->checked_out)) - 1) +
-                        (to_integer(old(count(slot(pool)))) + 1));
-                    conclusion 9;
-                }
+                solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                        (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
+                        - 1); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
+                        + 1); };
             }
-            arithmetic_certificate {
-                premise 0: to_integer(pool->capacity) <= (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool)))) => to_integer(pool->capacity) <=
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))));
-                premise 1: (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <=
-                    to_integer(pool->capacity) => (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool)))) <= to_integer(pool->capacity);
-                equal_from_bounds 0, 1 => to_integer(pool->capacity) ==
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))));
-                conclusion 2;
-            }
+            solve() using { to_integer(pool->capacity) <= (to_integer(pool->checked_out) +
+                    to_integer(count(slot(pool)))); (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <=
+                    to_integer(pool->capacity); };
         }
     }
     step();
@@ -696,237 +254,46 @@ void give_back(struct pool* pool, struct payload* p) {
     unfold(valid_pool(pool));
     have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1) by {
         have -2147483648 <= (to_integer(old(count(slot(pool)))) + 1) by {
-            arithmetic_certificate {
-                negated_goal => (to_integer(old(count(slot(pool)))) + 1) < -2147483648;
-                premise 0: 0 <= to_integer(old(count(slot(pool)))) => 0 <=
-                    to_integer(old(count(slot(pool))));
-                add 0, 1 => (to_integer(old(count(slot(pool)))) + 1 + 0) < (-2147483648 +
-                    to_integer(old(count(slot(pool)))));
-                conclusion 2;
-            }
+            solve() using { 0 <= to_integer(old(count(slot(pool)))); };
         }
         have (to_integer(old(count(slot(pool)))) + 1) <= 2147483647 by {
-            arithmetic_certificate {
-                negated_goal => 2147483647 < (to_integer(old(count(slot(pool)))) + 1);
-                premise 0: to_integer((to_integer(old(count(slot(pool)))) + 1)) <= 2147483647 =>
-                    to_integer((to_integer(old(count(slot(pool)))) + 1)) <= 2147483647;
-                add 0, 1 => (2147483647 + to_integer((to_integer(old(count(slot(pool)))) + 1))) <
-                    (to_integer(old(count(slot(pool)))) + 1 + 2147483647);
-                conclusion 2;
-            }
+            solve() using { to_integer((to_integer(old(count(slot(pool)))) + 1)) <= 2147483647; };
         }
         have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1) by {
-            arithmetic_certificate rules {
-                premise 0: -2147483648 <= (to_integer(old(count(slot(pool)))) + 1) => -2147483648 <=
-                    (to_integer(old(count(slot(pool)))) + 1);
-                premise 1: (to_integer(old(count(slot(pool)))) + 1) <= 2147483647 =>
-                    (to_integer(old(count(slot(pool)))) + 1) <= 2147483647;
-                integer_operation_identity bounds [0, 1] => to_integer(count(slot(pool))) ==
-                    (to_integer(old(count(slot(pool)))) + 1);
-                conclusion 0;
-            }
+            solve() using { -2147483648 <= (to_integer(old(count(slot(pool)))) + 1); (to_integer(old(count(slot(pool)))) + 1) <= 2147483647; };
         }
         known();
     }
     have to_integer(count(item(pool, _))) == (to_integer(old(count(item(pool, _)))) - 1) by {
         have to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) - 1) by {
-            arithmetic_certificate {
-                negated_goal => (to_integer(old(count(item(pool, _)))) - 1) <
-                    to_integer(count(item(pool, _)));
-                premise 0: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) =>
-                    at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool)))));
-                less_equal_from_equal 1 => at(function.entry, to_integer(pool->capacity)) <=
-                    at(function.entry, (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool)))));
-                premise 1: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+            solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer((pool->checked_out - 1)) + to_integer((old(count(slot(pool))) +
-                    1)))) => at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer((pool->checked_out - 1)) + to_integer((old(count(slot(pool))) +
-                    1))));
-                less_equal_from_equal 3 reverse => at(function.entry, (to_integer((pool->checked_out
-                    - 1)) + to_integer((old(count(slot(pool))) + 1)))) <= at(function.entry,
-                    to_integer(pool->capacity));
-                premise 2: to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1)
-                    => to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1);
-                less_equal_from_equal 5 reverse => (to_integer(old(count(slot(pool)))) + 1) <=
-                    to_integer(count(slot(pool)));
-                premise 3: to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
-                    _)))) => to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
-                    _))));
-                less_equal_from_equal 7 => to_integer(old(pool->checked_out)) <=
-                    to_integer(old(count(item(pool, _))));
-                premise 4: to_integer(pool->checked_out) == to_integer(count(item(pool, _))) =>
-                    to_integer(pool->checked_out) == to_integer(count(item(pool, _)));
-                less_equal_from_equal 9 reverse => to_integer(count(item(pool, _))) <=
-                    to_integer(pool->checked_out);
-                add 0, 2 => ((to_integer(old(count(item(pool, _)))) - 1) + at(function.entry,
-                    to_integer(pool->capacity))) < (to_integer(count(item(pool, _))) +
-                    at(function.entry, (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool))))));
-                add 11, 4 => ((to_integer(old(count(item(pool, _)))) - 1) + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    - 1)) + to_integer((old(count(slot(pool))) + 1))))) <
-                    (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                    at(function.entry, to_integer(pool->capacity)));
-                add 12, 6 => ((to_integer(old(count(item(pool, _)))) - 1) + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    - 1)) + to_integer((old(count(slot(pool))) + 1)))) +
-                    (to_integer(old(count(slot(pool)))) + 1)) < (to_integer(count(item(pool, _))) +
-                    at(function.entry, (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool))))) + at(function.entry, to_integer(pool->capacity))
-                    + to_integer(count(slot(pool))));
-                add 13, 8 => ((to_integer(old(count(item(pool, _)))) - 1) + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    - 1)) + to_integer((old(count(slot(pool))) + 1)))) +
-                    (to_integer(old(count(slot(pool)))) + 1) + to_integer(old(pool->checked_out))) <
-                    (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                    at(function.entry, to_integer(pool->capacity)) + to_integer(count(slot(pool))) +
-                    to_integer(old(count(item(pool, _)))));
-                add 14, 10 => ((to_integer(old(count(item(pool, _)))) - 1) + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    - 1)) + to_integer((old(count(slot(pool))) + 1)))) +
-                    (to_integer(old(count(slot(pool)))) + 1) + to_integer(old(pool->checked_out)) +
-                    to_integer(count(item(pool, _)))) < (to_integer(count(item(pool, _))) +
-                    at(function.entry, (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool))))) + at(function.entry, to_integer(pool->capacity))
-                    + to_integer(count(slot(pool))) + to_integer(old(count(item(pool, _)))) +
-                    to_integer(pool->checked_out));
-                premise 5: to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1) => to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1);
-                less_equal_from_equal 16 => to_integer(pool->checked_out) <= to_integer(old(pool->checked_out) - 1);
-                add 15, 17 => to_integer(pool->checked_out) < to_integer(pool->checked_out);
-                conclusion 18;
-            }
+                    1)))); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1); to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
+                    _)))); to_integer(pool->checked_out) == to_integer(count(item(pool, _))); to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1); };
         }
         have (to_integer(old(count(item(pool, _)))) - 1) <= to_integer(count(item(pool, _))) by {
-            arithmetic_certificate {
-                negated_goal => to_integer(count(item(pool, _))) < (to_integer(old(count(item(pool,
-                    _)))) - 1);
-                premise 0: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) =>
-                    at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool)))));
-                less_equal_from_equal 1 reverse => at(function.entry, (to_integer(pool->checked_out)
-                    + to_integer(count(slot(pool))))) <= at(function.entry,
-                    to_integer(pool->capacity));
-                premise 1: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+            solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer((pool->checked_out - 1)) + to_integer((old(count(slot(pool))) +
-                    1)))) => at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer((pool->checked_out - 1)) + to_integer((old(count(slot(pool))) +
-                    1))));
-                less_equal_from_equal 3 => at(function.entry, to_integer(pool->capacity)) <=
-                    at(function.entry, (to_integer((pool->checked_out - 1)) +
-                    to_integer((old(count(slot(pool))) + 1))));
-                premise 2: to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1)
-                    => to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1);
-                less_equal_from_equal 5 => to_integer(count(slot(pool))) <=
-                    (to_integer(old(count(slot(pool)))) + 1);
-                premise 3: to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
-                    _)))) => to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
-                    _))));
-                less_equal_from_equal 7 reverse => to_integer(old(count(item(pool, _)))) <=
-                    to_integer(old(pool->checked_out));
-                premise 4: to_integer(pool->checked_out) == to_integer(count(item(pool, _))) =>
-                    to_integer(pool->checked_out) == to_integer(count(item(pool, _)));
-                less_equal_from_equal 9 => to_integer(pool->checked_out) <=
-                    to_integer(count(item(pool, _)));
-                add 0, 2 => (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool)))))) <
-                    ((to_integer(old(count(item(pool, _)))) - 1) + at(function.entry,
-                    to_integer(pool->capacity)));
-                add 11, 4 => (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                    at(function.entry, to_integer(pool->capacity))) <
-                    ((to_integer(old(count(item(pool, _)))) - 1) + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    - 1)) + to_integer((old(count(slot(pool))) + 1)))));
-                add 12, 6 => (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                    at(function.entry, to_integer(pool->capacity)) + to_integer(count(slot(pool))))
-                    < ((to_integer(old(count(item(pool, _)))) - 1) + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    - 1)) + to_integer((old(count(slot(pool))) + 1)))) +
-                    (to_integer(old(count(slot(pool)))) + 1));
-                add 13, 8 => (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                    at(function.entry, to_integer(pool->capacity)) + to_integer(count(slot(pool))) +
-                    to_integer(old(count(item(pool, _))))) < ((to_integer(old(count(item(pool, _))))
-                    - 1) + at(function.entry, to_integer(pool->capacity)) + at(function.entry,
-                    (to_integer((pool->checked_out - 1)) + to_integer((old(count(slot(pool))) +
-                    1)))) + (to_integer(old(count(slot(pool)))) + 1) +
-                    to_integer(old(pool->checked_out)));
-                add 14, 10 => (to_integer(count(item(pool, _))) + at(function.entry,
-                    (to_integer(pool->checked_out) + to_integer(count(slot(pool))))) +
-                    at(function.entry, to_integer(pool->capacity)) + to_integer(count(slot(pool))) +
-                    to_integer(old(count(item(pool, _)))) + to_integer(pool->checked_out)) <
-                    ((to_integer(old(count(item(pool, _)))) - 1) + at(function.entry,
-                    to_integer(pool->capacity)) + at(function.entry, (to_integer((pool->checked_out
-                    - 1)) + to_integer((old(count(slot(pool))) + 1)))) +
-                    (to_integer(old(count(slot(pool)))) + 1) + to_integer(old(pool->checked_out)) +
-                    to_integer(count(item(pool, _))));
-                premise 5: to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1) => to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1);
-                less_equal_from_equal 16 reverse => to_integer(old(pool->checked_out) - 1) <= to_integer(pool->checked_out);
-                add 15, 17 => to_integer(pool->checked_out) < to_integer(pool->checked_out);
-                conclusion 18;
-            }
+                    1)))); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1); to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
+                    _)))); to_integer(pool->checked_out) == to_integer(count(item(pool, _))); to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1); };
         }
-        arithmetic_certificate {
-            premise 0: to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) -
-                1) => to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) -
-                1);
-            premise 1: (to_integer(old(count(item(pool, _)))) - 1) <= to_integer(count(item(pool,
-                _))) => (to_integer(old(count(item(pool, _)))) - 1) <= to_integer(count(item(pool,
-                _)));
-            equal_from_bounds 0, 1 => to_integer(count(item(pool, _))) ==
-                (to_integer(old(count(item(pool, _)))) - 1);
-            conclusion 2;
-        }
+        solve() using { to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) -
+                1); (to_integer(old(count(item(pool, _)))) - 1) <= to_integer(count(item(pool,
+                _))); };
     }
     have to_integer(pool->checked_out) == (to_integer(old(pool->checked_out)) - 1) by {
         known();
     }
     have defined((pool->checked_out + count(slot(pool)))) by {
         have (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) >= -2147483648 by {
-            arithmetic_certificate {
-                premise 0: 0 <= to_integer(pool->checked_out) => 0 <= to_integer(pool->checked_out);
-                premise 1: to_integer(count(slot(pool))) == to_integer(old(count(slot(pool)))) + 1 => to_integer(count(slot(pool))) == to_integer(old(count(slot(pool)))) + 1;
-                less_equal_from_equal 1 reverse => to_integer(old(count(slot(pool)))) + 1 <= to_integer(count(slot(pool)));
-                premise 2: to_integer(old(count(slot(pool)))) + 1 >= -2147483648 => to_integer(old(count(slot(pool)))) + 1 >= -2147483648;
-                add 2, 3 => -2147483648 <= to_integer(count(slot(pool)));
-                add 0, 4 => -2147483648 <= to_integer(pool->checked_out) + to_integer(count(slot(pool)));
-                conclusion 5;
-            }
+            solve() using { 0 <= to_integer(pool->checked_out); to_integer(count(slot(pool))) == to_integer(old(count(slot(pool)))) + 1; to_integer(old(count(slot(pool)))) + 1 >= -2147483648; };
         }
         have (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <= 2147483647 by {
-            arithmetic_certificate {
-                negated_goal => 2147483647 < (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool))));
-                premise 0: at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+            solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer((pool->checked_out - 1)) + to_integer((old(count(slot(pool))) +
-                    1)))) => at(function.entry, to_integer(pool->capacity)) == at(function.entry,
-                    (to_integer((pool->checked_out - 1)) + to_integer((old(count(slot(pool))) +
-                    1))));
-                less_equal_from_equal 1 reverse => at(function.entry, (to_integer((pool->checked_out
-                    - 1)) + to_integer((old(count(slot(pool))) + 1)))) <= at(function.entry,
-                    to_integer(pool->capacity));
-                type_range => to_integer(at(function.entry, to_integer(pool->capacity))) <=
-                    2147483647;
-                add 0, 2 => (2147483647 + at(function.entry, (to_integer((pool->checked_out - 1)) +
-                    to_integer((old(count(slot(pool))) + 1))))) < (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool))) + at(function.entry, to_integer(pool->capacity)));
-                add 4, 3 => (2147483647 + at(function.entry, (to_integer((pool->checked_out - 1)) +
-                    to_integer((old(count(slot(pool))) + 1)))) + to_integer(at(function.entry,
-                    to_integer(pool->capacity)))) < (to_integer(pool->checked_out) +
-                    to_integer(count(slot(pool))) + at(function.entry, to_integer(pool->capacity)) +
-                    2147483647);
-                premise 1: to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1) => to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1);
-                less_equal_from_equal 6 => to_integer(pool->checked_out) <= to_integer(old(pool->checked_out) - 1);
-                add 5, 7 => to_integer(pool->checked_out) < to_integer(pool->checked_out);
-                conclusion 8;
-            }
+                    1)))); to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1); };
         }
         known();
     }
@@ -967,25 +334,10 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
     }
     have defined((count(item(pool, _)) + 1)) by {
         have (to_integer(count(item(pool, _))) + to_integer(1)) >= -2147483648 by {
-            arithmetic_certificate {
-                negated_goal => (to_integer(count(item(pool, _))) + to_integer(1)) < -2147483648;
-                premise 0: 0 <= to_integer(count(item(pool, _))) => 0 <= to_integer(count(item(pool,
-                    _)));
-                add 0, 1 => (to_integer(count(item(pool, _))) + to_integer(1) + 0) < (-2147483648 +
-                    to_integer(count(item(pool, _))));
-                conclusion 2;
-            }
+            solve() using { 0 <= to_integer(count(item(pool, _))); };
         }
         have (to_integer(count(item(pool, _))) + to_integer(1)) <= 2147483647 by {
-            arithmetic_certificate {
-                negated_goal => 2147483647 < (to_integer(count(item(pool, _))) + to_integer(1));
-                premise 0: to_integer(count(item(pool, _))) == 0 => to_integer(count(item(pool, _)))
-                    == 0;
-                less_equal_from_equal 1 => to_integer(count(item(pool, _))) <= 0;
-                add 0, 2 => (2147483647 + to_integer(count(item(pool, _)))) <
-                    (to_integer(count(item(pool, _))) + to_integer(1) + 0);
-                conclusion 3;
-            }
+            solve() using { to_integer(count(item(pool, _))) == 0; };
         }
         known();
     }
@@ -995,26 +347,10 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
     }
     have defined((count(item(pool, _)) + 1)) by {
         have (to_integer(count(item(pool, _))) + to_integer(1)) >= -2147483648 by {
-            arithmetic_certificate {
-                negated_goal => (to_integer(count(item(pool, _))) + to_integer(1)) < -2147483648;
-                premise 0: to_integer(count(item(pool, _))) == 1 => to_integer(count(item(pool, _)))
-                    == 1;
-                less_equal_from_equal 1 reverse => 1 <= to_integer(count(item(pool, _)));
-                add 0, 2 => (to_integer(count(item(pool, _))) + to_integer(1) + 1) < (-2147483648 +
-                    to_integer(count(item(pool, _))));
-                conclusion 3;
-            }
+            solve() using { to_integer(count(item(pool, _))) == 1; };
         }
         have (to_integer(count(item(pool, _))) + to_integer(1)) <= 2147483647 by {
-            arithmetic_certificate {
-                negated_goal => 2147483647 < (to_integer(count(item(pool, _))) + to_integer(1));
-                premise 0: to_integer(count(item(pool, _))) == 1 => to_integer(count(item(pool, _)))
-                    == 1;
-                less_equal_from_equal 1 => to_integer(count(item(pool, _))) <= 1;
-                add 0, 2 => (2147483647 + to_integer(count(item(pool, _)))) <
-                    (to_integer(count(item(pool, _))) + to_integer(1) + 1);
-                conclusion 3;
-            }
+            solve() using { to_integer(count(item(pool, _))) == 1; };
         }
         known();
     }

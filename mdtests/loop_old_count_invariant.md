@@ -48,31 +48,9 @@ int32 loop_old_count_invariant(int32 p[3]) {
             have i >= 0 and i <= 3 by {
                 both {
                     have at(region(3).entry, i) >= at(region(3).entry, 0);
-                    arithmetic_certificate signed_int32 {
-                        premise 0: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >=
-                            at(region(3).entry, 0);
-                        premise 1: at(region(3).entry, i) < at(region(3).entry, 3) => at(region(3).entry, i) <
-                            at(region(3).entry, 3);
-                        interval_from_affine 0 (at(region(3).entry, i)) (0) (2147483647);
-                        interval_from_affine 1 (at(region(3).entry, i)) (-2147483648) (2);
-                        interval_intersect 2, 3 (0) (2);
-                        interval_atom (1) (1) (1);
-                        interval_add_bounded 4, 5 (1) (3);
-                        trivial => -1 <= 0;
-                        add 0, 7 => (at(region(3).entry, 0) + -1) <= (at(region(3).entry, i) + 0);
-                        affine_conclusion 8 6 => (i as int32) >= (0 as int32);
-                        conclusion 9;
-                    }
+                    solve() using { at(region(3).entry, i) >= at(region(3).entry, 0); at(region(3).entry, i) < at(region(3).entry, 3); };
                 } and {
-                    arithmetic_certificate signed_int32 {
-                        premise 0: at(region(3).entry, i) < at(region(3).entry, 3) => at(region(3).entry, i) <
-                            at(region(3).entry, 3);
-                        interval_from_affine 0 (at(region(3).entry, i)) (-2147483648) (2);
-                        interval_atom (1) (1) (1);
-                        interval_add_bounded 1, 2 (-2147483647) (3);
-                        affine_conclusion 0 3 => (i as int32) <= (3 as int32);
-                        conclusion 4;
-                    }
+                    solve() using { at(region(3).entry, i) < at(region(3).entry, 3); };
                 }
             }
         }

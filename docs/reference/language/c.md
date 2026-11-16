@@ -826,9 +826,8 @@ Supported C surface includes:
   Multi-character literals and universal character names are rejected. See
   `mdtests/c_numeric_character_escapes.md`
 - signed `+`, `-`, `*`, `/`, and `%`; in a proof, `defined(a + b)` or
-  `defined(a - b)` over `int32` has the explicit step `int32_defined` of
-  `arithmetic_certificate rules`, which checks the exact result range from
-  listed constant `int32` bounds on the operands; `solve` selects it
+  `defined(a - b)` over `int32` follows from ordinary Integer range bounds.
+  `solve` expands the range argument and checks the resulting domain
 - `uint32` `+` and `-` with 32-bit modular results
 - `uint32` `*`, `/`, and `%` with modular multiplication, unsigned division
   and remainder, and division-by-zero undefined behavior
@@ -840,15 +839,10 @@ Supported C surface includes:
   `int64` addition or subtraction whose operands were widened from 32-bit
   values is defined by their source ranges alone, and constant `int64` order
   facts on the operands discharge the obligation for other operands. In a
-  proof, `defined(a + b)` or `defined(a - b)` over `int64` has the explicit
-  step `int64_defined` of `arithmetic_certificate rules`, which checks the
-  same ranges from listed constant bounds; `solve` selects it
+  proof, `defined(a + b)` or `defined(a - b)` over `int64` follows from the
+  same range argument; `solve` expands it to ordinary steps
 - a sum of two `uint32` values widened to `int64` can be bounded using
-  operand bounds. `arithmetic_certificate rules` exposes
-  `unsigned_sum_bound bounds [indices] => proposition;`; it checks only the
-  listed constant bounds and preserves unsigned interpretation through widening.
-  Its result states a native `int64` comparison; comparisons outside that
-  rule result read as Integer arithmetic.
+  explicit operand bounds and ordinary Integer addition laws.
   Narrow unsigned casts retain their source range for subsequent statements
 - `size_t` is the modeled LP64 `uint64` type and can be used for scalar
   arithmetic and array or pointer indices
