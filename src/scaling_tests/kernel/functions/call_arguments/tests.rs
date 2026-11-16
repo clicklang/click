@@ -152,3 +152,35 @@ fn typed_contract_result_lookup_and_update_skip_unrelated_locals() {
         "direct binding operations: {samples:?}"
     );
 }
+
+#[test]
+fn typed_contract_exception_lookup_and_update_skip_unrelated_locals() {
+    let mut samples = Vec::new();
+    for count in [16, 128, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut locals = LocalEnvironment::new();
+        for index in 0..count {
+            locals.set(format!("unrelated_{index}"), int32(index));
+        }
+        locals.set("__click_exception", int32(7));
+        locals.set(CONTRACT_EXCEPTION, int32(11));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..16 {
+                locals.set(CONTRACT_EXCEPTION, int32(11));
+                assert_eq!(
+                    locals.get(CONTRACT_EXCEPTION).unwrap().native().as_ref(),
+                    &int32(11)
+                );
+                assert_eq!(
+                    locals.get("__click_exception").unwrap().native().as_ref(),
+                    &int32(7)
+                );
+            }
+        });
+        samples.push(work);
+    }
+    assert_eq!(
+        samples, [samples[0]; 3],
+        "direct binding operations: {samples:?}"
+    );
+}

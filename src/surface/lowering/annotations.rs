@@ -2784,7 +2784,7 @@ pub(in crate::surface) fn function_contract_summary(
     exceptional_context.values.insert(
         "exception".to_string(),
         SpecExpression::ProgramExpression(ProgramExpression::Variable(
-            (crate::kernel::C_EXCEPTIONAL_RESULT_NAME.to_string()).into(),
+            crate::kernel::CONTRACT_EXCEPTION,
         )),
     );
     for clause in function_block.exceptional_ensures() {

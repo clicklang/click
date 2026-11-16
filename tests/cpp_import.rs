@@ -9379,6 +9379,51 @@ int32 relay(bool should_throw) throws int32 { ensures result == 5; exceptional e
 }
 
 #[test]
+#[ignore = "nightly: exceptional payload namespaces, propagation, expansion, and hostile claim"]
+fn exceptional_payload_is_separate_from_cpp_source_names() {
+    let project = Project::with_fixture(
+        "relay.cpp",
+        "relay",
+        "int helper(int __click_exception, int value) { if (__click_exception == 0) { throw 7; } return value; } int relay(int __click_exception, int value) { return helper(__click_exception, value); }",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "relay.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "relay.cpp";
+int32 helper(int32 __click_exception, int32 value) throws int32 {
+    requires __click_exception == 0;
+    requires value == 3;
+    exceptional ensures exception == 7 and __click_exception == 0 and value == 3 and old(value) == 3;
+}
+int32 relay(int32 __click_exception, int32 value) throws int32 {
+    requires __click_exception == 0;
+    requires value == 3;
+    exceptional ensures exception == 7 and __click_exception == 0 and value == 3 and old(value) == 3;
+}
+"#;
+    check_selected_claim_certificate(&project, &import, source);
+    fs::write(project.directory.join("relay.click"), source).unwrap();
+    let parsed = read_click_project(&project.directory.join("relay.click"), source).unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &parsed,
+        &ProgramInputs::program(&import),
+        "relay.exceptional_ensures_0",
+    )
+    .unwrap();
+    verify_program_prepared_project(
+        &parsed.with_entry_source(expanded),
+        &load_import(&project.config()).unwrap(),
+    )
+    .unwrap();
+    let (before, after) = source.rsplit_once("exception == 7").unwrap();
+    let hostile = format!("{before}exception == 8{after}");
+    fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn nested_return_calls_verify_scalar_types_and_fresh_captures() {
     let cpp = include_str!("fixtures/cpp-verification/return-call/nested.cpp");

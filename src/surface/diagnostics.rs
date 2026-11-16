@@ -5088,6 +5088,7 @@ pub(in crate::surface) fn describe_pointer(
     if matches!(
         pointer.block,
         PointerBlock::ContractResult
+            | PointerBlock::ContractException
             | PointerBlock::AggregateReturn { .. }
             | PointerBlock::AutomaticLocal { .. }
             | PointerBlock::StaticObject { .. }
@@ -5717,6 +5718,7 @@ pub(super) fn describe_program_value(
             if matches!(
                 pointer.pointer().block,
                 PointerBlock::ContractResult
+                    | PointerBlock::ContractException
                     | PointerBlock::AggregateReturn { .. }
                     | PointerBlock::StringLiteral { .. }
                     | PointerBlock::AutomaticLocal { .. }

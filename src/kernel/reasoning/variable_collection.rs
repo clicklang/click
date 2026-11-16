@@ -3640,7 +3640,7 @@ fn collect_pointer_capture_variables(
         | PointerBlock::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        PointerBlock::ContractResult | PointerBlock::AggregateReturn { .. } | PointerBlock::StaticObject { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::Concrete(_)
+        PointerBlock::ContractResult | PointerBlock::ContractException | PointerBlock::AggregateReturn { .. } | PointerBlock::StaticObject { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
         | PointerBlock::ExternalArgument
@@ -5698,6 +5698,7 @@ fn collect_pointer_block_bitvector_variables(
             }
         }
         PointerBlock::ContractResult
+        | PointerBlock::ContractException
         | PointerBlock::AggregateReturn { .. }
         | PointerBlock::StaticObject { .. }
         | PointerBlock::AutomaticLocal { .. }
@@ -6321,6 +6322,7 @@ fn block_variables(block: &PointerBlock, contents: &MemoryBlock) -> BTreeSet<Var
             variables.insert(*variable);
         }
         PointerBlock::ContractResult
+        | PointerBlock::ContractException
         | PointerBlock::AggregateReturn { .. }
         | PointerBlock::StaticObject { .. }
         | PointerBlock::AutomaticLocal { .. }
@@ -6629,6 +6631,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
                 variables.insert(*variable);
             }
             PointerBlock::ContractResult
+            | PointerBlock::ContractException
             | PointerBlock::AggregateReturn { .. }
             | PointerBlock::StaticObject { .. }
             | PointerBlock::AutomaticLocal { .. }
