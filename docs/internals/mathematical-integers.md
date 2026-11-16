@@ -1413,3 +1413,8 @@ Numeric threshold evaluation is a separate `known()` equation followed by a
 rewrite. Conditional guards and operation bounds remain explicit, including
 during replay with implicit solving disabled. This does not broaden `known()`
 to interval search, general coefficient normalization, or memory resolution.
+
+An observation recovered from a retained read can still need the existing
+read-over-write adapter. Its planner keeps the selected normalizer for that
+case; `known()` does not resolve the read. Those observations remain part of
+the separate memory-transport migration.

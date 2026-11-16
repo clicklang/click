@@ -1867,7 +1867,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Prove each of `identities`, `to_integer(a op b) == to_integer(a) op
     /// to_integer(b)` or `to_integer((T)x) == to_integer(x)`, spelled from
     /// `written`: its two type-range bounds by selected-premise arithmetic, then the identity
-    /// by `known` after those two bounds. Each
+    /// by `known` for written operators, retaining selected normalization for
+    /// identities that require the read-over-write adapter. Each
     /// operand was found after its operation, so the reverse order proves
     /// the innermost identity first. Returns the proof with the identities
     /// established and their spellings, or the identity that missed.
@@ -2136,8 +2137,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             let identity_surface = identity.clone();
             let scope = proof.driver().open_have(identity.clone())?;
-            let step = ProofStep::Known;
-            let closed = match scope.driver().apply_step(step) {
+            // Written operators use the local observation rule. A retained
+            // read can still require the legacy read-over-write adapter;
+            // keep that selected normalizer until memory transport is explicit.
+            let closed = match scope.driver().apply_step(ProofStep::Known).or_else(|_| {
+                scope
+                    .driver()
+                    .apply_step(ProofStep::NormalizeUsing(vec![lower, upper]))
+            }) {
                 Ok(closed) => closed,
                 Err(_) => return Ok(Err(failed.clone())),
             };
