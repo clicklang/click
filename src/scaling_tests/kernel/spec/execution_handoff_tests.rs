@@ -256,3 +256,55 @@ fn float_lowering_conversions_keep_growing_operands_shared() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn mixed_call_assembly_keeps_growing_float_arguments_shared() {
+    for result_type in [ProgramType::Int32, ProgramType::Bool] {
+        let mut costs = Vec::new();
+        for size in [8, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut value = MachineTerm::Variable(Variable(999950));
+            for _ in 0..size {
+                value = MachineTerm::Float32Binary {
+                    operator: FloatBinaryOperator::Add,
+                    left: Box::new(value),
+                    right: Box::new(MachineTerm::constant(0x3f80_0000)),
+                };
+            }
+            let expression = SpecExpression::PureFunctionApplication {
+                name: "mixed_float_prefix".into(),
+                arguments: vec![
+                    SpecPureFunctionArgument::Value(SpecExpression::Value(ProgramValue::Float32(
+                        value,
+                    ))),
+                    SpecPureFunctionArgument::Value(SpecExpression::Value(int32(1))),
+                ],
+                result_type,
+                pointer_result: None,
+                result_object_class: None,
+                projection: None,
+            };
+            let exports = KernelTermExport::float_export_count();
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                evaluate_spec_expression_paths_with_loop_entry(
+                    &ExecutionState::new(),
+                    &expression,
+                    None,
+                    &PureFactContext::new(),
+                    &mut ExecutionBudget::new(),
+                )
+                .unwrap()
+            });
+            assert!(matches!(
+                paths[0].value.shared().unwrap().node(),
+                KernelTermNode::Call { .. }
+            ));
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+            costs.push(work);
+        }
+        assert!(
+            costs[0] > 0 && costs[1] <= 5 * costs[0] && costs[2] <= 5 * costs[1],
+            "{costs:?}"
+        );
+    }
+}

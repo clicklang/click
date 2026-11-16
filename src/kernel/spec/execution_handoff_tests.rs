@@ -692,3 +692,146 @@ fn float_lowering_conversions_preserve_bits_roots_and_path_context() {
         }
     }
 }
+
+#[test]
+fn mixed_call_assembly_preserves_typed_roots_without_exports() {
+    // Oracle-only normalization of the pre-existing numeric argument carrier
+    // difference. Production call assembly keeps its shared numeric handles.
+    fn native_call_value(value: SpecValue) -> ProgramValue {
+        let value = value.into_native();
+        let Some(format) = MachineIntegerType::from_program_type(value.program_type()) else {
+            return value;
+        };
+        let Some(MachineTerm::ClickFunctionApplication { name, arguments }) =
+            program_value_bitvector_term(&value)
+        else {
+            return value;
+        };
+        let arguments = arguments
+            .into_iter()
+            .map(|argument| match argument {
+                PureFunctionArgument::SharedMachine(value) => {
+                    PureFunctionArgument::Value(value.ty().value_from_term(value.value().clone()))
+                }
+                argument => argument,
+            })
+            .collect();
+        format.value_from_term(MachineTerm::ClickFunctionApplication { name, arguments })
+    }
+    let _session = crate::kernel::VerificationSession::enter();
+    let algebraic_type = AlgebraicType::parameter("T".into());
+    let algebraic = AlgebraicTerm {
+        algebraic_type: algebraic_type.clone(),
+        node: AlgebraicTermNode::Variable(Variable(999960)),
+    };
+    let pointer = PointerValue::new(
+        Pointer::symbolic(Variable(999961)),
+        ProgramType::Int32Pointer,
+    )
+    .with_pointee_constant(true);
+    let arguments = vec![
+        SpecPureFunctionArgument::Value(sum(MachineIntegerType::UInt32)),
+        SpecPureFunctionArgument::Value(SpecExpression::Value(ProgramValue::Float32(
+            MachineTerm::Float32Binary {
+                operator: FloatBinaryOperator::Add,
+                left: Box::new(MachineTerm::Variable(Variable(999962))),
+                right: Box::new(MachineTerm::constant(0x3f80_0000)),
+            },
+        ))),
+        SpecPureFunctionArgument::Value(SpecExpression::Value(ProgramValue::Parameter(Box::new(
+            algebraic,
+        )))),
+        SpecPureFunctionArgument::Algebraic(SpecAlgebraicExpression {
+            algebraic_type,
+            node: SpecAlgebraicExpressionNode::Variable(Variable(999963)),
+        }),
+        SpecPureFunctionArgument::Integer(SpecIntegerExpression::Term(IntegerTerm::Variable(
+            Variable(999964),
+        ))),
+        SpecPureFunctionArgument::Value(SpecExpression::Value(ProgramValue::Bool(
+            MachineTerm::Constant {
+                format: MachineIntegerType::UInt8,
+                bits: 1,
+            },
+        ))),
+        SpecPureFunctionArgument::Value(SpecExpression::Value(ProgramValue::Pointer(
+            pointer.clone(),
+        ))),
+        SpecPureFunctionArgument::Value(SpecExpression::Value(int32(7))),
+    ];
+    for result_type in [ProgramType::Bool, ProgramType::Int32, ProgramType::UInt64] {
+        let expression = SpecExpression::PureFunctionApplication {
+            name: "mixed_roots".into(),
+            arguments: arguments.clone(),
+            result_type,
+            pointer_result: None,
+            result_object_class: None,
+            projection: None,
+        };
+        let evaluate = |disabled| {
+            let mut execution = ExecutionBudget::new();
+            let mut budget = SpecEvaluation::logical(&mut execution);
+            budget.machine_result_production_disabled = disabled;
+            evaluate_spec_expression_paths_with_bindings_in(
+                &ExecutionState::new(),
+                &expression,
+                &PureFactContext::new(),
+                &BTreeMap::new(),
+                &mut budget,
+            )
+            .unwrap()
+            .pop()
+            .unwrap()
+        };
+        let floats = KernelTermExport::float_export_count();
+        let algebraics = KernelTermExport::algebraic_export_count();
+        let actual = evaluate(false);
+        assert_eq!(KernelTermExport::float_export_count(), floats);
+        assert_eq!(KernelTermExport::algebraic_export_count(), algebraics);
+        let KernelTermNode::Call { arguments, .. } = actual.value.shared().unwrap().node() else {
+            panic!("common call")
+        };
+        assert_eq!(arguments.len(), 8);
+        assert!(matches!(
+            arguments[1].node(),
+            KernelTermNode::FloatBinary { .. }
+        ));
+        assert!(matches!(
+            arguments[2].node(),
+            KernelTermNode::ProgramParameter { .. }
+        ));
+        assert!(matches!(arguments[3].ty(), KernelType::Algebraic(_)));
+        assert_eq!(arguments[4].ty(), &KernelType::Integer);
+        assert_eq!(arguments[5].ty(), &KernelType::Bool);
+        assert!(
+            arguments[6]
+                .pointer_payload()
+                .unwrap()
+                .same_source_payload(&SharedPointerValue::import(&pointer))
+        );
+        let old = evaluate(true);
+        assert_eq!(actual.facts, old.facts);
+        assert_eq!(actual.obligations, old.obligations);
+        assert_eq!(
+            native_call_value(actual.value),
+            native_call_value(old.value)
+        );
+    }
+    for value in [
+        ProgramValue::Void,
+        ProgramValue::Pointer(pointer),
+        ProgramValue::Bool(MachineTerm::Constant {
+            format: MachineIntegerType::UInt8,
+            bits: 2,
+        }),
+    ] {
+        let arguments = vec![SpecCallArgument::Native(PureFunctionArgument::Value(
+            value.clone(),
+        ))];
+        assert!(common_call_arguments(&arguments).is_none());
+        assert_eq!(
+            call_arguments(arguments),
+            vec![PureFunctionArgument::Value(value)]
+        );
+    }
+}
