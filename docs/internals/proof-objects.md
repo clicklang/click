@@ -593,6 +593,20 @@ evidence through ordinary descent obligations, and completed roots require
 no structural source-body walk. Explicit legacy standalone termination plans
 retain their compatibility analyses.
 
+Ordinary and independent termination inputs have separate constructors.
+`ContractBodyProof` retains `CompletedBodyTermination`, whose loop namespace
+and descent authority are nonoptional native outputs of the whole-contract
+root. Program obligation generation selects that typed input by its body
+owner; it never probes a reusable rule for missing evidence and then runs a
+legacy analysis. Completed-body local steps consume retained loop ranking
+and exit evidence directly. Legacy numeric/resource plans are refused when
+opening an ordinary program; standalone termination APIs retain their
+explicit independent adapter. Raw rule candidates already owned by a completed
+body are excluded before that adapter runs. Conservative call inventories are
+captured at body opening, so a missing execution trace does not cause a later
+source-body walk.
+
+
 Concrete loop-exit coverage is fixed in the ordinary body's source namespace
 at opening. Loop/body source mismatch is refused before proof execution.
 Successful `ApplyVerifiedRules` execution publishes coverage for loops it ran
