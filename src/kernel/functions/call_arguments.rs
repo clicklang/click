@@ -179,7 +179,7 @@ pub(super) fn complete_aggregate_return(
         return Err(AggregateReturnRefusal::UninitializedRead);
     }
     let frame = state.next_local_frame;
-    let destination = Memory::frame_local_pointer(frame, "__return");
+    let destination = Memory::aggregate_return_pointer(frame);
     state.set_memory(
         state
             .memory

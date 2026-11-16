@@ -3357,19 +3357,6 @@ fn expand_declared_resource_proposition_one(
             expand_declared_resource_expression(expression, resource_definitions)?,
         )),
 
-        ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => Ok(ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources: resources
-                .into_iter()
-                .map(|r| expand_declared_resource_subject(r, resource_definitions))
-                .collect::<Result<_, _>>()?,
-        }),
-
         ClickProposition::Comparison {
             left,
             operator,

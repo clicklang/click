@@ -136,9 +136,8 @@ impl ProgramState {
 }
 
 pub(crate) struct ProgramTerminationInputs<'a> {
-    pub partial_rules: &'a [VerifiedFunctionRule],
+    pub independent: super::inputs::IndependentTerminationInputs<'a>,
     pub plans: &'a [FunctionTerminationPlan],
-    pub inline_bodies: &'a [&'a ProgramFunction],
     pub assumed_terminating: &'a BTreeSet<String>,
     pub diverging_contracts: &'a BTreeSet<String>,
     pub has_unselected_functions: bool,
@@ -170,14 +169,15 @@ impl CompletedProgramContracts {
 }
 
 impl ProgramContractProof {
-    pub(crate) fn open_with_recursion_declarations(
+    pub(crate) fn open_ordinary(
         requested: BTreeSet<String>,
         declared_diverging: BTreeSet<String>,
         bodyless_declarations: &BTreeSet<String>,
         functions: &[&ProgramFunction],
         plans: &[FunctionTerminationPlan],
     ) -> Result<Self, TerminationError> {
-        let recursion = super::recursion_authority::RecursionDeclarations::open(functions, plans)?;
+        let recursion =
+            super::recursion_authority::RecursionDeclarations::open_ordinary(functions, plans)?;
         Ok(Self::open_inner(
             requested,
             declared_diverging,
@@ -256,33 +256,26 @@ impl ProgramContractProof {
         }
         // These are this scope's native body outputs, including startup and
         // source-only contracts that deliberately expose no modular rule.
-        let mut subjects = inputs
-            .partial_rules
-            .iter()
-            .map(|rule| {
-                charge_termination_work(1);
-                (rule.function.name().to_string(), rule.clone())
-            })
-            .collect::<BTreeMap<_, _>>();
         let mut loop_rules = BTreeMap::<String, Vec<VerifiedLoopRule>>::new();
         for body in &state.bodies {
             charge_termination_work(body.loop_rules().len() + 1);
-            let rule = body.termination_rule();
-            let name = rule.function.name().to_string();
+            let name = body.termination_rule().function.name().to_string();
             loop_rules
                 .entry(name.clone())
                 .or_default()
                 .extend_from_slice(body.loop_rules());
-            subjects.insert(name, rule.clone());
         }
-        let subjects = subjects.into_values().collect::<Vec<_>>();
-        let rules = prepare_independent_loop_exits(&subjects, &loop_rules);
-        let heights = program_termination_height_plan(&rules, inputs.inline_bodies);
-        let obligations = super::obligations::TerminationObligations::generate_with_recursion(
-            &rules,
+        let bodies = super::inputs::TerminationBodyInputs::completed(
+            &state.bodies,
+            inputs.independent.rules,
+            &loop_rules,
+        );
+        let heights = program_termination_height_plan(&bodies.rules, inputs.independent.bodies);
+        let obligations = super::obligations::TerminationObligations::generate_from_inputs(
+            &bodies,
             inputs.plans,
             &loop_rules,
-            inputs.inline_bodies,
+            inputs.independent.bodies,
             &heights,
             inputs.assumed_terminating,
             &self.declared_diverging,
@@ -434,9 +427,11 @@ mod tests {
         rules: &[VerifiedFunctionRule],
     ) -> Result<ProgramTerminationProof, ProgramContractFailure> {
         owner.generate_termination(ProgramTerminationInputs {
-            partial_rules: rules,
+            independent: crate::kernel::IndependentTerminationInputs {
+                rules: rules,
+                bodies: &[],
+            },
             plans: &[],
-            inline_bodies: &[],
             assumed_terminating: &BTreeSet::new(),
             diverging_contracts: &BTreeSet::new(),
             has_unselected_functions: false,
@@ -571,9 +566,11 @@ mod tests {
         );
         let proof = owner
             .generate_termination(ProgramTerminationInputs {
-                partial_rules: &rules,
+                independent: crate::kernel::IndependentTerminationInputs {
+                    rules: &rules,
+                    bodies: &[],
+                },
                 plans: &[],
-                inline_bodies: &[],
                 assumed_terminating: &assumptions,
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,

@@ -1737,6 +1737,10 @@ fn resource_scope_preservation_migrations_expand_and_replay() {
             "mdtests/graph_view_survives_marked_summary_call.md",
             "caller.contract",
         ),
+        (
+            "mdtests/store_geometry_uses_explicit_order_and_transport.md",
+            "keep_first.contract",
+        ),
     ] {
         let (source, sources) = mdtest_sources(fixture);
         let sources = sources

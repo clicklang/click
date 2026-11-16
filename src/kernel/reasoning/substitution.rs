@@ -3115,6 +3115,7 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
             variables.insert(*variable);
         }
         PointerBlock::ContractResult
+        | PointerBlock::AggregateReturn { .. }
         | PointerBlock::StaticObject { .. }
         | PointerBlock::AutomaticLocal { .. }
         | PointerBlock::Concrete(_)
@@ -7989,18 +7990,6 @@ fn substitute_pointer_variable_in_spec_proposition(
                         }
                     }
                 })
-                .collect(),
-        },
-        SpecProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => SpecProposition::ChangesOnly {
-            before: substitute_pointer_variable_in_spec_memory(before, from, to),
-            after: substitute_pointer_variable_in_spec_memory(after, from, to),
-            resources: resources
-                .iter()
-                .map(|r| substitute_pointer_variable_in_spec_resource(r, from, to))
                 .collect(),
         },
         SpecProposition::ResourceSeparate { left, right } => SpecProposition::ResourceSeparate {

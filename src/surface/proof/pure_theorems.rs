@@ -3411,8 +3411,7 @@ pub(super) fn click_function_applications(
                     expression(argument, known_facts, applications);
                 }
             }
-            ClickProposition::ChangesOnly { .. }
-            | ClickProposition::Separate { .. }
+            ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => {}

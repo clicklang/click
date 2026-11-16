@@ -35,6 +35,7 @@ pub(crate) struct WholeContractProof {
     proof: RootProof,
     modular: bool,
     loop_exits: Arc<crate::kernel::termination::loop_evidence::PreparedLoopExits>,
+    declared_calls: Arc<BTreeSet<String>>,
 }
 
 impl std::fmt::Debug for WholeContractProof {
@@ -61,6 +62,7 @@ pub(crate) struct AdmittedContractProof {
 /// completion also needs the enclosing program's termination obligations.
 #[derive(Clone, Debug)]
 pub(crate) struct ContractBodyProof {
+    termination: crate::kernel::termination::inputs::CompletedBodyTermination,
     rule: VerifiedFunctionRule,
     modular: bool,
     loop_rules: Vec<VerifiedLoopRule>,
@@ -172,6 +174,11 @@ impl ContractExecutionOwner {
 }
 
 impl ContractBodyProof {
+    pub(in crate::kernel) fn termination_input(
+        &self,
+    ) -> &crate::kernel::termination::inputs::CompletedBodyTermination {
+        &self.termination
+    }
     pub(crate) fn loop_rules(&self) -> &[VerifiedLoopRule] {
         &self.loop_rules
     }
@@ -186,6 +193,7 @@ impl ContractBodyProof {
 impl WholeContractProof {
     pub(crate) fn open(entry: Arc<PreparedContractEntryCases>) -> Result<Self, String> {
         let function = &entry.function;
+        let declared_calls = Arc::new(crate::kernel::termination::termination_callees(function));
         let loop_exits =
             crate::kernel::termination::loop_evidence::PreparedLoopExits::open(function)?;
         if entry.cases.is_empty() {
@@ -243,6 +251,7 @@ impl WholeContractProof {
             .unwrap_or_else(|_| panic!("the contract root was just opened"));
         let open = goals.into_iter().zip(ids).collect();
         Ok(Self {
+            declared_calls,
             entry,
             open,
             proof,
@@ -354,7 +363,12 @@ impl AdmittedContractProof {
             checked_callees: self.execution.checked_callees.clone(),
             applied_tactics: self.execution.applied_tactics.clone(),
         };
+        let termination =
+            crate::kernel::termination::inputs::CompletedBodyTermination::from_completed_root(
+                self.owner.loop_exits.unknown(),
+            );
         Ok(ContractBodyProof {
+            termination,
             rule,
             modular: self.owner.modular,
             loop_rules: Vec::new(),

@@ -1853,8 +1853,7 @@ fn validate_algebraic_proposition_one(
             }
             Ok(())
         }
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => Ok(()),
@@ -4173,8 +4172,7 @@ fn validate_generic_proposition_types(
             variables.end(scope);
             result
         }
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => Ok(()),

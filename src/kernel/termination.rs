@@ -5,6 +5,8 @@ pub(crate) use ordinary::{
 };
 pub(in crate::kernel) mod descent_completion;
 mod execution;
+pub(in crate::kernel) mod inputs;
+pub(crate) use inputs::IndependentTerminationInputs;
 pub(in crate::kernel) mod loop_evidence;
 mod recursion_authority;
 pub(crate) mod resource_descent;
@@ -4155,7 +4157,7 @@ pub(in crate::kernel) fn merge_checked_callees<'a>(
 /// parameter or local, so such a call goes through that object. Resolving it
 /// to the function would hand the call that function's ranking proof, so it is
 /// left unranked, which is the treatment every indirect call gets.
-fn termination_callees(function: &ProgramFunction) -> BTreeSet<String> {
+pub(in crate::kernel) fn termination_callees(function: &ProgramFunction) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
     statement_calls(&function.source_body, &mut found);
     classify_termination_callees(function, found.into_iter())
@@ -4933,9 +4935,8 @@ pub fn program_verified_function_termination_rules(
     declared_diverging: &BTreeSet<String>,
     diverging_contracts: &BTreeSet<String>,
 ) -> Result<TerminationVerdicts, TerminationError> {
-    let partial_rules = prepare_independent_loop_exits(partial_rules, verified_loop_rules);
-    obligations::TerminationObligations::generate(
-        &partial_rules,
+    obligations::TerminationObligations::generate_independent(
+        partial_rules,
         plan_entries,
         verified_loop_rules,
         inline_bodies,
@@ -6143,9 +6144,11 @@ mod local_descent_tests {
         let owner = ProgramContractProof::open(BTreeSet::new(), BTreeSet::new(), &BTreeSet::new());
         let result = owner
             .generate_termination(ProgramTerminationInputs {
-                partial_rules: &rules,
+                independent: crate::kernel::IndependentTerminationInputs {
+                    rules: &rules,
+                    bodies: &[],
+                },
                 plans: &[],
-                inline_bodies: &[],
                 assumed_terminating: &BTreeSet::new(),
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
@@ -6914,7 +6917,7 @@ mod local_descent_tests {
     fn generation_opens_recursion_and_loop_requirements_without_proving_them() {
         let rules = [self_call_in_loop_rule("drain")];
         let plans = [self_call_in_loop_plan("drain")];
-        let goals = obligations::TerminationObligations::generate(
+        let goals = obligations::TerminationObligations::generate_independent(
             &rules,
             &plans,
             &BTreeMap::new(),

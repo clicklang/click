@@ -2476,17 +2476,16 @@ fn verify_program_in_context(
                 function_environment = function_environment.with_external_function_rule(assumption);
             }
         }
-        let program_contracts =
-            crate::kernel::ProgramContractProof::open_with_recursion_declarations(
-                requested_contracts,
-                declared_diverging.clone(),
-                &bodyless_declarations,
-                &function_environment.linked_functions(),
-                &termination_plans,
-            )
-            .map_err(|error| {
-                ClickError::new(format!("could not open C recursion declarations: {error}"))
-            })?;
+        let program_contracts = crate::kernel::ProgramContractProof::open_ordinary(
+            requested_contracts,
+            declared_diverging.clone(),
+            &bodyless_declarations,
+            &function_environment.linked_functions(),
+            &termination_plans,
+        )
+        .map_err(|error| {
+            ClickError::new(format!("could not open C recursion declarations: {error}"))
+        })?;
         drop(_timing);
         let verified_theorems = verify_theorem_definitions(
             theorem_dependencies,
@@ -3043,9 +3042,11 @@ fn verify_program_in_context(
     }
     let generated_program = program_contracts
         .generate_termination(crate::kernel::ProgramTerminationInputs {
-            partial_rules: &partial_rules,
+            independent: crate::kernel::IndependentTerminationInputs {
+                rules: &partial_rules,
+                bodies: &inline_bodies,
+            },
             plans: &termination_plans,
-            inline_bodies: &inline_bodies,
             assumed_terminating: &assumed_terminating,
             diverging_contracts: &diverging_contracts,
             has_unselected_functions: !unselected_executing_names.is_empty(),

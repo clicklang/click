@@ -331,18 +331,6 @@ pub(super) fn print_proposition(
             },
             describe_contract_expression(expression)
         ),
-        ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => {
-            let mut args = vec![
-                describe_program_point_selector(before),
-                describe_program_point_selector(after),
-            ];
-            args.extend(resources.iter().map(describe_resource_subject));
-            format!("changes_only({})", args.join(", "))
-        }
         ClickProposition::Separate { left, right } => format!(
             "separate({}, {})",
             describe_resource_subject(left),

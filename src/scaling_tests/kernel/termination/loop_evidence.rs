@@ -86,7 +86,7 @@ fn termination_consumes_concrete_exit_authority_without_walking_unrelated_body()
         let rule = root.finish().unwrap().to_reusable_rule().unwrap();
         let rules = [rule];
         let heights = program_termination_height_plan(&rules, &[]);
-        let goals = super::super::super::obligations::TerminationObligations::generate(
+        let goals = super::super::super::obligations::TerminationObligations::generate_independent(
             &rules,
             &[],
             &BTreeMap::new(),

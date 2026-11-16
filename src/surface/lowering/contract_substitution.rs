@@ -65,7 +65,6 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 Ok(ClickProposition::Value(reduced.into_owned()))
             }
         }
-        ClickProposition::ChangesOnly { .. } => Ok(proposition.clone()),
 
         ClickProposition::PredicateCall { name, arguments } if selected(name) => {
             if !active.insert(name.clone()) {
@@ -374,19 +373,6 @@ fn substitute_click_proposition_nonlogical(
         ClickProposition::Value(expression) => Ok(ClickProposition::Value(
             substitute_contract_expression_in(expression, substitutions)?,
         )),
-
-        ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => Ok(ClickProposition::ChangesOnly {
-            before: before.clone(),
-            after: after.clone(),
-            resources: resources
-                .iter()
-                .map(|r| substitute_resource_subject(r, substitutions))
-                .collect::<Result<_, _>>()?,
-        }),
 
         ClickProposition::Comparison {
             left,
@@ -828,11 +814,6 @@ fn collect_click_proposition_binding_names(
         ClickProposition::Value(expression) => {
             collect_contract_expression_binding_names(expression, names)
         }
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                collect_resource_subject_binding_names(r, names);
-            }
-        }
 
         ClickProposition::Comparison { left, right, .. } => {
             collect_contract_expression_binding_names(left, names);
@@ -1209,7 +1190,6 @@ fn rewrite_click_proposition_expression(
             let (value, changed) = expression(value);
             (ClickProposition::Value(value), changed)
         }
-        ClickProposition::ChangesOnly { .. } => (proposition.clone(), false),
 
         ClickProposition::Comparison {
             left,
@@ -2453,18 +2433,6 @@ fn apply_contract_let_expressions_inner(
         ClickProposition::Value(expression) => Ok(ClickProposition::Value(
             apply_contract_lets_to_expression(expression, bindings)?,
         )),
-        ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => Ok(ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources: resources
-                .into_iter()
-                .map(|r| apply_contract_lets_to_resource_subject(r, bindings))
-                .collect::<Result<_, _>>()?,
-        }),
 
         ClickProposition::Comparison {
             left,
@@ -3141,11 +3109,6 @@ fn collect_click_proposition_referenced_bindings_one<N: ReferencedBinding>(
     match proposition {
         ClickProposition::Value(expression) => {
             collect_contract_expression_referenced_bindings(expression, names)
-        }
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                collect_resource_subject_referenced_bindings(r, names);
-            }
         }
 
         ClickProposition::Comparison { left, right, .. } => {

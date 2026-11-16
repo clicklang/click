@@ -2886,8 +2886,7 @@ pub(in crate::surface) fn function_contract_summary(
 fn proposition_supported_in_opaque_contract(proposition: &ClickProposition) -> bool {
     match proposition {
         ClickProposition::Value(_) => true,
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
@@ -4438,7 +4437,6 @@ impl AnnotationLowerer<'_> {
             }
             ClickProposition::Comparison { .. }
             | ClickProposition::FloatClassification { .. }
-            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
@@ -5387,26 +5385,6 @@ impl AnnotationLowerer<'_> {
                     syntax::CFloatClassification::Nan => FloatClassification::Nan,
                 },
             }),
-            ClickProposition::ChangesOnly {
-                before,
-                after,
-                resources,
-            } => {
-                let before = self
-                    .point_environment(before, environment)?
-                    .ok_or("changes_only requires a recorded before state")?;
-                let after = self
-                    .point_environment(after, environment)?
-                    .ok_or("changes_only requires a recorded after state")?;
-                Ok(SpecProposition::ChangesOnly {
-                    before: before.current_memory.clone(),
-                    after: after.current_memory.clone(),
-                    resources: resources
-                        .iter()
-                        .map(|r| self.lower_resource_subject_to_spec(r, &before))
-                        .collect::<Result<_, _>>()?,
-                })
-            }
             ClickProposition::Separate { left, right } => Ok(SpecProposition::ResourceSeparate {
                 left: self.lower_resource_subject_to_spec(left, environment)?,
                 right: self.lower_resource_subject_to_spec(right, environment)?,

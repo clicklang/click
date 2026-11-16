@@ -347,8 +347,7 @@ fn collect_signed_surface_proposition_terms<'a>(
                 collect_signed_surface_terms(end, terms);
                 pending.push(body);
             }
-            ClickProposition::ChangesOnly { .. }
-            | ClickProposition::Separate { .. }
+            ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. }

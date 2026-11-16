@@ -194,3 +194,47 @@ fn contract_result_slot_has_an_exact_surface_spelling() {
         )))
     );
 }
+
+#[test]
+fn aggregate_return_storage_round_trips_the_full_frame_identity() {
+    let source = "int f(void) { return 0; }";
+    for frame in [0, 1, u32::MAX as u64 + 1, u64::MAX] {
+        let text = format!("result.storage(frame, {frame})");
+        let expression = parse_binding_expression(&text, source).unwrap();
+        let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+            pointer,
+        ))) = &expression
+        else {
+            panic!("typed return storage")
+        };
+        assert_eq!(
+            pointer.pointer().block,
+            crate::kernel::PointerBlock::AggregateReturn { frame }
+        );
+        assert_ne!(
+            pointer.pointer().block,
+            crate::kernel::PointerBlock::ContractResult
+        );
+        assert_eq!(pointer.pointer().block.to_string(), text);
+        let raised = crate::surface::diagnostics::describe_pointer(
+            pointer.pointer(),
+            crate::surface::ParameterBinding::default(),
+        );
+        assert_eq!(raised, text);
+        assert_eq!(
+            parse_binding_expression(&raised, source).unwrap(),
+            expression
+        );
+    }
+    for invalid in [
+        "result.storage(frame, -1)",
+        "result.storage(frame, 18446744073709551616)",
+        "result.storage(lifetime, 1)",
+        "result.storage(frame)",
+    ] {
+        assert!(
+            parse_binding_expression(invalid, source).is_err(),
+            "{invalid}"
+        );
+    }
+}

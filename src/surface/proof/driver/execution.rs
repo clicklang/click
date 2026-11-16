@@ -5496,8 +5496,7 @@ fn proof_case_is_stable_program_point_condition(proposition: &ClickProposition) 
                 stable(left, expression_is_stable) && stable(right, expression_is_stable)
             }
             ClickProposition::Not(body) => stable(body, expression_is_stable),
-            ClickProposition::ChangesOnly { .. }
-            | ClickProposition::Separate { .. }
+            ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. }
