@@ -13218,9 +13218,7 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let certificate = |_goal: &str| {
-            format!(
-                r#"solve() using {{ -9223372036854775808 <= to_integer(a); to_integer(a) <= 9223372036854775807; 1 <= to_integer(b); to_integer(b) <= 2147483647; }};"#
-            )
+            r#"solve() using { -9223372036854775808 <= to_integer(a); to_integer(a) <= 9223372036854775807; 1 <= to_integer(b); to_integer(b) <= 2147483647; };"#.to_string()
         };
         let expression = format!("{pure}(to_integer(a), to_integer(b))");
         let observed = format!("to_integer(a {op} b)");
