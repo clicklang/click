@@ -334,17 +334,33 @@ the fixture reader separately from Bitcoin source. It copies four source
 bytes to the output span and advances its pointer/count cursor. It does not
 stand for Bitcoin's `SpanReader` or its exception behavior.
 
-This is **import coverage, not a completed serialization proof**.
-`pinned_bitcoin_read32_imports_but_cursor_read_is_not_yet_verified_offline`
-pins the exact source digest and the remaining ordinary-checking refusal:
-after the first output store, execution reports an uninitialized read before
-the second output accessor call. The source view and its nonoverlap with the
-destination are explicit. A raw C pointer-field byte-copy control succeeds;
-the copied span and nested reference call remain the composition boundary.
-The sidecar retains the intended four-byte meaning and cursor postconditions.
-It must become a positive ordinary/expanded/cold/retained witness before this
-item is counted as serialization coverage. No such proof-mode result is
-claimed for this cursor.
+This is **cursor execution coverage, not a completed serialization proof**.
+`pinned_bitcoin_read32_executes_cursor_but_byte_values_are_not_yet_verified_offline`
+pins the exact source digest and executes all four byte stores and both cursor
+updates. The original source and four byte-value/cursor postconditions remain
+unchanged. Checking reaches the reader's exit, then exhausts the bounded smart
+budget on the third byte's value equality; it must not regress to an
+uninitialized source read. No ordinary/expanded/cold/retained serialization
+proof is claimed.
+
+The former uninitialized read was an initialization-bookkeeping defect. Input
+pointer-field observations could precede the marker for unwritten output.
+Forgetting their cached values after a store retained initialization only for
+automatic storage; the subsequent external read therefore lost evidence it
+already had. Dropped observed cells and run slots now retain that evidence
+whenever an unwritten-object marker makes later reads check initialization.
+This grants no new ownership or view, initializes no unobserved bytes, and
+preserves the compact recording of contiguous constant-offset runs. Unit
+controls cover absent/partial observations and unwritten output; deterministic
+scaling grows unrelated cached cells and dropped runs through 65,536 slots.
+
+The next boundary is the byte-value preservation proof. Retaining the first
+two output-byte equalities succeeds; the third still exhausts bounded smart
+work, and selected intermediate pointer facts lack round-tripping source
+spellings. A pointer call-result naming prototype did not repair the actual
+store's separation spelling and was not retained. Reduce that spelling gap
+before continuing the proof, then require a positive
+ordinary/expanded/cold/retained witness before counting serialization coverage.
 
 The delivered prerequisites are narrower:
 

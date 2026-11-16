@@ -161,10 +161,13 @@ implementation:
   controls. The unchanged `ser_readdata32<FixtureReader>` graph now imports,
   including its nested span temporaries and record template argument. Its
   [cursor witness](../design/object-model-current-audit.md#bitcoin-read32-import-and-remaining-cursor-refusal)
-  still refuses a source read after the first output store; it is not yet
-  a serialization proof. Repair that copied-descriptor/read-preservation
-  boundary and establish ordinary, expanded cold and retained checking before
-  moving on to the real cursor's exception behavior.
+  now executes all four byte copies and both cursor updates: forgetting
+  cached input observations preserves their initialization evidence beside
+  unwritten output. Its byte-value postconditions remain unproved; bounded
+  search stops on the third byte, with intermediate pointer spelling gaps.
+  Repair that spelling/value-preservation boundary and establish ordinary,
+  expanded cold and retained checking before counting serialization coverage
+  or moving on to the real cursor's exception behavior.
   Plain `owns` still requires initialized input and does not express an
   initializer.
 

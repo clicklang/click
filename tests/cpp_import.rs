@@ -19952,3 +19952,76 @@ int32 probe(struct Stream& a, struct left_Stream& b) {
 "#;
     check_return_call_sidecar(&project, &import, proof);
 }
+
+// Frozen project imports must advance with the exporter just as mdtests do.
+// The release installation test independently checks the basic example.
+#[test]
+#[ignore = "nightly: regenerate committed C++ project imports with the pinned exporter"]
+fn committed_cpp_project_imports_match_the_pinned_exporter() {
+    fn copy_tree(from: &Path, to: &Path) {
+        fs::create_dir_all(to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+    fn files(root: &Path, relative: &Path, output: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(root.join(relative)).unwrap() {
+            let entry = entry.unwrap();
+            let path = relative.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                files(root, &path, output);
+            } else {
+                output.push(path);
+            }
+        }
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let exporter = PathBuf::from(std::env::var_os("CLICK_CPP_EXPORTER").unwrap());
+    let refresh = std::env::var("CLICK_REFRESH_CPP_IMPORTS").is_ok_and(|value| value == "1");
+    for relative in [
+        "examples/basic-cpp",
+        "examples/cpp-stack",
+        "examples/multifile-cpp",
+        "examples/integer-languages/cpp",
+        "integrations/bitcoin-core-money-range",
+    ] {
+        let committed = root.join(relative);
+        let temporary = tempfile::tempdir().unwrap();
+        let prepared = temporary.path();
+        copy_tree(&committed, prepared);
+        if prepared.join("input-closure.tar.gz").is_file() {
+            assert!(
+                std::process::Command::new("tar")
+                    .args(["-xzf", "input-closure.tar.gz"])
+                    .current_dir(prepared)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+        click::project::Project::load(&prepared.join(click::project::FILE_NAME))
+            .and_then(|project| project.lock_with_cpp_exporter(Some(&exporter)))
+            .unwrap_or_else(|error| panic!("{relative}: {error}"));
+        let mut generated = vec![PathBuf::from(click::project::LOCK_NAME)];
+        files(prepared, Path::new(".click"), &mut generated);
+        for file in generated {
+            let bytes = fs::read(prepared.join(&file)).unwrap();
+            if refresh {
+                fs::create_dir_all(committed.join(&file).parent().unwrap()).unwrap();
+                fs::write(committed.join(&file), &bytes).unwrap();
+            }
+            assert_eq!(
+                bytes,
+                fs::read(committed.join(&file)).unwrap(),
+                "{relative}/{}: run scripts/refresh-cpp-imports.sh",
+                file.display()
+            );
+        }
+    }
+}

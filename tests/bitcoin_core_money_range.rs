@@ -4805,8 +4805,8 @@ fn pinned_span_nested_parameter_precondition_expands_offline() {
 // Bitcoin's serialization body and endian conversion are unchanged. The
 // fixture reader is selected for body verification; it does not model SpanReader.
 #[test]
-#[ignore = "nightly: pinned Bitcoin read32 import and remaining cursor refusal"]
-fn pinned_bitcoin_read32_imports_but_cursor_read_is_not_yet_verified_offline() {
+#[ignore = "nightly: pinned Bitcoin read32 cursor execution and remaining byte-value refusal"]
+fn pinned_bitcoin_read32_executes_cursor_but_byte_values_are_not_yet_verified_offline() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cpp-byte-output");
     let harness = fs::read_to_string(fixture.join("bitcoin-read32.cpp")).unwrap();
     let source = fs::read_to_string(fixture.join("bitcoin-read32.click")).unwrap();
@@ -4836,13 +4836,26 @@ fn pinned_bitcoin_read32_imports_but_cursor_read_is_not_yet_verified_offline() {
     );
     fs::write(root.join("byte.click"), &source).unwrap();
     let project = read_click_project(&root.join("byte.click"), &source).unwrap();
-    // This pins the remaining refusal, not a completed serialization proof.
-    // The first store checks; the next source read loses initialization.
+    // All four byte stores and both cursor updates execute. The strong
+    // byte-value postconditions remain open; this is not serialization coverage.
+    // In particular this must never regress to an uninitialized source read.
     let error = verify_program_prepared_project(&project, &import)
         .expect_err("promote to ordinary/expanded/cold/retained verification when repaired");
     assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
     let report = error.report();
     assert!(report.contains("FixtureReader"), "{report}");
-    assert!(report.contains("read of uninitialized storage"), "{report}");
+    assert!(
+        !report.contains("read of uninitialized storage"),
+        "{report}"
+    );
+    assert!(report.contains("verification budget exhausted"), "{report}");
+    assert!(
+        report.contains("statement 26"),
+        "reader must reach its exit: {report}"
+    );
+    assert!(
+        report.contains("goal:") && report.contains("2))"),
+        "third byte's value remains open: {report}"
+    );
     fs::remove_dir_all(root).unwrap();
 }
