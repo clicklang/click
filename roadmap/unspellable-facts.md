@@ -116,7 +116,7 @@ Already-shared numeric/float operations and fold/match producers are reused.
 | 9i | Match raising | Consolidate existing spelling with arm bindings. |
 | 9j | Common lowering results | Expose typed shared roots with separately scoped obligations. |
 | 9k | Integer lowering | Remove remaining native Integer result detours. |
-| 9l | Machine-integer lowering | Preserve widths, casts and definedness through the common interface. |
+| 9l | Machine-integer lowering | Symbolic Integer-to-machine results now retain common roots with unchanged bounds (2,014 focused/scaling tests and quality checks passed; conversion fixture fact audit clean). C-expression retention follows a separate comparison-consumer prerequisite. |
 | 9m | Boolean lowering | Keep logical terms distinct from C Boolean carriers. |
 | 9n | Algebraic lowering | Retain constructors, abstract types and program-parameter argument forms. |
 | 9o | Pointer lowering | Preserve complete metadata, state and address identities. |
