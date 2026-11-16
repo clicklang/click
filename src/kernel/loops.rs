@@ -2623,6 +2623,7 @@ fn abstract_loop_exit_states(
         binders.is_empty(),
         &declared_memory,
         assumptions,
+        &contexts,
         &mut restatements,
         variables,
         budget,
@@ -3096,6 +3097,31 @@ fn abstract_loop_exit_binders(
                 binder.name
             ));
         };
+        // Joined fields are fresh values just as call-return fields are.
+        // Retain their declared names at the mint so explicit branch proofs
+        // can cite the exported disjunction through this binder.
+        for (field_index, ((name, _), value)) in joined
+            .schema()
+            .fields()
+            .iter()
+            .zip(joined.fields())
+            .enumerate()
+        {
+            if base.fields().get(field_index) == Some(value) {
+                continue;
+            }
+            if let Some(variable) = crate::kernel::model_fields::algebraic_value_variable(value) {
+                crate::kernel::model_fields::register_model_field_variable(
+                    variable,
+                    crate::kernel::model_fields::ModelFieldOrigin {
+                        identity: binder.identity,
+                        field: std::sync::Arc::from(name.as_str()),
+                        field_index,
+                        minted_by: crate::kernel::model_fields::ModelMint::Join,
+                    },
+                );
+            }
+        }
         let Some(resources) = successor.resources().clone().without_fact_incrementally(
             &ResourceFact::own(Resource::Instance(base)),
             &PureFactContext::new(),
@@ -3584,6 +3610,7 @@ fn abstract_loop_exit_memory(
     no_binders: bool,
     declared_memory: &[MemoryRange],
     assumptions: &PureFactContext,
+    contexts: &[PureFactContext],
     restatements: &mut [LoopExitRestatement],
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
@@ -3639,8 +3666,10 @@ fn abstract_loop_exit_memory(
                 pointer.block
             ));
         };
-        for (restatement, held) in restatements.iter_mut().zip(held) {
-            restatement.pin(&fresh, &held);
+        for (index, (restatement, held)) in restatements.iter_mut().zip(held).enumerate() {
+            let context = contexts.get(index).unwrap_or(assumptions);
+            let named = loop_exit_cell_pin_value(&held, context);
+            restatement.pin(&fresh, &named);
         }
         havoced.push((pointer, fresh));
     }
@@ -3711,6 +3740,24 @@ fn abstract_loop_exit_memory(
         *successor = successor.clone().with_memory(memory);
     }
     Ok(abstracted)
+}
+
+/// Export a proved scalar constant instead of a private loop-body read.
+/// The selected cell supplies the literal index key; no fact or equality class is
+/// enumerated, and this changes a produced equation rather than lowering.
+fn loop_exit_cell_pin_value(value: &ProgramValue, context: &PureFactContext) -> ProgramValue {
+    match value {
+        ProgramValue::Int32(term) | ProgramValue::UInt32(term) => {
+            match crate::kernel::assumptions::exact_signed_constant(term, context) {
+                Some(constant) => match value {
+                    ProgramValue::Int32(_) => int32(MachineTerm::constant(constant as u32)),
+                    _ => uint32(MachineTerm::constant(constant as u32)),
+                },
+                None => value.clone(),
+            }
+        }
+        _ => value.clone(),
+    }
 }
 
 /// The memory ranges a loop's own header declared, rather than folded into one

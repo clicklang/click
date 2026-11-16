@@ -4144,3 +4144,24 @@ fn solve_expands_refuted_memory_disjunction_without_extract() {
     })
     .unwrap();
 }
+
+#[test]
+#[ignore = "nightly: loop exit projection expansion and cold replay"]
+fn solve_expands_loop_exit_projection_without_extract() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/authority_loop_exit_disjunction_ignores_a_closed_guard.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c_sources(source, &sources).unwrap();
+    let expanded = expand_c_claim_source_by_label(source, &sources, "paint.ensures_0").unwrap();
+    assert!(!expanded.contains("extract("), "{expanded}");
+    without_implicit_solve_for_claim("paint.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .unwrap();
+}

@@ -42,9 +42,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
-            let Some(extracted) = attempt::candidate_outcome(Self::publish_selected_fact(
-                &with_guard,
-                &(surface_consequent.clone()),
+            let fact = ClickProposition::Implies(
+                Box::new(surface_guard.clone()),
+                Box::new(surface_consequent.clone()),
+            );
+            let Some(extracted) = attempt::candidate_outcome(with_guard.driver().apply_step(
+                ProofStep::ApplyFactUsing {
+                    fact,
+                    premises: vec![surface_guard.clone()],
+                },
             ))?
             else {
                 continue;

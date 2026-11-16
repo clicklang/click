@@ -4,19 +4,33 @@ use super::*;
 fn disjunction_proof(
     proof: &Proof<'_>,
     source: &Proposition,
+    surface: &ClickProposition,
 ) -> Result<(ClickProposition, Vec<ProofTactic>), ClickError> {
     if let Proposition::Or(left, right) = source {
-        let (left, left_body) = disjunction_proof(proof, left)?;
-        let (right, right_body) = disjunction_proof(proof, right)?;
+        // Keep the selected source's state selectors and comparison types.
+        // Compact forms such as sequence membership instead need their
+        // semantic alternatives spelled explicitly for `cases`.
+        let (left_surface, right_surface) = match crate::surface::split_case_disjunction(surface) {
+            Some(children) => children,
+            None => {
+                let spell = |selected| {
+                    proof.spelled_goal_for_search(selected).ok_or_else(|| {
+                        proof.step_error(
+                            "selected disjunction alternative has no retained Surface spelling",
+                        )
+                    })
+                };
+                (spell(left)?, spell(right)?)
+            }
+        };
+        let (left, left_body) = disjunction_proof(proof, left, &left_surface)?;
+        let (right, right_body) = disjunction_proof(proof, right, &right_surface)?;
         let surface = ClickProposition::Or(Box::new(left), Box::new(right));
         let body = vec![ProofTactic::Cases(ProofCases::from_binary(
             &surface, left_body, right_body,
         ))];
         return Ok((surface, body));
     }
-    let surface = proof.spelled_goal_for_search(source).ok_or_else(|| {
-        proof.step_error("selected disjunction leaf has no retained Surface spelling")
-    })?;
     let opposite = match source {
         Proposition::ConditionIs(condition, value) => {
             Proposition::ConditionIs(condition.clone(), !value)
@@ -32,20 +46,21 @@ fn disjunction_proof(
     } else {
         vec![ProofTactic::Known]
     };
-    Ok((surface, body))
+    Ok((surface.clone(), body))
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Establish one selected fact through ordinary explicit proof syntax.
-    /// A failed candidate leaves the immutable input untouched. There is no
-    /// recursive solve call: each candidate is known, one implication
-    /// application, or cases with known/contradiction leaves, under the current work budget.
+    /// A failed candidate leaves the immutable input untouched. Candidates
+    /// are known, one implication application, or cases with known/contradiction
+    /// leaves. Each runs under the current work budget without recursive solve.
     pub(in crate::surface::proof) fn publish_selected_fact(
         search_input: &Proof<'a>,
         surface: &ClickProposition,
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("publish_selected_fact");
+
         let publish = |body: Vec<ProofTactic>| -> Result<Option<Proof<'a>>, ClickError> {
             let Some(scope) =
                 attempt::candidate_outcome(search_input.driver().open_have(surface.clone()))?
@@ -94,6 +109,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(proof);
         }
         let goal = search_input.lower_cited_surface_proposition(surface, "selected fact")?;
+
         for source in crate::kernel::search::implication_candidates(search_input.facts(), &goal) {
             check_verification_deadline()?;
             let fact = search_input
@@ -122,7 +138,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &goal,
         ) {
             check_verification_deadline()?;
-            let (_, body) = disjunction_proof(search_input, &source)?;
+
+            let source_surface =
+                search_input
+                    .spelled_goal_for_search(&source)
+                    .ok_or_else(|| {
+                        search_input
+                            .step_error("selected disjunction has no retained Surface spelling")
+                    })?;
+
+            let (_, body) = disjunction_proof(search_input, &source, &source_surface)?;
             if let Some(proof) = publish(body)? {
                 return Ok(proof);
             }

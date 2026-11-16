@@ -5363,15 +5363,23 @@ fn synthesize_parameter_field_indexed_int32_load(
     })
 }
 
-/// A scalar field of a struct-pointer local whose cell currently holds
-/// `term`, spelled `local->field`. The layouts come from the installed local
+/// A scalar field of a struct-pointer parameter or local whose cell holds
+/// `term`, spelled `owner->field`. The layouts come from the installed local
 /// layout scope; without one, no local is a candidate.
 fn synthesize_local_struct_pointer_field(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    for owner in struct_owners(parameter_binding, state) {
+    // An abstract cell variable needs its parameter field as a name.
+    // Preserve operation syntax for compound terms: naming an arithmetic
+    // expression by the field currently holding it creates rewrite cycles.
+    let owners = if matches!(term, MachineTerm::Variable(_)) {
+        range_struct_owners(parameter_binding, state)
+    } else {
+        struct_owners(parameter_binding, state)
+    };
+    for owner in owners {
         for (field_name, field) in owner.layout.fields() {
             let value_type = field.interface_type().to_kernel_type();
             if value_type.is_pointer() || value_type.byte_width() == 0 {

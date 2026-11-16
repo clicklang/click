@@ -7028,6 +7028,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let lowered = lower(candidate)?;
             (lowered == *kernel
                 || condition_polarity_equivalent(&lowered, kernel)
+                // A compound fact can quote cached cell values through their
+                // explicit state reads. Match at the same read-over-write
+                // boundary the exact fact index already checks. Atomic source
+                // selection keeps its existing arithmetic spelling policy.
+                || (matches!(kernel, Proposition::And(..) | Proposition::Or(..)) && {
+                    let lowered_reading = crate::kernel::comparison_form(&lowered);
+                    let selected_reading = crate::kernel::comparison_form(kernel);
+                    lowered_reading.as_ref().unwrap_or(&lowered)
+                        == selected_reading.as_ref().unwrap_or(kernel)
+                })
                 // This candidate spells one already-selected premise. Admit
                 // its native/shared equality reading at the same explicit
                 // boundary used when the generated certificate cites it.

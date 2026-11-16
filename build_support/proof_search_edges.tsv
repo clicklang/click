@@ -202,7 +202,7 @@ src/surface/proof/fixed_state_proofs/fact_transport.rs	operation	::check_fixed_s
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::prove_guard	driver	2
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::prove_guard	try_solve_closure	1
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_guarded_consequent_closure	antecedent_is_refuted	1
-src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_guarded_consequent_closure	driver	1
+src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_guarded_consequent_closure	driver	2
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_guarded_consequent_closure	prove_guard	1
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_guarded_consequent_closure	try_solve_closure	2
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_restricted_guarded_consequent	driver	4
@@ -672,7 +672,6 @@ src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::apply_fact_application	driver	1
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_fact_application	driver	3
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_fact_application	try_solve_closure	1
-src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_guarded_consequent_closure	publish_selected_fact	1
 src/surface/proof/smart_closures/fact_projection.rs	search	ProofSearch::publish_selected_fact	driver	4
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::extract_special_conjunct_premises	publish_selected_fact	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_discharged_consequent_closure	publish_selected_fact	2
