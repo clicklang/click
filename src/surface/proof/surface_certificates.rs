@@ -4978,6 +4978,10 @@ pub(super) fn contract_expression_mentions_program_local(
     parameter_names: &BTreeSet<&str>,
 ) -> bool {
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            contract_expression_mentions_program_local(value, parameter_names)
+        }
+
         ContractExpression::Proposition(_) => {
             let mut names = BTreeSet::new();
             collect_contract_expression_referenced_names(expression, &mut names);

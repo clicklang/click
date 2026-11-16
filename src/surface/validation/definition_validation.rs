@@ -2377,6 +2377,18 @@ fn collect_resource_fact_reads_from_contract_expression(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            collect_resource_fact_reads_from_contract_expression(
+                value,
+                predicate_definitions,
+                click_function_definitions,
+                visited_predicates,
+                visited_functions,
+                reads,
+                resource_name,
+            )
+        }
+
         ContractExpression::Proposition(proposition) => {
             collect_resource_fact_reads_from_proposition(
                 proposition,

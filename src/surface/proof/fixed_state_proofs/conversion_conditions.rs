@@ -864,6 +864,8 @@ pub(in crate::surface) fn walk_written_expressions(
     visit(expression);
     let mut children: Vec<&ContractExpression> = Vec::new();
     match expression {
+        ContractExpression::IntegerContext(value) => children.push(value),
+
         ContractExpression::Proposition(proposition) => {
             walk_written_expressions_in_proposition(proposition, visit)
         }

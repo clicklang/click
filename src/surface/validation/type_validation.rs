@@ -655,6 +655,8 @@ fn integer_expression_kind(
         return Some(false);
     }
     match expression {
+        ContractExpression::IntegerContext(_) => Some(true),
+
         ContractExpression::Apply { function, .. } => {
             if let ContractExpression::Binding(name) = function.as_ref()
                 && let Some(ClickType::Function { result, .. }) =
@@ -874,6 +876,8 @@ fn contains_scoped_expression_shape(
         return false;
     }
     match expression {
+        ContractExpression::IntegerContext(value) => contains_scoped_expression_shape(value, shape),
+
         ContractExpression::Proposition(_) => false,
         ContractExpression::Resource(_) => false,
         ContractExpression::RegionResult(_)
@@ -987,6 +991,8 @@ fn contains_integer_expression_signal(
     locals: &BTreeSet<String>,
 ) -> bool {
     match expression {
+        ContractExpression::IntegerContext(_) => true,
+
         ContractExpression::Apply { function, .. } => {
             lambdas::application_result_type(function) == Ok(ClickType::Integer)
         }
@@ -1345,6 +1351,23 @@ pub(super) fn infer_scoped_spec_value_type(
     expected_integer: bool,
 ) -> Result<SpecValueType, ClickError> {
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            let actual = infer_scoped_spec_value_type(
+                value,
+                variables,
+                integer_bindings,
+                click_functions,
+                context,
+                true,
+            )?;
+            if actual != SpecValueType::Integer {
+                return Err(ClickError::new(
+                    "Integer context requires an Integer expression",
+                ));
+            }
+            Ok(SpecValueType::Integer)
+        }
+
         ContractExpression::Binding(name)
             if !variables.contains_key(name)
                 && !integer_bindings.contains(name)
@@ -2745,6 +2768,15 @@ fn infer_spec_value_type(
     context: &str,
 ) -> Result<SpecValueType, ClickError> {
     match expression {
+        ContractExpression::IntegerContext(value) => infer_scoped_spec_value_type(
+            value,
+            variables,
+            &BTreeSet::new(),
+            click_functions,
+            context,
+            true,
+        ),
+
         ContractExpression::Binding(name)
             if !variables.contains_key(name)
                 && callback_binding_type(name, click_functions).is_some() =>
@@ -3806,6 +3838,10 @@ pub(super) fn infer_contract_expression_type(
         return Ok(Some(value_type));
     }
     match expression {
+        ContractExpression::IntegerContext(_) => Err(ClickError::new(
+            "an Integer context is not a C scalar value",
+        )),
+
         ContractExpression::Proposition(_) => {
             Err(ClickError::new("a Prop is not a C scalar value"))
         }
@@ -5205,6 +5241,10 @@ fn validate_contract_expression_calls(
         return validate_contract_expression_calls(&reduced, click_functions, context);
     }
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            validate_contract_expression_calls(value, click_functions, context)
+        }
+
         ContractExpression::Proposition(proposition) => {
             validate_value_proposition_calls(proposition, click_functions, context, true)
         }

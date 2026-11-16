@@ -105,6 +105,8 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         fixed_measure_state(left).or_else(|| fixed_measure_state(right))
     };
     match expression {
+        ContractExpression::IntegerContext(value) => fixed_measure_state(value),
+
         ContractExpression::Proposition(_) => None,
         ContractExpression::Resource(_) => None,
         ContractExpression::RegionResult(_)
@@ -5569,6 +5571,8 @@ impl AnnotationLowerer<'_> {
         lexical_bindings: &mut Vec<(String, Option<ClickType>)>,
     ) -> Option<ClickType> {
         match expression {
+            ContractExpression::IntegerContext(_) => Some(ClickType::Integer),
+
             ContractExpression::Lambda {
                 parameters, result, ..
             } => Some(lambdas::signature(parameters, result)),
@@ -5875,6 +5879,9 @@ impl AnnotationLowerer<'_> {
         use crate::kernel::SpecIntegerExpression;
         check_integer_lowering_work(1)?;
         match expression {
+            ContractExpression::IntegerContext(value) => {
+                return self.lower_contract_integer_to_spec(value, environment);
+            }
             ContractExpression::Old(inner) => {
                 let old_environment =
                     environment.old_state(&self.entry_values, self.entry_state.memory())?;
@@ -6495,6 +6502,10 @@ impl AnnotationLowerer<'_> {
             return self.lower_region_parameter_read(region, name, &accesses, environment);
         }
         match expression {
+            ContractExpression::IntegerContext(_) => {
+                Err("an Integer context is not a C-valued expression".into())
+            }
+
             ContractExpression::Proposition(_) => Err("a Prop is not a C scalar value".into()),
             ContractExpression::Resource(_) => Err("a Resource descriptor is not a C value".into()),
             ContractExpression::Lambda { .. } => {

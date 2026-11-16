@@ -7129,6 +7129,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         return describe_add_contract_expression(expression);
     }
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            format!("({} : Integer)", describe_contract_expression(value))
+        }
         ContractExpression::Proposition(proposition) => {
             format!(
                 "prop {{ {} }}",

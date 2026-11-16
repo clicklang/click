@@ -16038,6 +16038,15 @@ impl Parser {
                     self.expect(Token::RParen)?;
                     return self.parse_range_fold(expression, end);
                 }
+                if self.peek() == Some(&Token::Colon) {
+                    self.position += 1;
+                    let (ty, _) = self.parse_click_type()?;
+                    if ty != ClickType::Integer {
+                        return Err(self.error("expression type context currently requires `Integer`"));
+                    }
+                    self.expect(Token::RParen)?;
+                    return Ok(ContractExpression::IntegerContext(Box::new(self.at_integer_position(expression))));
+                }
                 self.expect(Token::RParen)?;
                 Ok(expression)
             }

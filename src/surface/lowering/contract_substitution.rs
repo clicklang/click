@@ -885,6 +885,10 @@ pub(in crate::surface) fn collect_contract_expression_binding_names(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            collect_contract_expression_binding_names(value, names)
+        }
+
         ContractExpression::Proposition(proposition) => {
             collect_click_proposition_binding_names(proposition, names)
         }
@@ -1597,6 +1601,11 @@ fn rewrite_contract_expression_exact(
         (left, right, left_changed || right_changed)
     };
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            let (value, changed) = unary(value);
+            (ContractExpression::IntegerContext(Box::new(value)), changed)
+        }
+
         ContractExpression::Proposition(proposition) => {
             let (proposition, changed) =
                 rewrite_click_proposition_expression(proposition, source, target, preserve_states);
@@ -2877,6 +2886,10 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
     names: &mut BTreeSet<N>,
 ) {
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            collect_contract_expression_referenced_bindings(value, names)
+        }
+
         ContractExpression::Proposition(proposition) => {
             collect_click_proposition_referenced_bindings(proposition, names)
         }
@@ -3532,13 +3545,7 @@ pub(in crate::surface) fn pure_function_result_value(
         // The declaration supplies the carrier even when the body consists
         // only of contextual numerals (for example, `if P { 1 } else { 0 }`).
         // Keep that context in the defining equation used by `unfold`.
-        let name = "__click_integer_result".to_string();
-        return ContractExpression::Let {
-            name: name.clone(),
-            click_type: Some(ClickType::Integer),
-            value: Box::new(value),
-            body: Box::new(ContractExpression::Binding(name)),
-        };
+        return ContractExpression::IntegerContext(Box::new(value));
     }
     let Some(target_type) = pure_function_result_scalar_type(definition) else {
         return value;
@@ -3853,6 +3860,10 @@ fn substitute_contract_expression_node(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractExpression, String> {
     match expression {
+        ContractExpression::IntegerContext(value) => Ok(ContractExpression::IntegerContext(
+            Box::new(substitute_contract_expression_in(value, substitutions)?),
+        )),
+
         ContractExpression::Proposition(proposition) => Ok(ContractExpression::Proposition(
             Box::new(substitute_click_proposition_in(proposition, substitutions)?),
         )),
@@ -4841,6 +4852,8 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
         contract_expression_as_program_expression_resolving_fields(expression, field)
     };
     match expression {
+        ContractExpression::IntegerContext(_) => None,
+
         ContractExpression::Proposition(_) => None,
         ContractExpression::Resource(_) => None,
         ContractExpression::RegionResult(_)
@@ -4997,6 +5010,8 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
     expression: &ContractExpression,
 ) -> Option<ProgramExpression> {
     match expression {
+        ContractExpression::IntegerContext(_) => None,
+
         ContractExpression::Proposition(_) => None,
         ContractExpression::Resource(_) => None,
         ContractExpression::RegionResult(_)
@@ -5233,6 +5248,31 @@ fn substitute_fresh_synthesis_expression(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn integer_result_context_does_not_create_a_binding() {
+        let source = "function constant() -> Integer { 4294967296 } function choose(x: Integer) -> Integer { if x == 0 { 1 } else { 2 } } theorem check() { ensures constant() == 4294967296 by { unfold(constant()); solve(); } ensures choose(0) == 1 by { unfold(choose(0)); solve(); } }";
+        crate::surface::verify_c_sources(source, &[]).unwrap();
+        let annotated = "theorem check(__click_integer_result: Integer) { ensures ((__click_integer_result + 1) : Integer) == __click_integer_result + 1 by solve(); }";
+        crate::surface::verify_c_sources(annotated, &[]).unwrap();
+    }
+
+    #[test]
+    fn integer_context_preserves_unbounded_arithmetic_and_rejects_machine_claims() {
+        for source in [
+            "theorem check() { ensures (4294967296 + 4294967296 : Integer) == 8589934592 by solve(); }",
+            "theorem check() { ensures (1 : Integer) == 1 by solve(); }",
+        ] {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        }
+        assert!(
+            crate::surface::verify_c_sources(
+                "theorem bad() { ensures (1 : Integer) == 2 by solve(); }",
+                &[]
+            )
+            .is_err()
+        );
+    }
+
     use super::*;
 
     #[test]

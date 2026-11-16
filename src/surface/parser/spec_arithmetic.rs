@@ -503,6 +503,8 @@ impl Parser {
         scope: &mut LocalOperands,
     ) -> bool {
         match expression {
+            ContractExpression::IntegerContext(_) => true,
+
             ContractExpression::Add(left, right)
             | ContractExpression::Subtract(left, right)
             | ContractExpression::Multiply(left, right) => {

@@ -63,6 +63,8 @@ pub(in crate::surface) fn program_expression_uses_variable(
 
 pub(in crate::surface) fn contains_old_expression(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::IntegerContext(value) => contains_old_expression(value),
+
         ContractExpression::Proposition(proposition) => {
             proposition_contains_old_expression(proposition)
         }
@@ -149,6 +151,8 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
 
 pub(in crate::surface) fn contains_resource_count(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::IntegerContext(value) => contains_resource_count(value),
+
         ContractExpression::Proposition(proposition) => {
             proposition_contains_resource_count(proposition)
         }
@@ -365,6 +369,8 @@ pub(in crate::surface) fn collect_resource_count_families(
 ) {
     fn collect_expression(expression: &ContractExpression, families: &mut BTreeSet<String>) {
         match expression {
+            ContractExpression::IntegerContext(value) => collect_expression(value, families),
+
             ContractExpression::Proposition(proposition) => {
                 collect_resource_count_families(proposition, families)
             }
@@ -657,6 +663,8 @@ pub(in crate::surface) fn proposition_contains_old_expression(
 
 pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::IntegerContext(value) => contains_at_expression(value),
+
         ContractExpression::Proposition(proposition) => {
             proposition_contains_at_expression(proposition)
         }
@@ -855,6 +863,8 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
         return;
     }
     match expression {
+        ContractExpression::IntegerContext(value) => collect_click_function_calls(value, calls),
+
         ContractExpression::Proposition(proposition) => {
             collect_click_function_calls_in_proposition(proposition, calls)
         }
@@ -1382,6 +1392,10 @@ fn validate_recursive_calls_in_expression(
         )
     };
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            recurse(value, lower_bounds, structural_subterms)
+        }
+
         ContractExpression::Proposition(proposition) => validate_recursive_calls_in_proposition(
             caller,
             proposition,

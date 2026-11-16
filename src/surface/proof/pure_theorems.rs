@@ -3241,6 +3241,10 @@ pub(super) fn click_function_applications(
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match term {
+            ContractExpression::IntegerContext(value) => {
+                expression(value, known_facts, applications)
+            }
+
             ContractExpression::Proposition(proposition) => {
                 proposition_inner(proposition, known_facts, applications)
             }

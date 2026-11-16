@@ -720,6 +720,8 @@ pub(super) fn syntactic_expression_type(
         return Some(cast_type);
     }
     match expression {
+        ContractExpression::IntegerContext(_) => Some(ClickType::Integer),
+
         ContractExpression::Lambda {
             parameters, result, ..
         } => Some(lambdas::signature(parameters, result)),

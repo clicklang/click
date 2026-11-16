@@ -399,6 +399,10 @@ impl Analysis<'_> {
     ) -> Result<(), String> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
+            ContractExpression::IntegerContext(value) => {
+                self.check_expression(value, bindings, definition)?;
+            }
+
             ContractExpression::Proposition(proposition) => {
                 self.check_proposition(proposition, bindings, definition)?
             }

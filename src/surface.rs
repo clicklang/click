@@ -3028,6 +3028,10 @@ pub(crate) fn collect_current_contract_expression_variables(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            collect_current_contract_expression_variables(value, names)
+        }
+
         ContractExpression::Proposition(proposition) => {
             collect_current_proposition_variables(proposition, names)
         }
@@ -3254,6 +3258,8 @@ pub enum SurfaceTerm {
     /// same source spelling can denote a C literal or an exact Integer when
     /// its surrounding expression supplies that context.
     IntegerLiteral(String),
+    /// Mathematical Integer type context, written `(value : Integer)`.
+    IntegerContext(Box<SurfaceTerm>),
     /// A translation-unit-qualified C object. Retain its spelling for checked
     /// proof expansion while lowering its stable storage identity, not a local.
     QualifiedC {
@@ -7937,6 +7943,10 @@ fn contract_expression_reads_memory(
     callees: &mut Vec<String>,
 ) -> bool {
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            contract_expression_reads_memory(value, callees)
+        }
+
         ContractExpression::Proposition(proposition) => {
             click_proposition_reads_memory(proposition, callees)
         }

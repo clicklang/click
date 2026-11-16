@@ -2129,6 +2129,15 @@ fn validate_algebraic_expression_node(
         );
     }
     match expression {
+        ContractExpression::IntegerContext(value) => validate_algebraic_expression(
+            value,
+            variables,
+            click_functions,
+            predicates,
+            definitions,
+            context,
+        ),
+
         ContractExpression::Proposition(proposition) => {
             validate_algebraic_proposition(
                 proposition,
@@ -3582,6 +3591,8 @@ fn infer_generic_expression_type(
         return Ok(Some(cast_type));
     }
     match expression {
+        ContractExpression::IntegerContext(_) => Ok(Some(ClickType::Integer)),
+
         ContractExpression::Proposition(_) => {
             infer_scoped_spec_value_type(
                 expression,
