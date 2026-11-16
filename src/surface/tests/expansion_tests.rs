@@ -22612,8 +22612,8 @@ fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
 }
 
 #[test]
-#[ignore = "nightly: original arena allocation search-loop expansion and replay"]
-fn original_arena_alloc_search_loop_expands_without_transport_and_rechecks() {
+#[ignore = "nightly: original arena allocation loops expansion and replay"]
+fn original_arena_alloc_loops_expand_without_transport_and_recheck() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let sidecar = std::fs::read_to_string(root.join("examples/arena/arena_cells.click")).unwrap();
     let definitions = sidecar.split("verifying \"arena_init.c\";").next().unwrap();
@@ -22638,22 +22638,25 @@ fn original_arena_alloc_search_loop_expands_without_transport_and_rechecks() {
     let sources = [("arena_alloc.c", c.as_str())];
     let expanded =
         expand_c_claim_source_by_label(&source, &sources, "arena_alloc.contract").unwrap();
-    let scan = expanded
-        .split("loop as find_first_free_run {")
-        .nth(1)
-        .unwrap();
-    let mut depth = 1usize;
-    let end = scan
-        .char_indices()
-        .find_map(|(index, ch)| {
-            match ch {
-                '{' => depth += 1,
-                '}' => depth -= 1,
-                _ => {}
-            }
-            (depth == 0).then_some(index)
-        })
-        .unwrap();
-    assert!(!scan[..end].contains("transport("), "{expanded}");
+    for loop_name in ["find_first_free_run", "mark_free_run"] {
+        let marker = format!("loop as {loop_name} {{");
+        let body = expanded.split(&marker).nth(1).unwrap();
+        let mut depth = 1usize;
+        let end = body
+            .char_indices()
+            .find_map(|(index, ch)| {
+                match ch {
+                    '{' => depth += 1,
+                    '}' => depth -= 1,
+                    _ => {}
+                }
+                (depth == 0).then_some(index)
+            })
+            .unwrap();
+        assert!(
+            !body[..end].contains("transport("),
+            "{loop_name}: {expanded}"
+        );
+    }
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
