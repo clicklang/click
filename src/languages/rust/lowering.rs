@@ -2222,10 +2222,14 @@ impl Context<'_> {
 
     fn expr(&mut self, e: &E) -> Result<ProgramExpression, String> {
         match e {
-            E::CallResult { call, function } => Ok(ProgramExpression::StepResult {
+            E::CallResult {
+                call,
+                function,
+                keeps,
+            } => Ok(ProgramExpression::StepResult {
                 step: *call,
                 origin: crate::kernel::StepOrigin::Call(function.clone()),
-                ends: true,
+                ends: !*keeps,
             }),
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
             E::RangeHasNext { iterator } => self.range_has_next(iterator),
@@ -2252,6 +2256,10 @@ impl Context<'_> {
                     "{option}_some"
                 )))
             }
+            E::VariantIs { value, variant } => Ok(ProgramExpression::EnumIs {
+                value: Box::new(self.expr(value)?),
+                variant: variant.clone(),
+            }),
             E::ChunkOptionSlice { .. } | E::ChunkRemainder { .. } | E::ArrayToSlice { .. } => {
                 Err("Rust slices require pointer-plus-length preparation".into())
             }

@@ -55,12 +55,19 @@ impl ResourceContext {
         #[cfg(test)]
         let _fast =
             crate::kernel::search::FastOperationScope::enter("returned flat body admission");
-        for piece in body.owned_memory_frontier() {
-            let _checking = crate::instrumentation::CheckingWorkScope::new(
-                "admit returned flat memory leaf",
-                1,
-            );
+        for piece in body.boundary() {
+            let _checking =
+                crate::instrumentation::CheckingWorkScope::new("admit returned ownership leaf", 1);
             crate::instrumentation::record_deterministic_work(1);
+            if let Some(entry) = self.exclusive_boundary_owner(piece) {
+                return FlatBodyAdmission::Conflict {
+                    piece: Box::new(piece.clone()),
+                    held: Box::new(self.fact(entry).clone()),
+                };
+            }
+            if piece.memory_own_range().is_none() {
+                continue;
+            }
             match self.constant_owned_overlap(piece, assumptions) {
                 ConstantOwnedOverlap::Clear => {}
                 ConstantOwnedOverlap::Overlap(entry) => {
@@ -73,6 +80,19 @@ impl ResourceContext {
             }
         }
         FlatBodyAdmission::Admitted
+    }
+
+    /// Select one retained exclusive owner by the explicit resource identity.
+    pub(super) fn exclusive_boundary_owner(&self, piece: &ResourceFact) -> Option<ResourceEntryId> {
+        let entries = match piece.resource() {
+            Resource::Instance(instance) => self.storage.index.instances.get(&instance.identity),
+            Resource::PopulationAuthority(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_) => self.storage.index.by_resource.get(piece.resource()),
+            _ => None,
+        }?;
+        entries.iter().next().copied()
     }
 
     /// Admit explicit resources using maintained indexes only. This operation

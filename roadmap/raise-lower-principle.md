@@ -454,6 +454,20 @@ algebraic-read state parity, opaque-index refusal and linear traversal of growin
 shared address DAGs with zero machine exports. Quality and five exact regular
 pointer fixtures passed, with zero fact-stability differences.
 
+### 9v Contract-claim inputs
+
+Contract exit views bind retained return and exception values directly into
+locals instead of exporting them to native values first. The common binding
+helper uses the same unqualified local rules, including pointer qualifier
+normalization. Entry-state views and claim obligations are unchanged.
+
+Focused coverage preserves machine, float, logical Boolean, algebraic and
+complete pointer roots while comparing the former native binding behavior.
+Growing return operands take constant deterministic preparation work and cause
+zero machine exports. All 2,152 API, specification, execution-value, expression
+and scaling checks passed, as did quality checks and five exact regular
+return/exception fixtures with zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

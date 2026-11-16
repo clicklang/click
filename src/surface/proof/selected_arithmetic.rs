@@ -6,12 +6,11 @@
 //! is never negative. Those facts reach that arithmetic as the steps a proof would
 //! write by hand: each connected machine order fact is carried to `Integer`
 //! by `known` (a comparison of observations is the native comparison),
-//! and each unsigned value's observation gets its type range by an explicit
-//! `type_range` certificate.
-//! It then runs over the original and the carried facts, and only
-//! the carried facts its certificate cites are kept, so the expansion holds
-//! the bridges the proof needs and no others. Every step is an explicit
-//! arithmetic certificate or `known`; nothing here is trusted.
+//! and each unsigned value's observation gets its type range by `known()`.
+//! Planning uses the original and carried facts, retaining only the bridges
+//! the resulting proof needs. Expansion writes ordinary Integer law
+//! applications, explicit range proofs, and `known()` observation identities;
+//! legacy certificate routes remain for unmigrated forms. Planning is untrusted.
 
 use super::wide_arithmetic::{
     Carrier, Relation, have, operation_identity, relate, relation_parts, to_integer, type_range,
@@ -737,7 +736,8 @@ theorem identity(x: {ty}) {{
         let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
             crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1).unwrap();
-        assert!(expanded.contains("normalize() using"), "{expanded}");
+        assert!(!expanded.contains("normalize("), "{expanded}");
+        assert!(expanded.contains("known();"), "{expanded}");
         without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
         let omitted = source.replace(&format!("using {{ {bound}; }}"), "using {}");
         assert!(
@@ -769,8 +769,8 @@ theorem identity(x: {ty}) {{
     /// `solve` plans a product's in-range identity at a format other than
     /// `int32`. At `uint16` the lower bound `0 <= to_integer(a) *
     /// to_integer(b)` is no fact; it comes from the operands' type ranges by
-    /// `integer_product_bounds`. The expansion writes that certificate and
-    /// the identity, and replays with no search.
+    /// an explicit product-lower-bound library application. The expansion
+    /// retains the identity separately and replays with no search.
     #[test]
     fn solve_plans_a_product_identity_from_its_operand_ranges() {
         let source = r#"
@@ -792,7 +792,9 @@ theorem product_identity(a: uint16, b: uint16) {
         let expanded =
             crate::surface::expand_c_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
         assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-        assert!(expanded.contains("normalize() using"), "{expanded}");
+        assert!(expanded.contains("::product_lower_bound("), "{expanded}");
+        assert!(!expanded.contains("normalize("), "{expanded}");
+        assert!(expanded.contains("known();"), "{expanded}");
         without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
         // Without the upper bound the product may wrap; nothing gives it.
         let unbounded =

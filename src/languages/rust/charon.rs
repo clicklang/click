@@ -30,6 +30,7 @@ mod split_slices;
 mod split_slices_tests;
 mod temporaries;
 mod traits;
+mod user_iterators;
 mod vec_methods;
 
 use super::profile;
@@ -607,6 +608,8 @@ struct Adapter<'a> {
     /// The `Fn::call` methods of closures, imported as the closures, with
     /// each closure's state type.
     closure_calls: BTreeMap<a::FunDeclId, a::TypeDeclId>,
+    /// The names of the crate's own `Iterator::next` functions.
+    user_iterator_nexts: BTreeSet<String>,
     /// The variables each closure captures, by its state type.
     closure_captures: BTreeMap<a::TypeDeclId, Vec<closures::Capture>>,
     /// The callable type of each type parameter of the function being
@@ -1399,6 +1402,9 @@ impl BodyAdapter<'_, '_> {
             return Ok(Some(statement));
         }
         if let Some(statement) = self.chunk_call(t)? {
+            return Ok(Some(statement));
+        }
+        if let Some(statement) = self.user_iterator_into_iter(t)? {
             return Ok(Some(statement));
         }
         let u::TerminatorKind::Call { call, .. } = &t.kind else {
@@ -2929,6 +2935,7 @@ pub(super) fn decode_crate(
         drop_glues: BTreeMap::new(),
         closure_shims: BTreeMap::new(),
         closure_calls: BTreeMap::new(),
+        user_iterator_nexts: BTreeSet::new(),
         closure_captures: BTreeMap::new(),
         callable_parameters: std::cell::RefCell::new(Vec::new()),
         trait_impl_methods: BTreeMap::new(),
@@ -3141,6 +3148,10 @@ pub(super) fn decode_crate(
                     if tr.item_meta.lang_item != Some(LangItem::Drop) {
                         let name = if adapter.is_default_method(f) {
                             adapter.default_constructor_name(f)?
+                        } else if Adapter::is_core_iterator(tr) {
+                            let name = adapter.user_iterator_next_name(f)?;
+                            adapter.user_iterator_nexts.insert(name.clone());
+                            name
                         } else {
                             adapter.assignment_operator_name(f)?
                         };
@@ -3739,6 +3750,7 @@ pub(super) fn decode_crate(
         }
         traits::wrap_object_coercions(&mut blocks, coercions)?;
         protocol::split_next_branches(&mut blocks)?;
+        user_iterators::test_user_next_results(&mut blocks, &adapter.user_iterator_nexts);
         panics::assert_branches(&mut blocks);
         temporaries::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
@@ -4327,7 +4339,6 @@ mod tests {
             include_bytes!("../../../design/charon-trial/chunks/chunks.rs"),
         )
         .unwrap();
-        // The fixture's unit imports its iterators as library values.
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         ProgramVerificationSession::new_program_prepared(
             include_str!("../../../design/charon-trial/chunks/chunks.click"),

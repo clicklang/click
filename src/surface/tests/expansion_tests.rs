@@ -16083,14 +16083,11 @@ int32 select_when_positive(int32 limit, int32 left, int32 right) {
     verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!("expanded conditional proof failed independent verification: {error:?}\n{expanded}")
     });
-    let uncited = expanded.replacen(
-        "normalize() using {\n        limit > 0;\n    }",
-        "normalize();",
-        1,
-    );
-    assert_ne!(uncited, expanded, "{expanded}");
-    verify_c_sources(&uncited, &sources)
-        .expect_err("dropping the cited premise must leave the branch unresolved");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    let unguarded = expanded.replace("    requires limit > 0;\n", "");
+    assert_ne!(unguarded, expanded, "{expanded}");
+    verify_c_sources(&unguarded, &sources)
+        .expect_err("dropping the guard must leave the branch unresolved");
     let wrong_branch = click_source.replace(
         "if limit > 0 { left } else { right }",
         "if limit > 0 { right } else { left }",
@@ -17224,7 +17221,11 @@ fn restricted_solve_does_not_borrow_the_ambient_equality_graph() {
     for source in [source.to_string(), source.replace("int32", "int32*")] {
         for goal in ["a == c", "(if a == c { 7 } else { 0 }) == 7"] {
             let omitted = source.replace("ensures a == c", &format!("ensures {goal}"));
-            assert!(verify_c_sources(&omitted, &[]).is_err());
+            assert!(
+                verify_c_sources(&omitted, &[]).is_err(),
+                "{omitted}\n{}",
+                expand_c_claim_source_by_label(&omitted, &[], "restricted.ensures_0").unwrap()
+            );
             let selected = omitted.replace("using { a == b; }", "using { a == b; b == c; }");
             verify_c_sources(&selected, &[]).expect("the selected graph establishes transitivity");
             // The simple tactic deliberately has broader ambient semantics.

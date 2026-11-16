@@ -100,18 +100,8 @@ impl ResourceContext {
     ) -> Option<(ResourceFact, ResourceFact)> {
         for piece in frontier {
             crate::instrumentation::record_deterministic_work(1);
-            let exclusive = match piece.resource() {
-                Resource::Instance(instance) => {
-                    self.storage.index.instances.get(&instance.identity)
-                }
-                Resource::PopulationAuthority(_)
-                | Resource::MutexGuard(_)
-                | Resource::MutexLive(_)
-                | Resource::MutexUse(_) => self.storage.index.by_resource.get(piece.resource()),
-                _ => None,
-            };
-            if let Some(entry) = exclusive.and_then(|entries| entries.iter().next()) {
-                return Some((piece.clone(), self.fact(*entry).clone()));
+            if let Some(entry) = self.exclusive_boundary_owner(piece) {
+                return Some((piece.clone(), self.fact(entry).clone()));
             }
             let held = match self.constant_owned_overlap(piece, assumptions) {
                 ConstantOwnedOverlap::Clear => None,
