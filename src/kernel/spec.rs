@@ -7631,7 +7631,6 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             result_type,
             pointer_result,
             result_object_class,
-            projection,
         } => evaluate_spec_pure_function_application_paths_in(
             SpecScope { state, ..scope },
             name,
@@ -7639,7 +7638,6 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             *result_type,
             pointer_result.as_deref(),
             result_object_class.as_ref(),
-            projection.as_ref(),
             assumptions,
             budget,
         )?,
@@ -7790,7 +7788,6 @@ fn evaluate_spec_pure_function_application_paths_in(
     result_type: ProgramType,
     pointer_result: Option<&PurePointerResult>,
     result_object_class: Option<&crate::kernel::effective_type::CAccessClass>,
-    projection: Option<&PureProjection>,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
@@ -7832,33 +7829,6 @@ fn evaluate_spec_pure_function_application_paths_in(
     }
     let mut results = Vec::new();
     for (arguments, facts, obligations) in paths {
-        // A field projection of a constructed value is that field, by the
-        // function's definition: the term depends on the argument's own
-        // shape and on no fact.
-        if let Some(value) = projection.and_then(|projection| {
-            projected_field(
-                projection,
-                &arguments,
-                result_type,
-                !budget.machine_result_production_disabled,
-            )
-        }) {
-            results.push(SpecExpressionPath {
-                value: if result_type.is_pointer() && !budget.machine_result_production_disabled {
-                    value.retain_pointer_result()
-                } else if !budget.machine_result_production_disabled {
-                    value
-                        .retain_algebraic_result()
-                        .retain_float_result()
-                        .retain_boolean_result()
-                } else {
-                    value
-                },
-                facts,
-                obligations,
-            });
-            continue;
-        }
         if !budget.machine_result_production_disabled
             && let Some(format) = MachineIntegerType::from_program_type(result_type)
         {
@@ -8029,65 +7999,6 @@ fn evaluate_spec_pure_function_application_paths_in(
         });
     }
     Ok(results)
-}
-
-/// The field `projection` selects, when its argument is a value built with
-/// the projection's constructor and the field is a C value of the result's
-/// type.
-fn projected_field(
-    projection: &PureProjection,
-    arguments: &[SpecCallArgument],
-    result_type: ProgramType,
-    retain: bool,
-) -> Option<SpecValue> {
-    let argument = arguments.get(projection.argument)?;
-    let shared = match argument {
-        SpecCallArgument::Shared(root) => Some(match root.node() {
-            KernelTermNode::ProgramParameter { operand } => operand,
-            _ => root,
-        }),
-        _ => None,
-    };
-    if let Some(root) = shared
-        && let KernelTermNode::Constructor(constructor) = root.node()
-    {
-        let field = constructor.field(&projection.variant, projection.field)?;
-        if field.ty() != &KernelType::Program(result_type)
-            && !(field.ty() == &KernelType::Bool && result_type == ProgramType::Bool)
-        {
-            return None;
-        }
-        if let KernelTermNode::Legacy(value) = field.node() {
-            return match value.value() {
-                PureFunctionArgument::Value(value) => Some(value.clone().into()),
-                _ => None,
-            };
-        }
-        if retain {
-            return Some(field.clone().into());
-        }
-        return match KernelTermExport::default().argument(field).ok()? {
-            PureFunctionArgument::Value(value) => Some(value.into()),
-            _ => None,
-        };
-    }
-    let term = match argument.native_descriptor()? {
-        PureFunctionArgument::Algebraic(term) => term,
-        PureFunctionArgument::Value(ProgramValue::Parameter(term)) => term.as_ref(),
-        _ => return None,
-    };
-    let AlgebraicTermNode::Constructor { variant, fields } = &term.node else {
-        return None;
-    };
-    if variant != &projection.variant {
-        return None;
-    }
-    match fields.get(projection.field)? {
-        AlgebraicValue::Program(value) if value.program_type() == result_type => {
-            Some(value.clone().into())
-        }
-        _ => None,
-    }
 }
 
 /// Instantiate the body's pointer origins with this call's actual values.
@@ -9061,12 +8972,21 @@ fn evaluate_spec_if_paths_in(
             &condition_path.facts,
             &condition_path.obligations,
         );
-        // Logical expressions must have the same shape at declaration and
-        // application sites. Ambient proof facts justify explicit reductions,
-        // not a different expression during lowering. The only branch this
-        // lowering decides is one a literally constant condition folds away;
-        // every other condition lowers both branches.
-        let condition_truth = constant_spec_condition_value(&condition_path.proposition);
+        // A retained order guard is part of the conditional's syntax even
+        // when its two literal operands determine its truth. Checking may
+        // select an arm; logical lowering retains both guarded values.
+        let retained_order = !budget.machine_result_production_disabled
+            && matches!(&condition_path.proposition,
+                Proposition::ConditionIs(ConditionTerm::Compare { format, relation, left, right }, _)
+                if *relation != CompareRelation::Equal
+                    && matches!(format, MachineIntegerType::Int32 | MachineIntegerType::UInt32 | MachineIntegerType::Int64 | MachineIntegerType::UInt64)
+                    && format.constant_from_term(left).is_some()
+                    && format.constant_from_term(right).is_some());
+        let condition_truth = if retained_order {
+            None
+        } else {
+            constant_spec_condition_value(&condition_path.proposition)
+        };
 
         let branch_paths = match condition_truth {
             Some(true) => evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -9089,56 +9009,98 @@ fn evaluate_spec_if_paths_in(
                 // same assumptions, so their terms do not depend on the guard.
                 let condition = &condition_path.proposition;
                 let negated_condition = negated_lowered_condition(condition);
-                let then_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    scope,
-                    then_branch,
-                    &branch_assumptions,
-                    budget,
-                )?;
-                let else_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    scope,
-                    else_branch,
-                    &branch_assumptions,
-                    budget,
-                )?;
-                let mut branch_paths = Vec::new();
-                for then_path in then_paths {
-                    let then_obligations =
-                        obligations_owed_under(&then_path.obligations, condition, |guard, owed| {
-                            Proposition::Implies(Box::new(guard), Box::new(owed))
-                        });
-                    for else_path in &else_paths {
-                        let else_obligations = obligations_owed_under(
-                            &else_path.obligations,
-                            &negated_condition,
-                            |_, owed| Proposition::Or(Box::new(condition.clone()), Box::new(owed)),
-                        );
-                        let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                            &then_path.facts,
-                            &then_obligations,
-                            &else_path.facts,
-                            &else_obligations,
-                            &branch_assumptions,
-                        ) else {
-                            continue;
-                        };
-                        let Some(value) = SpecValue::conditional(
-                            &condition_path.proposition,
-                            &then_path.value,
-                            &else_path.value,
-                            !budget.machine_result_production_disabled,
-                        )?
-                        else {
-                            continue;
-                        };
-                        branch_paths.push(SpecExpressionPath {
-                            value,
-                            facts,
-                            obligations,
-                        });
+                let scalar = |path: &SpecExpressionPath| {
+                    path.value.machine().is_some_and(|(format, _)| {
+                        matches!(
+                            format,
+                            MachineIntegerType::Int32
+                                | MachineIntegerType::UInt32
+                                | MachineIntegerType::Int64
+                                | MachineIntegerType::UInt64
+                        )
+                    }) || path.value.boolean().is_some()
+                };
+                let mut evaluate = |expression| {
+                    evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                        scope,
+                        expression,
+                        &branch_assumptions,
+                        budget,
+                    )
+                };
+                let (then_paths, else_paths) = if retained_order
+                    && let Some(truth) = constant_spec_condition_value(condition)
+                {
+                    let selected = evaluate(if truth { then_branch } else { else_branch })?;
+                    // Other result families keep their existing selected-arm
+                    // representation. Do not evaluate their unselected arm.
+                    let other = if selected.first().is_some_and(scalar) {
+                        evaluate(if truth { else_branch } else { then_branch })?
+                    } else {
+                        Vec::new()
+                    };
+                    if truth {
+                        (selected, other)
+                    } else {
+                        (other, selected)
                     }
+                } else {
+                    (evaluate(then_branch)?, evaluate(else_branch)?)
+                };
+                let scalar_arms = then_paths
+                    .first()
+                    .zip(else_paths.first())
+                    .is_some_and(|(left, right)| scalar(left) && scalar(right));
+                if retained_order
+                    && !scalar_arms
+                    && let Some(truth) = constant_spec_condition_value(condition)
+                {
+                    if truth { then_paths } else { else_paths }
+                } else {
+                    let mut branch_paths = Vec::new();
+                    for then_path in then_paths {
+                        let then_obligations = obligations_owed_under(
+                            &then_path.obligations,
+                            condition,
+                            |guard, owed| Proposition::Implies(Box::new(guard), Box::new(owed)),
+                        );
+                        for else_path in &else_paths {
+                            let else_obligations = obligations_owed_under(
+                                &else_path.obligations,
+                                &negated_condition,
+                                |_, owed| {
+                                    Proposition::Or(Box::new(condition.clone()), Box::new(owed))
+                                },
+                            );
+                            let Some((facts, obligations)) =
+                                merge_execution_pure_facts_and_obligations(
+                                    &then_path.facts,
+                                    &then_obligations,
+                                    &else_path.facts,
+                                    &else_obligations,
+                                    &branch_assumptions,
+                                )
+                            else {
+                                continue;
+                            };
+                            let Some(value) = SpecValue::conditional(
+                                &condition_path.proposition,
+                                &then_path.value,
+                                &else_path.value,
+                                !budget.machine_result_production_disabled,
+                            )?
+                            else {
+                                continue;
+                            };
+                            branch_paths.push(SpecExpressionPath {
+                                value,
+                                facts,
+                                obligations,
+                            });
+                        }
+                    }
+                    branch_paths
                 }
-                branch_paths
             }
         };
 

@@ -4,8 +4,9 @@
 occurrence of the call `f(n)` in the goal by one layer of its body. A call of
 the same function at another argument, `f(m)`, stays folded, and so does the
 recursive call in the body of `steps`. The refreshed goal is lowered again,
-which evaluates the constant `if` condition of `steps(2)`; a refreshed goal
-that is merely true still needs a closer, here `normalize()`.
+retaining the constant order guard of `steps(2)`. Checked normalization selects its false arm and uses the explicit
+`steps(1) == 0` premise. A refreshed goal that is merely true still needs a
+closer, here `normalize()`.
 
 ```click
 function f(x: int32) -> int32 { x }
@@ -29,6 +30,7 @@ theorem one_layer() {
     requires steps(1) == 0;
     ensures steps(2) == 0 by {
         unfold(steps(2));
+        normalize() using { steps(1) == 0; };
     }
 }
 

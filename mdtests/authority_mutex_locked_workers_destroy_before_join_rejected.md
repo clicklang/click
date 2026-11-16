@@ -118,5 +118,5 @@ int32 run() {
 ```
 
 ```expect
-fail: Requires owns mutex_live(&"authority_mutex_locked_workers_destroy_before_join_rejected.c"::run.local(2)->mu)
+fail: Requires owns mutex_live(&obj->mu)
 ```

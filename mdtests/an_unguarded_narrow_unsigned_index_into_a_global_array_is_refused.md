@@ -22,5 +22,5 @@ int32 read_byte(uint8 x) {
 ```
 
 ```expect
-fail: unproved obligation: `"an_unguarded_narrow_unsigned_index_into_a_global_array_is_refused.c"::read_byte.parameter(0) >= 0 and "an_unguarded_narrow_unsigned_index_into_a_global_array_is_refused.c"::read_byte.parameter(0) < 4`
+fail: unproved obligation: `x >= 0 and x < 4`
 ```

@@ -87,9 +87,7 @@ impl Drop for StepLog {
 #[derive(Debug)]
 struct PointNode {
     id: ProgramPointId,
-    /// The memory state the path had here. The point-to-point version walk
-    /// reads it; until then nothing does.
-    #[allow(dead_code)]
+    /// The memory state the path had here.
     memory: SharedMemory,
     /// The steps the path took from its predecessor to here, newest first;
     /// none when it reached here without a recorded step.
@@ -167,7 +165,6 @@ impl PathLink {
     }
 
     /// The steps the path took from its predecessor to this point.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn steps(&self) -> Option<&StepLog> {
         self.0.as_ref().and_then(|node| node.steps.as_deref())
     }
@@ -176,6 +173,21 @@ impl PathLink {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn split(&self) -> Option<&Self> {
         self.0.as_ref().and_then(|node| node.split.as_ref())
+    }
+
+    /// The memory state the path had at this point.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn memory(&self) -> Option<&SharedMemory> {
+        self.0.as_ref().map(|node| &node.memory)
+    }
+
+    /// The points this one was reached from.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn predecessors(&self) -> &[Self] {
+        self.0
+            .as_ref()
+            .map(|node| node.predecessors.as_ref())
+            .unwrap_or(&[])
     }
 
     pub(crate) fn id(&self) -> Option<ProgramPointId> {

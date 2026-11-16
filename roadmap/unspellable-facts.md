@@ -489,6 +489,22 @@ passed. Two wall-clock outliers passed isolated serial checks under the unchange
 30-second cap; no test or budget was relaxed. Five exact regular return/exception
 fixtures passed with zero fact-stability differences.
 
+### 9x Certificate capture and replay
+
+Fixed-state program argument capture uses the common retained lowering result.
+Conversion and load obligations follow the same checks, and certificate guard
+selection keeps its operand shared. Native theorem bindings make their selected
+conversion at the value consumer. Certificate syntax and explicit replay rules
+are unchanged.
+
+Focused tests cover scalar and complete pointer payload parity, growing argument
+capture with zero machine exports, and machine, Integer and model argument
+expansions whose erased guards still refuse. The deep capture test uses the
+repository's documented fixture-thread stack; no verifier limit changes.
+All 3,184 selected API, proof, specification, execution and scaling checks
+passed. Quality and six exact regular argument/domain fixtures passed, with
+zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

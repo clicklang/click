@@ -24,5 +24,5 @@ int32 positive(double d) {
 ```
 
 ```expect
-fail: `"branch_float_cast.c"::positive.parameter(0) < float64_from_bits(0x41e0000000000000u64)`
+fail: `d < float64_from_bits(0x41e0000000000000u64)`
 ```

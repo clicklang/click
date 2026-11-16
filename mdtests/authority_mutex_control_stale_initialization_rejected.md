@@ -56,5 +56,5 @@ int32 run() {
 ```
 
 ```expect
-fail: Requires owns mutex_live(&"authority_mutex_control_stale_initialization_rejected.c"::run.local(0)->mu)
+fail: Requires owns mutex_live(&obj->mu)
 ```
