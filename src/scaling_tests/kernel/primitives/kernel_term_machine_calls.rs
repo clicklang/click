@@ -141,7 +141,7 @@ fn pthread_handle_leaf_lookup_is_independent_of_other_handles() {
 
 #[test]
 fn forwarded_handle_lookup_ignores_equality_class_and_context_population() {
-    use crate::kernel::{CompareRelation, ConditionTerm, Proposition, PureFactContext};
+    use crate::kernel::{ConditionTerm, Proposition, PureFactContext};
     let mut samples = Vec::new();
     for chain in [false, true] {
         for size in [16, 64, 256] {
@@ -150,15 +150,7 @@ fn forwarded_handle_lookup_ignores_equality_class_and_context_population() {
             let word = MachineTerm::ThreadHandle(handle);
             let variable = |index| MachineTerm::Variable(Variable(1009000 + index));
             let equality = |left, right| {
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::UInt64,
-                        relation: CompareRelation::Equal,
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    },
-                    true,
-                )
+                Proposition::ConditionIs(ConditionTerm::uint64_equal(left, right), true)
             };
             let mut facts =
                 PureFactContext::new().assume_proposition(equality(variable(0), word.clone()));

@@ -669,8 +669,7 @@ mod handle_tests {
     #[test]
     fn handle_is_a_shared_opaque_word_without_numeric_or_join_authority() {
         use super::super::{
-            CompareRelation, ConditionTerm, KernelTermExport, KernelTermImport, KernelTermNode,
-            MachineIntegerType,
+            ConditionTerm, KernelTermExport, KernelTermImport, KernelTermNode, MachineIntegerType,
         };
         let _session = super::super::VerificationSession::enter();
         let id = ThreadHandle(42);
@@ -687,12 +686,8 @@ mod handle_tests {
         assert_eq!(KernelTermExport::machine(&shared).unwrap(), native);
         assert_eq!(native.as_machine_constant(), None);
         for number in [0, 42, 43] {
-            let equality = ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::Equal,
-                left: Box::new(native.clone()),
-                right: Box::new(MachineTerm::uint64_constant(number)),
-            };
+            let equality =
+                ConditionTerm::uint64_equal(native.clone(), MachineTerm::uint64_constant(number));
             assert_eq!(PureFactContext::new().decide(&equality), None);
             let stated = PureFactContext::new()
                 .assume_proposition(Proposition::ConditionIs(equality.clone(), true));
@@ -713,18 +708,13 @@ mod handle_tests {
 
     #[test]
     fn forwarded_handle_resolution_uses_equality_and_preserves_forks() {
-        use super::super::{CompareRelation, ConditionTerm, MachineIntegerType, Variable};
+        use super::super::{ConditionTerm, Variable};
         let _session = super::super::VerificationSession::enter();
         let alias = MachineTerm::Variable(Variable(1008891));
         let value = ProgramValue::UInt64(alias.clone());
         let equality = |handle| {
             Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt64,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(alias.clone()),
-                    right: Box::new(MachineTerm::ThreadHandle(handle)),
-                },
+                ConditionTerm::uint64_equal(alias.clone(), MachineTerm::ThreadHandle(handle)),
                 true,
             )
         };
