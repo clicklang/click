@@ -1111,6 +1111,37 @@ impl<'a> MachineOperandView<'a> {
 mod tests {
     use super::*;
 
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../../scaling_tests/kernel/primitives/integer/machine_view/literal_retagging.rs"
+        );
+    }
+
+    #[test]
+    fn retagged_64_bit_literals_have_the_requested_integer_reading() {
+        let _session = crate::kernel::VerificationSession::enter();
+        use MachineIntegerType::{Int64, UInt64};
+        for bits in [0, 1, 7, i64::MAX as u64, 1u64 << 63, u64::MAX - 6, u64::MAX] {
+            let unsigned =
+                KernelTermImport::default().machine(UInt64, &MachineTerm::uint64_constant(bits));
+            let signed = unsigned.with_machine_observation_type(Int64);
+            assert_eq!(
+                MachineOperandView::Shared(&signed).observe(Int64),
+                Some(IntegerTerm::constant(i128::from(bits as i64).into())),
+            );
+            let original_signed = KernelTermImport::default()
+                .machine(Int64, &MachineTerm::int64_constant(bits as i64));
+            assert_eq!(signed.id(), original_signed.id());
+            let back = signed.with_machine_observation_type(UInt64);
+            assert_eq!(
+                MachineOperandView::Shared(&back).observe(UInt64),
+                Some(IntegerTerm::constant(u128::from(bits).into())),
+            );
+            assert_eq!(back.id(), unsigned.id());
+        }
+    }
+
     #[test]
     fn checking_casts_preserve_native_composition_without_exporting() {
         use crate::kernel::{KernelTermExport, KernelTermImport, MachineBinaryOp};
