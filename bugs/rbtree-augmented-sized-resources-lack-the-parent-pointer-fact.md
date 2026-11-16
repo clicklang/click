@@ -235,3 +235,22 @@ the insertion and its two wrappers. This mirrors the completed context-rotation
 repair. The C, original insertion
 contracts, existing tree-resource definitions, and verifier are unchanged. The
 remaining context sidecars and full-directory audit still leave this report open.
+
+## Context double rotation
+
+All three selected proofs in
+`rbtree_size_insert_context_double_rotation.click` now verify at default
+limits. The left-right rotation under an ancestor retains complete node
+observations across initialization and reads, executes the missing `tmp`
+declaration and inner-pivot load, and retains unchanged tags and child links
+through both rotations and the first callback. Opening and refolding the
+first callback's child exposes its identity before retaining that link through
+the outer parent update. Distinctness of the grandparent and pivot is stated
+explicitly from ownership of their separate header cells.
+
+Expansion, cold-replay, and fixed-point checks pass all 13 audit sites across
+the insertion and its two wrappers on merged master `262fd90d1`.
+
+Both callbacks, the C, the three original function contracts, existing tree
+resources, and verifier are unchanged. The remaining sidecars and full-directory
+audit still leave this report open.

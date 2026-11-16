@@ -15514,8 +15514,11 @@ pub struct FunctionExecutionCandidate {
 /// An immutable candidate record retained across distinct terminal frontiers.
 /// Adding facts shares the original outcome and obligations as well as the
 /// unchanged fact streams. This is untrusted publication, never a theorem.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub(super) struct FunctionExecutionCandidateData {
+    /// Selected producer delta for a retained completion context. It changes
+    /// neither the candidate's facts nor its untrusted publication semantics.
+    pub(super) completion_delta: Option<ExecutionFacts>,
     pub(super) outcome: Arc<FunctionOutcome>,
     pub(super) facts: ExecutionFacts,
     pub(super) effect_facts: ExecutionFacts,
@@ -15525,6 +15528,18 @@ pub(super) struct FunctionExecutionCandidateData {
     pub(super) obligations: Arc<Vec<ProofObligation>>,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
 }
+
+impl PartialEq for FunctionExecutionCandidateData {
+    fn eq(&self, other: &Self) -> bool {
+        self.outcome == other.outcome
+            && self.facts == other.facts
+            && self.effect_facts == other.effect_facts
+            && self.effects_public_first == other.effects_public_first
+            && self.obligations == other.obligations
+            && self.loan_evidence == other.loan_evidence
+    }
+}
+impl Eq for FunctionExecutionCandidateData {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SymbolicConditionEvaluation {
