@@ -1479,6 +1479,36 @@ application checking. The instantiated requirements and argument guards must
 be supplied by the listed facts under the existing `apply ... using` rules.
 An unconditional theorem can therefore close `solve() using {}`.
 
+Conclusion matching treats reversed `==` and `!=` operands and mirrored
+orders (`a > b` / `b < a`, `a >= b` / `b <= a`) as the same comparison.
+Both symmetric orientations remain available when theorem prerequisites
+must disambiguate the inferred arguments. Repeated parameters retain one
+consistent assignment across the whole conclusion. This adds no conversion
+between strict and non-strict orders or between negated and complementary
+float comparisons, where NaNs matter. Expansion still cites the original
+theorem with its inferred arguments.
+
+<!-- verified-example: mdtests/solve_using_equivalent_comparisons.md -->
+```click
+function fixed(x: Integer) -> Integer { 7 }
+
+theorem lower_bound(x: Integer) {
+    requires 0 <= x;
+    ensures fixed(x) >= 7 by { unfold(fixed(x)); solve(); }
+}
+
+theorem equality(x: Integer) {
+    requires 0 <= x;
+    ensures fixed(x) == 7 by { unfold(fixed(x)); solve(); }
+}
+
+theorem test(value: Integer) {
+    requires 0 <= value;
+    ensures 7 <= fixed(value) by { solve() using { 0 <= value; }; }
+    ensures 7 == fixed(value) by { solve() using { 0 <= value; }; }
+}
+```
+
 This first slice supports binder-free structural matching of comparisons,
 predicate calls, definedness, and proposition expressions, including ordinary
 arithmetic and function-call operands. It does not invent arguments absent
@@ -1535,9 +1565,13 @@ available when one of these holds:
 - It is a fact, or a leaf conjunct of a fact. An implication or quantified
   goal must be such a fact up to renaming of its bound variables.
 - It is another spelling of an available order claim, in every order family
-  (C machine types and `Integer`): `0 <= x` for `x >= 0`, and `not(y <= x)`,
+  (C machine integers and `Integer`): `0 <= x` for `x >= 0`, and `not(y <= x)`,
   `y > x` and `x < y` for one another. `x != y`, `not(x == y)`, and
   `y != x` are one claim.
+- A float comparison has its operands reversed with the matching relation:
+  `a > b` / `b < a`, `a >= b` / `b <= a`, and reversed `==` or `!=`.
+  Width and truth polarity stay fixed; negated float orders are not treated
+  as complementary orders, since NaNs would invalidate that rule.
 - The shared equality closure decides it. Equality is symmetric and
   transitive, and congruent through C and `Integer` operators, pure-function
   applications, and algebraic constructors: `x == y` gives `y == x`,

@@ -162,6 +162,106 @@ fn theorem_matching_retains_typed_c_binding_identity() {
         panic!()
     };
     arguments[0] = local.clone();
-    let application = match_theorem_conclusion(theorem, 0, &goal).unwrap();
+    let application = match_theorem_conclusion(theorem, 0, &goal).next().unwrap();
     assert_eq!(application.arguments, vec![local]);
+}
+
+#[test]
+fn equivalent_comparison_spellings_discover_and_expand() {
+    for (conclusion, goal) in [
+        ("fixed(x) == 7", "7 == fixed(value)"),
+        ("fixed(x) != 8", "8 != fixed(value)"),
+        ("fixed(x) < 8", "8 > fixed(value)"),
+        ("fixed(x) <= 7", "7 >= fixed(value)"),
+        ("fixed(x) > 6", "6 < fixed(value)"),
+        ("fixed(x) >= 7", "7 <= fixed(value)"),
+    ] {
+        let proof = "by { solve() using { 0 <= value; }; }";
+        let source = format!(
+            "function fixed(x: Integer) -> Integer {{ 7 }} theorem law(x: Integer) {{ requires 0 <= x; ensures {conclusion} by {{ unfold(fixed(x)); solve(); }} }} theorem test(value: Integer) {{ requires 0 <= value; ensures {goal} {proof} }}"
+        );
+        let verified =
+            verify_click_theorems(&source).unwrap_or_else(|e| panic!("{source}: {}", e.report()));
+        let expanded = verified.last().unwrap().expanded_proof_source().unwrap();
+        assert!(expanded.contains("apply(law(value)) using"), "{expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        verify_click_theorems(&source.replace(proof, &expanded))
+            .unwrap_or_else(|e| panic!("{expanded}: {}", e.report()));
+        let missing = source.replace("solve() using { 0 <= value; }", "solve() using {}");
+        assert!(verify_click_theorems(&missing).is_err(), "{missing}");
+    }
+}
+
+#[test]
+fn equality_orientation_is_disambiguated_by_listed_prerequisites() {
+    for (function, operator) in [("0", "=="), ("x", "!=")] {
+        let proof = "by { solve() using { a < b; }; }";
+        let source = format!(
+            "function image(x: Integer) -> Integer {{ {function} }} theorem law(x: Integer, y: Integer) {{ requires x < y; ensures image(x) {operator} image(y) by {{ unfold(image(x)); unfold(image(y)); solve(); }} }} theorem test(a: Integer, b: Integer) {{ requires a < b; ensures image(b) {operator} image(a) {proof} }}"
+        );
+        let verified =
+            verify_click_theorems(&source).unwrap_or_else(|e| panic!("{source}: {}", e.report()));
+        let expanded = verified.last().unwrap().expanded_proof_source().unwrap();
+        assert!(expanded.contains("apply(law(a, b)) using"), "{expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        verify_click_theorems(&source.replace(proof, &expanded))
+            .unwrap_or_else(|e| panic!("{expanded}: {}", e.report()));
+    }
+}
+
+#[test]
+fn nested_comparison_matching_preserves_shared_arguments() {
+    let file = parser::parse("function image(x: Integer) -> Integer { x } theorem law(x: Integer, y: Integer) { ensures image(x) == image(y) and x < y; } theorem target(a: Integer, b: Integer) { ensures image(b) == image(a) and b > a; }").unwrap();
+    let theorem = &file.theorem_definitions()[0];
+    let Ensure::Proposition(goal) = file.theorem_definitions()[1].ensures()[0].ensure() else {
+        panic!()
+    };
+    let applications = match_theorem_conclusion(theorem, 0, goal).collect::<Vec<_>>();
+    assert_eq!(applications.len(), 1);
+    assert_eq!(
+        applications[0].arguments,
+        vec![
+            ContractExpression::Binding("a".into()),
+            ContractExpression::Binding("b".into())
+        ]
+    );
+    let repeated = parser::parse("function image(x: Integer) -> Integer { x } theorem law(x: Integer) { ensures image(x) == x; } theorem target(a: Integer, b: Integer) { ensures b == image(a); }").unwrap();
+    let Ensure::Proposition(goal) = repeated.theorem_definitions()[1].ensures()[0].ensure() else {
+        panic!()
+    };
+    assert!(
+        match_theorem_conclusion(&repeated.theorem_definitions()[0], 0, goal)
+            .next()
+            .is_none()
+    );
+}
+
+#[test]
+fn mirrored_float_orders_do_not_complement_nan_comparisons() {
+    for (ty, bits, one) in [
+        ("float", "float32_from_bits", "0x3f800000"),
+        ("double", "float64_from_bits", "0x3ff0000000000000"),
+    ] {
+        let proof = "by { solve() using {}; }";
+        let source = format!(
+            "function fixed(x: {ty}) -> {ty} {{ {bits}({one}) }} theorem law(x: {ty}) {{ ensures fixed(x) > {bits}(0) by {{ unfold(fixed(x)); normalize(); }} }} theorem test(value: {ty}) {{ ensures {bits}(0) < fixed(value) {proof} }}"
+        );
+        let verified = verify_click_theorems(&source).unwrap_or_else(|e| panic!("{}", e.report()));
+        let expanded = verified.last().unwrap().expanded_proof_source().unwrap();
+        assert!(expanded.contains("apply(law(value)) using"), "{expanded}");
+        verify_click_theorems(&source.replace(proof, &expanded))
+            .unwrap_or_else(|e| panic!("{expanded}: {}", e.report()));
+    }
+    let false_goal = "theorem test(x: double, y: double) { requires not (x <= y); ensures y < x by { solve() using { not (x <= y); }; } }";
+    assert!(verify_click_theorems(false_goal).is_err());
+    let wrong_relation = parser::parse("theorem law(x: Integer, y: Integer) { ensures x < y; } theorem target(a: Integer, b: Integer) { ensures b >= a; }").unwrap();
+    let Ensure::Proposition(goal) = wrong_relation.theorem_definitions()[1].ensures()[0].ensure()
+    else {
+        panic!()
+    };
+    assert!(
+        match_theorem_conclusion(&wrong_relation.theorem_definitions()[0], 0, goal)
+            .next()
+            .is_none()
+    );
 }

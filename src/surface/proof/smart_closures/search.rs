@@ -9388,22 +9388,32 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             }
             let definition = environment.get(&candidate.name)?;
-            let Some(application) = crate::surface::planning::theorems::match_theorem_conclusion(
+            for application in crate::surface::planning::theorems::match_theorem_conclusion(
                 definition,
                 candidate.ensure,
                 goal,
-            ) else {
-                continue;
-            };
-            let step = ProofStep::ApplyTheoremUsing {
-                application,
-                premises: surfaces.to_vec(),
-            };
-            if let Some(proof) =
-                attempt::candidate_outcome(search_input.driver().apply_step(step)).ok()?
-                && (proof.is_complete() || proof.focused_discharged())
-            {
-                return Some(proof);
+            ) {
+                let step = ProofStep::ApplyTheoremUsing {
+                    application,
+                    premises: surfaces.to_vec(),
+                };
+                if let Some(proof) =
+                    attempt::candidate_outcome(search_input.driver().apply_step(step)).ok()?
+                {
+                    if proof.is_complete() || proof.focused_discharged() {
+                        return Some(proof);
+                    }
+                    // The matched conclusion may use the opposite comparison
+                    // spelling. Close its equivalent goal with the existing
+                    // indexed rule and retain that explicit step in expansion.
+                    if let Some(closed) =
+                        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
+                            .ok()?
+                        && (closed.is_complete() || closed.focused_discharged())
+                    {
+                        return Some(closed);
+                    }
+                }
             }
         }
         None

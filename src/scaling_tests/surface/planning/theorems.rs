@@ -21,31 +21,43 @@ fn conclusion_index_ignores_unrelated_theorems_on_hits_and_misses() {
             index.insert(&theorem, ordinal);
         }
         index.insert(template, size);
-        let ((count, work), lookup_work) = crate::persistent::measure_persistent_work(|| {
-            crate::instrumentation::measure_deterministic_work(|| {
-                index.candidates(goal, usize::MAX).count()
-            })
-        });
-        assert_eq!(count, 1);
-        assert_eq!(work, 5);
-        assert!(
-            lookup_work <= 64,
-            "index scanned {size} unrelated theorems: {lookup_work}"
-        );
-        let mut missing = goal.clone();
-        let ClickProposition::Comparison {
-            left: ContractExpression::Call { name, .. },
-            ..
-        } = &mut missing
-        else {
-            panic!()
-        };
-        *name = "absent".into();
-        let (count, work) = crate::persistent::measure_persistent_work(|| {
-            index.candidates(&missing, usize::MAX).count()
-        });
-        assert_eq!(count, 0);
-        assert!(work <= 64, "miss scanned {size} unrelated theorems: {work}");
+        for reversed in [false, true] {
+            let mut goal = goal.clone();
+            if reversed {
+                let ClickProposition::Comparison { left, right, .. } = &mut goal else {
+                    panic!()
+                };
+                std::mem::swap(left, right);
+            }
+            let ((count, work), lookup_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    index.candidates(&goal, usize::MAX).count()
+                })
+            });
+            assert_eq!(count, 1);
+            assert_eq!(work, 8);
+            assert!(
+                lookup_work <= 12 * (size + 2).ilog2() as usize + 16,
+                "index scanned {size} unrelated theorems: {lookup_work}"
+            );
+            let mut missing = goal.clone();
+            let ClickProposition::Comparison { left, right, .. } = &mut missing else {
+                panic!()
+            };
+            match (left, right) {
+                (ContractExpression::Call { name, .. }, _)
+                | (_, ContractExpression::Call { name, .. }) => *name = "absent".into(),
+                _ => panic!(),
+            }
+            let (count, work) = crate::persistent::measure_persistent_work(|| {
+                index.candidates(&missing, usize::MAX).count()
+            });
+            assert_eq!(count, 0);
+            assert!(
+                work <= 12 * (size + 2).ilog2() as usize + 16,
+                "miss scanned {size} unrelated theorems: {work}"
+            );
+        }
     }
 }
 
@@ -65,16 +77,46 @@ fn conclusion_index_prefix_and_related_candidate_work_are_bounded() {
             index
                 .candidates(goal, usize::MAX)
                 .map(|candidate| {
-                    assert!(match_theorem_conclusion(template, candidate.ensure, goal).is_some());
+                    assert!(
+                        match_theorem_conclusion(template, candidate.ensure, goal)
+                            .next()
+                            .is_some()
+                    );
                 })
                 .count()
         });
         assert_eq!(count, size);
         assert!(
-            work <= 8 * size + 4,
+            work <= 8 * size + 7,
             "candidate matching was superlinear: {size}: {work}"
         );
         assert_eq!(index.candidates(goal, size / 2).count(), size / 2);
         assert_eq!(index.candidates(goal, 0).count(), 0);
+    }
+}
+
+#[test]
+fn symmetric_match_alternatives_stop_at_the_existing_work_budget() {
+    for size in [8usize, 16, 32] {
+        let parameters = (0..size)
+            .map(|i| format!("x{i}: Integer, y{i}: Integer"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let comparisons = (0..size)
+            .map(|i| format!("x{i} == y{i}"))
+            .collect::<Vec<_>>()
+            .join(" and ");
+        let source = format!("theorem law({parameters}) {{ ensures {comparisons}; }}");
+        let file = parser::parse(&source).unwrap();
+        let theorem = &file.theorem_definitions()[0];
+        let Ensure::Proposition(goal) = theorem.ensures()[0].ensure() else {
+            panic!()
+        };
+        crate::instrumentation::with_run_work_limit(256, || {
+            let mut applications = match_theorem_conclusion(theorem, 0, goal);
+            assert!(applications.by_ref().count() < 256);
+            assert!(crate::instrumentation::deadline_exceeded());
+            assert!(applications.next().is_none());
+        });
     }
 }
