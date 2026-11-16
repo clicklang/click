@@ -269,7 +269,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         // A premise the context's equality graph proves is available too: a
         // read written through one alias of a cell whose fact was stated
         // through another is the same premise, and lowering does not rename
-        // it to match (lowering is fact-stable, `docs/internals/spellability.md`).
+        // it to match (lowering is fact-stable, `docs/internals/raise-lower-principle.md`).
         if !available.listed_premise_available(&premise, &[], true)
             && !holds_without_facts_under_binders(&premise)
             && !available.assumptions().contains_known(&premise)

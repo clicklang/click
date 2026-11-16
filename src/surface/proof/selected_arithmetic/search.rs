@@ -1914,7 +1914,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         for candidate in candidates {
             // Select the operation structurally from either ordinary bound.
             // The private query supplies its format and operands, not evidence.
-            // Naming uses the same indexed states as structural goal spelling;
+            // Naming uses the same indexed states as structural goal raising;
             // it does not require a recorded `defined(...)` source. The actual
             // observation theorem still proves the complete ordinary domain.
             let query = crate::kernel::machine_integer::definedness::definedness_of_integer_bound(

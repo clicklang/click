@@ -155,3 +155,57 @@ fn uint64_allocation_size_graph_queries_scale_without_fact_index() {
         assert!(work < 300 * size as usize, "size={size}, work={work}");
     }
 }
+
+#[test]
+fn allocation_companion_alias_lookup_ignores_unrelated_storage_and_alias_stars() {
+    for hit in [false, true] {
+        let mut work = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
+            let _session = VerificationSession::enter();
+            let (base, caller, callee) = allocation_companion_call(size);
+            let mut facts = PureFactContext::new();
+            for id in 0..size {
+                facts = facts.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        base.clone(),
+                        Pointer::symbolic(Variable(10_000_000 + id)),
+                    ),
+                    true,
+                );
+                facts = facts.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        Pointer::symbolic(Variable(20_000_000 + id)),
+                        Pointer::symbolic(Variable(30_000_000 + id)),
+                    ),
+                    true,
+                );
+            }
+            let alias = Pointer::symbolic(Variable(if hit { 10_000_000 + size - 1 } else { 40_000_000 }));
+            let output = ResourceFact::own_allocation(alias, 4);
+            let (returned, measured) = crate::instrumentation::measure_deterministic_work(|| {
+                transfer_population_call_facts(
+                    callee.clone(),
+                    &callee,
+                    &caller,
+                    &callee,
+                    std::iter::once(&output),
+                    &[],
+                    &facts,
+                )
+                .unwrap()
+            });
+            let finished = returned
+                .population_effects
+                .creation
+                .as_ref()
+                .unwrap()
+                .finish_call(caller.population_effects.creation.as_ref().unwrap());
+            assert_eq!(finished.is_ok(), hit);
+            work.push(measured);
+        }
+        assert!(
+            work.iter().max().unwrap() <= &(work[0] + 80),
+            "hit={hit}, alias and storage growth changed one return transfer: {work:?}"
+        );
+    }
+}

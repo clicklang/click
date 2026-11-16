@@ -244,8 +244,9 @@ importer-made operations (`SliceIter::len`, `SliceIter::as_ptr`,
    `nth` or `after`, and what `next()` leaves is stated by the importer's
    contract for the call at its element type, since a generic axiom cannot
    offset a `T*`.
-   This includes inclusive ranges, currently blocked by
-   `bugs/solve-exhausts-its-budget-spelling-premises-of-an-inclusive-range-loop.md`,
-   which should be re-checked under the new model.
+   This includes inclusive ranges. Their exhaustion proof now verifies with
+   typed signed range facts; the original proof and a premise-raising work
+   bound are covered by `charon_inclusive_range_exhaustion_uses_typed_signed_bounds`
+   in `tests/rust_import/inclusive_ranges.rs`.
 4. Remove the remaining per-kind lowering, the accessor table and the old
    spellings.

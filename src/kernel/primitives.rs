@@ -46,7 +46,7 @@ impl Proposition {
     /// Whether this is kernel authority rather than a proof-state fact: a
     /// resource composition, or a predicate with no Click spelling. The
     /// kernel holds and checks it like any fact; no surface view presents or
-    /// cites it (`docs/internals/spellability.md`).
+    /// cites it (`docs/internals/raise-lower-principle.md`).
     pub(crate) fn is_kernel_authority(&self) -> bool {
         match self {
             Self::ResourceComposition(_) => true,
@@ -4048,30 +4048,6 @@ pub struct PurePointerResult {
     pub(crate) arguments: BTreeSet<usize>,
 }
 
-/// A pure function that is one field of its argument: `match s {
-/// V(.., x, ..) => x }` over parameter `argument`. Applied to a value built
-/// with constructor `variant`, it is that value's field `field`.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct PureProjection {
-    pub(crate) argument: usize,
-    pub(crate) variant: String,
-    pub(crate) field: usize,
-}
-
-impl PureProjection {
-    pub(crate) fn argument_index(&self) -> usize {
-        self.argument
-    }
-
-    pub(crate) fn new(argument: usize, variant: String, field: usize) -> Self {
-        Self {
-            argument,
-            variant,
-            field,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecExpression {
     Value(ProgramValue),
@@ -4147,9 +4123,6 @@ pub enum SpecExpression {
         /// The class of the object a pointer result designates, from the
         /// function's declared return type (`design/effective-types.md`).
         result_object_class: Option<crate::kernel::effective_type::CAccessClass>,
-        /// When the function is a field projection, the field a constructed
-        /// argument is built with is the result, by the function's definition.
-        projection: Option<PureProjection>,
     },
     LoopEntryState(Box<SpecExpression>),
     Subobject {

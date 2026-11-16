@@ -39,6 +39,8 @@ unsigned long walk(unsigned char *p, unsigned long n) {
                     == p + j * 4u64
         };
         initialize by {
+            unfold(slice::len(Slice<uint8>::Slice(p, n)));
+            unfold(slice::as_ptr(Slice<uint8>::Slice(p, n)));
             have forall (j: uint64) {
                 j < n / 4u64 implies
                     chunks_exact::nth(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, n), 4u64), j).len() == 4u64
@@ -46,6 +48,7 @@ unsigned long walk(unsigned char *p, unsigned long n) {
                 intro();
                 intro();
                 apply(chunks_exact::nth_chunks_exact(Slice<uint8>::Slice(p, n), 4u64, j));
+                solve();
             }
             have forall (j: uint64) {
                 j < n / 4u64 implies
@@ -55,6 +58,7 @@ unsigned long walk(unsigned char *p, unsigned long n) {
                 intro();
                 intro();
                 apply(chunks_exact::nth_chunks_exact(Slice<uint8>::Slice(p, n), 4u64, j));
+                solve();
             }
             solve();
         }

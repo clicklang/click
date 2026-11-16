@@ -7793,10 +7793,11 @@ impl PureFactContext {
         }
     }
 
-    /// Files the signed range of a word an unsigned upper bound below the sign
-    /// bit established: `0 <= term`, and `term < bound + 1` (strict source)
-    /// or `term <= bound`.
+    /// Files the range of the typed signed reading established by an unsigned
+    /// bound below the sign bit: `0 <= signed(term)`, and
+    /// `signed(term) < bound + 1` (strict source) or `signed(term) <= bound`.
     fn assume_unsigned_word_range(mut self, term: MachineTerm, bound: u32, strict: bool) -> Self {
+        let term = condition_reasoning::signed_uint32_term(term);
         self = self.assume_condition_uncharged(
             ConditionTerm::signed_less_equal(MachineTerm::constant(0), term.clone()),
             true,

@@ -530,6 +530,11 @@ pub(super) fn transfer_population_call_facts<'a>(
         population_transfer_frontier(facts, definitions, validation_state.memory(), assumptions)?;
     for fact in &frontier {
         if let Some((base, _)) = fact.allocation() {
+            // A returned allocation can name the same storage through the
+            // call's result. Read its unique concrete storage coordinate from
+            // the checked equality index; this moves an existing anchor and
+            // grants neither allocation nor creation authority.
+            let base = assumptions.equality_graph.storage_address(base);
             if events.tracks_storage_anchor(&base.block)
                 && transferred_anchors.insert(base.block.clone())
             {
@@ -4583,6 +4588,7 @@ fn execute_verified_function_applications_with_suspension(
             continue;
         }
 
+        let return_assumptions = assumptions_with_path_context(&effective_assumptions, &facts, &[]);
         let (
             return_resources,
             return_ledger,
@@ -4595,7 +4601,7 @@ fn execute_verified_function_applications_with_suspension(
             &transfer,
             return_resources,
             &effective_assumptions,
-            &assumptions_with_path_context(&effective_assumptions, &facts, &[]),
+            &return_assumptions,
             &obligations,
         ) {
             Ok(recovered) => recovered,
@@ -4737,7 +4743,7 @@ fn execute_verified_function_applications_with_suspension(
                 &post_state,
                 output_resources.facts().iter(),
                 interface.composite_resource_definitions(),
-                &effective_assumptions,
+                &return_assumptions,
             ) {
                 Ok(state) => state,
                 Err(error) => {

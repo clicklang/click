@@ -1200,14 +1200,12 @@ Arithmetic may treat an opaque result as an unknown Integer without unfolding.
 A smart tactic may emit a checked unfold step; expansion makes that step visible.
 See [the function example](https://github.com/clicklang/click/blob/master/mdtests/integer_function_successor.md).
 
-One kind of call is not opaque. A library function whose body is exactly
-`match s { V(.., x, ..) => x }` is a field of its argument, and applied to a
-value built with that constructor it is the field:
-`slice::len(Slice<uint8>::Slice(p, n))` is `n`. This holds wherever the
-constructed value arrives, including a theorem parameter that `apply` binds
-to one, so a theorem stated over a slice applies to a slice built from its
-pointer and length. On any other argument the call stays opaque, and a
-program's own function always does
+Library field accessors follow the same rule. For example,
+`slice::len(Slice<uint8>::Slice(p, n))` remains a call until
+`unfold(slice::len(Slice<uint8>::Slice(p, n)))` exposes its defining equation,
+whose constructor match reduces to `n`. This also applies when a theorem's
+parameter is bound to the constructor by `apply`. Use the explicit equation
+to relate a theorem's conclusion over the accessor to the field value
 ([example](https://github.com/clicklang/click/blob/master/mdtests/a_library_field_function_of_a_constructed_value_is_the_field.md)).
 
 Machine-integer `forall` and `exists` binders retain their declared width and
@@ -2849,6 +2847,12 @@ spelled separately with `*base`. Allocation authority cannot be
 `views`-ed or duplicated, and a verified function may not silently drop it:
 the authority must be returned (possibly inside a composite resource) or
 consumed by an actual `free`.
+
+A callee can consume `allocation(p, bytes)` and produce
+`allocation(result, bytes)` with `ensures result == p`. This returns the same
+live allocation and its cleanup obligation through the result alias; it does
+not create a new lifetime. Freeing that alias invalidates both pointer spellings
+([checked example](https://github.com/clicklang/click/blob/master/mdtests/returned_allocation_pass_through_keeps_cleanup_authority.md)).
 
 <!-- verified-example: mdtests/conditional_resource_branchless_free.md -->
 ```click

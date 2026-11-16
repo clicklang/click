@@ -11,6 +11,8 @@ fn cover(bytes: &[u8]) -> usize {
     };
 } by {
     step_until(loop(0));
+    unfold(slice::len(Slice<u8>::Slice(bytes, bytes.len())));
+    unfold(slice::as_ptr(Slice<u8>::Slice(bytes, bytes.len())));
     have loop(0).iter == chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64);
     have tail_len == bytes.len() % 4u64 by {
         apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
@@ -39,6 +41,7 @@ fn cover(bytes: &[u8]) -> usize {
             if 0u64 < iter.len() {
                 have chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).len() == bytes.len() / 4u64 by {
                     apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
+                    solve();
                 }
                 have iter.len() <= bytes.len() / 4u64;
                 have to_integer((bytes.len() / 4u64 - iter.len())) == iterations;

@@ -2,7 +2,7 @@
 
 `b + i * 4`, with `b` the bytes of `q`, keeps its written byte offset `i * 4`
 when it is formed: lowering never reads the facts to choose an address
-(`docs/internals/spellability.md`, "Lowering is fact-stable"). It is the
+(`docs/internals/raise-lower-principle.md`, "Lowering is fact-stable"). It is the
 address of `q[i]` only where the `int32` product `i * 4` does not wrap. The C
 multiplication refuses its wrapping path, and the pointer arithmetic records
 that `i * 4` is defined, so the equality graph joins the byte offset to element

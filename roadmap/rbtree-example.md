@@ -806,7 +806,7 @@ commit that closed it. Reproductions live in the named fixtures.
 | 31 | Soundness: unevaluable guard conjunct dropped | S1 |
 | 32 | Induction hypothesis fixed every non-inducted parameter | A16 |
 | 33 | Ranked loop could not call a contract-less inline helper | A15 |
-| 35 | Parent-as-parameter unspellable; model re-keyed by node | C1b |
+| 35 | Parent-as-parameter unraisable; model re-keyed by node | C1b |
 | 36 | Two evaluable guard conjuncts refused | A17 |
 | 37, 38 | Load identity across an unfold | A18 |
 | 39 | Guard prefix did not publish common read authority | A19 |
@@ -864,7 +864,7 @@ blocks C3; each is a candidate package when it starts to.
   unsupported (gap 52).
 - **Loop exits:** algebraic model values are not renamed at the exit
   join, so an exit whose binder model is the head's symbolic model leaves
-  an unspellable name in its disjunct; `solve` cannot eliminate an exported
+  an unraisable name in its disjunct; `solve` cannot eliminate an exported
   exit disjunction or substitute an exported loop equation (`cases(...)`
   works); two ascent loops in one function fail the second loop's
   `close_invariants` with plain guards; `click expand` of a `loop` whose

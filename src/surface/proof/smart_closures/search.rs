@@ -4,7 +4,7 @@ use super::*;
 /// Premise citations must already be evaluable; a proposed `have` may
 /// carry evaluation requirements that its ordinary driver still must prove.
 #[derive(Clone, Copy)]
-enum SurfaceSpellingPurpose {
+enum SurfaceRaisingPurpose {
     AvailablePremise,
     ProposedGoal,
 }
@@ -3702,7 +3702,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// variable's bounds the same way wherever it runs. A bound can also be
     /// the negation of a branch condition. A goal that is itself an available
     /// fact is left to `known`. Pre-return signed orders and population
-    /// bounds run before broad premise spelling, preferring named rules on
+    /// bounds run before broad premise raising, preferring named rules on
     /// the selected premises; other goals retain the final fallback.
     pub(in crate::surface::proof) fn try_execution_signed_arithmetic(
         search_input: &Proof<'a>,
@@ -3855,8 +3855,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         anchor.as_ref(),
                         fact,
                     )
-                    .or_else(|| search_input.spelled_comparison_surface(fact)),
-                    None => search_input.spelled_comparison_surface(fact),
+                    .or_else(|| search_input.raised_comparison_surface(fact)),
+                    None => search_input.raised_comparison_surface(fact),
                 })
                 .collect::<Option<Vec<_>>>();
             if let Some(spelled) = spelled
@@ -4082,7 +4082,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 anchor,
                 &fact,
             )
-            .or_else(|| (!is_pure).then(|| search_input.spelled_comparison_surface(&fact))?);
+            .or_else(|| (!is_pure).then(|| search_input.raised_comparison_surface(&fact))?);
             if let Some(source) = source {
                 pairs.push((fact, source));
             }
@@ -4145,7 +4145,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 anchor,
                 &fact,
             )
-            .or_else(|| search_input.spelled_comparison_surface(&fact));
+            .or_else(|| search_input.raised_comparison_surface(&fact));
             if let Some(source) = source {
                 pairs.push((fact, source));
             }
@@ -5150,7 +5150,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // written through one alias of a cell whose fact was stated through
         // another, before a store the alias shows separate, is carried here
         // rather than renamed by lowering (lowering is fact-stable,
-        // `docs/internals/spellability.md`). Other goals keep their more
+        // `docs/internals/raise-lower-principle.md`). Other goals keep their more
         // local rewrite plans.
         if search_input.outcome_fixed_state_view().is_none() {
             let mut calls = BTreeSet::new();
@@ -6586,7 +6586,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 Some(Proposition::MemoryLoadable { .. })
             ) {
                 attempt::record_search_note(
-                    "solve view premise spelling",
+                    "solve view premise raising",
                     format!(
                         "budget exhausted: the selected view derivation contains {} premises; source spelling permits at most {MAX_SOLVE_SOURCE_PREMISES}",
                         premises.len()
@@ -6598,7 +6598,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::instrumentation::measure_operation(
             "surface",
             "solve closure",
-            "solve closure: premise spelling",
+            "solve closure: premise raising",
             || {
                 crate::kernel::search::ProofSearch::resolve_solve_premises_unmeasured(
                     search_input,
@@ -6778,9 +6778,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 search_input.goal(),
                 Some(Proposition::MemoryLoadable { .. })
             ) {
-                "solve view premise spelling"
+                "solve view premise raising"
             } else {
-                "solve premise spelling"
+                "solve premise raising"
             };
             attempt::record_search_premise_note(
                 strategy,
@@ -6925,7 +6925,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             surface_facts,
             premise_anchor,
             kernel,
-            SurfaceSpellingPurpose::AvailablePremise,
+            SurfaceRaisingPurpose::AvailablePremise,
         )
     }
 
@@ -6941,7 +6941,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             surface_facts,
             None,
             kernel,
-            SurfaceSpellingPurpose::ProposedGoal,
+            SurfaceRaisingPurpose::ProposedGoal,
         )
     }
 
@@ -6950,7 +6950,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface_facts: &SurfacePropositionMap,
         premise_anchor: Option<&ProgramPointRef>,
         kernel: &Proposition,
-        purpose: SurfaceSpellingPurpose,
+        purpose: SurfaceRaisingPurpose,
     ) -> Option<ClickProposition> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("surface_fact_raw_for_purpose");
@@ -7047,11 +7047,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .lower_surface_proposition_direct(candidate, "typed solve premise form")
                 };
                 match purpose {
-                    SurfaceSpellingPurpose::AvailablePremise => {
+                    SurfaceRaisingPurpose::AvailablePremise => {
                         super::super::execution_planning::without_open_obligation_probe(operation)
                             .ok()
                     }
-                    SurfaceSpellingPurpose::ProposedGoal => {
+                    SurfaceRaisingPurpose::ProposedGoal => {
                         // This private probe checks only the candidate's term identity.
                         // It publishes no proof/facts and cannot add debts to an outer
                         // operation. The selected Surface form must be lowered again by
@@ -7062,7 +7062,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     }
                 }
             };
-            if matches!(purpose, SurfaceSpellingPurpose::AvailablePremise)
+            if matches!(purpose, SurfaceRaisingPurpose::AvailablePremise)
                 && allow_recorded_pair
                 && search_input.focused_outcome_data().is_some()
                 && surface_facts
@@ -7234,7 +7234,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // read, which no single earlier state can spell. Try these named
         // states before walking history. New scalar candidates lower directly: a
         // recorded unanchored form may name an earlier value of the same local.
-        // The structural speller: values the current state and the proof's
+        // The structural raiser: values the current state and the proof's
         // binders name, entry reads as `old(..)`, and a read of any other
         // recorded memory at the point that recorded it, found by its memory
         // in one lookup.

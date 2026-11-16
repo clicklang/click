@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::VerificationSession;
 use crate::kernel::loans::LoanLedger;
 
 #[test]
@@ -1908,6 +1909,79 @@ fn conditional_resource_certification_checks_the_unsafe_case_too() {
         error.contains("cannot free an allocation whose lifetime has already ended"),
         "unexpected failure: {error}"
     );
+}
+
+#[test]
+fn free_resolves_an_owned_return_alias_without_losing_its_offset() {
+    for interior in [false, true] {
+        let _session = VerificationSession::enter();
+        let success = successful_heap_allocation_state();
+        let local = success.locals().get_native("p").unwrap();
+        let ProgramValue::Pointer(base) = local.as_ref() else {
+            panic!("allocation pointer")
+        };
+        let alias = Pointer::symbolic(Variable(984_100));
+        let bytes = success
+            .memory()
+            .live_heap_block_extent(base.pointer())
+            .unwrap()
+            .clone();
+        let facts = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(
+                alias.clone(),
+                base.pointer().offset_by_bytes(if interior { 4 } else { 0 }),
+            ),
+            true,
+        );
+        let resources = ResourceContext::new()
+            .unchecked_with_fact(ResourceFact::own_allocation(
+                alias.clone(),
+                bytes.bytes().clone(),
+            ))
+            .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                alias.clone(),
+                0u32.into(),
+                4u32.into(),
+            )));
+        let state = success
+            .clone()
+            .with_resource_context(resources)
+            .with_local("q", ProgramValue::pointer(alias));
+        let paths = execute_execution_statement_paths(
+            &state,
+            &program_heap_free(crate::kernel::program_expression::variable("q")),
+            &facts,
+            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        if interior {
+            assert!(matches!(
+                paths.as_slice(),
+                [StatementExecutionPath {
+                    outcome: StatementOutcome::RuntimeError(RuntimeError::InvalidFree(
+                        InvalidFree::InteriorPointer
+                    )),
+                    ..
+                }]
+            ));
+        } else {
+            let [
+                StatementExecutionPath {
+                    outcome: StatementOutcome::Normal(freed),
+                    ..
+                },
+            ] = paths.as_slice()
+            else {
+                panic!("base alias must free: {paths:?}")
+            };
+            assert!(
+                freed
+                    .memory()
+                    .is_deallocated_heap_address(base.pointer(), &facts)
+            );
+        }
+    }
 }
 
 #[test]
