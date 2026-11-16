@@ -1196,11 +1196,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             indent,
         ),
         ProofTactic::Known => line(output, &prefix, "known();"),
-        ProofTactic::Extract(proposition) => line(
-            output,
-            &prefix,
-            &format!("extract({});", source_click_proposition(proposition)),
-        ),
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),
         ProofTactic::NormalizeUsing(premises) => {
             write_using_premises(output, "normalize()", premises, indent)

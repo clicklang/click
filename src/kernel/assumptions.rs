@@ -6027,19 +6027,6 @@ impl PureFactContext {
             .algebraic_constructor_field_sources(field)
     }
 
-    /// Whether an exact same-constructor equality in this context entails
-    /// `field`. This is the checked no-confusion rule used by explicit
-    /// `extract`; the persistent index keeps the query independent of the
-    /// number of unrelated facts in the proof state.
-    pub(crate) fn contains_algebraic_constructor_field_equality(
-        &self,
-        field: &Proposition,
-    ) -> bool {
-        self.algebraic_constructor_field_sources(field)
-            .next()
-            .is_some()
-    }
-
     /// Test census of the loadable facts whose base is in `block`.
     #[cfg(test)]
     pub(crate) fn memory_loadable_candidates(

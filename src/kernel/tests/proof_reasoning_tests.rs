@@ -4002,7 +4002,7 @@ fn finite_forall_order_fact_needs_an_explicit_instantiation() {
 /// The guard is exactly available, so the old collection discharged it with
 /// the general prover and harvested the conclusion as an order fact. The
 /// theory now sees only `condition_facts`, and the conclusion joins the
-/// transitive path once an explicit `intro`/`extract` step has added it.
+/// transitive path once an explicit `intro`/`have` step has added it.
 #[test]
 fn guarded_implication_bound_needs_an_explicit_extraction() {
     let a = MachineTerm::Variable(Variable(97_001));
@@ -8572,4 +8572,39 @@ fn offset_and_existential_matches_ignore_unrelated_facts() {
         work.windows(2).all(|pair| pair[0] == pair[1]),
         "unrelated facts changed the offset and existential matches' work: {work:?}"
     );
+}
+
+#[test]
+fn complete_pointer_read_source_retains_the_domain_version() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let cell = Pointer::symbolic(Variable(995_031));
+    let unrelated = Pointer::symbolic(Variable(995_032));
+    let before = crate::kernel::intern_memory(Memory::new().store(
+        cell.clone(),
+        ProgramValue::typed_pointer(
+            Pointer::symbolic(Variable(995_033)),
+            ProgramType::Int32Pointer,
+        ),
+    ));
+    let address = Pointer::loaded_value(&before, &cell);
+    let after = crate::kernel::intern_memory(
+        before
+            .memory()
+            .clone()
+            .store(unrelated, ProgramValue::Int32(MachineTerm::constant(1))),
+    );
+    let old_value =
+        PointerValue::from_read(address.clone(), ProgramType::Int32Pointer, &before, &cell);
+    let value = PointerValue::from_read(address, ProgramType::Int32Pointer, &after, &cell);
+    assert_eq!(old_value.pointer(), value.pointer());
+    assert_ne!(
+        old_value, value,
+        "an address alone does not identify a complete pointer"
+    );
+    assert!(old_value.complete_read_source().is_none());
+    let (source, source_cell) = value
+        .complete_read_source()
+        .expect("the domain's introducing read");
+    assert_eq!(source, after.unchanged_bytes_source());
+    assert_eq!(source_cell, cell);
 }

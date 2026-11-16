@@ -562,7 +562,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     }
                 }
             }
-            extract(not (1024u64 <= size) or not (1000u64 <= size));
+            have not (1024u64 <= size) or not (1000u64 <= size);
             have size < 1024u64 by {
                 cases {
                     not (1024u64 <= size) => { solve() using { not (1024u64 <= size); }; }

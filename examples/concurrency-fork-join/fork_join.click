@@ -170,13 +170,13 @@ void *fill_range(void *argument) {
                 intro();
                 intro();
                 if k < index {
-                    extract(job->begin <= k);
+                    have job->begin <= k;
                     instantiate(at(region(5).entry, forall (k: int32) {
                         job->begin <= k and k < index implies job->output[k] == job->value
                     }), k) using { job->begin <= k; k < index; job->begin == at(iteration, job->begin); };
                     solve();
                 } else {
-                    extract(k <= index);
+                    have k <= index;
                     have k == index;
                     rewrite(k, index);
                     solve();
@@ -199,8 +199,8 @@ void *fill_range(void *argument) {
             } by {
                 intro();
                 intro();
-                extract(job->begin <= k);
-                extract(k < index);
+                have job->begin <= k;
+                have k < index;
                 have k <= at(iteration, index);
                 instantiate(at(region(6).entry, forall (k: int32) {
                     job->begin <= k and k <= index implies job->output[k] == job->value

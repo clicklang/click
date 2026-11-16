@@ -82,7 +82,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             } by {
                 intro();
                 intro();
-                extract(to_integer(k) < to_integer(at(opened, i) + 1));
+                have to_integer(k) < to_integer(at(opened, i) + 1);
                 if k < at(opened, i) {
                     have k < m by solve();
                     have at(opened, occupied[k]) == 1 by {

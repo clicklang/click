@@ -219,7 +219,7 @@ expansion output.
 - `witness { k: expression };`: prove the current existential goal by substituting
   the given int32 expression for binder `k`.
 - `known();`: close a goal already present as the same semantic fact; it
-  does not normalize, extract, or transport a new fact.
+  does not normalize or transport a new fact.
 - `normalize();`: close a pure goal by context-free computation.
 - `rewrite(from, to);`: rewrite the current proposition once using an exact
   available equality; the [tactic reference](../reference/tactics/index.md)

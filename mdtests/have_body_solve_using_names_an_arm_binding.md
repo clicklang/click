@@ -2,7 +2,7 @@
 
 The uniform-scoping slices resolve a proof `match` arm's bindings the way a
 `have` goal resolves them: in theorem arguments and `apply ... using` premises,
-in `instantiate`, in `extract`
+in `instantiate`, in `have`
 ([`theorem_argument_arm_binding.md`](theorem_argument_arm_binding.md)), in a
 `loop` written inside the arm
 ([`loop_clause_reads_arm_bindings.md`](loop_clause_reads_arm_bindings.md)),

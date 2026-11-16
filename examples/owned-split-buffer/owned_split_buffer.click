@@ -275,14 +275,14 @@ int32 owned_split_buffer_pipeline(
         normalize() using { separate(memory(owner->split), memory(data[1])); };
     }
     have at(statement(5).call(0).exit, data[1]) == at(statement(5).call(0).entry, data[1]) by {
-        preserve(separate(statement(5).call(0).footprint, memory(data[1])));
+        preserve(memory(data[1]), statement(5).call(0));
     }
     have separate(memory(ignored), memory(data[1])) by { known(); }
     have separate(statement(5).assignment(ignored, 0).footprint, memory(data[1])) by {
         normalize() using { separate(memory(ignored), memory(data[1])); };
     }
     have at(statement(5).assignment(ignored, 0).exit, data[1]) == at(statement(5).assignment(ignored, 0).entry, data[1]) by {
-        preserve(separate(statement(5).assignment(ignored, 0).footprint, memory(data[1])));
+        preserve(memory(data[1]), statement(5).assignment(ignored, 0));
     }
     have to_integer(at(statement(5).exit, owner->split)) == (to_integer(at(statement(5).entry, owner->split)) + 1) by {
         known();
@@ -300,7 +300,7 @@ int32 owned_split_buffer_pipeline(
         normalize() using { separate(memory(result), memory(data[1])); };
     }
     have at(statement(6).assignment(result, 0).exit, data[1]) == at(statement(6).assignment(result, 0).entry, data[1]) by {
-        preserve(separate(statement(6).assignment(result, 0).footprint, memory(data[1])));
+        preserve(memory(data[1]), statement(6).assignment(result, 0));
     }
     have data[1] == right_value by { known(); }
     apply(int32_equality_transitive(c(result), data[1], right_value)) using {

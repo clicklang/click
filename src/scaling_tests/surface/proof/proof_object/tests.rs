@@ -490,7 +490,7 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
 
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
-fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
+fn choose_body_indexing_scales_with_selected_body_size() {
     let click_file = crate::surface::parse(
         r#"
             int32 identity(int32 x) {
@@ -600,7 +600,6 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
             SpecDefinitions::new(&predicates, &click_functions),
             &theorems,
         );
-        CHOSEN_PROJECTION_WALK_WORK.with(|count| count.set((0, 0)));
         let chosen = root
             .driver()
             .apply_step(ProofStep::Choose(ProofChoice {
@@ -608,62 +607,16 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
                 source: ProofFactSource::Requirement(0),
             }))
             .expect("the selected existential should check");
-        let leaves = chosen
-            .execution()
-            .and_then(|execution| execution.presentation.chosen_projection.as_ref())
-            .map_or(0, |projection| projection.leaves.len());
-        (
-            leaves,
-            CHOSEN_PROJECTION_WALK_WORK.with(std::cell::Cell::get),
-            fact_node_allocations() - before,
-        )
+        assert!(chosen.local_binding(&"candidate".to_string()).is_some());
+        fact_node_allocations() - before
     };
 
-    let mut samples = Vec::new();
     for size in [8_u32, 32, 128, 512] {
-        let _ = run(size);
-        let first = crate::instrumentation::measure_deterministic_work(|| run(size));
-        let second = crate::instrumentation::measure_deterministic_work(|| run(size));
-        assert_eq!(
-            first.0.0, second.0.0,
-            "leaf count must be deterministic at {size}"
-        );
-        assert_eq!(
-            first.0.0, size as usize,
-            "all selected leaves must be retained at {size}"
-        );
-        // Fact indexing and proof setup are outside the projection walk.
-        // Their AVL shapes can differ between identical semantic samples:
-        // a phased reproduction had totals 3047/3049 at 32 leaves, while
-        // setup used 6 nodes and the walk used 96 nodes in both runs.
-        assert_eq!(
-            first.0.1, second.0.1,
-            "projection visits and allocations must be deterministic at {size}"
-        );
-        assert_eq!(
-            first.0.1.0,
-            (2 * size - 1) as usize,
-            "the walk must visit each selected conjunction node once"
-        );
-        samples.push((size, first.1, first.0.1.1, first.0.2));
-        samples.push((size, second.1, second.0.1.1, second.0.2));
-    }
-    let (base_size, base_work, base_walk_allocations, _) = samples[0];
-    for (size, work, walk_allocations, total_allocations) in samples {
-        assert!(
-            work <= base_work + 64 * (size - base_size) as usize,
-            "selected-body projection work exceeded the linear bound at {size}: {work}"
-        );
-        assert!(
-            walk_allocations <= base_walk_allocations + 8 * (size - base_size) as usize,
-            "projection walk allocations exceeded the linear bound at {size}: {walk_allocations}"
-        );
-        // The complete choose also updates persistent fact indexes; their
-        // logarithmic search paths have a separate size-dependent bound.
+        let allocations = run(size);
         let index_height = (u32::BITS - size.leading_zeros()) as usize;
         assert!(
-            total_allocations <= 32 * size as usize * index_height,
-            "proof setup and choose allocations exceeded the indexed bound at {size}: {total_allocations}"
+            allocations <= 32 * size as usize * index_height,
+            "choose indexing exceeded the selected-body bound at {size}: {allocations}"
         );
     }
 }

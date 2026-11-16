@@ -3885,7 +3885,7 @@ mod tests {
             }
             theorem extraction(x: int32) {
                 requires x == 0 and x <= 1;
-                ensures x == 0 by { extract(x == 0); rewrite(x, 0); normalize(); }
+                ensures x == 0 by { have x == 0 by known(); rewrite(x, 0); normalize(); }
             }
         "#;
         let verified = crate::surface::verify_click_theorems(source).unwrap();

@@ -100,8 +100,8 @@ when the default misses or when a proof must not search.
   `solve() using { ... }` for a goal that follows from named facts, an
   integer bound or equality among them: it tries arithmetic over the listed
   premises last. `known()`
-  (the goal is an available fact), `normalize()` (the goal is true by
-  evaluation) and `extract(P)` (one part of a fact) do no search. They are
+  (the goal is an available fact) and `normalize()` (the goal is true by
+  evaluation) do no search. They are
   what expansion writes; write them by hand only in a proof that must not
   search.
 - **Equalities and states: `rewrite`, `transport`.** `rewrite(from, to)` is the
@@ -1076,16 +1076,14 @@ rebuilt when a context is restricted to selected facts; it does not equate reads
 version points where memory may have changed. Exact fact membership remains separate. See
 [`model_getter_constant_conflict.md`](https://github.com/clicklang/click/blob/master/mdtests/model_getter_constant_conflict.md).
 
-`extract(P)` can also project an available disjunction: each source arm
-must establish `P` through its direct `and`/`or` structure and equality-backed
-fact lookup. It selects stated disjunctions indexed by the values or addresses
-`P` names, without scanning unrelated facts, unfolding functions, or searching
-for theorems. It checks every arm and keeps their assumptions local. For example,
-`(A and X) or (B and Y)` supplies `A or B` without spelling `X` and `Y`.
-See [`extract_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_disjunction_projection.md)
+`have P;` can project an available disjunction. The solver selects a connected
+stated disjunction and expands to explicit `cases`, with `known()` in each arm.
+For example, `(A and X) or (B and Y)` supplies `A or B`. Every source arm must
+establish the requested proposition; arm assumptions remain local.
+See [`have_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/have_disjunction_projection.md)
 and [`loop_exit_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_exit_disjunction_projection.md).
 
-A simple tactic that adds a fact (`extract`, `instantiate ... using`,
+A simple tactic that adds a fact (`instantiate ... using`,
 `apply ... using`, `transport ... using`, and `obtain`) also closes a
 proposition goal that it adds, when it is the last written step or only
 `known`, `solve`, or `normalize` follows it. An added order fact closes
@@ -1106,7 +1104,6 @@ step is still checked.
 | `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
 | `known()` | simple | Expansion output | Close a goal from available facts or goal-local computation. | [Reference](#available-facts) |
-| `extract(P)` | simple | Specialized | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
@@ -1195,7 +1192,7 @@ binders first, then every proof local, including the bindings a proof
 children, a `let { result: r } = step(...)` result, and a loop binder. The C null pointer constant
 is accepted at a pointer-typed theorem parameter and lowers to that
 type's null value, as it does at a pure function's pointer parameter.
-`instantiate` and `extract` resolve their written propositions the same way.
+`instantiate` and `have` resolve their written propositions the same way.
 See [`theorem_argument_arm_binding.md`](https://github.com/clicklang/click/blob/master/mdtests/theorem_argument_arm_binding.md),
 [`theorem_argument_arm_binding_algebraic.md`](https://github.com/clicklang/click/blob/master/mdtests/theorem_argument_arm_binding_algebraic.md),
 and [`theorem_argument_null_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/theorem_argument_null_constant.md).
@@ -1262,7 +1259,7 @@ cursor forward, `v = v + cs`, carries `v == b + k` across the pass this way
 
 When a smart `have` needs memory permissions merely to lower its goal, its
 expanded proof retains the relevant viewability and order facts through
-explicit transports, rewrites, extracts, or named theorem applications. A
+explicit transports, rewrites, intermediate facts, or named theorem applications. A
 context-free-looking result such as a normalized equality is not emitted as
 bare `normalize()` if checking still needs those premises to interpret an
 indexed load. A `solve() using` equality may be selected through a bounded chain
@@ -1433,9 +1430,8 @@ refuted arms closing by `contradiction`
 
 A goal that an available implication (or chain) concludes whose antecedents are
 exactly available, such as a call guarantee `r == 0 implies X` inside the branch
-where `r == 0`, is closed by modus ponens as a direct step through `extract`'s
-indexed consequent lookup, with the goal's `at(...)` points as written; an antecedent
-that is not exactly available is not proved or searched for.
+where `r == 0`, is closed by selecting the implication and expanding to
+`apply(fact) using { ... }`, with the goal's `at(...)` points as written.
 
 A guarded universal goal `forall k { G implies A }` closes from an available
 `forall k { G implies A and B }` with the same binder and guards, selected by one
@@ -1619,9 +1615,10 @@ already held as a fact retains its existing exact-lookup behavior.
 
 **Outside it**, with what to write instead:
 
-- A consequent of an available implication: `extract(Q)` first.
+- A consequent of an available implication: `have Q;` or apply the implication
+  with `apply(fact) using { ... }`.
 - A reordered disjunction fact (`y > 0 or x < y` from `x < y or y > 0`):
-  `extract(y > 0 or x < y)`, which checks each arm, then `known()`.
+  `have y > 0 or x < y;`, which expands to `cases`, then `known()`.
 - A weaker or derived bound, such as `x <= y` from `x < y`: `solve()
   using { x < y; }`.
 - An implication or quantifier whose body is only equivalent to a fact, such
@@ -1658,73 +1655,6 @@ effects. Expansion leaves the step unchanged, and profiling charges one
 simple leaf.
 
 **Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`known_computes_fast_leaves.md`](https://github.com/clicklang/click/blob/master/mdtests/known_computes_fast_leaves.md), [`known_closes_an_evaluated_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/known_closes_an_evaluated_goal.md)
-
-### Extracting a fact
-
-**Form:** `extract(P)`
-
-**Specialized.** Retained for handwritten proofs. Solver expansion uses
-`have P by { known(); }`, explicit implication application, `cases`, or
-`if` instead. This tactic states one conjunct or consequent of an available fact.
-It adds
-`P` as a fact and closes the goal when the goal is then a fact. Written steps
-after a closing `extract` are still checked, and they see all of `P`
-([`extract_before_more_steps_keeps_the_whole_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_before_more_steps_keeps_the_whole_fact.md)).
-
-**Accepts** `P` when one of these holds:
-
-- `P` is a proper sub-conjunction of a conjunction fact: a leaf conjunct, or
-  a parenthesized group of conjuncts exactly as the fact is built. `and`
-  associates to the left, so `a and b` is a sub-conjunction of `a and b and
-  c` while `b and c` is not. A leaf may be written in another polarity or
-  direction (`0 < y` for the conjunct `y > 0`), and a quantified conjunct
-  under renamed binders.
-- `P` is the consequent of an available implication fact, exactly as written
-  there (up to renaming of quantified binders), and every antecedent before
-  it is available in the sense of `known()`'s atomic rules: `A implies B
-  implies C` with `A` and `B` available gives `C`, and with `A` alone gives
-  `B implies C`.
-- `P` is a field equality `a == c` of an exact equality between two
-  applications of one algebraic constructor, `K(a, b) == K(c, d)`, at the
-  same field position and in that orientation.
-- Some available disjunction connected to `P`'s atoms has every arm, assumed
-  with the ambient facts, establish `P` by `known()`'s rules, including
-  the equality closure: `(x < 5 and y == 1) or (x < 5 and y == 2)` gives
-  `x < 5`, and also `y == 1 or y == 2`.
-
-Each leaf conjunct of a fact is already an available fact, so `extract` of a
-leaf conjunct adds nothing; every tactic, including `known()` and an
-arithmetic certificate's premises, may cite it directly.
-
-Between execution steps and after execution, a bare `extract(P)` adds `P` to
-the current state exactly as `have P by { extract(P); }` does.
-
-**Outside it**, with what to write instead:
-
-- `P` that is itself a whole fact, or a regrouped or reordered selection of
-  conjuncts (`x < y and z == 1` from `x < y and y > 0 and z == 1`): cite the
-  fact directly, or build the conjunction with `have P by { known(); }`.
-- A part of an implication's consequent: extract the whole consequent, then
-  extract the part
-  ([`extract_takes_an_implication_consequent_whole.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_takes_an_implication_consequent_whole.md)).
-- A consequent whose antecedent is not available, including a conjunction
-  antecedent that is not itself a fact: prove it with `have` first.
-- A consequent written in another spelling than the implication's: extract
-  it as written, then close with `known()`.
-- A consequence an arm establishes only by arithmetic or evaluation (`x != 3`
-  or `x < 3` from `x == 1 or x == 2`): `cases { x == 1 => { ... } x == 2 =>
-  { ... } }`, rewriting and normalizing in each arm.
-- Modus ponens with an implication that is a conjunct of a fact rather than
-  a fact itself: `extract` the implication, then its consequent.
-
-**Failure, checking, and tools:**
-
-A refusal names the requested proposition in its written syntax, retaining
-parameter and proof-local names. Click follows an indexed, checked
-derivation with no search; expansion is unchanged, and profiling charges that
-derivation.
-
-**Checked examples:** [`extract_refusal_keeps_written_parameter_names.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_refusal_keeps_written_parameter_names.md), [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`algebraic_symbolic_values.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_symbolic_values.md), [`extract_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_disjunction_projection.md), [`extract_disjunction_projection_missing_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_disjunction_projection_missing_arm.md), [`a_bare_extract_between_execution_steps_adds_its_conjunct.md`](https://github.com/clicklang/click/blob/master/mdtests/a_bare_extract_between_execution_steps_adds_its_conjunct.md), [`extract_takes_an_implication_consequent_whole.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_takes_an_implication_consequent_whole.md)
 
 ### Context-free normalization
 
@@ -1899,7 +1829,7 @@ cited premise is accepted:
 **Outside it**, with what to write instead:
 
 - A premise that is a conjunction, disjunction, implication, or quantifier:
-  `extract` the single condition and cite it. Two premises stating opposite
+  `have` the single condition and cite it. Two premises stating opposite
   values of one condition are refused as inconsistent.
 - A goal that needs a cited equality's value substituted into a term, such as
   `x * 2 < 15` from `x == 7`: `rewrite(x, 7)` then `normalize()`
@@ -2440,7 +2370,7 @@ must be the goal itself:
   certificate: only the unsuffixed form accepts one.
 - A node of another family, or a proposition at another point or inside a
   conjunction: a separate `have` step for each family, and `at(...)` or
-  `extract(...)` steps for provenance; certificate families never coerce one
+  `have ... by known();` steps for provenance; certificate families never coerce one
   another's propositions.
 
 **Failure, checking, and tools:**
@@ -2525,8 +2455,8 @@ fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
 
 - A proposition that is not an equality (`x != y`, `x <= y`): there is no
   substitution by order; use `solve() using` or `normalize() using`.
-- An equality available only as an implication's consequent: `extract` it
-  first.
+- An equality available only as an implication's consequent: establish it
+  with `have` or `apply(fact)` first.
 - A goal without an occurrence of `L`, including a different association or
   a constant that lowering folded away: rewrite by the equality as the goal
   spells it, or in the other direction.
@@ -3367,7 +3297,7 @@ from an earlier `have` or a proof `if` condition inside a pure theorem has none
 and is not offered. In a pure theorem, an omitted proof of `ensures P` is the
 same `solve`. `have name: P` also names the fact: until the end of
 the enclosing block, `name` stands for `P` wherever a proposition is cited
-whole, as in `using { name; }`, `extract(name)` or `contradiction(name)`, and is
+whole, as in `using { name; }`, `have name by known();` or `contradiction(name)`, and is
 read as `P` there, so citing it proves exactly what restating `P` proves.
 
 The name is not visible inside the fact's own proof, and expansion writes `P` in
@@ -3593,7 +3523,7 @@ fact.
 **Outside it**, with what to write instead:
 
 - An existential held only under a disjunction or implication: `cases` or
-  `extract` it first.
+  `have` it first.
 - A body spelled differently from the fact (`n > m` for `m < n`), or a
   different binder type: write it as the fact states it.
 - More names than the fact's binders: name only those it has.

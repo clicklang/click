@@ -44,7 +44,7 @@ int32 count_up(int32 *a, int32 n) {
             have forall (k: int32) { 0 <= k and to_integer(k) <= to_integer(i + 1) implies viewable(a[0..k]) } by {
                 intro();
                 intro();
-                extract(to_integer(k) <= to_integer(i + 1));
+                have to_integer(k) <= to_integer(i + 1);
                 solve();
             }
             solve();

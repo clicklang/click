@@ -2565,6 +2565,26 @@ impl PointerValue {
             .with_designation(origin)
     }
 
+    /// The read that introduced this complete pointer's opaque domain when
+    /// its numeric address alone names a different read version. This is
+    /// producer provenance, not an address-alias or preservation query.
+    pub(crate) fn complete_read_source(&self) -> Option<(SharedMemory, Pointer)> {
+        if self.opaque_extent() != Some(self.designation())
+            || self.pointer.object_identity() == *self.designation()
+        {
+            return None;
+        }
+        let address_read = self.pointer.as_loaded_value()?;
+        let origin = self.designation().as_loaded_value()?;
+        if address_read.displacement != PointerOffsetTerm::Constant(0)
+            || origin.displacement != PointerOffsetTerm::Constant(0)
+            || address_read.defining_address != origin.defining_address
+        {
+            return None;
+        }
+        Some((origin.defining_memory, origin.defining_address))
+    }
+
     pub(crate) fn designation(&self) -> &Pointer {
         &self.designation
     }

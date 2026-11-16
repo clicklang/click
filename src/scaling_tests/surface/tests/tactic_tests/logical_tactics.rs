@@ -72,8 +72,8 @@ fn extracting_two_call_equalities_ignores_earlier_call_history() {
                 step();
                 have 0 <= to and to < n implies v[to] == at(start, v[to]) by {{
                     intro();
-                    extract(v[to] == at(middle, v[to]));
-                    extract(at(middle, v[to]) == at(start, v[to]));
+                    have v[to] == at(middle, v[to]) by known();
+                    have at(middle, v[to]) == at(start, v[to]) by known();
                     known();
                 }}
                 step();

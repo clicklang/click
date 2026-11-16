@@ -1262,7 +1262,6 @@ fn instantiate_proof_tactic(
                 .map(proposition)
                 .collect::<Result<Vec<_>, _>>()?,
         },
-        ProofTactic::Extract(value) => ProofTactic::Extract(proposition(value)?),
         ProofTactic::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(
             premises
                 .iter()

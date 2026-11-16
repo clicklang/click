@@ -52,7 +52,6 @@ impl SourceContext {
                     | ProofTactic::CheckTerminationComponent { .. }
                     | ProofTactic::CheckTerminationCallbacks
                     | ProofTactic::Known
-                    | ProofTactic::Extract(_)
                     | ProofTactic::Normalize
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
@@ -145,7 +144,6 @@ impl SourceContext {
                         | ProofTactic::ApplyTheorem(_)
                         | ProofTactic::Transport { .. }
                         | ProofTactic::Have(_)
-                        | ProofTactic::Extract(_)
                         | ProofTactic::ExecuteUntil(_)
                         | ProofTactic::SmartExecute
                         | ProofTactic::Loop(_)

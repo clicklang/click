@@ -79,7 +79,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(added) = attempt::candidate_outcome(closed.join())? else {
                 return Ok(None);
             };
-            // Extraction also closed a goal established by the selected fact.
+            // Close an outer goal established by the selected fact.
             // Retain an ordinary explicit closer for that case.
             if (added
                 .goal()

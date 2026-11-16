@@ -5004,8 +5004,8 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
                      have forall (k: int32) {{ 0 <= k and k < i implies dst[k] == old(src[k]) }} by {{\n                \
                          intro();\n                \
                          intro();\n                \
-                         extract(0 <= k);\n                \
-                         extract(k < i);\n                \
+                         have 0 <= k by known();\n                \
+                         have k < i by known();\n                \
                          have i == 0 by {{\n                    normalize();\n                }}\n                \
                          have not (0 <= k) by {{\n                    \
                              solve() using {{\n                        k < i;\n                        i == 0;\n                    }}\n                \

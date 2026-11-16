@@ -123,8 +123,8 @@ void fill(struct arena *arena, int32 start, int32 end) {
             } by {
                 intro();
                 intro();
-                extract(at(opened, i) < k);
-                extract(k < end);
+                have at(opened, i) < k;
+                have k < end;
                 have at(opened, i) <= k;
                 have m <= k;
                 have at(opened, arena->occupied[k]) == 0 by {

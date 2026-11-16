@@ -308,7 +308,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         // `defined(x + y)` fact emitted for a C addition.  The theorem may
         // require one of that fact's proper conjuncts (the no-overflow
         // condition), so select it through the same exact structural rule as
-        // the kernel `extract` step.  This does not derive or normalize a
+        // an explicit implication application.  This does not derive or normalize a
         // weaker proposition: the complete conjunction remains the supplied
         // evidence and only its checked conjunct satisfies this requirement.
         // A requirement is also met by a listed fact that states the same

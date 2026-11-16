@@ -100,113 +100,6 @@ mod constant_truth_tests {
 }
 
 #[cfg(test)]
-mod disjunction_projection_tests {
-    use super::*;
-
-    fn value(id: u64, constant: u32) -> Proposition {
-        Proposition::ConditionIs(
-            ConditionTerm::equal(
-                MachineTerm::Variable(Variable(id)),
-                MachineTerm::constant(constant),
-            ),
-            true,
-        )
-    }
-    fn and(left: Proposition, right: Proposition) -> Proposition {
-        Proposition::And(Box::new(left), Box::new(right))
-    }
-    fn or(left: Proposition, right: Proposition) -> Proposition {
-        Proposition::Or(Box::new(left), Box::new(right))
-    }
-
-    #[test]
-    fn projection_checks_every_arm_and_every_conjunct_of_the_goal() {
-        let source = or(and(value(1, 1), value(3, 3)), and(value(2, 2), value(3, 3)));
-        let facts = ProofFacts::from_ordered(&[source]);
-        let goal = or(value(1, 1), value(2, 2));
-        assert!(facts.contains_disjunction_projection(&goal));
-        assert!(facts.contains_disjunction_projection(&and(goal.clone(), value(3, 3))));
-        assert!(facts.contains_disjunction_projection(&value(3, 3)));
-        assert!(!facts.contains_disjunction_projection(&or(value(1, 1), value(2, 9))));
-        assert!(!facts.contains_disjunction_projection(&and(goal, value(1, 1))));
-    }
-
-    #[test]
-    fn projection_uses_scoped_equalities() {
-        let alias = Proposition::ConditionIs(
-            ConditionTerm::equal(
-                MachineTerm::Variable(Variable(1)),
-                MachineTerm::Variable(Variable(4)),
-            ),
-            true,
-        );
-        let source = or(value(1, 1), value(2, 2));
-        let goal = or(value(4, 1), value(2, 2));
-        let root = ProofFacts::from_ordered(&[alias]);
-        let child = root.with_fact(source.clone());
-        assert!(child.contains_disjunction_projection(&goal));
-        assert!(!root.contains_disjunction_projection(&goal));
-        let wide = Proposition::ConditionIs(
-            ConditionTerm::uint64_equal(
-                MachineTerm::Variable(Variable(1)),
-                MachineTerm::uint64_constant(1),
-            ),
-            true,
-        );
-        assert!(!child.contains_disjunction_projection(&or(wide, value(2, 2))));
-    }
-
-    #[test]
-    fn an_impossible_arm_does_not_contaminate_the_other_arm_or_parent() {
-        let facts = ProofFacts::from_ordered(&[value(7, 1), or(value(7, 0), value(8, 1))]);
-        assert!(!facts.assumptions().is_inconsistent());
-        assert!(!facts.contains_disjunction_projection(&or(value(7, 0), value(8, 2))));
-        assert!(facts.contains_disjunction_projection(&value(8, 1)));
-        assert!(!facts.assumptions().is_inconsistent());
-        assert!(!facts.assumptions().contains_known(&value(7, 0)));
-        assert!(!facts.assumptions().contains_known(&value(8, 1)));
-    }
-
-    #[test]
-    fn projection_respects_changed_read_states() {
-        let pointer = Pointer {
-            block: "projection-cell".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let before = Memory::new().with_block("projection-cell", 4).store(
-            pointer.clone(),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(10))),
-        );
-        let after = before.clone().store(
-            pointer.clone(),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
-        );
-        let read = |memory| {
-            Proposition::ConditionIs(
-                ConditionTerm::equal(
-                    MachineTerm::MemoryLoad(
-                        ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-                        Box::new(pointer.clone()),
-                        LoadKind::Int32,
-                    ),
-                    MachineTerm::constant(0),
-                ),
-                true,
-            )
-        };
-        let source = or(read(before.clone()), value(2, 2));
-        let facts = ProofFacts::from_ordered(&[source]);
-        assert!(facts.contains_disjunction_projection(&or(read(before), value(2, 2))));
-        assert!(!facts.contains_disjunction_projection(&or(read(after), value(2, 2))));
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../../scaling_tests/kernel/proof/facts/disjunction_projection_tests.rs");
-    }
-}
-
-#[cfg(test)]
 thread_local! {
     static INDEXED_FACT_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static STATEMENT_PRIORITY_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -321,7 +214,7 @@ pub(crate) struct ProofFacts {
     /// carrier choice; they retain state, argument order and type keys.
     call_payloads: PersistentSet<CallPayloadKey>,
     /// Every strict subtree of an available top-level conjunction. This is
-    /// the exact structural authority for `extract`; top-level facts are not
+    /// used for selected conjunction sources; top-level facts are not
     /// included merely because they are independently available.
     proper_conjuncts: PersistentSet<PropositionKey>,
     /// The quantified atomic conjuncts of available conjunctions, keyed by
@@ -421,8 +314,8 @@ struct ImplicationCandidate {
     consequent: Proposition,
     /// For an entry filed under one conjunct of a conjunctive consequent,
     /// that whole consequent. Such an entry serves only the search for a
-    /// conjunct (`discharged_implication_containing`); the `extract` rule's
-    /// own lookup reads the entries without one.
+    /// conjunct (`discharged_implication_containing`); whole-consequent lookup
+    /// reads the entries without one.
     whole: Option<Proposition>,
 }
 
@@ -1822,50 +1715,6 @@ impl ProofFacts {
                 .any(|form| self.proper_conjuncts.contains(&PropositionKey::new(form)))
     }
 
-    /// Project a known disjunction without naming its discarded conjuncts.
-    /// Select only operand-adjacent stated facts, then check every arm using
-    /// the existing direct logical rule and this scope's equality closure.
-    /// No unfolding, implication extraction, or recursive case search.
-    pub(crate) fn contains_disjunction_projection(&self, required: &Proposition) -> bool {
-        let keys =
-            crate::kernel::reasoning::variable_collection::collect_atomic_connection_keys(required);
-        let mut seen = std::collections::HashSet::new();
-        for key in keys {
-            for disjunction in self.assumptions.disjunctions_connected_to(&key) {
-                crate::instrumentation::record_deterministic_work(1);
-                if !seen.insert(disjunction as *const Proposition as usize) {
-                    continue;
-                }
-                let mut cases = vec![disjunction];
-                let mut complete = true;
-                while let Some(case) = cases.pop() {
-                    crate::instrumentation::record_deterministic_work(1);
-                    if let Proposition::Or(left, right) = case {
-                        cases.push(right);
-                        cases.push(left);
-                        continue;
-                    }
-                    let context = self
-                        .assumptions
-                        .clone()
-                        .assume_proposition(crate::kernel::clone_proposition_iteratively(case));
-                    if first_unavailable_connective_side(required, &|side| {
-                        context.contains_known(side)
-                    })
-                    .is_some()
-                    {
-                        complete = false;
-                        break;
-                    }
-                }
-                if complete {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
     /// The available proper conjunct that `required` names up to the
     /// renaming of its quantifier binders, selected by its alpha bucket.
     pub(crate) fn alpha_equivalent_proper_conjunct(
@@ -2293,7 +2142,7 @@ impl ProofFacts {
 
     /// An implication whose antecedents are all available and whose
     /// consequent is a conjunction with `required` among its conjuncts: the
-    /// implication fact itself and that whole consequent. `extract` states
+    /// implication fact itself and that whole consequent. `apply(fact)` states
     /// the whole consequent from the fact, and `required` is then a proper
     /// conjunct of an available fact.
     pub(crate) fn discharged_implication_containing(
@@ -3186,7 +3035,7 @@ fn index_guarded_implication_fact(
         return index;
     }
     // Only a definedness guard: applying an ambient implication under an
-    // ordinary condition stays an explicit `extract`
+    // ordinary condition stays an explicit `apply(fact)`
     // (`verified_call_ensure_premise_needs_its_discharge.md`), while a
     // no-overflow guard is a side condition of the arithmetic the
     // consequent states.

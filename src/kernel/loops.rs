@@ -2866,6 +2866,10 @@ struct LoopExitRestatement {
     /// The held value is a term, not only a symbol: one exit may hold the
     /// head's own model variable and another a constructor it folded.
     replacements: Vec<(AlgebraicTerm, AlgebraicTerm)>,
+    /// The first successor name for a selected symbolic resource value.
+    /// Further fields holding that same value pin to this name directly,
+    /// without exporting the private exit variable or walking other pins.
+    symbolic_resource_pins: BTreeMap<Variable, AlgebraicTerm>,
 }
 
 impl LoopExitRestatement {
@@ -2898,13 +2902,26 @@ impl LoopExitRestatement {
             self.pin(fresh, held);
             return;
         }
+        if let (AlgebraicValue::Algebraic(fresh), AlgebraicValue::Algebraic(held)) = (fresh, held) {
+            self.replacements.push((held.clone(), fresh.clone()));
+            if let AlgebraicTermNode::Variable(variable) = held.node {
+                let representative = self
+                    .symbolic_resource_pins
+                    .entry(variable)
+                    .or_insert_with(|| fresh.clone());
+                if representative != fresh {
+                    self.equations.push(Proposition::Equal(
+                        Term::Algebraic(fresh.clone()),
+                        Term::Algebraic(representative.clone()),
+                    ));
+                }
+                return;
+            }
+        }
         self.equations.push(Proposition::Equal(
             resource_value_term(fresh),
             resource_value_term(held),
         ));
-        if let (AlgebraicValue::Algebraic(fresh), AlgebraicValue::Algebraic(held)) = (fresh, held) {
-            self.replacements.push((held.clone(), fresh.clone()));
-        }
     }
 
     /// One stated fact with this exit's value for each renamed binder
@@ -2954,7 +2971,7 @@ impl LoopExitRestatement {
         obligations: Vec<ProofObligation>,
         loan_evidence: CheckedLoanCallEvidenceSequence,
     ) -> LoopExitFacts {
-        if self.renamings.is_empty() && self.equations.is_empty() {
+        if self.renamings.is_empty() && self.equations.is_empty() && self.replacements.is_empty() {
             return LoopExitFacts::unabstracted(facts, obligations, loan_evidence);
         }
         let rename = |proposition: &Proposition| {

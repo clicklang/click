@@ -386,7 +386,7 @@ fn known_computes_leaves_but_does_not_extract_implications() {
         } by {
             step();
             have y == 0 by {
-                extract(y == 0);
+                apply(x == 0 implies y == 0) using { x == 0; };
             }
             step();
             normalize();
@@ -396,7 +396,10 @@ fn known_computes_leaves_but_does_not_extract_implications() {
     verify_c_sources(click_source, &[("keep.c", c_source)])
         .expect("explicit extraction and normalization should verify");
 
-    let implicit_extract = click_source.replace("extract(y == 0);", "known();");
+    let implicit_extract = click_source.replace(
+        "apply(x == 0 implies y == 0) using { x == 0; };",
+        "known();",
+    );
     let error = verify_c_sources(&implicit_extract, &[("keep.c", c_source)])
         .expect_err("known must not discharge an implication");
     assert!(
@@ -560,7 +563,7 @@ fn fixed_state_proof_intro_places_forall_binder_in_surface_scope() {
                 } by {
                     intro();
                     intro();
-                    extract(k == k);
+                    have k == k by known();
                     known();
                 }
                 known();
@@ -2082,10 +2085,10 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
             ensures result == x;
         } by {
             have x == 0 by {
-                extract(x == 0);
+                known();
             }
             have y == 0 by {
-                extract(y == 0);
+                known();
             }
             have x == 0 and y == 0 by {
                 known();
@@ -2126,7 +2129,7 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
         .expanded_proof_tactics()
         .expect("the checked logical scopes should expose retained provenance");
     let expanded_debug = format!("{expanded:#?}");
-    for operation in ["Extract", "Known", "Intro", "Cases", "If"] {
+    for operation in ["Have", "Known", "Intro", "Cases", "If"] {
         assert!(
             expanded_debug.contains(operation),
             "the expansion should retain {operation}: {expanded_debug}"

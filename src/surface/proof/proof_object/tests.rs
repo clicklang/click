@@ -189,7 +189,6 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
             ProofStep::Known
             | ProofStep::Normalize
             | ProofStep::Rewrite(_)
-            | ProofStep::Extract(_)
             | ProofStep::Intro
             | ProofStep::Contradiction(_) => {}
             _ => {
@@ -4026,97 +4025,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
 }
 
 #[test]
-#[ignore = "nightly: 1.5s in the parallel gate"]
-fn fixed_state_extract_uses_persistent_proper_conjunct_membership() {
-    let state = ExecutionState::new();
-    let recorded_states = RecordedStates::new();
-    let surface_propositions = SurfacePropositionMap::default();
-    let predicate_environment = PredicateEnvironment::new(&[]);
-    let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_environment = TheoremEnvironment::new(&[]);
-    let surface = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
-        operator: ComparisonOperator::Equal,
-        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
-    };
-    let kernel = lower_fixed_state_proposition_with_assumptions(
-        &surface,
-        &PureFactContext::new(),
-        ParameterBinding::default(),
-        FixedStateFrame::new(&state, &state, None, &recorded_states),
-        SpecDefinitions::new(&predicate_environment, &click_function_environment),
-    )
-    .expect("constant equality should lower");
-
-    let merely_top_level = Proof::for_fixed_state_goal(
-        "top-level is not a proper conjunct",
-        0,
-        std::slice::from_ref(&kernel),
-        kernel.clone(),
-        ParameterBinding::default(),
-        &state,
-        &state,
-        &recorded_states,
-        &surface_propositions,
-        SpecDefinitions::new(&predicate_environment, &click_function_environment),
-        &theorem_environment,
-        &[],
-    );
-    assert!(
-        merely_top_level
-            .driver()
-            .apply_step(ProofStep::Extract(surface.clone()))
-            .is_err(),
-        "an independently available fact is not extractable unless it is also a proper conjunct"
-    );
-
-    for size in LOCAL_PROOF_FACT_SIZES {
-        let mut available = (0..size).map(indexed_fact).collect::<Vec<_>>();
-        available.push(Proposition::And(
-            Box::new(indexed_fact(size + 1)),
-            Box::new(Proposition::And(
-                Box::new(kernel.clone()),
-                Box::new(indexed_fact(size + 2)),
-            )),
-        ));
-        let root = Proof::for_fixed_state_goal(
-            "persistent extract",
-            0,
-            &available,
-            kernel.clone(),
-            ParameterBinding::default(),
-            &state,
-            &state,
-            &recorded_states,
-            &surface_propositions,
-            SpecDefinitions::new(&predicate_environment, &click_function_environment),
-            &theorem_environment,
-            &[],
-        );
-        let retained_root = root.clone();
-        let step = ProofStep::Extract(surface.clone());
-        let before = fact_node_allocations();
-        let extracted = root
-            .driver()
-            .apply_step(step.clone())
-            .expect("the nested proper conjunct should extract");
-        let allocations = fact_node_allocations() - before;
-        let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 32 * logarithmic_height + 128;
-        assert!(
-            allocations <= allocation_bound,
-            "size {size} extract allocated {allocations} persistent nodes (bound {allocation_bound})"
-        );
-        assert!(root.state.shares_state_with(&retained_root.state));
-        assert!(root.certificate().steps().is_empty());
-        assert_eq!(extracted.certificate().steps(), &[step]);
-        assert_eq!(extracted.added_facts(), std::slice::from_ref(&kernel));
-        assert!(extracted.is_complete());
-    }
-}
-
-#[test]
-fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent() {
+fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
@@ -4141,34 +4050,56 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         surface_requirements: SurfacePropositionMap::default(),
     };
     let target = lower_pure_theorem_proposition(
-        "indexed implication extract",
+        "indexed implication application",
         &target_surface,
         ContractEnvironment::new(&theorem_context.values, &theorem_context.array_refs),
         &theorem_context.memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("target should lower");
-    let universal = |variable| Proposition::ForAll {
+    let antecedent_surface = ClickProposition::ForAll {
+        name: "k".into(),
+        written_name: None,
+        click_type: ClickType::Program(InterfaceType::Int32),
+        body: Box::new(ClickProposition::Comparison {
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable("k".into())),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::ProgramExpression(ProgramExpression::Variable("k".into())),
+        }),
+    };
+    let implication_surface = ClickProposition::Implies(
+        Box::new(antecedent_surface.clone()),
+        Box::new(target_surface.clone()),
+    );
+    let required_antecedent = lower_pure_theorem_proposition(
+        "selected implication antecedent",
+        &antecedent_surface,
+        ContractEnvironment::new(&theorem_context.values, &theorem_context.array_refs),
+        &theorem_context.memory,
+        SpecDefinitions::new(&predicate_environment, &click_function_environment),
+    )
+    .expect("antecedent should lower in the current comparison representation");
+    let Proposition::ForAll {
+        var, sort, body, ..
+    } = &required_antecedent
+    else {
+        panic!("a universal antecedent must remain quantified");
+    };
+    let available_variable = Variable(8_200_000);
+    let available_antecedent = Proposition::ForAll {
         name: Default::default(),
-        var: variable,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::Variable(variable)),
-            },
-            true,
+        var: available_variable,
+        sort: sort.clone(),
+        body: Box::new(substitute_int32_variable_in_proposition(
+            body,
+            *var,
+            MachineTerm::Variable(available_variable),
         )),
     };
-    let required_antecedent = universal(Variable(8_100_000));
-    let available_antecedent = universal(Variable(8_200_000));
     let selected_implication = Proposition::Implies(
         Box::new(required_antecedent.clone()),
         Box::new(target.clone()),
     );
-
     for size in [16_u32, 64, 256, 1024, 4096] {
         let mut facts = (0..size)
             .map(|index| {
@@ -4181,7 +4112,7 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         facts.push(available_antecedent.clone());
         facts.push(selected_implication.clone());
         let root = Proof::for_pure_goal(
-            "indexed implication extract",
+            "indexed implication application",
             &facts,
             target.clone(),
             &theorem_context,
@@ -4206,7 +4137,10 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
             1
         );
 
-        let step = ProofStep::Extract(target_surface.clone());
+        let step = ProofStep::ApplyFactUsing {
+            fact: implication_surface.clone(),
+            premises: vec![antecedent_surface.clone()],
+        };
         let before = fact_node_allocations();
         let extracted = root
             .driver()
@@ -4217,7 +4151,7 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         let allocation_bound = 48 * logarithmic_height + 192;
         assert!(
             allocations <= allocation_bound,
-            "size {size} implication extract allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} implication application allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
@@ -4236,7 +4170,10 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         assert!(
             missing_antecedent
                 .driver()
-                .apply_step(ProofStep::Extract(target_surface.clone()))
+                .apply_step(ProofStep::ApplyFactUsing {
+                    fact: implication_surface.clone(),
+                    premises: vec![antecedent_surface.clone()]
+                })
                 .is_err(),
             "an indexed consequent does not bypass its antecedent"
         );
@@ -5851,7 +5788,7 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
         let retained_root = root.clone();
         let extracted = root
             .driver()
-            .apply_step(ProofStep::Extract(premise.clone()))
+            .apply_step(known_have_step(premise.clone()))
             .expect("a checked predecessor should promote the indexed conjunct");
         assert!(
             crate::kernel::search::ProofSearch::try_theorem_application(
@@ -5882,7 +5819,10 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
             }
         );
         let tactics = [
-            ProofTactic::Extract(premise.clone()),
+            ProofTactic::Have(ProofHave {
+                proposition: premise.clone(),
+                proof: SourceProof::Script(vec![ProofTactic::Known]),
+            }),
             ProofTactic::ApplyTheorem(application.clone()),
             ProofTactic::Solve,
         ];
@@ -5902,7 +5842,7 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
         assert!(complete.is_complete());
         assert_eq!(
             complete.certificate().steps().first(),
-            Some(&ProofStep::Extract(premise.clone()))
+            Some(&known_have_step(premise.clone()))
         );
         assert_eq!(
             complete.certificate().steps().get(1),
@@ -6217,7 +6157,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
         );
         let refined = root
             .driver()
-            .apply_step(ProofStep::Extract(extracted.clone()))
+            .apply_step(known_have_step(extracted.clone()))
             .expect("the predecessor should advance the proof");
         let retained_refined = refined.clone();
         let rejected = refined.driver().apply_step(ProofStep::TransportUsing {
@@ -6282,7 +6222,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
         assert_eq!(
             transported.certificate().steps(),
             &[
-                ProofStep::Extract(extracted.clone()),
+                known_have_step(extracted.clone()),
                 ProofStep::Have {
                     proposition: source.clone(),
                     proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
@@ -9533,7 +9473,7 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
 }
 
 #[test]
-fn choose_projection_retains_source_token_and_is_consumed_by_extract() {
+fn choose_body_leaves_support_have_and_reject_other_binders_and_epochs() {
     let click_file = crate::surface::parse(
         r#"
             int32 identity(int32 x) {
@@ -9630,28 +9570,29 @@ fn choose_projection_retains_source_token_and_is_consumed_by_extract() {
             source: ProofFactSource::Requirement(0),
         }))
         .expect("choose should use the selected existential");
-    let projection = chosen
-        .execution()
-        .and_then(|execution| execution.presentation.chosen_projection.as_ref())
-        .expect("choose should retain a checked source projection")
-        .clone();
-    assert_eq!(projection.source_id, source_id);
-    assert_eq!(projection.principal_fact_index, 0);
-    assert_eq!(projection.source_token.source_id, projection.source_id);
-    assert!(matches!(
-        projection.source_requirement,
-        Proposition::Exists { .. }
-    ));
-    assert!(!projection.leaves.is_empty());
-    assert_eq!(projection.leaves[0].source_token.source_id, source_id);
-    assert_eq!(projection.leaves[0].source_token.connective_path, vec![0]);
-    assert_eq!(
-        projection.leaves[1].source_token.source_id,
-        projection.source_id
-    );
-    assert_eq!(projection.leaves[1].source_token.connective_path, vec![1]);
+    let leaf_surface = ClickProposition::Comparison {
+        left: ContractExpression::At {
+            selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Entry,
+            }),
+            expression: Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable("candidate".into()),
+            )),
+        },
+        operator: ComparisonOperator::Equal,
+        right: ContractExpression::At {
+            selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Entry,
+            }),
+            expression: Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable("x".into()),
+            )),
+        },
+    };
     let wrong_binder = substitute_click_proposition(
-        &projection.leaves[0].surface,
+        &leaf_surface,
         &BTreeMap::from([(
             "candidate".to_string(),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
@@ -9663,7 +9604,7 @@ fn choose_projection_retains_source_token_and_is_consumed_by_extract() {
     assert!(
         chosen
             .driver()
-            .apply_step(ProofStep::Extract(wrong_binder))
+            .apply_step(known_have_step(wrong_binder))
             .is_err()
     );
     let wrong_epoch_selector = ProgramPointSelector::ProgramPoint(ProgramPointRef {
@@ -9677,7 +9618,7 @@ fn choose_projection_retains_source_token_and_is_consumed_by_extract() {
         },
         other => panic!("chosen projection must retain its source state: {other:?}"),
     };
-    let wrong_epoch = match &projection.leaves[0].surface {
+    let wrong_epoch = match &leaf_surface {
         ClickProposition::Comparison {
             left,
             operator,
@@ -9692,34 +9633,17 @@ fn choose_projection_retains_source_token_and_is_consumed_by_extract() {
     assert!(
         chosen
             .driver()
-            .apply_step(ProofStep::Extract(wrong_epoch))
+            .apply_step(known_have_step(wrong_epoch))
             .is_err()
     );
     let extracted = chosen
         .driver()
-        .apply_step(ProofStep::Extract(projection.leaves[0].surface.clone()))
+        .apply_step(known_have_step(leaf_surface.clone()))
         .expect("extract should consume the checked chosen-body leaf");
     assert!(matches!(
         extracted.certificate().steps(),
-        [ProofStep::Choose(_), ProofStep::Extract(_)]
+        [ProofStep::Choose(_), ProofStep::Have { .. }]
     ));
-    let nested = chosen
-        .driver()
-        .open_have(ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
-            operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
-        })
-        .expect("a nested proposition scope should open");
-    assert!(
-        nested
-            .body()
-            .execution()
-            .expect("nested scope should retain execution context")
-            .presentation
-            .chosen_projection
-            .is_none()
-    );
 }
 
 #[test]
@@ -15223,4 +15147,11 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
         );
     }
     assert!(synthesize().is_none(), "the arm's names must not leak");
+}
+
+fn known_have_step(proposition: ClickProposition) -> ProofStep {
+    ProofStep::Have {
+        proposition,
+        proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
+    }
 }

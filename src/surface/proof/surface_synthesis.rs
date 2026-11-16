@@ -6653,6 +6653,74 @@ fn synthesize_pointer_equality_operand(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
+    if let Some(name) = pointer_names::native_name(&ProgramValue::Pointer(value.clone())) {
+        return Some(ContractExpression::ProgramExpression(
+            ProgramExpression::Variable(name.into()),
+        ));
+    }
+    // An address can survive a later store while the complete pointer's
+    // designation still names the earlier read. Spell that value at the
+    // state that introduced its domain, rather than naming only its address
+    // through the current field. The source memory selects one recorded
+    // point; this does not search pointer aliases or state history.
+    if let Some((source, address)) = value.complete_read_source() {
+        let at_state = |state: &ExecutionState| {
+            if let Some(field) = synthesize_struct_field_load(
+                &address,
+                value.program_type(),
+                parameter_binding,
+                state,
+            ) {
+                return Some(field);
+            }
+            let operand = synthesize_surface_pointer_expression(
+                &address,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?;
+            Some(ContractExpression::CUnary {
+                operand: Box::new(operand),
+                lowered: ProgramExpression::TypedLoad {
+                    pointer: Box::new(ProgramExpression::Value(int32(0))),
+                    value_type: value.program_type(),
+                    volatile: false,
+                    pointee_constant: false,
+                    access_class: None,
+                    source: Default::default(),
+                },
+            })
+        };
+        if crate::kernel::intern_memory_ref(state.memory()).unchanged_bytes_source()
+            == source.unchanged_bytes_source()
+        {
+            return at_state(state);
+        }
+        if let Some((reference, selector)) =
+            SYNTHESIS_REFERENCE_STATE.with(|slot| slot.borrow().clone())
+            && crate::kernel::intern_memory_ref(reference.memory()).unchanged_bytes_source()
+                == source.unchanged_bytes_source()
+        {
+            return Some(ContractExpression::At {
+                selector,
+                expression: Box::new(at_state(&reference)?),
+            });
+        }
+        if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
+            && crate::kernel::intern_memory_ref(entry.memory()).unchanged_bytes_source()
+                == source.unchanged_bytes_source()
+        {
+            return Some(ContractExpression::Old(Box::new(at_state(&entry)?)));
+        }
+        return SYNTHESIS_RECORDED_POINTS.with(|slot| {
+            let slot = slot.borrow();
+            let (selector, recorded) = slot.as_ref()?.point_reading_memory(&source)?;
+            Some(ContractExpression::At {
+                selector: selector.clone(),
+                expression: Box::new(at_state(recorded)?),
+            })
+        });
+    }
     synthesize_pointer_equality_address(
         value.pointer(),
         value.program_type(),

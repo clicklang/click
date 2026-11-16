@@ -508,8 +508,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// A goal that is one conjunct of a discharged implication's
-    /// consequent, `c` from `a` and `a implies (b and c)`: `extract` the
-    /// whole consequent, spelled as the implication fact is written, and
+    /// consequent, `c` from `a` and `a implies (b and c)`: apply the
+    /// implication to publish the whole consequent, spelled as the implication fact is written, and
     /// then the goal, now a proper conjunct of an available fact. The
     /// implication is selected by one probe of the conjunct index
     /// (`ProofFacts::discharged_implication_containing`); both steps are
@@ -4014,7 +4014,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// variable costs one O(log n) bucket lookup and one indexed membership
     /// test per bound it lists; a leaf conjunct of a fact is itself an
     /// indexed fact, so a bound written inside a conjunction needs no
-    /// `extract`. Literal bounds on the goal variables are tried first, so
+    /// `have`. Literal bounds on the goal variables are tried first, so
     /// unrelated relational claims do not crowd out those operands' ranges.
     /// The certificate is planned over the kernel facts before any
     /// of them is spelled, so a goal the bounds do not decide is declined
@@ -5542,7 +5542,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             available_surfaces.extend(conjuncts.iter().cloned());
             // Introducing this guard can make a previously introduced
             // conditional premise usable. Select its written consequent
-            // and let the ordinary checked `extract` rule discharge the
+            // and let an ordinary checked implication application discharge the
             // guard; do not branch over possible guard values.
             for premise in available_surfaces.clone() {
                 let mut current = &premise;
@@ -7202,11 +7202,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // explicit state reads. Match at the same read-over-write
                 // boundary the exact fact index already checks. Atomic source
                 // selection keeps its existing arithmetic spelling policy.
-                || (matches!(kernel, Proposition::And(..) | Proposition::Or(..)) && {
+                || (matches!(kernel,
+                    Proposition::And(..) | Proposition::Or(..) | Proposition::Implies(..)
+                ) && {
                     let lowered_reading = crate::kernel::comparison_form(&lowered);
                     let selected_reading = crate::kernel::comparison_form(kernel);
-                    lowered_reading.as_ref().unwrap_or(&lowered)
-                        == selected_reading.as_ref().unwrap_or(kernel)
+                    crate::kernel::proof::propositions_are_alpha_equal(
+                        lowered_reading.as_ref().unwrap_or(&lowered),
+                        selected_reading.as_ref().unwrap_or(kernel),
+                    )
                 })
                 // This candidate spells one already-selected premise. Admit
                 // its native/shared equality reading at the same explicit
@@ -9381,7 +9385,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             crate::kernel::search::ProofSearch::selected_solve_derivation(search_input, false)?;
         // Resource unfolding records the body conjunction as one checked
         // fact.  Special derivations cite the exact relation leaf, so expose
-        // that leaf through the ordinary checked `extract` transition before
+        // that leaf through an ordinary checked `have` proof before
         // constructing a certificate.  This keeps certificate premises
         // top-level and preserves the source spelling/state that produced
         // the resource fact.

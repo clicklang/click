@@ -3850,8 +3850,7 @@ fn describe_special_arithmetic_check_error(
     }
 }
 
-/// A step that adds a fact closes a proposition goal it added, as `extract`
-/// does. A goal that was already available before the step stays open.
+/// A step that adds a fact closes a proposition goal it added. A goal that was already available before the step stays open.
 fn close_goal_from_added_fact(state: KernelProofHandle) -> KernelProofHandle {
     state.closed_if_goal_was_added().unwrap_or(state)
 }

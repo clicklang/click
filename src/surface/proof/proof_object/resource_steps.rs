@@ -2741,7 +2741,7 @@ impl<'a> Proof<'a> {
                 },
             )
         }?;
-        transition.clear_chosen_projection();
+        transition.clear_existential_projection();
         let state = self.publish_checked_transition(transition)?;
         Ok(Self {
             site: self.site.clone(),

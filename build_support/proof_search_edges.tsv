@@ -471,7 +471,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_so
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure	try_restricted_solve_closure_before_arithmetic	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	apply_normalization_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	check_typed_atomic_solve_candidate	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	driver	10
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	driver	9
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	plan_solve_certificate	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_outcome_anchored_increment_order	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_outcome_anchored_order_transitivity	1

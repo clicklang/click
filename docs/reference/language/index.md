@@ -1576,7 +1576,7 @@ return types retain their C types. See the
 
 An explicit proof `if` after `step(Contract)` may distinguish success and
 failure using `result`. Conditional postconditions remain conditional until
-their guard is established; `extract` exposes the selected consequence.
+their guard is established; `apply(fact)` exposes the selected consequence.
 Each case must return the target resources, and failure does not inherit
 success's update guarantee (nor success failure's preservation guarantee).
 The [status-returning callback tests](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_status.md)

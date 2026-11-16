@@ -665,7 +665,7 @@ kernel `MemoryRange`.
 ### Modus ponens
 
 The rule that derives `Q` from exact facts `P` and `P implies Q`. Click uses
-this rule in explicit extraction and selected simplification paths.
+this rule in `apply(fact) using { ... }` and solver expansion.
 
 ## N
 

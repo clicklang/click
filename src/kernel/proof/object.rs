@@ -173,7 +173,6 @@ pub(crate) enum PropositionCloseError {
     ContradictionUnavailable {
         fact_held: bool,
     },
-    ExtractUnavailable,
     /// The explicit premise at this index of the `using` list is not held.
     InstantiatePremiseUnavailable(usize, Proposition),
     InstantiateQuantifiedUnavailable,
@@ -1674,7 +1673,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         if !matches!(fact, Proposition::Implies(..)) {
             return Err("`apply(fact)` requires an implication fact");
         }
-        if !facts.contains(fact) {
+        if !facts.contains_quantified_identity(fact) {
             return Err("`apply(fact)` source implication is not an available fact");
         }
         let mut selected = crate::kernel::PureFactContext::new();
@@ -1718,70 +1717,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 ),
                 checked_facts: Arc::new(added.clone()),
                 added_facts: Arc::new(added),
-            },
-            self.focused_branch,
-        ))
-    }
-
-    pub(crate) fn apply_extract(
-        &self,
-        proposition: Proposition,
-    ) -> Result<Self, PropositionCloseError> {
-        let branch = self
-            .state
-            .open_branches
-            .get(self.focused_branch)
-            .ok_or(PropositionCloseError::Unavailable)?;
-        let proposition = if branch.state.facts.contains_proper_conjunct(&proposition)
-            || branch
-                .state
-                .facts
-                .contains_discharged_implication_consequent(&proposition)
-            || branch
-                .state
-                .facts
-                .assumptions()
-                .contains_algebraic_constructor_field_equality(&proposition)
-        {
-            proposition
-        } else if let Some(conjunct) = branch
-            .state
-            .facts
-            .alpha_equivalent_proper_conjunct(&proposition)
-        {
-            // The cited universal under other binder names: extract the
-            // conjunct itself.
-            conjunct
-        } else if branch
-            .state
-            .facts
-            .contains_disjunction_projection(&proposition)
-        {
-            proposition
-        } else {
-            return Err(PropositionCloseError::ExtractUnavailable);
-        };
-        let added_facts = (!branch.state.facts.contains_top_level(&proposition))
-            .then(|| proposition.clone())
-            .into_iter()
-            .collect::<Vec<_>>();
-        let facts = branch.state.facts.with_fact(proposition);
-        let complete = match &branch.obligation {
-            ProofObligation::Proposition(goal) => facts.contains(goal.proposition()),
-            _ => false,
-        };
-        Ok(Self::new(
-            ProofState {
-                termination: self.state.termination.clone(),
-                termination_root: self.state.termination_root,
-                locals: self.state.locals.clone(),
-                open_branches: self.state.open_branches.discharged_if_at(
-                    self.focused_branch,
-                    complete,
-                    facts,
-                ),
-                checked_facts: Arc::new(added_facts.clone()),
-                added_facts: Arc::new(added_facts),
             },
             self.focused_branch,
         ))

@@ -257,7 +257,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "execute_until",
     "exists",
     "exit",
-    "extract",
     "fact",
     "false",
     "field",
@@ -5872,7 +5871,6 @@ pub enum ProofTactic {
     },
     CheckTerminationCallbacks,
     Known,
-    Extract(ClickProposition),
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
@@ -5982,7 +5980,6 @@ pub enum SimpleTactic {
     Choose,
     Termination,
     Known,
-    Extract,
     Normalize,
     Arithmetic,
     Intro,
@@ -6303,11 +6300,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "extract",
-        syntax: "extract(P)",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "normalize",
         syntax: "normalize()",
         class: "simple",
@@ -6547,7 +6539,6 @@ impl ProofTactic {
             | Self::CheckTerminationComponent { .. }
             | Self::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
             Self::Known => TacticClass::Simple(SimpleTactic::Known),
-            Self::Extract(_) => TacticClass::Simple(SimpleTactic::Extract),
             Self::Normalize | Self::NormalizeUsing(_) => {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }

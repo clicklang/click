@@ -90,7 +90,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
             } by {
                 intro();
                 intro();
-                extract(to_integer(i + 1) <= to_integer(k));
+                have to_integer(i + 1) <= to_integer(k);
                 have i < i + 1;
                 have i < k;
                 have i <= k;
@@ -127,7 +127,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
             } by {
                 intro();
                 intro();
-                extract(to_integer(at(opened, i) + 1) <= to_integer(k));
+                have to_integer(at(opened, i) + 1) <= to_integer(k);
                 have at(opened, occupied[k]) == 0 by {
                     instantiate(forall (k: int32) {
                         to_integer(at(opened, i) + 1) <= to_integer(k) and k < end implies at(opened, occupied[k]) == 0

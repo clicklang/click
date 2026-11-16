@@ -3103,7 +3103,7 @@ fn collect_resource_subject_referenced_bindings<N: ReferencedBinding>(
 ) {
     match subject {
         ResourceSubject::At { resource, .. } => {
-            collect_resource_subject_referenced_names(resource, names)
+            collect_resource_subject_referenced_bindings(resource, names)
         }
         ResourceSubject::Emp => (),
         ResourceSubject::Star(left, right) => {

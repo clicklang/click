@@ -82,7 +82,7 @@ void claim(int32* data, int32 capacity, int32 start) {
     } by {
         intro();
         intro();
-        extract(to_integer(old(before.start) + 1) <= to_integer(k));
+        have to_integer(old(before.start) + 1) <= to_integer(k);
         have old(before.start) < old(before.start) + 1;
         have old(before.start) < k;
         have old(before.start) <= k;

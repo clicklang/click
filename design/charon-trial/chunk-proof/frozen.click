@@ -105,11 +105,11 @@ fn cover(bytes: &[u8]) -> usize {
             have chunks_cursor == bytes + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) by {
                 rewrite(((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining), at(iteration, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4); solve();
             }
-            extract(((((bytes.len() as uint32)) as int32)) <= 1000);
-            extract(at(region(23).entry, 0) <= at(region(23).entry, chunks_remaining));
-            extract(at(region(23).entry, chunks_remaining) <= at(region(23).entry, (((((bytes.len() - (bytes.len() % 4u64)) as uint32)) as int32))));
-            extract(at(region(23).entry, 0) <= at(region(23).entry, ((((((bytes.len() - (bytes.len() % 4u64)) as uint32)) as int32)) - chunks_remaining)));
-            extract(at(region(23).entry, ((((((bytes.len() - (bytes.len() % 4u64)) as uint32)) as int32)) - chunks_remaining)) <= at(region(23).entry, 1000));
+            have ((((bytes.len() as uint32)) as int32)) <= 1000;
+            have at(region(23).entry, 0) <= at(region(23).entry, chunks_remaining);
+            have at(region(23).entry, chunks_remaining) <= at(region(23).entry, (((((bytes.len() - (bytes.len() % 4u64)) as uint32)) as int32)));
+            have at(region(23).entry, 0) <= at(region(23).entry, ((((((bytes.len() - (bytes.len() % 4u64)) as uint32)) as int32)) - chunks_remaining));
+            have at(region(23).entry, ((((((bytes.len() - (bytes.len() % 4u64)) as uint32)) as int32)) - chunks_remaining)) <= at(region(23).entry, 1000);
         }
     }
     have chunks_remaining < 4 by {

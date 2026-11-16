@@ -11252,12 +11252,6 @@ impl Parser {
                 }
                 ProofTactic::Sorry
             }
-            "extract" => {
-                self.expect(Token::LParen)?;
-                let proposition = self.parse_proposition()?;
-                self.expect(Token::RParen)?;
-                ProofTactic::Extract(proposition)
-            }
             "normalize" => {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
@@ -18946,7 +18940,6 @@ mod tactic_classification_tests {
         ("witness", "witness { x: 1 };"),
         ("obtain", "obtain (x: Integer) { x == x }"),
         ("known", "known();"),
-        ("extract", "extract(x == 1);"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),
         ("preserve", "preserve(memory(*p), statement(0));"),

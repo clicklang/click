@@ -3307,7 +3307,7 @@ impl PureFactContext {
         let strict = view.relation == crate::kernel::machine_integer::Relation::Less;
         // Order facts come from `condition_facts` only. A bound that lives
         // inside a guarded implication or a finite universal reaches this
-        // theory through an explicit `intro`, `extract`, or `enumerate` step,
+        // theory through an explicit `intro`, `have`, or `enumerate` step,
         // or through the exact conjunction split `assume_proposition`
         // performs; deriving it here meant discharging antecedents with the
         // general prover and instantiating quantifiers inside a theory query.

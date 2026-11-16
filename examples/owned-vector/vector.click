@@ -134,8 +134,8 @@ int32 vector_copy(
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < i);
+                have 0 <= k;
+                have k < i;
                 contradiction(0 <= k);
             }
         }
@@ -244,8 +244,8 @@ int32 vector_copy(
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < i);
+                have 0 <= k;
+                have k < i;
                 if at(region(4).entry, k) < at(region(4).entry, (i as int32)) {
                     have at(region(4).entry, k) != at(region(4).entry, (i as int32)) by {
                         have at(region(4).entry, k) < at(region(4).entry, (i as int32)) by {
@@ -522,8 +522,8 @@ int32 vector_grow(struct vector* owner) {
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
             intro();
             intro();
-            extract(0 <= k);
-            extract(k < old(owner->len));
+            have 0 <= k;
+            have k < old(owner->len);
             have owner->data[k] == old(owner->data[k]) by { known(); }
             known();
         }
@@ -774,8 +774,8 @@ int32 vector_push(struct vector* owner, int32 value) {
     have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < old(owner->len));
+        have 0 <= k;
+        have k < old(owner->len);
         // The append writes at the old length, beyond this prefix element.
         have old(owner->len) != k by {
             intro();
@@ -875,11 +875,11 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             normalize() using { separate(memory(grown), memory(owner->data)); };
         }
         have owner->data == at(after_grow, owner->data) by {
-            preserve(separate(statement(2).statement(0).assignment(grown, 0).footprint, memory(owner->data)));
+            preserve(memory(owner->data), statement(2).statement(0).assignment(grown, 0));
         }
         have c(grown) == 0 implies owner->data == at(before_grow, owner->data) by {
             intro();
-            extract(at(after_grow, owner->data) == at(before_grow, owner->data));
+            have at(after_grow, owner->data) == at(before_grow, owner->data);
             known();
         }
         if c(grown) == 0 {
@@ -902,12 +902,12 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have result == 0 implies owner->cap == old(owner->cap) by {
                 intro();
-                extract(at(region(5).entry, owner->cap) == at(region(3).entry, owner->cap));
+                have at(region(5).entry, owner->cap) == at(region(3).entry, owner->cap);
                 known();
             }
             have result == 0 implies owner->data == old(owner->data) by {
                 intro();
-                extract(at(region(5).entry, owner->data) == at(region(3).entry, owner->data));
+                have at(region(5).entry, owner->data) == at(region(3).entry, owner->data);
                 known();
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
@@ -961,10 +961,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have owner->len == old(owner->len) by {
                 known();
             }
-            have owner->cap == (old(owner->cap) + 1) by {
-                extract(owner->cap == (old(owner->cap) + 1));
-                known();
-            }
+            have owner->cap == (old(owner->cap) + 1) by solve();
             have owner->len < owner->cap;
             fold(vector_storage(owner));
             step();
@@ -1051,8 +1048,8 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < old(owner->len));
+                have 0 <= k;
+                have k < old(owner->len);
                 instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(region(5).entry, owner->data[j]) == old(owner->data[j]) }, k);
                 have k < at(statement(3).entry, owner->len) by {
                     rewrite(at(statement(3).entry, owner->len), old(owner->len));
@@ -1111,10 +1108,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         have not owner->len == owner->cap by {
             known();
         }
-        have owner->len < owner->cap by {
-            have owner->len < owner->cap;
-            known();
-        }
+        have owner->len < owner->cap by solve();
         have old(owner->len) < old(owner->cap) by {
             known();
         }

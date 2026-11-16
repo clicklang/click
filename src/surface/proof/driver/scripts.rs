@@ -342,12 +342,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 .get(index + 1)
                 .is_some_and(|next| !matches!(next, ProofTactic::Known | ProofTactic::Solve));
             let retain_application = retain_application
-                || (matches!(
-                    tactic,
-                    ProofTactic::Extract(_) | ProofTactic::ApplyTheorem(_)
-                ) && tactics
-                    .get(index + 1)
-                    .is_some_and(|next| !matches!(next, ProofTactic::Known | ProofTactic::Solve)));
+                || (matches!(tactic, ProofTactic::ApplyTheorem(_))
+                    && tactics.get(index + 1).is_some_and(|next| {
+                        !matches!(next, ProofTactic::Known | ProofTactic::Solve)
+                    }));
             let before_application = retain_application.then(|| proof.clone());
             match tactic {
                 ProofTactic::ApplyInduction {
@@ -721,9 +719,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             if let Some(before) = before_application
                 && proof.focused_discharged()
             {
-                // An application guarantees every conclusion of its theorem,
-                // and an `extract` the whole fact it extracted, not only the
-                // part that happened to be the goal.
+                // An application guarantees every conclusion, including the
+                // parts that were not needed for the current goal.
                 let conclusions = match tactic {
                     ProofTactic::ApplyTheorem(application)
                     | ProofTactic::ApplyTheoremUsing { application, .. } => {
@@ -732,7 +729,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     ProofTactic::ApplyFact(fact) | ProofTactic::ApplyFactUsing { fact, .. } => {
                         vec![crate::surface::proof::driver::fact_application_parts(fact).1]
                     }
-                    ProofTactic::Extract(proposition) => vec![proposition.clone()],
                     _ => Vec::new(),
                 };
                 proof = before.retain_completed_goal(&proof, &conclusions)?;

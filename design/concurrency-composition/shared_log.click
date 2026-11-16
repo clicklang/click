@@ -110,8 +110,8 @@ int32 vector_copy(
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < i);
+                have 0 <= k;
+                have k < i;
                 have i == 0 by {
                     normalize();
                 }
@@ -153,8 +153,8 @@ int32 vector_copy(
     have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < length);
+        have 0 <= k;
+        have k < length;
         transport(old(src[k]) == old(src[k]), src[k] == old(src[k])) using {
             0 <= length;
             0 <= k;
@@ -307,8 +307,8 @@ int32 vector_grow(struct vector* owner) {
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
             intro();
             intro();
-            extract(0 <= k);
-            extract(k < old(owner->len));
+            have 0 <= k;
+            have k < old(owner->len);
             transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
                 0 <= k;
                 k < old(owner->len);
@@ -454,8 +454,8 @@ int32 vector_push(struct vector* owner, int32 value) {
     have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < old(owner->len));
+        have 0 <= k;
+        have k < old(owner->len);
         transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
             at(region(5).entry, owner->len) <= at(region(5).entry, owner->cap);
             0 <= k;
@@ -499,7 +499,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         step();
         step();
         let ready = fold(allocated_vector(owner), { cap: owner->cap });
-        let { after: after } = step(vector_grow(owner), { before: ready });
+        let { after: after } = step(vector_grow, { before: ready });
         if c(grown) == 0 {
             step();
             step();
@@ -521,12 +521,12 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have result == 0 implies owner->cap == old(owner->cap) by {
                 intro();
-                extract(at(region(4).entry, owner->cap) == at(region(3).entry, owner->cap));
+                have at(region(4).entry, owner->cap) == at(region(3).entry, owner->cap);
                 known();
             }
             have result == 0 implies owner->data == old(owner->data) by {
                 intro();
-                extract(at(region(4).entry, owner->data) == at(region(3).entry, owner->data));
+                have at(region(4).entry, owner->data) == at(region(3).entry, owner->data);
                 known();
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
@@ -553,7 +553,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 contradiction(old(owner->len) < old(owner->cap));
             }
             have owner->cap == old(owner->cap) by {
-                extract(at(region(4).entry, owner->cap) == at(region(3).entry, owner->cap));
+                have at(region(4).entry, owner->cap) == at(region(3).entry, owner->cap);
                 known();
             }
             have owner->cap <= old(owner->cap) by {
@@ -600,7 +600,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 known();
             }
             have owner->cap == (old(owner->cap) + 1) by {
-                extract(owner->cap == (old(owner->cap) + 1));
+                have owner->cap == (old(owner->cap) + 1);
                 known();
             }
             have at(function.entry, owner->cap) <= 536870911 by {
@@ -710,8 +710,8 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < old(owner->len));
+                have 0 <= k;
+                have k < old(owner->len);
                 instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(region(4).entry, owner->data[j]) == old(owner->data[j]) }, k);
                 transport(at(region(4).entry, owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
                     at(region(4).entry, owner->data[k]) == old(owner->data[k]);
@@ -915,8 +915,7 @@ void* producer(void* argument) {
 } by {
     step();
     step();
-    let { guard: guard, state: state } = step(
-        pthread_mutex_lock(&log->mu), { access: access }
+    let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access }
     );
     let { cap: cap, slack: slack, items: items } = unfold(state);
     have count(credit(log)) >= 1;
@@ -937,7 +936,7 @@ void* producer(void* argument) {
     have log->items->cap == cap;
     have log->items->cap <= 536870910;
     let ready = fold(allocated_vector(log->items), { cap: log->items->cap });
-    let { after: after } = step(allocated_vector_push(log->items, 7), { before: ready });
+    let { after: after } = step(allocated_vector_push, { before: ready });
     let { cap: pushed_cap } = unfold(after);
     have log->items->cap <= at(region(3).entry, log->items->cap) + 1;
     have at(region(3).entry, log->items->cap) == cap;
@@ -962,7 +961,7 @@ void* producer(void* argument) {
     };
     let pushed = fold(allocated_vector(log->items), { cap: log->items->cap });
     let restored = fold(log_state(log), { cap: pushed_cap, slack: slack - 1 }, { items: pushed });
-    step(pthread_mutex_unlock(&log->mu), {
+    step(pthread_mutex_unlock, {
         access: access, guard: guard, state: restored
     });
     step();
@@ -991,7 +990,7 @@ int32 run_two_producers(struct shared_log* log) {
         to_integer(2) == 2;
     };
     let state = fold(log_state(log), { cap: before.cap, slack: 2 }, { items: before });
-    let { lifetime: lifetime } = step(pthread_mutex_init(&log->mu, 0), { state: state });
+    let { lifetime: lifetime } = step(pthread_mutex_init, { state: state });
     branch {
         let { cap: cap1, slack: slack1, items: after } = unfold(state);
         unfold(credit(log));
@@ -1001,7 +1000,7 @@ int32 run_two_producers(struct shared_log* log) {
     } else {}
     step();
     branch {
-        step(pthread_mutex_destroy(&log->mu), { lifetime: lifetime });
+        step(pthread_mutex_destroy, { lifetime: lifetime });
         let { cap: cap2, slack: slack2, items: after } = unfold(state);
         unfold(credit(log));
         unfold(credit(log));
@@ -1011,7 +1010,7 @@ int32 run_two_producers(struct shared_log* log) {
     step();
     branch {
         step();
-        step(pthread_mutex_destroy(&log->mu), { lifetime: lifetime });
+        step(pthread_mutex_destroy, { lifetime: lifetime });
         let { cap: cap3, slack: slack3, items: after } = unfold(state);
         unfold(credit(log));
         step();
@@ -1019,7 +1018,7 @@ int32 run_two_producers(struct shared_log* log) {
     } else {}
     step();
     step();
-    step(pthread_mutex_destroy(&log->mu), { lifetime: lifetime });
+    step(pthread_mutex_destroy, { lifetime: lifetime });
     let { cap: cap4, slack: slack4, items: after } = unfold(state);
     step();
     solve();

@@ -146,7 +146,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
     } by {
         intro();
         intro();
-        extract(to_integer(k) < to_integer(p + 1));
+        have to_integer(k) < to_integer(p + 1);
         if k < p {
             have at(before_store, occupied[k]) == 1 by {
                 instantiate(forall (j: int32) {
@@ -186,7 +186,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
     } by {
         intro();
         intro();
-        extract(to_integer(p + 1) <= to_integer(k));
+        have to_integer(p + 1) <= to_integer(k);
         have p < p + 1;
         have p < k;
         have p <= k;

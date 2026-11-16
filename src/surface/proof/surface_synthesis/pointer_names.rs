@@ -70,6 +70,18 @@ mod tests {
                 );
                 let exports = KernelTermExport::machine_export_count();
                 assert_eq!(shared_name(&retained).as_deref(), Some(name));
+                assert_eq!(
+                    synthesize_pointer_equality_operand(
+                        &pointer,
+                        ParameterBinding::default(),
+                        &state,
+                        &BTreeMap::new(),
+                    ),
+                    Some(ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable(name.into())
+                    )),
+                    "pointer equality must preserve the complete selected value name",
+                );
                 let expression = synthesize_surface_value(
                     &ProgramValue::Pointer(pointer),
                     ParameterBinding::default(),

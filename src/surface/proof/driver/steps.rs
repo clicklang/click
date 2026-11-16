@@ -459,7 +459,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::IntroAs(name) => Some(driver_proof.apply_intro(Some(name))),
             ProofStep::Enumerate => Some(driver_proof.apply_enumerate()),
             ProofStep::Contradiction(surface) => Some(driver_proof.apply_contradiction(surface)),
-            ProofStep::Extract(proposition) => Some(driver_proof.apply_extract(proposition)),
             ProofStep::InstantiateUsing {
                 quantified,
                 argument,
@@ -568,7 +567,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             step,
             ProofStep::Rewrite(_) | ProofStep::TransportUsing { .. }
         ) {
-            transition.clear_chosen_projection();
+            transition.clear_existential_projection();
         }
 
         let state = driver_proof.publish_checked_transition(transition)?;

@@ -231,8 +231,8 @@ void arena_write(struct region* region, int32 index, int32 value) {
     } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < at(w, region->arena->capacity));
+        have 0 <= k;
+        have k < at(w, region->arena->capacity);
         transport(
             at(w, region->arena->occupied[k]) == at(w, region->arena->occupied[k]),
             at(w, region->arena->occupied[k]) == region->arena->occupied[k]

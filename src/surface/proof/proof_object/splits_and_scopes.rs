@@ -1131,18 +1131,7 @@ impl<'a> Proof<'a> {
                 body_facts = body_facts.with_selected_load_equality_bridge(&body_kernel);
             }
         }
-        // Chosen-body projections are scoped to the proposition proof that
-        // selected them. A nested `have` starts a fresh presentation scope;
-        // otherwise an outer witness could make an unrelated `extract`
-        // citation resolve against the wrong source epoch.
-        let body_execution = self.branch_execution().map(|execution| {
-            if execution.presentation.chosen_projection.is_none() {
-                return execution.clone();
-            }
-            let mut execution = execution.as_ref().clone();
-            execution.presentation.chosen_projection = None;
-            Arc::new(execution)
-        });
+        let body_execution = self.branch_execution().cloned();
         // Outcome certification must see the assumptions that preceded this
         // scope, not the facts its checked premise-selection operations just
         // derived. Keep those selected facts in the successor below.
@@ -1254,9 +1243,6 @@ impl<'a> Proof<'a> {
             .execution()
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        if execution.presentation.chosen_projection.is_some() {
-            execution.presentation.chosen_projection = None;
-        }
         if execution.core.frontier.is_at_function_exit() {
             return Err(self.step_error("`open` must begin before execution reaches function exit"));
         }

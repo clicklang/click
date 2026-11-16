@@ -44,13 +44,6 @@ pub(in crate::surface) enum EntryFactOrigin {
     Derived,
 }
 
-/// Bounded source leaf retained after a checked `choose` projection.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::surface) struct ProjectionSourceToken {
-    pub(in crate::surface) source_id: RequirementSourceId,
-    pub(in crate::surface) connective_path: Vec<usize>,
-}
-
 /// Shallow lookup key for a direct caller predicate argument.  Exact
 /// propositions and expressions remain validation payloads, never map keys.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]

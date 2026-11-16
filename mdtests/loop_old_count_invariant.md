@@ -47,7 +47,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
             step();
             have i >= 0 and i <= 3 by {
                 both {
-                    extract(at(region(3).entry, i) >= at(region(3).entry, 0));
+                    have at(region(3).entry, i) >= at(region(3).entry, 0);
                     arithmetic_certificate signed_int32 {
                         premise 0: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >=
                             at(region(3).entry, 0);

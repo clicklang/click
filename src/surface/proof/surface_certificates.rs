@@ -3334,9 +3334,9 @@ fn plan_explicit_implies_refuted_antecedent(
 
 /// Modus ponens over a listed implication premise: walk a (possibly chained)
 /// implication whose antecedents are each listed premises, and close the goal
-/// when a consequent along the walk is the goal. The emitted `extract` names
-/// the consequent's surface form, so the checker revalidates the same bounded
-/// rule; `known` then closes the goal from the extracted fact.
+/// when a consequent along the walk is the goal. The emitted `apply(fact)`
+/// names the implication and lists its evidence; `known` then closes the
+/// goal from the consequent.
 fn plan_explicit_discharged_implication_consequent(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],

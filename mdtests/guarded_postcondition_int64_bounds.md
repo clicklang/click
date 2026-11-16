@@ -25,7 +25,7 @@ have defined((old(st.total) + at(region(2).exit, got))) by {
 }
 ```
 
-followed by the `extract` and `rewrite` of the consequent, and the expansion
+followed by the `have` and `rewrite` of the consequent, and the expansion
 re-verifies (`src/surface/tests/expansion_tests.rs`). The explicit step on
 its own, a widened operand, and the refusal when the bounds do not exclude
 overflow are in [`int64_defined_from_bounds.md`](int64_defined_from_bounds.md)

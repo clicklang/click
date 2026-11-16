@@ -231,8 +231,8 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             } by {
                 intro();
                 intro();
-                extract(start <= k);
-                extract(to_integer(k) < to_integer(at(opened, i) + 1));
+                have start <= k;
+                have to_integer(k) < to_integer(at(opened, i) + 1);
                 if k < at(opened, i) {
                     have k < m;
                     have at(opened, arena->occupied[k]) == 0 by {
@@ -279,8 +279,8 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < start);
+                have 0 <= k;
+                have k < start;
                 have at(opened, arena->occupied[k]) ==
                     at(clear_occupied.entry, arena->occupied[k]) by {
                     instantiate(forall (j: int32) {
@@ -321,8 +321,8 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             } by {
                 intro();
                 intro();
-                extract(end <= k);
-                extract(k < arena->capacity);
+                have end <= k;
+                have k < arena->capacity;
                 have at(opened, arena->occupied[k]) ==
                     at(clear_occupied.entry, arena->occupied[k]) by {
                     instantiate(forall (j: int32) {

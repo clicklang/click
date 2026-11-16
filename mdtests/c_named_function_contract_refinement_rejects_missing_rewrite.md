@@ -44,7 +44,7 @@ theorem decrement_is_decrease() {
             known();
         } and {
             intro();
-            extract(*cell == (old(*cell) - 1));
+            have *cell == (old(*cell) - 1);
             both {
                 known();
             } and {

@@ -63,7 +63,7 @@ int32 caller(int32* occ, int32* other, int32 n) {
     } by {
         intro();
         intro();
-        extract(0 <= k); extract(k < n);
+        have 0 <= k; have k < n;
         have contains(memory(occ[0..n]), memory(occ[k])) by {
             apply(separation::contains_element(occ, 0, n, k)) using { 0 <= k; k < n; };
         }

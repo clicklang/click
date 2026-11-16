@@ -2957,7 +2957,7 @@ fn pure_mixed_linear_smart_script_expands_the_retained_proof_object_path() {
         theorem applied_then_solve(x: int32) {
             requires (x >= 0) and (x <= 10);
             ensures (x >= 0) and (x >= 0) by {
-                extract(x >= 0);
+                have x >= 0 by known();
                 apply(required(x));
                 solve();
             }
@@ -2973,7 +2973,7 @@ fn pure_mixed_linear_smart_script_expands_the_retained_proof_object_path() {
         "{selected}"
     );
     assert!(selected.contains("x >= 0;"), "{selected}");
-    assert!(selected.contains("extract(x >= 0);"), "{selected}");
+    assert!(selected.contains("have x >= 0 by {"), "{selected}");
     assert!(selected.contains("known();"), "{selected}");
     assert!(!selected.contains("apply(required(x));"), "{selected}");
     assert!(!selected.contains("solve();"), "{selected}");

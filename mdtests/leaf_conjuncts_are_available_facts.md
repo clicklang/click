@@ -3,9 +3,9 @@
 Recording a conjunction as a fact also records each of its leaf conjuncts,
 so every tactic may cite a leaf directly: `known()` closes `x <= 5`,
 and an arithmetic certificate names `x <= 100` as a premise, with no
-`extract`. A conjunct that is itself a conjunction is not a leaf, so it is
+`have`. A conjunct that is itself a conjunction is not a leaf, so it is
 not recorded as a fact; `known()` still closes it from its leaves, and
-`extract` adds it when a `using` list must cite it whole. See
+`have` adds it when a `using` list must cite it whole. See
 `mdtests/sub_conjunction_closes_by_known.md`.
 
 ```c filename=leaf_conjuncts_are_available_facts.c
@@ -25,7 +25,7 @@ theorem leaf(x: int32, y: int32) {
 theorem sub_extracted(x: int32, y: int32) {
     requires (x >= 0 and x <= 5) and y == 1;
     ensures x >= 0 and x <= 5 by {
-        extract(x >= 0 and x <= 5);
+        have x >= 0 and x <= 5;
         known();
     }
 }

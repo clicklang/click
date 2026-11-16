@@ -53,7 +53,7 @@ void poke(uint8* s, uint64 n) {
         normalize() using { separate(memory(s[n]), memory(s[0u64])); };
     }
     have s[n] == old(s[n]) by {
-        preserve(separate(statement(0).footprint, memory(s[n])));
+        preserve(memory(s[n]), statement(0));
     }
     have s[n] == '\0' by { known(); }
     have forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(s[k]) } by {

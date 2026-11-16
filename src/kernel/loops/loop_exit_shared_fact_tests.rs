@@ -175,3 +175,80 @@ fn facts_in_every_exit_cost_exits_times_facts() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/loops/loop_exit_shared_fact_tests.rs");
 }
+
+#[test]
+fn algebraic_exit_pins_drop_private_aliases_but_keep_constructors() {
+    let variants: std::sync::Arc<[crate::kernel::AlgebraicVariantType]> =
+        vec![crate::kernel::AlgebraicVariantType {
+            name: "Done".into(),
+            fields: Vec::new(),
+        }]
+        .into();
+    let value_type = crate::kernel::AlgebraicValueType::Algebraic {
+        name: "Model".into(),
+        arguments: Vec::new(),
+    };
+    let ty = AlgebraicType {
+        rigid: false,
+        name: "Model".into(),
+        arguments: Vec::new(),
+        variants: variants.clone(),
+        schemas: std::sync::Arc::new(crate::kernel::AlgebraicSchemas::new(BTreeMap::from([(
+            value_type, variants,
+        )]))),
+    };
+    let symbol = |id| {
+        AlgebraicValue::Algebraic(AlgebraicTerm {
+            algebraic_type: ty.clone(),
+            node: AlgebraicTermNode::Variable(Variable(id)),
+        })
+    };
+    let fresh = symbol(100);
+    let held = symbol(101);
+    let mut aliases = LoopExitRestatement::default();
+    aliases.pin_resource_value(&fresh, &held);
+    let alias_exit = aliases.restate(
+        Vec::new().into(),
+        Vec::new(),
+        crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+    );
+    assert!(alias_exit.successor_equations.is_empty());
+    assert!(alias_exit.disjunct.is_empty());
+
+    // Two successor fields that held the same private symbol retain their
+    // equality through the first successor name, rather than losing aliasing.
+    let other_fresh = symbol(102);
+    let mut shared = LoopExitRestatement::default();
+    shared.pin_resource_value(&fresh, &held);
+    shared.pin_resource_value(&other_fresh, &held);
+    let expected_shared = Proposition::Equal(
+        resource_value_term(&other_fresh),
+        resource_value_term(&fresh),
+    );
+    let shared_exit = shared.restate(
+        Vec::new().into(),
+        Vec::new(),
+        crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+    );
+    assert_eq!(shared_exit.successor_equations, vec![expected_shared]);
+
+    // Constructor pins describe the successor's actual value; unlike a
+    // private symbolic alias, they must survive the join.
+    let constructor = AlgebraicValue::Algebraic(AlgebraicTerm {
+        algebraic_type: ty,
+        node: AlgebraicTermNode::Constructor {
+            variant: "Done".into(),
+            fields: Vec::new(),
+        },
+    });
+    let mut concrete = LoopExitRestatement::default();
+    concrete.pin_resource_value(&fresh, &constructor);
+    let expected = concrete.equations.clone();
+    let concrete_exit = concrete.restate(
+        Vec::new().into(),
+        Vec::new(),
+        crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+    );
+    assert_eq!(concrete_exit.successor_equations, expected);
+    assert_eq!(concrete_exit.disjunct, expected);
+}

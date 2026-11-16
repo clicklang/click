@@ -60,8 +60,8 @@ int32 vector_push(struct vector* owner, int32 value) {
     have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < old(owner->len));
+        have 0 <= k;
+        have k < old(owner->len);
         // The append writes at the old length, beyond this prefix element.
         have old(owner->len) != k by {
             intro();

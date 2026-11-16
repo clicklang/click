@@ -1620,7 +1620,6 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Contradiction(_)
         | ProofTactic::ApplyFact(_)
         | ProofTactic::ApplyFactUsing { .. }
-        | ProofTactic::Extract(_)
         | ProofTactic::Preserve(_)
         | ProofTactic::Rewrite(_)
         | ProofTactic::Transport { .. }
@@ -2357,9 +2356,6 @@ fn expand_declared_resource_tactic_with_propositions(
                 .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
                 .collect::<Result<_, _>>()?,
         }),
-        ProofTactic::Extract(proposition) => Ok(ProofTactic::Extract(
-            expand_declared_resource_proposition(proposition, resource_definitions)?,
-        )),
         ProofTactic::Preserve(proposition) => Ok(ProofTactic::Preserve(
             expand_declared_resource_proposition(proposition, resource_definitions)?,
         )),

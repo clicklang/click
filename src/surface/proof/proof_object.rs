@@ -31,9 +31,6 @@ thread_local! {
     static FINALIZATION_VIEW_CONSTRUCTIONS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
-    static CHOSEN_PROJECTION_WALK_WORK: std::cell::Cell<(usize, usize)> = const {
-        std::cell::Cell::new((0, 0))
-    };
     static TERMINAL_PUBLICATION_VISITS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
     static TERMINAL_JOIN_MATERIALIZED_FACTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static CHECKED_HAVE_OPERATIONS: std::cell::Cell<usize> = const {
@@ -459,12 +456,11 @@ impl CheckedFocusedTransition {
         }
     }
 
-    fn clear_chosen_projection(&mut self) {
+    fn clear_existential_projection(&mut self) {
         if let Some(branch) = self.branch.as_mut()
             && let Some(execution) = branch.state.execution.as_deref()
         {
             let mut execution = execution.clone();
-            execution.presentation.chosen_projection = None;
             execution.presentation.existential_projection = None;
             branch.state.execution = Some(Arc::new(execution));
         }
@@ -637,12 +633,6 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// since the split root, just like generated-load binding observations.
     pub(in crate::surface::proof) generated_load_source_events:
         PersistentSequence<crate::kernel::GeneratedLoadSourceEvent>,
-    /// The one selected existential whose body leaves may still be cited by
-    /// an enclosing `extract`.  A later `choose` replaces this active record;
-    /// nested `have`/scope boundaries start without one. This is
-    /// presentation-only provenance: the kernel's exact conjunct index remains
-    /// the authority for extraction.
-    pub(in crate::surface::proof) chosen_projection: Option<ChosenProjection>,
     /// The fact list the last `loop` tactic on this path copied from the
     /// proof's facts, as it was copied. The next `loop` extends it by the
     /// facts the proof gained since (`PureFactList::extended_to_proof_facts`)
@@ -698,33 +688,6 @@ pub(in crate::surface::proof) struct ExistentialProjection {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface::proof) struct ExistentialProjectionLeaf {
     pub(in crate::surface::proof) connective_path: Vec<usize>,
-    pub(in crate::surface::proof) surface: ClickProposition,
-    pub(in crate::surface::proof) kernel: Proposition,
-}
-
-/// Surface spellings for the checked leaves of a selected existential body.
-/// The source requirement and state are retained alongside every checked
-/// leaf so a spelling cannot silently drift to the current heap after a C
-/// declaration.  This record is intentionally branch-local and is never a
-/// proof fact in its own right.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::surface::proof) struct ChosenProjection {
-    pub(in crate::surface::proof) source_id: RequirementSourceId,
-    pub(in crate::surface::proof) principal_fact_index: usize,
-    pub(in crate::surface::proof) source_token: ProjectionSourceToken,
-    pub(in crate::surface::proof) source_proposition: ClickProposition,
-    /// Exact existential source selected by `choose`.
-    pub(in crate::surface::proof) source_requirement: Proposition,
-    pub(in crate::surface::proof) chosen_name: String,
-    pub(in crate::surface::proof) chosen_variable: crate::kernel::Variable,
-    pub(in crate::surface::proof) source_memory_state: crate::kernel::MemoryStateIdentity,
-    pub(in crate::surface::proof) source_selector: ProgramPointSelector,
-    pub(in crate::surface::proof) leaves: Vec<ChosenProjectionLeaf>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::surface::proof) struct ChosenProjectionLeaf {
-    pub(in crate::surface::proof) source_token: ProjectionSourceToken,
     pub(in crate::surface::proof) surface: ClickProposition,
     pub(in crate::surface::proof) kernel: Proposition,
 }
@@ -907,7 +870,6 @@ impl ExecutionProofState {
                 generated_load_binding_events: PersistentSequence::default(),
                 generated_load_source_resolutions: PersistentMap::default(),
                 generated_load_source_events: PersistentSequence::default(),
-                chosen_projection: None,
                 existential_projection: None,
                 store_separation_misses: PersistentSequence::default(),
                 loop_fact_list: None,
@@ -3777,7 +3739,6 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::CallOutcomes { .. } => "outcomes",
         ProofStep::Loop(_) => "loop",
         ProofStep::Rewrite(_) => "rewrite",
-        ProofStep::Extract(_) => "extract",
         ProofStep::Contradiction(_) => "contradiction",
         ProofStep::Witness(_) => "witness",
         ProofStep::LetSatisfy(_) => "obtain",

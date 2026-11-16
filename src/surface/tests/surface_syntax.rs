@@ -2267,7 +2267,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
         theorem use_equality_from_conjunction(first: int32, second: int32) {
             requires (first == second) and (second == second);
             ensures second == first by {
-                extract(first == second);
+                have first == second by known();
                 apply(equality_symmetric(first, second));
             }
         }
@@ -2282,7 +2282,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
     assert!(matches!(
         verified[2].proof_tactics().as_deref(),
         Some([
-            ProofTactic::Extract(_),
+            ProofTactic::Have(_),
             ProofTactic::Have(ProofHave { proof: SourceProof::Script(body), .. }),
             ProofTactic::ApplyTheoremUsing { application, premises },
         ]) if matches!(body.as_slice(), [ProofTactic::Known]) && application.name == "equality_symmetric"

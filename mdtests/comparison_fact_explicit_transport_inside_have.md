@@ -35,7 +35,7 @@ void mark(int32 *next, int32 *visited) {
         normalize() using { separate(memory(next[0]), memory(visited[0])); };
     }
     have next[0] == at(entry, next[0]) by {
-        preserve(separate(statement(0).footprint, memory(next[0])));
+        preserve(memory(next[0]), statement(0));
     }
     have 0 <= next[0] by {
         known();

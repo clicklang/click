@@ -117,7 +117,6 @@ pub enum ProofStep {
     },
     CheckTerminationCallbacks,
     Known,
-    Extract(ClickProposition),
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
@@ -787,7 +786,6 @@ impl ProofStep {
                 premises: premises.clone(),
             },
             ProofTactic::Known => Self::Known,
-            ProofTactic::Extract(proposition) => Self::Extract(proposition.clone()),
             ProofTactic::Normalize => Self::Normalize,
             ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
             ProofTactic::ArithmeticUsing(premises) => Self::ArithmeticUsing(premises.clone()),
@@ -956,7 +954,6 @@ impl ProofStep {
                 premises: premises.clone(),
             },
             Self::Known => ProofTactic::Known,
-            Self::Extract(proposition) => ProofTactic::Extract(proposition.clone()),
             Self::Normalize => ProofTactic::Normalize,
             Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
             Self::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(premises.clone()),
@@ -1184,7 +1181,6 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         | ProofStep::CheckTerminationComponent { .. }
         | ProofStep::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
         ProofStep::Known => TacticClass::Simple(SimpleTactic::Known),
-        ProofStep::Extract(_) => TacticClass::Simple(SimpleTactic::Extract),
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => {
             TacticClass::Simple(SimpleTactic::Normalize)
         }

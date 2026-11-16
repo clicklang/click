@@ -250,7 +250,10 @@ fn cases_obligation_expands_before_execution_arms() {
             "=> { step_until(function.exit); solve(); }",
             "=> { solve(); }",
         );
-    let explicit = after.replace("            cases {", "            have x == 0 or x == 1 by { extract(x == 0 or x == 1); known(); }\n            cases {");
+    let explicit = after.replace(
+        "            cases {",
+        "            have x == 0 or x == 1 by { known(); known(); }\n            cases {",
+    );
     let result_cases = after
         .replace("x == 0 =>", "result == 0 =>")
         .replace("x == 1 =>", "result == 1 =>");
@@ -9756,7 +9759,7 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
                 ensures result == second;
             } by {
                 have second == first and first == second by {
-                    extract(first == second);
+                    have first == second by known();
                     apply(equality_symmetric(first, second));
                     solve();
                 }
@@ -9795,7 +9798,7 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
         "{expanded_have}"
     );
     assert!(
-        expanded_have.contains("extract(first == second);"),
+        expanded_have.contains("have first == second by {"),
         "{expanded_have}"
     );
     assert!(!expanded_have.contains("solve();"), "{expanded_have}");

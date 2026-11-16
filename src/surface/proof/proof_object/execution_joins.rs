@@ -1359,13 +1359,6 @@ impl<'a> Proof<'a> {
         self.merge_branch_generated_load_bindings(execution, parent, arms)?;
         self.merge_branch_generated_load_source_events(execution, parent, arms)?;
         merge_branch_store_separation_misses(execution, parent, arms);
-        // A chosen existential projection is usable only when both sibling
-        // paths retained the same checked source record.  Otherwise it is
-        // branch-local presentation and must not leak through the join.
-        execution.presentation.chosen_projection = (arms[0].presentation.chosen_projection
-            == arms[1].presentation.chosen_projection)
-            .then(|| arms[0].presentation.chosen_projection.clone())
-            .flatten();
         if !carry_condition_spellings {
             return Ok(());
         }
