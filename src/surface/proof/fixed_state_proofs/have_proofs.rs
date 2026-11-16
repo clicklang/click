@@ -1732,7 +1732,7 @@ mod retained_capture_tests {
             &PureFactContext::new(),
             ContractEnvironment::new(&BTreeMap::new(), &ClickArrayRefs::new()),
             BTreeMap::new(),
-            &crate::persistent::PersistentMap::default(),
+            &PersistentBinderMap::default(),
             FixedStateFrame::new(&state, &state, None, &RecordedStates::default()),
             SpecDefinitions::new(
                 &PredicateEnvironment::new(&[]),
