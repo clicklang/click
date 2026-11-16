@@ -8,7 +8,7 @@ thread_local! {
 }
 
 #[cfg(test)]
-fn take_fact_reads() -> usize {
+pub(in crate::kernel) fn take_fact_reads() -> usize {
     FACT_READS.with(|reads| reads.replace(0))
 }
 
@@ -922,7 +922,7 @@ mod tests {
     }
 
     #[test]
-    fn fragment_merge_suppresses_repeated_shared_occurrences() {
+    fn fragment_merge_distinguishes_guards_from_certified_occurrences() {
         let source: ExecutionFacts = [ExecutionPureFact::new(guard(1, true))].into();
         let mut repeated = source.clone();
         repeated.extend_shared(&source);
@@ -949,9 +949,21 @@ mod tests {
             &PureFactContext::new(),
         )
         .unwrap();
-        assert_eq!(merged.len(), 1);
-        assert!(merged[0].is_certified());
-        assert!(std::ptr::eq(&merged[0], &certified[0]));
+        // Producer records remain shared occurrences in the stream; the
+        // logical context, not this merge, deduplicates their proposition.
+        assert_eq!(merged.len(), 2);
+        for fact in &merged {
+            assert!(fact.is_certified());
+            assert!(std::ptr::eq(fact, &certified[0]));
+        }
+        let context = |facts: &ExecutionFacts| {
+            crate::kernel::reasoning::path_facts::assumptions_with_path_context(
+                &PureFactContext::new(),
+                facts,
+                &[],
+            )
+        };
+        assert_eq!(context(&merged), context(&certified));
         let opposite: ExecutionFacts = [ExecutionPureFact::new(guard(1, false))].into();
         assert!(
             crate::kernel::reasoning::path_facts::merge_facts(

@@ -7256,7 +7256,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("named_returned_pointer_surface_fact");
         let view = search_input.premise_fixed_state_view()?;
-        let Some(result @ ProgramValue::Pointer(_)) = view.fixed_state.result else {
+        let native_result = view.fixed_state.native_result();
+        let Some(result @ ProgramValue::Pointer(_)) = native_result.as_deref() else {
             return None;
         };
         // Resource witnesses may have no written name but coincide with the

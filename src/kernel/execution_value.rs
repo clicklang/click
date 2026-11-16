@@ -516,6 +516,13 @@ impl StoredExecutionValue {
             ),
         }
     }
+    /// Preserve an exact native-payload comparison at a compatibility consumer.
+    /// Storage equality can identify different machine spellings of one word;
+    /// an outcome refresh must retain the earlier, stricter payload contract.
+    pub(crate) fn same_native_value(&self, other: &Self) -> bool {
+        self.same_retained_root(other) || self.native() == other.native()
+    }
+
     pub fn matches_native(&self, value: &ProgramValue) -> bool {
         self == &Self::from(value.clone())
     }
@@ -702,6 +709,47 @@ mod tests {
         let cell = StoredMemoryValue::from(raw.clone());
         assert_eq!(cell.native(), &raw);
         assert!(cell.value().shared().is_none());
+    }
+
+    #[test]
+    fn exact_native_value_comparison_does_not_use_machine_storage_equivalence() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let argument = MachineTerm::Variable(Variable(998319));
+        let call = |argument| {
+            ProgramValue::UInt32(MachineTerm::ClickFunctionApplication {
+                name: "payload_identity".into(),
+                arguments: vec![argument],
+            })
+        };
+        let native_argument = call(PureFunctionArgument::Value(ProgramValue::UInt32(
+            argument.clone(),
+        )));
+        let shared_argument = call(PureFunctionArgument::SharedMachine(
+            SharedMachineIntegerTerm::intern(MachineIntegerType::UInt32, argument),
+        ));
+        assert_ne!(native_argument, shared_argument);
+        let native = StoredExecutionValue::from(native_argument.clone());
+        let retained = StoredExecutionValue::from(shared_argument.clone());
+        assert_eq!(
+            native, retained,
+            "storage observes the same typed call argument"
+        );
+        assert!(
+            !native.same_native_value(&retained),
+            "refresh keeps exact native payloads"
+        );
+        assert!(!retained.same_native_value(&native));
+        assert!(native.same_native_value(&native.clone()));
+        let ProgramValue::UInt32(term) = &native_argument else {
+            unreachable!()
+        };
+        let root = KernelTermImport::default().machine(MachineIntegerType::UInt32, term);
+        let shared = StoredExecutionValue::from(ExecutionValue::Shared(root));
+        let exported = shared.clone().into_native();
+        for (stored, native) in [(native, native_argument), (retained, shared_argument)] {
+            assert_eq!(shared.same_native_value(&stored), exported == native);
+            assert_eq!(stored.same_native_value(&shared), native == exported);
+        }
     }
 
     #[test]

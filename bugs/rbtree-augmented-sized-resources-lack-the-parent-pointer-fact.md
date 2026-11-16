@@ -254,3 +254,21 @@ the insertion and its two wrappers on merged master `262fd90d1`.
 Both callbacks, the C, the three original function contracts, existing tree
 resources, and verifier are unchanged. The remaining sidecars and full-directory
 audit still leave this report open.
+
+## Mirrored context double rotation
+
+All three selected proofs in
+`rbtree_size_insert_mirrored_context_double_rotation.click` now verify at
+default limits. The right-left case retains complete parent tags and child
+links across initialization, the extra mirrored uncle read, both rotations,
+and their callbacks. It executes the missing local declaration and pivot
+load, exposes the first callback child's identity before retaining the link,
+and proves grandparent/pivot distinctness from separate owned header cells.
+The final fold's count equation is stated directly in the library's child order.
+
+Expansion, cold-replay, and fixed-point checks pass all 13 audit sites across
+the insertion and its two wrappers on merged master `d6e2b0979`.
+
+The C, three original function contracts, both callbacks, existing tree
+resources, and verifier are unchanged by this proof repair. Other sidecars
+and the full-directory audit still leave this report open.
