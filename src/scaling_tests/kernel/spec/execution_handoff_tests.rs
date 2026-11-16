@@ -175,3 +175,135 @@ fn algebraic_program_field_wrapping_does_not_walk_retained_prefixes() {
     }
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
 }
+
+#[test]
+fn pointer_field_qualifier_changes_keep_growing_indices_shared() {
+    let mut costs = Vec::new();
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut index = MachineTerm::Variable(Variable(999980));
+        for _ in 0..size {
+            index = MachineTerm::Binary {
+                op: MachineBinaryOp::Add,
+                format: MachineIntegerType::Int32,
+                left: Box::new(index),
+                right: Box::new(MachineTerm::constant(1)),
+            };
+        }
+        let pointer = PointerValue::new(
+            Pointer {
+                block: PointerBlock::Symbolic(Variable(999981)),
+                offset: PointerOffsetTerm::scaled_int32_node(index, 4),
+            },
+            ProgramType::Int32Pointer,
+        )
+        .with_pointee_constant(true);
+        let root = KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer));
+        let original = root.pointer_payload().unwrap().node().address.clone();
+        let exports = KernelTermExport::machine_export_count();
+        let (field, work) = crate::instrumentation::measure_deterministic_work(|| {
+            AlgebraicFieldResult::from_program(SpecValue::Shared(root))
+                .without_pointer_constant()
+                .into_kernel()
+        });
+        assert_eq!(field.pointer_payload().unwrap().node().address, original);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs.iter().all(|cost| *cost == costs[0]),
+        "{costs:?}"
+    );
+}
+
+#[test]
+fn float_lowering_conversions_keep_growing_operands_shared() {
+    let mut costs = Vec::new();
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut value = MachineTerm::Variable(Variable(999970));
+        for _ in 0..size {
+            value = MachineTerm::Float32Binary {
+                operator: FloatBinaryOperator::Add,
+                left: Box::new(value),
+                right: Box::new(MachineTerm::constant(0x3f80_0000)),
+            };
+        }
+        let expression = SpecExpression::Cast(
+            Box::new(SpecExpression::Value(ProgramValue::Float32(value))),
+            ProgramType::Float64,
+        );
+        let exports = KernelTermExport::float_export_count();
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_spec_expression_paths_with_loop_entry(
+                &ExecutionState::new(),
+                &expression,
+                None,
+                &PureFactContext::new(),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+        });
+        assert!(matches!(
+            paths[0].value.shared().unwrap().node(),
+            KernelTermNode::FloatConvert { .. }
+        ));
+        assert_eq!(KernelTermExport::float_export_count(), exports);
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs[1] <= 5 * costs[0] && costs[2] <= 5 * costs[1],
+        "{costs:?}"
+    );
+}
+
+#[test]
+fn mixed_call_assembly_keeps_growing_float_arguments_shared() {
+    for result_type in [ProgramType::Int32, ProgramType::Bool] {
+        let mut costs = Vec::new();
+        for size in [8, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut value = MachineTerm::Variable(Variable(999950));
+            for _ in 0..size {
+                value = MachineTerm::Float32Binary {
+                    operator: FloatBinaryOperator::Add,
+                    left: Box::new(value),
+                    right: Box::new(MachineTerm::constant(0x3f80_0000)),
+                };
+            }
+            let expression = SpecExpression::PureFunctionApplication {
+                name: "mixed_float_prefix".into(),
+                arguments: vec![
+                    SpecPureFunctionArgument::Value(SpecExpression::Value(ProgramValue::Float32(
+                        value,
+                    ))),
+                    SpecPureFunctionArgument::Value(SpecExpression::Value(int32(1))),
+                ],
+                result_type,
+                pointer_result: None,
+                result_object_class: None,
+            };
+            let exports = KernelTermExport::float_export_count();
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                evaluate_spec_expression_paths_with_loop_entry(
+                    &ExecutionState::new(),
+                    &expression,
+                    None,
+                    &PureFactContext::new(),
+                    &mut ExecutionBudget::new(),
+                )
+                .unwrap()
+            });
+            assert!(matches!(
+                paths[0].value.shared().unwrap().node(),
+                KernelTermNode::Call { .. }
+            ));
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+            costs.push(work);
+        }
+        assert!(
+            costs[0] > 0 && costs[1] <= 5 * costs[0] && costs[2] <= 5 * costs[1],
+            "{costs:?}"
+        );
+    }
+}

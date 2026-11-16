@@ -5830,15 +5830,7 @@ fn prepare_verified_function_call<'a>(
             )
         };
         opened
-            .map(|opened| {
-                let opened = expand_decidable_composite_resource_frontier(
-                    &opened,
-                    definitions,
-                    entry_contract_state.memory(),
-                    &path_assumptions,
-                );
-                entry_contract_state.clone().with_resource_context(opened)
-            })
+            .map(|opened| entry_contract_state.clone().with_resource_context(opened))
             .unwrap_or_else(|| entry_contract_state.clone())
     } else {
         entry_contract_state.clone()
@@ -12115,12 +12107,6 @@ fn prepare_contract_resource_transfer_unexplained(
             bounded_contract_resource_frontier(&required_resources)
         ))));
     };
-    let canonical_resources = expand_decidable_composite_resource_frontier(
-        &canonical_resources,
-        interface.composite_resource_definitions(),
-        callee_state.memory(),
-        assumptions,
-    );
     let population_body_resources = match evaluate_resource_population_body_resources(
         &required_resources,
         callee_state,
@@ -12184,14 +12170,6 @@ fn prepare_contract_resource_transfer_unexplained(
             callee_state.memory(),
             assumptions,
         )
-        .map(|expanded| {
-            expand_decidable_composite_resource_frontier(
-                &expanded,
-                interface.composite_resource_definitions(),
-                callee_state.memory(),
-                assumptions,
-            )
-        })
         .unwrap_or(singleton);
         for fact in expanded.facts() {
             if callee_resources.satisfies_fact(fact, assumptions) {
@@ -13106,8 +13084,6 @@ fn opened_composite_read_views(
     else {
         return Vec::new();
     };
-    let opened =
-        expand_decidable_composite_resource_frontier(&opened, definitions, memory, assumptions);
     opened
         .facts()
         .iter()
@@ -13224,7 +13200,7 @@ fn evaluate_contract_return_resources(
         Err(error) => return Ok(Err(error)),
     };
     let ensured_resources = &evaluated.resources;
-    let Some(flat_bodies) = ConstructedReturnBodies::try_construct(
+    let Some(return_bodies) = ConstructedReturnBodies::try_construct(
         &evaluated,
         interface.composite_resource_definitions(),
         post_state,
@@ -13276,7 +13252,7 @@ fn evaluate_contract_return_resources(
                     &retained,
                     prepared
                         .frontier_sources(ensured_resources, true)
-                        .map(|(source, fact)| (fact, flat_bodies.for_return(source, fact))),
+                        .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
                     interface.composite_resource_definitions(),
                     post_state.memory(),
                     assumptions,
@@ -13297,7 +13273,7 @@ fn evaluate_contract_return_resources(
                 &destination,
                 prepared
                     .frontier_sources(ensured_resources, false)
-                    .map(|(source, fact)| (fact, flat_bodies.for_return(source, fact))),
+                    .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
                 interface.composite_resource_definitions(),
                 post_state.memory(),
                 assumptions,
@@ -13339,7 +13315,7 @@ fn evaluate_contract_return_resources(
             project_return_resource_cores(
                 ensured_resources,
                 &inserted_ensured_occurrences,
-                &flat_bodies,
+                &return_bodies,
                 interface.composite_resource_definitions(),
                 post_state,
                 assumptions,
@@ -13390,29 +13366,16 @@ fn evaluate_contract_return_resources(
             if let Some(pieces) = constructed_borrowing_pieces {
                 produced_borrowing_pieces.extend(pieces);
             } else {
-                let children = frontier.or_else(|| {
-                    expand_composite_resource_fact_with_children(
-                        &ResourceContext::new_with_equalities(assumptions)
-                            .unchecked_with_fact(support.head.clone()),
-                        &support.head,
-                        interface.composite_resource_definitions(),
-                        post_state.memory(),
-                        assumptions,
-                    )
-                    .map(|(_, children, _)| children)
-                });
-                if let Some(children) = children {
-                    produced_borrowing_pieces.extend(
-                        children
-                            .into_iter()
-                            .filter(|piece| piece.is_view())
-                            .map(|piece| ProducedBorrowingPiece {
-                                support: support.clone(),
-                                piece,
-                                sources: None,
-                            }),
-                    );
-                }
+                produced_borrowing_pieces.extend(
+                    frontier
+                        .into_iter()
+                        .filter(|piece| piece.is_view())
+                        .map(|piece| ProducedBorrowingPiece {
+                            support: support.clone(),
+                            piece,
+                            sources: None,
+                        }),
+                );
             }
         }
         return_resources = return_resources
@@ -15778,7 +15741,7 @@ fn construct_composite_resource_body(
         "composite expansion",
         "composite child composition",
         || {
-            if selected.is_some() && !witnesses.is_empty() {
+            if selected.is_some() && (!witnesses.is_empty() || definition.is_recursive()) {
                 ResourceContext::new_with_equalities(assumptions)
                     .try_compose_with_legacy_discovery_and_occurrences(child_facts, assumptions)
                     .map(|(context, _)| context.normalized_without_discovery(assumptions))
@@ -16178,46 +16141,6 @@ pub(super) fn expand_all_composite_resource_facts_at_state(
     let (expanded, _) =
         expand_checked_authority_controls(context, definitions, state, assumptions)?;
     expand_all_composite_resource_facts(&expanded, definitions, state.memory(), assumptions)
-}
-
-/// Continues through recursive composites only while their guards are
-/// decidable in the current contract path. Unknown branches remain folded.
-fn expand_decidable_composite_resource_frontier(
-    context: &ResourceContext,
-    definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
-    assumptions: &PureFactContext,
-) -> ResourceContext {
-    let mut expanded = context.clone();
-    let mut seen = BTreeSet::new();
-    let mut pending = VecDeque::from(
-        context
-            .facts()
-            .iter()
-            .filter(|fact| matches!(fact.resource(), Resource::Composite { .. }))
-            .cloned()
-            .collect::<Vec<_>>(),
-    );
-    while let Some(composite) = pending.pop_front() {
-        if !seen.insert(composite.clone()) || !expanded.facts().contains(&composite) {
-            continue;
-        }
-        let Some(next) =
-            expand_composite_resource_fact(&expanded, &composite, definitions, memory, assumptions)
-        else {
-            continue;
-        };
-        if next == expanded {
-            continue;
-        }
-        for child in next.facts().iter().filter(|fact| {
-            matches!(fact.resource(), Resource::Composite { .. }) && !seen.contains(*fact)
-        }) {
-            pending.push_back(child.clone());
-        }
-        expanded = next;
-    }
-    expanded
 }
 
 /// Expands only the folded branches needed to expose `target`, leaving

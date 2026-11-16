@@ -1417,3 +1417,150 @@ fn existential_return_construction_scales_with_its_body_and_ignores_ambient_stat
         }
     }
 }
+
+#[test]
+fn recursive_return_frontiers_ignore_depth_aliases_and_retained_state() {
+    use super::recursive_return_tests::{recursive_definition, recursive_output};
+    for axis in [
+        "depth",
+        "aliases",
+        "related owners",
+        "unrelated owners",
+        "definitions",
+    ] {
+        for overlap in [false, true] {
+            let mut samples = Vec::new();
+            for count in [4_u32, 16, 64] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let pointer = Pointer::symbolic(Variable(8_861_000));
+                let mut facts = PureFactContext::new();
+                let mut frame = ResourceContext::new();
+                let mut definitions = vec![recursive_definition()];
+                for index in 0..count {
+                    let other = Pointer::symbolic(Variable(8_861_100 + u64::from(index)));
+                    match axis {
+                        "aliases" => {
+                            facts = facts.assume_condition(
+                                ConditionTerm::pointer_equal(pointer.clone(), other),
+                                true,
+                            )
+                        }
+                        "related owners" | "unrelated owners" => {
+                            let base = if axis == "related owners" {
+                                pointer.clone()
+                            } else {
+                                other
+                            };
+                            frame = frame.unchecked_with_fact(ResourceFact::own_memory(
+                                MemoryRange::new(
+                                    base,
+                                    (index * 2 + 1000).into(),
+                                    (index * 2 + 1001).into(),
+                                ),
+                            ));
+                        }
+                        "definitions" => definitions.push(CompositeResourceDefinition::new(
+                            format!("unrelated_{index:04}"),
+                            vec![],
+                            None,
+                            false,
+                            vec![],
+                            vec![],
+                        )),
+                        _ => {}
+                    }
+                }
+                if overlap {
+                    frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                        pointer.clone(),
+                        0u32.into(),
+                        1u32.into(),
+                    )));
+                }
+                frame.synchronize_memory_equalities(&facts);
+                let state = ExecutionState::new().with_resource_context(frame.clone());
+                let evaluated = recursive_output(
+                    pointer,
+                    MachineTerm::constant(if axis == "depth" { count } else { 2 }),
+                    &facts,
+                );
+                let source = evaluated.occurrences[0].source;
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    let _fast = crate::kernel::search::FastOperationScope::enter(
+                        "finite recursive return construction",
+                    );
+                    let bodies = ConstructedReturnBodies::construct(
+                        &evaluated,
+                        &definitions,
+                        &state,
+                        &facts,
+                    );
+                    assert!(bodies.1.is_empty());
+                    let body = bodies.get(source).unwrap();
+                    assert_eq!(body.expansion.len(), 2);
+                    assert_eq!(body.folded.len(), 1);
+                    assert_eq!(body.transfers.len(), 2);
+                    let error = produced_composite_frontier_conflict(
+                        &frame,
+                        std::iter::once((
+                            evaluated
+                                .resources
+                                .owned_fact_for_occurrence(source)
+                                .unwrap(),
+                            Some(body),
+                        )),
+                        &[],
+                        state.memory(),
+                        &facts,
+                    );
+                    assert_eq!(error.is_some(), overlap);
+                });
+                samples.push(work);
+            }
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 96),
+                "{axis}, overlap={overlap}: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn recursive_call_preparation_does_not_deepen_a_decided_tail() {
+    use super::recursive_return_tests::{recursive_definition, recursive_output};
+    use crate::kernel::program_expression::{int32_literal, variable};
+    let mut samples = Vec::new();
+    for depth in [4_u32, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let pointer = Pointer::symbolic(Variable(8_862_000));
+        let clause = ResourceSpec::declared(
+            ResourceFamily::Composite,
+            ResourceAccessMode::Own,
+            "finite_list".into(),
+            vec![variable("p"), int32_literal(depth)],
+            vec![ProgramType::Int32Pointer, ProgramType::Int32],
+            ResourceTransferRole::Borrow,
+            ResourceStateSource::Current,
+        )
+        .unwrap();
+        let function = program_function(
+            ProgramType::Void,
+            "keep_finite_list",
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
+            program_skip(),
+        )
+        .with_resource_summary(vec![clause.clone()], vec![clause])
+        .with_composite_resource_definitions(vec![recursive_definition()]);
+        let evaluated = recursive_output(pointer.clone(), MachineTerm::constant(depth), &facts);
+        let (transfer, work) = crate::instrumentation::measure_deterministic_work(|| {
+            super::tests::prepare_scalar_transfer(&function, pointer, evaluated.resources, &facts)
+        });
+        assert_eq!(transfer.borrowed_inputs.len(), 1);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 256),
+        "{samples:?}"
+    );
+}

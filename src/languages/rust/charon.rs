@@ -4327,7 +4327,6 @@ mod tests {
             include_bytes!("../../../design/charon-trial/chunks/chunks.rs"),
         )
         .unwrap();
-        let mut export = export;
         // The fixture's unit imports its iterators as library values.
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         ProgramVerificationSession::new_program_prepared(

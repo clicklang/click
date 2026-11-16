@@ -737,9 +737,9 @@ two-constructor enum and `exists (v) { c.model == Some(v) }` both select
 through it fail as today; there is no implicit proof by cases. The same
 decision applies at a loop head, where the invariants play the role of the
 requirements, so a guard such as `root->left != 0` can read through the
-focused subtree. This generalizes the existing decidable-guard expansion in
-`src/kernel/functions.rs` (`expand_decidable_composite_resource_frontier`)
-rather than adding a second path. No sugar such as `requires c.model is
+focused subtree. This generalizes finite guarded-body construction in
+`src/kernel/functions.rs` (`construct_composite_resource_body`) rather than
+adding another recursive expansion pass. No sugar such as `requires c.model is
 Some` in this issue.
 
 **D8. Matched arms may own children of another declared resource.** The

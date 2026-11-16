@@ -180,7 +180,11 @@ fn allocation_companion_alias_lookup_ignores_unrelated_storage_and_alias_stars()
                     true,
                 );
             }
-            let alias = Pointer::symbolic(Variable(if hit { 10_000_000 + size - 1 } else { 40_000_000 }));
+            let alias = Pointer::symbolic(Variable(if hit {
+                10_000_000 + size - 1
+            } else {
+                40_000_000
+            }));
             let output = ResourceFact::own_allocation(alias, 4);
             let (returned, measured) = crate::instrumentation::measure_deterministic_work(|| {
                 transfer_population_call_facts(

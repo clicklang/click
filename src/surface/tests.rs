@@ -119,7 +119,7 @@ fn scalar_returns_keep_constructor_bound_algebraic_types() {
     assert!(
         error
             .message()
-            .contains("algebraic comparison type mismatch"),
+            .contains("comparison has types Color and Other in function `wrong`"),
         "{error}"
     );
 }
