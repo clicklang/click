@@ -20371,15 +20371,6 @@ fn prefix_has_non_assertion(prefix: &[CStatement]) -> bool {
         .any(|statement| !matches!(statement, CStatement::Assert { .. }))
 }
 
-/// Run a lowered loop-condition prefix and condition check before each
-/// `continue` that targets the current loop. Nested loops consume their own
-/// `continue` statements, while a `switch` does not introduce a continue
-/// target and is traversed.
-/// Whether a statement can `continue` the loop that encloses it.
-///
-/// An inner loop owns its own `continue`, so one nested inside a `while`,
-/// `do ... while`, or `for` does not belong to the enclosing loop.
-
 fn first_embedded_call_position(expression: &CExpression) -> Option<SourcePosition> {
     match expression {
         CExpression::ScalarUpdate { .. } => None,
