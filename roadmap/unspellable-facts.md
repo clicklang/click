@@ -505,6 +505,20 @@ All 3,184 selected API, proof, specification, execution and scaling checks
 passed. Quality and six exact regular argument/domain fixtures passed, with
 zero fact-stability differences.
 
+### 9y Retire the private native capture entry point
+
+The last resource-field initializer caller uses the common retained result,
+checks its type, then converts at the existing native field-storage boundary.
+The superseded private checked-obligation capture wrapper is removed. The public
+native evaluation API projects the same common path directly, with its signature,
+value and obligation behavior preserved. Strict resource evaluation keeps its
+separate checked-load contract.
+
+All 3,188 selected API, proof, specification, execution and scaling checks passed
+with current upstream integrated. Six exact regular resource/initializer fixtures
+passed, including the unchanged wrong-type refusals, with zero fact-stability
+differences. Quality checks passed; nightly was not run.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

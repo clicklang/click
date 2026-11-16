@@ -3369,30 +3369,14 @@ pub fn program_evaluate_speprogram_expression_at_state(
     entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
 ) -> Result<(ProgramValue, Vec<Proposition>), String> {
-    let (value, obligations) = program_evaluate_speprogram_expression_with_checked_obligations(
-        state,
-        expression,
-        entry_state,
-        assumptions,
-    )?;
+    let path = evaluate_speprogram_expression_path(state, expression, entry_state, assumptions)?;
     Ok((
-        value,
-        obligations
+        path.value.into_native(),
+        path.obligations
             .into_iter()
             .map(|obligation| obligation.proposition().clone())
             .collect(),
     ))
-}
-
-/// Retains mandatory conversion conditions for proof-side expression capture.
-pub(crate) fn program_evaluate_speprogram_expression_with_checked_obligations(
-    state: &ExecutionState,
-    expression: &SpecExpression,
-    entry_state: Option<&ExecutionState>,
-    assumptions: &PureFactContext,
-) -> Result<(ProgramValue, Vec<ProofObligation>), String> {
-    let path = evaluate_speprogram_expression_path(state, expression, entry_state, assumptions)?;
-    Ok((path.value.into_native(), path.obligations))
 }
 
 /// Capture a typed common root without materializing its native expression tree.
