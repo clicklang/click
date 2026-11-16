@@ -316,7 +316,7 @@ fn expanded_loop_claims_preserve_the_audit_work_bound() {
     for (fixture, claim) in [
         ("c_decreases_recursive_in_loop", "recursive_loop.contract"),
         ("later_loop_preserve", "later_loop_preserve.contract"),
-        ("loop_exit_state", "count_from_to.contract"),
+        ("loop_exit_program_point", "count_from_to.contract"),
         ("nested_loop_preserve", "nested_loop_preserve.contract"),
     ] {
         let path =
@@ -9788,6 +9788,10 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
             curve(&|sample| named(sample, "contract claim: proposition")),
         ),
         ("path theorem premises", curve(&premises)),
+        (
+            "completion fact delta",
+            curve(&|sample| named(sample, "completion fact delta")),
+        ),
         // Uncharged work: an outcome goal merging its path's fact and effect
         // streams, and a join taking its arms' effect suffixes. Each is the
         // path's or arm's whole history when it is not shared.
@@ -9847,7 +9851,7 @@ fn assert_early_return_finishing_shares_prefixes(sizes: &[usize]) {
             );
         }
         assert!(
-            counter || work.iter().all(|units| *units > 0),
+            counter || *name == "completion fact delta" || work.iter().all(|units| *units > 0),
             "{name} was not measured: {work:?}"
         );
         assert!(

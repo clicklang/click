@@ -3,6 +3,78 @@ use super::*;
 
 type Values = crate::persistent::PersistentMap<String, KernelTerm>;
 
+/// Fold and match bodies share one lexical handoff. Program-local fold
+/// bindings keep their existing C state semantics; selected match fields keep
+/// their common roots. Integer binders remain in the evaluator's typed stack.
+pub(super) struct Scope<'a> {
+    state: ExecutionState,
+    algebraic: std::borrow::Cow<'a, BTreeMap<String, AlgebraicTerm>>,
+    values: Values,
+    loop_entry_state: Option<&'a ExecutionState>,
+}
+
+impl<'a> Scope<'a> {
+    pub(super) fn new<'n>(parent: SpecScope<'a>, names: impl IntoIterator<Item = &'n str>) -> Self {
+        Self {
+            state: parent.state.clone(),
+            algebraic: std::borrow::Cow::Borrowed(parent.algebraic_bindings),
+            values: parent.without_values(names),
+            loop_entry_state: parent.loop_entry_state,
+        }
+    }
+
+    pub(super) fn bind_field(&mut self, name: &str, value: &AlgebraicFieldResult) {
+        match value {
+            AlgebraicFieldResult::Shared(root)
+                if matches!(root.node(), KernelTermNode::Legacy(_)) =>
+            {
+                self.bind_native_field(name, &value.clone().into_native());
+            }
+            AlgebraicFieldResult::Shared(root) if root.ty() != &KernelType::Integer => {
+                self.values.insert(name.to_owned(), root.clone());
+            }
+            AlgebraicFieldResult::Shared(_) => {}
+            AlgebraicFieldResult::Native(value) => self.bind_native_field(name, value),
+        }
+    }
+
+    pub(super) fn bind_native_field(&mut self, name: &str, value: &AlgebraicValue) {
+        match value {
+            AlgebraicValue::Program(value) => {
+                self.state.locals.set(name.to_owned(), value.clone());
+            }
+            AlgebraicValue::Algebraic(value) => {
+                self.algebraic
+                    .to_mut()
+                    .insert(name.to_owned(), value.clone());
+            }
+            AlgebraicValue::Integer(_) => {}
+        }
+    }
+
+    pub(super) fn bind_program_local(&mut self, name: &str, value: SpecValue) {
+        let ty = value.program_type();
+        self.state.locals.set_retained_typed_with_all_qualifiers(
+            name.to_owned(),
+            value,
+            ty,
+            false,
+            false,
+            false,
+            false,
+        );
+    }
+
+    pub(super) fn as_scope(&self) -> SpecScope<'_> {
+        SpecScope {
+            state: &self.state,
+            algebraic_bindings: &self.algebraic,
+            values: Some(&self.values),
+            loop_entry_state: self.loop_entry_state,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct Path {
     state: ExecutionState,

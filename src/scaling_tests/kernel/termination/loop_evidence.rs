@@ -23,7 +23,7 @@ fn selected_loop_opening_does_not_scan_unrelated_statements_or_loops() {
             );
         }
         let mut wrong = selected.clone();
-        let ProgramStatement::While { condition, .. } = &mut wrong else {
+        let ProgramStatement::Loop { condition, .. } = &mut wrong else {
             unreachable!()
         };
         *condition = int32_literal(1);

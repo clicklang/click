@@ -609,7 +609,7 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
             else_branch,
             ..
         } => statement_contains_call(then_branch) || statement_contains_call(else_branch),
-        ProgramStatement::While { body, .. } => statement_contains_call(body),
+        ProgramStatement::Loop { body, .. } => statement_contains_call(body),
         ProgramStatement::Switch { cases, .. } => {
             cases.iter().any(|case| statement_contains_call(&case.body))
         }

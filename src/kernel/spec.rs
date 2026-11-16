@@ -3178,8 +3178,6 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecIntegerPath>> {
-    let state = scope.state;
-    let algebraic_bindings = scope.algebraic_bindings;
     let scrutinee_paths =
         evaluate_spec_algebraic_at_state_with_bindings_in(scope, scrutinee, assumptions, budget)?;
     let mut result = Vec::new();
@@ -3219,28 +3217,16 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 schema,
                 budget,
             )?;
-            let mut body_state = state.clone();
-            let mut body_algebraic_bindings = algebraic_bindings.clone();
-            let body_values = scope.without_values(arm.bindings.iter().map(String::as_str));
-            for (binding, value) in arm.bindings.iter().zip(bindings.clone()) {
-                match value {
-                    AlgebraicValue::Program(value) => body_state.locals.set(binding.clone(), value),
-                    AlgebraicValue::Algebraic(value) => {
-                        body_algebraic_bindings.insert(binding.clone(), value);
-                    }
-                    AlgebraicValue::Integer(_) => {}
-                }
+            let mut body_scope =
+                bindings::Scope::new(scope, arm.bindings.iter().map(String::as_str));
+            for (binding, value) in arm.bindings.iter().zip(&bindings) {
+                body_scope.bind_native_field(binding, value);
             }
             let body_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             let mut body_paths =
                 budget.with_integer_bindings(&arm.binding_variables, &bindings, |budget| {
                     evaluate_spec_integer_expression_paths_in(
-                        SpecScope {
-                            state: &body_state,
-                            algebraic_bindings: &body_algebraic_bindings,
-                            values: Some(&body_values),
-                            ..scope
-                        },
+                        body_scope.as_scope(),
                         &arm.body,
                         &body_assumptions,
                         budget,
@@ -4021,20 +4007,10 @@ fn evaluate_spec_algebraic_non_call_in(
                             schema,
                             budget,
                         )?;
-                        let mut body_state = state.clone();
-                        let mut body_algebraic_bindings = algebraic_bindings.clone();
-                        let body_values =
-                            scope.without_values(arm.bindings.iter().map(String::as_str));
+                        let mut body_scope =
+                            bindings::Scope::new(scope, arm.bindings.iter().map(String::as_str));
                         for (binding, value) in arm.bindings.iter().zip(&bindings) {
-                            match value {
-                                AlgebraicValue::Program(value) => {
-                                    body_state.locals.set(binding.clone(), value.clone());
-                                }
-                                AlgebraicValue::Integer(_) => {}
-                                AlgebraicValue::Algebraic(value) => {
-                                    body_algebraic_bindings.insert(binding.clone(), value.clone());
-                                }
-                            }
+                            body_scope.bind_native_field(binding, value);
                         }
                         let body_assumptions =
                             assumptions_with_path_context(assumptions, &facts, &obligations);
@@ -4043,12 +4019,7 @@ fn evaluate_spec_algebraic_non_call_in(
                             &bindings,
                             |budget| {
                                 evaluate_spec_algebraic_at_state_with_bindings_in(
-                                    SpecScope {
-                                        state: &body_state,
-                                        algebraic_bindings: &body_algebraic_bindings,
-                                        values: Some(&body_values),
-                                        ..scope
-                                    },
+                                    body_scope.as_scope(),
                                     &arm.body,
                                     &body_assumptions,
                                     budget,
@@ -4104,17 +4075,10 @@ fn evaluate_spec_algebraic_non_call_in(
                     if arm.bindings.len() != case.fields.len() {
                         return Err(ExecutionLimit::Paths);
                     }
-                    let mut body_state = state.clone();
-                    let mut body_algebraic_bindings = algebraic_bindings.clone();
-                    let mut body_values =
-                        scope.without_values(arm.bindings.iter().map(String::as_str));
+                    let mut body_scope =
+                        bindings::Scope::new(scope, arm.bindings.iter().map(String::as_str));
                     for (binding, field) in arm.bindings.iter().zip(&case.fields) {
-                        field.bind(
-                            binding,
-                            &mut body_state,
-                            &mut body_algebraic_bindings,
-                            &mut body_values,
-                        );
+                        body_scope.bind_field(binding, field);
                     }
                     let Some((case_facts, case_obligations)) =
                         merge_execution_pure_facts_and_obligations(
@@ -4134,12 +4098,7 @@ fn evaluate_spec_algebraic_non_call_in(
                         &case.fields,
                         |budget| {
                             evaluate_spec_algebraic_at_state_with_bindings_in(
-                                SpecScope {
-                                    state: &body_state,
-                                    algebraic_bindings: &body_algebraic_bindings,
-                                    values: Some(&body_values),
-                                    ..scope
-                                },
+                                body_scope.as_scope(),
                                 &arm.body,
                                 &body_assumptions,
                                 budget,
@@ -6664,7 +6623,6 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let state = scope.state;
     let loop_entry_state = scope.loop_entry_state;
-    let algebraic_bindings = scope.algebraic_bindings;
     budget.consume_expression_step()?;
     let paths = match expression {
         SpecExpression::Requires { requirement, value } => evaluate_spec_requires_paths_in(
@@ -6867,20 +6825,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                 Ok(variable)
                             },
                         )?;
-                        let mut body_state = state.clone();
-                        let mut body_algebraic_bindings = algebraic_bindings.clone();
-                        let body_values =
-                            scope.without_values(arm.bindings.iter().map(String::as_str));
+                        let mut body_scope =
+                            bindings::Scope::new(scope, arm.bindings.iter().map(String::as_str));
                         for (binding, value) in arm.bindings.iter().zip(&bindings) {
-                            match value {
-                                AlgebraicValue::Program(value) => {
-                                    body_state.locals.set(binding.clone(), value.clone());
-                                }
-                                AlgebraicValue::Integer(_) => {}
-                                AlgebraicValue::Algebraic(value) => {
-                                    body_algebraic_bindings.insert(binding.clone(), value.clone());
-                                }
-                            }
+                            body_scope.bind_native_field(binding, value);
                         }
                         let body_assumptions = assumptions_with_path_context(
                             assumptions,
@@ -6889,12 +6837,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         );
                         let mut body_paths =
                             evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                                SpecScope {
-                                    state: &body_state,
-                                    algebraic_bindings: &body_algebraic_bindings,
-                                    values: Some(&body_values),
-                                    ..scope
-                                },
+                                body_scope.as_scope(),
                                 &arm.body,
                                 &body_assumptions,
                                 budget,
@@ -7039,17 +6982,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     if arm.bindings.len() != case.fields.len() {
                         return Err(ExecutionLimit::Paths);
                     }
-                    let mut body_state = state.clone();
-                    let mut body_algebraic_bindings = algebraic_bindings.clone();
-                    let mut body_values =
-                        scope.without_values(arm.bindings.iter().map(String::as_str));
+                    let mut body_scope =
+                        bindings::Scope::new(scope, arm.bindings.iter().map(String::as_str));
                     for (binding, field) in arm.bindings.iter().zip(&case.fields) {
-                        field.bind(
-                            binding,
-                            &mut body_state,
-                            &mut body_algebraic_bindings,
-                            &mut body_values,
-                        );
+                        body_scope.bind_field(binding, field);
                     }
                     let Some((case_facts, case_obligations)) =
                         merge_execution_pure_facts_and_obligations(
@@ -7065,12 +7001,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     let body_assumptions =
                         assumptions_with_path_context(assumptions, &case_facts, &case_obligations);
                     for body_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                        SpecScope {
-                            state: &body_state,
-                            algebraic_bindings: &body_algebraic_bindings,
-                            values: Some(&body_values),
-                            ..scope
-                        },
+                        body_scope.as_scope(),
                         &arm.body,
                         &body_assumptions,
                         budget,
@@ -9608,7 +9539,6 @@ fn evaluate_spec_range_fold_body_path_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Option<SpecExpressionPath>> {
-    let state = scope.state;
     let constant = |value: &SpecValue| value.machine()?.1.literal()?.as_const();
     match (constant(&start), constant(&end)) {
         (Some(start), Some(end)) => {
@@ -9616,27 +9546,13 @@ fn evaluate_spec_range_fold_body_path_in(
             let mut facts = facts;
             let mut obligations = obligations;
             for index in concrete_spec_fold_range(start as i32, end as i32) {
-                let mut body_state = state.clone();
-                let body_values = scope.without_values([accumulator, item]);
-                let ty = value.program_type();
-                body_state.locals.set_retained_typed_with_all_qualifiers(
-                    accumulator.to_string(),
-                    value,
-                    ty,
-                    false,
-                    false,
-                    false,
-                    false,
-                );
-                body_state.locals.set(item.to_string(), int32(index as u32));
+                let mut body_scope = bindings::Scope::new(scope, [accumulator, item]);
+                body_scope.bind_program_local(accumulator, value);
+                body_scope.bind_program_local(item, int32(index as u32).into());
                 let body_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
                 let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    SpecScope {
-                        state: &body_state,
-                        values: Some(&body_values),
-                        ..scope
-                    },
+                    body_scope.as_scope(),
                     body,
                     &body_assumptions,
                     budget,
@@ -9670,26 +9586,22 @@ fn evaluate_spec_range_fold_body_path_in(
             }))
         }
         _ => {
-            let mut body_state = state.clone();
-            let body_values = scope.without_values([accumulator, item]);
-            body_state.locals.set(
-                accumulator.to_string(),
+            let mut body_scope = bindings::Scope::new(scope, [accumulator, item]);
+            body_scope.bind_program_local(
+                accumulator,
                 int32(MachineTerm::Variable(spec_fold_bound_variable(
                     accumulator,
                     0,
-                ))),
+                )))
+                .into(),
             );
-            body_state.locals.set(
-                item.to_string(),
-                int32(MachineTerm::Variable(spec_fold_bound_variable(item, 1))),
+            body_scope.bind_program_local(
+                item,
+                int32(MachineTerm::Variable(spec_fold_bound_variable(item, 1))).into(),
             );
             let body_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                SpecScope {
-                    state: &body_state,
-                    values: Some(&body_values),
-                    ..scope
-                },
+                body_scope.as_scope(),
                 body,
                 &body_assumptions,
                 budget,

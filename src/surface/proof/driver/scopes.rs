@@ -20,6 +20,23 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
+    /// Emit the explicit interval-product proof inside a selected have body.
+    pub(in crate::surface::proof) fn try_product_bound_using(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_product_bound_using(
+            &self.proof.body,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Runs the loop-bundle member planner inside the owned nested body, so a
     /// pivot arm proved under `have` retains the same checked descendant the
     /// bundle root would have retained for it.

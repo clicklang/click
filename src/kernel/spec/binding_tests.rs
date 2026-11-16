@@ -134,6 +134,25 @@ fn native_fold_binders_shadow_shared_let_bindings() {
     assert_eq!(result.value.into_native(), int32(2));
 }
 
+#[test]
+fn fold_binding_scope_preserves_old_state_and_restores_outer_values() {
+    let _session = VerificationSession::enter();
+    let state = ExecutionState::new().with_local("v", int32(7));
+    let old = ExecutionState::new().with_local("v", int32(99));
+    let fold = SpecExpression::RangeFold {
+        start: Box::new(SpecExpression::Value(int32(0))),
+        end: Box::new(SpecExpression::Value(int32(2))),
+        initial: Box::new(SpecExpression::Value(int32(0))),
+        accumulator: "v".into(),
+        item: "i".into(),
+        body: Box::new(SpecExpression::LoopEntryState(Box::new(name("v")))),
+    };
+    let scope = SpecScope::unbound(&state, Some(&old));
+    let body = add(fold, name("v"));
+    assert_eq!(evaluate(scope, &body).value.into_native(), int32(106));
+    assert_eq!(evaluate(scope, &name("v")).value.into_native(), int32(7));
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/spec/binding_tests.rs");

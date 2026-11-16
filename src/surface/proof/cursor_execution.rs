@@ -346,13 +346,8 @@ pub(super) fn apply_branch_interface_with_proof_facts(
 fn completed_execution_facts(
     core: &crate::kernel::proof::ExecutionProofCore,
     delta: &ExecutionFacts,
-) -> ExecutionFacts {
-    core.completed_path_facts_with_effects(delta)
-        .unwrap_or_else(|| {
-            let mut facts = core.completed_path_facts(delta);
-            append_execution_effect_facts(&mut facts, &core.effect_facts);
-            facts
-        })
+) -> crate::kernel::proof::CompletedExecutionFacts {
+    core.completed_execution_facts(delta)
 }
 
 pub(super) fn append_execution_effect_facts(
@@ -830,7 +825,7 @@ fn execute_concrete_loop_head_step(
     let tactic_index = proof_context.tactic_index;
 
     execution.core.concrete_loop_execution = true;
-    let ProgramStatement::While {
+    let ProgramStatement::Loop {
         condition,
         invariant,
         invariant_checks,
@@ -843,7 +838,7 @@ fn execute_concrete_loop_head_step(
         ..
     } = loop_statement.clone()
     else {
-        unreachable!("concrete loop stepping requires a while statement");
+        unreachable!("concrete loop stepping requires a loop statement");
     };
 
     record_statement_program_state(
@@ -861,7 +856,7 @@ fn execute_concrete_loop_head_step(
         current_state.clone(),
     );
 
-    let loop_head = ProgramStatement::While {
+    let loop_head = ProgramStatement::Loop {
         condition: condition.clone(),
         invariant: invariant.clone(),
         invariant_checks: invariant_checks.clone(),
@@ -2065,7 +2060,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
             append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
             *available_pure_facts = transition.pure_facts.clone();
             let completed =
-                crate::kernel::program_function_execution_candidates_from_outcomes_with_loan_evidence(
+                crate::kernel::program_function_execution_candidates_from_completed_outcomes(
                     prepared.execution_start_state.clone(),
                     function.clone(),
                     arguments.to_vec(),
@@ -2350,12 +2345,12 @@ fn execute_step_from_frontier_position_selecting_path(
             ))
         })?;
     }
-    if matches!(source_statement, ProgramStatement::While { .. }) && loop_index.is_none() {
+    if matches!(source_statement, ProgramStatement::Loop { .. }) && loop_index.is_none() {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve the source loop at region({statement_index})"
         )));
     }
-    if let (Some(loop_index), ProgramStatement::While { .. }) = (loop_index, &source_statement)
+    if let (Some(loop_index), ProgramStatement::Loop { .. }) = (loop_index, &source_statement)
         && matches!(loop_step_policy, LoopStepPolicy::EnterBody)
     {
         execute_concrete_loop_head_step(
@@ -2806,7 +2801,7 @@ fn execute_step_from_frontier_position_selecting_path(
         append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
         let state: &mut ExecutionState = &mut execution.core.state;
         let completed =
-            crate::kernel::program_function_execution_candidates_from_outcomes_with_loan_evidence(
+            crate::kernel::program_function_execution_candidates_from_completed_outcomes(
                 execution_start_state.clone(),
                 function.clone(),
                 arguments.to_vec(),
@@ -3253,7 +3248,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     &returned.execution_facts,
                     &returned.obligations,
                     outcome,
-                    completed_execution_facts,
+                    completed_execution_facts.into_facts(),
                     obligations,
                     returned_facts,
                     loan_evidence,
@@ -3611,7 +3606,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 }
                 append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
                 let completed =
-                    crate::kernel::program_function_execution_candidates_from_outcomes_with_loan_evidence(
+                    crate::kernel::program_function_execution_candidates_from_completed_outcomes(
                         execution_start_state.clone(),
                         function.clone(),
                         arguments.to_vec(),
@@ -3732,7 +3727,7 @@ fn execute_step_from_frontier_position_selecting_path(
             )];
             append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
             let completed =
-                crate::kernel::program_function_execution_candidates_from_outcomes_with_loan_evidence(
+                crate::kernel::program_function_execution_candidates_from_completed_outcomes(
                     execution_start_state.clone(),
                     function.clone(),
                     arguments.to_vec(),
@@ -4194,7 +4189,7 @@ fn append_pending_loop_returns(
     core: &mut crate::kernel::proof::ExecutionProofCore,
     completed_outcomes: &mut Vec<(
         FunctionOutcome,
-        ExecutionFacts,
+        crate::kernel::proof::CompletedExecutionFacts,
         Vec<ProofObligation>,
         crate::kernel::CheckedLoanCallEvidenceSequence,
     )>,
@@ -4202,7 +4197,7 @@ fn append_pending_loop_returns(
     for pending in core.complete_pending_loop_returns() {
         completed_outcomes.push((
             pending.outcome,
-            pending.execution_facts,
+            crate::kernel::proof::CompletedExecutionFacts::from_facts(pending.execution_facts),
             pending.obligations,
             pending.loan_evidence,
         ));
@@ -4449,7 +4444,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
                 describe_program_expression(condition)
             )
         }
-        ProgramStatement::While { condition, .. } => {
+        ProgramStatement::Loop { condition, .. } => {
             format!("while ({})", describe_program_expression(condition))
         }
         ProgramStatement::Switch { expression, .. } => {

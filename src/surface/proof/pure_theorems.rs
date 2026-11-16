@@ -4417,6 +4417,34 @@ mod tests {
     }
 
     #[test]
+    fn divisor_sign_declarations_check_their_guards_and_conclusions() {
+        for (name, goal, wrong) in [
+            (
+                "quotient_negate_divisor",
+                "truncating_quotient(n,d) == -truncating_quotient(n,-d)",
+                "truncating_quotient(n,d) == truncating_quotient(n,-d)",
+            ),
+            (
+                "remainder_negate_divisor",
+                "truncating_remainder(n,d) == truncating_remainder(n,-d)",
+                "truncating_remainder(n,d) == -truncating_remainder(n,-d)",
+            ),
+        ] {
+            let source = format!(
+                "theorem click::integer::{name}(n: Integer, d: Integer) {{ requires d != 0; requires -d != 0; ensures {goal}; }}"
+            );
+            verify_standard_declaration(&source).unwrap();
+            for bad in [
+                source.replace("requires d != 0;", ""),
+                source.replace("d != 0", "d == 0"),
+                source.replace(goal, wrong),
+            ] {
+                assert!(verify_standard_declaration(&bad).is_err(), "{bad}");
+            }
+        }
+    }
+
+    #[test]
     fn uint32_byte_representation_declaration_checks_its_target_reads_and_order() {
         let source = include_str!("../../../library/integer.click")
             .split("// Representation bytes")
@@ -4424,7 +4452,10 @@ mod tests {
             .unwrap()
             .split_once('\n')
             .unwrap()
-            .1;
+            .1
+            .split("\ntheorem ")
+            .next()
+            .unwrap();
         verify_standard_declaration(source).expect("representation declaration");
         for invalid in [
             source.replace("requires little_endian();", ""),
