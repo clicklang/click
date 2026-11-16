@@ -394,7 +394,9 @@ pub(super) fn split_next_branches(blocks: &mut Vec<out::MirBlock>) -> Result<(),
             S::SharedArrayNext { iterator, option } => (iterator.clone(), option.clone(), true),
             S::EnumerateNext { iterator, option } => (iterator.clone(), option.clone(), true),
             S::RangeNext {
-                iterator, option, ..
+                iterator,
+                option: Some(option),
+                ..
             } => {
                 split_range_next(blocks, &predecessors, header, iterator, option, &next)?;
                 continue;

@@ -416,6 +416,7 @@ fn float_steps_and_returns_keep_shared_roots_without_exporting_prefixes() {
                     origin: crate::kernel::StepOrigin::Operator(
                         crate::kernel::OperatorKind::Ternary,
                     ),
+                    ends: true,
                 };
                 let paths = evaluate_expression_value_paths(
                     &after,
