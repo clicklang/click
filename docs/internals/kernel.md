@@ -1750,23 +1750,26 @@ Resolving a load to a stored scalar requires
 the load's recorded width to match the stored value; a width-less term cannot
 choose a cell type implicitly.
 
-Call and loop behavior are explicit inputs to kernel execution. The common
-configurations are:
+Calls have one semantics. A call applies the callee's verified rule and never
+evaluates the callee's body; the body is checked once, against its contract,
+in its own proof. The one exception is a `static inline` helper (or a
+file-scope `static` function) with no Click contract, whose checked body runs
+at the call site on the caller's resources. A call to any other function
+without a verified rule fails rather than falling back to its body.
 
-- `ExecutionSemantics::EXECUTE_BODIES` evaluates callee bodies, verifies
-  annotated loops directly, and ignores available verified rules. Low-level C
-  evaluator tests use this mode.
-- `ExecutionSemantics::APPLY_VERIFIED_RULES` applies opaque function and loop
-  rules and never evaluates the corresponding bodies. Click execution proofs
-  use this mode.
+Loop behavior is an explicit input to kernel execution, `ExecutionSemantics`:
+
+- `ExecutionSemantics::APPLY_VERIFIED_RULES` applies verified loop rules and
+  never evaluates the corresponding bodies. Click execution proofs use this
+  mode.
+- `ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS` verifies the current
+  loop body directly. The loop-rule construction phase and low-level evaluator
+  tests use this mode.
 
 `ExecutionEnvironment` contains the function definitions and verified rules
 available to an execution; it does not select between these semantics. In
-particular, rule lookup is not a fallback mechanism. Applying verified rules
-without a matching rule fails, while direct body verification behaves the same
-whether or not a matching rule is present. `ExecutionSemantics` also exposes
-`APPLY_CALL_RULES_AND_VERIFY_LOOPS` for the loop-rule construction phase,
-where calls remain modular while the current loop body is verified directly.
+particular, rule lookup is not a fallback mechanism: applying verified rules
+without a matching rule fails.
 
 Concrete execution judgments and modular verification transitions are
 deliberately different propositions. `ProgramStatementExecutes` and

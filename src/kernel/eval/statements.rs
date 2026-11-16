@@ -15,7 +15,7 @@ pub(in crate::kernel) fn execute_execution_statement(
         state,
         statement,
         assumptions,
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::for_new_execution(),
     )
     .ok()?;

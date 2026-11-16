@@ -6256,7 +6256,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     .expect("the lowered reference function should execute");
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramFunctionExecutes {
+        &Proposition::ProgramFunctionVerifies {
             state: Box::new(state),
             function: Box::new(function.clone()),
             arguments: arguments.clone(),
@@ -6279,7 +6279,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     .expect("concrete signed overflow should produce a checked outcome");
     assert_eq!(
         overflow.proposition(),
-        &Proposition::ProgramFunctionExecutes {
+        &Proposition::ProgramFunctionVerifies {
             state: Box::new(max_state),
             function: Box::new(function.clone()),
             arguments,

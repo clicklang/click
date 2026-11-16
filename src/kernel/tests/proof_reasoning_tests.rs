@@ -5358,7 +5358,7 @@ fn builtin_obligation_solver_discharges_concrete_invariant() {
 
     assert_eq!(
         theorem.proposition(),
-        &Proposition::ProgramStatementExecutes {
+        &Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Normal(Box::new(state)),

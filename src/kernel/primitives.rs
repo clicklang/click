@@ -7222,36 +7222,25 @@ impl PartialEq for ExecutionEnvironment {
 impl Eq for ExecutionEnvironment {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CallSemantics {
-    ExecuteBodies,
-    ApplyVerifiedRules,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LoopSemantics {
     Verify,
     ApplyVerifiedRules,
 }
 
+/// How an execution treats loops. Calls have one semantics: a callee with a
+/// verified rule is applied through it, and only a contract-less inline
+/// helper runs its body, at the call site.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExecutionSemantics {
-    pub calls: CallSemantics,
     pub loops: LoopSemantics,
 }
 
 impl ExecutionSemantics {
-    pub const EXECUTE_BODIES: Self = Self {
-        calls: CallSemantics::ExecuteBodies,
-        loops: LoopSemantics::Verify,
-    };
-
     pub const APPLY_VERIFIED_RULES: Self = Self {
-        calls: CallSemantics::ApplyVerifiedRules,
         loops: LoopSemantics::ApplyVerifiedRules,
     };
 
     pub const APPLY_CALL_RULES_AND_VERIFY_LOOPS: Self = Self {
-        calls: CallSemantics::ApplyVerifiedRules,
         loops: LoopSemantics::Verify,
     };
 }
@@ -7276,10 +7265,13 @@ impl<'a> ExecutionContext<'a> {
         }
     }
 
-    /// Runs callee bodies and verifies loops.
+    /// Applies verified call rules and verifies loops directly.
     #[cfg(test)]
-    pub(crate) fn execute_bodies(environment: &'a ExecutionEnvironment) -> Self {
-        Self::new(environment, ExecutionSemantics::EXECUTE_BODIES)
+    pub(crate) fn verify_loops(environment: &'a ExecutionEnvironment) -> Self {
+        Self::new(
+            environment,
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
+        )
     }
 
     /// Applies verified call and loop rules.

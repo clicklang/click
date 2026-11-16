@@ -5,7 +5,7 @@ fn free_once(state: &ExecutionState, name: &str, facts: &PureFactContext) -> Sta
         state,
         &program_heap_free(crate::kernel::program_expression::variable(name)),
         facts,
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .unwrap();

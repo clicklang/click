@@ -4775,7 +4775,7 @@ pub fn prove_symbolic_program_execution_with_budget(
         statement,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         budget,
     )
 }
@@ -4845,7 +4845,7 @@ pub fn prove_symbolic_program_execution_paths_with_budget(
         statement,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         budget,
     )
 }
@@ -4904,18 +4904,13 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
             }
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
-            let proposition = if execution_semantics == ExecutionSemantics::EXECUTE_BODIES {
-                Proposition::ProgramStatementExecutes {
-                    state: Box::new(state.clone()),
-                    statement: Box::new(statement.clone()),
-                    outcome: path.outcome,
-                }
-            } else {
-                Proposition::ProgramStatementVerifies {
-                    state: Box::new(state.clone()),
-                    statement: Box::new(statement.clone()),
-                    outcome: path.outcome,
-                }
+            // Calls apply their callees' verified rules, which describe a
+            // returning callee only, so the outcome is a verification
+            // transition rather than a concretely reachable execution.
+            let proposition = Proposition::ProgramStatementVerifies {
+                state: Box::new(state.clone()),
+                statement: Box::new(statement.clone()),
+                outcome: path.outcome,
             };
             let theorem = Theorem::new(wrap_proof_facts(
                 proposition,
@@ -5277,7 +5272,7 @@ pub fn prove_symbolic_program_function_execution_with_budget(
         arguments,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         budget,
     )
 }
@@ -5362,7 +5357,7 @@ pub fn prove_symbolic_program_function_execution_paths_with_budget(
         arguments,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         budget,
     )
 }
@@ -5451,20 +5446,13 @@ fn prove_symbolic_program_function_execution_paths_with_contract_resources(
         .map(|path| {
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
-            let proposition = if execution_semantics == ExecutionSemantics::EXECUTE_BODIES {
-                Proposition::ProgramFunctionExecutes {
-                    state: Box::new(state.clone()),
-                    function: Box::new(function.clone()),
-                    arguments: arguments.clone(),
-                    outcome: path.outcome,
-                }
-            } else {
-                Proposition::ProgramFunctionVerifies {
-                    state: Box::new(state.clone()),
-                    function: Box::new(function.clone()),
-                    arguments: arguments.clone(),
-                    outcome: path.outcome,
-                }
+            // As for statements: applied callee rules make this a
+            // verification transition.
+            let proposition = Proposition::ProgramFunctionVerifies {
+                state: Box::new(state.clone()),
+                function: Box::new(function.clone()),
+                arguments: arguments.clone(),
+                outcome: path.outcome,
             };
             let theorem = Theorem::new(wrap_proof_facts(
                 proposition,
@@ -7358,7 +7346,7 @@ pub fn prove_program_function_satisfies_specification(
         specification,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
 }
 
