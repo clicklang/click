@@ -22610,3 +22610,50 @@ fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
         .expect("a null store cannot produce the nonempty tree");
     assert!(!error.message().contains("no Surface spelling"), "{error}");
 }
+
+#[test]
+#[ignore = "nightly: original arena allocation search-loop expansion and replay"]
+fn original_arena_alloc_search_loop_expands_without_transport_and_rechecks() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let sidecar = std::fs::read_to_string(root.join("examples/arena/arena_cells.click")).unwrap();
+    let definitions = sidecar.split("verifying \"arena_init.c\";").next().unwrap();
+    let proof = sidecar
+        .split("verifying \"arena_alloc.c\";")
+        .nth(1)
+        .unwrap()
+        .split("verifying \"arena_free.c\";")
+        .next()
+        .unwrap();
+    let allocation_definitions = sidecar
+        .split("spec enum ArenaAllocOutcome")
+        .nth(1)
+        .unwrap()
+        .split("verifying \"arena_alloc.c\";")
+        .next()
+        .unwrap();
+    let source = format!(
+        "{definitions}\nspec enum ArenaAllocOutcome{allocation_definitions}\nverifying \"arena_alloc.c\";\n{proof}"
+    );
+    let c = std::fs::read_to_string(root.join("examples/arena/arena_alloc.c")).unwrap();
+    let sources = [("arena_alloc.c", c.as_str())];
+    let expanded =
+        expand_c_claim_source_by_label(&source, &sources, "arena_alloc.contract").unwrap();
+    let scan = expanded
+        .split("loop as find_first_free_run {")
+        .nth(1)
+        .unwrap();
+    let mut depth = 1usize;
+    let end = scan
+        .char_indices()
+        .find_map(|(index, ch)| {
+            match ch {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+            (depth == 0).then_some(index)
+        })
+        .unwrap();
+    assert!(!scan[..end].contains("transport("), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+}
