@@ -6241,3 +6241,60 @@ fn shared_algebraic_reads_and_variables_raise_without_tree_exports() {
         assert_eq!(KernelTermExport::algebraic_export_count(), exports);
     }
 }
+
+#[test]
+fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
+    use crate::kernel::{
+        AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, KernelMatch, KernelTermExport,
+        KernelTermImport,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(999986);
+    let names = BTreeMap::from([(variable, "x".into())]);
+    let mut conditions = vec![];
+    for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+        for op in [
+            OverflowOperation::Add,
+            OverflowOperation::Subtract,
+            OverflowOperation::Multiply,
+        ] {
+            conditions.push(ConditionTerm::Overflows {
+                format,
+                op,
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(MachineTerm::Variable(variable)),
+            });
+        }
+    }
+    let mut constructor =
+        KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Int32)]);
+    constructor.node = AlgebraicTermNode::Constructor {
+        variant: "Arm".into(),
+        fields: vec![AlgebraicValue::Program(int32(7))],
+    };
+    conditions.push(ConditionTerm::AlgebraicEqual(
+        Box::new(constructor.clone()),
+        Box::new(constructor),
+    ));
+    for native in conditions {
+        let state = ExecutionState::new();
+        let expected =
+            synthesize_surface_bool(&native, ParameterBinding::default(), &state, &names).unwrap();
+        let root = KernelTermImport::default().condition(&native);
+        let exports = (
+            KernelTermExport::machine_export_count(),
+            KernelTermExport::algebraic_export_count(),
+        );
+        assert_eq!(
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &names),
+            Some(expected)
+        );
+        assert_eq!(
+            (
+                KernelTermExport::machine_export_count(),
+                KernelTermExport::algebraic_export_count()
+            ),
+            exports
+        );
+    }
+}
