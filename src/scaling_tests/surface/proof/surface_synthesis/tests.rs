@@ -849,3 +849,54 @@ fn shared_overflow_spelling_does_not_export_growing_operands() {
         assert!(work <= size * 64 + 128, "{size} operations: {work} work");
     }
 }
+
+#[test]
+fn pointer_comparison_spelling_does_not_export_extent_payloads() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, PointerValue, SubobjectExtent};
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(999990));
+        let mut width = MachineTerm::Variable(Variable(999991));
+        for _ in 0..size {
+            width = MachineTerm::logical_machine_binary(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                width,
+                MachineTerm::constant(1),
+            );
+        }
+        let value = PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_extent(
+            Some(SubobjectExtent {
+                start: pointer,
+                width,
+            }),
+        );
+        let parameters = [crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "p".into(),
+            None,
+        )];
+        let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
+            value.clone(),
+        ))];
+        let root = KernelTermImport::default().condition(&ConditionTerm::PointerValueEqual(
+            Box::new(value.clone()),
+            Box::new(value),
+        ));
+        let exports = KernelTermExport::machine_export_count();
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            raise_kernel_term(
+                &root,
+                ParameterBinding::new(&parameters, &arguments),
+                &ExecutionState::new(),
+                &BTreeMap::new(),
+            )
+        });
+        assert!(surface.is_some());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(
+            work <= 128,
+            "{size} unspelled extent operations: {work} work"
+        );
+    }
+}

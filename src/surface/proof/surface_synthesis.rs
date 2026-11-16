@@ -3314,6 +3314,69 @@ pub(super) fn raise_kernel_term(
     raise_kernel_term_dispatch(term, parameter_binding, state, bound_variables)
 }
 
+// A comparison's presentation reads addresses and declared pointer types.
+// Keep producer qualifiers/evidence/extents on the root; do not export those
+// unrelated payloads merely to pass through a native condition constructor.
+fn raise_pointer_comparison(
+    term: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::{KernelPointerOffset, KernelTermNode as Node};
+    let (left, right) = match term.node() {
+        Node::PointerValueEqual(pair) => {
+            let operand = |value: &crate::kernel::SharedPointerValue| {
+                synthesize_pointer_equality_address(
+                    &value.node().address.export().ok()?,
+                    value.node().program_type,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )
+            };
+            (
+                operand(&pair.arguments()[0])?,
+                operand(&pair.arguments()[1])?,
+            )
+        }
+        Node::PointerEqual { arguments } => {
+            let left = arguments[0].export().ok()?;
+            let right = arguments[1].export().ok()?;
+            let pointer = if left == Pointer::null() || right == Pointer::null() {
+                synthesize_surface_pointer_expression
+            } else {
+                synthesize_surface_pointer_address
+            };
+            (
+                pointer(&left, parameter_binding, state, bound_variables)?,
+                pointer(&right, parameter_binding, state, bound_variables)?,
+            )
+        }
+        Node::PointerOffsetEqual { arguments } => (
+            synthesize_surface_pointer_offset(
+                &KernelPointerOffset::export(&arguments[0]).ok()?,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
+            synthesize_surface_pointer_offset(
+                &KernelPointerOffset::export(&arguments[1]).ok()?,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
+        ),
+        _ => return None,
+    };
+    proposition_bool_value(ClickProposition::Comparison {
+        left,
+        operator: ComparisonOperator::Equal,
+        right,
+    })
+    .ok()
+}
+
 // Definedness names the written operation, even when a local holds its
 // result. Keep its children shared and preserve the supported overflow profile.
 fn raise_shared_overflow(
@@ -3753,8 +3816,7 @@ fn raise_kernel_term_dispatch(
         Node::PointerValueEqual(_)
         | Node::PointerEqual { .. }
         | Node::PointerOffsetEqual { .. } => {
-            let condition = crate::kernel::KernelTermExport::condition(term).ok()?;
-            synthesize_surface_bool(&condition, parameter_binding, state, bound_variables)?
+            raise_pointer_comparison(term, parameter_binding, state, bound_variables)?
         }
         Node::Variable(variable) if term.ty() == &KernelType::Bool => synthesize_surface_bool(
             &ConditionTerm::Variable(*variable),
@@ -6567,12 +6629,24 @@ fn synthesize_pointer_equality_operand(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
-    let expression = synthesize_surface_pointer_expression(
+    synthesize_pointer_equality_address(
         value.pointer(),
+        value.program_type(),
         parameter_binding,
         state,
         bound_variables,
-    )?;
+    )
+}
+
+fn synthesize_pointer_equality_address(
+    pointer: &Pointer,
+    program_type: ProgramType,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let expression =
+        synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
     let mut inner = &expression;
     while let ContractExpression::At { expression, .. } | ContractExpression::Old(expression) =
         inner
@@ -6586,7 +6660,7 @@ fn synthesize_pointer_equality_operand(
         ) | ContractExpression::Add(..)
             | ContractExpression::Subtract(..)
     ) {
-        synthesize_observation_operand(expression, value.program_type())
+        synthesize_observation_operand(expression, program_type)
     } else {
         Some(expression)
     }

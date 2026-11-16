@@ -6298,3 +6298,44 @@ fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
         );
     }
 }
+
+#[test]
+fn shared_pointer_comparisons_preserve_native_spelling() {
+    use crate::kernel::{KernelTermImport, PointerValue};
+    let _session = crate::kernel::VerificationSession::enter();
+    let left = PointerValue::new(
+        Pointer::symbolic(Variable(999988)),
+        ProgramType::Int32Pointer,
+    );
+    let right = PointerValue::new(
+        Pointer::symbolic(Variable(999989)),
+        ProgramType::Int32Pointer,
+    );
+    let parameters = ["p", "q"].map(|name| {
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            name.into(),
+            None,
+        )
+    });
+    let arguments = [left.clone(), right.clone()]
+        .map(|value| ProgramExpression::Value(ProgramValue::Pointer(value)));
+    let binding = ParameterBinding::new(&parameters, &arguments);
+    let state = ExecutionState::new();
+    let names = BTreeMap::new();
+    for native in [
+        ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())),
+        ConditionTerm::PointerEqual(
+            Box::new(left.pointer().clone()),
+            Box::new(right.pointer().clone()),
+        ),
+        ConditionTerm::PointerEqual(Box::new(left.pointer().clone()), Box::new(Pointer::null())),
+    ] {
+        let expected = synthesize_surface_bool(&native, binding, &state, &names).unwrap();
+        let root = KernelTermImport::default().condition(&native);
+        assert_eq!(
+            raise_kernel_term(&root, binding, &state, &names),
+            Some(expected)
+        );
+    }
+}
