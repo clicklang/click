@@ -330,17 +330,6 @@ impl crate::kernel::CheckedFunctionExecution {
     }
 
     #[cfg(test)]
-    pub(crate) fn with_contract_completion(
-        mut self,
-        progress: Option<crate::kernel::ContractProofProgress>,
-    ) -> Self {
-        self.contract_completion = progress
-            .filter(|progress| progress.belongs_to(&self))
-            .map(Arc::new);
-        self
-    }
-
-    #[cfg(test)]
     pub(crate) fn with_closed_exit_obligations(
         mut self,
         completions: Vec<crate::kernel::ClosedContractExit>,
@@ -4704,7 +4693,11 @@ impl CheckedExecutionBranch {
         // The arms reach equal states by different routes; the join is a new
         // point reached from both.
         let mut joined_state = arms[0].reached_state().clone();
-        joined_state.join_program_points(arms[0].reached_state(), arms[1].reached_state());
+        joined_state.join_program_points(
+            arms[0].reached_state(),
+            arms[1].reached_state(),
+            split.state.path_link(),
+        );
         Ok(Self {
             split,
             arms: [then_arm, else_arm],
@@ -6825,12 +6818,12 @@ fn statements_have_same_source(left: &ProgramStatement, right: &ProgramStatement
                 && statements_have_same_source(left_else, right_else)
         }
         (
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 condition: left_condition,
                 body: left_body,
                 ..
             },
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 condition: right_condition,
                 body: right_body,
                 ..
@@ -6921,13 +6914,13 @@ fn checked_source_statement_matches(proved: &ProgramStatement, source: &ProgramS
         return true;
     }
     let (
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition: proved_condition,
             do_while: proved_do_while,
             body: proved_body,
             ..
         },
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition: source_condition,
             invariant,
             invariant_checks,
@@ -7005,7 +6998,7 @@ fn checked_condition_event(
                 *else_branch
             }
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition,
             invariant,
             invariant_checks,
@@ -7017,7 +7010,7 @@ fn checked_condition_event(
             ..
         } if &condition == proved_condition => {
             if value {
-                let loop_head = ProgramStatement::While {
+                let loop_head = ProgramStatement::Loop {
                     condition,
                     invariant,
                     invariant_checks,
@@ -9367,7 +9360,7 @@ impl ExecutionProofCore {
                 return Err("goto evidence does not carry its checked function target".into());
             }
             (
-                ProgramStatement::While {
+                ProgramStatement::Loop {
                     backedge_target: Some(_),
                     natural_exit_target: Some(expected),
                     ..
@@ -9421,7 +9414,7 @@ impl ExecutionProofCore {
                     );
                 };
                 let do_while_initial_body = match &*next {
-                    ProgramStatement::While {
+                    ProgramStatement::Loop {
                         condition,
                         invariant,
                         invariant_checks,
@@ -9433,7 +9426,7 @@ impl ExecutionProofCore {
                         backedge_target: None,
                         natural_exit_target: None,
                         body,
-                    } if !matches!(&**proved_statement, ProgramStatement::While { .. }) => {
+                    } if !matches!(&**proved_statement, ProgramStatement::Loop { .. }) => {
                         let (body_head, body_tail) = split_shared_source(body);
                         if !statements_have_same_source(&body_head, proved_statement) {
                             return Err(EvidenceRefusal {
@@ -9443,7 +9436,7 @@ impl ExecutionProofCore {
                                 premise: None,
                             });
                         }
-                        let loop_head = ProgramStatement::While {
+                        let loop_head = ProgramStatement::Loop {
                             condition: condition.clone(),
                             invariant: invariant.clone(),
                             invariant_checks: invariant_checks.clone(),
@@ -9517,7 +9510,7 @@ impl ExecutionProofCore {
         // condition decided at its head belongs to the body's first
         // statement, never to the loop: the source is the body followed by
         // an ordinary loop head, as for a statement theorem.
-        while let ProgramStatement::While {
+        while let ProgramStatement::Loop {
             condition,
             invariant,
             invariant_checks,
@@ -9539,7 +9532,7 @@ impl ExecutionProofCore {
                     premise: None,
                 });
             }
-            let loop_head = ProgramStatement::While {
+            let loop_head = ProgramStatement::Loop {
                 condition: condition.clone(),
                 invariant: invariant.clone(),
                 invariant_checks: invariant_checks.clone(),
@@ -9569,7 +9562,7 @@ impl ExecutionProofCore {
             tail = rest;
         }
         let decided = match &*next {
-            ProgramStatement::If { condition, .. } | ProgramStatement::While { condition, .. } => {
+            ProgramStatement::If { condition, .. } | ProgramStatement::Loop { condition, .. } => {
                 condition
             }
             _ => {
@@ -9604,7 +9597,7 @@ impl ExecutionProofCore {
                     Some(prepend_shared_source(Arc::new(selected.clone()), tail))
                 }
             }
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 condition,
                 invariant,
                 invariant_checks,
@@ -9616,7 +9609,7 @@ impl ExecutionProofCore {
                 ..
             } => {
                 if value {
-                    let loop_head = ProgramStatement::While {
+                    let loop_head = ProgramStatement::Loop {
                         condition: condition.clone(),
                         invariant: invariant.clone(),
                         invariant_checks: invariant_checks.clone(),
@@ -11577,6 +11570,7 @@ impl ExecutionProofCore {
             [trace] => trace,
             _ => return Err("the interface parent does not have one execution trace"),
         };
+        let split_point = split.state.path_link().clone();
         let branch = CheckedExecutionBranch::construct_interface(
             split,
             root_facts,
@@ -11595,7 +11589,11 @@ impl ExecutionProofCore {
         )?;
         let interface_effect_facts = branch.interface_effect_facts().clone();
         let mut joined_state = branch.joined_state().clone();
-        joined_state.join_program_points(arms[0].reached_state(), arms[1].reached_state());
+        joined_state.join_program_points(
+            arms[0].reached_state(),
+            arms[1].reached_state(),
+            &split_point,
+        );
         // The kernel recomputed the abstraction, so it also knows where the
         // abstraction left the counter. Installing that mark here is what
         // makes the successor's counter kernel-owned: a caller cannot take

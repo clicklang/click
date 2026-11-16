@@ -73,7 +73,7 @@ pub(super) fn region_count(statement: &ProgramStatement) -> usize {
             else_branch,
             ..
         } => 1 + region_count(then_branch) + region_count(else_branch),
-        ProgramStatement::While { body, .. } => 1 + region_count(body),
+        ProgramStatement::Loop { body, .. } => 1 + region_count(body),
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => 1 + region_count(try_body) + region_count(handler),

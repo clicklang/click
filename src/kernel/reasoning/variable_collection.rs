@@ -1059,7 +1059,7 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
             collect_execution_statement_bitvector_variables(then_branch, variables);
             collect_execution_statement_bitvector_variables(else_branch, variables);
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition,
             invariant,
             invariant_checks,

@@ -181,7 +181,7 @@ fn run_bounded(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
         expanded,
         &inputs,
         &claim,
-        matches!(arguments.selection, Selection::Claim(_)),
+        selects_whole_claim(&arguments.selection, &claim),
     )?;
     Ok(ExpandedArtifact {
         source: expanded,
@@ -397,7 +397,7 @@ fn run_mdtest(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
         expanded,
         &inputs,
         &claim,
-        matches!(arguments.selection, Selection::Claim(_)),
+        selects_whole_claim(&arguments.selection, &claim),
     )?;
     let source = mdtest.replace_click_source(&markdown, &expanded)?;
     Ok(ExpandedArtifact { source, claim })
@@ -604,10 +604,19 @@ fn verified_expansion(
     Ok(expanded)
 }
 
+/// Whether `selection` names the whole proof unit `claim` expanded. A loop
+/// phase selected by its label expands one site of its enclosing claim, whose
+/// other steps keep the implicit closer, as when the phase is selected by line.
+fn selects_whole_claim(selection: &Selection, claim: &str) -> bool {
+    matches!(selection, Selection::Claim(selected) if selected == claim)
+}
+
 /// Checks the expansion before it is written. A whole claim's expansion has
-/// nothing smart left, so it is checked with the implicit closer off and so
-/// shown self-contained; a single site's leaves
-/// the claim's other steps and smart tactics, which still use it.
+/// nothing smart left, so that claim is checked with the implicit closer off
+/// and so shown self-contained, while the proofs around it keep the closer
+/// they were written against, as in `click audit`. A single site's
+/// expansion leaves the claim's other steps and smart tactics, which still
+/// use it.
 fn verify_expansion(
     project: Option<&ClickProject>,
     expanded: &str,
@@ -615,20 +624,13 @@ fn verify_expansion(
     claim: &str,
     whole_claim: bool,
 ) -> Result<(), String> {
-    let check = || {
-        if whole_claim && claim == "program.termination" {
-            click::surface::without_implicit_solve_for_claim(claim, || {
-                verify_expansion_now(project, expanded, inputs, claim)
-            })
-        } else if whole_claim {
-            click::surface::without_implicit_solve(|| {
-                verify_expansion_now(project, expanded, inputs, claim)
-            })
-        } else {
+    if whole_claim {
+        click::surface::without_implicit_solve_for_claim(claim, || {
             verify_expansion_now(project, expanded, inputs, claim)
-        }
-    };
-    check()
+        })
+    } else {
+        verify_expansion_now(project, expanded, inputs, claim)
+    }
 }
 
 fn verify_expansion_now(

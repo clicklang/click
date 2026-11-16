@@ -5771,7 +5771,8 @@ pub enum ProgramStatement {
         aggregate_steps: Vec<u32>,
         condition: ProgramExpression,
     },
-    While {
+    /// Shared loop form for structured loops and checked natural cycles.
+    Loop {
         condition: ProgramExpression,
         invariant: Vec<Proposition>,
         invariant_checks: Vec<LoopInvariantCheck>,
@@ -8592,6 +8593,11 @@ pub struct ForgottenKnowledge {
 #[derive(Clone, Debug, Default)]
 pub struct Memory {
     pub(super) construction: Option<Arc<MemoryConstruction>>,
+    /// The steps taken on this value's path since its state last reached a
+    /// point ([`program_point::StepLog`]). Not part of equality, hashing or
+    /// the interning key, and never kept in the arena: it follows the value
+    /// a path executes, not the content.
+    pub(super) pending_steps: Option<Arc<program_point::StepLog>>,
     pub(super) blocks: std::sync::Arc<MemoryBlocks>,
     pub(super) cells: std::sync::Arc<CellStore>,
     /// Typed views of address-overlapping union storage. A union member is
@@ -8762,6 +8768,7 @@ impl Memory {
     pub(crate) fn with_fresh_storage_roots(&self) -> Self {
         let mut result = Self {
             construction: None,
+            pending_steps: None,
             blocks: std::sync::Arc::new((*self.blocks).clone()),
             cells: std::sync::Arc::new((*self.cells).clone()),
             union_cells: std::sync::Arc::new((*self.union_cells).clone()),
@@ -10053,6 +10060,9 @@ pub(crate) fn intern_derivation_base(memory: &mut Memory) -> SharedMemory {
 pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDerivation) {
     let variable_base = derivation.base().clone();
     let derivation = Arc::new(derivation);
+    // The log this value carries from the path that made it; the step is
+    // added once the result's arena identity is known.
+    let inherited = result.pending_steps.take();
     result.construction = Some(Arc::new(MemoryConstruction {
         roots: result.diagnostic_roots(),
         kind: MemoryConstructionKind::Transition(derivation.clone()),
@@ -10061,6 +10071,12 @@ pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDe
         // Already this base's recorded child: its derivation slot is filled,
         // so recording would change nothing but the storage handed back.
         *result = child;
+        let produced = intern_memory_ref(result);
+        result.pending_steps = Some(program_point::StepLog::push(
+            inherited,
+            derivation.clone(),
+            produced,
+        ));
         return;
     }
     // Interning borrows the arena, so it has to finish before the write.
@@ -10094,6 +10110,11 @@ pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDe
     if !result.same_storage_roots(derived.memory()) {
         *result = derived.memory().clone();
     }
+    result.pending_steps = Some(program_point::StepLog::push(
+        inherited,
+        derivation.clone(),
+        derived.clone(),
+    ));
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();
         if arena.0 != derived.arena || arena.0 != derivation.base().arena {
@@ -10271,6 +10292,8 @@ pub fn intern_memory(memory: Memory) -> SharedMemory {
         }
         let id = u32::try_from(arena.identities.len()).expect("memory arena exhausted");
         let content_hash = memory_content_hash(&memory);
+        let mut memory = memory;
+        memory.pending_steps = None;
         let stored = std::sync::Arc::new(memory);
         arena.identities.insert(stored.clone(), (id, content_hash));
         arena
@@ -10359,7 +10382,9 @@ fn intern_memory_ref_with_read_identity(
         }
         let id = u32::try_from(arena.identities.len()).expect("memory arena exhausted");
         let content_hash = memory_content_hash(memory);
-        let stored = std::sync::Arc::new(memory.clone());
+        let mut stored = memory.clone();
+        stored.pending_steps = None;
+        let stored = std::sync::Arc::new(stored);
         arena.identities.insert(stored.clone(), (id, content_hash));
         arena
             .shallow_identities

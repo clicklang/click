@@ -818,7 +818,7 @@ mod tests {
                         else_branch,
                         ..
                     } => pending.extend([then_branch.as_ref(), else_branch.as_ref()]),
-                    ProgramStatement::While { body, .. } => {
+                    ProgramStatement::Loop { body, .. } => {
                         loops += 1;
                         pending.push(body);
                     }

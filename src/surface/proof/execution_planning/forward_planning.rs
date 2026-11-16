@@ -100,7 +100,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             *next_statement_index = source_region.continuation_node;
             Ok(joined)
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition,
             invariant_checks,
             effect_checks,
@@ -695,7 +695,7 @@ fn advance_execution_proof_statement(
                 &mut context.next_kernel_variable,
             )?,
         };
-        if matches!(statement, ProgramStatement::While { .. }) {
+        if matches!(statement, ProgramStatement::Loop { .. }) {
             let loop_index = loop_index.ok_or_else(|| {
                 ClickError::new(format!(
                     "execution proof traversal region({statement_index}) is a loop without a loop index"
@@ -764,8 +764,8 @@ fn advance_execution_proof_statement(
                     );
                 }
             }
-            if matches!(statement, ProgramStatement::While { .. }) {
-                let loop_index = loop_index.expect("a while statement has a checked loop index");
+            if matches!(statement, ProgramStatement::Loop { .. }) {
+                let loop_index = loop_index.expect("a loop statement has a checked loop index");
                 let loop_labels = environment
                     .function_block
                     .structural_clauses()
@@ -814,7 +814,7 @@ fn advance_execution_proof_statement(
                             loop_index,
                         )?;
                     }
-                    if let ProgramStatement::While { condition, .. } = statement {
+                    if let ProgramStatement::Loop { condition, .. } = statement {
                         let exit_condition = ClickProposition::Not(Box::new(
                             surface_program_condition(condition, exit_state)?,
                         ));
