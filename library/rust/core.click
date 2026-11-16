@@ -91,27 +91,3 @@ extern fn Result::expect<T, E>(r: Result<T, E>) -> T {
 extern fn Result::unwrap_or<T, E>(r: Result<T, E>, d: T) -> T {
     ensures result == click::result::unwrap_or(r, d);
 }
-
-// A slice iterator over the library's `SliceIter<T>`
-// (`library/rust/slice_iter.click`): `<[T]>::iter` builds the library value
-// of the slice, and `Iterator::next` is the next law over `old(*it)` and
-// `*it`. Where the remaining slice starts after one `next()` needs the
-// element's size, so it is stated here and written out at each element
-// type, not as a generic axiom.
-extern fn SliceIter::iter<T>(p: &T, n: usize) -> SliceIter<T> {
-    ensures result == click::rust::slice_iter::iter(Slice<T>::Slice(p, n));
-    ensures click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(result)) == p;
-    ensures click::rust::slice::len(click::rust::slice_iter::as_slice(result)) == n;
-    ensures click::rust::slice_iter::len(result) == n;
-}
-
-extern fn SliceIter::next<T>(it: &mut SliceIter<T>) -> Option<&T> {
-    owns *it;
-    ensures click::rust::slice_iter::len(old(*it)) == 0u64 implies result == Option<&T>::None;
-    ensures click::rust::slice_iter::len(old(*it)) == 0u64 implies *it == old(*it);
-    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies result == Option<&T>::Some(click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(old(*it))));
-    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies *it == click::rust::slice_iter::after_next(old(*it));
-    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(*it)) == click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(old(*it))) + 1u64;
-    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies click::rust::slice::len(click::rust::slice_iter::as_slice(*it)) == click::rust::slice::len(click::rust::slice_iter::as_slice(old(*it))) - 1u64;
-    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies click::rust::slice_iter::len(*it) == click::rust::slice_iter::len(old(*it)) - 1u64;
-}

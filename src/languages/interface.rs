@@ -1762,15 +1762,13 @@ pub struct RustLoopIterator {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum RustIteratorKind {
-    /// `core::slice::Iter` or a shared array's iterator: `_cursor` and
-    /// `_remaining` locals.
+    /// `core::slice::Iter` or a shared array's iterator: the slice it still
+    /// covers, `_ptr` and `_len`, which a proof reads as `iter.as_slice()`
+    /// and `iter.len()`.
     Slice,
-    /// `Enumerate<Iter<T>>`: the slice iterator's state and `_count`.
+    /// `Enumerate<Iter<T>>`: the slice iterator's fields and `_count`,
+    /// which a proof reads as `iter.count`.
     Enumerate,
-    /// `core::slice::Iter` in the library-iterator model: one local holding
-    /// a value of the library's `SliceIter` at this type, which a proof
-    /// names `iter` and reads with that type's methods.
-    SliceLibrary(crate::kernel::TypeParameterName),
     /// `ChunksExact<u8>`: its fields `_v`, `_v_len`, `_rem`, `_rem_len`
     /// and `_chunk_size`, which a proof reads as `iter.v`, `iter.v.len()`,
     /// `iter.rem`, `iter.rem.len()` and `iter.chunk_size`.

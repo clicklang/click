@@ -44,10 +44,6 @@ fn reference_view(
 pub(crate) type LoweredRust = (Vec<ImportedFunction>, BTreeMap<String, RecordLayout>);
 
 thread_local! {
-    /// Whether the export being lowered reads a slice iterator through its
-    /// Click library contract ([`RustExport::library_iterators`]), set for
-    /// one lowering with the enum types.
-    static LIBRARY_ITERATORS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The kernel types of the crate enums being lowered, by name. One
     /// lowering runs on one thread and sets them for its duration
     /// ([`EnumTypes::enter`]), so a type is found from its name alone.
@@ -215,11 +211,6 @@ fn scalar_type(t: &Type) -> Result<InterfaceType, String> {
             crate::kernel::TypeParameterName::intern(name),
         )),
         Type::Vec { element } => Ok(InterfaceType::Parameter(vec_type(element)?)),
-        // A slice iterator passed to its library operations is a value of
-        // the library's `SliceIter`.
-        Type::SharedArrayIterator { element } => {
-            Ok(InterfaceType::Parameter(slice_iter_type(element)?))
-        }
         // A box of a crate struct is its address, as a struct reference is.
         Type::Box { .. } | Type::OptionBox { .. } => Ok(InterfaceType::Int32Pointer),
         Type::Reference { pointee, .. } => match pointee.as_ref() {
@@ -239,9 +230,6 @@ fn scalar_type(t: &Type) -> Result<InterfaceType, String> {
             // An enum value is a spec value, as a type parameter's is.
             Type::Enum { name } => Ok(InterfaceType::ParameterPointer(EnumTypes::get(name)?)),
             Type::Vec { element } => Ok(InterfaceType::ParameterPointer(vec_type(element)?)),
-            Type::SharedArrayIterator { element } => {
-                Ok(InterfaceType::ParameterPointer(slice_iter_type(element)?))
-            }
             Type::Array { element, .. } => match element.as_ref() {
                 Type::I32 => Ok(InterfaceType::Int32Pointer),
                 Type::U8 => Ok(InterfaceType::UInt8Pointer),
@@ -261,21 +249,6 @@ fn vec_type(element: &Type) -> Result<crate::kernel::TypeParameterName, String> 
     let element = scalar_type(element)?.to_kernel_type();
     Ok(crate::kernel::TypeParameterName::of(
         &crate::surface::primitive_instance_type("Vec", &[AlgebraicValueType::Program(element)]),
-    ))
-}
-/// Whether this lowering reads a slice iterator through its library contract.
-fn library_iterators() -> bool {
-    LIBRARY_ITERATORS.with(std::cell::Cell::get)
-}
-/// The type of a slice iterator over `element`: the library's primitive
-/// `SliceIter` at the element's type.
-fn slice_iter_type(element: &Type) -> Result<crate::kernel::TypeParameterName, String> {
-    let element = scalar_type(element)?.to_kernel_type();
-    Ok(crate::kernel::TypeParameterName::of(
-        &crate::surface::primitive_instance_type(
-            "SliceIter",
-            &[AlgebraicValueType::Program(element)],
-        ),
     ))
 }
 /// A function-pointer type's signature, as a sidecar's `fn(i32) -> i32`
@@ -401,7 +374,6 @@ pub(crate) fn lower_with_identity(
 ) -> Result<LoweredRust, String> {
     // Enum fields are scalars, so their types need no other enum's.
     let _enums = EnumTypes::enter(export)?;
-    LIBRARY_ITERATORS.with(|library| library.set(export.library_iterators));
     let mut layouts = BTreeMap::new();
     let mut fields = BTreeMap::new();
     for record in &export.records {
@@ -514,12 +486,7 @@ fn lower_function(
                 | Type::Vec { .. }
                 | Type::Box { .. }
                 | Type::OptionBox { .. }
-        )
-        // The library-iterator model's own external functions return the
-        // iterator value.
-        || f.core_method.as_deref().is_some_and(|method| {
-            method.starts_with(super::standard_library::SLICE_ITER)
-        }))
+        ))
     {
         return Err("Rust reference/aggregate returns are not supported".into());
     }
@@ -741,9 +708,6 @@ fn lower_function(
         .unwrap_or(0);
     let mut cx = Context {
         shared_array_iterators: BTreeMap::new(),
-        library_slice_iterators: BTreeMap::new(),
-        library_slice_options: BTreeMap::new(),
-        library_next_options: BTreeMap::new(),
         ranges: BTreeMap::new(),
         enumerated: BTreeSet::new(),
         shared_array_options: BTreeMap::new(),
@@ -821,14 +785,6 @@ fn lower_function(
 }
 struct Context<'a> {
     shared_array_iterators: BTreeMap<String, ProgramType>,
-    /// The slice iterators that are values of the library's `SliceIter`,
-    /// with their element types.
-    library_slice_iterators: BTreeMap<String, Type>,
-    /// The `Option<&T>` locals library slice iterators' `next()` returns,
-    /// with their element types.
-    library_slice_options: BTreeMap<String, Type>,
-    /// Each library slice iterator's `next()` result local.
-    library_next_options: BTreeMap<String, String>,
     /// The range locals, with their element type.
     ranges: BTreeMap<String, (Type, bool)>,
     /// The enumerated slice iterators and their `Option` locals.
@@ -1657,20 +1613,6 @@ impl Context<'_> {
     fn prepared_expr(&mut self, e: &E) -> Result<(ProgramStatement, ProgramExpression), String> {
         match e {
             E::EnumerateOptionIndex { option } => self.enumerate_option_index(option),
-            // The `Some` payload of a library iterator's `Option<&T>`: the
-            // test that led here established the variant.
-            E::SharedArrayOptionElement { option }
-                if self.library_slice_options.contains_key(option) =>
-            {
-                Ok((
-                    program_skip(),
-                    ProgramExpression::EnumField {
-                        value: Box::new(crate::kernel::program_expression::variable(option)),
-                        variant: "Some".into(),
-                        index: 0,
-                    },
-                ))
-            }
             E::SharedArrayOptionElement { option } => {
                 if !self.shared_array_options.contains_key(option) {
                     return Err("unknown shared iterator Option".into());
@@ -2287,14 +2229,6 @@ impl Context<'_> {
             }),
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
             E::RangeHasNext { iterator } => self.range_has_next(iterator),
-            E::SharedArrayOptionTag { option }
-                if self.library_slice_options.contains_key(option) =>
-            {
-                Ok(ProgramExpression::EnumIs {
-                    value: Box::new(crate::kernel::program_expression::variable(option)),
-                    variant: "Some".into(),
-                })
-            }
             E::SharedArrayOptionTag { option } => {
                 if !self.shared_array_options.contains_key(option) {
                     return Err("unknown shared iterator Option".into());
@@ -2313,12 +2247,6 @@ impl Context<'_> {
             E::ChunkOptionTag { option } => {
                 if !self.chunk_options.contains(option) {
                     return Err("unknown chunk Option".into());
-                }
-                if library_iterators() {
-                    return Ok(ProgramExpression::EnumIs {
-                        value: Box::new(crate::kernel::program_expression::variable(option)),
-                        variant: "Some".into(),
-                    });
                 }
                 Ok(crate::kernel::program_expression::variable(format!(
                     "{option}_some"
