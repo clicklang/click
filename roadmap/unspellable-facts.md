@@ -240,6 +240,17 @@ and zero machine exports. All 1,850 Surface/scaling tests and quality checks
 passed. The pointer-address-equality fixture passed with zero fact-stability
 differences.
 
+### 9g common call raising
+
+Machine, Integer, algebraic and float call roots now share call assembly and
+argument rendering. Numeric result casts remain at the result boundary. The
+native call entry point uses the same argument policy, including exact proof-local
+names for complete pointer arguments, while retaining its existing work accounting.
+
+Validation: all 1,850 Surface/scaling tests and quality checks passed, including
+nested mixed-family calls and exact pointer-name admission/refusal. Pure-pointer
+call fixtures passed with zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

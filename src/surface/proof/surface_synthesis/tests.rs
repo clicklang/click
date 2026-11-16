@@ -6152,6 +6152,20 @@ fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
             );
             let shared = raise_call_argument(&root, ParameterBinding::default(), &state, &bound);
             assert_eq!(shared, native);
+            let call = synthesize_surface_call(
+                "pointer_probe",
+                std::slice::from_ref(&argument),
+                ParameterBinding::default(),
+                &state,
+                &bound,
+            );
+            assert_eq!(
+                call,
+                native.map(|argument| SurfaceTerm::Call {
+                    name: "pointer_probe".into(),
+                    arguments: vec![argument],
+                })
+            );
         });
     }
 }
