@@ -81,7 +81,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step();
     step() by {
         have at(function.entry, 0u64) < at(function.entry, load_uint64(byte_offset(dst, 8))) by {
-            rewrite(at(function.entry, dst->_M_extent._M_extent_value), at(function.entry, 4u64));
+            rewrite(at(region(3).entry, at(region(1).exit, dst->_M_extent._M_extent_value)), at(region(3).entry, 4u64));
             known();
         }
         known();
@@ -92,6 +92,17 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step();
     step() by {
         known();
+    }
+    have separate(memory(at(call(0).exit, call(0).result)[0]), memory(this->data)) by {
+        known();
+    }
+    have separate(region(5).footprint, memory(this->data)) by {
+        normalize() using {
+            separate(memory(at(call(0).exit, call(0).result)[0]), memory(this->data));
+        };
+    }
+    have at(region(5).exit, this->data) == at(region(5).entry, this->data) by {
+        preserve(separate(region(5).footprint, memory(this->data)));
     }
     have this->data == old(this->data) by {
         known();
@@ -178,7 +189,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step();
     step() by {
         have at(function.entry, 1u64) < at(function.entry, load_uint64(byte_offset(dst, 8))) by {
-            rewrite(at(function.entry, dst->_M_extent._M_extent_value), at(function.entry, 4u64));
+            rewrite(at(region(9).entry, at(region(7).exit, dst->_M_extent._M_extent_value)), at(region(9).entry, 4u64));
             known();
         }
         known();
@@ -190,10 +201,19 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step() by {
         known();
     }
-    have this->data == old(this->data) by {
-        transport(at(region(11).entry, this->data == old(this->data)), this->data == old(this->data)) using {
-            at(region(11).entry, this->data == old(this->data));
+    have separate(memory(at(call(1).exit, call(1).result)[0]), memory(this->data)) by {
+        known();
+    }
+    have separate(region(11).footprint, memory(this->data)) by {
+        normalize() using {
+            separate(memory(at(call(1).exit, call(1).result)[0]), memory(this->data));
         };
+    }
+    have at(region(11).exit, this->data) == at(region(11).entry, this->data) by {
+        preserve(separate(region(11).footprint, memory(this->data)));
+    }
+    have this->data == old(this->data) by {
+        known();
     }
     have separate(memory(at(call(1).exit, call(1).result)[0]), memory(this->remaining)) by {
         known();
@@ -296,7 +316,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step();
     step() by {
         have at(function.entry, 2u64) < at(function.entry, load_uint64(byte_offset(dst, 8))) by {
-            rewrite(at(function.entry, dst->_M_extent._M_extent_value), at(function.entry, 4u64));
+            rewrite(at(region(15).entry, at(region(13).exit, dst->_M_extent._M_extent_value)), at(region(15).entry, 4u64));
             known();
         }
         known();
@@ -308,10 +328,19 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step() by {
         known();
     }
-    have this->data == old(this->data) by {
-        transport(at(region(17).entry, this->data == old(this->data)), this->data == old(this->data)) using {
-            at(region(17).entry, this->data == old(this->data));
+    have separate(memory(at(call(2).exit, call(2).result)[0]), memory(this->data)) by {
+        known();
+    }
+    have separate(region(17).footprint, memory(this->data)) by {
+        normalize() using {
+            separate(memory(at(call(2).exit, call(2).result)[0]), memory(this->data));
         };
+    }
+    have at(region(17).exit, this->data) == at(region(17).entry, this->data) by {
+        preserve(separate(region(17).footprint, memory(this->data)));
+    }
+    have this->data == old(this->data) by {
+        known();
     }
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(this->remaining)) by {
         known();
@@ -433,7 +462,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step();
     step() by {
         have at(function.entry, 3u64) < at(function.entry, load_uint64(byte_offset(dst, 8))) by {
-            rewrite(at(function.entry, dst->_M_extent._M_extent_value), at(function.entry, 4u64));
+            rewrite(at(region(21).entry, at(region(19).exit, dst->_M_extent._M_extent_value)), at(region(21).entry, 4u64));
             known();
         }
         known();
@@ -445,10 +474,19 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step() by {
         known();
     }
-    have this->data == old(this->data) by {
-        transport(at(region(23).entry, this->data == old(this->data)), this->data == old(this->data)) using {
-            at(region(23).entry, this->data == old(this->data));
+    have separate(memory(at(call(3).exit, call(3).result)[0]), memory(this->data)) by {
+        known();
+    }
+    have separate(region(23).footprint, memory(this->data)) by {
+        normalize() using {
+            separate(memory(at(call(3).exit, call(3).result)[0]), memory(this->data));
         };
+    }
+    have at(region(23).exit, this->data) == at(region(23).entry, this->data) by {
+        preserve(separate(region(23).footprint, memory(this->data)));
+    }
+    have this->data == old(this->data) by {
+        known();
     }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(this->remaining)) by {
         known();
@@ -832,103 +870,105 @@ void FixtureReader::read(std::span<std::byte> dst) {
         have (let integer_value: Integer = to_integer(((at(region(25).entry, load_uint64(byte_offset(this, 8))) - 4u64) as uint64)); integer_value) == (to_integer(old((load_uint64(byte_offset(this, 8)) as uint64))) - 4) by {
             have 0 <= (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4) by {
                 have 0 <= (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4) by {
-                    have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + (-1 * to_integer(old(this->remaining)))) == 0 by {
-                        have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - to_integer(old(this->remaining))) == 0 by {
-                            apply(click::integer::equal_difference(to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))), to_integer(old(this->remaining)))) using {
-                                to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))
-                                    == to_integer(old(this->remaining));
+                    have ((-1 * old(to_integer(this->remaining))) + at(region(24).exit, to_integer(this->remaining))) == 0 by {
+                        have at(region(24).exit, to_integer(this->remaining)) == old(to_integer(this->remaining)) by {
+                            normalize() using {
+                                at(region(24).exit, this->remaining) == old(this->remaining);
                             };
                         }
-                        have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + (-1 * to_integer(old(this->remaining)))) == (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - to_integer(old(this->remaining))) by {
+                        have (at(region(24).exit, to_integer(this->remaining)) - old(to_integer(this->remaining))) == 0 by {
+                            apply(click::integer::equal_difference(at(region(24).exit, to_integer(this->remaining)), old(to_integer(this->remaining)))) using {
+                                at(region(24).exit, to_integer(this->remaining)) ==
+                                    old(to_integer(this->remaining));
+                            };
+                        }
+                        have ((-1 * old(to_integer(this->remaining))) + at(region(24).exit, to_integer(this->remaining))) == (at(region(24).exit, to_integer(this->remaining)) - old(to_integer(this->remaining))) by {
                             normalize();
                         }
-                        apply(click::integer::equal_substitute((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - to_integer(old(this->remaining))), 0, (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + (-1 * to_integer(old(this->remaining)))), 0)) using {
-                            (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) -
-                                to_integer(old(this->remaining))) == 0;
-                            (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) +
-                                (-1 * to_integer(old(this->remaining)))) ==
-                                (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))
-                                - to_integer(old(this->remaining)));
+                        apply(click::integer::equal_substitute((at(region(24).exit, to_integer(this->remaining)) - old(to_integer(this->remaining))), 0, ((-1 * old(to_integer(this->remaining))) + at(region(24).exit, to_integer(this->remaining))), 0)) using {
+                            (at(region(24).exit, to_integer(this->remaining)) -
+                                old(to_integer(this->remaining))) == 0;
+                            ((-1 * old(to_integer(this->remaining))) + at(region(24).exit,
+                                to_integer(this->remaining))) == (at(region(24).exit,
+                                to_integer(this->remaining)) - old(to_integer(this->remaining)));
                             (let integer_value: Integer = 0; integer_value) == 0;
                         };
                     }
-                    have ((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining))) <= 0 by {
-                        have ((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + (-1 * to_integer(old(this->remaining)))) * -1) == (0 * -1) by {
-                            apply(click::integer::equal_multiply((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + (-1 * to_integer(old(this->remaining)))), 0, -1)) using {
-                                (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))
-                                    + (-1 * to_integer(old(this->remaining)))) == 0;
+                    have (old(to_integer(this->remaining)) + (-1 * at(region(24).exit, to_integer(this->remaining)))) <= 0 by {
+                        have (((-1 * old(to_integer(this->remaining))) + at(region(24).exit, to_integer(this->remaining))) * -1) == (0 * -1) by {
+                            apply(click::integer::equal_multiply(((-1 * old(to_integer(this->remaining))) + at(region(24).exit, to_integer(this->remaining))), 0, -1)) using {
+                                ((-1 * old(to_integer(this->remaining))) + at(region(24).exit,
+                                    to_integer(this->remaining))) == 0;
                             };
                         }
-                        have ((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining))) == 0 by {
-                            have ((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining))) == ((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + (-1 * to_integer(old(this->remaining)))) * -1) by {
+                        have (old(to_integer(this->remaining)) + (-1 * at(region(24).exit, to_integer(this->remaining)))) == 0 by {
+                            have (old(to_integer(this->remaining)) + (-1 * at(region(24).exit, to_integer(this->remaining)))) == (((-1 * old(to_integer(this->remaining))) + at(region(24).exit, to_integer(this->remaining))) * -1) by {
                                 normalize();
                             }
                             have (let integer_value: Integer = 0; integer_value) == (0 * -1) by {
                                 normalize();
                             }
-                            apply(click::integer::equal_substitute(((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + (-1 * to_integer(old(this->remaining)))) * -1), (0 * -1), ((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining))), 0)) using {
-                                ((to_integer(at(region(25).entry, load_uint64(byte_offset(this,
-                                    8)))) + (-1 * to_integer(old(this->remaining)))) * -1) == (0 *
-                                    -1);
-                                ((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this,
-                                    8))))) + to_integer(old(this->remaining))) ==
-                                    ((to_integer(at(region(25).entry, load_uint64(byte_offset(this,
-                                    8)))) + (-1 * to_integer(old(this->remaining)))) * -1);
+                            apply(click::integer::equal_substitute((((-1 * old(to_integer(this->remaining))) + at(region(24).exit, to_integer(this->remaining))) * -1), (0 * -1), (old(to_integer(this->remaining)) + (-1 * at(region(24).exit, to_integer(this->remaining)))), 0)) using {
+                                (((-1 * old(to_integer(this->remaining))) + at(region(24).exit,
+                                    to_integer(this->remaining))) * -1) == (0 * -1);
+                                (old(to_integer(this->remaining)) + (-1 * at(region(24).exit,
+                                    to_integer(this->remaining)))) == (((-1 *
+                                    old(to_integer(this->remaining))) + at(region(24).exit,
+                                    to_integer(this->remaining))) * -1);
                                 (let integer_value: Integer = 0; integer_value) == (0 * -1);
                             };
                         }
-                        apply(click::integer::equal_le(((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining))), 0)) using {
-                            ((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this,
-                                8))))) + to_integer(old(this->remaining))) == 0;
+                        apply(click::integer::equal_le((old(to_integer(this->remaining)) + (-1 * at(region(24).exit, to_integer(this->remaining)))), 0)) using {
+                            (old(to_integer(this->remaining)) + (-1 * at(region(24).exit,
+                                to_integer(this->remaining)))) == 0;
                         };
                     }
-                    have ((-1 * to_integer(old(this->remaining))) + 4) <= 0 by {
-                        have ((-1 * to_integer(old(this->remaining))) + 4) == (4 - to_integer(old(this->remaining))) by {
-                            normalize();
-                        }
-                        apply(click::integer::le_difference(4, to_integer(old(this->remaining)), ((-1 * to_integer(old(this->remaining))) + 4))) using {
-                            4 <= to_integer(old(this->remaining));
-                            ((-1 * to_integer(old(this->remaining))) + 4) == (4 -
-                                to_integer(old(this->remaining)));
-                        };
-                    }
-                    have ((-1 * to_integer(old(this->remaining))) + (-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining)) + 4) <= 0 by {
-                        have ((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining)) + ((-1 * to_integer(old(this->remaining))) + 4)) <= (0 + 0) by {
-                            apply(click::integer::add_le(((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining))), 0, ((-1 * to_integer(old(this->remaining))) + 4), 0)) using {
-                                ((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this,
-                                    8))))) + to_integer(old(this->remaining))) <= 0;
-                                ((-1 * to_integer(old(this->remaining))) + 4) <= 0;
+                    have ((-1 * old(to_integer(this->remaining))) + 4) <= 0 by {
+                        have 4 <= at(function.entry, to_integer(this->remaining)) by {
+                            normalize() using {
+                                at(function.entry, 4u64 <= this->remaining);
                             };
                         }
-                        have ((-1 * to_integer(old(this->remaining))) + (-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining)) + 4) == ((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining)) + ((-1 * to_integer(old(this->remaining))) + 4)) by {
+                        have ((-1 * old(to_integer(this->remaining))) + 4) == (4 - at(function.entry, to_integer(this->remaining))) by {
+                            normalize();
+                        }
+                        apply(click::integer::le_difference(4, at(function.entry, to_integer(this->remaining)), ((-1 * old(to_integer(this->remaining))) + 4))) using {
+                            4 <= at(function.entry, to_integer(this->remaining));
+                            ((-1 * old(to_integer(this->remaining))) + 4) == (4 - at(function.entry,
+                                to_integer(this->remaining)));
+                        };
+                    }
+                    have ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4) <= 0 by {
+                        have (old(to_integer(this->remaining)) + (-1 * at(region(24).exit, to_integer(this->remaining))) + ((-1 * old(to_integer(this->remaining))) + 4)) <= (0 + 0) by {
+                            apply(click::integer::add_le((old(to_integer(this->remaining)) + (-1 * at(region(24).exit, to_integer(this->remaining)))), 0, ((-1 * old(to_integer(this->remaining))) + 4), 0)) using {
+                                (old(to_integer(this->remaining)) + (-1 * at(region(24).exit,
+                                    to_integer(this->remaining)))) <= 0;
+                                ((-1 * old(to_integer(this->remaining))) + 4) <= 0;
+                            };
+                        }
+                        have ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4) == (old(to_integer(this->remaining)) + (-1 * at(region(24).exit, to_integer(this->remaining))) + ((-1 * old(to_integer(this->remaining))) + 4)) by {
                             normalize();
                         }
                         have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
                             normalize();
                         }
-                        apply(click::integer::le_substitute(((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining)) + ((-1 * to_integer(old(this->remaining))) + 4)), (0 + 0), ((-1 * to_integer(old(this->remaining))) + (-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining)) + 4), 0)) using {
-                            ((-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this,
-                                8))))) + to_integer(old(this->remaining)) + ((-1 *
-                                to_integer(old(this->remaining))) + 4)) <= (0 + 0);
-                            ((-1 * to_integer(old(this->remaining))) + (-1 *
-                                to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))))
-                                + to_integer(old(this->remaining)) + 4) == ((-1 *
-                                to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))))
-                                + to_integer(old(this->remaining)) + ((-1 *
-                                to_integer(old(this->remaining))) + 4));
+                        apply(click::integer::le_substitute((old(to_integer(this->remaining)) + (-1 * at(region(24).exit, to_integer(this->remaining))) + ((-1 * old(to_integer(this->remaining))) + 4)), (0 + 0), ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4), 0)) using {
+                            (old(to_integer(this->remaining)) + (-1 * at(region(24).exit,
+                                to_integer(this->remaining))) + ((-1 *
+                                old(to_integer(this->remaining))) + 4)) <= (0 + 0);
+                            ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4) ==
+                                (old(to_integer(this->remaining)) + (-1 * at(region(24).exit,
+                                to_integer(this->remaining))) + ((-1 *
+                                old(to_integer(this->remaining))) + 4));
                             (let integer_value: Integer = 0; integer_value) == (0 + 0);
                         };
                     }
-                    have ((-1 * to_integer(old(this->remaining))) + (-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining)) + 4) == (0 - (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4)) by {
+                    have ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4) == (0 - (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4)) by {
                         normalize();
                     }
-                    apply(click::integer::difference_le(0, (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4), ((-1 * to_integer(old(this->remaining))) + (-1 * to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) + to_integer(old(this->remaining)) + 4))) using {
-                        ((-1 * to_integer(old(this->remaining))) + (-1 *
-                            to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) +
-                            to_integer(old(this->remaining)) + 4) <= 0;
-                        ((-1 * to_integer(old(this->remaining))) + (-1 *
-                            to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))) +
-                            to_integer(old(this->remaining)) + 4) == (0 -
+                    apply(click::integer::difference_le(0, (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4), ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4))) using {
+                        ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4) <= 0;
+                        ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4) == (0 -
                             (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) -
                             4));
                     };
@@ -939,48 +979,51 @@ void FixtureReader::read(std::span<std::byte> dst) {
             }
             have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4) <= 18446744073709551615 by {
                 have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4) <= 18446744073709551615 by {
-                    have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -to_integer(18446744073709551615u64)) <= 0 by {
+                    have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615) <= 0 by {
                         have to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) <= 18446744073709551615 by {
                             normalize();
                         }
-                        have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -to_integer(18446744073709551615u64)) == (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 18446744073709551615) by {
+                        have to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) <= to_integer(18446744073709551615u64) by {
+                            normalize() using {
+                                to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))
+                                    <= 18446744073709551615;
+                            };
+                        }
+                        have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615) == (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - to_integer(18446744073709551615u64)) by {
                             normalize();
                         }
-                        apply(click::integer::le_difference(to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))), 18446744073709551615, (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -to_integer(18446744073709551615u64)))) using {
+                        apply(click::integer::le_difference(to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))), to_integer(18446744073709551615u64), (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615))) using {
                             to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) <=
-                                18446744073709551615;
+                                to_integer(18446744073709551615u64);
                             (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) +
-                                -to_integer(18446744073709551615u64)) ==
-                                (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))
-                                - 18446744073709551615);
+                                -18446744073709551615) == (to_integer(at(region(25).entry,
+                                load_uint64(byte_offset(this, 8)))) -
+                                to_integer(18446744073709551615u64));
                         };
                     }
-                    have (let integer_constant: Integer = -4; integer_constant) <= 0 by {
+                    have (let integer_value: Integer = -4; integer_value) <= 0 by {
                         normalize();
                     }
                     have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551619) <= 0 by {
-                        have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -to_integer(18446744073709551615u64) + (let integer_constant: Integer = -4; integer_constant)) <= (0 + 0) by {
-                            apply(click::integer::add_le((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -to_integer(18446744073709551615u64)), 0, (let integer_constant: Integer = -4; integer_constant), 0)) using {
+                        have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615 + -4) <= (0 + 0) by {
+                            apply(click::integer::add_le((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615), 0, -4, 0)) using {
                                 (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))
-                                    + -to_integer(18446744073709551615u64)) <= 0;
-                                (let integer_constant: Integer = -4; integer_constant) <= 0;
+                                    + -18446744073709551615) <= 0;
+                                (let integer_value: Integer = -4; integer_value) <= 0;
                             };
                         }
-                        have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551619) == (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -to_integer(18446744073709551615u64) + (let integer_constant: Integer = -4; integer_constant)) by {
+                        have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551619) == (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615 + -4) by {
                             normalize();
                         }
                         have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
                             normalize();
                         }
-                        apply(click::integer::le_substitute((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -to_integer(18446744073709551615u64) + (let integer_constant: Integer = -4; integer_constant)), (0 + 0), (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551619), 0)) using {
+                        apply(click::integer::le_substitute((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615 + -4), (0 + 0), (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551619), 0)) using {
                             (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) +
-                                -to_integer(18446744073709551615u64) + (let integer_constant:
-                                Integer = -4; integer_constant)) <= (0 + 0);
+                                -18446744073709551615 + -4) <= (0 + 0);
                             (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) +
                                 -18446744073709551619) == (to_integer(at(region(25).entry,
-                                load_uint64(byte_offset(this, 8)))) +
-                                -to_integer(18446744073709551615u64) + (let integer_constant:
-                                Integer = -4; integer_constant));
+                                load_uint64(byte_offset(this, 8)))) + -18446744073709551615 + -4);
                             (let integer_value: Integer = 0; integer_value) == (0 + 0);
                         };
                     }
