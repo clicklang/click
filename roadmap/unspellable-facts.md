@@ -247,7 +247,7 @@ argument rendering. Numeric result casts remain at the result boundary. The
 native call entry point uses the same argument policy, including exact proof-local
 names for complete pointer arguments, while retaining its existing work accounting.
 
-Validation: all 1,850 Surface/scaling tests and quality checks passed, including
+Validation: all 1,860 Surface/scaling tests and quality checks passed, including
 nested mixed-family calls and exact pointer-name admission/refusal. Pure-pointer
 call fixtures passed with zero fact-stability differences.
 
