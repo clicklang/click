@@ -1,18 +1,20 @@
 use super::*;
 
 #[test]
-fn owned_entry_admission_visits_executions_without_rewalking_entry_premises() {
+fn ordinary_execution_opening_does_not_rewalk_entry_premises() {
     for unrelated in [0, 64, 256] {
         let (entry, checked) = checked_execution(unrelated, None).unwrap();
         for executions in [1, 4, 16, 64] {
-            let artifacts = vec![checked.clone(); executions];
-            let owner = WholeContractProof::open(entry.clone()).unwrap();
-            let (admitted, work) = crate::instrumentation::measure_deterministic_work(|| {
-                owner.admit_executions(&artifacts)
+            let owner = WholeContractRoot::open(entry.clone()).unwrap();
+            let (opened, work) = crate::instrumentation::measure_deterministic_work(|| {
+                (0..executions)
+                    .map(|_| open_execution(&owner, checked.clone()).unwrap())
+                    .collect::<Vec<_>>()
             });
-            assert_eq!(admitted.execution().cases[0].len(), executions);
+            assert_eq!(opened.len(), executions);
+            assert!(owner.finish().is_err(), "opening is not completion");
             assert!(
-                work <= 8 * executions + 8,
+                work <= 32 * executions + 8,
                 "{executions} executions, {unrelated} unrelated premises: {work}"
             );
         }
