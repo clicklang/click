@@ -267,8 +267,21 @@ scalar type and binds as in Rust, tighter than a binary operator.
 
 A parameter may be a reference, `&T` or `&mut T`, to a scalar or a struct.
 The contract names what it refers to as Rust does: `*value` for the
-referent and `parent.left` for a field. The type does not grant authority;
-the contract still states `views` or `owns`. Lifetimes may be written or
+referent and `parent.left` for a field. The type grants the authority a
+safe caller holds: `value: &mut T` owns `*value` and `value: &T` views it,
+a slice `bytes: &mut [T]` or `bytes: &[T]` owns or views
+`bytes[0..bytes.len()]`, and an array `bytes: &[T; N]` owns or views
+`bytes[0..N]`, with no clause written. The derived clause is the
+one a sidecar would write, so the callee is checked against it and each
+caller must hold it. A sidecar that writes an `owns`, `views`, `consumes` or
+`produces` clause naming the parameter states its authority itself, and
+nothing is derived for it: `views parent.right` on a `&mut Pair` promises
+the caller the field is not written. `owns` through a shared reference is
+refused. The rule covers free functions and inherent methods whose referent
+is a scalar, a slice or array of scalars or a struct of scalar fields; a
+receiver, a trait method, a generic function, an `extern` or `contract`
+declaration, an enum and any other referent keep only their written clauses.
+Lifetimes may be written or
 left out, `fn pick<'a>(value: &'a u32) -> u32`; the contract does not use
 them. Type parameters are limited to the supported
 [callable bounds](#function-pointers-and-named-contracts) and
@@ -290,7 +303,6 @@ fn choose(x: i32) -> i32 {
 }
 
 fn set_seven(value: &mut i32) {
-    owns *value;
     ensures *value == 8;
 }
 
@@ -1983,8 +1995,9 @@ parameters use pointer-shaped sidecar parameters with explicit `owns` clauses;
 shared references use explicit `views` where access is required. Borrowed
 references carry no allocation or deallocation authority.
 
-This frontend does not infer sidecar authority from a Rust reference. Contracts
-must provide the resources they use. Reborrows of caller storage retain the
+A reference parameter's type grants authority over its referent (see
+[Signatures in Rust syntax](#signatures-in-rust-syntax)); every other resource
+a contract uses is written. Reborrows of caller storage retain the
 same modeled pointer: writes through the child are observed through its parent.
 The compiler establishes when parent reuse is legal; the kernel establishes
 that each modeled access is justified by the supplied resources.
