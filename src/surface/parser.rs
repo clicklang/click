@@ -1416,7 +1416,7 @@ impl ProgramLayouts {
                         else_branch,
                         ..
                     } => pending.extend([then_branch.as_ref(), else_branch.as_ref()]),
-                    ProgramStatement::While { body, .. } => pending.push(body),
+                    ProgramStatement::Loop { body, .. } => pending.push(body),
                     ProgramStatement::ForStep { step, .. } => pending.push(step),
                     ProgramStatement::Switch { cases, .. } => {
                         pending.extend(cases.iter().map(|case| case.body.as_ref()))
