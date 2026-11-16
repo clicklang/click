@@ -48,7 +48,7 @@ void caller(struct Node* p, struct Node* q, struct Node* t, struct Root* root) {
     requires t->next == 0;
     produces after: link(q, root);
 } by {
-    step(); step(); step(); step(); step(); step();
+    step_until(call(helper, 0));
     have r->next == 0;
     mark call_entry;
     let {after: after} = step(helper, {before: before});
