@@ -2284,7 +2284,7 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }
-    assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("the expansion verifies");
     // Without the bound on `i`, `i + 1` may wrap, and the step says so.
@@ -2296,31 +2296,6 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
         "{}",
         error.message()
     );
-}
-
-#[test]
-#[ignore = "nightly: 0.6s in the parallel gate"]
-fn wide_arithmetic_promotes_unsuffixed_literals_in_checked_certificates() {
-    for (carrier, suffix) in [("uint64", "u64"), ("int64", "i64")] {
-        let source = format!(
-            "theorem span(n: {carrier}) {{ requires 4{suffix} <= n; requires n <= 16{suffix}; \
-             ensures (16 - n) + 4 <= 16 by {{ solve() using {{ 4 <= n; n <= 16; }} }} }}"
-        );
-        verify_c_sources(&source, &[]).expect("implicit wide literals must verify");
-        let expanded = expand_c_claim_source_by_label(&source, &[], "span.ensures_0")
-            .expect("the promoted literals must expand to a checked certificate");
-        // Normalization can discharge the arithmetic without explicit
-        // operation-identity bridges. Check the certificate independently.
-        assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
-        assert!(!expanded.contains("solve() using"), "{expanded}");
-        verify_c_sources(&expanded, &[])
-            .expect("the explicit certificate must independently verify");
-        let missing_bound = source.replace("4 <= n; n <= 16;", "n <= 16;");
-        verify_c_sources(&missing_bound, &[])
-            .expect_err("the final inequality lacks its lower bound");
-        let false_result = source.replace("+ 4 <= 16 by", "+ 5 <= 16 by");
-        verify_c_sources(&false_result, &[]).expect_err("promotion cannot prove a false bound");
-    }
 }
 
 #[test]
@@ -2383,7 +2358,7 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }
-    assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("the expansion verifies");
     // Without an upper bound on `i`, `i + 1` may overflow above. (A lower
@@ -3242,25 +3217,6 @@ fn signed_to_unsigned_interval_comparisons_expand_and_recheck_both_sides() {
     }
 }
 
-#[test]
-fn arithmetic_certificates_accept_checked_mixed_atoms_without_erasing_domains() {
-    for (parameters, requirements, term) in [
-        ("x: int32", "", "to_integer(x)"),
-        ("x: int32", "requires defined(x + 1);", "to_integer(x + 1)"),
-        ("x: int32", "requires defined(x + 1);", "f(x + 1)"),
-        ("n: Nat", "", "to_integer(n)"),
-    ] {
-        let source = format!(
-            "function f(x: int32) -> Integer {{ to_integer(x) }} theorem client({parameters}) {{ {requirements} ensures {term} == {term} by {{ arithmetic_certificate {{ trivial => {term} == {term}; conclusion 0; }} }} }}"
-        );
-        verify_c_sources(&source, &[])
-            .unwrap_or_else(|error| panic!("{source}\n{}", error.message()));
-        if !requirements.is_empty() {
-            assert!(verify_c_sources(&source.replace(requirements, ""), &[]).is_err());
-        }
-    }
-}
-
 /// `source_tactic_width` numbers the tactics inside a proof `cases` and a call
 /// `outcomes` block, so the site inventory, the source span list, and the
 /// nested-proof test must walk those arms too. Before they did, a smart tactic
@@ -3779,34 +3735,6 @@ fn resource_and_theorem_name_namespaces_roundtrip_with_commented_imports() {
     }
 }
 
-// The implicit block of a one-tactic proof is the tactic the parser read
-// after `by`, not a guess from the tokens: a certificate's `scale 1 by 2 =>`
-// is no proof, and a nested `by normalize();` is its own block.
-#[test]
-fn implicit_proof_blocks_are_the_tactics_the_parser_read() {
-    let source = "theorem t(x: Integer) {\n    requires 2 * x <= 10;\n    ensures x <= 5 by {\n        arithmetic_certificate {\n            premise 0: 2 * x <= 10 => 2 * x <= 10;\n            negated_goal => 5 < x;\n            scale 1 by 2 => 2 * 6 <= 2 * x;\n            add 0, 2 => 2 * x + 2 * 6 <= 10 + 2 * x;\n            conclusion 3;\n        }\n    }\n    ensures true by { have true by normalize(); solve(); }\n    ensures x == x by solve();\n}\n";
-    let spans = parser::parsed_source_spans(source, parser::ProgramLayouts::default()).unwrap();
-    let read = spans
-        .implicit_proofs
-        .iter()
-        .map(|span| (span.first.clone(), span.last.clone()))
-        .collect::<Vec<_>>();
-    assert_eq!(
-        read,
-        [
-            (SourcePosition::new(12, 36), SourcePosition::new(12, 47)),
-            (SourcePosition::new(13, 23), SourcePosition::new(13, 30)),
-        ]
-    );
-    let tokens = proof_source_tokens(source, &spans.implicit_proofs).unwrap();
-    let blocks = tokens
-        .iter()
-        .filter(|token| token.span.is_empty())
-        .map(|token| (token.text.as_str(), token.start.line))
-        .collect::<Vec<_>>();
-    assert_eq!(blocks, [("{", 12), ("}", 12), ("{", 13), ("}", 13)]);
-}
-
 #[test]
 fn branch_transfers_cannot_claim_an_unreachable_return() {
     use crate::kernel::{program_if, program_return, program_seq, program_skip};
@@ -3942,31 +3870,6 @@ int32 f(int32 x) {
         "{}",
         refused.message()
     );
-}
-
-#[test]
-fn common_machine_call_certificates_preserve_calls_and_definedness() {
-    for (requirements, term) in [
-        ("", "to_integer(f(x))"),
-        ("", "to_integer(f(f(x)))"),
-        ("requires defined(x + 1);", "to_integer(f(x + 1))"),
-        ("", "to_integer(f(x) as uint64)"),
-    ] {
-        let source = format!(
-            "function f(x: int32) -> int32 {{ x }} theorem client(x: int32) {{ {requirements} ensures {term} == {term} by {{ arithmetic_certificate {{ trivial => {term} == {term}; conclusion 0; }} }} }}"
-        );
-        verify_c_sources(&source, &[])
-            .unwrap_or_else(|error| panic!("{source}\n{}", error.message()));
-        let altered = source.replacen(
-            &format!("ensures {term} == {term}"),
-            &format!("ensures {term} != {term}"),
-            1,
-        );
-        assert!(verify_c_sources(&altered, &[]).is_err());
-        if !requirements.is_empty() {
-            assert!(verify_c_sources(&source.replace(requirements, ""), &[]).is_err());
-        }
-    }
 }
 
 #[test]

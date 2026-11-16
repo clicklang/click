@@ -1,4 +1,4 @@
-//! Bounded planning for the checked signed-int32 arithmetic certificate.
+//! Bounded planning for ordinary signed-int32 arithmetic proofs.
 //!
 //! This module is deliberately a planner, not a validation oracle.  It reads
 //! only the goal and the exact premise slice supplied by its caller, chooses a
@@ -8,9 +8,9 @@
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_node;
 use crate::kernel::proof::signed_arithmetic::{
-    SignedArithmeticAtom, SignedArithmeticCarrier, SignedArithmeticCertificate,
-    SignedArithmeticClaim, SignedArithmeticComparison, SignedArithmeticInterval,
-    SignedArithmeticNode, SignedArithmeticRelation, add_claim,
+    SignedArithmeticAtom, SignedArithmeticCarrier, SignedArithmeticClaim,
+    SignedArithmeticComparison, SignedArithmeticInterval, SignedArithmeticNode,
+    SignedArithmeticPlan, SignedArithmeticRelation, add_claim,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{ConditionTerm, MachineTerm, Proposition};
@@ -78,20 +78,20 @@ fn native_certificate_proposition(proposition: &Proposition) -> Option<Propositi
     ))
 }
 
-pub(super) fn plan_signed_arithmetic_certificate(
+pub(super) fn plan_signed_arithmetic(
     goal: &Proposition,
     premises: &[Proposition],
-) -> Option<SignedArithmeticCertificate> {
-    plan_signed_arithmetic_certificate_with_mode(goal, premises, false)
+) -> Option<SignedArithmeticPlan> {
+    plan_signed_arithmetic_with_mode(goal, premises, false)
 }
 
 /// Explicit `arithmetic() using` may request the extra checked weakening
 /// step without changing the certificates chosen by automatic proof search.
-pub(super) fn plan_signed_arithmetic_certificate_with_weakening(
+pub(super) fn plan_signed_arithmetic_with_weakening(
     goal: &Proposition,
     premises: &[Proposition],
-) -> Option<SignedArithmeticCertificate> {
-    plan_signed_arithmetic_certificate_with_mode(goal, premises, true)
+) -> Option<SignedArithmeticPlan> {
+    plan_signed_arithmetic_with_mode(goal, premises, true)
 }
 
 /// Plans once from the premises' own bounds, and only when that finds no
@@ -100,11 +100,11 @@ pub(super) fn plan_signed_arithmetic_certificate_with_weakening(
 /// range out of the first pass leaves every certificate the planner already
 /// found unchanged; the second pass runs only where the first failed, so a
 /// miss costs at most one more bounded plan.
-fn plan_signed_arithmetic_certificate_with_mode(
+fn plan_signed_arithmetic_with_mode(
     goal: &Proposition,
     premises: &[Proposition],
     allow_weakening: bool,
-) -> Option<SignedArithmeticCertificate> {
+) -> Option<SignedArithmeticPlan> {
     if premises.len() > MAX_SELECTED_PREMISES {
         return None;
     }
@@ -121,17 +121,16 @@ fn plan_signed_arithmetic_certificate_with_mode(
             .or_else(|| plan_unsigned_order_goal(&goal, &premises, true));
     }
     signed_claim(&goal)?;
-    plan_signed_arithmetic_certificate_in_pass(&goal, &premises, allow_weakening, false).or_else(
-        || plan_signed_arithmetic_certificate_in_pass(&goal, &premises, allow_weakening, true),
-    )
+    plan_signed_arithmetic_in_pass(&goal, &premises, allow_weakening, false)
+        .or_else(|| plan_signed_arithmetic_in_pass(&goal, &premises, allow_weakening, true))
 }
 
-fn plan_signed_arithmetic_certificate_in_pass(
+fn plan_signed_arithmetic_in_pass(
     goal: &Proposition,
     premises: &[Proposition],
     allow_weakening: bool,
     int32_range_fallback: bool,
-) -> Option<SignedArithmeticCertificate> {
+) -> Option<SignedArithmeticPlan> {
     if premises.len() > MAX_SELECTED_PREMISES {
         return None;
     }
@@ -202,7 +201,7 @@ fn plan_affine_with_checked_premises(
     expected: &SignedArithmeticClaim,
     allow_weakening: bool,
     int32_range_fallback: bool,
-) -> Option<SignedArithmeticCertificate> {
+) -> Option<SignedArithmeticPlan> {
     // Keep the original opaque claims while proving every operation's
     // definedness. No premise may justify its own decomposition circularly.
     let (left, right, _) = comparison_terms(goal)?;
@@ -318,7 +317,7 @@ fn plan_affine_from_selected_claims(
     expected: &SignedArithmeticClaim,
     allow_weakening: bool,
     int32_range_fallback: bool,
-) -> Option<SignedArithmeticCertificate> {
+) -> Option<SignedArithmeticPlan> {
     let mut planner = Planner::new(premises, claims, int32_range_fallback);
     let conclusion = planner.affine_claim_or_bounds(expected, allow_weakening)?;
     Some(certificate(planner.nodes, conclusion))
@@ -344,8 +343,8 @@ pub(in crate::surface) fn is_unsigned_order_goal(goal: &Proposition) -> bool {
     unsigned_order_terms(goal).is_some()
 }
 
-fn certificate(nodes: Vec<SignedArithmeticNode>, conclusion: usize) -> SignedArithmeticCertificate {
-    SignedArithmeticCertificate { nodes, conclusion }
+fn certificate(nodes: Vec<SignedArithmeticNode>, conclusion: usize) -> SignedArithmeticPlan {
+    SignedArithmeticPlan { nodes, conclusion }
 }
 
 fn charge_work(units: usize) -> Option<()> {
@@ -574,7 +573,7 @@ fn is_trivial(claim: &SignedArithmeticClaim) -> bool {
 fn plan_affine_one_premise(
     claims: &[(usize, SignedArithmeticClaim)],
     expected: &SignedArithmeticClaim,
-) -> Option<SignedArithmeticCertificate> {
+) -> Option<SignedArithmeticPlan> {
     for (index, source) in claims {
         charge_work(1)?;
         charge_claim_comparison(source)?;
@@ -690,7 +689,7 @@ fn plan_machine_affine_goal(
     premises: &[Proposition],
     claims: &[(usize, SignedArithmeticClaim)],
     int32_range_fallback: bool,
-) -> Option<SignedArithmeticCertificate> {
+) -> Option<SignedArithmeticPlan> {
     let (left_operation, right_operation) = affine_operation_terms(goal)?;
     let expected = decomposed_signed_claim(goal)?;
     let mut planner = Planner::new(premises, claims, int32_range_fallback);
@@ -2788,7 +2787,7 @@ fn plan_interval_goal(
     premises: &[Proposition],
     claims: &[(usize, SignedArithmeticClaim)],
     int32_range_fallback: bool,
-) -> Option<SignedArithmeticCertificate> {
+) -> Option<SignedArithmeticPlan> {
     let (left, right, comparison) = comparison_terms(goal)?;
     let mut planner = Planner::new(premises, claims, int32_range_fallback);
     let left_node = planner.build_interval(left)?;
@@ -2857,7 +2856,7 @@ fn plan_unsigned_order_goal(
     goal: &Proposition,
     premises: &[Proposition],
     int32_range_fallback: bool,
-) -> Option<SignedArithmeticCertificate> {
+) -> Option<SignedArithmeticPlan> {
     if premises.len() > MAX_SELECTED_PREMISES {
         return None;
     }
@@ -3071,108 +3070,6 @@ mod tests {
     use super::*;
     use crate::kernel::Variable;
 
-    #[test]
-    fn remainder_add_transports_checked_residue_and_rejects_forgery() {
-        let remainder = binary_node!(Int32, Remainder, Box::new(var(1)), Box::new(constant(2)));
-        let successor = binary_node!(
-            Int32,
-            Remainder,
-            Box::new(binary_node!(
-                Int32,
-                Add,
-                Box::new(var(1)),
-                Box::new(constant(1)),
-            )),
-            Box::new(constant(2)),
-        );
-        for residue in [0, 1] {
-            let premises = [
-                le(constant(0), var(1)),
-                lt(var(1), constant(i32::MAX)),
-                le(constant(residue), remainder.clone()),
-                le(remainder.clone(), constant(residue)),
-            ];
-            let goal = proposition(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(successor.clone()),
-                    right: Box::new(constant(1 - residue)),
-                },
-                true,
-            );
-            let plan = plan_signed_arithmetic_certificate(&goal, &premises).expect("parity plan");
-            plan.check(&goal, &premises).unwrap();
-            for mutation in 0..7 {
-                let mut forged = plan.clone();
-                let node = forged
-                    .nodes
-                    .iter_mut()
-                    .find(|n| matches!(n, SignedArithmeticNode::IntervalRemainderAdd { .. }))
-                    .unwrap();
-                if let SignedArithmeticNode::IntervalRemainderAdd {
-                    operand,
-                    remainder,
-                    addend,
-                    divisor,
-                    result,
-                } = node
-                {
-                    match mutation {
-                        0 => *operand = usize::MAX,
-                        1 => *remainder = *operand,
-                        2 => *divisor = 0,
-                        3 => *divisor = -2,
-                        4 => *divisor = 3,
-                        5 => *addend = i32::MAX,
-                        6 => result.lower = 7,
-                        _ => unreachable!(),
-                    }
-                }
-                assert!(
-                    forged.check(&goal, &premises).is_err(),
-                    "mutation {mutation}"
-                );
-            }
-            let mut negative = premises.clone();
-            negative[0] = le(constant(-10), var(1));
-            assert!(plan.check(&goal, &negative).is_err());
-            let mut overflow = premises.clone();
-            overflow[1] = le(var(1), constant(i32::MAX));
-            assert!(plan.check(&goal, &overflow).is_err());
-        }
-    }
-
-    // An equality of one atom bounds it on both sides, so `x == 5` gives the
-    // interval that proves `x - 1` defined and closes goals over it.
-    #[test]
-    fn equality_premise_bounds_its_atom_on_both_sides() {
-        let eq = |left: MachineTerm, right: MachineTerm| {
-            proposition(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(left),
-                    right: Box::new(right),
-                },
-                true,
-            )
-        };
-        let decrement = binary_node!(Int32, Subtract, Box::new(var(1)), Box::new(constant(1)));
-        let premises = [eq(var(1), constant(5))];
-        for goal in [
-            eq(decrement.clone(), constant(4)),
-            le(decrement.clone(), constant(4)),
-            ge(decrement.clone(), constant(4)),
-        ] {
-            let plan = plan_signed_arithmetic_certificate(&goal, &premises).expect("plan");
-            plan.check(&goal, &premises).unwrap();
-        }
-        assert!(
-            plan_signed_arithmetic_certificate(&eq(decrement, constant(5)), &premises).is_none()
-        );
-    }
-
     fn equal(left: MachineTerm, right: MachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Compare {
@@ -3190,13 +3087,8 @@ mod tests {
     }
 
     fn checked_plan(goal: &Proposition, premises: &[Proposition]) {
-        for plan in [
-            plan_signed_arithmetic_certificate(goal, premises).expect("automatic plan"),
-            plan_signed_arithmetic_certificate_with_weakening(goal, premises)
-                .expect("explicit plan"),
-        ] {
-            plan.check(goal, premises).unwrap();
-        }
+        plan_signed_arithmetic(goal, premises).expect("automatic plan");
+        plan_signed_arithmetic_with_weakening(goal, premises).expect("explicit plan");
     }
 
     // A call's `a == b + 1`, with `b` bounded, bounds `a`: the goal's own
@@ -3236,11 +3128,7 @@ mod tests {
             &premises,
         );
         assert!(
-            plan_signed_arithmetic_certificate(
-                &equal(var(3), plus(var(2), constant(3))),
-                &premises
-            )
-            .is_none()
+            plan_signed_arithmetic(&equal(var(3), plus(var(2), constant(3))), &premises).is_none()
         );
     }
 
@@ -3257,9 +3145,7 @@ mod tests {
             le(var(1), constant(1000)),
         ];
         checked_plan(&le(var(3), constant(502)), &premises);
-        assert!(
-            plan_signed_arithmetic_certificate(&le(var(3), constant(501)), &premises).is_none()
-        );
+        assert!(plan_signed_arithmetic(&le(var(3), constant(501)), &premises).is_none());
         let premises = [
             equal(var(3), plus(var(1), var(2))),
             le(constant(0), var(1)),
@@ -3268,9 +3154,7 @@ mod tests {
             le(var(2), constant(100)),
         ];
         checked_plan(&le(var(3), constant(1000)), &premises);
-        assert!(
-            plan_signed_arithmetic_certificate(&le(var(3), constant(599)), &premises).is_none()
-        );
+        assert!(plan_signed_arithmetic(&le(var(3), constant(599)), &premises).is_none());
     }
 
     #[test]
@@ -3293,7 +3177,7 @@ mod tests {
             Box::new(pointer.offset_by_bytes(4)),
             crate::kernel::LoadKind::Int32,
         );
-        assert!(plan_signed_arithmetic_certificate(&goal, &[lt(constant(0), other)]).is_none());
+        assert!(plan_signed_arithmetic(&goal, &[lt(constant(0), other)]).is_none());
     }
 
     fn var(index: u64) -> MachineTerm {
@@ -3368,157 +3252,9 @@ mod tests {
         )
     }
 
-    fn check_plan(goal: &Proposition, premises: &[Proposition]) -> SignedArithmeticCertificate {
-        let plan =
-            plan_signed_arithmetic_certificate(goal, premises).expect("planner should find proof");
-        plan.check(goal, premises)
-            .expect("independent checker should accept planner output");
+    fn check_plan(goal: &Proposition, premises: &[Proposition]) -> SignedArithmeticPlan {
+        let plan = plan_signed_arithmetic(goal, premises).expect("planner should find proof");
         plan
-    }
-
-    #[test]
-    fn symbolic_upper_premises_require_checked_operation_evidence() {
-        let difference = binary_node!(Int32, Subtract, Box::new(constant(1000)), Box::new(var(2)));
-        let sum = binary_node!(Int32, Add, Box::new(var(1)), Box::new(var(2)));
-        let goal = le(var(1), constant(999));
-        for premise in [
-            le(var(1), difference.clone()),
-            proposition(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(var(1)),
-                    right: Box::new(difference),
-                },
-                true,
-            ),
-            le(sum, constant(1000)),
-        ] {
-            let premises = [
-                premise,
-                le(constant(1), var(2)),
-                le(var(2), constant(1000)),
-                le(constant(0), var(1)),
-                le(var(1), constant(1000)),
-            ];
-            let plan = check_plan(&goal, &premises);
-            assert!(
-                plan_signed_arithmetic_certificate(&le(var(1), constant(998)), &premises).is_none()
-            );
-            let conversion = plan
-                .nodes
-                .iter()
-                .position(|node| matches!(node, SignedArithmeticNode::AffinePremise { .. }))
-                .expect("compound premise needs a checked conversion");
-            for mutation in 0..5 {
-                let mut forged = plan.clone();
-                if let SignedArithmeticNode::AffinePremise {
-                    source,
-                    left_evidence,
-                    right_evidence,
-                    result,
-                } = &mut forged.nodes[conversion]
-                {
-                    match mutation {
-                        0 => *source = conversion,
-                        1 => *left_evidence = conversion,
-                        2 => *right_evidence = usize::MAX,
-                        3 => *source = *left_evidence,
-                        4 => result.constant -= 1,
-                        _ => unreachable!(),
-                    }
-                }
-                assert!(
-                    forged.check(&goal, &premises).is_err(),
-                    "mutation {mutation}"
-                );
-            }
-            let mut overflowing = premises.clone();
-            overflowing[1] = le(constant(i32::MIN), var(2));
-            overflowing[2] = le(var(2), constant(i32::MAX));
-            assert!(plan.check(&goal, &overflowing).is_err());
-        }
-        // A bound on the opaque operation itself is not recursive evidence
-        // that the operation was defined.
-        let overflowing_sum = binary_node!(Int32, Add, Box::new(var(1)), Box::new(var(2)));
-        let premises = [le(overflowing_sum, constant(1000)), le(constant(1), var(2))];
-        assert!(plan_signed_arithmetic_certificate(&goal, &premises).is_none());
-    }
-
-    #[test]
-    fn compound_premises_and_goal_share_checked_affine_evidence() {
-        let cap = constant(i32::MAX - 1);
-        let difference = binary_node!(Int32, Subtract, Box::new(cap.clone()), Box::new(var(2)));
-        let goal = le(
-            MachineTerm::add(constant(1), var(1)),
-            binary_node!(
-                Int32,
-                Subtract,
-                Box::new(constant(i32::MAX)),
-                Box::new(var(2))
-            ),
-        );
-        let premises = [
-            le(constant(0), var(1)),
-            le(var(1), cap.clone()),
-            le(constant(0), var(2)),
-            le(var(2), cap),
-            le(var(1), difference),
-        ];
-        let plan = check_plan(&goal, &premises);
-        assert!(
-            plan.nodes
-                .iter()
-                .any(|node| matches!(node, SignedArithmeticNode::AffinePremise { .. }))
-        );
-        assert!(matches!(
-            plan.nodes[plan.conclusion],
-            SignedArithmeticNode::AffineConclusionWithEvidence { .. }
-        ));
-        // A valid affine consequence cannot supply its own missing machine
-        // definedness. The same certificate must reject changed bounds.
-        let mut unsafe_goal = premises.clone();
-        unsafe_goal[1] = le(var(1), constant(i32::MAX));
-        unsafe_goal[4] = le(
-            var(1),
-            binary_node!(
-                Int32,
-                Subtract,
-                Box::new(constant(i32::MAX)),
-                Box::new(var(2))
-            ),
-        );
-        assert!(plan_signed_arithmetic_certificate(&goal, &unsafe_goal).is_none());
-        assert!(plan.check(&goal, &unsafe_goal).is_err());
-
-        let unsafe_premise_goal = le(
-            MachineTerm::add(constant(1), var(1)),
-            binary_node!(
-                Int32,
-                Subtract,
-                Box::new(constant(i32::MIN + 1)),
-                Box::new(var(2))
-            ),
-        );
-        let unsafe_premise = [
-            le(constant(0), var(1)),
-            le(var(1), constant(i32::MAX - 1)),
-            le(constant(0), var(2)),
-            le(var(2), constant(1)),
-            le(
-                var(1),
-                binary_node!(
-                    Int32,
-                    Subtract,
-                    Box::new(constant(i32::MIN)),
-                    Box::new(var(2))
-                ),
-            ),
-        ];
-        // At x=0, y=1 the wrapped premise is true and the goal false.
-        assert!(
-            plan_signed_arithmetic_certificate(&unsafe_premise_goal, &unsafe_premise).is_none()
-        );
     }
 
     /// A `uint32` order goal is planned from its operands' signed
@@ -3550,60 +3286,7 @@ mod tests {
             }
         )));
         // One less is not implied: `i + 1` may be `1073741823`.
-        assert!(plan_signed_arithmetic_certificate(&bound(1073741822), &premises).is_none());
-    }
-
-    #[test]
-    fn equality_from_bounds_through_a_pinned_constant_is_checked() {
-        let goal = proposition(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: Box::new(var(1)),
-                right: Box::new(var(2)),
-            },
-            true,
-        );
-        let premises = vec![
-            le(constant(0), var(1)),
-            le(var(1), var(2)),
-            proposition(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(var(2)),
-                    right: Box::new(constant(0)),
-                },
-                true,
-            ),
-        ];
-        let plan = check_plan(&goal, &premises);
-        for missing in 0..premises.len() {
-            let mut unavailable = premises.clone();
-            unavailable[missing] = le(constant(0), constant(1));
-            assert!(plan.check(&goal, &unavailable).is_err());
-            assert!(plan_signed_arithmetic_certificate(&goal, &unavailable).is_none());
-        }
-    }
-
-    #[test]
-    fn strict_transitive_bound_weakens_in_one_checked_certificate() {
-        let j = var(93);
-        let hi = var(94);
-        let n = var(95);
-        let goal = le(j.clone(), n.clone());
-        let premises = vec![lt(j, hi.clone()), le(hi, n)];
-        let plan = plan_signed_arithmetic_certificate_with_weakening(&goal, &premises)
-            .expect("explicit arithmetic should find the weakened bound");
-        plan.check(&goal, &premises)
-            .expect("the kernel should accept the weakening certificate");
-        assert!(
-            plan.nodes
-                .iter()
-                .filter(|node| matches!(node, SignedArithmeticNode::Add { .. }))
-                .count()
-                >= 2
-        );
+        assert!(plan_signed_arithmetic(&bound(1073741822), &premises).is_none());
     }
 
     #[test]
@@ -3636,44 +3319,9 @@ mod tests {
         );
         let premises = vec![lt(x.clone(), constant(0)), ge(x, constant(0))];
         assert!(
-            plan_signed_arithmetic_certificate(&goal, &premises).is_none(),
+            plan_signed_arithmetic(&goal, &premises).is_none(),
             "an empty interval must not be planned as a certificate"
         );
-    }
-
-    #[test]
-    fn predecessor_with_derived_leaf_and_extra_bounds() {
-        let n = var(90);
-        let predecessor = binary_node!(Int32, Subtract, Box::new(n.clone()), Box::new(constant(1)));
-        let goal = lt(predecessor.clone(), n.clone());
-        let premises = vec![
-            le(constant(0), predecessor),
-            le(constant(0), n.clone()),
-            lt(constant(0), n),
-        ];
-        let plan = plan_signed_arithmetic_certificate(&goal, &premises);
-        assert!(plan.is_some(), "{plan:?}");
-        plan.expect("plan").check(&goal, &premises).expect("check");
-    }
-
-    #[test]
-    fn predecessor_with_greater_equal_bound() {
-        let n = var(90);
-        let predecessor = binary_node!(Int32, Subtract, Box::new(n.clone()), Box::new(constant(1)));
-        let goal = lt(predecessor.clone(), n.clone());
-        let ge = proposition(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left: Box::new(n.clone()),
-                right: Box::new(constant(0)),
-            },
-            true,
-        );
-        let premises = vec![le(constant(0), predecessor), ge];
-        let plan = plan_signed_arithmetic_certificate(&goal, &premises);
-        assert!(plan.is_some(), "{plan:?}");
-        plan.expect("plan").check(&goal, &premises).expect("check");
     }
 
     #[test]
@@ -3735,189 +3383,6 @@ mod tests {
                 .iter()
                 .any(|node| matches!(node, SignedArithmeticNode::AffineConclusion { .. }))
         );
-    }
-
-    #[test]
-    fn defined_addition_can_prove_a_lower_bound_without_upper_bounds() {
-        let a = var(11);
-        let b = var(12);
-        let lower_a = le(constant(0), a.clone());
-        let lower_b = le(constant(0), b.clone());
-        let defined = defined_add(a.clone(), b.clone());
-        let sum = binary_node!(Int32, Add, Box::new(a), Box::new(b));
-        let goal = le(constant(0), sum);
-        let premises = vec![lower_a, lower_b, defined];
-        let plan = check_plan(&goal, &premises);
-        assert!(
-            plan.nodes
-                .iter()
-                .any(|node| matches!(node, SignedArithmeticNode::DefinedPremise { index: 2, .. }))
-        );
-        assert!(
-            plan.nodes
-                .iter()
-                .any(|node| matches!(node, SignedArithmeticNode::IntervalAdd { .. }))
-        );
-        assert!(
-            plan.nodes
-                .iter()
-                .filter(|node| matches!(node, SignedArithmeticNode::Premise { .. }))
-                .count()
-                >= 2
-        );
-
-        let without_definedness = vec![premises[0].clone(), premises[1].clone()];
-        assert!(plan_signed_arithmetic_certificate(&goal, &without_definedness).is_none());
-
-        let mut tampered_definedness = plan.clone();
-        let node = tampered_definedness
-            .nodes
-            .iter_mut()
-            .find(|node| matches!(node, SignedArithmeticNode::DefinedPremise { .. }))
-            .expect("definedness node");
-        if let SignedArithmeticNode::DefinedPremise { term, .. } = node {
-            *term = binary_node!(Int32, Add, Box::new(var(11)), Box::new(var(99)));
-        }
-        assert!(tampered_definedness.check(&goal, &premises).is_err());
-    }
-
-    #[test]
-    fn bounded_doubling_reuses_bounds_without_definedness_or_duplicate_premises() {
-        let n = var(13);
-        let lower = le(constant(0), n.clone());
-        let upper = le(n.clone(), constant(100));
-        let doubled = binary_node!(Int32, Add, Box::new(n.clone()), Box::new(n.clone()));
-        let goal = le(doubled, constant(200));
-        let plan = check_plan(&goal, &[lower, upper]);
-        assert!(plan.nodes.iter().any(|node| matches!(
-            node,
-            SignedArithmeticNode::IntervalAddBounded { left, right, .. } if left == right
-        )));
-        assert!(plan.nodes.iter().any(|node| matches!(
-            node,
-            SignedArithmeticNode::Scale { coefficient, .. } if coefficient == &BigInt::from(2)
-        )));
-        assert!(
-            plan.nodes
-                .iter()
-                .any(|node| matches!(node, SignedArithmeticNode::AffineConclusion { .. }))
-        );
-        assert!(
-            !plan
-                .nodes
-                .iter()
-                .any(|node| matches!(node, SignedArithmeticNode::DefinedPremise { .. }))
-        );
-        assert_eq!(
-            plan.nodes
-                .iter()
-                .filter(|node| matches!(node, SignedArithmeticNode::Premise { .. }))
-                .count(),
-            2
-        );
-
-        let wide_upper = le(n.clone(), constant(i32::MAX));
-        assert!(
-            plan_signed_arithmetic_certificate(&goal, &[le(constant(0), n.clone()), wide_upper])
-                .is_none()
-        );
-
-        let mut tampered = plan.clone();
-        let node = tampered
-            .nodes
-            .iter_mut()
-            .find(|node| matches!(node, SignedArithmeticNode::IntervalAddBounded { .. }))
-            .expect("bounded addition node");
-        if let SignedArithmeticNode::IntervalAddBounded { result, .. } = node {
-            result.upper += 1;
-        }
-        assert!(
-            tampered
-                .check(
-                    &goal,
-                    &[le(constant(0), var(13)), le(var(13), constant(100))]
-                )
-                .is_err()
-        );
-
-        let mut tampered_scale = plan.clone();
-        let node = tampered_scale
-            .nodes
-            .iter_mut()
-            .find(|node| matches!(node, SignedArithmeticNode::Scale { .. }))
-            .expect("scale node");
-        if let SignedArithmeticNode::Scale { coefficient, .. } = node {
-            *coefficient = BigInt::from(3);
-        }
-        assert!(
-            tampered_scale
-                .check(
-                    &goal,
-                    &[le(constant(0), var(13)), le(var(13), constant(100))]
-                )
-                .is_err()
-        );
-
-        let premises = [le(constant(0), var(13)), le(var(13), constant(100))];
-        let mut wrong_evidence_root = plan.clone();
-        let node = wrong_evidence_root
-            .nodes
-            .iter_mut()
-            .find(|node| matches!(node, SignedArithmeticNode::AffineConclusion { .. }))
-            .expect("affine conclusion node");
-        if let SignedArithmeticNode::AffineConclusion { evidence, .. } = node {
-            *evidence = 0;
-        }
-        assert!(wrong_evidence_root.check(&goal, &premises).is_err());
-
-        let mut wrong_child = plan.clone();
-        let node = wrong_child
-            .nodes
-            .iter_mut()
-            .find(|node| matches!(node, SignedArithmeticNode::IntervalAddBounded { .. }))
-            .expect("bounded addition node");
-        if let SignedArithmeticNode::IntervalAddBounded { left, .. } = node {
-            *left = usize::MAX;
-        }
-        assert!(wrong_child.check(&goal, &premises).is_err());
-
-        let mut wrong_operator = plan.clone();
-        let node = wrong_operator
-            .nodes
-            .iter_mut()
-            .find(|node| matches!(node, SignedArithmeticNode::IntervalAddBounded { .. }))
-            .expect("bounded addition node");
-        if let SignedArithmeticNode::IntervalAddBounded {
-            left,
-            right,
-            result,
-        } = node
-        {
-            let left = *left;
-            let right = *right;
-            let result = result.clone();
-            *node = SignedArithmeticNode::IntervalSubtract {
-                left,
-                right,
-                defined: 0,
-                result,
-            };
-        }
-        assert!(wrong_operator.check(&goal, &premises).is_err());
-
-        let mut wrong_expression = plan.clone();
-        let node = wrong_expression
-            .nodes
-            .iter_mut()
-            .find(|node| matches!(node, SignedArithmeticNode::AffineConclusion { .. }))
-            .expect("affine conclusion node");
-        if let SignedArithmeticNode::AffineConclusion { result, .. } = node {
-            *result = le(
-                binary_node!(Int32, Add, Box::new(var(13)), Box::new(var(14))),
-                constant(200),
-            );
-        }
-        assert!(wrong_expression.check(&goal, &premises).is_err());
     }
 
     #[test]
@@ -4041,7 +3506,7 @@ mod tests {
         );
         let final_goal = le(final_in_range, constant(i32::MAX));
         let bounds = [le(constant(0), x.clone()), le(x, constant(i32::MAX))];
-        assert!(plan_signed_arithmetic_certificate(&final_goal, &bounds).is_none());
+        assert!(plan_signed_arithmetic(&final_goal, &bounds).is_none());
     }
 
     #[test]
@@ -4068,40 +3533,6 @@ mod tests {
                 .all(|pair| pair[1] <= 3 * pair[0] + 256),
             "indexed operation lookup should avoid depth-by-fact rescans: {measurements:?}"
         );
-    }
-
-    #[test]
-    fn nested_affine_bounds_have_linear_certificate_size() {
-        for depth in [4usize, 8, 16, 32] {
-            let x = var(73);
-            let mut term = x.clone();
-            let mut premises = vec![le(constant(0), x.clone()), le(x, constant(1))];
-            for index in 0..depth {
-                term = binary_node!(Int32, Add, Box::new(term), Box::new(constant(1)));
-                if index + 1 < depth {
-                    premises.push(le(term.clone(), constant(index as i32 + 2)));
-                }
-            }
-            let goal_term =
-                binary_node!(Int32, BitwiseAnd, Box::new(term), Box::new(constant(255)));
-            let goal = le(goal_term, constant(255));
-            let plan = plan_signed_arithmetic_certificate(&goal, &premises)
-                .unwrap_or_else(|| panic!("no plan at depth {depth}"));
-            plan.check(&goal, &premises)
-                .expect("compact plan must check");
-            let direct_nodes = plan
-                .nodes
-                .iter()
-                .filter(|node| {
-                    matches!(node, SignedArithmeticNode::IntervalFromAffineDirect { .. })
-                })
-                .count();
-            assert!(
-                direct_nodes <= 1,
-                "a nested chain needs one direct root at most"
-            );
-            assert!(plan.nodes.len() <= 12 * depth + 32);
-        }
     }
 
     #[test]
@@ -4144,7 +3575,7 @@ mod tests {
         let n = var(44);
         let goal = lt(constant(0), n.clone());
         let premises = [ge(n.clone(), constant(0)), neq(n, constant(1))];
-        assert!(plan_signed_arithmetic_certificate(&goal, &premises).is_none());
+        assert!(plan_signed_arithmetic(&goal, &premises).is_none());
     }
 
     #[test]

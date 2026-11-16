@@ -1610,19 +1610,24 @@ permitted stores or a transition that drops the fact:
   Exact flat borrows retain the caller's original checked partition instead
   of reconstructing and validating every old owner. Returned flat resources
   use incremental composition, checking each new owner and its conflicts.
-  Unit returned composites with unconditional flat memory/token bodies carry
-  one evaluated body per emitted source occurrence. The frontier overlap
-  check, core projection, escaping-view bookkeeping and installed expansion
-  cache reuse that construction; equal heads retain independent support IDs.
-  `FlatReturnBodies` does not infer disjointness from a folded head: its body
-  still checks against the retained caller frame in post-call memory. Nested,
-  guarded, existential, nonunit and authority bodies retain legacy expansion.
-  A prepared flat body's constant-coordinate memory leaves query the retained
-  frame's address-class interval index directly. Admission neither inserts
-  temporary children nor rechecks the body's composition or the old frame;
-  an overlap reports the selected held occurrence's original fact. Cold
-  indexes, symbolic/general coordinates and other unsupported geometry keep
-  the legacy frontier validation; an indexed miss never certifies them.
+  Ordinary unit returned composites carry one constructed body per emitted
+  source occurrence, including acyclic owned nesting and decided conditional
+  bodies. `ConstructedReturnBodies` retains each child's producer-assigned ID
+  and parent, before normalization. Fixed consumed-input paths are selected
+  from contract parameter bindings at entry; invariant borrowed footprints
+  and actual allocation provenance supply the other explicit transfers.
+  Post-call loads do not acquire invariant-borrow authority. Body custody,
+  allocation extent and lifetime checks still apply to executed returns.
+  Admission uses only the remaining unclassified ownership boundary, so cold
+  or symbolic fallback cannot rediscover separation for transferred children.
+  Prepared constant-coordinate memory leaves query the frame's address-class
+  interval index; conflicts name the selected original held fact. Projections,
+  packaged views and expansion caches reuse the same construction. Flat memory
+  and token returns project directly, without generic composite expansion.
+  An undecided body condition retains the opaque head; a decided false body
+  produces emp. Recursive, existential, matched, authority and viewed-nesting
+  cases retain explicitly classified legacy routes. Failure constructing a
+  migrated body refuses the return rather than retrying legacy reconstruction.
   Monotone memory-evidence admission walks a smaller incoming contract or a
   shared persistent delta, without enumerating absent caller facts. Scalar
   refresh seeks only the equality class's concrete `local:` block interval,

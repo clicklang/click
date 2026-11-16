@@ -656,7 +656,7 @@ impl PureFactContext {
     }
 
     // A clear-sign-bit mask has a local range. Keep comparison terms intact
-    // so arithmetic certificates retain their original proposition shapes.
+    // so explicit arithmetic proofs retain their original proposition shapes.
     pub(super) fn decide_masked_order(&self, condition: &ConditionTerm) -> Option<bool> {
         use crate::kernel::MachineOperandView;
         use crate::kernel::machine_integer::{Relation, comparison::comparison_view};

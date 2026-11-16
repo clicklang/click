@@ -12,12 +12,7 @@ theorem checked_integer_multiply_order_nonnegative(a: Integer, b: Integer, facto
     requires a <= b;
     requires 0 <= factor;
     ensures a * factor <= b * factor by {
-        arithmetic_certificate rules {
-            premise 0: a <= b => a <= b;
-            premise 1: 0 <= factor => 0 <= factor;
-            integer_multiply_order bounds [0, 1] => a * factor <= b * factor;
-            conclusion 0;
-        }
+        solve() using { a <= b; 0 <= factor; };
     }
 }
 
@@ -25,12 +20,7 @@ theorem checked_integer_multiply_order_nonpositive(a: Integer, b: Integer, facto
     requires a <= b;
     requires factor <= 0;
     ensures b * factor <= a * factor by {
-        arithmetic_certificate rules {
-            premise 0: a <= b => a <= b;
-            premise 1: factor <= 0 => factor <= 0;
-            integer_multiply_order bounds [0, 1] => b * factor <= a * factor;
-            conclusion 0;
-        }
+        solve() using { a <= b; factor <= 0; };
     }
 }
 
@@ -44,24 +34,14 @@ theorem checked_integer_scaled_product_bounds(value: Integer, amount: Integer, s
     ensures lower * size <= value * amount by {
         apply(integer::multiply_order_nonnegative(lower, value, amount));
         have lower * size <= lower * amount by {
-            arithmetic_certificate rules {
-                premise 0: amount <= size => amount <= size;
-                premise 1: lower <= 0 => lower <= 0;
-                integer_multiply_order bounds [0, 1] => lower * size <= lower * amount;
-                conclusion 0;
-            }
+            solve() using { amount <= size; lower <= 0; };
         }
         solve() using { lower * size <= lower * amount; lower * amount <= value * amount; };
     }
     ensures value * amount <= upper * size by {
         apply(integer::multiply_order_nonnegative(value, upper, amount));
         have upper * amount <= upper * size by {
-            arithmetic_certificate rules {
-                premise 0: amount <= size => amount <= size;
-                premise 1: 0 <= upper => 0 <= upper;
-                integer_multiply_order bounds [0, 1] => upper * amount <= upper * size;
-                conclusion 0;
-            }
+            solve() using { amount <= size; 0 <= upper; };
         }
         solve() using { value * amount <= upper * amount; upper * amount <= upper * size; };
     }

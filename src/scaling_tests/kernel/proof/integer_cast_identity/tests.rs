@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::MachineTerm;
 
 /// A narrow value's 32-bit widening is identified with the value in work
 /// independent of the ambient premises, when the certificate cites bounds on
@@ -39,24 +39,18 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
                 premises.resize_with(ambient + 2, || {
                     Proposition::ConditionIs(ConditionTerm::Variable(Variable(168_011)), true)
                 });
-                let cert = certificate(goal.clone(), vec![0, 1]);
+
                 let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    cert.check(&goal, &premises)
+                    check_rule(vec![0, 1], &goal, &premises)
                 });
                 result.unwrap();
                 costs.push(work);
-                assert!(
-                    certificate(goal.clone(), vec![0, 2])
-                        .check(&goal, &premises)
-                        .is_err()
-                );
+                assert!(check_rule(vec![0, 2], &goal, &premises).is_err());
             }
             assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
             for (lower, upper) in [(lo.clone() - 1, hi.clone()), (lo.clone(), hi.clone() + 1)] {
                 assert!(
-                    certificate(goal.clone(), vec![0, 1])
-                        .check(&goal, &bounds(lower, upper))
-                        .is_err(),
+                    check_rule(vec![0, 1], &goal, &bounds(lower, upper)).is_err(),
                     "{source:?} -> {destination:?}"
                 );
             }
@@ -75,109 +69,11 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
             ] {
                 let goal = equal(observation(destination, carrier), original.clone());
                 assert!(
-                    certificate(goal.clone(), vec![0, 1])
-                        .check(&goal, &bounds(lo.clone(), hi.clone()))
-                        .is_err(),
+                    check_rule(vec![0, 1], &goal, &bounds(lo.clone(), hi.clone())).is_err(),
                     "{source:?} -> {destination:?}"
                 );
             }
         }
-    }
-}
-
-#[test]
-fn legacy_integer_cast_identity_work_depends_on_nodes_and_explicit_bounds() {
-    let value = MachineTerm::Variable(Variable(168_001));
-    let original = IntegerTerm::from_machine(Ty::Int64, value.clone()).unwrap();
-    let observed = IntegerTerm::from_machine(
-        Ty::UInt64,
-        MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt64, value.into()),
-    )
-    .unwrap();
-    let goal = Proposition::ConditionIs(
-        ConditionTerm::integer_equal(observed, original.clone()),
-        true,
-    );
-    let mut premises = vec![
-        le(IntegerTerm::constant_i64(0), original.clone()),
-        le(original, IntegerTerm::constant_i64(i64::MAX)),
-    ];
-    let mut samples = Vec::new();
-    for size in [16, 64, 256, 1024] {
-        premises.resize_with(size, || {
-            Proposition::ConditionIs(ConditionTerm::Variable(Variable(168_003)), true)
-        });
-        let cert = certificate(goal.clone(), vec![0, 1]);
-        let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| cert.check(&goal, &premises));
-        result.unwrap();
-        samples.push(work);
-    }
-    assert!(
-        samples.iter().max().unwrap() - samples.iter().min().unwrap() <= 32,
-        "{samples:?}"
-    );
-    let mut previous = None;
-    for size in [2usize, 8, 32, 128] {
-        let cert = SpecialArithmeticCertificate {
-            nodes: vec![
-                SpecialArithmeticNode::IntegerCastIdentity {
-                    bounds: vec![0, 1],
-                    result: goal.clone()
-                };
-                size
-            ],
-            conclusion: size - 1,
-        };
-        let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| cert.check(&goal, &premises));
-        result.unwrap();
-        assert!(work <= 4096 * size, "{size}: {work}");
-        if let Some(before) = previous {
-            assert!(work <= 4 * before + 64);
-        }
-        previous = Some(work);
-    }
-}
-
-#[test]
-fn integer_cast_identity_checks_only_explicit_premises_and_scales_with_nodes() {
-    let (mut premises, goal) = inputs(Ty::Int128, Ty::Int64);
-    let mut samples = Vec::new();
-    for size in [16, 64, 256, 1024] {
-        premises.resize_with(size, || {
-            Proposition::ConditionIs(ConditionTerm::Variable(Variable(168_003)), true)
-        });
-        let cert = certificate(goal.clone(), vec![0, 1]);
-        let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| cert.check(&goal, &premises));
-        result.unwrap();
-        samples.push(work);
-    }
-    assert!(
-        samples.iter().max().unwrap() - samples.iter().min().unwrap() <= 32,
-        "{samples:?}"
-    );
-    let mut previous = None;
-    for size in [2usize, 8, 32, 128] {
-        let cert = SpecialArithmeticCertificate {
-            nodes: vec![
-                SpecialArithmeticNode::IntegerCastIdentity {
-                    bounds: vec![0, 1],
-                    result: goal.clone()
-                };
-                size
-            ],
-            conclusion: size - 1,
-        };
-        let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| cert.check(&goal, &premises));
-        result.unwrap();
-        assert!(work <= 4096 * size, "{size}: {work}");
-        if let Some(before) = previous {
-            assert!(work <= 4 * before + 64);
-        }
-        previous = Some(work);
     }
 }
 
@@ -213,9 +109,10 @@ fn integer_conversion_identity_ignores_unrelated_premises_and_operand_size() {
             premises.resize_with(ambient + 2, || {
                 Proposition::ConditionIs(ConditionTerm::Variable(Variable(168_202)), true)
             });
-            let cert = certificate(goal.clone(), vec![0, 1]);
-            let (result, work) =
-                crate::instrumentation::measure_deterministic_work(|| cert.check(&goal, &premises));
+
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                check_rule(vec![0, 1], &goal, &premises)
+            });
             result.unwrap_or_else(|error| panic!("{destination:?}: {error:?}"));
             costs.push(work);
         }

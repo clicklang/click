@@ -1,7 +1,7 @@
 # Alignment closes by an explicit `rules` arithmetic certificate
 
-The explicit typed certificate names the base fact and checks the alignment
-directly, with no search.
+Arithmetic search expands to ordinary proof steps, with the selected premises
+stated explicitly in `solve() using { ... }`.
 
 ```c filename=aligned_explicit_arithmetic.c
 int32 aligned_explicit_arithmetic(uint8* p) {
@@ -18,11 +18,7 @@ int32 aligned_explicit_arithmetic(uint8* p) {
 } by {
     step_until(function.exit);
     have aligned(p + 24, 8) by {
-        arithmetic_certificate rules {
-            premise 0: aligned(p, 16) => aligned(p, 16);
-            pointer_alignment premise 0 => aligned(p + 24, 8);
-            conclusion 0;
-        }
+        solve() using { aligned(p, 16); };
     }
     solve();
 }

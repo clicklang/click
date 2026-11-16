@@ -10,7 +10,8 @@ because both sides of the append equation are the same function.
 Nothing here retypes the fold, and no fold law is applied by name. The two
 `peel` steps refresh the goal through the equation they open, so
 the step case closes with the induction hypothesis and one bound on the cell
-the last iteration adds.
+the last iteration adds. The last item is stated as `int32`, preserving the
+fold body's native comparison when its index is substituted.
 
 ```click
 import click::integer;
@@ -44,10 +45,10 @@ theorem marks_nonnegative(lo: int32, hi: int32) {
                 to_integer(lo) <= to_integer(hi - 1);
                 to_integer(hi - 1) < 2147483647;
             };
-            have 0 <= to_integer(if to_integer(hi - 1) == 0 { 1 } else { 0 });
+            have 0 <= to_integer(if (hi - 1) as int32 == 0 { 1 } else { 0 });
             solve() using {
                 0 <= marks(lo, hi - 1);
-                0 <= to_integer(if to_integer(hi - 1) == 0 { 1 } else { 0 });
+                0 <= to_integer(if (hi - 1) as int32 == 0 { 1 } else { 0 });
             };
         }
     }

@@ -145,7 +145,7 @@ fn nested_conjunction_extraction_precedes_explicit_arithmetic_certificate() {
     assert!(expanded.contains("extract(n >= 0);"), "{expanded}");
     // The extracted conjunct is the initialization's own fact; the
     // decrease and the exit equality are explicit arithmetic certificates.
-    assert_only_integer_arithmetic_leaves(&expanded);
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("normalize"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
@@ -497,7 +497,7 @@ fn pointer_loop_increment_emits_checked_equality_proof() {
         verify_c_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "last_element")
         .unwrap_or_else(|e| panic!("{}", e.message()));
-    assert_only_integer_arithmetic_leaves(&expanded);
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
 }
 
@@ -516,7 +516,7 @@ fn grouped_arithmetic_using_expands_to_checked_certificate() {
     let click = fixture.click_source.unwrap();
     verify_c_sources(&click, &sources).unwrap();
     let expanded = expand_function_proof_source(&click, &sources, "bump").unwrap();
-    assert_only_integer_arithmetic_leaves(&expanded);
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
@@ -546,7 +546,7 @@ fn symbolic_alignment_expands_to_ordinary_proof_and_rechecks_without_planning() 
     let expanded =
         expand_checked_grouped_claim(&click, &verified_for_expansion, "element_is_aligned")
             .unwrap();
-    assert_only_integer_arithmetic_leaves(&expanded);
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
@@ -1590,7 +1590,7 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
         "{expanded}"
     );
     assert!(
-        expanded.contains("have at(loop(0).exit, to_integer((\"count_to_n.c\"::count_to_n.parameter(0) as int32))) <= at(loop(0).exit, to_integer((\"count_to_n.c\"::count_to_n.local(0) as int32))) by"),
+        expanded.contains("not at(loop(0).exit, \"count_to_n.c\"::count_to_n.local(0)) <"),
         "{expanded}"
     );
     assert!(

@@ -302,17 +302,7 @@ impl adler2::Adler32 {
      have a == at(tail_a_1, a) + at(tail_a_1, __rust_mir_144) by solve() using { __rust_mir_146 == at(tail_a_1, a) + at(tail_a_1, __rust_mir_144); };
      have to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) == to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144));
      have to_integer(a) == to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) by solve() using { a == at(tail_a_1, a) + at(tail_a_1, __rust_mir_144); };
-     have to_integer(a) <= 256 by { arithmetic_certificate {
-     premise 0: to_integer(a) == to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) => to_integer(a) == to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144));
-     premise 1: to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) == to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144)) => to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) == to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144));
-     add 0, 1 => to_integer(a) + to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) == to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) + (to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144)));
-     less_equal_from_equal 2 => to_integer(a) + to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) <= to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) + (to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144)));
-     premise 2: to_integer(at(tail_a_1, a)) <= 1 => to_integer(at(tail_a_1, a)) <= 1;
-     add 4, 3 => to_integer(at(tail_a_1, a)) + (to_integer(a) + to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144))) <= 1 + (to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) + (to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144))));
-     premise 3: to_integer(at(tail_a_1, __rust_mir_144)) <= 255 => to_integer(at(tail_a_1, __rust_mir_144)) <= 255;
-     add 6, 5 => to_integer(at(tail_a_1, __rust_mir_144)) + (to_integer(at(tail_a_1, a)) + (to_integer(a) + to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)))) <= 255 + (1 + (to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) + (to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144)))));
-     conclusion 7;
-     } }
+     have to_integer(a) <= 256 by { solve() using { to_integer(a) == to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)); to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) == to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144)); to_integer(at(tail_a_1, a)) <= 1; to_integer(at(tail_a_1, __rust_mir_144)) <= 255; }; }
      have to_integer(b) + to_integer(a) <= 4294967295 by solve() using { to_integer(b) <= 393126; to_integer(a) <= 256; };
      have b <= 4294967295u32 - a by solve() using { to_integer(b) + to_integer(a) <= 4294967295; };
      step_until(assignment(__rust_mir_148, 0));
@@ -332,17 +322,7 @@ impl adler2::Adler32 {
      }
      have to_integer(at(tail_b_1, b) + at(tail_b_1, a)) == to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a));
      have to_integer(__rust_mir_148) == to_integer(at(tail_b_1, b) + at(tail_b_1, a)) by solve() using { __rust_mir_148 == at(tail_b_1, b) + at(tail_b_1, a); };
-     have to_integer(__rust_mir_148) <= 393382 by { arithmetic_certificate {
-     premise 0: to_integer(__rust_mir_148) == to_integer(at(tail_b_1, b) + at(tail_b_1, a)) => to_integer(__rust_mir_148) == to_integer(at(tail_b_1, b) + at(tail_b_1, a));
-     premise 1: to_integer(at(tail_b_1, b) + at(tail_b_1, a)) == to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a)) => to_integer(at(tail_b_1, b) + at(tail_b_1, a)) == to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a));
-     add 0, 1 => to_integer(__rust_mir_148) + to_integer(at(tail_b_1, b) + at(tail_b_1, a)) == to_integer(at(tail_b_1, b) + at(tail_b_1, a)) + (to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a)));
-     less_equal_from_equal 2 => to_integer(__rust_mir_148) + to_integer(at(tail_b_1, b) + at(tail_b_1, a)) <= to_integer(at(tail_b_1, b) + at(tail_b_1, a)) + (to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a)));
-     premise 2: to_integer(at(tail_b_1, b)) <= 393126 => to_integer(at(tail_b_1, b)) <= 393126;
-     add 4, 3 => to_integer(at(tail_b_1, b)) + (to_integer(__rust_mir_148) + to_integer(at(tail_b_1, b) + at(tail_b_1, a))) <= 393126 + (to_integer(at(tail_b_1, b) + at(tail_b_1, a)) + (to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a))));
-     premise 3: to_integer(at(tail_b_1, a)) <= 256 => to_integer(at(tail_b_1, a)) <= 256;
-     add 6, 5 => to_integer(at(tail_b_1, a)) + (to_integer(at(tail_b_1, b)) + (to_integer(__rust_mir_148) + to_integer(at(tail_b_1, b) + at(tail_b_1, a)))) <= 256 + (393126 + (to_integer(at(tail_b_1, b) + at(tail_b_1, a)) + (to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a)))));
-     conclusion 7;
-     } }
+     have to_integer(__rust_mir_148) <= 393382 by { solve() using { to_integer(__rust_mir_148) == to_integer(at(tail_b_1, b) + at(tail_b_1, a)); to_integer(at(tail_b_1, b) + at(tail_b_1, a)) == to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a)); to_integer(at(tail_b_1, b)) <= 393126; to_integer(at(tail_b_1, a)) <= 256; }; }
      // Finish the original store and storage-end nodes, then reach the next loop head.
      step(); step(); step(); step(); step(); step(); step(); step(); step(); step();
      // Tail byte 1: the stored cursor/remaining pair advances once.
@@ -375,17 +355,7 @@ impl adler2::Adler32 {
      have a == at(tail_a_2, a) + at(tail_a_2, __rust_mir_144) by solve() using { __rust_mir_146 == at(tail_a_2, a) + at(tail_a_2, __rust_mir_144); };
      have to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) == to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144));
      have to_integer(a) == to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) by solve() using { a == at(tail_a_2, a) + at(tail_a_2, __rust_mir_144); };
-     have to_integer(a) <= 511 by { arithmetic_certificate {
-     premise 0: to_integer(a) == to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) => to_integer(a) == to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144));
-     premise 1: to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) == to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144)) => to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) == to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144));
-     add 0, 1 => to_integer(a) + to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) == to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) + (to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144)));
-     less_equal_from_equal 2 => to_integer(a) + to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) <= to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) + (to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144)));
-     premise 2: to_integer(at(tail_a_2, a)) <= 256 => to_integer(at(tail_a_2, a)) <= 256;
-     add 4, 3 => to_integer(at(tail_a_2, a)) + (to_integer(a) + to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144))) <= 256 + (to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) + (to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144))));
-     premise 3: to_integer(at(tail_a_2, __rust_mir_144)) <= 255 => to_integer(at(tail_a_2, __rust_mir_144)) <= 255;
-     add 6, 5 => to_integer(at(tail_a_2, __rust_mir_144)) + (to_integer(at(tail_a_2, a)) + (to_integer(a) + to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)))) <= 255 + (256 + (to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) + (to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144)))));
-     conclusion 7;
-     } }
+     have to_integer(a) <= 511 by { solve() using { to_integer(a) == to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)); to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) == to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144)); to_integer(at(tail_a_2, a)) <= 256; to_integer(at(tail_a_2, __rust_mir_144)) <= 255; }; }
      have to_integer(b) + to_integer(a) <= 4294967295 by solve() using { to_integer(b) <= 393382; to_integer(a) <= 511; };
      have b <= 4294967295u32 - a by solve() using { to_integer(b) + to_integer(a) <= 4294967295; };
      step_until(assignment(__rust_mir_148, 0));
@@ -405,17 +375,7 @@ impl adler2::Adler32 {
      }
      have to_integer(at(tail_b_2, b) + at(tail_b_2, a)) == to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a));
      have to_integer(__rust_mir_148) == to_integer(at(tail_b_2, b) + at(tail_b_2, a)) by solve() using { __rust_mir_148 == at(tail_b_2, b) + at(tail_b_2, a); };
-     have to_integer(__rust_mir_148) <= 393893 by { arithmetic_certificate {
-     premise 0: to_integer(__rust_mir_148) == to_integer(at(tail_b_2, b) + at(tail_b_2, a)) => to_integer(__rust_mir_148) == to_integer(at(tail_b_2, b) + at(tail_b_2, a));
-     premise 1: to_integer(at(tail_b_2, b) + at(tail_b_2, a)) == to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a)) => to_integer(at(tail_b_2, b) + at(tail_b_2, a)) == to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a));
-     add 0, 1 => to_integer(__rust_mir_148) + to_integer(at(tail_b_2, b) + at(tail_b_2, a)) == to_integer(at(tail_b_2, b) + at(tail_b_2, a)) + (to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a)));
-     less_equal_from_equal 2 => to_integer(__rust_mir_148) + to_integer(at(tail_b_2, b) + at(tail_b_2, a)) <= to_integer(at(tail_b_2, b) + at(tail_b_2, a)) + (to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a)));
-     premise 2: to_integer(at(tail_b_2, b)) <= 393382 => to_integer(at(tail_b_2, b)) <= 393382;
-     add 4, 3 => to_integer(at(tail_b_2, b)) + (to_integer(__rust_mir_148) + to_integer(at(tail_b_2, b) + at(tail_b_2, a))) <= 393382 + (to_integer(at(tail_b_2, b) + at(tail_b_2, a)) + (to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a))));
-     premise 3: to_integer(at(tail_b_2, a)) <= 511 => to_integer(at(tail_b_2, a)) <= 511;
-     add 6, 5 => to_integer(at(tail_b_2, a)) + (to_integer(at(tail_b_2, b)) + (to_integer(__rust_mir_148) + to_integer(at(tail_b_2, b) + at(tail_b_2, a)))) <= 511 + (393382 + (to_integer(at(tail_b_2, b) + at(tail_b_2, a)) + (to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a)))));
-     conclusion 7;
-     } }
+     have to_integer(__rust_mir_148) <= 393893 by { solve() using { to_integer(__rust_mir_148) == to_integer(at(tail_b_2, b) + at(tail_b_2, a)); to_integer(at(tail_b_2, b) + at(tail_b_2, a)) == to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a)); to_integer(at(tail_b_2, b)) <= 393382; to_integer(at(tail_b_2, a)) <= 511; }; }
      step_until(assignment(__rust_mir_149, 0));
      mark output_a;
      step();
@@ -453,16 +413,8 @@ impl adler2::Adler32 {
      have to_integer(__rust_mir_151) <= 65535 by solve() using { to_integer(__rust_mir_151) < 65521; };
      mark reduced_b;
      step_until(function.exit);
-     have to_integer(self.a) == to_integer(at(reduced_a, __rust_mir_149)) by { arithmetic_certificate rules {
-     premise 0: 0 <= to_integer(at(reduced_a, __rust_mir_149)) => 0 <= to_integer(at(reduced_a, __rust_mir_149));
-     premise 1: to_integer(at(reduced_a, __rust_mir_149)) <= 65535 => to_integer(at(reduced_a, __rust_mir_149)) <= 65535;
-     integer_cast_identity bounds [0, 1] => to_integer(self.a) == to_integer(at(reduced_a, __rust_mir_149)); conclusion 0;
-     } }
-     have to_integer(self.b) == to_integer(at(reduced_b, __rust_mir_151)) by { arithmetic_certificate rules {
-     premise 0: 0 <= to_integer(at(reduced_b, __rust_mir_151)) => 0 <= to_integer(at(reduced_b, __rust_mir_151));
-     premise 1: to_integer(at(reduced_b, __rust_mir_151)) <= 65535 => to_integer(at(reduced_b, __rust_mir_151)) <= 65535;
-     integer_cast_identity bounds [0, 1] => to_integer(self.b) == to_integer(at(reduced_b, __rust_mir_151)); conclusion 0;
-     } }
+     have to_integer(self.a) == to_integer(at(reduced_a, __rust_mir_149)) by { solve() using { 0 <= to_integer(at(reduced_a, __rust_mir_149)); to_integer(at(reduced_a, __rust_mir_149)) <= 65535; }; }
+     have to_integer(self.b) == to_integer(at(reduced_b, __rust_mir_151)) by { solve() using { 0 <= to_integer(at(reduced_b, __rust_mir_151)); to_integer(at(reduced_b, __rust_mir_151)) <= 65535; }; }
      have bytes[0] == old(bytes[0]) by solve() using {};
      have bytes[1] == old(bytes[1]) by solve() using {};
      have to_integer(self.a) == to_integer((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32) by {

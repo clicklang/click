@@ -82,12 +82,7 @@ int32 vector_push(struct vector* owner, int32 value) {
         }
         // Restrict the struct/array separation to the length field and element.
         have k < old(owner->cap) by {
-            arithmetic_certificate {
-                premise 0: k < old(owner->len) => to_integer(k) < to_integer(old(owner->len));
-                premise 1: old(owner->len) <= old(owner->cap) => to_integer(old(owner->len)) <= to_integer(old(owner->cap));
-                add 0, 1 => to_integer(k) + to_integer(old(owner->len)) < to_integer(old(owner->len)) + to_integer(old(owner->cap));
-                conclusion 2;
-            }
+            solve() using { k < old(owner->len); old(owner->len) <= old(owner->cap); };
         }
         have contains(memory(*owner), memory(owner->len)) by { normalize(); }
         have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {

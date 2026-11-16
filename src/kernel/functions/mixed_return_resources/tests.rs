@@ -146,7 +146,7 @@ fn equal_return_descriptions_keep_distinct_transfers_and_projection_lifetimes() 
             let projected = project_return_resource_cores(
                 &evaluated.resources,
                 &transfers,
-                &FlatReturnBodies::default(),
+                &ConstructedReturnBodies::default(),
                 &[],
                 &state,
                 &facts,
@@ -889,7 +889,10 @@ fn a_borrowed_composites_post_footprint_cannot_overlap_a_transferred_cell() {
         .clone()
         .with_memory(memory.store(field, ProgramValue::pointer(cell)))
         .with_resource_context(ResourceContext::new_with_equalities(&facts));
-    let transfers = ConsumedCellReturns(BTreeMap::from([(1, selected)]));
+    let transfers = ConsumedCellReturns {
+        direct: BTreeMap::from([(1, selected)]),
+        children: BTreeMap::new(),
+    };
     let result = evaluate_contract_return_resources(
         &ResourceContext::new_with_equalities(&facts),
         &[],
@@ -1196,7 +1199,7 @@ fn flat_composite_return_carries_its_body_through_frontier_and_projection() {
         .unwrap()
         .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
         .unwrap();
-    let bodies = FlatReturnBodies::construct(&evaluated, &[definition], &state, &facts);
+    let bodies = ConstructedReturnBodies::construct(&evaluated, &[definition], &state, &facts);
     assert_eq!(bodies.0.len(), 2);
     for entry in &evaluated.occurrences {
         let body = bodies.get(entry.source).unwrap();
@@ -1331,16 +1334,20 @@ fn nested_and_nonunit_return_bodies_keep_legacy_expansion() {
         flat_body_definition("many", &pointer, 1),
     ];
     definitions.sort_by(|a, b| a.name().cmp(b.name()));
-    let bodies =
-        FlatReturnBodies::construct(&evaluated, &definitions, &ExecutionState::new(), &facts);
-    assert!(bodies.0.is_empty());
+    let bodies = ConstructedReturnBodies::construct(
+        &evaluated,
+        &definitions,
+        &ExecutionState::new(),
+        &facts,
+    );
+    assert_eq!(bodies.0.len(), 1); // The decided conditional body now migrates.
 }
 
 pub(super) fn constructed_flat_return(
     pointer: &Pointer,
     count: u32,
     facts: &PureFactContext,
-) -> (EvaluatedReturnResources, FlatReturnBodies) {
+) -> (EvaluatedReturnResources, ConstructedReturnBodies) {
     let evaluated = EvaluatedReturnResources::new(facts)
         .admit(
             ResourceFact::own_composite("boundary_return".into(), vec![]),
@@ -1348,7 +1355,7 @@ pub(super) fn constructed_flat_return(
             facts,
         )
         .unwrap();
-    let bodies = FlatReturnBodies::construct(
+    let bodies = ConstructedReturnBodies::construct(
         &evaluated,
         &[flat_body_definition("boundary_return", pointer, count)],
         &ExecutionState::new(),
@@ -1433,4 +1440,288 @@ fn flat_body_admission_does_not_certify_cold_or_general_geometry() {
         general.admit_returned_flat_body(body, &facts),
         FlatBodyAdmission::Unsupported
     ));
+}
+
+pub(super) fn composite_spec(
+    name: &str,
+    base: ProgramExpression,
+    role: ResourceTransferRole,
+) -> ResourceSpec {
+    ResourceSpec::declared(
+        ResourceFamily::Composite,
+        ResourceAccessMode::Own,
+        name.into(),
+        vec![base],
+        vec![ProgramType::Int32Pointer],
+        role,
+        ResourceStateSource::Post,
+    )
+    .unwrap()
+}
+
+pub(super) fn nested_transfer_function(depth: usize) -> ProgramFunction {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    let mut definitions = vec![CompositeResourceDefinition::new(
+        "layer_0000",
+        vec![program_parameter("cell", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
+            variable("cell"),
+            int32_literal(0),
+            int32_literal(1),
+        ))],
+        vec![],
+    )];
+    for index in 1..depth {
+        definitions.push(CompositeResourceDefinition::new(
+            format!("layer_{index:04}"),
+            vec![program_parameter("cell", ProgramType::Int32Pointer)],
+            None,
+            false,
+            vec![composite_spec(
+                &format!("layer_{:04}", index - 1),
+                variable("cell"),
+                ResourceTransferRole::Borrow,
+            )],
+            vec![],
+        ));
+    }
+    let input = ResourceSpec::owned_memory(MemorySegment::new(
+        variable("p"),
+        int32_literal(0),
+        int32_literal(1),
+    ))
+    .with_role(ResourceTransferRole::Consume);
+    program_function(
+        ProgramType::Void,
+        "nested_transfer",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_skip(),
+    )
+    .with_resource_summary(
+        vec![input],
+        vec![composite_spec(
+            &format!("layer_{:04}", depth - 1),
+            variable("p"),
+            ResourceTransferRole::Produce,
+        )],
+    )
+    .with_composite_resource_definitions(definitions)
+}
+
+#[test]
+fn composite_children_carry_consumed_sources_selected_before_return_lowering() {
+    for depth in [1, 4] {
+        let facts = PureFactContext::new();
+        let pointer = Pointer::symbolic(Variable(8_819_200));
+        let function = nested_transfer_function(depth);
+        let caller = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(
+            pointer.clone(),
+            0,
+            1,
+        ));
+        let transfer = prepare_scalar_transfer(&function, pointer.clone(), caller, &facts);
+        let path = std::iter::repeat_n(0, depth + 1).collect::<Vec<_>>();
+        assert_eq!(transfer.consumed_cell_returns.children.len(), 1);
+        let selected = transfer.consumed_cell_returns.children[&path];
+        let state = ExecutionState::new().with_local("p", ProgramValue::pointer(pointer));
+        let evaluated = evaluate_mixed_scalar(&function, &state, &transfer, &facts).unwrap();
+        let bodies = ConstructedReturnBodies::try_construct(
+            &evaluated,
+            function
+                .contract_interface()
+                .composite_resource_definitions(),
+            &state,
+            ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+            &facts,
+        )
+        .unwrap();
+        let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+        let leaf = body.transfers.last().unwrap();
+        assert_eq!(leaf.origin, ReturnOwnershipOrigin::ConsumedCell(selected));
+        assert!(body.boundary.is_empty());
+        assert_eq!(body.transfers.len(), depth);
+        assert_eq!(body.transfers[0].parent, evaluated.occurrences[0].source);
+        for pair in body.transfers.windows(2) {
+            assert_eq!(pair[1].parent, pair[0].source);
+        }
+        assert!(matches!(
+            ResourceContext::new().admit_returned_flat_body(body, &facts),
+            FlatBodyAdmission::Admitted
+        ));
+        // The raw-description route cannot exercise the selected transfer.
+        let raw = ConstructedReturnBodies::try_construct(
+            &evaluated,
+            function
+                .contract_interface()
+                .composite_resource_definitions(),
+            &state,
+            ReturnResourceComposition::ValidateDescriptions,
+            &facts,
+        )
+        .unwrap();
+        assert_eq!(
+            raw.get(evaluated.occurrences[0].source)
+                .unwrap()
+                .boundary
+                .len(),
+            1
+        );
+    }
+}
+
+#[test]
+fn invariant_borrowed_children_retain_provenance_without_granting_it_to_descriptions() {
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_819_201));
+    let function = nested_transfer_function(3);
+    let head =
+        ResourceFact::own_composite("layer_0002".into(), vec![ProgramValue::pointer(pointer)]);
+    let evaluated = EvaluatedReturnResources::new(&facts)
+        .admit(head, ReturnOwnershipOrigin::EntryBorrow, &facts)
+        .unwrap();
+    let state = ExecutionState::new();
+    let bodies = ConstructedReturnBodies::try_construct(
+        &evaluated,
+        function
+            .contract_interface()
+            .composite_resource_definitions(),
+        &state,
+        ReturnResourceComposition::RestoreEntryBorrows,
+        &facts,
+    )
+    .unwrap();
+    let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+    assert_eq!(
+        body.transfers.last().unwrap().origin,
+        ReturnOwnershipOrigin::EntryBorrow
+    );
+    assert!(body.boundary.is_empty());
+}
+
+#[test]
+fn decided_conditional_bodies_and_opaque_guards_are_constructed_once() {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_819_202));
+    let mut definition = flat_body_definition("conditional_return", &pointer, 1);
+    definition.parameters = vec![program_parameter("flag", ProgramType::Int32)];
+    definition.condition = Some(SpecProposition::Comparison {
+        left: SpecExpression::ProgramExpression(variable("flag")),
+        operator: ComparisonOperator::Equal,
+        right: SpecExpression::ProgramExpression(int32_literal(0)),
+    });
+    for (flag, count) in [
+        (ProgramValue::Int32(MachineTerm::constant(0)), 2),
+        (ProgramValue::Int32(MachineTerm::constant(1)), 0),
+        (
+            ProgramValue::Int32(MachineTerm::Variable(Variable(8_819_203))),
+            1,
+        ),
+    ] {
+        let head = ResourceFact::own_composite("conditional_return".into(), vec![flag]);
+        let evaluated = EvaluatedReturnResources::new(&facts)
+            .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
+            .unwrap();
+        let bodies = ConstructedReturnBodies::construct(
+            &evaluated,
+            &[definition.clone()],
+            &ExecutionState::new(),
+            &facts,
+        );
+        let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+        assert_eq!(body.expansion.len(), count);
+        let (destination, transfers) = evaluated
+            .restore_entry_borrows(
+                ResourceContext::new(),
+                ReturnResourceComposition::ValidateDescriptions,
+                &facts,
+            )
+            .unwrap()
+            .finish(&facts)
+            .unwrap();
+        let projected = project_return_resource_cores(
+            &evaluated.resources,
+            &transfers,
+            &bodies,
+            &[],
+            &ExecutionState::new(),
+            &facts,
+            &destination,
+        )
+        .unwrap();
+        assert_eq!(projected[0].expansion, body.expansion);
+    }
+}
+
+#[test]
+fn nested_body_normalization_keeps_distinct_child_identities_and_checks_internal_overlap() {
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_819_204));
+    let function = nested_transfer_function(3);
+    let evaluated = EvaluatedReturnResources::new(&facts)
+        .admit(
+            ResourceFact::own_composite(
+                "layer_0002".into(),
+                vec![ProgramValue::pointer(pointer.clone())],
+            ),
+            ReturnOwnershipOrigin::Description,
+            &facts,
+        )
+        .unwrap();
+    let bodies = ConstructedReturnBodies::construct(
+        &evaluated,
+        function
+            .contract_interface()
+            .composite_resource_definitions(),
+        &ExecutionState::new(),
+        &facts,
+    );
+    let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+    assert_eq!(
+        body.transfers
+            .iter()
+            .map(|transfer| transfer.source)
+            .collect::<BTreeSet<_>>()
+            .len(),
+        3
+    );
+    assert_eq!(body.expansion, vec![owner(pointer.clone(), 0, 1)]);
+    let frame =
+        ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(pointer, 0, 1));
+    frame.synchronize_memory_equalities(&facts);
+    assert!(matches!(
+        frame.admit_returned_flat_body(body, &facts),
+        FlatBodyAdmission::Conflict { .. }
+    ));
+    let mut definitions = function
+        .contract_interface()
+        .composite_resource_definitions()
+        .to_vec();
+    let duplicate = definitions[2].contains[0].clone();
+    definitions[2].contains.push(duplicate);
+    assert!(
+        ConstructedReturnBodies::try_construct(
+            &evaluated,
+            &definitions,
+            &ExecutionState::new(),
+            ReturnResourceComposition::ValidateDescriptions,
+            &facts
+        )
+        .is_none()
+    );
+}
+
+#[test]
+#[should_panic(
+    expected = "returned composite must carry its construction or an explicit legacy route"
+)]
+fn composite_consumers_refuse_missing_construction_metadata() {
+    let facts = PureFactContext::new();
+    let head = ResourceFact::own_composite("omitted_body".into(), vec![]);
+    let evaluated = EvaluatedReturnResources::new(&facts)
+        .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
+        .unwrap();
+    ConstructedReturnBodies::default().for_return(evaluated.occurrences[0].source, &head);
 }
