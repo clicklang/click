@@ -340,9 +340,10 @@ arithmetic evaluation or the existing equality normal forms.
 Machine conditionals with closed 32/64-bit order guards retain their `if` node
 and guard during logical lowering. Their arm domains remain guarded, including
 unselected reads and invalid shifts. Checking selects the arm when needed.
-The comparison boundary recognizes a closed-guard conditional over literal or
-variable arms as a fixed-size native atom, retaining the comparison family
-without exporting arithmetic DAGs. Other result families retain their existing
+The comparison boundary recognizes a conditional whose 32/64-bit order guard
+and arms have only literal or variable operands as a fixed-size native atom.
+It retains the comparison family even with a symbolic guard, without exporting
+arithmetic DAGs or selecting an arm from ambient facts. Other result families retain their existing
 selected-arm behavior; literal Boolean and equality guards keep their normal forms.
 
 Generated comparison operands that are negative `int64` literals keep an explicit
