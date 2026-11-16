@@ -132,6 +132,7 @@ fn nested_getter_arguments_are_not_revisited_for_each_enclosing_call() {
 }
 
 #[test]
+#[ignore = "nightly: enum guard checking across definition and lexical-scope sizes"]
 fn algebraic_scalar_return_conditions_scale_with_definitions_and_scopes() {
     for grow_scopes in [false, true] {
         let mut samples = Vec::new();
