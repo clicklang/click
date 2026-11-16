@@ -20450,27 +20450,7 @@ fn original_arena_free_expands_and_rechecks_without_implicit_search() {
     let sources = [("arena_free.c", c.as_str())];
     let expanded =
         expand_c_claim_source_by_label(&source, &sources, "arena_free.contract").unwrap();
-    let loop_source = expanded.split("loop as clear_occupied {").nth(1).unwrap();
-    let mut depth = 1usize;
-    let loop_end = loop_source
-        .char_indices()
-        .find_map(|(index, character)| {
-            match character {
-                '{' => depth += 1,
-                '}' => depth -= 1,
-                _ => {}
-            }
-            (depth == 0).then_some(index)
-        })
-        .unwrap();
-    assert!(
-        !loop_source[..loop_end].contains("transport("),
-        "{expanded}"
-    );
-    assert!(
-        !loop_source[loop_end..].contains("transport("),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
