@@ -451,3 +451,135 @@ fn selected_scalar_transfers_scale_with_the_return_delta() {
         assert!(*maps <= samples[0].2 * growth * 4, "{samples:?}");
     }
 }
+
+#[test]
+fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    for axis in ["length", "aliases", "same block aliases", "owners"] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut facts = PureFactContext::new();
+            let pointer = Pointer::symbolic(Variable(8_920_000));
+            let base = super::tests::scalar_transfer_contract(MemorySegment::new(
+                variable("p"),
+                int32_literal(0),
+                int32_literal(1),
+            ));
+            let mut plan = super::tests::prepare_scalar_transfer(
+                &base,
+                pointer.clone(),
+                ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
+                    ResourceFact::own_memory(MemoryRange::new(
+                        pointer.clone(),
+                        0u32.into(),
+                        1u32.into(),
+                    )),
+                ),
+                &facts,
+            )
+            .stable_view_plan
+            .unwrap();
+            let end = if axis == "length" {
+                count * 1024 + 2
+            } else {
+                6
+            };
+            let owner = |base, start: u32, end: u32| {
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                    base,
+                    start.into(),
+                    end.into(),
+                    8,
+                ))
+            };
+            let output = owner(pointer.clone(), 2, end);
+            let (mut caller, original) = ResourceContext::new_with_equalities(&facts)
+                .unchecked_with_facts_and_occurrences([owner(pointer.clone(), 0, end + 2)]);
+            plan.transferred_ownership[0].fact = output.clone();
+            plan.transferred_ownership_sources = vec![Some(original[0].1)];
+            let mut frame = ResourceContext::new_with_equalities(&facts).unchecked_with_facts([
+                owner(pointer.clone(), 0, 2),
+                owner(pointer.clone(), end, end + 2),
+            ]);
+            // The selected reservation is this explicit interval difference.
+            // Legacy entry discovery is outside the operation being measured.
+            for index in 0..count {
+                let other = Pointer::symbolic(Variable(8_921_000 + u64::from(index)));
+                match axis {
+                    "aliases" | "same block aliases" => {
+                        let alias = if axis == "aliases" {
+                            other
+                        } else {
+                            Pointer {
+                                block: pointer.block.clone(),
+                                offset: PointerOffsetTerm::Variable(Variable(
+                                    8_921_000 + u64::from(index),
+                                )),
+                            }
+                        };
+                        facts = facts.assume_condition(
+                            ConditionTerm::pointer_equal(pointer.clone(), alias),
+                            true,
+                        );
+                    }
+                    "owners" => {
+                        let fact = owner(other, 0, 1);
+                        caller = caller.unchecked_with_fact(fact.clone());
+                        frame = frame.unchecked_with_fact(fact);
+                    }
+                    _ => {}
+                }
+            }
+            caller.synchronize_memory_equalities(&facts);
+            frame.synchronize_memory_equalities(&facts);
+            let segment = MemorySegment::new(variable("p"), int32_literal(2), int32_literal(end))
+                .with_element_width(8);
+            let function = super::tests::fixed_range_contract(
+                ProgramType::Int64Pointer,
+                segment.clone(),
+                segment,
+            );
+            let (resources, inserted) = ResourceContext::new_with_equalities(&facts)
+                .unchecked_with_facts_and_occurrences([output.clone()]);
+            let mut evaluated = EvaluatedReturnResources {
+                resources,
+                occurrences: vec![EvaluatedReturnOccurrence {
+                    source: inserted[0].1,
+                    origin: ReturnOwnershipOrigin::Description,
+                }],
+            };
+            let ((result, mappings), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let _fast = crate::kernel::search::FastOperationScope::enter(
+                        "fixed range ownership return",
+                    );
+                    let selected =
+                        ConsumedCellReturns::prepare(function.contract_interface(), &plan, &caller)
+                            .get(0)
+                            .unwrap();
+                    evaluated.occurrences[0].origin = ReturnOwnershipOrigin::ConsumedCell(selected);
+                    evaluated
+                        .restore_entry_borrows(
+                            frame.clone(),
+                            ReturnResourceComposition::RestoreEntryBorrows,
+                            &facts,
+                        )
+                        .unwrap()
+                        .finish(&facts)
+                        .unwrap()
+                });
+            assert_eq!(mappings[0].consumed_input, Some(original[0].1));
+            assert_eq!(
+                result.owned_fact_for_occurrence(mappings[0].destination),
+                Some(&output)
+            );
+            assert_eq!(result.facts().len(), frame.facts().len() + 1);
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 96),
+            "{axis}: {samples:?}"
+        );
+    }
+}
