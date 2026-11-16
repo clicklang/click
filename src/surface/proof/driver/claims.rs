@@ -9,7 +9,7 @@ use std::sync::Arc;
 pub(in crate::surface) fn finish_contract_body_root(
     function: &FunctionBlock,
     theorems: &[VerifiedProgramTheorem],
-) -> Result<Option<Arc<crate::kernel::ContractBodyProof>>, ClickError> {
+) -> Result<Arc<crate::kernel::ContractBodyProof>, ClickError> {
     let entry = theorems
         .iter()
         .find_map(|theorem| theorem.entry_context.as_ref())
@@ -19,10 +19,13 @@ pub(in crate::surface) fn finish_contract_body_root(
                 function.signature().name()
             ))
         })?;
-    let Some(root) = &entry.completion else {
-        return Ok(None);
-    };
-    root.finish().map(Some).map_err(|goal| {
+    let root = entry.completion.as_ref().ok_or_else(|| {
+        ClickError::new(format!(
+            "ordinary function proof for `{}` lost its contract root",
+            function.signature().name()
+        ))
+    })?;
+    root.finish().map_err(|goal| {
         let missing = match goal {
             crate::kernel::ContractCompletionGoal::Boundary { case } => {
                 format!("closing obligations for entry case {case}")
