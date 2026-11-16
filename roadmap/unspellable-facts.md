@@ -330,6 +330,41 @@ algebraic exports. All 2,015 API, specification, execution-value and scaling tes
 passed after upstream integration. Quality and algebraic/Boolean fixtures passed
 with zero fact-stability differences.
 
+### 9o Pointer lowering
+
+Specification pointer values and resource fields retain complete shared payloads;
+C-expression handoffs preserve supported pointer producer roots. Removing a
+constructor field's `const` qualifier now updates metadata through the existing
+pointer payload API, preserving the address, call/read producer, historical memory,
+other qualifiers, extents and object/local-reference evidence. Native nominal
+object-class refinement remains an explicit checker boundary. Explicit pointer
+casts still run the existing metadata rules before retaining their result: even
+a same-type `void*` cast clears the selected extent, while byte-to-byte casts
+preserve it.
+
+Validation: exact producer/payload parity and unchanged facts/obligations passed.
+Qualifier updates on growing pointer indices take constant work with zero machine
+exports. All 2,129 API, specification, execution-value, expression and scaling
+tests passed, including the reproduced cast regression and retained/native extent
+parity. Quality checks and all 575 regular pointer fixtures passed; the audit reported zero fact
+stability differences. A broad fixture selector also selected 23 nightly cases;
+the ten failures were identical before 9o and were left outside this task.
+
+### 9p Float-producing conversions
+
+Supported symbolic machine-to-float and float-width conversions retain their
+shared operands. Float constant arithmetic is read through the existing views
+and numeric bit helpers, preserving the prior normalization of signed zeros,
+NaN payloads, infinities and subnormals. Integer literal rounding and
+float-to-integer finite/range obligations remain at their existing native
+producer boundaries; no conversion admission or rounding rules changed.
+
+Validation: exact native result, root and scoped-context parity passed across
+both float widths and four machine formats. Growing operands remain shared with
+linear work and zero float exports. All 2,019 API, specification, execution-value
+and scaling tests and quality checks passed. Regular float fixtures passed with
+zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

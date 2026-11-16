@@ -5,8 +5,6 @@ mod publication;
 pub(crate) use publication::PublishedFunctionOutcome;
 
 mod completion;
-#[cfg(test)]
-pub(crate) use completion::WholeContractProof;
 pub(crate) use completion::{
     CompletedContractExecution, ContractBodyProof, ContractCompletionGoal, ContractExecutionOwner,
     ContractProofProgress, WholeContractRoot,

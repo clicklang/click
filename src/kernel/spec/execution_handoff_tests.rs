@@ -406,3 +406,289 @@ fn algebraic_lowering_retains_program_envelopes_and_handoff_roots() {
         }
     }
 }
+
+#[test]
+fn pointer_lowering_keeps_producers_and_complete_metadata() {
+    use std::sync::Arc;
+    let _session = crate::kernel::VerificationSession::enter();
+    let class = crate::kernel::effective_type::CAccessClass::Scalar(
+        crate::kernel::effective_type::CScalarClass::Int,
+    );
+    let source = PointerValue::new(
+        Pointer::symbolic(Variable(999982)),
+        ProgramType::VoidPointer,
+    )
+    .with_address(Pointer::symbolic(Variable(999981)))
+    .with_opaque_extent(Some(Arc::new(Pointer::symbolic(Variable(999983)))))
+    .with_pointee_volatile(true)
+    .with_pointee_constant(true)
+    .with_extent(Some(SubobjectExtent {
+        start: Pointer::symbolic(Variable(999984)),
+        width: MachineTerm::Variable(Variable(999985)),
+    }))
+    .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(class, 3, 999986, false)))
+    .with_local_reference(crate::kernel::loans::LocalScalarReference::fresh_for_payload_test());
+    let payload = SharedPointerValue::import(&source);
+    let memory = intern_memory(Memory::new());
+    let address = SharedPointerAddress::import(&Memory::global_pointer("pointer-slot"));
+    let roots = [
+        KernelTerm::shared_pointer_value(payload.clone()),
+        KernelTerm::shared_pointer_call(
+            KernelTerm::checked_call(
+                KernelType::Program(source.program_type()),
+                "pointer_source".into(),
+                vec![],
+            ),
+            payload.clone(),
+        ),
+        KernelTerm::shared_pointer_read(payload.clone(), memory.clone(), address.clone()),
+    ];
+    for root in roots {
+        let field = AlgebraicFieldResult::from_program(SpecValue::Shared(root.clone()))
+            .without_pointer_constant()
+            .into_kernel();
+        let expected = SharedPointerValue::import(&source.clone().with_pointee_constant(false));
+        assert!(
+            field
+                .pointer_payload()
+                .unwrap()
+                .same_source_payload(&expected)
+        );
+        assert_eq!(
+            field.pointer_payload().unwrap().node().address,
+            payload.node().address
+        );
+        assert_eq!(
+            field.pointer_payload().unwrap().node().designation,
+            payload.node().designation
+        );
+        match (root.node(), field.node()) {
+            (KernelTermNode::PointerValue { .. }, KernelTermNode::PointerValue { .. }) => {}
+            (
+                KernelTermNode::PointerCall { call: a, .. },
+                KernelTermNode::PointerCall { call: b, .. },
+            ) => assert_eq!(a, b),
+            (
+                KernelTermNode::PointerRead {
+                    memory: a,
+                    address: p,
+                    ..
+                },
+                KernelTermNode::PointerRead {
+                    memory: b,
+                    address: q,
+                    ..
+                },
+            ) => {
+                assert_eq!(a, b);
+                assert_eq!(p, q);
+            }
+            _ => panic!("pointer producer changed"),
+        }
+        assert_eq!(
+            AlgebraicFieldResult::from_program(SpecValue::Shared(field.clone()))
+                .without_pointer_constant()
+                .into_kernel(),
+            field
+        );
+        let mut state = ExecutionState::new();
+        state.locals.set_retained_typed_with_all_qualifiers(
+            "p",
+            SpecValue::Shared(root.clone()),
+            source.program_type(),
+            false,
+            true,
+            false,
+            true,
+        );
+        let expression = SpecExpression::ProgramExpression(ProgramExpression::Variable("p".into()));
+        let evaluate = |disabled| {
+            let mut budget = ExecutionBudget::new();
+            let mut evaluation = SpecEvaluation::logical(&mut budget);
+            evaluation.machine_result_production_disabled = disabled;
+            evaluate_spec_expression_paths_with_bindings_in(
+                &state,
+                &expression,
+                &PureFactContext::new(),
+                &BTreeMap::new(),
+                &mut evaluation,
+            )
+            .unwrap()
+            .pop()
+            .unwrap()
+        };
+        let actual = evaluate(false);
+        assert_eq!(actual.value.shared(), Some(&root));
+        assert!(
+            actual
+                .value
+                .shared()
+                .unwrap()
+                .pointer_payload()
+                .unwrap()
+                .same_source_payload(&payload)
+        );
+        let old = evaluate(true);
+        assert_eq!(actual.facts, old.facts);
+        assert_eq!(actual.obligations, old.obligations);
+        assert_eq!(actual.value.into_native(), old.value.into_native());
+    }
+}
+
+#[test]
+fn explicit_pointer_cast_lowering_keeps_native_extent_rules() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for (source, target, keeps_extent) in [
+        (ProgramType::VoidPointer, ProgramType::VoidPointer, false),
+        (ProgramType::Int32Pointer, ProgramType::UInt8Pointer, false),
+        (ProgramType::Int8Pointer, ProgramType::UInt8Pointer, true),
+    ] {
+        let pointer = PointerValue::new(Pointer::symbolic(Variable(999940)), source)
+            .with_pointee_constant(true)
+            .with_extent(Some(SubobjectExtent {
+                start: Pointer::symbolic(Variable(999940)),
+                width: MachineTerm::constant(4),
+            }));
+        let expression = SpecExpression::Cast(
+            Box::new(SpecExpression::Value(ProgramValue::Pointer(pointer))),
+            target,
+        );
+        let evaluate = |disabled| {
+            let mut execution = ExecutionBudget::new();
+            let mut budget = SpecEvaluation::logical(&mut execution);
+            budget.machine_result_production_disabled = disabled;
+            evaluate_spec_expression_paths_with_bindings_in(
+                &ExecutionState::new(),
+                &expression,
+                &PureFactContext::new(),
+                &BTreeMap::new(),
+                &mut budget,
+            )
+            .unwrap()
+            .pop()
+            .unwrap()
+        };
+        let actual = evaluate(false);
+        let old = evaluate(true);
+        let ProgramValue::Pointer(expected) = old.value.into_native() else {
+            panic!()
+        };
+        assert_eq!(expected.extent().is_some(), keeps_extent);
+        assert!(
+            actual
+                .value
+                .shared()
+                .unwrap()
+                .pointer_payload()
+                .unwrap()
+                .same_source_payload(&SharedPointerValue::import(&expected))
+        );
+        assert_eq!(actual.facts, old.facts);
+        assert_eq!(actual.obligations, old.obligations);
+        assert_eq!(actual.value.into_native(), ProgramValue::Pointer(expected));
+    }
+}
+
+#[test]
+fn float_lowering_conversions_preserve_bits_roots_and_path_context() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let evaluate = |expression: &SpecExpression, disabled| {
+        let mut budget = ExecutionBudget::new();
+        let mut evaluation = SpecEvaluation::logical(&mut budget);
+        evaluation.machine_result_production_disabled = disabled;
+        evaluate_spec_expression_paths_with_bindings_in(
+            &ExecutionState::new(),
+            expression,
+            &PureFactContext::new(),
+            &BTreeMap::new(),
+            &mut evaluation,
+        )
+        .unwrap()
+        .pop()
+        .unwrap()
+    };
+    for (format, target, literals) in [
+        (
+            KernelFloatType::Float32,
+            ProgramType::Float64,
+            vec![0, 0x8000_0000, 0x7fc0_1234, 0x7f80_0000, 1, 0x3f80_0000],
+        ),
+        (
+            KernelFloatType::Float64,
+            ProgramType::Float32,
+            vec![
+                0,
+                0x8000_0000_0000_0000,
+                0x7ff8_0000_0000_1234,
+                0x7ff0_0000_0000_0000,
+                1,
+                0x3ff0_0000_0000_0000,
+            ],
+        ),
+    ] {
+        let literal = |bits| match format {
+            KernelFloatType::Float32 => MachineTerm::constant(bits as u32),
+            KernelFloatType::Float64 => MachineTerm::uint64_constant(bits),
+        };
+        let mut values = literals.into_iter().map(literal).collect::<Vec<_>>();
+        values.push(MachineTerm::Variable(Variable(999970)));
+        values.push(match format {
+            KernelFloatType::Float32 => MachineTerm::Float32Negate(Box::new(literal(0))),
+            KernelFloatType::Float64 => MachineTerm::Float64Negate(Box::new(literal(0))),
+        });
+        values.push(match format {
+            KernelFloatType::Float32 => MachineTerm::Float32Binary {
+                operator: FloatBinaryOperator::Add,
+                left: Box::new(literal(0x3f80_0000)),
+                right: Box::new(literal(0x3f80_0000)),
+            },
+            KernelFloatType::Float64 => MachineTerm::Float64Binary {
+                operator: FloatBinaryOperator::Add,
+                left: Box::new(literal(0x3ff0_0000_0000_0000)),
+                right: Box::new(literal(0x3ff0_0000_0000_0000)),
+            },
+        });
+        for value in values {
+            let operand = SpecExpression::Value(format.value(value));
+            let source = evaluate(&operand, false);
+            let expression = SpecExpression::Cast(Box::new(operand), target);
+            let exports = KernelTermExport::float_export_count();
+            let actual = evaluate(&expression, false);
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+            if let KernelTermNode::FloatConvert { operand, .. } =
+                actual.value.shared().unwrap().node()
+            {
+                assert_eq!(Some(operand), source.value.shared());
+            }
+            let old = evaluate(&expression, true);
+            assert_eq!(actual.facts, old.facts);
+            assert_eq!(actual.obligations, old.obligations);
+            assert_eq!(actual.value.into_native(), old.value.into_native());
+        }
+    }
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        for target in [ProgramType::Float32, ProgramType::Float64] {
+            let operand = sum(format);
+            let source = evaluate(&operand, false);
+            let expression = SpecExpression::Cast(Box::new(operand), target);
+            let exports = KernelTermExport::machine_export_count();
+            let actual = evaluate(&expression, false);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            let KernelTermNode::FloatConvert { operand, .. } =
+                actual.value.shared().unwrap().node()
+            else {
+                panic!("retained numeric conversion")
+            };
+            assert_eq!(Some(operand), source.value.shared());
+            let old = evaluate(&expression, true);
+            assert_eq!(actual.facts, old.facts);
+            assert_eq!(actual.obligations, old.obligations);
+            assert_eq!(actual.value.into_native(), old.value.into_native());
+        }
+    }
+}

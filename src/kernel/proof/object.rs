@@ -751,31 +751,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         execution.finish()
     }
 
-    /// Bind an execution strategy's whole-contract progress to the exact
-    /// generative outcomes this ordinary proof owner just opened.
-    #[cfg(test)]
-    pub(crate) fn start_contract_completion(
-        &self,
-        owner: &crate::kernel::WholeContractProof,
-        execution: &crate::kernel::CheckedFunctionExecution,
-        branches: impl Iterator<Item = BranchId>,
-    ) -> Option<crate::kernel::ContractProofProgress> {
-        crate::kernel::ContractProofProgress::open(
-            owner,
-            execution,
-            branches.filter_map(|id| {
-                crate::instrumentation::record_deterministic_work(1);
-                let branch = self.state.open_branches.get(id)?;
-                match &branch.obligation {
-                    ProofObligation::FunctionOutcome(outcome) => {
-                        Some((outcome.path_index, outcome.data.core.identity.clone()))
-                    }
-                    _ => None,
-                }
-            }),
-        )
-    }
-
     /// Retire the outcome branch only after every source and closing goal is closed.
     #[cfg(test)]
     pub(crate) fn complete_function_outcome(&self) -> Result<Self, String> {

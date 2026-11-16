@@ -287,10 +287,6 @@ impl CompletedContractExecution {
             root.publish(self.execution, preferred, self.loop_rules);
         }
     }
-    #[cfg(test)]
-    pub(crate) fn into_execution(self) -> CheckedFunctionExecution {
-        Arc::unwrap_or_clone(self.execution)
-    }
 }
 
 #[cfg(test)]

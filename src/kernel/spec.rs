@@ -6807,6 +6807,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     value.clone().into()
                 } else {
                     SpecValue::from(value.clone())
+                        .retain_pointer_result()
                         .retain_algebraic_result()
                         .retain_float_result()
                         .retain_boolean_result()
@@ -6820,6 +6821,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 value.clone().into()
             } else {
                 SpecValue::from(value.clone())
+                    .retain_pointer_result()
                     .retain_algebraic_result()
                     .retain_float_result()
                     .retain_boolean_result()
@@ -7158,6 +7160,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                 || value.float().is_some()
                                 || value.shared().is_some_and(|root| {
                                     matches!(root.ty(), KernelType::Bool | KernelType::Algebraic(_))
+                                        || root.pointer_payload().is_some()
                                         || matches!(
                                             root.node(),
                                             KernelTermNode::ProgramParameter { .. }
@@ -9009,14 +9012,28 @@ fn evaluate_spec_scalar_unary_paths_retaining_type_in(
         if !budget.machine_result_production_disabled
             && matches!(path.value, SpecValue::Shared(_))
             && retained_type == Some(path.value.program_type())
+            && !path.value.program_type().is_pointer()
         {
             paths.push(path);
             continue;
         }
-        paths.extend(spec_value_paths_in(
-            apply(path.value.into_native(), path.facts, path.obligations),
-            budget,
-        ));
+        // An explicit pointer cast can change extent metadata even when its
+        // type is unchanged. Let the existing cast producer select that payload,
+        // then retain its producer and unchanged address children.
+        let retained_pointer = (!budget.machine_result_production_disabled
+            && retained_type.is_some_and(|target| target.is_pointer()))
+        .then(|| path.value.clone());
+        let results = apply(path.value.into_native(), path.facts, path.obligations);
+        if let Some(source) = retained_pointer {
+            paths.extend(spec_execution_value_paths_in(
+                results
+                    .into_iter()
+                    .map(|path| path.map_value(|value| source.retain_checked_pointer(value))),
+                budget,
+            ));
+        } else {
+            paths.extend(spec_value_paths_in(results, budget));
+        }
     }
     Ok(paths)
 }

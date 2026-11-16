@@ -330,17 +330,6 @@ impl crate::kernel::CheckedFunctionExecution {
     }
 
     #[cfg(test)]
-    pub(crate) fn with_contract_completion(
-        mut self,
-        progress: Option<crate::kernel::ContractProofProgress>,
-    ) -> Self {
-        self.contract_completion = progress
-            .filter(|progress| progress.belongs_to(&self))
-            .map(Arc::new);
-        self
-    }
-
-    #[cfg(test)]
     pub(crate) fn with_closed_exit_obligations(
         mut self,
         completions: Vec<crate::kernel::ClosedContractExit>,

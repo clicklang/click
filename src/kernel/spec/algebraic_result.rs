@@ -132,19 +132,31 @@ impl AlgebraicFieldResult {
             _ => None,
         }
     }
-    pub(super) fn without_pointer_constant(mut self) -> Self {
+    pub(super) fn without_pointer_constant(self) -> Self {
         match self {
             Self::Native(AlgebraicValue::Program(value)) => Self::Native(AlgebraicValue::Program(
                 value.with_pointer_pointee_constant(false),
             )),
-            Self::Shared(ref root) if matches!(root.ty(), KernelType::Program(ty) if ty.is_pointer()) =>
-            {
-                if let Some(value) = self.program_mut() {
-                    *value = value.clone().with_pointer_pointee_constant(false);
+            Self::Shared(root) if matches!(root.ty(), KernelType::Program(ty) if ty.is_pointer()) => {
+                if let Some(pointer) = root.pointer_payload() {
+                    let payload = pointer.node();
+                    let volatile = payload.qualifiers.as_ref().is_some_and(|q| q.volatile);
+                    Self::Shared(root.with_pointer_payload(
+                        pointer.with_binding_type_and_qualifiers(
+                            payload.program_type,
+                            volatile,
+                            false,
+                        ),
+                    ))
+                } else {
+                    Self::Native(AlgebraicValue::Program(
+                        SpecValue::Shared(root)
+                            .into_native()
+                            .with_pointer_pointee_constant(false),
+                    ))
                 }
-                self
             }
-            _ => self,
+            value => value,
         }
     }
     pub(super) fn into_kernel(self) -> KernelTerm {
