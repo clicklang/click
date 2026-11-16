@@ -1178,32 +1178,9 @@ impl<'a> Proof<'a> {
         if let Some(goal) = self.goal() {
             for plan in arithmetic_plans(goal, &premises, true) {
                 match plan {
-                    ArithmeticPlan::Special(plan) => {
-                        // Signed domains are ordinary Integer-bound proofs in
-                        // the smart dispatcher, never replacement certificates.
-                        if plan.nodes.iter().any(|node|matches!(node,crate::kernel::proof::arithmetic_special::SpecialArithmeticNode::SignedDefined {..})) {continue;}
-                        let Some(surface_goal) = surface_goal else {
-                            continue;
-                        };
-                        let pairs = premises
-                            .iter()
-                            .cloned()
-                            .zip(anchored_surface_premises.iter().cloned())
-                            .collect::<Vec<_>>();
-                        let certificate =
-                            crate::surface::checking::special_plan_to_surface_certificate(
-                                &plan,
-                                &pairs.iter().map(|(_, p)| p.clone()).collect::<Vec<_>>(),
-                                surface_goal,
-                            );
-                        let handle = self.apply_special_certificate(match &certificate.family {
-                            ArithmeticCertificateFamily::Special(c) => c,
-                            _ => unreachable!(),
-                        });
-                        if let Ok(handle) = handle {
-                            return Ok((handle, Some(certificate)));
-                        }
-                    }
+                    // Smart dispatch expands specialized plans into ordinary
+                    // primitives; compatibility checking never emits them.
+                    ArithmeticPlan::Special(_) => {}
                     ArithmeticPlan::IntegerAffine(plan) => {
                         // An execution proof's goal can outlive its source
                         // template after a rewrite or unfold, as a pure one's

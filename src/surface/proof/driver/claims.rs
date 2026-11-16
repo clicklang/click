@@ -2071,14 +2071,22 @@ fn apply_post_execution_arithmetic_using<'a>(
             })?;
         let certificate = match plan {
             ArithmeticPlan::Special(plan) => {
-                if let Some(width)=plan.nodes.iter().find_map(|node|if let crate::kernel::proof::arithmetic_special::SpecialArithmeticNode::SignedDefined {width,..}=node {Some(*width)} else {None}) {
-                    return crate::kernel::search::ProofSearch::try_signed_definedness_bounds(focused,width,surface_premises.to_vec())?.ok_or_else(||focused.step_error("post-execution signed definedness needs explicit operand bounds"));
-                }
-                crate::surface::checking::special_plan_to_surface_certificate(
+                let certificate = crate::surface::checking::special_plan_to_surface_certificate(
                     &plan,
                     surface_premises,
                     surface_goal,
-                )
+                );
+                let ArithmeticCertificateFamily::Special(plan) = &certificate.family else {
+                    unreachable!()
+                };
+                return crate::kernel::search::ProofSearch::apply_specialized_composition(
+                    focused, plan,
+                )?
+                .ok_or_else(|| {
+                    focused.step_error(
+                        "post-execution specialized arithmetic needs explicit intermediate facts",
+                    )
+                });
             }
             ArithmeticPlan::IntegerAffine(plan) => {
                 let retained_state = surface_program_point_selector(surface_goal);

@@ -2098,6 +2098,78 @@ fn integer_rule_holds(
     Err(first_error.expect("a reading was checked"))
 }
 
+/// Fixed local rules over the goal and the caller's ordered explicit inputs.
+/// Polynomial search and signed-domain planning deliberately do not live here.
+pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) -> bool {
+    if !matches!(goal, Proposition::ConditionIs(..) | Proposition::Not(..)) {
+        return false;
+    }
+    if premises.is_empty() {
+        return pointer_alignment(None, goal);
+    }
+    let indices = (0..premises.len()).collect::<Vec<_>>();
+    let checks = [
+        super::integer_product_bounds::check,
+        super::integer_division_bounds::check,
+        super::integer_multiply_order::check,
+        super::integer_quotient_bound::check,
+        super::integer_bound_exclusion::check,
+        super::integer_relation_transport::check,
+        super::integer_quotient_shift::check,
+        super::integer_cast_identity::check,
+        super::integer_operation_identity::check,
+    ];
+    // A fixed rule family; no premise permutations, subset selection, or
+    // arithmetic expansion. Every checker consumes the listed inputs only.
+    if checks
+        .into_iter()
+        .any(|check| integer_rule(0, &indices, premises, goal, check).is_ok())
+    {
+        return true;
+    }
+    let inputs = premises.iter().collect::<Vec<_>>();
+    if pointer_alignment(
+        if premises.len() == 1 {
+            premises.first()
+        } else {
+            None
+        },
+        goal,
+    ) && premises.len() <= 1
+    {
+        return true;
+    }
+    if let Some((first, rest)) = inputs.split_first() {
+        if (premises.len() == 1 && float_reflexive(first, goal))
+            || pointer_translation(first, rest, goal)
+            || pointer_word_equality(first, rest, goal)
+            || pointer_word_from_alignment(&inputs, goal)
+        {
+            return true;
+        }
+    }
+    if let Proposition::ConditionIs(condition, truth) = goal
+        && matches!(
+            condition,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                ..
+            }
+        )
+    {
+        let mut context = crate::kernel::PureFactContext::new();
+        for premise in premises {
+            if !charge_signed_bound(premise) {
+                return false;
+            }
+            context = context.assume_proposition(premise.clone());
+        }
+        return context.decide_widened_sum_bound(condition) == Some(*truth);
+    }
+    false
+}
+
 fn pointer_translation(
     relation: &Proposition,
     bound_propositions: &[&Proposition],
@@ -5471,4 +5543,9 @@ mod unsigned_widening_tests {
         }
         assert!(!bitvector_equal(&deep, &deep));
     }
+}
+
+#[cfg(test)]
+mod normalization_scaling_tests {
+    include!("../../scaling_tests/kernel/proof/arithmetic_special/normalization.rs");
 }

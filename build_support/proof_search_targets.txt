@@ -233,3 +233,6 @@ try_recorded_footprint_preservation
 try_signed_interval_using
 ordinary_integer_fact
 apply_signed_interval_composition
+
+apply_specialized_composition
+prepare_integer_read_domain

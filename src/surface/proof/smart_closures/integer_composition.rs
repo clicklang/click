@@ -754,7 +754,7 @@ pub(super) fn observed_argument(expression: &ContractExpression) -> Option<Contr
         ContractExpression::Call { name, arguments }
             if name == "to_integer" && arguments.len() == 1 =>
         {
-            Some(arguments[0].clone())
+            observed_argument(&arguments[0]).or_else(|| Some(arguments[0].clone()))
         }
         ContractExpression::At {
             selector,
@@ -766,6 +766,14 @@ pub(super) fn observed_argument(expression: &ContractExpression) -> Option<Contr
         ContractExpression::Old(expression) => Some(ContractExpression::Old(Box::new(
             observed_argument(expression)?,
         ))),
+        ContractExpression::Let {
+            name,
+            click_type: Some(ClickType::Integer),
+            value,
+            body,
+        } if matches!(body.as_ref(), ContractExpression::Binding(bound) if bound == name) => {
+            observed_argument(value)
+        }
         _ => None,
     }
 }

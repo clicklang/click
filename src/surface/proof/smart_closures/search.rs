@@ -216,6 +216,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return Ok(Some(closed));
             }
         }
+        if matches!(
+            goal,
+            Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), true)
+        ) && specialized::needs_distribution(&observed)
+        {
+            let plan = SpecialArithmeticCertificate {
+                premises: Vec::new(),
+                nodes: vec![SpecialArithmeticNode::IntegerPolynomialIdentity {
+                    bounds: Vec::new(),
+                    result: observed,
+                }],
+                conclusion: 0,
+            };
+            return Ok(
+                attempt::candidate_outcome(Self::apply_specialized_composition(
+                    search_input,
+                    &plan,
+                ))?
+                .flatten(),
+            );
+        }
         Ok(None)
     }
 
@@ -1652,32 +1673,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 operator: ComparisonOperator::Equal,
                 right: spelled_value.clone(),
             };
-            // Reads need their own explicit domain as well as the result's
-            // arithmetic range; initialized resource fields may not yet have
-            // that domain recorded as a pure fact.
-            for observed in
-                written_integer_observations_with_entry(std::iter::once(&identity), false)
-            {
-                let Some(expression) = integer_composition::observed_argument(&observed) else {
-                    continue;
-                };
-                let domain = ClickProposition::Defined { expression };
-                let Ok(kernel) =
-                    proof.lower_cited_surface_proposition(&domain, "operation operand domain")
-                else {
-                    continue;
-                };
-                if matches!(kernel, Proposition::MemoryReadDefined { .. })
-                    && !proof.facts().listed_premise_available(&kernel, &[], false)
-                {
-                    let scope = proof.driver().open_have(domain)?;
-                    let closed = scope
-                        .driver()
-                        .apply_step(ProofStep::Known)
-                        .or_else(|_| scope.driver().apply_step(ProofStep::Normalize))?;
-                    proof = closed.join()?;
-                }
-            }
             // The identity is checked at the format of the observation's
             // value reading (rule W).
             let (min, max) = match observed.value_read() {
@@ -1756,16 +1751,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .map(|fact| (fact.clone(), bound.clone())),
                 );
             }
-            if matches!(
-                machine.ty(),
-                MachineIntegerType::Int32 | MachineIntegerType::Int64
-            ) && !conversion
+            // The observation identity consumes only the exact outer range.
+            // Asking for defined(native-expression) here is stronger: it also
+            // asks that logical/historical read operands are initialized.
+            // Native theorem arguments establish their complete domain where
+            // they are actually applied.
+            if !conversion
                 && let Some(expression) = integer_composition::observed_argument(&spelled_observed)
             {
-                let scope = proof
-                    .driver()
-                    .open_have(ClickProposition::Defined { expression })?;
-                proof = scope.driver().apply_step(ProofStep::Known)?.join()?;
+                let domain = ClickProposition::Defined { expression };
+                // For total operands this is precisely the range pair. Keep
+                // its native spelling available to subsequent theorem arguments.
+                // A domain containing read initialization is a stronger claim
+                // and is established only when an argument requires it.
+                if proof
+                    .lower_cited_surface_proposition(&domain, "native argument domain")
+                    .is_ok_and(|kernel| {
+                        crate::kernel::machine_integer::definedness::range_domain_query(&kernel)
+                            .is_some()
+                    })
+                {
+                    let scope = proof.driver().open_have(domain)?;
+                    proof = scope.driver().apply_step(ProofStep::Known)?.join()?;
+                }
             }
             let identity_surface = identity.clone();
             let scope = proof.driver().open_have(identity.clone())?;
@@ -3585,9 +3593,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     {
                         return Ok(Some(proof));
                     }
-                } else if let Ok(proof) = search_input
-                    .driver()
-                    .apply_step(ProofStep::ArithmeticCertificate(certificate))
+                } else if let ArithmeticCertificateFamily::Special(plan) = &certificate.family
+                    && let Some(proof) = Self::apply_specialized_composition(search_input, plan)?
                 {
                     return Ok(Some(proof));
                 }
@@ -9941,9 +9948,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     return Some(closed);
                 }
             } else {
-                if let Ok(closed) = proof
-                    .driver()
-                    .apply_step(ProofStep::ArithmeticCertificate(certificate))
+                if let ArithmeticCertificateFamily::Special(plan) = &certificate.family
+                    && let Ok(Some(closed)) = Self::apply_specialized_composition(&proof, plan)
                     && closed.is_complete()
                 {
                     return Some(closed);
@@ -10488,8 +10494,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             } else {
                 None
             };
-            let defined = matches!(&certificate.family,ArithmeticCertificateFamily::Special(c) if c.nodes.iter().any(|n|matches!(n,SpecialArithmeticNode::SignedDefined {..})));
-            if signed || defined || spelled_integer.is_some() {
+            let specialized =
+                matches!(&certificate.family, ArithmeticCertificateFamily::Special(_));
+            if signed || specialized || spelled_integer.is_some() {
                 let base = if tactics.len() == 1 {
                     search_input.clone()
                 } else {
@@ -10514,16 +10521,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             .flatten()
                     }
                     ArithmeticCertificateFamily::Special(c) => {
-                        let width = c.nodes.iter().find_map(|n| {
-                            if let SpecialArithmeticNode::SignedDefined { width, .. } = n {
-                                Some(*width)
-                            } else {
-                                None
-                            }
-                        })?;
-                        Self::try_signed_definedness_bounds(&base, width, c.premises.clone())
-                            .ok()
-                            .flatten()
+                        Self::apply_specialized_composition(&base, c).ok().flatten()
                     }
                     _ => None,
                 };

@@ -91,7 +91,14 @@ fn spell_signed_bound(
                 }
                 SignedDefinedWidth::Int64 => side.int64_constant(),
             };
-            number.map(signed_literal)
+            number.map(|value| match width {
+                SignedDefinedWidth::Int32 => signed_literal(value),
+                SignedDefinedWidth::Int64 => {
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        ProgramValue::Int64(MachineTerm::int64_constant(value)),
+                    ))
+                }
+            })
         }
     };
     let [left, right] = view

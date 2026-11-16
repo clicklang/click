@@ -1685,9 +1685,12 @@ or quantifier, when evaluation makes it true:
 
 For explicit Integer normalization, `2 * x == x + x`,
 `3 * (x - y) == 3 * x - 3 * y`, and `(2 + 3) * x == 5 * x` also hold.
-Only constant coefficients distribute; a product of two symbolic terms, a
-call, a read, or a fold remains an opaque operand. The checker visits shared
-arithmetic nodes once and reads no facts. The computational `known()` leaf
+Products also normalize association and factor order within each monomial.
+One explicit symbolic distribution, `(a + b) * c == a * c + b * c`
+(or subtraction, or distribution on the other side), is a local primitive
+with opaque operands. Full polynomial expansion is search: `solve` writes
+individual distribution equalities and rewrites before normalization. Calls,
+reads, and folds remain opaque. Checking reads no facts. The computational `known()` leaf
 retains its narrower sum/difference rules. C machine multiplication also
 remains opaque; these exact Integer identities introduce no machine overflow
 or definedness facts.
@@ -1740,6 +1743,18 @@ written goal and citations. They do not plan arithmetic or construct an
 arithmetic certificate. See
 [`integer_machine_bridge_normalization.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_machine_bridge_normalization.md)
 and its wrapping and false-corner refusal controls.
+
+The specialized selected rules also accept exact Integer division/remainder
+bounds from four ordered constant endpoints, multiplication order from an
+ordered pair and its factor's sign, quotient bounds from a scaled bound and
+a positive divisor, and a constant-divisor quotient shift from the two
+nonnegative operands. Pointer translation names its equality first and scalar
+bounds after it; tagged-word rules name their word equality first (when used)
+and then the alignment facts. One finite classification proves the matching
+reflexive IEEE comparison. These are fixed local rules over explicit inputs;
+none selects premises or expands a polynomial. Generated proofs use ordinary
+normalization steps; legacy `rules` certificates remain accepted as authored
+compatibility syntax.
 
 **Accepts** a goal that `normalize()` accepts after this reduction, when every
 cited premise is accepted:
@@ -2168,15 +2183,16 @@ ranges normalize directly, as do constant-divisor quotient, shift, and
 remainder bounds. Rounding and endpoint exclusions use ordinary Integer laws.
 Machine operation and cast identities normalize from their explicit Integer
 bounds. Signed intervals expand to ordinary bounds and observation identities;
-the remaining specialized rules use the certificate forms below when needed. The [library reference](../library/index.md#foundational-integer-order-axioms)
+specialized selected rules normalize from explicit inputs, while polynomial
+search emits separate distribution and rewrite steps. All library proofs use
+ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
 states the named laws' exact guards.
 
 **Form:** `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }`
 
-**Compatibility and specialized expansion output.** Existing authored
-certificates remain accepted. `click expand` emits certificates for the
-specialized families that still require them; ordinary Integer composition,
-signed intervals, and signed add/subtract domains expand to ordinary tactics. Check a typed
+**Compatibility.** Existing authored certificates remain accepted. Integer
+composition, signed intervals, signed arithmetic domains, and the specialized
+rule family expand to ordinary tactics. Check a typed
 arithmetic-certificate envelope against the current goal; it closes the goal
 or refuses.
 

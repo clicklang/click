@@ -50,6 +50,25 @@ fn observed(term: &ContractExpression) -> ContractExpression {
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Retain a native read's available domain or its recorded initialization.
+    /// Observation identities themselves need only their outer range guards.
+    pub(in crate::surface::proof) fn prepare_integer_read_domain(
+        proof: &Proof<'a>,
+        domain: ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("prepare_integer_read_domain");
+        let scope = proof.driver().open_have(domain)?;
+        if let Ok(closed) = scope.driver().apply_step(ProofStep::Known).or_else(|_| {
+            scope
+                .driver()
+                .apply_step(ProofStep::NormalizeUsing(Vec::new()))
+        }) {
+            return Ok(Some(closed.join()?));
+        }
+        Ok(None)
+    }
+
     /// Prove a stated fact without any route back to a signed certificate.
     pub(in crate::surface::proof) fn ordinary_integer_fact(
         proof: &Proof<'a>,
@@ -58,6 +77,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("ordinary_integer_fact");
+        let mut atomic = Vec::new();
+        let mut pending = premises.iter().rev().collect::<Vec<_>>();
+        while let Some(premise) = pending.pop() {
+            if let ClickProposition::And(a, b) = premise {
+                pending.push(b);
+                pending.push(a);
+            } else {
+                atomic.push(premise.clone());
+            }
+        }
+        let premises = atomic.as_slice();
         let scope = proof.driver().open_have(target.clone())?;
         if let Ok(closed) = scope
             .driver()
@@ -88,11 +118,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .facts()
                     .listed_premise_available(&kernel, &[], false)
             {
-                let scope = prepared.driver().open_have(domain)?;
-                let Ok(closed) = scope.driver().apply_step(ProofStep::Normalize) else {
+                let Some(next) = Self::prepare_integer_read_domain(&prepared, domain)? else {
                     return Ok(None);
                 };
-                prepared = closed.join()?;
+                prepared = next;
             }
         }
         let scope = prepared.driver().open_have(target.clone())?;
@@ -119,8 +148,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut proof = proof.clone();
         let mut values = Vec::<Value>::new();
         let mut identities = Vec::new();
-        let mut pending_identities =
-            Vec::<(ClickProposition, [ClickProposition; 2], ClickProposition)>::new();
+        let mut pending_identities = Vec::<([ClickProposition; 2], ClickProposition)>::new();
         let last_interval = certificate.nodes.iter().rposition(|node| {
             crate::instrumentation::record_deterministic_work(1);
             matches!(
@@ -417,9 +445,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // Observation identities are needed only when a claim crosses
                 // an operation boundary. Endpoint-only plans use their stated
                 // intervals directly, without expanding unused affine bridges.
-                for (domain, bounds, identity) in pending_identities.drain(..) {
-                    let scope = proof.driver().open_have(domain)?;
-                    proof = scope.driver().apply_step(ProofStep::Known)?.join()?;
+                for (bounds, identity) in pending_identities.drain(..) {
                     for bound in &bounds {
                         let scope = proof.driver().open_have(bound.clone())?;
                         proof = scope.driver().apply_step(ProofStep::Known)?.join()?;
@@ -496,9 +522,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         le(number(i64::from(i32::MIN)), exact.clone()),
                         le(exact.clone(), number(i64::from(i32::MAX))),
                     ];
-                    let domain = ClickProposition::Defined {
-                        expression: term.clone(),
-                    };
                     // State only the outer operation's ordinary range pair.
                     // Rebuilding definedness of every nested operand here
                     // repeats the growing domain tree at each interval node.
@@ -523,7 +546,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             proof = next;
                         }
                     }
-                    pending_identities.push((domain, bounds, eq(observed(&term), exact)));
+                    pending_identities.push((bounds, eq(observed(&term), exact)));
                 }
                 // The final operation can close the original goal directly
                 // from its children's bounds. Avoid publishing an unused

@@ -60,6 +60,11 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     {
         return holds == *value;
     }
+    if let Proposition::ConditionIs(condition, true) = goal
+        && computation::integer_distribution_step(condition)
+    {
+        return true;
+    }
     if let Proposition::ConditionIs(condition, value) = goal
         && let Some(holds) = computation::integer_linear_comparison(condition)
     {
@@ -218,8 +223,7 @@ pub(crate) fn normalize_using_conditions(
     // Successful endpoint checks need no general rewriting context or its
     // mirrored condition forms over each increasingly large machine term.
     for (index, premise) in premises.iter().enumerate() {
-        if !crate::kernel::proposition_holds_without_facts(premise)
-            && !facts.available(premise)
+        if !crate::kernel::listed_premise_holds(premise, |fact| facts.available(fact))
             && !order_claim_forms(premise)
                 .iter()
                 .any(|form| facts.available(form))
@@ -227,7 +231,9 @@ pub(crate) fn normalize_using_conditions(
             return Err(ConditionalNormalizationError::UnavailablePremise(index));
         }
     }
-    if intervals::reduces_one_operation(goal, premises) {
+    if intervals::reduces_one_operation(goal, premises)
+        || super::arithmetic_special::normalizes_selected(goal, premises)
+    {
         return Ok(());
     }
     let mut conditions = std::collections::HashMap::new();

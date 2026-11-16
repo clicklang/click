@@ -4461,10 +4461,7 @@ theorem nonpositive_dividend_remainder(n: Integer, d: Integer) {
 
 theorem multiply_add(a: Integer, b: Integer, c: Integer) {
     ensures (a + b) * c == a * c + b * c by {
-        arithmetic_certificate rules {
-            integer_polynomial_identity bounds [] => (a + b) * c == a * c + b * c;
-            conclusion 0;
-        }
+        normalize();
     }
 }
 
@@ -4549,12 +4546,7 @@ theorem positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) 
     requires 1 <= d;
     requires bound * d <= n;
     ensures bound <= truncating_quotient(n, d) by {
-        arithmetic_certificate rules {
-            premise 0: bound * d <= n => bound * d <= n;
-            premise 1: 1 <= d => 1 <= d;
-            integer_quotient_bound bounds [0, 1] => bound <= truncating_quotient(n, d);
-            conclusion 0;
-        }
+        normalize() using { bound * d <= n; 1 <= d; };
     }
 }
 
@@ -4563,12 +4555,7 @@ theorem positive_divisor_quotient_upper(n: Integer, d: Integer, bound: Integer) 
     requires 1 <= d;
     requires n <= bound * d;
     ensures truncating_quotient(n, d) <= bound by {
-        arithmetic_certificate rules {
-            premise 0: n <= bound * d => n <= bound * d;
-            premise 1: 1 <= d => 1 <= d;
-            integer_quotient_bound bounds [0, 1] => truncating_quotient(n, d) <= bound;
-            conclusion 0;
-        }
+        normalize() using { n <= bound * d; 1 <= d; };
     }
 }
 
@@ -4699,12 +4686,7 @@ theorem multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
     requires a <= b;
     requires factor <= 0;
     ensures b * factor <= a * factor by {
-        arithmetic_certificate rules {
-            premise 0: a <= b => a <= b;
-            premise 1: factor <= 0 => factor <= 0;
-            integer_multiply_order bounds [0, 1] => b * factor <= a * factor;
-            conclusion 0;
-        }
+        normalize() using { a <= b; factor <= 0; };
     }
 }
 
@@ -4718,24 +4700,14 @@ theorem scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lo
     ensures lower * size <= value * amount by {
         apply(integer::multiply_order_nonnegative(lower, value, amount));
         have lower * size <= lower * amount by {
-            arithmetic_certificate rules {
-                premise 0: amount <= size => amount <= size;
-                premise 1: lower <= 0 => lower <= 0;
-                integer_multiply_order bounds [0, 1] => lower * size <= lower * amount;
-                conclusion 0;
-            }
+            normalize() using { amount <= size; lower <= 0; };
         }
         solve() using { lower * size <= lower * amount; lower * amount <= value * amount; };
     }
     ensures value * amount <= upper * size by {
         apply(integer::multiply_order_nonnegative(value, upper, amount));
         have upper * amount <= upper * size by {
-            arithmetic_certificate rules {
-                premise 0: amount <= size => amount <= size;
-                premise 1: 0 <= upper => 0 <= upper;
-                integer_multiply_order bounds [0, 1] => upper * amount <= upper * size;
-                conclusion 0;
-            }
+            normalize() using { amount <= size; 0 <= upper; };
         }
         solve() using { value * amount <= upper * amount; upper * amount <= upper * size; };
     }
@@ -4957,13 +4929,7 @@ theorem uint32_multiply_to_integer(left: uint32, right: uint32) {
                 };
             }
             have ((truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right)) == ((truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) - (to_integer(left) * to_integer(right))) by {
-                arithmetic_certificate rules {
-                    integer_polynomial_identity bounds [] => ((truncating_quotient(4294967295,
-                        to_integer(right)) - to_integer(left)) * to_integer(right)) ==
-                        ((truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) -
-                        (to_integer(left) * to_integer(right)));
-                    conclusion 0;
-                }
+                normalize();
             }
             have (to_integer(left) * to_integer(right)) <= 4294967295 by {
                 have 0 + (to_integer(left) * to_integer(right)) <= ((truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right)) + (to_integer(left) * to_integer(right)) by {

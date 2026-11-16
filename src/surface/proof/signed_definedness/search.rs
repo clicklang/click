@@ -44,12 +44,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let kernel = proof.lower_cited_surface_proposition(&domain, "signed operand domain")?;
             if matches!(kernel, Proposition::MemoryReadDefined { .. }) {
-                let scope = proof.driver().open_have(domain.clone())?;
-                let closed = scope
-                    .driver()
-                    .apply_step(ProofStep::Known)
-                    .or_else(|_| scope.driver().apply_step(ProofStep::Normalize))?;
-                proof = closed.join()?;
+                let Some(next) = Self::prepare_integer_read_domain(&proof, domain.clone())? else {
+                    return Ok(None);
+                };
+                proof = next;
                 listed.push(domain);
             }
         }
@@ -85,6 +83,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_signed_definedness_closure");
+        // Unary negation has the same exact domain as subtraction from
+        // zero. Retain that ordinary domain proof rather than invoking the
+        // signed interval compatibility checker.
+        if let Some(ClickProposition::Defined {
+            expression: ContractExpression::Negate(operand),
+        }) = search_input.surface_goal()
+        {
+            let domain = ClickProposition::Defined {
+                expression: ContractExpression::Subtract(
+                    Box::new(signed_literal(0)),
+                    operand.clone(),
+                ),
+            };
+            let scope = search_input.driver().open_have(domain)?;
+            if let Some(closed) = scope.driver().try_signed_definedness_closure()? {
+                return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
+            }
+            return Ok(None);
+        }
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };

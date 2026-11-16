@@ -68,6 +68,17 @@ fn operation(
             let (bl, bh) = bounds(b, selected)?;
             return Some((al.checked_sub(bh)?, ah.checked_sub(bl)?));
         }
+        IntegerTerm::Multiply(a, b) => {
+            let (al, ah) = bounds(a, selected)?;
+            let (bl, bh) = bounds(b, selected)?;
+            let corners = [
+                al.checked_mul(bl)?,
+                al.checked_mul(bh)?,
+                ah.checked_mul(bl)?,
+                ah.checked_mul(bh)?,
+            ];
+            return Some((*corners.iter().min()?, *corners.iter().max()?));
+        }
         _ => {}
     }
     let IntegerTerm::Machine(machine) = value.as_ref() else {
