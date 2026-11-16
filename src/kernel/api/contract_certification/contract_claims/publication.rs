@@ -78,7 +78,7 @@ impl PublishedFunctionOutcome {
                 Some(OutcomeProofCore {
                     publication: None,
                     identity: identity.clone(),
-                    result: Arc::new(value.clone().into_native()),
+                    result: value.clone(),
                     store_consequences_available: false,
                     state: (**state).clone().into(),
                     is_exceptional: matches!(candidate.outcome(), FunctionOutcome::Throw { .. }),
@@ -225,6 +225,94 @@ mod tests {
             ),
         );
         (execution, root)
+    }
+
+    fn publish_result(
+        seed: &Arc<PublishedFunctionOutcome>,
+        value: StoredExecutionValue,
+        exceptional: bool,
+    ) -> Arc<PublishedFunctionOutcome> {
+        let state = ExecutionState::new();
+        let function = ProgramFunction::new(
+            value.program_type(),
+            "retained_publication",
+            vec![],
+            ProgramStatement::Skip,
+        );
+        let outcome = if exceptional {
+            FunctionOutcome::Throw {
+                value,
+                state: Box::new(state.clone()),
+            }
+        } else {
+            FunctionOutcome::Return {
+                value,
+                state: Box::new(state.clone()),
+            }
+        };
+        let candidates = program_function_execution_candidates_from_outcomes(
+            state.clone(),
+            function.clone(),
+            vec![],
+            vec![(outcome.clone(), vec![], vec![])],
+        );
+        PublishedFunctionOutcome::from_execution(
+            &state,
+            &function,
+            &[],
+            &PureFactContext::new(),
+            &ExecutionFacts::default(),
+            &[],
+            &outcome,
+            candidates.candidate_at(0).unwrap(),
+            seed.path(),
+            seed.return_seed().clone(),
+        )
+    }
+
+    #[test]
+    fn publication_keeps_return_and_exception_operands_and_storage_identity() {
+        use crate::kernel::{ExecutionValue, KernelTerm, KernelTermImport, KernelType};
+        let _session = crate::kernel::VerificationSession::enter();
+        let (execution, _) = fixture();
+        let seed = execution.published_outcome(0);
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(996901)),
+            ProgramType::Int32Pointer,
+        )
+        .with_pointee_constant(true);
+        let roots = [
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(996906)),
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(996902)),
+            KernelTerm::variable(KernelType::Program(ProgramType::Float64), Variable(996903)),
+            KernelTermImport::default().condition(&ConditionTerm::Variable(Variable(996904))),
+            KernelTerm::shared_pointer_value(crate::kernel::SharedPointerValue::import(&pointer)),
+            KernelTerm::variable(
+                KernelType::Algebraic(crate::kernel::AlgebraicType::parameter("T".into())),
+                Variable(996905),
+            ),
+        ];
+        for root in roots {
+            let value = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+            let native = value.clone().into_native();
+            for exceptional in [false, true] {
+                if exceptional && value.program_type() != ProgramType::Int32 {
+                    continue;
+                }
+                let publication = publish_result(seed, value.clone(), exceptional);
+                let opened = publication.open_core().unwrap();
+                assert_eq!(opened.result.shared(), Some(&root));
+                assert_eq!(opened.is_exceptional, exceptional);
+                assert_eq!(opened.result, value);
+                assert!(opened.result.matches_native(&native));
+                assert_eq!(opened.result.clone().into_native(), native);
+                let distinct = StoredExecutionValue::from(crate::kernel::int32(42));
+                assert_eq!(value == distinct, distinct.matches_native(&native));
+                let reopened = publication.open_core().unwrap();
+                assert_eq!(reopened.result.shared(), Some(&root));
+                assert!(!opened.identity.same_as(&reopened.identity));
+            }
+        }
     }
 
     fn close_claim(root: &Root) -> Root {

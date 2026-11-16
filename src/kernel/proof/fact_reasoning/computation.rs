@@ -77,6 +77,7 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             }
             super::super::integer_arithmetic::literal_integer_comparison_value(condition)
                 .or_else(|| integer_affine_comparison(condition))
+                .or_else(|| integer_operation_bound_comparison(condition))
         }
         ConditionTerm::Compare {
             format,
@@ -104,6 +105,35 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                     CompareRelation::GreaterThan => left > right,
                     CompareRelation::GreaterEqual => left >= right,
                 });
+            }
+            if matches!(
+                relation,
+                CompareRelation::LessEqual | CompareRelation::GreaterEqual
+            ) {
+                // Native comparisons retain their format rather than changing
+                // lowering to an Integer condition. Its exact extrema are local.
+                let (min, max) = format.format().bounds();
+                let a = format.constant_from_term(left).map(|n| n.to_integer());
+                let b = format.constant_from_term(right).map(|n| n.to_integer());
+                if matches!(relation, CompareRelation::LessEqual)
+                    && (a.as_ref() == Some(&min) || b.as_ref() == Some(&max))
+                    || matches!(relation, CompareRelation::GreaterEqual)
+                        && (a.as_ref() == Some(&max) || b.as_ref() == Some(&min))
+                {
+                    return Some(true);
+                }
+                // A promoted narrow operand retains its smaller intrinsic range.
+                for reading in
+                    crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+                        &Proposition::ConditionIs(condition.clone(), true),
+                    )
+                {
+                    if let Proposition::ConditionIs(reading, true) = reading
+                        && integer_operation_bound_comparison(&reading) == Some(true)
+                    {
+                        return Some(true);
+                    }
+                }
             }
             // Raw goal atoms retain their exact typed state identities.
             // In particular, this key must never canonicalize a memory read.

@@ -73,7 +73,7 @@ pub(super) fn region_count(statement: &ProgramStatement) -> usize {
             else_branch,
             ..
         } => 1 + region_count(then_branch) + region_count(else_branch),
-        ProgramStatement::While { body, .. } => 1 + region_count(body),
+        ProgramStatement::Loop { body, .. } => 1 + region_count(body),
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => 1 + region_count(try_body) + region_count(handler),
@@ -1262,6 +1262,42 @@ fn loop_iterator(
     } else {
         loop_.body..loop_.exit.max(loop_.body)
     };
+    // A crate's own iterator: the header calls its `next(&mut iter)` and
+    // tests the `Option` that call returns.
+    if let T::If {
+        condition: E::VariantIs { value, .. },
+        ..
+    } = &mir.blocks[loop_.test].terminator
+    {
+        // The call whose result the test reads: by its destination, or by
+        // its step when its result is the test's own.
+        let reads = |terminator: &T| match (value.as_ref(), terminator) {
+            (E::Local { name }, T::Call { destination, .. }) => destination == name,
+            (E::CallResult { call, .. }, T::Call { result, .. }) => *result == Some(*call),
+            _ => false,
+        };
+        let user = std::iter::once(header)
+            .chain(loop_.headers.iter().copied())
+            .filter_map(|block| mir.blocks.get(block))
+            .find_map(|block| match &block.terminator {
+                terminator @ T::Call { arguments, .. } if reads(terminator) => {
+                    match arguments.as_slice() {
+                        [E::Borrow { place, .. }] => match place.as_ref() {
+                            E::Local { name } => Some(name.clone()),
+                            _ => None,
+                        },
+                        _ => None,
+                    }
+                }
+                _ => None,
+            });
+        if let Some(local) = user {
+            return Some(RustLoopIterator {
+                local,
+                kind: K::User,
+            });
+        }
+    }
     std::iter::once(header)
         .chain(loop_.headers.iter().copied())
         .chain(std::iter::once(loop_.test))
@@ -1357,13 +1393,20 @@ fn region(
                 leases,
                 loop_.breaks.then_some(&inner),
             )?;
-            let condition = flow::header_condition(
-                mir,
-                &loop_.headers,
-                condition,
-                &flow.scalar_names,
-                &flow.metadata_names,
-            )?;
+            // A header that calls runs before its test each pass, so the test
+            // reads what the header left; otherwise the test is read through
+            // the header's scalar copies.
+            let condition = if loop_.header_calls {
+                condition.clone()
+            } else {
+                flow::header_condition(
+                    mir,
+                    &loop_.headers,
+                    condition,
+                    &flow.scalar_names,
+                    &flow.metadata_names,
+                )?
+            };
             let condition = if loop_.body_on_true {
                 condition
             } else {
@@ -1404,6 +1447,22 @@ fn region(
                     header.then(
                         Sited::branch(loop_site, condition, Sited::unsited(program_skip()), exit)
                             .then(body),
+                    ),
+                )
+            } else if loop_.header_calls {
+                // The test reads what the header's call returned, so the
+                // header runs at the top of each pass and its test leaves.
+                Sited::looping(
+                    loop_site,
+                    crate::kernel::program_expression::int32_literal(1),
+                    header.then(
+                        Sited::branch(
+                            loop_site,
+                            condition,
+                            Sited::unsited(program_skip()),
+                            Sited::unsited(program_break()),
+                        )
+                        .then(body),
                     ),
                 )
             } else {

@@ -63,7 +63,7 @@ fn split_while_headers_preserve_order_and_have_linear_work_and_emitted_size() {
                 ProgramStatement::Seq(statements) => {
                     pending.extend(statements.iter().map(|statement| statement.as_ref()))
                 }
-                ProgramStatement::While { body, .. } => {
+                ProgramStatement::Loop { body, .. } => {
                     loops += 1;
                     pending.push(body);
                 }
@@ -132,7 +132,7 @@ fn nested_while_regions_have_linear_analysis_work_and_emitted_size() {
                 ProgramStatement::Seq(statements) => {
                     pending.extend(statements.iter().map(|statement| statement.as_ref()))
                 }
-                ProgramStatement::While { body, .. } => {
+                ProgramStatement::Loop { body, .. } => {
                     count += 1;
                     pending.push(body);
                 }

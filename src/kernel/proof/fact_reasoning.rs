@@ -1,6 +1,8 @@
 mod computation;
 mod intervals;
+mod known_bridges;
 pub(crate) use computation::computes_leaf;
+pub(crate) use known_bridges::known_bridge_leaf;
 
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;

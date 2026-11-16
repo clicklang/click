@@ -8,8 +8,9 @@
 //! `2^32` and so modulo its own `2^w`), and `+`, `-` and `*` respect the
 //! congruence. When the exact result lies in `F` it is the one element of
 //! `F` in its residue class, so it is the machine result. The certificate
-//! rule `integer_operation_identity` checks this statement for the format
-//! the observation names, with the two bounds as premises.
+//! rule `integer_operation_identity` and the root-local `known()` rule check
+//! this statement for the observation's format using its exact range pair.
+//! The latter accepts only a written operation, without memory resolution.
 
 use super::{Operation, definedness, range, representation};
 #[cfg(test)]
@@ -25,6 +26,19 @@ use num_bigint::BigInt;
 /// `value` is bounded inside the format.
 pub(crate) fn mathematical(observed: &IntegerTerm) -> Option<(MachineIntegerType, IntegerTerm)> {
     mathematical_operation(observed).map(|(_, ty, exact)| (ty, exact))
+}
+
+/// The written operator only. Checking a known identity must not recover
+/// an operation by resolving a read or walking memory history.
+pub(crate) fn explicit_mathematical(
+    observed: &IntegerTerm,
+) -> Option<(MachineIntegerType, IntegerTerm)> {
+    let IntegerTerm::Machine(machine) = observed.value_read() else {
+        return None;
+    };
+    let ty = machine.ty();
+    let (operation, [left, right]) = representation::view_operation(ty, machine.operand_view())?;
+    Some((ty, operation.exact(left.observe(ty)?, right.observe(ty)?)))
 }
 
 fn mathematical_operation(

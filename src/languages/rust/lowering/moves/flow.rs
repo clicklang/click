@@ -91,6 +91,8 @@ pub(super) fn header_condition(
             E::ChunkHasNext { .. }
             | E::SharedArrayHasNext { .. }
             | E::RangeHasNext { .. }
+            // The enum a header's call returns, read after the call.
+            | E::VariantIs { .. }
             | E::Integer { .. }
             | E::UnsignedInteger { .. }
             | E::SignedInteger { .. }
@@ -150,6 +152,10 @@ pub(super) struct While {
     /// Whether some body edge leaves the loop other than through the test,
     /// as a `break` does.
     pub breaks: bool,
+    /// Whether the header calls a function before its test, as a `for` loop
+    /// over a crate's own iterator calls its `next`. Its test then reads the
+    /// call's result, so the header runs once at the top of each pass.
+    pub header_calls: bool,
     /// Where a labeled `break` or `continue` from the body resumes in an
     /// enclosing loop: that loop's exit or header.
     pub escapes: Vec<usize>,
@@ -282,8 +288,13 @@ impl Flow {
             // loop, effectful terminator, or another loop entry.
             let mut headers = vec![header];
             let mut test = header;
-            while let T::Goto { target } = mir.blocks[test].terminator {
+            // The call steps the header makes before its test.
+            let mut header_steps = Vec::new();
+            while let T::Goto { target } | T::Call { target, .. } = mir.blocks[test].terminator {
                 crate::instrumentation::record_deterministic_work(1);
+                if let T::Call { result, .. } = &mir.blocks[test].terminator {
+                    header_steps.push(*result);
+                }
                 if target >= exit
                     || target == header
                     || predecessors[target].as_slice() != [test]
@@ -296,13 +307,25 @@ impl Flow {
                 test = target;
             }
             let T::If {
+                ref condition,
                 then_target,
                 else_target,
-                ..
             } = mir.blocks[test].terminator
             else {
                 return Err("MIR loop requires a conditional while header".into());
             };
+            // A header may call only the one function whose result its test
+            // reads, as a `for` loop over a crate's own iterator calls `next`.
+            let header_calls = !header_steps.is_empty();
+            if header_calls
+                && !matches!(
+                    (header_steps.as_slice(), condition),
+                    ([Some(step)], E::VariantIs { value, .. })
+                        if matches!(value.as_ref(), E::CallResult { call, keeps: true, .. } if call == step)
+                )
+            {
+                return Err("MIR loop requires a conditional while header".into());
+            }
             let body_on_true = membership[root(&mut parents, then_target)] == Some(header);
             if body_on_true == (membership[root(&mut parents, else_target)] == Some(header)) {
                 return Err("MIR while header requires one body and one exit".into());
@@ -422,6 +445,7 @@ impl Flow {
                     after,
                     body_on_true,
                     breaks,
+                    header_calls,
                     escapes,
                 },
             );
@@ -546,6 +570,21 @@ mod tests {
                     target: 1,
                     through_pointer: false,
                     result: None,
+                }),
+                block(branch(2, 3)),
+                block(T::Goto { target: 0 }),
+                block(T::Return),
+            ],
+            // A call step whose result the test does not read.
+            vec![
+                block(T::Call {
+                    function: "guard".into(),
+                    arguments: vec![],
+                    owned_arguments: vec![],
+                    destination: "marker".into(),
+                    target: 1,
+                    through_pointer: false,
+                    result: Some(0),
                 }),
                 block(branch(2, 3)),
                 block(T::Goto { target: 0 }),
@@ -818,7 +857,7 @@ mod tests {
                         else_branch,
                         ..
                     } => pending.extend([then_branch.as_ref(), else_branch.as_ref()]),
-                    ProgramStatement::While { body, .. } => {
+                    ProgramStatement::Loop { body, .. } => {
                         loops += 1;
                         pending.push(body);
                     }

@@ -1536,7 +1536,7 @@ pub(in crate::kernel) fn abstract_loop_paths(
 ) -> ExecutionResult<Option<Vec<StatementExecutionPath>>> {
     let annotated = matches!(
         statement,
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             invariant_checks,
             effect_checks,
             ranking_measures,
@@ -1581,9 +1581,9 @@ pub(in crate::kernel) fn abstract_loop_paths(
     // Loop verification and verified-call execution share one symbolic
     // identity stream: `variables` allocates from `budget`, so nothing has
     // to be synchronized across this boundary.
-    let paths = execute_program_while_exit_paths(
+    let paths = execute_program_loop_exit_paths(
         state,
-        WhileLoop::of(statement).expect("matched a while statement"),
+        ProgramLoop::of(statement).expect("matched a loop statement"),
         assumptions,
         execution_context.environment,
         Some(execution_context.environment),
@@ -1969,9 +1969,9 @@ fn loop_state_components_match_at_back_edge_inner(
     }
 }
 
-/// The parts of one `while` statement the loop rule reads, borrowed from it.
+/// The parts of one program loop the loop rule reads, borrowed from it.
 #[derive(Clone, Copy)]
-pub(super) struct WhileLoop<'a> {
+pub(super) struct ProgramLoop<'a> {
     pub(super) condition: &'a ProgramExpression,
     pub(super) invariant: &'a [Proposition],
     pub(super) invariant_checks: &'a [LoopInvariantCheck],
@@ -1985,10 +1985,10 @@ pub(super) struct WhileLoop<'a> {
     pub(super) natural_exit_target: Option<ControlTargetId>,
 }
 
-impl<'a> WhileLoop<'a> {
-    /// The loop a `while` statement states, or `None` for any other statement.
+impl<'a> ProgramLoop<'a> {
+    /// The loop a program statement states, or `None` for any other statement.
     pub(super) fn of(statement: &'a ProgramStatement) -> Option<Self> {
-        let ProgramStatement::While {
+        let ProgramStatement::Loop {
             condition,
             invariant,
             invariant_checks,
@@ -2021,9 +2021,9 @@ impl<'a> WhileLoop<'a> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn execute_program_while_exit_paths_with_proven_phases(
+pub(super) fn execute_program_loop_exit_paths_with_proven_phases(
     state: &ExecutionState,
-    while_loop: WhileLoop<'_>,
+    program_loop: ProgramLoop<'_>,
     assumptions: &PureFactContext,
     execution_context: ExecutionContext<'_>,
     initialization_proven: bool,
@@ -2034,9 +2034,9 @@ pub(super) fn execute_program_while_exit_paths_with_proven_phases(
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    execute_program_while_exit_paths(
+    execute_program_loop_exit_paths(
         state,
-        while_loop,
+        program_loop,
         assumptions,
         execution_context.environment,
         (!preservation_proven).then_some(execution_context.environment),
@@ -4126,9 +4126,9 @@ fn loop_exit_state_difference(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn execute_program_while_exit_paths(
+fn execute_program_loop_exit_paths(
     state: &ExecutionState,
-    while_loop: WhileLoop<'_>,
+    program_loop: ProgramLoop<'_>,
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     preservation_environment: Option<&ExecutionEnvironment>,
@@ -4140,7 +4140,7 @@ fn execute_program_while_exit_paths(
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    let WhileLoop {
+    let ProgramLoop {
         condition,
         invariant,
         invariant_checks,
@@ -4151,7 +4151,7 @@ fn execute_program_while_exit_paths(
         backedge_target,
         natural_exit_target,
         ..
-    } = while_loop;
+    } = program_loop;
     let mut base_obligations = Vec::new();
     for proposition in invariant {
         if add_proof_obligation(&mut base_obligations, assumptions, proposition.clone()).is_none() {
@@ -4202,9 +4202,9 @@ fn execute_program_while_exit_paths(
             let summary = collect_loop_preservation_summary(
                 state,
                 &head,
-                WhileLoop {
+                ProgramLoop {
                     effect_checks: &head.effect_checks,
-                    ..while_loop
+                    ..program_loop
                 },
                 &composite_resource_definitions,
                 &whole_loop_effect_summaries,
@@ -5048,7 +5048,7 @@ pub(super) struct LoopPreservationSummary {
 pub(super) fn collect_loop_preservation_summary(
     loop_entry_state: &ExecutionState,
     head: &LoopHead,
-    while_loop: WhileLoop<'_>,
+    program_loop: ProgramLoop<'_>,
     composite_resource_definitions: &[CompositeResourceDefinition],
     whole_loop_effect_summaries: &[Proposition],
     assumptions: &PureFactContext,
@@ -5056,7 +5056,7 @@ pub(super) fn collect_loop_preservation_summary(
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<LoopPreservationSummary> {
-    let WhileLoop {
+    let ProgramLoop {
         condition,
         invariant_checks,
         effect_checks,
@@ -5068,7 +5068,7 @@ pub(super) fn collect_loop_preservation_summary(
         backedge_target,
         natural_exit_target,
         ..
-    } = while_loop;
+    } = program_loop;
     let mut obligations = Vec::new();
     let mut final_exit_paths = Vec::new();
     let mut break_exits = Vec::new();
@@ -8693,7 +8693,7 @@ pub(super) fn statement_may_write_memory(
                 || statement_may_write_memory(state, else_branch)
         }
         ProgramStatement::ForStep { step, .. } => statement_may_write_memory(state, step),
-        ProgramStatement::While { body, .. } => statement_may_write_memory(state, body),
+        ProgramStatement::Loop { body, .. } => statement_may_write_memory(state, body),
         ProgramStatement::Switch { cases, .. } => cases
             .iter()
             .any(|case| statement_may_write_memory(state, &case.body)),
@@ -8784,7 +8784,7 @@ pub(super) fn collect_loop_modified_locals(
         ProgramStatement::ForStep { step, .. } => {
             collect_loop_modified_locals(step, names);
         }
-        ProgramStatement::While { body, .. } => {
+        ProgramStatement::Loop { body, .. } => {
             collect_loop_modified_locals(body, names);
         }
         ProgramStatement::Switch { cases, .. } => {
@@ -9027,7 +9027,7 @@ fn for_each_statement_expression<'a>(
             for_each_statement_expression(else_branch, visit);
         }
         ProgramStatement::ForStep { step, .. } => for_each_statement_expression(step, visit),
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition, body, ..
         } => {
             visit(condition);
@@ -9131,7 +9131,7 @@ pub(crate) fn collect_address_taken_locals(
         ProgramStatement::ForStep { step, .. } => {
             collect_address_taken_locals(step, names);
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition, body, ..
         } => {
             collect_address_taken_in_expression(condition, names);

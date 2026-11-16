@@ -197,6 +197,35 @@ impl ExecutionEvidence {
     }
 }
 
+/// Publication of a completing statement, retaining its selected fact delta.
+/// The combined stream is still the complete candidate presentation. The delta
+/// is what its producer added beyond the context already retained on the trace.
+#[derive(Clone)]
+pub(crate) struct CompletedExecutionFacts {
+    pub(in crate::kernel) facts: ExecutionFacts,
+    pub(in crate::kernel) additional: Option<ExecutionFacts>,
+}
+
+impl CompletedExecutionFacts {
+    pub(crate) fn from_facts(facts: ExecutionFacts) -> Self {
+        Self {
+            facts,
+            additional: None,
+        }
+    }
+
+    pub(crate) fn push(&mut self, fact: ExecutionPureFact) {
+        self.facts.push(fact.clone());
+        if let Some(additional) = &mut self.additional {
+            additional.push(fact);
+        }
+    }
+
+    pub(crate) fn into_facts(self) -> ExecutionFacts {
+        self.facts
+    }
+}
+
 /// What the kernel established along one open trace: every fact of each
 /// context recorded on it, every case fact it admitted, and every effect it
 /// retained. It is extended at each recorded transition by what that
@@ -370,7 +399,7 @@ impl CheckedReturnProposition {
         // As for checked function propositions, resource representation may
         // change during the proof. The program state and result may not.
         if outcome.is_exceptional
-            || !value.matches_native(outcome.result.as_ref())
+            || value != &outcome.result
             || outcome.state.locals() != state.locals()
             || outcome.state.aggregate_destination != state.aggregate_destination
             || !crate::kernel::api::contract_certification::memories_definitionally_equal(
@@ -4693,7 +4722,11 @@ impl CheckedExecutionBranch {
         // The arms reach equal states by different routes; the join is a new
         // point reached from both.
         let mut joined_state = arms[0].reached_state().clone();
-        joined_state.join_program_points(arms[0].reached_state(), arms[1].reached_state());
+        joined_state.join_program_points(
+            arms[0].reached_state(),
+            arms[1].reached_state(),
+            split.state.path_link(),
+        );
         Ok(Self {
             split,
             arms: [then_arm, else_arm],
@@ -6814,12 +6847,12 @@ fn statements_have_same_source(left: &ProgramStatement, right: &ProgramStatement
                 && statements_have_same_source(left_else, right_else)
         }
         (
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 condition: left_condition,
                 body: left_body,
                 ..
             },
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 condition: right_condition,
                 body: right_body,
                 ..
@@ -6910,13 +6943,13 @@ fn checked_source_statement_matches(proved: &ProgramStatement, source: &ProgramS
         return true;
     }
     let (
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition: proved_condition,
             do_while: proved_do_while,
             body: proved_body,
             ..
         },
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition: source_condition,
             invariant,
             invariant_checks,
@@ -6994,7 +7027,7 @@ fn checked_condition_event(
                 *else_branch
             }
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition,
             invariant,
             invariant_checks,
@@ -7006,7 +7039,7 @@ fn checked_condition_event(
             ..
         } if &condition == proved_condition => {
             if value {
-                let loop_head = ProgramStatement::While {
+                let loop_head = ProgramStatement::Loop {
                     condition,
                     invariant,
                     invariant_checks,
@@ -9031,6 +9064,38 @@ impl ExecutionProofCore {
         self.publication_case_facts.clone()
     }
 
+    /// Keep the completing statement's explicit delta beside its full
+    /// publication. Completion already has the trace's cases and effects.
+    pub(crate) fn completed_execution_facts(
+        &self,
+        delta: &ExecutionFacts,
+    ) -> CompletedExecutionFacts {
+        let facts = self
+            .completed_path_facts_with_effects(delta)
+            .unwrap_or_else(|| {
+                // Preserve the existing overlap route's publication order.
+                let mut facts = self.completed_path_facts(delta);
+                let mut seen = std::collections::BTreeSet::new();
+                let accepted = self
+                    .effect_facts
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, fact)| {
+                        ((is_memory_effect(fact.proposition()) || fact.is_certified())
+                            && !facts.contains(fact)
+                            && seen.insert(fact))
+                        .then_some(index)
+                    })
+                    .collect::<Vec<_>>();
+                facts.extend_shared(&self.effect_facts.selected(&accepted));
+                facts
+            });
+        CompletedExecutionFacts {
+            facts,
+            additional: Some(delta.clone()),
+        }
+    }
+
     /// Candidate publication retains the admitted case prefix and appends
     /// only this statement's own evidence. This carries no theorem authority.
     pub(crate) fn completed_path_facts(&self, delta: &ExecutionFacts) -> ExecutionFacts {
@@ -9356,7 +9421,7 @@ impl ExecutionProofCore {
                 return Err("goto evidence does not carry its checked function target".into());
             }
             (
-                ProgramStatement::While {
+                ProgramStatement::Loop {
                     backedge_target: Some(_),
                     natural_exit_target: Some(expected),
                     ..
@@ -9410,7 +9475,7 @@ impl ExecutionProofCore {
                     );
                 };
                 let do_while_initial_body = match &*next {
-                    ProgramStatement::While {
+                    ProgramStatement::Loop {
                         condition,
                         invariant,
                         invariant_checks,
@@ -9422,7 +9487,7 @@ impl ExecutionProofCore {
                         backedge_target: None,
                         natural_exit_target: None,
                         body,
-                    } if !matches!(&**proved_statement, ProgramStatement::While { .. }) => {
+                    } if !matches!(&**proved_statement, ProgramStatement::Loop { .. }) => {
                         let (body_head, body_tail) = split_shared_source(body);
                         if !statements_have_same_source(&body_head, proved_statement) {
                             return Err(EvidenceRefusal {
@@ -9432,7 +9497,7 @@ impl ExecutionProofCore {
                                 premise: None,
                             });
                         }
-                        let loop_head = ProgramStatement::While {
+                        let loop_head = ProgramStatement::Loop {
                             condition: condition.clone(),
                             invariant: invariant.clone(),
                             invariant_checks: invariant_checks.clone(),
@@ -9506,7 +9571,7 @@ impl ExecutionProofCore {
         // condition decided at its head belongs to the body's first
         // statement, never to the loop: the source is the body followed by
         // an ordinary loop head, as for a statement theorem.
-        while let ProgramStatement::While {
+        while let ProgramStatement::Loop {
             condition,
             invariant,
             invariant_checks,
@@ -9528,7 +9593,7 @@ impl ExecutionProofCore {
                     premise: None,
                 });
             }
-            let loop_head = ProgramStatement::While {
+            let loop_head = ProgramStatement::Loop {
                 condition: condition.clone(),
                 invariant: invariant.clone(),
                 invariant_checks: invariant_checks.clone(),
@@ -9558,7 +9623,7 @@ impl ExecutionProofCore {
             tail = rest;
         }
         let decided = match &*next {
-            ProgramStatement::If { condition, .. } | ProgramStatement::While { condition, .. } => {
+            ProgramStatement::If { condition, .. } | ProgramStatement::Loop { condition, .. } => {
                 condition
             }
             _ => {
@@ -9593,7 +9658,7 @@ impl ExecutionProofCore {
                     Some(prepend_shared_source(Arc::new(selected.clone()), tail))
                 }
             }
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 condition,
                 invariant,
                 invariant_checks,
@@ -9605,7 +9670,7 @@ impl ExecutionProofCore {
                 ..
             } => {
                 if value {
-                    let loop_head = ProgramStatement::While {
+                    let loop_head = ProgramStatement::Loop {
                         condition: condition.clone(),
                         invariant: invariant.clone(),
                         invariant_checks: invariant_checks.clone(),
@@ -11566,6 +11631,7 @@ impl ExecutionProofCore {
             [trace] => trace,
             _ => return Err("the interface parent does not have one execution trace"),
         };
+        let split_point = split.state.path_link().clone();
         let branch = CheckedExecutionBranch::construct_interface(
             split,
             root_facts,
@@ -11584,7 +11650,11 @@ impl ExecutionProofCore {
         )?;
         let interface_effect_facts = branch.interface_effect_facts().clone();
         let mut joined_state = branch.joined_state().clone();
-        joined_state.join_program_points(arms[0].reached_state(), arms[1].reached_state());
+        joined_state.join_program_points(
+            arms[0].reached_state(),
+            arms[1].reached_state(),
+            &split_point,
+        );
         // The kernel recomputed the abstraction, so it also knows where the
         // abstraction left the counter. Installing that mark here is what
         // makes the successor's counter kernel-owned: a caller cannot take
@@ -11905,8 +11975,8 @@ impl ExecutionProofCore {
             let body_outcome = candidate.outcome().clone();
             // The kernel built this path's context as the path advanced.
             // It holds the completing statement's context, every case fact
-            // and every effect, so only the facts the candidate published
-            // after its case facts are new here. A path with post-return
+            // and every effect. Import only the completing producer's delta
+            // when it retained one. A path with post-return
             // exchanges completes under their facts too, and is rebuilt.
             let path_context = (publication_end == events.len())
                 .then(|| {
@@ -11929,7 +11999,17 @@ impl ExecutionProofCore {
             let mut boundary_assumptions = statement_assumptions.clone();
             if let Some(path_context) = path_context {
                 boundary_assumptions = path_context.facts.clone();
-                for fact in candidate.facts().facts_from(path_context.cases) {
+                let _publication_delta = crate::instrumentation::OperationTiming::new(
+                    function.name(),
+                    "proof completion",
+                    "completion fact delta",
+                );
+                let additional = match &candidate.data.completion_delta {
+                    Some(delta) => delta.facts_from(0),
+                    // Older candidate producers do not yet retain their delta.
+                    None => candidate.facts().facts_from(path_context.cases),
+                };
+                for fact in additional {
                     boundary_assumptions = retain_completed_path_fact(boundary_assumptions, fact);
                 }
             } else {

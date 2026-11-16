@@ -1474,10 +1474,10 @@ A listed guarded equality whose definedness guard is not listed has the guard
 proved first, from the other listed facts when they suffice, and is then used as
 its consequent. An `int32` or `int64` definedness goal uses the listed operand
 bounds and intrinsic type ranges to prove the two exact-result bounds through
-ordinary normalization and Integer laws. For an Integer goal observing a machine sum or difference,
+ordinary `known()` leaves and Integer laws. For an Integer goal observing a machine sum or difference,
 listed bounds and the machine type's range can establish the in-range
 identity, such as `to_integer(x + 1) == to_integer(x) + 1`. Expansion writes
-the range proofs and an explicit normalization step. An
+the range proofs and a `known()` identity step. An
 unsigned operation is used this way only when those bounds prove it does not wrap.
 
 Available verified theorems are reasoning rules, not extra hypotheses. If the
@@ -1605,6 +1605,23 @@ order comparisons close when their symbolic terms cancel. Calls, reads, folds,
 and symbolic matches are opaque operands; their identical occurrences may
 cancel, but this check never unfolds a call or resolves a read. It does not
 invoke the general atomic prover.
+
+The same fixed local check accepts intrinsic machine type ranges and
+constant-divisor quotient, remainder, and right-shift bounds. A written
+machine `+`, `-`, or `*` observation equals its exact Integer expression when
+both exact-result range bounds are available. An integral cast or `to_T(z)`
+observation equals its operand when the destination-range bounds are available.
+Each check reads the named operands and at most two exact bound keys; it does
+not search for an interval or derive missing bounds.
+
+For a valid literal shift count, a left-shift observation equals multiplication
+by its power of two when the exact result is in range; signed shifts also
+require a nonnegative source. A bitwise-and with a nonnegative literal mask
+is between zero and the mask, and is at most a nonnegative source. A root
+conditional equals its selected arm when its written guard is available.
+Shared native comparison guards retain their operand DAGs; other shared
+compound guards require explicit logical steps rather than exporting a guard
+tree. Missing guards and unsupported forms are refused.
 
 A conjunction goal closes when every conjunct does, and a disjunction goal
 when one disjunct does, using available facts or these computations recursively.
@@ -2056,11 +2073,10 @@ comparison itself (see
 so each listed premise of that type is restated over its observations by
 `known()`, a listed `not left < right` is read as `right <= left` and a
 listed `right > left` as `left < right`, each value written beside a sum or
-difference has its type's range stated by a `type_range` certificate (so `i -
+difference has its type's range stated by `known()` (so `i -
 1` is defined under `0 < i`), each sum and difference in the premises and the
 goal is shown to stay in range from the facts before it, by both constant
-bounds of its exact value, and observed by an `integer_operation_identity`
-certificate citing those bounds, the Integer claim is proved in the `Integer`
+bounds of its exact value, and observed by a `known()` identity step reading those bounds, the Integer claim is proved in the `Integer`
 family, and `known()` concludes the goal. A listed premise the proof does
 not hold is refused as an unavailable exact premise.
 
@@ -2252,10 +2268,12 @@ search. Integer antisymmetry uses `integer::le_antisymmetric`.
 Strict Integer premises and goals use the successor-order law. Linear
 refutations that use the negated goal once become direct compositions;
 other refutations open a negated-goal scope with `intro` and close its contradiction. Type
-ranges normalize directly, as do constant-divisor quotient, shift, and
-remainder bounds. Rounding and endpoint exclusions use ordinary Integer laws.
-Machine operation and cast identities normalize from their explicit Integer
-bounds. Signed intervals expand to ordinary bounds and observation identities;
+ranges and constant-divisor quotient, shift, and remainder bounds use
+`known()`. Rounding and endpoint exclusions use ordinary Integer laws.
+Machine operation and cast identities use `known()` after their exact Integer
+bounds have been proved. Literal shifts and nonnegative literal masks expand
+to these leaves, explicit product bounds, and rounding laws. A root conditional
+with an available guard expands to a `known()` arm equation and a rewrite. Signed intervals expand to ordinary bounds and observation identities;
 specialized selected rules normalize from explicit inputs, while polynomial
 search emits separate distribution and rewrite steps. All library proofs use
 ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
@@ -3087,7 +3105,7 @@ result as ordinary Integer law applications
 
 Connected `int32`, `int64` and `uint64` order facts are carried to `Integer` by
 `known()`, since a comparison of observations is the native comparison,
-and `uint64` values get their type range by normalization; only
+and `uint64` values get their type range by `known()`; only
 the selected carried facts are kept
 ([`solve_carries_machine_orders_to_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_carries_machine_orders_to_integer.md)).
 
@@ -3103,12 +3121,12 @@ definedness fact
 ([`solve_proves_signed_addition_defined.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_signed_addition_defined.md)),
 and each `to_integer(a + b)` or `to_integer(a - b)` in the goal is observed term
 by term: a signed operation once it is defined, and a `uint64` one once it
-does not wrap, by normalization citing both
+does not wrap, by `known()` reading both
 constant bounds of its exact value
 ([`solve_observes_an_operation_term_by_term.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_observes_an_operation_term_by_term.md)).
 
 Machine equality facts are carried by rewriting, each observed value gets its
-type range by normalization, an `int32`, `int64` or `uint64`
+type range by `known()`, an `int32`, `int64` or `uint64`
 equality goal is
 proved as its observed reading once both sides are shown defined, splitting an
 equality into its two bounds when needed, and a conjunction goal is split
@@ -3118,7 +3136,7 @@ this arithmetic and the searches below, as for `result == 1 implies cap ==
 old(cap) + 1` on a path where the antecedent reads `true`
 ([`solve_proves_an_implication_whose_consequent_needs_the_solver.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_an_implication_whose_consequent_needs_the_solver.md)).
 The in-range `+`, `-` and `*` identities, a product's bounds from its
-operands' type ranges by `integer_product_bounds` included
+operands' explicit type ranges by ordinary product-bound applications included
 ([`solve_observes_a_product_by_a_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_observes_a_product_by_a_constant.md),
 [`a_product_of_64_bit_values_is_its_exact_product.md`](https://github.com/clicklang/click/blob/master/mdtests/a_product_of_64_bit_values_is_its_exact_product.md)),
 and integral-cast identities this arithmetic uses, nested ones included, are
@@ -3381,13 +3399,46 @@ step.
 
 **Checked examples:** [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`obtain_requires_the_written_existential_body.md`](https://github.com/clicklang/click/blob/master/mdtests/obtain_requires_the_written_existential_body.md)
 
+## Integer multiplication order and division intervals
+
+`solve() using { a <= b; 0 <= k; }` proves `a * k <= b * k` by
+explicit application of `integer::multiply_order_nonnegative`. A nonpositive
+factor reverses the order and uses `integer::multiply_order_nonpositive`.
+Commuted operands name their commutativity equations separately. The library
+`scaled_product_bounds` proof uses these laws and explicit transitivity.
+
+For Integer `truncating_quotient(n, d)` and `truncating_remainder(n, d)`,
+selected constant lower/upper bounds on `n` and `d` can prove a constant
+result bound when the divisor interval excludes zero. Expansion states the
+numerical endpoint conditions with `known()`, proves the nonzero divisor
+from the selected interval, and applies ordinary quotient/remainder lemmas.
+Positive-divisor quotient bounds also accept `n <= bound * d` or
+`bound * d <= n` together with `1 <= d`, including symbolic bounds.
+Negative divisor intervals use the two explicit divisor-sign laws.
+Remainder proofs retain both the dividend and divisor envelopes and the case
+where the dividend's magnitude is smaller than every divisor's magnitude.
+
+These expansions and their derived library proofs contain no `normalize()`
+or implicit solving. Selection runs under the existing `solve` budgets;
+replay checks only the written arguments and premises. Missing bounds, a
+zero-crossing divisor interval, and false result bounds do not justify the
+interval route. Native machine definedness remains a separate obligation.
+
 ## Exact integer product bounds
 
-Use `normalize() using { L <= x; x <= U; M <= y; y <= N; }` to check
+Use `solve() using { L <= x; x <= U; M <= y; y <= N; }` to prove
 an exact bound on the mathematical product `x * y`. Each interval endpoint
 and the result bound must be constant, with ordered interval endpoints.
+Expansion writes four numerical corner checks with `known()`, followed by
+`apply(integer::product_lower_bound(...)) using { ... }` or
+`apply(integer::product_upper_bound(...)) using { ... }`. The library proofs
+split on signs and apply multiplication order and transitivity explicitly;
+their dependencies contain no `normalize()`. No ambient fact is selected
+when replaying these applications. The same proof construction supplies
+product bounds from machine operands' stated type ranges.
 
-The checker computes `L*M`, `L*N`, `U*M`, and `U*N` using exact integers.
+The authored `normalize() using` compatibility form still checks this rule.
+Its checker computes `L*M`, `L*N`, `U*M`, and `U*N` using exact integers.
 For an upper bound, all four must be at most `T`; for the result `T <= x * y`,
 all four must be at least `T`. The rule accepts negative, zero, and crossing
 intervals and bounds weaker than the exact endpoints. It reads the four selected facts and does no premise search or implicit machine-range inference.

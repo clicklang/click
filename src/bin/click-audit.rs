@@ -89,7 +89,7 @@ stops at a resumable cursor. Verification inside each phase keeps the tactic
 limits `click verify` applies.
 
 defaults:
-  --session-work-limit 100000000   smart-site inventory or original-sidecar session initialization
+  --session-work-limit 100000000   one source's smart-site inventory, or its session initialization
   --expansion-work-limit 50000000  one expansion, and the re-expansion check
   --verification-work-limit 50000000
                                    one retained or cold proof-unit verification
@@ -692,49 +692,48 @@ fn prepare_audit(arguments: &Arguments, deadline: Instant) -> Result<AuditInvent
     let sources = without_excluded(audit_targets(&arguments.path)?, &arguments.exclude)?;
     println!("INVENTORY");
     let inventory_limit = arguments.limits.session.within(deadline)?;
-    let ((sources, mut sites, mut discovery_failures), _) =
-        run_phase("smart-site inventory", inventory_limit, || {
-            let mut ready = Vec::new();
-            let mut sites = Vec::new();
-            let mut failures = Vec::new();
-            for path in sources {
-                let inventory = (|| {
-                    // Negative fixtures must be skipped before preparing inputs.
-                    if is_expected_failure_mdtest(&path)? {
-                        return Ok(None);
-                    }
-                    let source = load_audit_source(&path)?;
-                    let runtime = match &source.project {
-                        Some(project) => click::surface::selected_project_thread_runtime(project),
-                        None => click::surface::selected_thread_runtime(&source.click_source),
-                    }
-                    .map_err(|error| error.report())?;
-                    if let Some(assumption) = runtime.assumption() {
-                        println!("  {} runtime assumption: {assumption}", path.display());
-                    }
-                    inventory_sites(std::slice::from_ref(&path)).map(Some)
-                })();
-                match inventory {
-                    Ok(Some(source_sites)) => {
-                        sites.extend(source_sites);
-                        ready.push(path);
-                    }
-                    Ok(None) => {}
-                    Err(message) => {
-                        if inventory_limit.deadline_exceeded() {
-                            return Err(RUN_LIMIT_EXHAUSTED.to_string());
-                        }
-                        let failure = format!("{}: {message}", path.display());
-                        if !arguments.keep_going {
-                            return Err(failure);
-                        }
-                        println!("  smart-site inventory FAILED: {failure}");
-                        failures.push(failure);
-                    }
-                }
+    // Each source is inventoried under its own session budget, as its
+    // session is initialized under one; the whole run is bounded by time.
+    let mut ready = Vec::new();
+    let mut sites = Vec::new();
+    let mut discovery_failures = Vec::new();
+    for path in sources {
+        let inventory = run_phase("smart-site inventory", inventory_limit, || {
+            // Negative fixtures must be skipped before preparing inputs.
+            if is_expected_failure_mdtest(&path)? {
+                return Ok(None);
             }
-            Ok((ready, sites, failures))
-        })?;
+            let source = load_audit_source(&path)?;
+            let runtime = match &source.project {
+                Some(project) => click::surface::selected_project_thread_runtime(project),
+                None => click::surface::selected_thread_runtime(&source.click_source),
+            }
+            .map_err(|error| error.report())?;
+            if let Some(assumption) = runtime.assumption() {
+                println!("  {} runtime assumption: {assumption}", path.display());
+            }
+            inventory_sites(std::slice::from_ref(&path)).map(Some)
+        });
+        match inventory {
+            Ok((Some(source_sites), _)) => {
+                sites.extend(source_sites);
+                ready.push(path);
+            }
+            Ok((None, _)) => {}
+            Err(message) => {
+                if inventory_limit.deadline_exceeded() {
+                    return Err(RUN_LIMIT_EXHAUSTED.to_string());
+                }
+                let failure = format!("{}: {message}", path.display());
+                if !arguments.keep_going {
+                    return Err(failure);
+                }
+                println!("  smart-site inventory FAILED: {failure}");
+                discovery_failures.push(failure);
+            }
+        }
+    }
+    let sources = ready;
     let inventory_claims = sites
         .iter()
         .map(|site| (site.click_path.clone(), site.claim.clone()))

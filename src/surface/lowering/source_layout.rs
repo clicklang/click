@@ -49,7 +49,7 @@ pub(in crate::surface) fn count_loop_regions(
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => pending.extend([try_body.as_ref(), handler.as_ref()]),
-            ProgramStatement::While { body, .. } => {
+            ProgramStatement::Loop { body, .. } => {
                 count += 1;
                 pending.push(body);
             }
@@ -245,7 +245,7 @@ fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
             condition: expression,
             ..
         }
-        | ProgramStatement::While {
+        | ProgramStatement::Loop {
             condition: expression,
             ..
         }
@@ -490,7 +490,7 @@ impl SourceExecutionLayout {
                     );
                     Ok(statement_index)
                 }
-                ProgramStatement::While { body, .. } => {
+                ProgramStatement::Loop { body, .. } => {
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
                     let loop_index = layout.loop_bodies.len();
@@ -1954,7 +1954,7 @@ fn collect_kernel_automatic_exits(
                 ));
                 tails
             }
-            ProgramStatement::While { body, .. } => {
+            ProgramStatement::Loop { body, .. } => {
                 scope(body, index, scopes, Some(head), layout, return_parameters);
                 vec![head]
             }

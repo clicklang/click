@@ -8739,6 +8739,30 @@ impl ExecutionState {
     ) -> Result<(Vec<ResourceFact>, Vec<MachineTerm>), String> {
         let (children, descriptions) =
             self.authority_wrapper_candidates(selected, definition, assumptions, require_folded)?;
+        let counts = self.authority_counts_for_descriptions(descriptions)?;
+        Ok((children, counts))
+    }
+
+    /// Connect newly emitted authority descriptions to the live ledger. This
+    /// grants no authority and never re-evaluates the producing body.
+    pub(in crate::kernel) fn returned_authority_counts(
+        &self,
+        authorities: &[ResourceFact],
+    ) -> Result<Vec<MachineTerm>, String> {
+        let descriptions = authorities
+            .iter()
+            .map(|fact| match fact.resource() {
+                Resource::PopulationAuthority(description) => Ok(description.clone()),
+                _ => Err("expected an emitted authority".into()),
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        self.authority_counts_for_descriptions(descriptions)
+    }
+
+    fn authority_counts_for_descriptions(
+        &self,
+        descriptions: Vec<ResourceDescription>,
+    ) -> Result<Vec<MachineTerm>, String> {
         let mut counts = Vec::with_capacity(descriptions.len());
         for description in descriptions {
             let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
@@ -8785,7 +8809,7 @@ impl ExecutionState {
             };
             counts.push(count);
         }
-        Ok((children, counts))
+        Ok(counts)
     }
 
     /// A standalone helper's typed lock returns a fresh authority-bearing
@@ -9768,13 +9792,21 @@ impl ExecutionState {
             self.resources.loan_dependency_state(),
         );
         self.memory = memory;
-        self.point = self.point.after();
+        let steps = self.memory.pending_steps.take();
+        self.point = self
+            .point
+            .after(super::intern_memory_ref(&self.memory), steps);
     }
 
     /// The point this state stands at on its path.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn program_point(&self) -> super::ProgramPoint {
         super::ProgramPoint::of_state(&self.memory, &self.point)
+    }
+
+    /// Where on its path this state stands.
+    pub(crate) fn path_link(&self) -> &super::program_point::PathLink {
+        &self.point
     }
 
     /// The identity of the point this state stands at, without interning its
@@ -9788,7 +9820,10 @@ impl ExecutionState {
     /// it. It is still a transition, so the state moves to a new point.
     pub(crate) fn set_memory_directly(&mut self, memory: Memory) {
         self.memory = memory;
-        self.point = self.point.after();
+        let steps = self.memory.pending_steps.take();
+        self.point = self
+            .point
+            .after(super::intern_memory_ref(&self.memory), steps);
     }
 
     /// Keep `before`'s memory, and so stand where `before` stood: a state
@@ -9799,8 +9834,18 @@ impl ExecutionState {
     }
 
     /// Stand this state at a new point reached from both arms of a join.
-    pub(crate) fn join_program_points(&mut self, left: &Self, right: &Self) {
-        self.point = super::program_point::PathLink::joining(&left.point, &right.point);
+    pub(crate) fn join_program_points(
+        &mut self,
+        left: &Self,
+        right: &Self,
+        split: &super::program_point::PathLink,
+    ) {
+        self.point = super::program_point::PathLink::joining(
+            &left.point,
+            &right.point,
+            split,
+            super::intern_memory_ref(&self.memory),
+        );
     }
 
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {
