@@ -2106,7 +2106,7 @@ fn expanded_loop_claims_stay_within_checking_work_bounds() {
     for (fixture, claim) in [
         ("c_decreases_recursive_in_loop", "recursive_loop.contract"),
         ("later_loop_preserve", "later_loop_preserve.contract"),
-        ("loop_exit_state", "count_from_to.contract"),
+        ("loop_exit_program_point", "count_from_to.contract"),
         ("nested_loop_preserve", "nested_loop_preserve.contract"),
     ] {
         let path = root.join("mdtests").join(format!("{fixture}.md"));
@@ -2238,9 +2238,12 @@ int32 compare(uint8 bytes[]) {
 fn whole_claim_audits_allow_unexpanded_neighbors_and_workers() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
     for (fixture, claim) in [
-        ("statement_at_states", "set_first_twice.prefix_exit"),
-        ("statement_at_states", "set_first_twice.adjacent_boundary"),
-        ("statement_at_states", "set_first_twice.final_exit"),
+        ("statement_program_points", "set_first_twice.prefix_exit"),
+        (
+            "statement_program_points",
+            "set_first_twice.adjacent_boundary",
+        ),
+        ("statement_program_points", "set_first_twice.final_exit"),
         ("composite_resource_borrow_fact", "inspect_server.owns_0"),
         (
             "composite_resource_borrow_fact",
@@ -2392,6 +2395,62 @@ fn keep_going_audits_other_files_after_an_inventory_failure() {
     );
 }
 
+/// The session budget bounds one source's inventory, as it bounds one
+/// session's initialization: sources that together spend more than it are
+/// still each inventoried.
+#[test]
+#[ignore = "nightly: 0.8s debug, three audit inventories and discovery"]
+fn inventory_budget_applies_to_each_source() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut paths = Vec::new();
+    for index in 0..3 {
+        let path = directory.path().join(format!("unit{index}.md"));
+        fs::write(
+            &path,
+            format!(
+                "```click\ntheorem identity{index}() {{ ensures 0 == 0 by solve(); }}\n```\n\
+                 ```expect\npass\n```\n"
+            ),
+        )
+        .unwrap();
+        paths.push(path);
+    }
+    // The first inventory also loads the standard library.
+    inventory_sites(std::slice::from_ref(&paths[0])).unwrap();
+    let (sites, one_source) = click::instrumentation::measure_deterministic_work(|| {
+        let source = load_audit_source(&paths[1]).unwrap();
+        click::surface::selected_thread_runtime(&source.click_source).unwrap();
+        inventory_sites(std::slice::from_ref(&paths[1])).unwrap()
+    });
+    assert_eq!(sites.len(), 1);
+    assert!(one_source > 0);
+    let mut arguments = parse_arguments([
+        "--keep-going".to_string(),
+        directory.path().display().to_string(),
+    ])
+    .unwrap();
+    // Under the old whole-run inventory budget, the three sources together
+    // exhausted this, and the later ones failed their inventory.
+    arguments.limits.session.work = 2 * one_source;
+    let inventory = prepare_audit(&arguments, Instant::now() + Duration::from_secs(60)).unwrap();
+    assert!(
+        !inventory
+            .discovery_failures
+            .iter()
+            .any(|failure| failure.contains("inventory")),
+        "{:?}",
+        inventory.discovery_failures
+    );
+    assert_eq!(
+        inventory
+            .scoped_sites
+            .iter()
+            .filter(|site| site.claim.contains("identity"))
+            .count(),
+        paths.len()
+    );
+}
+
 #[test]
 #[ignore = "nightly: body-safety alias expansion and retained/cold audits"]
 fn body_safety_proofs_have_one_auditable_source_site() {
@@ -2489,7 +2548,19 @@ fn body_safety_proofs_have_one_auditable_source_site() {
 /// audit, including cold verification with implicit solving disabled.
 #[test]
 fn a_fully_explicit_script_has_an_auditable_fixed_point() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/simple_statement_step.md");
+    // The contract closes with one written `known()` per closing goal:
+    // returned resources, allocation lifetime, and write footprint.
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("explicit_identity.md");
+    fs::write(
+        &path,
+        "```c filename=explicit_identity.c\nint32 identity(int32 x) {\n    return x;\n}\n```\n\n\
+         ```click\nverifying \"explicit_identity.c\";\n\n\
+         int32 identity(int32 x) {\n    ensures result == x;\n} by {\n    step();\n    \
+         normalize();\n    known();\n    known();\n    known();\n}\n```\n\n\
+         ```expect\npass\n```\n",
+    )
+    .unwrap();
     let source = load_audit_source(&path).unwrap();
     let claim = "identity.contract";
     click::surface::without_implicit_solve(|| {
