@@ -1656,7 +1656,10 @@ permitted stores or a transition that drops the fact:
   Canonical memory keys detect known alias ambiguity without a loan census.
   Inherited loans maintain exact-resource and singleton-family permission
   indexes at creation/projection; a selected return never scans their growing
-  projection histories. A failed nominee is final. Whole-range permissions
+  projection histories. A failed nominee is final. Flat returned-view checks
+  likewise select one caller occurrence and retain its checked binding in an
+  opaque receipt; ledger use checks live holder/scope authority without
+  re-proving that retained binding's permission. Whole-range permissions
   may back separate contained pieces, so keeping descriptions unmerged does
   not drop their holds. Adapter lends retain the producer-selected support
   occurrence rather than recovering an equal-looking head from the residual.

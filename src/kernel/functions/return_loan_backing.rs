@@ -131,17 +131,16 @@ impl ReturnLoanBackings {
         // The plan's newly emitted permission is already selected. An inherited
         // hold uses its producer-maintained per-loan index instead of scanning
         // the loan's projection history.
-        if !crate::kernel::loans::returned_permission_covers(
+        if selected.entering.is_some() {
+            selected.permission = ledger
+                .selected_return_permission(selected.loan, piece, &selected.permission, assumptions)
+                .ok_or(false)?;
+        } else if !crate::kernel::loans::returned_permission_covers(
             &selected.permission,
             piece,
             assumptions,
         ) {
-            if selected.entering.is_none() {
-                return Err(false);
-            }
-            selected.permission = ledger
-                .selected_return_permission(selected.loan, piece, assumptions)
-                .ok_or(false)?;
+            return Err(false);
         }
         Ok(selected)
     }

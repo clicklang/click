@@ -4772,3 +4772,33 @@ fn equal_returned_composite_occurrences_keep_independent_holds() {
         Some(first.scope)
     );
 }
+
+#[test]
+fn a_failed_selected_return_permission_does_not_retry_a_wider_description() {
+    let (ledger, owner, reader) = participants();
+    let p = Pointer::symbolic(Variable(8_916_000));
+    let view = |start: u32, end: u32| {
+        ResourceFact::view_memory(MemoryRange::new(p.clone(), start.into(), end.into()))
+    };
+    let opening = lend_test(
+        &ledger,
+        owner,
+        reader,
+        ResourceFact::own_memory(MemoryRange::new(p.clone(), 0u32.into(), 2u32.into())),
+    );
+    let ledger = ledger.apply(&opening.transition).unwrap();
+    let facts = PureFactContext::new();
+    let preferred = view(0, 1);
+    let _fast = crate::kernel::search::FastOperationScope::enter(
+        "selected return permission refuses without retry",
+    );
+    assert!(
+        ledger
+            .selected_return_permission(opening.loan, &view(1, 2), &preferred, &facts)
+            .is_none()
+    );
+    assert_eq!(
+        ledger.selected_return_permission(opening.loan, &preferred, &preferred, &facts),
+        Some(preferred)
+    );
+}

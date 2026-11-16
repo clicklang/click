@@ -330,6 +330,11 @@ impl PartialOrd for LoanViewBindings {
     }
 }
 
+/// Authority selected from an already checked caller view occurrence. The
+/// private constructor retains its producer-issued loan binding; using it at
+/// return checks liveness/holder status, not the old permission proof again.
+pub(crate) struct ReturnedViewAuthority(LoanViewBinding);
+
 impl LoanViewBindings {
     pub(crate) fn from_state(state: Arc<LoanViewBindingsState>) -> Self {
         Self { state }
@@ -385,6 +390,16 @@ impl LoanViewBindings {
         // Binding metadata alone cannot turn an owned composite or an absent
         // occurrence into a view. Check only the nominated held occurrence.
         bound_view_covers_requirement(held, None, required, assumptions).then_some(occurrence)
+    }
+
+    pub(crate) fn select_returned_view_authority(
+        &self,
+        required: &ResourceFact,
+        resources: &ResourceContext,
+        assumptions: &PureFactContext,
+    ) -> Option<ReturnedViewAuthority> {
+        let occurrence = self.select_bound_view(required, resources, assumptions)?;
+        self.get(&occurrence).cloned().map(ReturnedViewAuthority)
     }
 
     /// Attach inherited authority to the occurrences just constructed by a
@@ -5374,6 +5389,7 @@ impl LoanLedger {
         &self,
         loan: LoanId,
         required: &ResourceFact,
+        preferred: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceFact> {
         let data = &self.storage.data;
@@ -5381,7 +5397,22 @@ impl LoanLedger {
         if record.recovered || !data.scopes.get(&record.scope)?.active {
             return None;
         }
-        let candidate = record.permitted.candidate(required)?;
+        let same_kind = match (preferred.resource(), required.resource()) {
+            (Resource::Memory(_), Resource::Memory(_)) => true,
+            (Resource::Composite { name: left, .. }, Resource::Composite { name: right, .. })
+            | (Resource::Token { name: left, .. }, Resource::Token { name: right, .. }) => {
+                left == right
+            }
+            (left, right) => left == right,
+        };
+        // Nominate before checking coverage. A stored exact projection takes
+        // priority; otherwise use the selected binding or a singleton family.
+        // A failed coverage check never requests another source.
+        let candidate = record
+            .permitted
+            .exact_candidate(required)
+            .or_else(|| same_kind.then_some(preferred))
+            .or_else(|| record.permitted.candidate(required))?;
         returned_permission_covers(candidate, required, assumptions).then(|| candidate.clone())
     }
 
@@ -5451,6 +5482,15 @@ impl LoanLedger {
             return Err(LoanRefusal::MissingLoanBinding);
         }
         Ok(loan)
+    }
+
+    pub(crate) fn validate_returned_view_authority(
+        &self,
+        authority: ReturnedViewAuthority,
+        holder: LoanParticipantId,
+    ) -> Result<(), LoanRefusal> {
+        self.validate_authority_binding(authority.0.authority(), holder)
+            .map(|_| ())
     }
 
     pub(crate) fn validate_view_binding(

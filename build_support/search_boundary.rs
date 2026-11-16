@@ -84,7 +84,7 @@ impl Boundary<'_> {
             && name == "normalized")
             || (self.path == "src/kernel/functions.rs"
                 && self.function == "recover_candidate_stable_view_resources"
-                && name == "permitted_descriptions")
+                && matches!(name, "permitted_descriptions" | "view_occurrences_for_fact"))
             || (self.path == "src/kernel/functions/return_loan_backing.rs"
                 && self.function == "select"
                 && matches!(

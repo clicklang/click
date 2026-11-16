@@ -971,6 +971,11 @@ fn recover_candidate_stable_view_resources(
     // unrelated view whose binding would otherwise be composed into the
     // recovered caller frame after the child scope closes, and a view is never
     // accepted merely because some equal owner happens to satisfy it.
+    let returned_inputs = plan
+        .stable_views()
+        .iter()
+        .map(|view| view.requirement.fact.clone())
+        .collect::<BTreeSet<_>>();
     let mut checked_return_views = std::collections::BTreeSet::new();
     // Only this call's newly published views need return-authority checks.
     // The residual also contains the unchanged caller frame; produced owner
@@ -979,26 +984,18 @@ fn recover_candidate_stable_view_resources(
         if !fact.is_view() || !checked_return_views.insert((*fact).clone()) {
             continue;
         }
-        let returned_input = plan
-            .stable_views()
-            .iter()
-            .any(|stable_view| stable_view.requirement.fact == *fact);
+        let returned_input = returned_inputs.contains(fact);
         let preserved_outer = caller_state
             .loan_ledger()
             .zip(caller_state.loan_participant())
             .is_some_and(|(ledger, participant)| {
                 caller_state
-                    .resources()
-                    .view_occurrences_for_fact(fact, assumptions)
-                    .into_iter()
-                    .filter_map(|occurrence| caller_state.loan_view_bindings().get(&occurrence))
-                    .any(|binding| {
+                    .loan_view_bindings()
+                    .select_returned_view_authority(fact, caller_state.resources(), assumptions)
+                    .is_some_and(|authority| {
                         ledger
-                            .validate_view_binding(binding.clone(), participant)
+                            .validate_returned_view_authority(authority, participant)
                             .is_ok()
-                            && ResourceContext::new_with_equalities(assumptions)
-                                .unchecked_with_fact(binding.viewed.clone())
-                                .satisfies_fact(fact, assumptions)
                     })
             });
         // A duplicable core published from an exact returned owned occurrence

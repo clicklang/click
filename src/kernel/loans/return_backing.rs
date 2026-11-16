@@ -39,6 +39,11 @@ impl PermittedDescriptions {
         }
         self.facts.push_back(fact);
     }
+    pub(super) fn exact_candidate(&self, required: &ResourceFact) -> Option<&ResourceFact> {
+        self.exact
+            .get(required.resource())
+            .and_then(|index| self.facts.get(*index))
+    }
     pub(super) fn candidate(&self, required: &ResourceFact) -> Option<&ResourceFact> {
         crate::instrumentation::record_deterministic_work(1);
         let index = self
