@@ -897,3 +897,8 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../scaling_tests/surface/lambdas.rs");
+}
