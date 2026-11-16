@@ -22718,6 +22718,38 @@ fn typed_contract_results_expand_and_recheck() {
 }
 
 #[test]
+#[ignore = "nightly: saved-memory and member-address expansion with cold replay"]
+fn specification_member_addresses_expand_and_recheck() {
+    for (fixture, claim) in [
+        (
+            "saved_memory_field_address_keeps_state",
+            "redirect.contract",
+        ),
+        ("struct_field_address", "update_nested.contract"),
+        (
+            "struct_scalar_array_element_address",
+            "update_value.contract",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{fixture}: {error:?}"));
+        assert!(
+            !expanded.contains("<spec-address-operand>"),
+            "{fixture}: {expanded}"
+        );
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error:?}\n{expanded}"));
+    }
+}
+
+#[test]
 #[ignore = "nightly: original arena pipeline expansion and replay"]
 fn original_arena_pipeline_return_expands_without_transport_and_rechecks() {
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/arena");

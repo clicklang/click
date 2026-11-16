@@ -56,6 +56,7 @@ pub(super) struct SpecPropositionPath {
 
 mod algebraic_result;
 mod bindings;
+mod object_address;
 use algebraic_result::{AlgebraicFieldResult, AlgebraicResult};
 mod result;
 use result::{SpecCallArgument, SpecValue, call_arguments};
@@ -7705,6 +7706,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             assumptions,
             budget,
         )?,
+        SpecExpression::ObjectAddress(address) => {
+            object_address::evaluate(scope, address, assumptions, budget)?
+        }
         SpecExpression::Let { .. } => bindings::evaluate(scope, expression, assumptions, budget)?,
         SpecExpression::PureFunctionApplication {
             name,
@@ -8776,6 +8780,10 @@ fn spec_expression_pointer_step_width(
     expression: &SpecExpression,
 ) -> Option<u32> {
     match expression {
+        SpecExpression::ObjectAddress(address) => address
+            .value_type
+            .pointer_to()
+            .map(|_| address.value_type.byte_width()),
         SpecExpression::ProgramExpression(expression) => {
             program_expression_pointer_step_width(state, expression)
         }
