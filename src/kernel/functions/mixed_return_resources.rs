@@ -9,66 +9,109 @@ pub(super) struct ConsumedCellReturn {
     input: ResourceOccurrenceId,
 }
 
-impl ConsumedCellReturn {
+/// Planned by source clause, then attached to the occurrence the evaluator
+/// actually emits for that output clause. Each input clause is selected once.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(super) struct ConsumedCellReturns(BTreeMap<usize, ConsumedCellReturn>);
+
+impl ConsumedCellReturns {
     pub(super) fn prepare(
         interface: &FunctionContractInterface,
         plan: &StableViewTransferPlan,
         caller: &ResourceContext,
-    ) -> Option<Self> {
-        use crate::kernel::program_expression::int32_literal;
-        let [input] = interface.resource_requires() else {
-            return None;
-        };
-        let [output] = interface.resource_ensures() else {
-            return None;
-        };
-        let [parameter] = interface.parameters() else {
-            return None;
-        };
-        let [checked] = plan.transferred_ownership.as_slice() else {
-            return None;
-        };
-        let [(_, occurrence)] = plan.reserved_ownership_supports.as_slice() else {
-            return None;
-        };
-        let (ResourceTerm::Memory(before), ResourceTerm::Memory(after)) =
-            (input.term(), output.term())
-        else {
-            return None;
-        };
-        if input.role() != ResourceTransferRole::Consume
-            || output.role() != ResourceTransferRole::Produce
-            || checked.role != ResourceTransferRole::Consume
-            || checked.section_index != Some(0)
-            || input.access() != ResourceAccessMode::Own
-            || output.access() != ResourceAccessMode::Own
-            || input.quantity() != &ResourceQuantity::One
-            || output.quantity() != &ResourceQuantity::One
-            || input.guard().is_some()
-            || output.guard().is_some()
-            || before.guard().is_some()
-            || after.guard().is_some()
-            || output.state_source() != ResourceStateSource::Post
-            || parameter.program_type() != ProgramType::Int32Pointer
-            || before.base != ProgramExpression::Variable(parameter.name().into())
-            || after.base != before.base
-            || before.start != int32_literal(0)
-            || after.start != before.start
-            || before.end != int32_literal(1)
-            || after.end != before.end
-            || before.element_width() != 4
-            || after.element_width() != 4
+    ) -> Self {
+        let parameters = interface
+            .parameters()
+            .iter()
+            .filter(|parameter| parameter.program_type() == ProgramType::Int32Pointer)
+            .map(|parameter| parameter.binding_name())
+            .collect::<BTreeSet<_>>();
+        let mut inputs = BTreeMap::<BindingName, VecDeque<ConsumedCellReturn>>::new();
+        for (checked, source) in plan
+            .transferred_ownership
+            .iter()
+            .zip(&plan.transferred_ownership_sources)
         {
-            return None;
+            if checked.role != ResourceTransferRole::Consume {
+                continue;
+            }
+            let Some(input) = checked
+                .section_index
+                .and_then(|index| interface.resource_requires().get(index))
+            else {
+                continue;
+            };
+            let Some(parameter) =
+                scalar_parameter(input, &parameters, ResourceTransferRole::Consume)
+            else {
+                continue;
+            };
+            let Some(source) = source else { continue };
+            // One indexed read excludes sources materialized from composites.
+            // Reservation already proved coverage and separated the residual.
+            if caller
+                .owned_fact_for_occurrence(*source)
+                .and_then(ResourceFact::memory_own_range)
+                .is_none()
+            {
+                continue;
+            }
+            inputs
+                .entry(parameter.clone())
+                .or_default()
+                .push_back(ConsumedCellReturn { input: *source });
         }
-        // One indexed read excludes ownership materialized from a composite.
-        // Reservation already checked coverage and separated the residual;
-        // neither pointer aliases nor the retained frame are inspected here.
-        caller
-            .owned_fact_for_occurrence(*occurrence)?
-            .memory_own_range()?;
-        Some(Self { input: *occurrence })
+        let mut outputs = BTreeMap::new();
+        for (index, output) in interface.resource_ensures().iter().enumerate() {
+            let Some(parameter) =
+                scalar_parameter(output, &parameters, ResourceTransferRole::Produce)
+            else {
+                continue;
+            };
+            if output.state_source() != ResourceStateSource::Post {
+                continue;
+            }
+            if let Some(input) = inputs.get_mut(parameter).and_then(VecDeque::pop_front) {
+                outputs.insert(index, input);
+            }
+        }
+        Self(outputs)
     }
+
+    pub(super) fn get(&self, clause: usize) -> Option<ConsumedCellReturn> {
+        self.0.get(&clause).copied()
+    }
+}
+
+fn scalar_parameter<'a>(
+    spec: &'a ResourceSpec,
+    parameters: &BTreeSet<&BindingName>,
+    role: ResourceTransferRole,
+) -> Option<&'a BindingName> {
+    use crate::kernel::program_expression::int32_literal;
+    let ResourceTerm::Memory(segment) = spec.term() else {
+        return None;
+    };
+    let ProgramExpression::Variable(parameter) = &segment.base else {
+        return None;
+    };
+    (spec.role() == role
+        && spec.access() == ResourceAccessMode::Own
+        && spec.quantity() == &ResourceQuantity::One
+        && spec.guard().is_none()
+        && segment.guard().is_none()
+        && segment.start == int32_literal(0)
+        && segment.end == int32_literal(1)
+        && segment.element_width() == 4
+        && parameters.contains(parameter))
+    .then_some(parameter)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ReturnOwnershipOrigin {
+    Description,
+    EntryBorrow,
+    ConsumedCell(ConsumedCellReturn),
 }
 
 pub(in crate::kernel) struct ReturnedConsumedCell {
@@ -95,7 +138,7 @@ impl ReturnedConsumedCell {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct EvaluatedReturnOccurrence {
     pub(super) source: ResourceOccurrenceId,
-    pub(super) entry_borrow: bool,
+    pub(super) origin: ReturnOwnershipOrigin,
 }
 
 pub(super) struct EvaluatedReturnResources {
@@ -115,8 +158,8 @@ pub(super) struct PreparedReturnComposition {
     pub(super) frame: ResourceContext,
     pub(super) pending: ResourceContext,
     pub(super) entry_borrow_outputs: ResourceContext,
-    restored: Vec<(ResourceFact, ResourceOccurrenceId)>,
-    consumed_cell: Option<ReturnResourceTransfer>,
+    restored: BTreeMap<ResourceOccurrenceId, ReturnResourceTransfer>,
+    pub(super) consumed_cell_outputs: ResourceContext,
     occurrences: Vec<EvaluatedReturnOccurrence>,
 }
 
@@ -133,7 +176,7 @@ impl EvaluatedReturnResources {
     pub(super) fn admit(
         mut self,
         fact: ResourceFact,
-        entry_borrow: bool,
+        origin: ReturnOwnershipOrigin,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
         let (resources, mut inserted) = self
@@ -141,10 +184,8 @@ impl EvaluatedReturnResources {
             .try_compose_with_legacy_discovery_and_occurrences([fact], assumptions)?;
         let (_, source) = inserted.pop().expect("one admitted return occurrence");
         self.resources = resources;
-        self.occurrences.push(EvaluatedReturnOccurrence {
-            source,
-            entry_borrow,
-        });
+        self.occurrences
+            .push(EvaluatedReturnOccurrence { source, origin });
         Ok(self)
     }
 
@@ -154,70 +195,86 @@ impl EvaluatedReturnResources {
         composition: ReturnResourceComposition,
         assumptions: &PureFactContext,
     ) -> Result<PreparedReturnComposition, ResourceContextValidityError> {
-        if let ReturnResourceComposition::RestoreConsumedCell(transfer) = composition {
-            // The producer selected a single unguarded output and its consumed
-            // entry support. No other output can overlap this transfer.
-            let output = self.occurrences[0].source;
-            let (frame, consumed_cell) = ResourceContext::return_consumed_cell(
-                ReturnedConsumedCell {
-                    frame,
-                    output: self.resources.facts()[0].clone(),
-                    source: output,
-                    consumed: transfer,
-                },
-                assumptions,
-            );
-            return Ok(PreparedReturnComposition {
-                frame,
-                pending: ResourceContext::new_with_equalities(assumptions),
-                entry_borrow_outputs: ResourceContext::new_with_equalities(assumptions),
-                restored: Vec::new(),
-                consumed_cell: Some(consumed_cell),
-                occurrences: Vec::new(),
-            });
-        }
         let occurrences = self
             .occurrences
             .iter()
             .map(|entry| EvaluatedReturnOccurrence {
                 source: entry.source,
-                entry_borrow: entry.entry_borrow
-                    && matches!(composition, ReturnResourceComposition::RestoreEntryBorrows),
+                origin: if matches!(composition, ReturnResourceComposition::ValidateDescriptions) {
+                    ReturnOwnershipOrigin::Description
+                } else {
+                    entry.origin
+                },
             })
             .collect::<Vec<_>>();
-        if !occurrences.iter().any(|entry| entry.entry_borrow) {
+        if occurrences
+            .iter()
+            .all(|entry| entry.origin == ReturnOwnershipOrigin::Description)
+        {
             return Ok(PreparedReturnComposition {
                 frame,
                 pending: self.resources.clone(),
                 entry_borrow_outputs: ResourceContext::new_with_equalities(assumptions),
-                restored: Vec::new(),
-                consumed_cell: None,
+                consumed_cell_outputs: ResourceContext::new_with_equalities(assumptions),
+                restored: BTreeMap::new(),
                 occurrences,
             });
         }
+        let mut frame = frame;
         let mut borrowed = ResourceContext::new_with_equalities(assumptions);
+        let mut borrowed_sources = Vec::new();
         let mut pending = ResourceContext::new_with_equalities(assumptions);
+        let mut consumed_cell_outputs = ResourceContext::new_with_equalities(assumptions);
+        let mut restored = BTreeMap::new();
         for (fact, occurrence) in self.resources.facts().iter().zip(&occurrences) {
-            if occurrence.entry_borrow {
-                borrowed = borrowed.unchecked_with_fact(fact.clone());
-            } else {
-                pending = pending.unchecked_with_fact(fact.clone());
+            match occurrence.origin {
+                ReturnOwnershipOrigin::EntryBorrow => {
+                    borrowed = borrowed.unchecked_with_fact(fact.clone());
+                    borrowed_sources.push(occurrence.source);
+                }
+                ReturnOwnershipOrigin::ConsumedCell(consumed) => {
+                    let (next, transfer) = ResourceContext::return_consumed_cell(
+                        ReturnedConsumedCell {
+                            frame,
+                            output: fact.clone(),
+                            source: occurrence.source,
+                            consumed,
+                        },
+                        assumptions,
+                    );
+                    frame = next;
+                    restored.insert(occurrence.source, transfer);
+                    consumed_cell_outputs = consumed_cell_outputs.unchecked_with_fact(fact.clone());
+                }
+                ReturnOwnershipOrigin::Description => {
+                    pending = pending.unchecked_with_fact(fact.clone());
+                }
             }
         }
         let entry_borrow_outputs = borrowed.clone();
-        let (frame, restored) = ResourceContext::restore_call_borrows(
+        let (frame, borrowed_insertions) = ResourceContext::restore_call_borrows(
             ReturnedCallBorrows {
                 frame,
                 outputs: borrowed,
             },
             assumptions,
         )?;
+        for (source, (_, destination)) in borrowed_sources.into_iter().zip(borrowed_insertions) {
+            restored.insert(
+                source,
+                ReturnResourceTransfer {
+                    source,
+                    destination,
+                    consumed_input: None,
+                },
+            );
+        }
         Ok(PreparedReturnComposition {
             frame,
             pending,
             entry_borrow_outputs,
+            consumed_cell_outputs,
             restored,
-            consumed_cell: None,
             occurrences,
         })
     }
@@ -228,9 +285,6 @@ impl PreparedReturnComposition {
         self,
         assumptions: &PureFactContext,
     ) -> Result<(ResourceContext, Vec<ReturnResourceTransfer>), ResourceContextValidityError> {
-        if let Some(transfer) = self.consumed_cell {
-            return Ok((self.frame, vec![transfer]));
-        }
         let (frame, inserted) = if self.pending.facts().is_empty() {
             (self.frame, Vec::new())
         } else {
@@ -240,24 +294,26 @@ impl PreparedReturnComposition {
                     assumptions,
                 )?
         };
-        // Both constructors retain one occurrence for each supplied fact.
-        // Pair the original source identity with the insertion's destination,
-        // retaining emitted order across the two partitions.
-        let mut restored = self.restored.into_iter();
+        // Restore by the producer's selected identity. Ordinary insertions
+        // retain pending order, so this preserves actual emitted order even
+        // when guards or deferred clauses changed it from declaration order.
+        let mut restored = self.restored;
         let mut inserted = inserted.into_iter();
         let occurrences = self
             .occurrences
             .into_iter()
             .map(|source| {
-                let (_, destination) = if source.entry_borrow {
-                    restored.next().expect("restored entry occurrence")
+                if source.origin != ReturnOwnershipOrigin::Description {
+                    restored
+                        .remove(&source.source)
+                        .expect("restored return occurrence")
                 } else {
-                    inserted.next().expect("admitted output occurrence")
-                };
-                ReturnResourceTransfer {
-                    source: source.source,
-                    destination,
-                    consumed_input: None,
+                    let (_, destination) = inserted.next().expect("admitted output occurrence");
+                    ReturnResourceTransfer {
+                        source: source.source,
+                        destination,
+                        consumed_input: None,
+                    }
                 }
             })
             .collect();
