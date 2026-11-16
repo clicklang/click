@@ -1311,15 +1311,23 @@ impl ProgramLayouts {
     ) {
         self.register_function_static_bindings(function);
         let index = std::sync::Arc::make_mut(&mut self.local_bindings);
-        let mut record = |binding: &crate::kernel::BindingName, site: Option<&syntax::CSite>| {
+        // Declarations normally share one owner. Retain the typed owner so a
+        // long function/source spelling is copied once, not per temporary.
+        let mut last_owner = None;
+        let mut record = |binding: &crate::kernel::BindingName,
+                          site: Option<&syntax::CSite>,
+                          materialized: bool| {
             let Some(id) = binding.local_id() else {
                 return;
             };
-            index
-                .owners
-                .entry(id.function().to_owned())
-                .or_default()
-                .insert(id.source().map(str::to_owned));
+            if last_owner.as_ref() != Some(id.owner()) {
+                index
+                    .owners
+                    .entry(id.function().to_owned())
+                    .or_default()
+                    .insert(id.source().map(str::to_owned));
+                last_owner = Some(id.owner().clone());
+            }
             let parameter = id
                 .is_parameter()
                 .then(|| function.parameters().get(id.ordinal() as usize))
@@ -1332,9 +1340,10 @@ impl ProgramLayouts {
                     .cloned()
                     .or_else(|| parameter.and_then(|p| p.struct_name().map(str::to_owned)))
             });
-            let aggregate = id
-                .program_type()
-                .is_some_and(|ty| ty.array_element_type().is_some())
+            let aggregate = materialized
+                || id
+                    .program_type()
+                    .is_some_and(|ty| ty.array_element_type().is_some())
                 || function.local_struct_values().contains_key(binding)
                 || parameter.is_some_and(|p| p.is_struct_value());
             let array_shape = id.array_shape().map(<[u32]>::to_vec);
@@ -1378,7 +1387,7 @@ impl ProgramLayouts {
             }
         };
         for parameter in function.parameters() {
-            record(parameter.binding_name(), None);
+            record(parameter.binding_name(), None, false);
         }
         let mut statements = vec![function.body()];
         let mut expressions = Vec::new();
@@ -1387,7 +1396,7 @@ impl ProgramLayouts {
                 match statement {
                     syntax::CStatement::Declare { name, .. }
                     | syntax::CStatement::DeclareStructValue { name, .. } => {
-                        record(name.binding(), statement.site())
+                        record(name.binding(), statement.site(), false)
                     }
                     _ => {}
                 }
@@ -1403,6 +1412,42 @@ impl ProgramLayouts {
                     &mut expressions,
                     &mut statements,
                 );
+            }
+        }
+        if let Some(lowered) = function.prelowered_kernel_function() {
+            use crate::kernel::ProgramStatement;
+            let mut pending = vec![lowered.body()];
+            while let Some(statement) = pending.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                match statement {
+                    ProgramStatement::Declare { name, .. } => record(name.binding(), None, false),
+                    ProgramStatement::DeclareAggregate { name, .. } => {
+                        record(name.binding(), None, true)
+                    }
+                    ProgramStatement::TryCatchInt32 {
+                        try_body,
+                        binding,
+                        handler,
+                        ..
+                    } => {
+                        record(binding, None, false);
+                        pending.extend([try_body.as_ref(), handler.as_ref()]);
+                    }
+                    ProgramStatement::Seq(sequence) => {
+                        pending.extend(sequence.iter().map(|s| s.as_ref()))
+                    }
+                    ProgramStatement::If {
+                        then_branch,
+                        else_branch,
+                        ..
+                    } => pending.extend([then_branch.as_ref(), else_branch.as_ref()]),
+                    ProgramStatement::While { body, .. } => pending.push(body),
+                    ProgramStatement::ForStep { step, .. } => pending.push(step),
+                    ProgramStatement::Switch { cases, .. } => {
+                        pending.extend(cases.iter().map(|case| case.body.as_ref()))
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -16136,8 +16181,15 @@ impl Parser {
             self.position = start;
             return Ok(None);
         }
+        let temporary =
+            matches!(self.peek_next(), Some(Token::Ident(selector)) if selector == "temporary");
         let parameter = match (self.peek(), self.peek_next()) {
             (Some(Token::Dot), Some(Token::Ident(selector))) if selector == "local" => false,
+            (Some(Token::Dot), Some(Token::Ident(selector)))
+                if selector == "temporary" && path.is_empty() =>
+            {
+                false
+            }
             (Some(Token::Dot), Some(Token::Ident(selector)))
                 if selector == "parameter" && path.is_empty() =>
             {
@@ -16176,12 +16228,12 @@ impl Parser {
         let id = if path.is_empty() {
             let ordinal = u32::try_from(self.expect_index("declaration ordinal")?)
                 .map_err(|_| self.error("declaration ordinal exceeds u32"))?;
-            let query = crate::kernel::LocalBindingId::new(
-                crate::kernel::LocalFunctionId::new(source, function),
-                parameter,
-                ordinal,
-                None,
-            );
+            let owner = crate::kernel::LocalFunctionId::new(source, function);
+            let query = if temporary {
+                crate::kernel::LocalBindingId::temporary(owner, ordinal)
+            } else {
+                crate::kernel::LocalBindingId::new(owner, parameter, ordinal, None)
+            };
             self.local_bindings
                 .declarations
                 .get_key_value(&query)

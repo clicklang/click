@@ -6160,7 +6160,7 @@ impl ExecutionFrontier {
 /// the `try` for normal completion.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EvidenceTryFrame {
-    pub(crate) binding: String,
+    pub(crate) binding: BindingName,
     pub(crate) handler: Arc<ProgramStatement>,
     pub(crate) tail_after_try: Option<Arc<ProgramStatement>>,
     pub(crate) cleanup_unwind: bool,
@@ -6187,7 +6187,7 @@ pub(crate) struct ProofExecutionContinuation {
 /// carries one of these.
 #[derive(Clone)]
 pub(crate) struct ExceptionalContinuation {
-    pub(crate) binding: String,
+    pub(crate) binding: BindingName,
     pub(crate) handler: Arc<ProgramStatement>,
     pub(crate) handler_first_index: usize,
     pub(crate) cleanup_unwind: bool,
@@ -9173,8 +9173,8 @@ impl ExecutionProofCore {
         // Binding micro-steps and handler heads are meaningful only while
         // a `try` frame is open; without one there is nothing to route to.
         let frame_binding_matches = |frame: &EvidenceTryFrame| match proved_statement {
-            ProgramStatement::Declare { name, .. } => name.binding().is_named(&frame.binding),
-            ProgramStatement::Assign { name, .. } => name.is_named(&frame.binding),
+            ProgramStatement::Declare { name, .. } => name.binding() == &frame.binding,
+            ProgramStatement::Assign { name, .. } => name == &frame.binding,
             _ => false,
         };
         if let Some(frame) = self.evidence_try_stack.last()

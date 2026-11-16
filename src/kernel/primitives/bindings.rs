@@ -57,6 +57,7 @@ pub struct LocalBindingId(Arc<LocalDeclaration>);
 struct LocalDeclaration {
     owner: LocalFunctionId,
     parameter: bool,
+    temporary: bool,
     ordinal: u32,
     scope_depth: u32,
     spelling: Option<String>,
@@ -74,6 +75,7 @@ impl LocalBindingId {
         Self(Arc::new(LocalDeclaration {
             owner,
             parameter,
+            temporary: false,
             ordinal,
             scope_depth: 0,
             spelling,
@@ -82,10 +84,28 @@ impl LocalBindingId {
             struct_name: OnceLock::new(),
         }))
     }
+    /// A frontend temporary is distinct from all source declaration ordinals.
+    pub(crate) fn temporary(owner: LocalFunctionId, ordinal: u32) -> Self {
+        Self(Arc::new(LocalDeclaration {
+            owner,
+            parameter: false,
+            temporary: true,
+            ordinal,
+            scope_depth: 0,
+            spelling: None,
+            program_type: OnceLock::new(),
+            array_shape: OnceLock::new(),
+            struct_name: OnceLock::new(),
+        }))
+    }
+    pub fn is_temporary(&self) -> bool {
+        self.0.temporary
+    }
     pub(crate) fn with_scope_depth(self, scope_depth: u32) -> Self {
         Self(Arc::new(LocalDeclaration {
             owner: self.0.owner.clone(),
             parameter: self.0.parameter,
+            temporary: self.0.temporary,
             ordinal: self.0.ordinal,
             scope_depth,
             spelling: self.0.spelling.clone(),
@@ -93,6 +113,9 @@ impl LocalBindingId {
             array_shape: OnceLock::new(),
             struct_name: OnceLock::new(),
         }))
+    }
+    pub fn owner(&self) -> &LocalFunctionId {
+        &self.0.owner
     }
     pub fn scope_depth(&self) -> u32 {
         self.0.scope_depth
@@ -131,8 +154,13 @@ impl LocalBindingId {
     pub fn program_type(&self) -> Option<ProgramType> {
         self.0.program_type.get().copied()
     }
-    fn identity(&self) -> (&LocalFunctionId, bool, u32) {
-        (&self.0.owner, self.0.parameter, self.0.ordinal)
+    fn identity(&self) -> (&LocalFunctionId, bool, bool, u32) {
+        (
+            &self.0.owner,
+            self.0.temporary,
+            self.0.parameter,
+            self.0.ordinal,
+        )
     }
 }
 
@@ -154,7 +182,12 @@ impl Ord for LocalBindingId {
 }
 impl Hash for LocalBindingId {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.identity().hash(state);
+        if self.is_temporary() {
+            (&self.0.owner, 2u8, self.0.ordinal).hash(state);
+        } else {
+            // Preserve the hash domain of existing C declaration identities.
+            (&self.0.owner, self.0.parameter, self.0.ordinal).hash(state);
+        }
     }
 }
 impl std::fmt::Display for LocalBindingId {
@@ -166,7 +199,9 @@ impl std::fmt::Display for LocalBindingId {
             f,
             "{}.{}({})",
             self.function(),
-            if self.is_parameter() {
+            if self.is_temporary() {
+                "temporary"
+            } else if self.is_parameter() {
                 "parameter"
             } else {
                 "local"
@@ -316,6 +351,15 @@ pub enum BindingName {
 }
 
 impl BindingName {
+    /// A lexical source spelling, absent for frontend temporaries and outcomes.
+    pub fn source_spelling(&self) -> Option<&str> {
+        match self {
+            Self::Named(name) => Some(name),
+            Self::Local(id) => id.spelling(),
+            Self::Static(id) => Some(id.spelling()),
+            Self::ContractResult | Self::ContractException => None,
+        }
+    }
     pub fn source_name(&self) -> &str {
         match self {
             Self::Named(name) => name,
@@ -560,6 +604,50 @@ mod tests {
     }
 
     #[test]
+    fn temporary_ids_are_distinct_from_declarations_and_legacy_spellings() {
+        let owner = LocalFunctionId::new(Some("unit.cpp".into()), "f".into());
+        let temporary: BindingName = LocalBindingId::temporary(owner.clone(), 0).into();
+        let source = local(&owner, 0, "__click_cpp_return_value", 0);
+        let parameter: BindingName =
+            LocalBindingId::new(owner.clone(), true, 0, Some("p".into())).into();
+        let mut locals = LocalEnvironment::new();
+        locals.set(&temporary, int32(7));
+        for (index, binding) in [
+            source.clone(),
+            parameter,
+            "__click_cpp_return_value".into(),
+            "__click_cpp_unwind_exception".into(),
+            "__click_cpp_nested_value_0".into(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_ne!(temporary, binding);
+            locals.set(&binding, int32(index as u32));
+            assert_eq!(locals.get(&temporary).unwrap().native().as_ref(), &int32(7));
+            assert!(
+                Memory::local_pointer(&temporary)
+                    .block
+                    .proven_distinct(&Memory::local_pointer(binding).block)
+            );
+        }
+        assert_eq!(temporary.source_spelling(), None);
+        assert_eq!(locals.active_source_name(&temporary), None);
+        assert_eq!(locals.resolve_binding(&temporary), temporary);
+        assert_eq!(temporary.to_string(), "\"unit.cpp\"::f.temporary(0)");
+        assert_ne!(temporary, BindingName::from(temporary.to_string()));
+        assert_ne!(temporary, LocalBindingId::temporary(owner, 1).into());
+        assert_ne!(
+            temporary,
+            LocalBindingId::temporary(
+                LocalFunctionId::new(Some("other.cpp".into()), "f".into()),
+                0
+            )
+            .into()
+        );
+    }
+
+    #[test]
     fn contract_result_is_neither_a_source_name_nor_a_string_alias() {
         let owner = LocalFunctionId::new(None, "f".into());
         let source = local(&owner, 0, "result", 1);
@@ -700,4 +788,10 @@ mod tests {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    use super::*;
+    include!("../../scaling_tests/kernel/primitives/bindings.rs");
 }

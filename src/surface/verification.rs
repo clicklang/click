@@ -3845,8 +3845,11 @@ fn source_struct_names(
 ) -> BTreeMap<String, String> {
     let mut names: BTreeMap<String, Option<String>> = BTreeMap::new();
     for (binding, ty) in bindings {
+        let Some(spelling) = binding.source_spelling() else {
+            continue;
+        };
         names
-            .entry(binding.source_name().to_owned())
+            .entry(spelling.to_owned())
             .and_modify(|previous| {
                 if previous.as_ref() != Some(ty) {
                     *previous = None;
@@ -4951,12 +4954,12 @@ impl parser::ProgramLayouts {
                     references: function
                         .local_references()
                         .iter()
-                        .map(|name| name.source_name().to_owned())
+                        .filter_map(|name| name.source_spelling().map(str::to_owned))
                         .collect(),
                     pointers: function
                         .local_pointers()
                         .iter()
-                        .map(|name| name.source_name().to_owned())
+                        .filter_map(|name| name.source_spelling().map(str::to_owned))
                         .collect(),
                     loop_iterators: function.loop_iterators().to_vec(),
                 },

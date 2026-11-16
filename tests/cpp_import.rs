@@ -2645,6 +2645,24 @@ fn scalar_int32_profile_unwinds_one_guard_on_both_paths() {
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
     verify_program_prepared_project(&click_project, &prepared)
         .expect("normal and caught exceptional paths must restore the original value");
+    let lowered = lower_import(&prepared).unwrap();
+    let body = format!("{:?}", lowered.kernel_function().body());
+    assert!(!body.contains("__click_cpp_unwind_exception"), "{body}");
+    let expanded = expand_project_claim_source_by_label(
+        &click_project,
+        &ProgramInputs::program(&prepared),
+        "guarded.contract",
+    )
+    .unwrap();
+    assert!(
+        !expanded.contains("__click_cpp_unwind_exception"),
+        "{expanded}"
+    );
+    click::surface::without_implicit_solve_for_claim("guarded.contract", || {
+        verify_program_prepared_project(&click_project.with_entry_source(expanded), &prepared)
+            .map_err(|error| error.report())
+    })
+    .expect("typed cleanup payload survives expansion and cold replay");
 }
 
 #[test]
@@ -4751,7 +4769,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
                     if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
                         returned.as_ref(),
                         ProgramStatement::Return(ProgramExpression::Variable(name))
-                            if name.source_name().starts_with("__click_cpp_return_value")
+                            if name.local_id().is_some_and(|id| id.is_temporary())
                     ) }
             ) }
     ));
@@ -4775,8 +4793,17 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
         execute.column,
     )
     .expect("expand the proof across terminal cleanup");
-    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
-        .expect("expanded terminal-cleanup proof must reverify");
+    assert!(!expanded.contains("__click_cpp_return_value"), "{expanded}");
+    assert!(!expanded.contains("__click_cpp_nested_value"), "{expanded}");
+    assert!(
+        !expanded.contains("__click_cpp_unwind_exception"),
+        "{expanded}"
+    );
+    click::surface::without_implicit_solve_for_claim("capture.contract", || {
+        verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
+            .map_err(|error| error.report())
+    })
+    .expect("expanded terminal-cleanup proof must cold reverify");
 
     let missing_destructor = TERMINAL_DESTRUCTOR_SIDECAR.replace(
         "RestoreState::~RestoreState() {\n    requires separate(memory(*this), memory(this->pointer[0..1]));\n    owns this->pointer;\n    owns this->saved;\n    owns this->pointer[0..1];\n    ensures this->pointer == old(this->pointer);\n    ensures this->saved == old(this->saved);\n    ensures this->pointer[0] == old(this->saved);\n}\n\n",
@@ -9558,7 +9585,7 @@ int64 choose(bool first, int32 value) { requires value == 7; ensures result == 7
 
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
-fn nested_capture_name_probes_scale_with_calls_and_source_collisions() {
+fn nested_temporary_ids_scale_with_calls_and_source_collisions() {
     let mut previous = None;
     for size in [2usize, 4, 8, 16] {
         let locals = (0..size)
@@ -9576,7 +9603,7 @@ fn nested_capture_name_probes_scale_with_calls_and_source_collisions() {
         lowered.unwrap();
         // The shared constant layer charges decimal parsing at both artifact
         // validation and lowering. Each one-character initializer adds six
-        // units; name probing must still grow linearly across all sizes.
+        // units; temporary allocation must still grow linearly across all sizes.
         assert!(
             work >= 2 * size && work <= 11 * size + 32,
             "{size} calls and collisions: {work} work"

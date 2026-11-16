@@ -5723,7 +5723,7 @@ pub enum ProgramStatement {
     /// for the handler. Other outcomes retain their original path and state.
     TryCatchInt32 {
         try_body: Box<ProgramStatement>,
-        binding: String,
+        binding: BindingName,
         handler: Box<ProgramStatement>,
         /// This is an implementation cleanup edge inserted by a frontend,
         /// rather than a source-level handler. Its handler runs cleanup and
