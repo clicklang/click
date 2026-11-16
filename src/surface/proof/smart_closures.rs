@@ -4595,7 +4595,7 @@ fn source_backed_call_requirement_surface(
                 .names_holding_integer(term)
                 .next()?;
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                crate::kernel::program_local_source_name(local).to_owned(),
+                (crate::kernel::program_local_source_name(local).to_owned()).into(),
             ))
         };
         substitutions.insert(name.clone(), expression);
@@ -4707,10 +4707,9 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
             else {
                 return None;
             };
-            let callee_slot = callee
-                .parameters()
-                .iter()
-                .position(|parameter| parameter.name() == callee_name)?;
+            let callee_slot = callee.parameters().iter().position(|parameter| {
+                parameter.binding_name() == callee_name || callee_name.is_named(parameter.name())
+            })?;
             let caller_slot = caller_parameter_through_identity_cast(
                 &resolved.arguments[callee_slot],
                 context.parsed_function.parameters(),
@@ -4785,7 +4784,7 @@ fn caller_parameter_as_argument(
             crate::surface::lowering::character_byte_view(parameter.name())
         }
         _ => ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            parameter.name().to_string(),
+            (parameter.name().to_string()).into(),
         )),
     }
 }
@@ -4819,11 +4818,11 @@ fn caller_parameter_through_identity_cast(
     // that no effect separates entry from this call.
     let slot = parameters
         .iter()
-        .position(|parameter| parameter.name() == name)
+        .position(|parameter| parameter.matches_binding(name))
         .or_else(|| {
             let held = state.scalar_local_value(name)?;
             let mut matching = parameters.iter().enumerate().filter(|(_, parameter)| {
-                state.scalar_local_value(parameter.name()).as_ref() == Some(&held)
+                state.scalar_local_value(parameter.binding_name()).as_ref() == Some(&held)
             });
             match (matching.next(), matching.next()) {
                 (Some((slot, _)), None) => Some(slot),

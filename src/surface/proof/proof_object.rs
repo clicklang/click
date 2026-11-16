@@ -1736,13 +1736,16 @@ fn register_state_names(
             // local's value, or a pointer local's whole address, is exactly
             // the local.
             // A temporary the translation introduced has no source spelling.
-            if name.starts_with("__click")
-                || name.starts_with("__rust_")
-                || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-            {
+            if name.named().is_some_and(|name| {
+                name.starts_with("__click")
+                    || name.starts_with("__rust_")
+                    || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            }) {
                 continue;
             }
-            let name = crate::surface::diagnostics::rust_variable_spelling(name)
+            let name = name
+                .named()
+                .and_then(crate::surface::diagnostics::rust_variable_spelling)
                 .unwrap_or_else(|| name.to_string());
             // A `usize` or `uintptr_t` local is a pointer integer; its
             // numeric value is the scalar the local held.
@@ -1841,12 +1844,13 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             if self.3.is_none() {
                 labels.register_current_state(&execution.core.state);
                 for (name, value) in execution.core.state.locals().object_values() {
-                    if !name.starts_with("__rust_")
+                    if !name.named().is_some_and(|name| name.starts_with("__rust_"))
                         && let Some(variable) = diagnostic_value_variable(&value.native())
                     {
                         labels.source_name(
                             variable,
-                            crate::surface::diagnostics::rust_variable_spelling(name)
+                            name.named()
+                                .and_then(crate::surface::diagnostics::rust_variable_spelling)
                                 .unwrap_or_else(|| name.to_string()),
                         );
                     }

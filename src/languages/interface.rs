@@ -60,7 +60,8 @@ pub struct ImportedFunction {
     /// Compiler-created carriers for statement-form callback calls. Keeping
     /// their origins explicit distinguishes them from user declarations with
     /// similar names and lets diagnostics name the written callback pointer.
-    pub(super) callback_statement_sources: std::sync::Arc<BTreeMap<String, CExpression>>,
+    pub(super) callback_statement_sources:
+        std::sync::Arc<BTreeMap<crate::kernel::BindingName, CExpression>>,
     /// Function-scope C label spellings resolved to kernel identities and
     /// executable statement indices after the complete body is parsed.
     pub(super) control_targets: BTreeMap<String, (crate::kernel::ControlTargetId, usize)>,
@@ -81,18 +82,18 @@ pub struct ImportedFunction {
     /// static locals and aggregates already travel in the maps above. A
     /// spelling declared twice in one function with two struct types is
     /// dropped rather than guessed.
-    pub(super) local_struct_pointers: BTreeMap<String, String>,
+    pub(super) local_struct_pointers: BTreeMap<crate::kernel::BindingName, String>,
     /// Struct type of each unambiguous automatic struct value, indexed by
     /// the spelling a Click sidecar uses.
-    pub(super) local_struct_values: BTreeMap<String, String>,
+    pub(super) local_struct_values: BTreeMap<crate::kernel::BindingName, String>,
     /// The automatic locals of reference type, by the name the source gives
     /// each. Its carrying pointer is the local [`reference_carrier_name`]
     /// names.
-    pub(super) local_references: BTreeSet<String>,
+    pub(super) local_references: BTreeSet<crate::kernel::BindingName>,
     /// The automatic locals of pointer type, by C spelling. A sidecar
     /// comparison doing arithmetic on one keeps its C meaning. A spelling
     /// declared both as a pointer and not is left out.
-    pub(super) local_pointers: BTreeSet<String>,
+    pub(super) local_pointers: BTreeSet<crate::kernel::BindingName>,
     pub(super) string_literals: Vec<CStringLiteral>,
     /// For a Rust function, the iterator each loop advances, by loop index
     /// (the loops in preorder): the state a proof names `iter` in that loop
@@ -117,7 +118,7 @@ pub(crate) struct SourceSites {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImportedParameter {
     pub(super) interface_type: InterfaceType,
-    pub(super) name: String,
+    pub(super) name: crate::kernel::BindingName,
     pub(super) volatile: bool,
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
@@ -563,7 +564,7 @@ impl ImportedFunction {
         }
         let mut named = self.clone();
         for (parameter, name) in named.parameters.iter_mut().zip(names) {
-            parameter.name = name.to_string();
+            parameter.name = (name.to_string()).into();
         }
         named.positional_parameters = false;
         Some(named)
@@ -649,7 +650,7 @@ impl ImportedFunction {
 
     pub(crate) fn callback_statement_sources(
         &self,
-    ) -> &std::sync::Arc<BTreeMap<String, CExpression>> {
+    ) -> &std::sync::Arc<BTreeMap<crate::kernel::BindingName, CExpression>> {
         &self.callback_statement_sources
     }
 
@@ -726,7 +727,7 @@ impl ImportedFunction {
             parameters
                 .iter()
                 .map(|parameter| ImportedParameter {
-                    name: String::new(),
+                    name: (String::new()).into(),
                     ..parameter.clone()
                 })
                 .collect::<Vec<_>>()
@@ -796,11 +797,14 @@ impl ImportedFunction {
 
     /// The struct name of each automatic local of struct-pointer type, by its
     /// C spelling.
-    pub fn local_struct_pointers(&self) -> &BTreeMap<String, String> {
+    pub fn local_struct_pointers(&self) -> &BTreeMap<crate::kernel::BindingName, String> {
         &self.local_struct_pointers
     }
 
-    pub(crate) fn with_local_struct_values(mut self, values: BTreeMap<String, String>) -> Self {
+    pub(crate) fn with_local_struct_values(
+        mut self,
+        values: BTreeMap<crate::kernel::BindingName, String>,
+    ) -> Self {
         self.local_struct_values = values;
         self
     }
@@ -830,7 +834,7 @@ impl ImportedFunction {
         self
     }
 
-    pub fn local_struct_values(&self) -> &BTreeMap<String, String> {
+    pub fn local_struct_values(&self) -> &BTreeMap<crate::kernel::BindingName, String> {
         &self.local_struct_values
     }
 
@@ -854,18 +858,21 @@ impl ImportedFunction {
         &self.loop_iterators
     }
 
-    pub(crate) fn with_local_references(mut self, references: BTreeSet<String>) -> Self {
+    pub(crate) fn with_local_references(
+        mut self,
+        references: BTreeSet<crate::kernel::BindingName>,
+    ) -> Self {
         self.local_references = references;
         self
     }
 
     /// The automatic locals of reference type, by source name. A proof names
     /// one as it names a reference parameter: the name is the referent.
-    pub fn local_references(&self) -> &BTreeSet<String> {
+    pub fn local_references(&self) -> &BTreeSet<crate::kernel::BindingName> {
         &self.local_references
     }
 
-    pub fn local_pointers(&self) -> &BTreeSet<String> {
+    pub fn local_pointers(&self) -> &BTreeSet<crate::kernel::BindingName> {
         &self.local_pointers
     }
 
@@ -1302,7 +1309,7 @@ impl ImportedParameter {
     ) -> Self {
         Self {
             interface_type,
-            name,
+            name: (name).into(),
             volatile: false,
             pointee_volatile: false,
             constant: false,
@@ -1321,7 +1328,15 @@ impl ImportedParameter {
     }
 
     pub fn name(&self) -> &str {
+        self.name.source_name()
+    }
+    pub fn binding_name(&self) -> &crate::kernel::BindingName {
         &self.name
+    }
+    /// A contract's unresolved source name refers to this parameter; an
+    /// explicit declaration reference must match its exact identity.
+    pub(crate) fn matches_binding(&self, binding: &crate::kernel::BindingName) -> bool {
+        binding == self.binding_name() || binding.is_named(self.name())
     }
 
     pub fn interface_type(&self) -> InterfaceType {
@@ -1689,9 +1704,11 @@ pub(super) fn record_value_type(layout: &RecordLayout) -> InterfaceType {
     InterfaceType::UInt8Array(layout.size_bytes)
 }
 
-pub(super) fn declared_pointer_locals(body: &crate::kernel::ProgramStatement) -> BTreeSet<String> {
+pub(super) fn declared_pointer_locals(
+    body: &crate::kernel::ProgramStatement,
+) -> BTreeSet<crate::kernel::BindingName> {
     use crate::kernel::ProgramStatement;
-    let mut pointers = BTreeMap::<String, bool>::new();
+    let mut pointers = BTreeMap::<crate::kernel::BindingName, bool>::new();
     let mut pending = vec![body];
     while let Some(statement) = pending.pop() {
         match statement {
@@ -1700,7 +1717,7 @@ pub(super) fn declared_pointer_locals(body: &crate::kernel::ProgramStatement) ->
             } => {
                 let pointer = program_type.is_pointer();
                 pointers
-                    .entry(name.clone())
+                    .entry(name.binding().clone())
                     .and_modify(|existing| *existing &= pointer)
                     .or_insert(pointer);
             }

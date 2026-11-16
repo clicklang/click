@@ -10,7 +10,7 @@ const ACCUMULATOR: Variable = Variable(3_200_000);
 const ITEM: Variable = Variable(3_200_001);
 
 fn name(text: &str) -> SpecExpression {
-    SpecExpression::ProgramExpression(ProgramExpression::Variable(text.to_string()))
+    SpecExpression::ProgramExpression(ProgramExpression::Variable((text.to_string()).into()))
 }
 
 fn int(value: u32) -> SpecExpression {

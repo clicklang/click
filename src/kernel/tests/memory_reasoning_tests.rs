@@ -4057,7 +4057,7 @@ fn a_pointerless_state_equality_drops_only_a_local_no_pointer_can_reach() {
     // `hidden` is the only name this session's sources never take the
     // address of; `addressed` is one a `&addressed` somewhere reaches.
     crate::kernel::primitives::set_never_address_taken_locals(
-        ["hidden".to_string()].into_iter().collect(),
+        ["hidden".to_string()].into_iter().map(Into::into).collect(),
     );
 
     let entry = Memory::new()
@@ -6908,7 +6908,7 @@ mod state_object_agreement {
         assert!(agree(&bare, &declared));
         assert!(agree(&declared, &bare.clone().with_block("local:a", 16)));
 
-        set_never_address_taken_locals(BTreeSet::from(["unreachable".to_string()]));
+        set_never_address_taken_locals(BTreeSet::from(["unreachable".into()]));
         let hidden = bare
             .clone()
             .with_block("local:unreachable", 8)

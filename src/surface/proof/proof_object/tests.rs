@@ -253,9 +253,9 @@ fn is_one_arithmetic_certificate_over(steps: &[ProofStep], expected: &[ClickProp
 /// to the kernel `terms` in order; any other term stays a literal value.
 fn named_int32(terms: &[MachineTerm], term: &MachineTerm) -> ContractExpression {
     match terms.iter().position(|named| named == term) {
-        Some(index) => {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(format!("x{index}")))
-        }
+        Some(index) => ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            format!("x{index}").into(),
+        )),
         None => ContractExpression::ProgramExpression(ProgramExpression::Value(
             ProgramValue::Int32(term.clone()),
         )),
@@ -684,7 +684,7 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
             let surface = ClickProposition::Comparison {
                 left: ContractExpression::Index(
                     Box::new(ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable("p".to_string()),
+                        ProgramExpression::Variable(("p".to_string()).into()),
                     )),
                     Box::new(ContractExpression::IntegerLiteral("0".to_string())),
                 ),
@@ -1835,11 +1835,11 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binder.clone(),
+                (binder.clone()).into(),
             )),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binder.clone(),
+                (binder.clone()).into(),
             )),
         }),
     };
@@ -2016,10 +2016,12 @@ fn have_scope_rejects_inconsistent_universal_binder_flags() {
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binder.clone(),
+                (binder.clone()).into(),
             )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Variable(binder)),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                (binder).into(),
+            )),
         }),
     };
     let root = pure_have_presentation_root(surface.clone());
@@ -2052,7 +2054,7 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                "chosen".to_string(),
+                ("chosen".to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
@@ -2087,11 +2089,11 @@ fn have_scope_rejects_unreachable_universal_introduction() {
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                "branch_local".to_string(),
+                ("branch_local".to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                "branch_local".to_string(),
+                ("branch_local".to_string()).into(),
             )),
         }),
     };
@@ -3049,7 +3051,9 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let proposition = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("x".to_string()).into(),
+        )),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
@@ -3199,7 +3203,9 @@ fn fixed_state_context_have_goal_does_not_reuse_an_older_surface_lowering() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("x".to_string()).into(),
+        )),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
@@ -3379,7 +3385,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
     );
     let expected_surface = ClickProposition::Comparison {
         left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            "chosen".to_string(),
+            ("chosen".to_string()).into(),
         )),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
@@ -3474,7 +3480,7 @@ fn universal_intro_binding_is_local_to_its_focused_sibling_branch() {
     let theorem_environment = TheoremEnvironment::new(&[]);
     let binder = "k".to_string();
     let binder_expression =
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(binder.clone()));
+        ContractExpression::ProgramExpression(ProgramExpression::Variable((binder.clone()).into()));
     let constant =
         |value| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value)));
     let surface_goal = ClickProposition::ForAll {
@@ -3667,7 +3673,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
             .apply_step(ProofStep::Witness(ProofWitness::single(
                 "witness".to_string(),
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    "candidate".to_string(),
+                    ("candidate".to_string()).into(),
                 )),
             )))
             .expect("witness should resolve the one referenced proof local")
@@ -3757,7 +3763,7 @@ fn initial_entry_provenance_keeps_nonzero_requirement_identity_after_derived_ins
         crate::kernel::MemoryStateIdentity::of(context.state.memory()),
     );
     let source_arguments = vec![ContractExpression::ProgramExpression(
-        ProgramExpression::Variable("x".to_string()),
+        ProgramExpression::Variable(("x".to_string()).into()),
     )];
     let indexed = index
         .lookup_unique_caller_requirement(
@@ -3784,14 +3790,22 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let equality = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("x".to_string()).into(),
+        )),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::ProgramExpression(ProgramExpression::Variable("y".to_string())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("y".to_string()).into(),
+        )),
     };
     let unavailable = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("z".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("z".to_string()).into(),
+        )),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::ProgramExpression(ProgramExpression::Variable("w".to_string())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("w".to_string()).into(),
+        )),
     };
     let values = BTreeMap::from([
         (
@@ -3913,7 +3927,9 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let variable = |name: &str| {
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name.to_string()))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            (name.to_string()).into(),
+        ))
     };
     let zero = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0)));
     let comparison =
@@ -4156,7 +4172,9 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let target_surface = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("x".to_string()).into(),
+        )),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
     };
@@ -4293,7 +4311,9 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
     let value =
         |constant| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(constant)));
     let variable = |name: &str| {
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name.to_string()))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            (name.to_string()).into(),
+        ))
     };
     let premise = ClickProposition::Comparison {
         left: variable("x"),
@@ -4876,7 +4896,9 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         body: Box::new(ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable("k".into())),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into())),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                parsed_function.parameters()[1].binding_name().clone(),
+            )),
         }),
     };
     let requirement = lower_fixed_state_proposition_with_assumptions(
@@ -4896,7 +4918,9 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
     .expect("the scalar existential should synthesize");
     assert!(matches!(synthesized, ClickProposition::Exists { .. }));
     let actual_surface = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            parsed_function.parameters()[1].binding_name().clone(),
+        )),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
@@ -4958,14 +4982,18 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
             "other_callback",
             "Need",
             0,
-            vec![ProgramExpression::Variable("x".into())],
+            vec![ProgramExpression::Variable(
+                parsed_function.parameters()[1].binding_name().clone(),
+            )],
         ),
         (
             "wrong interface",
             "callback",
             "Other",
             0,
-            vec![ProgramExpression::Variable("x".into())],
+            vec![ProgramExpression::Variable(
+                parsed_function.parameters()[1].binding_name().clone(),
+            )],
         ),
         (
             "wrong argument",
@@ -4979,7 +5007,9 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
             "callback",
             "Need",
             1,
-            vec![ProgramExpression::Variable("x".into())],
+            vec![ProgramExpression::Variable(
+                parsed_function.parameters()[1].binding_name().clone(),
+            )],
         ),
     ] {
         let site = std::sync::Arc::new(crate::kernel::CallRequirementSite::for_requirement(
@@ -5018,7 +5048,9 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         "callback",
         "Need",
         0,
-        &[ProgramExpression::Variable("x".into())],
+        &[ProgramExpression::Variable(
+            parsed_function.parameters()[1].binding_name().clone(),
+        )],
         at_call.execution().unwrap().core.state.memory(),
     ));
     let source = std::sync::Arc::new(crate::kernel::CallRequirementSource::new(
@@ -5045,7 +5077,17 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         panic!("retry should retain a Have before the call step");
     };
     assert!(matches!(proposition, ClickProposition::Exists { .. }));
-    assert_eq!(proposition, &synthesized);
+    let expected = substitute_click_proposition(
+        &synthesized,
+        &BTreeMap::from([(
+            "x".into(),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                parsed_function.parameters()[1].binding_name().clone(),
+            )),
+        )]),
+    )
+    .unwrap();
+    assert_eq!(proposition, &expected);
 }
 
 #[test]
@@ -7586,8 +7628,9 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
     };
     let mut recorded_states = RecordedStates::new();
     recorded_states.insert(point.clone(), state.clone());
-    let variable =
-        || ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string()));
+    let variable = || {
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into()))
+    };
     let constant =
         |value| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value)));
     let lower_premise = ClickProposition::Comparison {
@@ -9620,7 +9663,9 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         &projection.leaves[0].surface,
         &BTreeMap::from([(
             "candidate".to_string(),
-            ContractExpression::ProgramExpression(ProgramExpression::Variable("other".to_string())),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                ("other".to_string()).into(),
+            )),
         )]),
     )
     .expect("renaming a citation should be capture-safe");
@@ -10104,9 +10149,13 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
         right: ContractExpression::CBinding("x".to_string()),
     };
     let _exposed_reflexive = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("x".to_string()).into(),
+        )),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("x".to_string()).into(),
+        )),
     };
 
     for size in [16_u32, 64, 256, 1024, 4096] {
@@ -10634,9 +10683,9 @@ fn contextual_store_step_scales_with_unrelated_named_facts() {
         for index in 0..size {
             let fact = indexed_fact(index + 10_000);
             let surface = ClickProposition::Comparison {
-                left: ContractExpression::ProgramExpression(ProgramExpression::Variable(format!(
-                    "unrelated_{index}"
-                ))),
+                left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    format!("unrelated_{index}").into(),
+                )),
                 operator: ComparisonOperator::Equal,
                 right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
             };
@@ -10995,7 +11044,7 @@ fn proof_condition_split_filters_conflicts_without_rebuilding_facts() {
     let symbolic = Variable(50_000);
     let state = ExecutionState::new().with_local("x", int32(MachineTerm::Variable(symbolic)));
     let condition = ProgramExpression::LessThan(
-        Box::new(ProgramExpression::Variable("x".to_string())),
+        Box::new(ProgramExpression::Variable(("x".to_string()).into())),
         Box::new(ProgramExpression::Value(int32(0))),
     );
     let empty = ProofFacts::default();
@@ -11123,7 +11172,9 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
     ))];
     let function_environment = ExecutionEnvironment::new();
     let condition = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("x".to_string()).into(),
+        )),
         operator: ComparisonOperator::GreaterEqual,
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
@@ -11229,7 +11280,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
         // the original arm prefix through both terminal joins.
         let inner_condition = ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                "x".to_string(),
+                ("x".to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
@@ -11348,12 +11399,16 @@ fn execution_proof_cases_split_is_logarithmic_in_unrelated_facts() {
     ))];
     let function_environment = ExecutionEnvironment::new();
     let nonnegative = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("x".to_string()).into(),
+        )),
         operator: ComparisonOperator::GreaterEqual,
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let negative = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("x".to_string()).into(),
+        )),
         operator: ComparisonOperator::LessThan,
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
@@ -12290,7 +12345,9 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     ))];
     let function_environment = ExecutionEnvironment::new();
     let variable = |name: &str| {
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name.to_string()))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            (name.to_string()).into(),
+        ))
     };
     let value =
         |constant| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(constant)));
@@ -12877,7 +12934,9 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
     let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let nonnegative = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("x".to_string()).into(),
+        )),
         operator: ComparisonOperator::GreaterEqual,
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
@@ -14272,7 +14331,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
                 name,
                 expression: ProgramExpression::TypedLoad { value_type, .. },
                 ..
-            } => Some((*value_type, name.as_str())),
+            } => Some((*value_type, name.source_name())),
             _ => None,
         }
     }

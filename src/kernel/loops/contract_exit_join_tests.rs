@@ -186,7 +186,7 @@ fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_stor
     );
 
     let mut declared = value;
-    if let Some(mut binding) = declared.locals.bindings.get("temporary").cloned() {
+    if let Some(mut binding) = declared.locals.bindings.get(&("temporary").into()).cloned() {
         if let LocalBinding::Object {
             storage_declared, ..
         } = &mut binding
@@ -196,7 +196,7 @@ fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_stor
         declared
             .locals
             .bindings
-            .insert("temporary".to_string(), binding);
+            .insert(("temporary".to_string()).into(), binding);
     }
     let mut exits = [empty.clone(), declared];
     discard_loop_exit_partial_value_bindings(&empty, &body, &mut exits);

@@ -51,5 +51,5 @@ uint8 last(const uint8* p, uint64 n, uint64 k) {
 ```
 
 ```expect
-fail: at(function.entry, viewable(q[0..k + 4u64 - k]))
+fail: at(function.entry, viewable("a_viewable_premise_from_an_earlier_point_prints_that_point.c"::last.local(0)[0.."a_viewable_premise_from_an_earlier_point_prints_that_point.c"::last.parameter(2) + 4u64 - "a_viewable_premise_from_an_earlier_point_prints_that_point.c"::last.parameter(2)]))
 ```

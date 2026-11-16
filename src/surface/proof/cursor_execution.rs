@@ -579,7 +579,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
     if let Some(split) = enum_switch_proof_match(&statement, &current_state, context) {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached a Rust `match` of `{}`, whose variant is not known here; each variant is its own proof arm. Write `{}` here, or end the script here and let its implicit tail split it",
-            describe_program_expression(&ProgramExpression::Variable(split.scrutinee_name().to_string())),
+            split.describe_scrutinee(),
             split.outline(),
         ))
         .with_path_case_match(split));

@@ -418,7 +418,7 @@ impl GuardedTermSpeller<'_, '_> {
             && let Some(name) = self.bound.get(variable)
         {
             return Some(ContractExpression::ProgramExpression(
-                ProgramExpression::Variable(name.clone()),
+                ProgramExpression::Variable((name.clone()).into()),
             ));
         }
         if let Some(field) = self.field_spelling(term) {

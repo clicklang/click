@@ -33,5 +33,5 @@ int32 grow(size_t m) {
 ```
 
 ```expect
-fail: missing resource fact `owns ((char *)q)[(m * 4)..((m + 1) * 4)]`
+fail: missing resource fact `owns ((char *)"a_store_past_a_reallocated_64_bit_block_is_refused.c"::grow.local(1))[(m * 4)..((m + 1) * 4)]`
 ```

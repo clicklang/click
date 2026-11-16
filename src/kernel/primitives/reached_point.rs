@@ -7,8 +7,9 @@
 //! linked to the point it came from, so two paths are two chains whatever
 //! their memories hold.
 //!
-//! Nothing reads these yet. They are recorded alongside the snapshots so that
-//! naming and the version walk can move onto them.
+//! Surface records the name of each point it records a state at
+//! (`RecordedStates::point_name`); naming and the version walk are to move
+//! onto these points.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,7 +30,6 @@ impl ProgramPointId {
 }
 
 #[derive(Debug)]
-#[cfg_attr(not(test), allow(dead_code))]
 struct PointNode {
     id: ProgramPointId,
     /// The points this one was reached from on its path: one after an
@@ -83,7 +83,6 @@ impl ReachedPoint {
         })))
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn id(&self) -> Option<ProgramPointId> {
         self.0.as_ref().map(|node| node.id)
     }

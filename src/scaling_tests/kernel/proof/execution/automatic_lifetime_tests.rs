@@ -67,7 +67,7 @@ fn automatic_lifetime_event_ignores_unrelated_locals_and_checks_exact_states() {
         }
         let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
-            core.record_automatic_lifetime_end(&state, &["selected".to_string()])
+            core.record_automatic_lifetime_end(&state, &[("selected".to_string()).into()])
                 .unwrap()
         });
         assert!(after.locals().get_native("selected").as_deref().is_none());

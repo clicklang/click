@@ -176,7 +176,7 @@ impl AssumedMutexProtocol {
         } else {
             resources
         };
-        state.memory = memory;
+        state.set_memory_directly(memory);
         state.loan_ledger = Some(next);
         if let (Some(payload), Some(definition)) = (&payload, definition) {
             state = state
@@ -326,7 +326,7 @@ impl AssumedMutexProtocol {
         let evidence = self.evidence(loans, transition, &next)?;
         let mut state = state.clone();
         state.resources = resources;
-        state.memory = memory;
+        state.set_memory_directly(memory);
         state.loan_ledger = Some(next);
         Ok(AssumedMutexTransition { state, evidence })
     }

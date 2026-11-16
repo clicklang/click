@@ -159,7 +159,7 @@ fn c_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_th
                 }
                 syntax::CStatement::Declare {
                     name, zero_fill, ..
-                } => zero_filled.push((name.clone(), zero_fill.is_some())),
+                } => zero_filled.push((name.source_name().to_owned(), zero_fill.is_some())),
                 _ => {}
             }
         }

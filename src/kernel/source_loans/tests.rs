@@ -572,7 +572,7 @@ fn source_scalar_lease_explicit_end_is_not_executed_after_failed_read_assignment
     let statements = leaves(&program);
     let point = statements
         .iter()
-        .position(|s| matches!(s,ProgramStatement::Assign{name,..} if name=="x"))
+        .position(|s| matches!(s,ProgramStatement::Assign{name,..} if name.is_named("x")))
         .unwrap();
     for statement in &statements[..point] {
         state = normal(execute(&state, statement));
@@ -586,7 +586,7 @@ fn source_scalar_lease_explicit_end_is_not_executed_after_failed_read_assignment
         true,
         false,
     );
-    eval::sync_stack_local(&mut state, "x", &int32(0));
+    eval::sync_stack_local(&mut state, &("x").into(), &int32(0));
     let tail = statements[point..]
         .iter()
         .cloned()

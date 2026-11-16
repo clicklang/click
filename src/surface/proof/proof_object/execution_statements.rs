@@ -522,7 +522,8 @@ impl<'a> Proof<'a> {
         evaluate_fixed_state_expression_through_kernel(
             &expression,
             self.facts().assumptions(),
-            ContractEnvironment::new(&values, &array_refs),
+            ContractEnvironment::new(&values, &array_refs)
+                .with_parameters(context.parameter_binding()),
             FixedStateFrame::new(
                 pre_state,
                 state,
@@ -1031,7 +1032,8 @@ impl<'a> Proof<'a> {
                 &argument,
                 &crate::kernel::ResourceFieldType::Program(parameter.program_type()),
                 self.facts().assumptions(),
-                ContractEnvironment::new(&values, &array_refs),
+                ContractEnvironment::new(&values, &array_refs)
+                    .with_parameters(context.parameter_binding()),
                 pre_state,
                 before,
                 &execution.presentation.recorded_states,
@@ -2114,7 +2116,7 @@ mod search;
 /// Where the statement at the frontier leaves the result a `step` binds.
 enum FrontierResult {
     /// The local it assigns.
-    Local(String),
+    Local(crate::kernel::BindingName),
     /// The result of this call step.
     Call(u32),
 }

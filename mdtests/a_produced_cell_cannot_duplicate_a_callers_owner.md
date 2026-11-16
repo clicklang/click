@@ -23,5 +23,5 @@ int32 duplicate_output(int32* p) {
 ```
 
 ```expect
-fail: C operation: mint(p)
+fail: C operation: mint("duplicate_output.c"::duplicate_output.parameter(0))
 ```

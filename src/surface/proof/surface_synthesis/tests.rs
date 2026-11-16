@@ -954,7 +954,7 @@ fn full_guarded_requirement_with_variable_argument_round_trips() {
         _ => panic!("the production-shaped argument must be a pointer"),
     };
     let arguments = vec![
-        ProgramExpression::Variable("bytes".to_string()),
+        ProgramExpression::Variable(("bytes".to_string()).into()),
         concrete_arguments[1].clone(),
     ];
     let requirement_surface = full_external_guarded_range_surface();
@@ -1000,7 +1000,7 @@ fn full_guarded_constant_byte_requirement_with_variable_argument_round_trips() {
         _ => panic!("the production-shaped argument must be a pointer"),
     };
     let arguments = vec![
-        ProgramExpression::Variable("bytes".to_string()),
+        ProgramExpression::Variable(("bytes".to_string()).into()),
         concrete_arguments[1].clone(),
     ];
     let requirement_surface = full_external_guarded_range_surface();
@@ -1884,7 +1884,7 @@ fn function_array_argument_keeps_its_recorded_memory_after_other_writes() {
     };
     assert!(
         matches!(&arguments[0], SurfaceTerm::At { selector: selected, expression }
-        if *selected == selector && matches!(expression.as_ref(), SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) if name == "p"))
+        if *selected == selector && matches!(expression.as_ref(), SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named("p")))
     );
 }
 
@@ -2798,7 +2798,9 @@ fn a_local_indexes_only_addresses_formed_from_it() {
     };
     assert_eq!(
         *base,
-        ContractExpression::ProgramExpression(ProgramExpression::Variable("arena".to_string()))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("arena".to_string()).into()
+        ))
     );
 }
 
@@ -3456,7 +3458,12 @@ fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
     };
     let state = |pointer: &Pointer| {
         ExecutionState::new().with_local(
-            "p",
+            crate::kernel::BindingName::Local(crate::kernel::LocalBindingId::new(
+                crate::kernel::LocalFunctionId::new(None, "f".into()),
+                false,
+                0,
+                Some("p".into()),
+            )),
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         )
     };

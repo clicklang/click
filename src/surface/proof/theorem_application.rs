@@ -973,7 +973,9 @@ fn theorem_application_argument_type(
             return Ok(Some(generics::click_type_from_program_value(value)));
         }
         ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => {
             if let Some(value) = context.values.get(name) {
                 return Ok(Some(generics::click_type_from_program_value(value)));
             }
@@ -1472,7 +1474,7 @@ fn pointer_element_width_for_program_expression(
     known: &BTreeMap<String, u32>,
 ) -> Option<u32> {
     match expression {
-        ProgramExpression::Variable(name) => known.get(name).copied(),
+        ProgramExpression::Variable(name) => name.named_in(known).copied(),
         ProgramExpression::Add(left, right) => {
             pointer_element_width_for_program_expression(left, known)
                 .or_else(|| pointer_element_width_for_program_expression(right, known))
@@ -1921,11 +1923,9 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     let parameter = |side: &ContractExpression| match side {
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
-            if machine.contains(name.as_str()) =>
-        {
-            Some(name.clone())
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) if machine.contains(name.as_str()) => Some(name.clone()),
         _ => None,
     };
     // A suffixed literal, such as `100u64`, is a machine constant: it reads

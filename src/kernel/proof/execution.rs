@@ -11,7 +11,7 @@ use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, S
 use crate::kernel::population_authority::storage_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
-use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{BindingName, CompareRelation, MachineIntegerType};
 use crate::kernel::{
     CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
     ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MachineTerm,
@@ -2760,7 +2760,7 @@ fn checked_borrowing_fold_hold(
 pub(crate) struct CheckedAutomaticLifetimeEnd {
     before_state: ExecutionState,
     after_state: ExecutionState,
-    names: Vec<String>,
+    names: Vec<BindingName>,
 }
 
 impl CheckedAutomaticLifetimeEnd {
@@ -9134,9 +9134,8 @@ impl ExecutionProofCore {
         // Binding micro-steps and handler heads are meaningful only while
         // a `try` frame is open; without one there is nothing to route to.
         let frame_binding_matches = |frame: &EvidenceTryFrame| match proved_statement {
-            ProgramStatement::Declare { name, .. } | ProgramStatement::Assign { name, .. } => {
-                *name == frame.binding
-            }
+            ProgramStatement::Declare { name, .. } => name.binding().is_named(&frame.binding),
+            ProgramStatement::Assign { name, .. } => name.is_named(&frame.binding),
             _ => false,
         };
         if let Some(frame) = self.evidence_try_stack.last()
@@ -10322,7 +10321,7 @@ impl ExecutionProofCore {
     pub(crate) fn record_automatic_lifetime_end(
         &mut self,
         state: &ExecutionState,
-        names: &[String],
+        names: &[BindingName],
     ) -> Result<ExecutionState, RuntimeError> {
         self.last_footprint = None;
         if names.is_empty() {
@@ -11242,7 +11241,7 @@ impl ExecutionProofCore {
                 produced.state.resources(),
             )?;
             let mut retained = produced.state.clone().with_resource_context(resources);
-            retained.memory = before_state.memory().clone();
+            retained.keep_memory_of(&before_state);
             retained.locals = before_state.locals().clone();
             retained.enclosing_frame_holds_locals = before_state.enclosing_frame_holds_locals;
             Arc::make_mut(&mut retained.population_effects).predicate_count_permissions =
@@ -11400,7 +11399,7 @@ impl ExecutionProofCore {
                 format!("return resource exchange changed its retained frame: {error}")
             })?;
         let mut retained_after_state = after_state.clone().with_resource_context(resources);
-        retained_after_state.memory = before_state.memory().clone();
+        retained_after_state.keep_memory_of(&before_state);
         retained_after_state.locals = before_state.locals().clone();
         retained_after_state.enclosing_frame_holds_locals =
             before_state.enclosing_frame_holds_locals;
@@ -11546,7 +11545,8 @@ impl ExecutionProofCore {
             old_reference,
         )?;
         let interface_effect_facts = branch.interface_effect_facts().clone();
-        let joined_state = branch.joined_state().clone();
+        let mut joined_state = branch.joined_state().clone();
+        joined_state.join_reached_points(arms[0].reached_state(), arms[1].reached_state());
         // The kernel recomputed the abstraction, so it also knows where the
         // abstraction left the counter. Installing that mark here is what
         // makes the successor's counter kernel-owned: a caller cannot take
