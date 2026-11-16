@@ -7384,6 +7384,7 @@ fn viewed_form_of_resource_fact(fact: &ResourceFact) -> Option<ResourceFact> {
             Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)

@@ -1,13 +1,11 @@
-//! Private ordinary resource carriers for conditional loop guard clauses.
-//! Metadata locates an owned carrier; only checked unfolding transfers its guard.
+//! Typed, affine custody for conditional loop guard clauses.
+//! Metadata locates custody; protocol heldness alone never transfers a guard.
 use super::*;
 use crate::kernel::*;
-use crate::kernel::{CompareRelation, MachineIntegerType};
 
 pub(super) struct DirectLoopGuard {
     source: ResourceSpec,
-    definition: CompositeResourceDefinition,
-    head: ResourceInstance,
+    pub(super) head: Arc<ConditionalMutexGuard>,
 }
 
 fn scalar_expression(expression: &SpecExpression) -> bool {
@@ -73,7 +71,7 @@ fn source_condition(
     state: &ExecutionState,
     spec: &ResourceSpec,
     assumptions: &PureFactContext,
-) -> Result<(ConditionTerm, ProgramValue), String> {
+) -> Result<ConditionTerm, String> {
     let guard = spec
         .guard()
         .ok_or("conditional loop resource has no condition")?;
@@ -103,25 +101,17 @@ fn source_condition(
     {
         return Err("Requires the conditional loop resource expression to be defined".into());
     }
-    let value = crate::kernel::spec::conditional_spec_value(&path.proposition, int32(1), int32(0))
-        .ok_or("conditional loop resources require one scalar condition")?;
     let (condition, expected) =
         crate::kernel::spec::proposition_as_single_condition(&path.proposition)
             .ok_or("conditional loop resources require one scalar condition")?;
-    let held = if expected {
+    Ok(if expected {
         condition
     } else {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(match &value {
-                ProgramValue::Int32(term) => term.clone(),
-                _ => unreachable!(),
-            }),
-            right: Box::new(1u32.into()),
-        }
-    };
-    Ok((held, value))
+        ConditionTerm::BoolEqual(
+            Box::new(condition),
+            Box::new(ConditionTerm::Constant(false)),
+        )
+    })
 }
 
 fn source_mutex(
@@ -177,15 +167,15 @@ fn missing_guard(spec: &ResourceSpec) -> String {
     )
 }
 
-fn instance_with_value(carrier: &DirectLoopGuard, value: ProgramValue) -> ResourceInstance {
-    ResourceInstance::new(
-        carrier.head.identity(),
-        carrier.head.name().into(),
-        vec![].into(),
-        carrier.head.schema().clone(),
-        vec![value.into()].into(),
-    )
-    .expect("private carrier schema")
+pub(super) fn fact(carrier: &DirectLoopGuard) -> ResourceFact {
+    ResourceFact::own(Resource::ConditionalMutexGuard(carrier.head.clone()))
+}
+
+fn owns_carrier(state: &ExecutionState, carrier: &DirectLoopGuard) -> bool {
+    state
+        .resources
+        .unique_owned_occurrence_for_fact(&fact(carrier))
+        .is_some()
 }
 
 pub(in crate::kernel) fn prepare_direct_loop_guard(
@@ -202,12 +192,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
         .mutex_ledger
         .as_ref()
         .and_then(|ledger| ledger.storage.direct_loop_carriers.get(&mutex))
-        .is_some_and(|carrier| {
-            entry
-                .resources
-                .owned_instance(carrier.head.identity())
-                .is_some()
-        })
+        .is_some_and(|carrier| owns_carrier(entry, carrier))
     {
         let open = |state: &ExecutionState| -> Result<ExecutionState, String> {
             let context = MutexContext::new(state.clone());
@@ -226,7 +211,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     if source_mutex(head, spec, assumptions)? != mutex {
         return Err("conditional loop mutex must not change at the loop head".into());
     }
-    let (entry_condition, _) = source_condition(entry, spec, assumptions)?;
+    let entry_condition = source_condition(entry, spec, assumptions)?;
     let active = crate::kernel::loops::condition_is_decided(assumptions, &entry_condition)
         .ok_or("Requires the conditional loop resource condition at entry")?;
     let ledger = entry
@@ -249,56 +234,27 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     {
         return Err(missing_guard(spec));
     }
-    let (condition, value) = source_condition(head, spec, assumptions)?;
-    let schema = ResourceFieldSchema::new(vec![(
-        "active".into(),
-        ResourceFieldType::Program(ProgramType::Int32),
-    )])
-    .unwrap();
-    let name = format!("$conditional-loop-guard:{}", identity.0);
-    let body = ResourceSpec::new(
-        ResourceTerm::MutexGuard {
-            mutex: Box::new(ProgramExpression::Value(ProgramValue::pointer(
-                mutex.clone(),
-            ))),
-            state_source: ResourceStateSource::Current,
-        },
-        ResourceAccessMode::Own,
-        ResourceQuantity::One,
-        ResourceTransferRole::Consume,
-        ResourceStateSource::Current,
-    )
-    .unwrap();
-    let mut definition = CompositeResourceDefinition::new(
-        name.clone(),
-        vec![],
-        Some(SpecProposition::Comparison {
-            left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                "active",
-            )),
-            operator: ComparisonOperator::NotEqual,
-            right: SpecExpression::Value(int32(0)),
-        }),
-        false,
-        vec![body],
-        vec![],
-    )
-    .with_instance_schema(Some(schema.clone()));
-    definition.contains_mutex_authority = true;
-    let instance = ResourceInstance::new(
-        identity,
-        name,
-        vec![].into(),
-        schema,
-        vec![value.into()].into(),
-    )
-    .unwrap();
+    let condition = source_condition(head, spec, assumptions)?;
+    let mut state = abstract_loop_mutex(head, &mutex, condition.clone())?;
+    let ledger = state.mutex_ledger.as_ref().unwrap();
+    let Resource::MutexGuard(guard) = ledger.guard_resource(&mutex).unwrap().resource().clone()
+    else {
+        unreachable!()
+    };
+    let Resource::MutexLive(initialization) =
+        ledger.live_resource(&mutex).unwrap().resource().clone()
+    else {
+        unreachable!()
+    };
     let carrier = Arc::new(DirectLoopGuard {
         source: spec.clone(),
-        definition,
-        head: instance.clone(),
+        head: Arc::new(ConditionalMutexGuard {
+            identity,
+            guard,
+            initialization,
+            held: condition,
+        }),
     });
-    let mut state = abstract_loop_mutex(head, &mutex, condition)?;
     if let Some(guard) = old_guard {
         state.resources = state
             .resources
@@ -307,10 +263,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     }
     state.resources = state
         .resources
-        .try_compose_into_valid_context_delaying_normalization(
-            [ResourceFact::own(Resource::Instance(instance))],
-            assumptions,
-        )
+        .try_compose_into_valid_context_delaying_normalization([fact(&carrier)], assumptions)
         .map_err(|error| format!("conditional loop resource ownership overlaps: {error}"))?;
     let ledger = state.mutex_ledger.as_ref().unwrap();
     let mut ledger = ledger.with_inserted(mutex.clone(), ledger.get(&mutex).unwrap().clone());
@@ -357,20 +310,41 @@ impl MutexContext {
         else {
             return Ok(None);
         };
-        let Some(instance) = self.state.resources.owned_instance(carrier.head.identity()) else {
+        if !owns_carrier(&self.state, carrier) {
             return Ok(None);
-        };
-        let result = crate::kernel::functions::rewrite_resource_instance_selecting_children(
-            &self.state,
-            instance,
-            &carrier.definition,
-            std::slice::from_ref(&carrier.definition),
-            assumptions,
-            true,
-            None,
-        )
-        .map_err(|_| MutexTransitionError::MissingGuard(mutex.clone()))?;
-        let mut state = result.state;
+        }
+        let active = crate::kernel::loops::condition_is_decided(assumptions, &carrier.head.held)
+            .ok_or_else(|| MutexTransitionError::MissingGuard(mutex.clone()))?;
+        let ledger = self.state.mutex_ledger.as_ref().unwrap();
+        if ledger
+            .guard_resource(mutex)
+            .as_ref()
+            .map(ResourceFact::resource)
+            != Some(&Resource::MutexGuard(carrier.head.guard.clone()))
+            || ledger
+                .live_resource(mutex)
+                .as_ref()
+                .map(ResourceFact::resource)
+                != Some(&Resource::MutexLive(carrier.head.initialization.clone()))
+        {
+            return Err(MutexTransitionError::MissingGuard(mutex.clone()));
+        }
+        let mut state = self.state.clone();
+        state.resources = state
+            .resources
+            .without_fact_incrementally(&fact(carrier), assumptions)
+            .ok_or_else(|| MutexTransitionError::MissingGuard(mutex.clone()))?;
+        if active {
+            state.resources = state
+                .resources
+                .try_compose_into_valid_context_delaying_normalization(
+                    [ResourceFact::own(Resource::MutexGuard(
+                        carrier.head.guard.clone(),
+                    ))],
+                    assumptions,
+                )
+                .map_err(|_| MutexTransitionError::MissingGuard(mutex.clone()))?;
+        }
         let ledger = state.mutex_ledger.as_ref().unwrap();
         let mut next = ledger.with_inserted(mutex.clone(), ledger.get(mutex).unwrap().clone());
         Arc::get_mut(&mut next.storage)
@@ -400,15 +374,15 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
         let Some(carrier) = ledger.storage.direct_loop_carriers.get(mutex) else {
             continue;
         };
-        let Some(head_instance) = top.resources.owned_instance(carrier.head.identity()) else {
+        if !owns_carrier(top, carrier) {
             continue;
-        };
-        let (held, value) = source_condition(&state, &carrier.source, assumptions)?;
+        }
+        let held = source_condition(&state, &carrier.source, assumptions)?;
         if source_mutex(&state, &carrier.source, assumptions)? != *mutex {
             return Err("conditional loop guard changed its mutex".into());
         }
-        if head_instance.fields().first() == Some(&AlgebraicValue::Program(value.clone()))
-            && state.resources.owned_instance(carrier.head.identity()) == Some(head_instance)
+        if carrier.head.held == held
+            && owns_carrier(&state, carrier)
             && state.mutex_ledger.as_ref().is_some_and(|next| {
                 matches!(
                     (ledger.get(mutex), next.get(mutex)),
@@ -439,26 +413,40 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
         {
             state = opened.state;
         }
-        let instance = instance_with_value(carrier, value);
-        state = crate::kernel::functions::rewrite_resource_instance_selecting_children(
-            &state,
-            &instance,
-            &carrier.definition,
-            std::slice::from_ref(&carrier.definition),
-            assumptions,
-            false,
-            None,
-        )
-        .map_err(|_| missing_guard(&carrier.source))?
-        .state;
+        // Close directly from the actual current acquisition; no fabricated
+        // composite fold, intermediate resource, or authority from heldness.
+        if active {
+            let guard = state
+                .mutex_ledger
+                .as_ref()
+                .and_then(|l| l.guard_resource(mutex))
+                .ok_or_else(|| missing_guard(&carrier.source))?;
+            if state
+                .resources
+                .unique_owned_occurrence_for_fact(&guard)
+                .is_none()
+            {
+                return Err(missing_guard(&carrier.source));
+            }
+            state.resources = state
+                .resources
+                .without_fact_incrementally(&guard, assumptions)
+                .ok_or_else(|| missing_guard(&carrier.source))?;
+        }
+        if state
+            .mutex_ledger
+            .as_ref()
+            .and_then(|l| l.live_resource(mutex))
+            .as_ref()
+            .map(ResourceFact::resource)
+            != Some(&Resource::MutexLive(carrier.head.initialization.clone()))
+        {
+            return Err("conditional loop guard changed its mutex initialization".into());
+        }
         state.resources = state
             .resources
-            .without_fact_incrementally(
-                &ResourceFact::own(Resource::Instance(instance)),
-                assumptions,
-            )
-            .expect("just folded carrier")
-            .unchecked_with_fact(ResourceFact::own(Resource::Instance(head_instance.clone())));
+            .try_compose_into_valid_context_delaying_normalization([fact(carrier)], assumptions)
+            .map_err(|error| format!("conditional loop resource ownership overlaps: {error}"))?;
         checked.push(mutex.clone());
     }
     Ok((state, checked))

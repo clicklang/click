@@ -728,6 +728,11 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                 identity.mutex.clone()
             },
         }),
+        Resource::ConditionalMutexGuard(carrier) => {
+            let mut mapped = (**carrier).clone();
+            mapped.held = s.condition(&carrier.held);
+            Resource::ConditionalMutexGuard(std::sync::Arc::new(mapped))
+        }
         Resource::MutexGuard(identity) => Resource::MutexGuard(MutexIdentity {
             epoch: identity.epoch,
             mutex: if identity.epoch.is_none() {
@@ -3276,6 +3281,9 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
             if identity.binding.is_none() {
                 collect_pointer_bound_variables(&identity.mutex, variables);
             }
+        }
+        Resource::ConditionalMutexGuard(carrier) => {
+            collect_condition_bound_variables(&carrier.held, variables)
         }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
