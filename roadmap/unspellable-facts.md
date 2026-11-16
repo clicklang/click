@@ -401,6 +401,22 @@ zero machine exports; old-state lookup and outer binding restoration are covered
 Quality checks and five exact regular fold/match fixtures passed, with zero
 fact-stability differences.
 
+### 9s Numeric certification
+
+Retained machine and float calls use one numeric call reader, comparing their
+common arguments without first assembling a native call. Supported argument
+syntax keeps its prior admission; unsupported float expressions still refuse.
+Integer-to-machine conversions retain the existing native-syntax refusal without
+exporting the Integer operand solely to reach it. Shared-root identity and the
+existing numeric cast, width, order and conversion checks are unchanged.
+
+Validation: all 14 focused certification tests passed, including native/shared
+admission parity and zero float exports. Growing unsupported float and Integer
+operands refuse with constant deterministic work. All 2,138 API, specification,
+execution-value, expression and scaling tests passed, including three serial
+scaling checks. Quality and four exact regular certification fixtures passed,
+with zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
