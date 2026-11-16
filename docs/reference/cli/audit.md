@@ -73,7 +73,7 @@ Verification inside each phase keeps the per-tactic work budgets [`click verify`
 
 | Option | Default | Meaning |
 | --- | ---: | --- |
-| `--session-work-limit UNITS` | `100000000` | Budget each of smart-site inventory and original-sidecar session initialization. |
+| `--session-work-limit UNITS` | `100000000` | Budget each source's smart-site inventory, and each original-sidecar session initialization. |
 | `--expansion-work-limit UNITS` | `50000000` | Budget the deterministic work of one expansion or re-expansion. |
 | `--verification-work-limit UNITS` | `50000000` | Budget the deterministic work of one retained or cold proof-unit verification. |
 | `--performance-slack UNITS` | `10000` | Set the minimum expanded-over-original work increase that can fail. |

@@ -337,6 +337,11 @@ established by checking, including when exact rewriting removed the last
 variable before the comparison was printed. This does not change literal
 arithmetic evaluation or the existing equality normal forms.
 
+Generated comparison operands that are negative `int64` literals keep an explicit
+`as int64` cast, including under `old` and `at`. Their printed unary minus would
+otherwise reparse as mathematical Integer arithmetic and change the comparison
+family. Authored and diagnostic spellings keep the ordinary negative literal.
+
 Closed narrow native comparisons spell both operands with explicit `int8`,
 `uint8`, `int16`, or `uint16` casts. This preserves their format after a checked rewrite
 exposes literal operands: converting those literals to mathematical Integer

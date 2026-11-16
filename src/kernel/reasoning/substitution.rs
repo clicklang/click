@@ -6459,6 +6459,7 @@ fn substitute_bitvector_variable_in_memory_contents(
     ));
     let mut result = Memory {
         construction: None,
+        pending_steps: None,
         blocks: std::sync::Arc::new(
             memory
                 .blocks
@@ -7146,6 +7147,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
 ) -> Memory {
     let mut result = Memory {
         construction: None,
+        pending_steps: None,
         blocks: std::sync::Arc::new(
             memory
                 .blocks
