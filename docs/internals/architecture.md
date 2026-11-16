@@ -11,6 +11,23 @@ loops and checked natural cycles. Source ASTs retain their language-specific
 `While` forms; `program_while` and `program_do_while` construct the corresponding
 pre-test and post-test forms of the shared node.
 
+A loop owns its optional update once. An effectful condition owns one
+`LoopTestRegion`, with its calls, decision, temporary cleanup and placement
+before or after the body. A pure condition stays directly on the loop.
+`program_loop_pass` assembles the shared phase references for checked source
+execution; `program_loop_continuation` selects the update and post-test owed
+by a continuing edge. Normal body completion and `continue` leave the body
+scopes before entering that continuation. A `break` or function exit skips it.
+The evaluator and execution frontier follow the same regions; invariant and ranking
+obligations close only after the continuation reaches the backedge. A false
+post-test instead supplies a loop exit with its own state and facts.
+
+Source layout indexes each update/test once and records the continuation entry
+directly. Persistent lexical-scope exit lists distinguish leaving the body on
+`continue` from leaving the function on `return`, including transfers emitted
+by an atomically executed switch. For-initializer storage remains live across
+updates and tests and ends when the loop exits.
+
 ## Repository map
 
 | Path | Responsibility |

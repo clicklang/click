@@ -109,7 +109,7 @@ pub(super) fn statement_expressions<'a>(
             expressions.push((source, false));
         }
         ProgramStatement::Update { operand, .. } => expressions.push((operand, false)),
-        ProgramStatement::ForStep { step, .. } => statement_expressions(step, expressions),
+
         ProgramStatement::Seq(statements) => statement_expressions(statements.first(), expressions),
         ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)

@@ -2852,3 +2852,52 @@ test_batches! {
         indexed_structural_clauses_agree_with_the_clause_list_walks,
     ],
 }
+
+#[test]
+#[ignore = "nightly: 0.6s focused, expansion and false-result control"]
+fn shared_post_test_after_switch_continue_expands_and_rejects_a_false_result() {
+    let (click, sources) = loop_fixture("do_while_switch_continue");
+    let sources = borrowed_sources(&sources);
+    let checked = verify_c_sources(&click, &sources).expect("shared post-test verifies");
+    let expanded =
+        expand_checked_grouped_claim(&click, &checked, "do_while_switch_continue_rejected")
+            .expect("shared post-test expands");
+    verify_c_sources(&expanded, &sources).expect("expanded post-test verifies");
+    let mut false_claim = click.clone();
+    let at = false_claim.rfind("ensures result == 0;").unwrap();
+    false_claim.replace_range(
+        at..at + "ensures result == 0;".len(),
+        "ensures result == 1;",
+    );
+    assert!(verify_c_sources(&false_claim, &sources).is_err());
+}
+
+#[test]
+#[ignore = "nightly: 2.3s focused, expands and rechecks two ranked shared-phase proofs"]
+fn shared_test_and_update_ranking_expands_and_rechecks() {
+    let (click, sources) = loop_fixture("shared_loop_test_and_update");
+    let sources = borrowed_sources(&sources);
+    let checked = verify_c_sources(&click, &sources).expect("ranked shared phases verify");
+    for function in ["shared_for", "shared_do"] {
+        let expanded = expand_checked_grouped_claim(&click, &checked, function)
+            .expect("ranked shared phases expand");
+        verify_c_sources(&expanded, &sources).expect("expanded ranked shared phases verify");
+    }
+}
+
+#[test]
+#[ignore = "nightly: 0.8s focused, live and expired inline-reader storage controls"]
+fn shared_post_test_scope_retires_storage_after_a_switch_continue() {
+    let (click, sources) = loop_fixture("shared_loop_post_test_ends_body_scope");
+    let sources = borrowed_sources(&sources);
+    let live = click.split("int32 expired_post_test()").next().unwrap();
+    verify_c_sources(live, &sources).expect("the inline reader accepts live local storage");
+    let error = verify_c_sources(&click, &sources)
+        .err()
+        .expect("the expired array is refused");
+    assert!(
+        error.message().contains("invalid memory access"),
+        "{}",
+        error.message()
+    );
+}

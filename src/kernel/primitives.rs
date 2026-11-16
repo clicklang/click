@@ -5587,14 +5587,7 @@ pub enum ProgramStatement {
     Goto {
         target: ControlTargetId,
     },
-    /// A for-loop update, after leaving the body scope. On a source
-    /// `continue` this also transfers control to the loop head; on ordinary
-    /// fallthrough it is the first statement of the update clause.
-    ForStep {
-        step: Box<ProgramStatement>,
-        exited_locals: Vec<BindingName>,
-        continue_after: bool,
-    },
+
     Declare {
         /// A scalar construction initializer, evaluated after fresh allocation.
         /// This is the only declaration transition permitted to initialize const storage.
@@ -5784,6 +5777,10 @@ pub enum ProgramStatement {
     },
     /// Shared loop form for structured loops and checked natural cycles.
     Loop {
+        /// The loop's shared effectful test, outside the body scope.
+        test: Option<LoopTestRegion>,
+        /// Shared update region, entered after leaving the body scope.
+        update: Option<std::sync::Arc<ProgramStatement>>,
         condition: ProgramExpression,
         invariant: Vec<Proposition>,
         invariant_checks: Vec<LoopInvariantCheck>,
@@ -5829,6 +5826,20 @@ pub enum ProgramStatement {
         names: Vec<BindingName>,
         steps: Vec<u32>,
     },
+}
+
+/// Where an effectful loop test runs relative to its body.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum LoopTestPosition {
+    BeforeBody,
+    AfterBody,
+}
+
+/// The one shared source region that prepares and decides an effectful test.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct LoopTestRegion {
+    pub statement: std::sync::Arc<ProgramStatement>,
+    pub position: LoopTestPosition,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

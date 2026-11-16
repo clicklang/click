@@ -3567,7 +3567,7 @@ impl FunctionContract {
 fn statement_contains_internal_throw(statement: &ProgramStatement) -> bool {
     match statement {
         ProgramStatement::Throw(_) => true,
-        ProgramStatement::ForStep { step, .. } => statement_contains_internal_throw(step),
+
         ProgramStatement::Seq(statements) => statements
             .iter()
             .any(|statement| statement_contains_internal_throw(statement)),
@@ -3585,7 +3585,17 @@ fn statement_contains_internal_throw(statement: &ProgramStatement) -> bool {
             statement_contains_internal_throw(then_branch)
                 || statement_contains_internal_throw(else_branch)
         }
-        ProgramStatement::Loop { body, .. } => statement_contains_internal_throw(body),
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
+            statement_contains_internal_throw(body)
+                || test
+                    .as_ref()
+                    .is_some_and(|test| statement_contains_internal_throw(&test.statement))
+                || update
+                    .as_ref()
+                    .is_some_and(|update| statement_contains_internal_throw(update))
+        }
         ProgramStatement::Switch { cases, .. } => cases
             .iter()
             .any(|case| statement_contains_internal_throw(&case.body)),
