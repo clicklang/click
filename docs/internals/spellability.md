@@ -332,6 +332,21 @@ speller, which searches recorded spellings first and keeps only one that
 lowers back. It observes the steps the [census](#measuring-the-gap) does; a
 fact a `have` publishes to its enclosing proof is not among them.
 
+Baseline (2026-11-16, ordinary mdtest corpus, both runs passing):
+
+- Fact stability: 0 `differs`, 0 `paths:N`, 371 `refused` lines in 19
+  fixtures; 338 of them come from
+  `mutex_resource_quantity_requires_conservation` (`uint32` comparisons).
+- Round trip: 54,642 records. Of the 11,058 spellings the raiser produced,
+  9,343 were `same`, 658 `polarity`, 814 `differs` and 243 `unlowered`;
+  9,478 terms were `unraised` and 34,106 had `no-state` (mostly termination predicates). Recurring `differs`
+  shapes: an entry read raised through a current name (`old(*result) ==
+  7` spelled `result->value == 7`, lowering to `old(*next) == 7`); a
+  closed literal comparison lowering folds to a constant
+  (`-2147483648i64 == 2147483648i64` to `false`); casts spelled
+  differently on the two sides of an equality; and `to_integer(...)` terms
+  raised as `let` bindings or bare machine arithmetic.
+
 ## Lowering is structural
 
 A lowered term has the structure of the surface text it lowers: each
