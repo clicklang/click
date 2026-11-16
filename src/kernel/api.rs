@@ -3391,6 +3391,29 @@ pub(crate) fn program_evaluate_speprogram_expression_with_checked_obligations(
     entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
 ) -> Result<(ProgramValue, Vec<ProofObligation>), String> {
+    let path = evaluate_speprogram_expression_path(state, expression, entry_state, assumptions)?;
+    Ok((path.value.into_native(), path.obligations))
+}
+
+/// Capture a typed common root without materializing its native expression tree.
+/// Path facts and required constructions remain attached to this result; capture
+/// alone grants no authority to use them as established premises.
+pub(crate) fn program_evaluate_retained_spec_expression(
+    state: &ExecutionState,
+    expression: &SpecExpression,
+    entry_state: Option<&ExecutionState>,
+    assumptions: &PureFactContext,
+) -> Result<crate::kernel::LoweredTermPath, String> {
+    evaluate_speprogram_expression_path(state, expression, entry_state, assumptions)
+        .map(|path| path.map_value(|value| value.common_operand()))
+}
+
+fn evaluate_speprogram_expression_path(
+    state: &ExecutionState,
+    expression: &SpecExpression,
+    entry_state: Option<&ExecutionState>,
+    assumptions: &PureFactContext,
+) -> Result<super::spec::SpecExpressionPath, String> {
     let lowering_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
@@ -3405,10 +3428,10 @@ pub(crate) fn program_evaluate_speprogram_expression_with_checked_obligations(
         &mut budget,
     )
     .map_err(|limit| describe_spec_lowering_limit("evaluation", limit))?;
-    let [path] = paths.as_slice() else {
+    if paths.len() != 1 {
         return Err(no_single_path_message("evaluation", &paths, &budget));
-    };
-    Ok((path.value.clone().into_native(), path.obligations.clone()))
+    }
+    Ok(paths.into_iter().next().expect("one evaluation path"))
 }
 
 pub(crate) fn program_evaluate_speresource_expression_with_checked_obligations(
@@ -6057,7 +6080,7 @@ fn theorem_from_exact_context_fact(
     assumptions: &PureFactContext,
     conclusion: Proposition,
 ) -> Option<Theorem> {
-    if !assumptions.proves_exact(&conclusion) {
+    if !proposition_holds_without_facts(&conclusion) && !assumptions.proves_exact(&conclusion) {
         return None;
     }
     let proposition = Proposition::Implies(Box::new(conclusion.clone()), Box::new(conclusion));
@@ -6239,13 +6262,21 @@ pub fn checked_owned_resource_count_lower_bound(
         value.clone()
     };
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(quantity.clone(), count.clone()),
+        crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            [
+                MachineOperandView::Legacy(&quantity),
+                MachineOperandView::Legacy(&count),
+            ],
+        ),
         true,
     );
     {
         let reversed =
             Proposition::ConditionIs(ConditionTerm::signed_greater_equal(count, quantity), true);
-        if !PureFactContext::settles_exactly(&checked_facts, &conclusion)
+        if !proposition_holds_without_facts(&conclusion)
+            && !PureFactContext::settles_exactly(&checked_facts, &conclusion)
             && !checked_facts.proves_exact(&reversed)
         {
             return None;
@@ -6267,7 +6298,14 @@ pub fn prove_owned_resource_quantity_nonnegative(
     }
     let quantity = owned.owned_quantity_term()?.clone();
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(MachineTerm::constant(0), quantity),
+        crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            [
+                MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                MachineOperandView::Legacy(&quantity),
+            ],
+        ),
         true,
     );
     if claimed != &conclusion {
@@ -9283,5 +9321,66 @@ mod retained_fold_law_tests {
     mod scaling_tests {
         use super::*;
         include!("../scaling_tests/kernel/api/retained_fold_law_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod retained_lowering_result_tests {
+    use super::*;
+    use crate::kernel::{ExecutionValue, KernelTermExport, KernelType, VerificationSession};
+
+    #[test]
+    fn common_lowering_result_keeps_typed_root_and_scoped_obligations() {
+        let _session = VerificationSession::enter();
+        let state = ExecutionState::new();
+        let assumptions = PureFactContext::new();
+        let expressions = [
+            SpecExpression::Add(
+                Box::new(SpecExpression::Value(ProgramValue::Int32(
+                    MachineTerm::Variable(Variable(999992)),
+                ))),
+                Box::new(SpecExpression::Value(ProgramValue::Int32(
+                    MachineTerm::constant(1),
+                ))),
+            ),
+            SpecExpression::IntegerToMachine {
+                value: Box::new(SpecIntegerExpression::Term(IntegerTerm::Variable(
+                    Variable(999993),
+                ))),
+                destination: MachineIntegerType::Int32,
+            },
+        ];
+        for (index, expression) in expressions.iter().enumerate() {
+            let native =
+                evaluate_speprogram_expression_path(&state, expression, None, &assumptions)
+                    .unwrap();
+            let expected = native.value.clone().into_native();
+            let exports = KernelTermExport::machine_export_count();
+            let retained =
+                program_evaluate_retained_spec_expression(&state, expression, None, &assumptions)
+                    .unwrap();
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert_eq!(
+                retained.value.ty(),
+                &KernelType::Program(ProgramType::Int32)
+            );
+            assert_eq!(retained.facts, native.facts);
+            assert_eq!(retained.obligations, native.obligations);
+            if index == 1 {
+                assert!(
+                    !retained.obligations.is_empty(),
+                    "conversion bounds remain obligations"
+                );
+            }
+            assert_eq!(
+                ExecutionValue::Shared(retained.value).into_native(),
+                expected
+            );
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../scaling_tests/kernel/api/retained_lowering_result_tests.rs");
     }
 }

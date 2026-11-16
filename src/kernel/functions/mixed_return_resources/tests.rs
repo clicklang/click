@@ -1725,3 +1725,448 @@ fn composite_consumers_refuse_missing_construction_metadata() {
         .unwrap();
     ConstructedReturnBodies::default().for_return(evaluated.occurrences[0].source, &head);
 }
+
+pub(super) fn viewed_child_definitions(
+    data: Pointer,
+    depth: usize,
+) -> Vec<CompositeResourceDefinition> {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    let mut definitions = vec![CompositeResourceDefinition::new(
+        "view_level_0000",
+        vec![program_parameter("v", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
+            variable("v"),
+            int32_literal(0),
+            int32_literal(1),
+        ))],
+        vec![],
+    )];
+    for index in 1..depth {
+        definitions.push(CompositeResourceDefinition::new(
+            format!("view_level_{index:04}"),
+            vec![program_parameter("v", ProgramType::Int32Pointer)],
+            None,
+            false,
+            vec![composite_spec(
+                &format!("view_level_{:04}", index - 1),
+                variable("v"),
+                ResourceTransferRole::Borrow,
+            )],
+            vec![],
+        ));
+    }
+    let viewed = ResourceSpec::declared(
+        ResourceFamily::Composite,
+        ResourceAccessMode::View,
+        format!("view_level_{:04}", depth - 1),
+        vec![ProgramExpression::Value(ProgramValue::pointer(data))],
+        vec![ProgramType::Int32Pointer],
+        ResourceTransferRole::Borrow,
+        ResourceStateSource::Current,
+    )
+    .unwrap();
+    definitions.push(CompositeResourceDefinition::new(
+        "viewed_return",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![
+            ResourceSpec::owned_memory(MemorySegment::new(
+                variable("p"),
+                int32_literal(0),
+                int32_literal(1),
+            )),
+            viewed,
+        ],
+        vec![],
+    ));
+    definitions.sort_by(|a, b| a.name().cmp(b.name()));
+    definitions
+}
+
+#[test]
+fn viewed_children_keep_ownership_incremental_without_acquiring_ownership_origins() {
+    let facts = PureFactContext::new();
+    let own = Pointer::symbolic(Variable(8_819_400));
+    let (_, entry, post, data) = super::fresh_allocation_tests::allocated_call(16);
+    for depth in [1, 4] {
+        let definitions = viewed_child_definitions(data.clone(), depth);
+        let head = ResourceFact::own_composite(
+            "viewed_return".into(),
+            vec![ProgramValue::pointer(own.clone())],
+        );
+        let evaluated = EvaluatedReturnResources::new(&facts)
+            .admit(head, ReturnOwnershipOrigin::EntryBorrow, &facts)
+            .unwrap();
+        for composition in [
+            ReturnResourceComposition::RestoreEntryBorrows,
+            ReturnResourceComposition::BodyAllocations {
+                creator: entry.population_effects.creation.as_ref().unwrap(),
+                events: post.population_effects.creation.as_ref().unwrap(),
+                consumed: None,
+            },
+        ] {
+            let bodies = ConstructedReturnBodies::try_construct(
+                &evaluated,
+                &definitions,
+                &post,
+                composition,
+                &facts,
+            )
+            .unwrap();
+            assert!(
+                bodies.1.is_empty(),
+                "a viewed child must not select legacy ownership admission"
+            );
+            let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+            assert_eq!(body.expansion.len(), 2);
+            assert!(body.expansion.contains(&owner(own.clone(), 0, 1)));
+            assert!(
+                body.expansion
+                    .contains(&ResourceFact::view_memory(MemoryRange::new(
+                        data.clone(),
+                        0u32.into(),
+                        1u32.into()
+                    )))
+            );
+            assert_eq!(body.viewed_children.len(), 1);
+            let viewed = body
+                .transfers
+                .iter()
+                .filter(|child| child.fact.is_view())
+                .collect::<Vec<_>>();
+            assert_eq!(viewed.len(), depth + 1);
+            assert!(
+                viewed
+                    .iter()
+                    .all(|child| child.origin == ReturnOwnershipOrigin::Description)
+            );
+            assert_eq!(body.viewed_children[0].1, viewed[0].source);
+            for pair in viewed.windows(2) {
+                assert_eq!(pair[1].parent, pair[0].source);
+            }
+            let frame = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(
+                data.clone(),
+                0,
+                1,
+            ));
+            frame.synchronize_memory_equalities(&facts);
+            assert!(matches!(
+                frame.admit_returned_flat_body(body, &facts),
+                FlatBodyAdmission::Admitted
+            ));
+            let (destination, transfers) = evaluated
+                .restore_entry_borrows(ResourceContext::new(), composition, &facts)
+                .unwrap()
+                .finish(&facts)
+                .unwrap();
+            let projected = project_return_resource_cores(
+                &evaluated.resources,
+                &transfers,
+                &bodies,
+                &[],
+                &post,
+                &facts,
+                &destination,
+            )
+            .unwrap();
+            assert_eq!(
+                projected[0].viewed_children.as_ref().unwrap(),
+                &body.viewed_children
+            );
+            assert_eq!(projected[0].destination, transfers[0].destination);
+        }
+    }
+}
+
+pub(super) fn selected_view_expansion_fixture() -> (
+    ResourceContext,
+    ResourceFact,
+    ResourceOccurrenceId,
+    LoanViewBinding,
+    Vec<CompositeResourceDefinition>,
+    Memory,
+) {
+    selected_view_expansion_fixture_with_cells(1)
+}
+
+fn selected_view_expansion_fixture_with_cells(
+    cells: u32,
+) -> (
+    ResourceContext,
+    ResourceFact,
+    ResourceOccurrenceId,
+    LoanViewBinding,
+    Vec<CompositeResourceDefinition>,
+    Memory,
+) {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_819_401));
+    let head = ResourceFact::view_composite(
+        "selected_view".into(),
+        vec![ProgramValue::pointer(pointer.clone())],
+    );
+    let owner = ResourceFact::own_composite(
+        "selected_view".into(),
+        vec![ProgramValue::pointer(pointer.clone())],
+    );
+    let ledger = LoanLedger::new();
+    let caller = ledger.fresh_participant().unwrap();
+    let callee = ledger.fresh_participant().unwrap();
+    let input = CheckedResourceFact {
+        fact: head.clone(),
+        role: ResourceTransferRole::Borrow,
+        state_source: ResourceStateSource::Entry,
+        clause_position: None,
+        section_index: None,
+        selected_mutex_source: None,
+    };
+    let (caller_resources, owned) =
+        ResourceContext::new().unchecked_with_facts_and_occurrences([owner.clone()]);
+    // The fixture's declared body is exactly these disjoint cells. Supply
+    // the typed composite backing required by the ordinary loan planner.
+    let backing = CompositeLoanBacking::from_checked_expansion(
+        owned[0].1,
+        owner,
+        (0..cells)
+            .map(|index| {
+                ResourceFact::own_memory(MemoryRange::new(
+                    pointer.clone(),
+                    index.into(),
+                    (index + 1).into(),
+                ))
+            })
+            .collect(),
+    )
+    .unwrap();
+    let plan = crate::kernel::loans::plan_stable_view_transfer_with_bindings_and_composites(
+        &caller_resources,
+        &[input],
+        &facts,
+        &ledger,
+        caller,
+        callee,
+        &LoanViewBindings::default(),
+        &BTreeMap::from([(owned[0].1, backing)]),
+    )
+    .unwrap();
+    let source = plan
+        .callee_resources
+        .view_occurrences_for_fact(&head, &facts)[0];
+    let binding = plan.callee_view_bindings().get(&source).unwrap().clone();
+    let context = plan
+        .callee_resources
+        .clone()
+        .with_loan_dependency(source, binding.clone());
+    let definitions = vec![CompositeResourceDefinition::new(
+        "selected_view",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        (0..cells)
+            .map(|index| {
+                ResourceSpec::owned_memory(MemorySegment::new(
+                    variable("p"),
+                    int32_literal(index),
+                    int32_literal(index + 1),
+                ))
+            })
+            .collect(),
+        vec![],
+    )];
+    (
+        context,
+        head,
+        source,
+        binding,
+        definitions,
+        Memory::new().with_block(pointer.block, cells * 4),
+    )
+}
+
+#[test]
+fn viewed_expansion_transports_only_the_selected_occurrence_dependency() {
+    let facts = PureFactContext::new();
+    let (parent, head, source, binding, definitions, memory) = selected_view_expansion_fixture();
+    let (parent, extra) = parent.unchecked_with_facts_and_occurrences([head.clone()]);
+    for (selected, bound) in [(source, true), (extra[0].1, false)] {
+        let body = construct_composite_resource_body(
+            &parent,
+            &head,
+            &definitions,
+            &memory,
+            &facts,
+            Some(selected),
+        )
+        .unwrap();
+        let (piece, occurrence) = &body.occurrences[0];
+        assert!(piece.is_view());
+        let expected = LoanViewBinding {
+            viewed: piece.clone(),
+            ..binding.clone()
+        };
+        assert_eq!(
+            body.expanded.loan_dependency(*occurrence),
+            if bound { Some(&expected) } else { None }
+        );
+        assert!(parent.view_fact_for_occurrence(selected).is_some());
+    }
+}
+
+pub(in crate::kernel::functions) fn returned_hold_fixture(
+    count: usize,
+) -> (ResourceContext, Vec<crate::kernel::loans::EscapedHold>) {
+    let (resources, holds, _, _) = returned_hold_fixture_with_ledger(count);
+    (resources, holds)
+}
+
+pub(in crate::kernel::functions) fn returned_hold_fixture_with_ledger(
+    count: usize,
+) -> (
+    ResourceContext,
+    Vec<crate::kernel::loans::EscapedHold>,
+    LoanLedger,
+    crate::kernel::loans::LoanParticipantId,
+) {
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_819_402));
+    let range = MemoryRange::new(pointer, 0u32.into(), 1u32.into());
+    let input = CheckedResourceFact {
+        fact: ResourceFact::view_memory(range.clone()),
+        role: ResourceTransferRole::Borrow,
+        state_source: ResourceStateSource::Entry,
+        clause_position: None,
+        section_index: None,
+        selected_mutex_source: None,
+    };
+    let ledger = LoanLedger::new();
+    let caller = ledger.fresh_participant().unwrap();
+    let callee = ledger.fresh_participant().unwrap();
+    let plan = crate::kernel::loans::plan_stable_view_transfer(
+        &ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(range)),
+        &[input],
+        &facts,
+        &ledger,
+        caller,
+        callee,
+    )
+    .unwrap();
+    let head = ResourceFact::own_composite("returned_view".into(), vec![]);
+    let (resources, inserted) = ResourceContext::new()
+        .unchecked_with_facts_and_occurrences(std::iter::repeat_n(head, count));
+    let escaping = BTreeMap::from([(
+        plan.stable_views()[0].loan,
+        inserted
+            .into_iter()
+            .map(|(head, occurrence)| crate::kernel::loans::EscapingComposite { head, occurrence })
+            .collect(),
+    )]);
+    let recovered = plan.recover_stable_views(&facts, &escaping, &[]).unwrap();
+    (resources, recovered.escaped_holds, recovered.ledger, caller)
+}
+
+#[test]
+fn selected_view_expansion_keeps_raw_child_bindings_through_adjacent_normalization() {
+    let facts = PureFactContext::new();
+    let (context, head, selected, binding, definitions, memory) =
+        selected_view_expansion_fixture_with_cells(2);
+    let body = construct_composite_resource_body(
+        &context,
+        &head,
+        &definitions,
+        &memory,
+        &facts,
+        Some(selected),
+    )
+    .unwrap();
+    assert_eq!(
+        body.children.len(),
+        1,
+        "the normalized group merges adjacent descriptions"
+    );
+    assert_eq!(
+        body.occurrences.len(),
+        2,
+        "the producer retains both raw child identities"
+    );
+    for (piece, source) in body.occurrences {
+        let dependency = body.expanded.loan_dependency(source).unwrap();
+        assert_eq!(dependency.loan, binding.loan);
+        assert_eq!(dependency.support, binding.support);
+        assert_eq!(dependency.viewed, piece);
+    }
+}
+
+#[test]
+fn packaged_views_keep_normalized_descriptions_and_the_raw_source_group() {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_819_403));
+    let definition = CompositeResourceDefinition::new(
+        "adjacent_views",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![
+            ResourceSpec::viewed_memory(MemorySegment::new(
+                variable("p"),
+                int32_literal(0),
+                int32_literal(1),
+            )),
+            ResourceSpec::viewed_memory(MemorySegment::new(
+                variable("p"),
+                int32_literal(1),
+                int32_literal(2),
+            )),
+        ],
+        vec![],
+    );
+    let head = ResourceFact::own_composite(
+        "adjacent_views".into(),
+        vec![ProgramValue::pointer(pointer.clone())],
+    );
+    let evaluated = EvaluatedReturnResources::new(&facts)
+        .admit(head, ReturnOwnershipOrigin::Description, &facts)
+        .unwrap();
+    let state = ExecutionState::new();
+    let bodies = ConstructedReturnBodies::construct(&evaluated, &[definition], &state, &facts);
+    let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+    assert_eq!(body.viewed_children.len(), 2);
+    let (destination, transfers) = evaluated
+        .restore_entry_borrows(
+            ResourceContext::new(),
+            ReturnResourceComposition::ValidateDescriptions,
+            &facts,
+        )
+        .unwrap()
+        .finish(&facts)
+        .unwrap();
+    let projected = project_return_resource_cores(
+        &evaluated.resources,
+        &transfers,
+        &bodies,
+        &[],
+        &state,
+        &facts,
+        &destination,
+    )
+    .unwrap();
+    let pieces = projected[0].constructed_borrowing_pieces().unwrap();
+    assert_eq!(pieces.len(), 1);
+    assert_eq!(
+        pieces[0].piece,
+        ResourceFact::view_memory(MemoryRange::new(pointer, 0u32.into(), 2u32.into()))
+    );
+    assert_eq!(
+        pieces[0].sources.as_ref().unwrap().as_ref(),
+        &body
+            .viewed_children
+            .iter()
+            .map(|(_, source)| *source)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(pieces[0].support.occurrence, transfers[0].destination);
+}

@@ -37,19 +37,27 @@ use algebraic_result::{AlgebraicFieldResult, AlgebraicResult};
 mod result;
 use result::{SpecCallArgument, SpecValue, call_arguments};
 
+/// One lowering path: a typed result plus its separately scoped facts and debts.
+/// Mapping the representation of a result does not evaluate or discharge either.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct SpecExpressionPath {
-    pub(super) value: SpecValue,
-    pub(super) facts: ExecutionFacts,
-    pub(super) obligations: Vec<ProofObligation>,
+pub(crate) struct LoweredTermPath<T = KernelTerm> {
+    pub(crate) value: T,
+    pub(crate) facts: ExecutionFacts,
+    pub(crate) obligations: Vec<ProofObligation>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct SpecIntegerPath {
-    pub(super) value: IntegerTerm,
-    pub(super) facts: ExecutionFacts,
-    pub(super) obligations: Vec<ProofObligation>,
+impl<T> LoweredTermPath<T> {
+    pub(crate) fn map_value<U>(self, map: impl FnOnce(T) -> U) -> LoweredTermPath<U> {
+        LoweredTermPath {
+            value: map(self.value),
+            facts: self.facts,
+            obligations: self.obligations,
+        }
+    }
 }
+
+pub(super) type SpecExpressionPath = LoweredTermPath<SpecValue>;
+pub(super) type SpecIntegerPath = LoweredTermPath<IntegerTerm>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecSequencePath {
@@ -58,12 +66,7 @@ struct SpecSequencePath {
     obligations: Vec<ProofObligation>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SpecAlgebraicPath {
-    value: AlgebraicResult,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-}
+type SpecAlgebraicPath = LoweredTermPath<AlgebraicResult>;
 
 /// The interpretation of specification reads is lexical: ordinary expressions
 /// denote logical values, while `defined(...)` explicitly asks for validity.
@@ -945,19 +948,9 @@ struct SpecAlgebraicCasePath {
     obligations: Vec<ProofObligation>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SpecAlgebraicValuePath {
-    value: AlgebraicFieldResult,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-}
+type SpecAlgebraicValuePath = LoweredTermPath<AlgebraicFieldResult>;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SpecPureFunctionArgumentPath {
-    value: SpecCallArgument,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-}
+type SpecPureFunctionArgumentPath = LoweredTermPath<SpecCallArgument>;
 
 fn lower_spec_proposition_at_state_with_loop_entry_in(
     state: &ExecutionState,
@@ -5595,14 +5588,16 @@ fn lower_spec_disjunction_at_state_in(
             &right_assumptions,
             budget,
         )?;
-        // A literally true left side leaves no case for the right, which then
-        // need not denote anything (`0u32 == 0u32 or a <= MAX / 0u32`).
-        if right_paths.is_empty()
-            && matches!(
-                &left_path.proposition,
-                Proposition::ConditionIs(ConditionTerm::Constant(value), expected)
-                    if value == expected
-            )
+        // Preserve a defined disjunction even when its left side is true:
+        // its logical structure still belongs to the proof. An intrinsically
+        // undefined right side need not denote anything when the left holds.
+        if constant_spec_condition_value(&left_path.proposition) == Some(true)
+            && right_paths.iter().all(|path| {
+                path.obligations.iter().any(|obligation| {
+                    obligation.evaluation_domain
+                        && constant_spec_condition_value(obligation.proposition()) == Some(false)
+                })
+            })
         {
             paths.push(left_path);
             continue;
@@ -6814,6 +6809,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     SpecValue::from(value.clone())
                         .retain_algebraic_result()
                         .retain_float_result()
+                        .retain_boolean_result()
                 },
                 facts: vec![].into(),
                 obligations: vec![],
@@ -6826,6 +6822,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 SpecValue::from(value.clone())
                     .retain_algebraic_result()
                     .retain_float_result()
+                    .retain_boolean_result()
             },
             facts: Vec::new().into(),
             obligations: Vec::new(),
@@ -7147,11 +7144,22 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let native_state = scope.native_expression_state(expression);
             let paths =
                 evaluate_expression_value_paths(&native_state, expression, assumptions, budget)?;
-            let retain_floats = !budget.machine_result_production_disabled;
+            let retain_results = !budget.machine_result_production_disabled;
             spec_execution_value_paths_in(
                 paths.into_iter().map(|path| {
                     path.map_value(|value| {
-                        if retain_floats && value.float().is_some() {
+                        let value = if retain_results {
+                            value.retain_boolean_result()
+                        } else {
+                            value
+                        };
+                        if retain_results
+                            && (value.machine().is_some()
+                                || value.float().is_some()
+                                || value
+                                    .shared()
+                                    .is_some_and(|root| root.ty() == &KernelType::Bool))
+                        {
                             value
                         } else {
                             SpecValue::Native(value.into_native())
@@ -7901,7 +7909,10 @@ fn evaluate_spec_pure_function_application_paths_in(
                 value: if result_type.is_pointer() && !budget.machine_result_production_disabled {
                     value.retain_pointer_result()
                 } else if !budget.machine_result_production_disabled {
-                    value.retain_algebraic_result().retain_float_result()
+                    value
+                        .retain_algebraic_result()
+                        .retain_float_result()
+                        .retain_boolean_result()
                 } else {
                     value
                 },
@@ -8725,7 +8736,10 @@ fn spec_execution_value_paths_in(
                 value: if budget.machine_result_production_disabled {
                     value
                 } else {
-                    value.retain_algebraic_result().retain_float_result()
+                    value
+                        .retain_algebraic_result()
+                        .retain_float_result()
+                        .retain_boolean_result()
                 },
                 facts: path.facts,
                 obligations: path.obligations,
@@ -9862,12 +9876,12 @@ pub(super) fn proposition_as_single_condition(
     }
 }
 
-/// The truth value a lowered specification condition folds to on its own,
+/// The truth value a lowered specification condition establishes on its own,
 /// or `None` when deciding it would need an ambient fact.
 ///
-/// This is exact constant folding: context-free builtin solving of the
+/// This checks intrinsic truth: context-free builtin solving of the
 /// lowered proposition, plus the frozen condition checker on the empty
-/// context for a bare `ConditionIs`, which is where a folded comparison of
+/// context for a bare `ConditionIs`, which is where a retained comparison of
 /// two constants is decided. Nothing here reads the surrounding proof
 /// context, so a specification `if` lowers to the same shape wherever it is
 /// written and wherever it is applied; a condition that holds only under

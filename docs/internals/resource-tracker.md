@@ -1611,8 +1611,8 @@ permitted stores or a transition that drops the fact:
   of reconstructing and validating every old owner. Returned flat resources
   use incremental composition, checking each new owner and its conflicts.
   Ordinary unit returned composites carry one constructed body per emitted
-  source occurrence, including acyclic owned nesting and decided conditional
-  bodies. `ConstructedReturnBodies` retains each child's producer-assigned ID
+  source occurrence, including acyclic owned/viewed nesting and decided
+  conditional bodies. `ConstructedReturnBodies` retains each child's producer-assigned ID
   and parent, before normalization. Fixed consumed-input paths are selected
   from contract parameter bindings at entry; invariant borrowed footprints
   and actual allocation provenance supply the other explicit transfers.
@@ -1621,12 +1621,41 @@ permitted stores or a transition that drops the fact:
   Admission uses only the remaining unclassified ownership boundary, so cold
   or symbolic fallback cannot rediscover separation for transferred children.
   Prepared constant-coordinate memory leaves query the frame's address-class
-  interval index; conflicts name the selected original held fact. Projections,
-  packaged views and expansion caches reuse the same construction. Flat memory
+  interval index; conflicts name the selected original held fact. Cold and
+  symbolic boundary checks retain explicitly named legacy discovery, comparing
+  only each new piece with retained owners. They never install a temporary
+  combined context, revalidate the unchanged frame or the constructed body's
+  internal partition, or scan the frame again to name a conflict. Exclusive
+  boundaries select the retained occurrence by resource or instance identity.
+  Projections, packaged views and expansion caches reuse the same construction. Flat memory
   and token returns project directly, without generic composite expansion.
   An undecided body condition retains the opaque head; a decided false body
-  produces emp. Recursive, existential, matched, authority and viewed-nesting
-  cases retain explicitly classified legacy routes. Failure constructing a
+  produces emp. Viewed children keep their emitted source identities and
+  stay views even when their definitions contain ownership clauses; they
+  never acquire consumed-input, invariant-owner or fresh-allocation custody.
+  A selected viewed expansion transfers only its exact source dependency,
+  without enumerating equal-looking heads. Escaping loan recovery retains the
+  installed owner occurrence and gives each returned owner its own hold;
+  consuming one equal-looking owner cannot release another's hold. Repackaging
+  a borrowing head retains its selected input hold by ID even when the returned
+  head's name changes; further returned owners receive additional holds.
+  Loan backing
+  selection still uses the existing call-plan compatibility checks.
+  Single-pointer-witness existential bodies with memory/token children use a
+  separate migrated fragment, also when nested under ordinary owned or viewed
+  parents. The body producer retains the actual witness value keyed by its
+  opened occurrence; admission, projection and caches reuse the emitted body
+  without binding that witness again. A witness-dependent memory description
+  receives no invariant-parameter borrow or consumed-input custody. Only its
+  actual fresh-allocation provenance can grant allocation custody. This flat
+  fragment never selects a witness from held composite children. Its optional
+  normalization reads written endpoints/exact resource keys, selecting one
+  neighbour per key without enumerating aliases or endpoint classes. A missed
+  merge retains both facts. Internal composition still checks ownership using
+  the full assumptions through incremental admission. Ordinary body producers
+  retain their existing normalization. Multiple
+  witnesses, existential bodies containing composites, recursive, matched
+  and authority cases retain explicitly classified legacy routes. Failure constructing a
   migrated body refuses the return rather than retrying legacy reconstruction.
   Monotone memory-evidence admission walks a smaller incoming contract or a
   shared persistent delta, without enumerating absent caller facts. Scalar

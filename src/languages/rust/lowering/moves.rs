@@ -129,20 +129,6 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         .iter()
         .filter(|p| matches!(p.value_type, Type::Record { .. }))
         .count();
-    // Each library slice iterator's `next()` writes one `Option` local, which
-    // the test reading it names.
-    if super::library_iterators() {
-        for statement in mir.blocks.iter().flat_map(|block| &block.statements) {
-            if let S::SharedArrayNext { iterator, option } = statement
-                && cx
-                    .library_next_options
-                    .insert(iterator.clone(), option.clone())
-                    .is_some_and(|previous| previous != *option)
-            {
-                return Err("a library slice iterator's next() writes two Options".into());
-            }
-        }
-    }
     for (index, local) in f
         .parameters
         .iter()
@@ -151,27 +137,6 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         .enumerate()
     {
         let parameter = index < owned_parameter_count;
-        if let Type::SharedArrayIterator { element } = &local.value_type
-            && super::library_iterators()
-        {
-            declarations = program_seq(
-                declarations,
-                cx.library_slice_iterator_storage(&local.name, element)?,
-            );
-            continue;
-        }
-        if let Type::SharedArrayOption { element } = &local.value_type
-            && super::library_iterators()
-            && !mir.blocks.iter().flat_map(|block| &block.statements).any(|statement| {
-                matches!(statement, S::EnumerateNext { option, .. } if *option == local.name)
-            })
-        {
-            declarations = program_seq(
-                declarations,
-                cx.library_slice_option_storage(&local.name, element)?,
-            );
-            continue;
-        }
         if let Type::SharedArrayIterator { element } | Type::SharedArrayOption { element } =
             &local.value_type
         {
@@ -561,10 +526,6 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     Some(_) => {
                         return Err("destructor body missing from prepared Rust input".into());
                     }
-                    None if cx.shared_array_iterators.contains_key(local) => program_assign(
-                        format!("{local}_live"),
-                        crate::kernel::program_expression::int32_literal(0),
-                    ),
                     None => program_skip(),
                 };
                 program_seq(
@@ -1117,10 +1078,6 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                             )
                         }
                     }
-                    None if cx.shared_array_iterators.contains_key(local) => program_assign(
-                        format!("{local}_live"),
-                        crate::kernel::program_expression::int32_literal(0),
-                    ),
                     None => program_skip(),
                 },
             };
@@ -1313,19 +1270,7 @@ fn loop_iterator(
         .flat_map(|block| &block.statements)
         .find_map(|statement| {
             let (local, kind) = match statement {
-                S::SharedArrayNext { iterator, .. } => (
-                    iterator,
-                    mir.locals
-                        .iter()
-                        .find(|local| local.name == *iterator)
-                        .and_then(|local| match &local.value_type {
-                            Type::SharedArrayIterator { element } if super::library_iterators() => {
-                                super::slice_iter_type(element).ok()
-                            }
-                            _ => None,
-                        })
-                        .map_or(K::Slice, K::SliceLibrary),
-                ),
+                S::SharedArrayNext { iterator, .. } => (iterator, K::Slice),
                 S::EnumerateNext { iterator, .. } => (iterator, K::Enumerate),
                 S::ChunkNext { iterator, .. } => (iterator, K::Chunks),
                 S::RangeNext { iterator, .. } => {
@@ -1419,12 +1364,6 @@ fn region(
                 &flow.scalar_names,
                 &flow.metadata_names,
             )?;
-            // A library iterator's test reads a value the iterator's own
-            // function returns, so the read is a statement of the header.
-            let library_test = match &condition {
-                E::SharedArrayHasNext { iterator } => cx.library_slice_next_call(iterator),
-                _ => None,
-            };
             let condition = if loop_.body_on_true {
                 condition
             } else {
@@ -1448,10 +1387,6 @@ fn region(
             // once on the final false test, without an artificial break exit.
             // A body that breaks leaves without running them again, so its
             // test exits by `break` too, right after them, as the MIR does.
-            let header_first = library_test.is_some();
-            if let Some(read) = library_test {
-                header = header.then(Sited::at(loop_site, read));
-            }
             let lowered = if loop_.breaks {
                 let exit = region(
                     cx,
@@ -1469,20 +1404,6 @@ fn region(
                     header.then(
                         Sited::branch(loop_site, condition, Sited::unsited(program_skip()), exit)
                             .then(body),
-                    ),
-                )
-            } else if header_first {
-                Sited::looping(
-                    loop_site,
-                    crate::kernel::program_expression::int32_literal(1),
-                    header.then(
-                        Sited::branch(
-                            loop_site,
-                            condition,
-                            Sited::unsited(program_skip()),
-                            Sited::unsited(program_break()),
-                        )
-                        .then(body),
                     ),
                 )
             } else {
@@ -1564,11 +1485,6 @@ fn region(
                     } else {
                         Sited::branch(site, cx.condition(condition)?, yes, no)
                     };
-                if let E::SharedArrayHasNext { iterator } = condition
-                    && let Some(read) = cx.library_slice_next_call(iterator)
-                {
-                    result = result.then(Sited::at(site, read));
-                }
                 result = result.then(branch);
                 block = join;
             }
@@ -1841,7 +1757,6 @@ mod tests {
         let mut baseline = None;
         for size in [8, 32, 128] {
             let mut export = RustExport {
-                library_iterators: false,
                 schema: 2,
                 compiler_commit: String::new(),
                 target: String::new(),
@@ -1925,9 +1840,6 @@ mod tests {
             let mut cx = Context {
                 references: BTreeMap::new(),
                 shared_array_iterators: BTreeMap::new(),
-                library_slice_iterators: BTreeMap::new(),
-                library_slice_options: BTreeMap::new(),
-                library_next_options: BTreeMap::new(),
                 ranges: BTreeMap::new(),
                 enumerated: BTreeSet::new(),
                 shared_array_options: BTreeMap::new(),
