@@ -185,30 +185,9 @@ impl KernelTerm {
         )
     }
 
-    /// Change only the observation's numeric interpretation. Symbolic word
-    /// nodes and their format-tagged operations remain exactly as written;
-    /// a literal's carrier follows the requested interpretation.
+    /// Change only the observation's numeric interpretation. The underlying
+    /// word node and its format-tagged operations remain exactly as written.
     pub(crate) fn with_machine_observation_type(&self, format: MachineIntegerType) -> Self {
-        // A 64-bit literal's signedness is part of its payload, unlike a
-        // symbolic word operator's independent observation type. Keep its
-        // bits while giving the literal the requested interpretation.
-        let literal = match (self.node(), format) {
-            (
-                KernelTermNode::MachineLiteral(KernelMachineLiteral::UInt64(bits)),
-                MachineIntegerType::Int64,
-            ) => Some(KernelMachineLiteral::Int64(*bits as i64)),
-            (
-                KernelTermNode::MachineLiteral(KernelMachineLiteral::Int64(value)),
-                MachineIntegerType::UInt64,
-            ) => Some(KernelMachineLiteral::UInt64(*value as u64)),
-            _ => None,
-        };
-        if let Some(literal) = literal {
-            return Self::intern(
-                KernelType::Program(format.program_type()),
-                KernelTermNode::MachineLiteral(literal),
-            );
-        }
         if self.ty() == &KernelType::Program(format.program_type()) {
             return self.clone();
         }
@@ -235,12 +214,6 @@ impl KernelTerm {
                     continue;
                 }
                 crate::instrumentation::record_deterministic_work(1);
-                // Literal arms use the same immediate-root interpretation
-                // as standalone literals. This call cannot enter this walk.
-                if matches!(term.node(), KernelTermNode::MachineLiteral(_)) {
-                    cache.insert(key, term.with_machine_observation_type(format));
-                    continue;
-                }
                 if term.ty() == &KernelType::Program(format.program_type()) {
                     cache.insert(key, term.clone());
                     continue;
