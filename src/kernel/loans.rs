@@ -1881,8 +1881,15 @@ pub(crate) struct StableViewTransferPlan {
 /// returned: the loan the composite keeps open and the binding, carrying the
 /// hold, that its occurrence in the caller must carry.
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EscapingComposite {
+    pub(crate) head: ResourceFact,
+    pub(crate) occurrence: ResourceOccurrenceId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct EscapedHold {
     pub(crate) head: ResourceFact,
+    pub(crate) occurrence: ResourceOccurrenceId,
     pub(crate) binding: LoanViewBinding,
 }
 
@@ -3993,7 +4000,7 @@ impl StableViewTransferPlan {
     pub(crate) fn recover_stable_views(
         self,
         assumptions: &PureFactContext,
-        escaping: &BTreeMap<LoanId, Vec<ResourceFact>>,
+        escaping: &BTreeMap<LoanId, Vec<EscapingComposite>>,
         consumed_holds: &[LoanViewBinding],
     ) -> Result<StableViewRecovery, StableViewPlanError> {
         self.recover_stable_views_impl(assumptions, escaping, consumed_holds, false)
@@ -4026,7 +4033,7 @@ impl StableViewTransferPlan {
     fn recover_stable_views_impl(
         self,
         assumptions: &PureFactContext,
-        escaping: &BTreeMap<LoanId, Vec<ResourceFact>>,
+        escaping: &BTreeMap<LoanId, Vec<EscapingComposite>>,
         consumed_holds: &[LoanViewBinding],
         mut keep_terminal: bool,
     ) -> Result<StableViewRecovery, StableViewPlanError> {
@@ -4051,7 +4058,7 @@ impl StableViewTransferPlan {
         let mut transitions = Vec::new();
         let mut recovered_escrows = Vec::new();
         let mut mutex_authority_updates = Vec::new();
-        let mut pending_holds: Vec<(Vec<ResourceFact>, LoanViewBinding)> = Vec::new();
+        let mut pending_holds: Vec<(Vec<EscapingComposite>, LoanViewBinding)> = Vec::new();
         for (scope, loan, root, support, recoverable) in loan_roots.into_iter().rev() {
             let transfer = ledger.transfer(root, self.callee, self.caller)?;
             ledger = ledger.apply(&transfer)?;
@@ -4275,17 +4282,20 @@ impl StableViewTransferPlan {
         let mut hold_transitions = Vec::new();
         let mut escaped_holds = Vec::new();
         for (heads, binding) in pending_holds {
-            let (held, hold, transition) = ledger.hold_with_transition(&binding, self.caller)?;
-            ledger = held;
-            hold_transitions.push(transition);
-            let binding = LoanViewBinding {
-                hold: Some(hold),
-                ..binding
-            };
+            // Each returned owner has its own lifetime. Releasing one must
+            // not release the hold of another equal-looking occurrence.
             for head in heads {
+                let (held, hold, transition) =
+                    ledger.hold_with_transition(&binding, self.caller)?;
+                ledger = held;
+                hold_transitions.push(transition);
                 escaped_holds.push(EscapedHold {
-                    head,
-                    binding: binding.clone(),
+                    head: head.head,
+                    occurrence: head.occurrence,
+                    binding: LoanViewBinding {
+                        hold: Some(hold),
+                        ..binding.clone()
+                    },
                 });
             }
         }

@@ -3060,3 +3060,67 @@ fn local_storage_absence_summary_tracks_persistent_resource_edits() {
     assert!(clean.has_no_explicit_memory_for_local_storage(&local.block, &facts));
     assert!(!branch.has_no_explicit_memory_for_local_storage(&local.block, &facts));
 }
+
+#[test]
+fn returned_hold_installation_uses_the_selected_owner_and_preserves_other_occurrences() {
+    let (parent, holds) = super::mixed_return_resources::tests::returned_hold_fixture(2);
+    let binding = holds[1].binding.clone();
+    let first = holds[0].occurrence;
+    let second = holds[1].occurrence;
+    let (branch, bindings) = install_returned_composite_hold(
+        parent.clone(),
+        LoanViewBindings::default(),
+        holds[1].clone(),
+    )
+    .unwrap();
+    assert!(parent.loan_dependency(second).is_none());
+    assert!(branch.loan_dependency(first).is_none());
+    assert_eq!(branch.loan_dependency(second), Some(&binding));
+    assert_eq!(bindings.get(&second), Some(&binding));
+}
+
+#[test]
+fn returning_multiple_owners_from_one_input_hold_constructs_distinct_holds() {
+    let (_, holds, ledger, caller) =
+        super::mixed_return_resources::tests::returned_hold_fixture_with_ledger(1);
+    let original = holds[0].binding.clone();
+    let facts = PureFactContext::new();
+    let callee = ledger.fresh_participant().unwrap();
+    let plan = crate::kernel::loans::plan_stable_view_transfer(
+        &ResourceContext::new(),
+        &[],
+        &facts,
+        &ledger,
+        caller,
+        callee,
+    )
+    .unwrap();
+    let predecessor = plan.ledger.clone();
+    let mut recovery = plan
+        .recover_stable_views(&facts, &BTreeMap::new(), &[])
+        .unwrap();
+    let head = ResourceFact::own_composite("repackaged_reader".into(), vec![]);
+    let (_, returned) =
+        ResourceContext::new().unchecked_with_facts_and_occurrences([head.clone(), head.clone()]);
+    let mut rebound = returned
+        .into_iter()
+        .map(|(head, occurrence)| (occurrence, (head, original.clone())))
+        .collect::<BTreeMap<_, _>>();
+    retain_rebound_composite_holds(&mut recovery, &mut rebound, caller).unwrap();
+    let bindings = rebound
+        .values()
+        .map(|(_, binding)| binding)
+        .collect::<Vec<_>>();
+    assert_ne!(bindings[0].hold, bindings[1].hold);
+    recovery.recheck_transitions(&predecessor, caller).unwrap();
+    let first = recovery
+        .ledger
+        .release(bindings[0].hold.unwrap(), caller)
+        .unwrap();
+    assert_eq!(
+        first.end(original.scope, caller),
+        Err(LoanRefusal::ActiveDependency)
+    );
+    let both = first.release(bindings[1].hold.unwrap(), caller).unwrap();
+    assert!(both.end(original.scope, caller).is_ok());
+}
