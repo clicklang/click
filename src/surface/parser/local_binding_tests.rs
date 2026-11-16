@@ -166,3 +166,31 @@ fn function_statics_keep_types_and_exact_storage_spelling() {
     assert!(parse_binding_expression("f.static(2)", source).is_err());
     assert!(parse_binding_expression("f.static(0).storage(frame, 1)", source).is_err());
 }
+
+#[test]
+fn contract_result_slot_has_an_exact_surface_spelling() {
+    let expression = parse_binding_expression("result.storage()", "int f(void) { return 0; }")
+        .expect("typed result slot parses without a C declaration");
+    let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+        pointer,
+    ))) = expression
+    else {
+        panic!("a typed result slot pointer")
+    };
+    assert_eq!(
+        pointer.pointer().block,
+        crate::kernel::PointerBlock::ContractResult
+    );
+    assert_eq!(pointer.pointer().block.to_string(), "result.storage()");
+    let text = crate::surface::diagnostics::describe_pointer(
+        pointer.pointer(),
+        crate::surface::ParameterBinding::default(),
+    );
+    assert_eq!(text, "result.storage()");
+    assert_eq!(
+        parse_binding_expression(&text, "int f(void) { return 0; }").unwrap(),
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+            pointer
+        )))
+    );
+}

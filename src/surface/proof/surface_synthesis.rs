@@ -1292,7 +1292,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::StaticObject { .. }))
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::ContractResult | PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Value(value.clone()),
@@ -3811,7 +3811,7 @@ fn synthesize_unsigned_comparison(
             .names_holding_integer(term)
             .find(|name| {
                 !name.is_named("result")
-                    && !name.is_named(crate::kernel::C_CONTRACT_RESULT_NAME)
+                    && *name != &crate::kernel::CONTRACT_RESULT
                     && state.locals().get(*name).is_some_and(|value| {
                         value.program_type() == crate::kernel::ProgramType::UInt32
                             && value
@@ -4399,11 +4399,7 @@ fn synthesize_named_integer_local<'a>(
     mut holders: impl Iterator<Item = &'a crate::kernel::BindingName>,
 ) -> Option<SurfaceTerm> {
     if let Some(name) = holders.next() {
-        return Some(if name.is_named(crate::kernel::C_CONTRACT_RESULT_NAME) {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                ("result".to_string()).into(),
-            ))
-        } else if crate::surface::is_click_value_name(name) {
+        return Some(if crate::surface::is_click_value_name(name) {
             ContractExpression::CBinding(name.to_string())
         } else {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(surface_local_name(
@@ -6028,7 +6024,8 @@ fn synthesize_surface_pointer(
     }
     if matches!(
         pointer.block,
-        PointerBlock::StringLiteral { .. }
+        PointerBlock::ContractResult
+            | PointerBlock::StringLiteral { .. }
             | PointerBlock::AutomaticLocal { .. }
             | PointerBlock::StaticObject { .. }
     ) {

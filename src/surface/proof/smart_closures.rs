@@ -3622,7 +3622,7 @@ impl<'a> Proof<'a> {
                         view.fixed_state
                             .state
                             .clone()
-                            .with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone())
+                            .with_local(crate::kernel::CONTRACT_RESULT, result.clone())
                     },
                 );
                 super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(

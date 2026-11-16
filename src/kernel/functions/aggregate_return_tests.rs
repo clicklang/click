@@ -104,7 +104,7 @@ fn destination_procedure(name: &str, body: ProgramStatement) -> ProgramFunction 
 
 fn construction_function(name: &str, body: ProgramStatement) -> ProgramFunction {
     let storage = ResourceSpec::owned_memory(MemorySegment::new(
-        crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME),
+        crate::kernel::program_expression::variable(CONTRACT_RESULT),
         crate::kernel::program_expression::int32_literal(0),
         crate::kernel::program_expression::int32_literal(4),
     ));
@@ -119,7 +119,7 @@ fn construction_function(name: &str, body: ProgramStatement) -> ProgramFunction 
 }
 
 fn node_construction_body() -> ProgramStatement {
-    let destination = crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME);
+    let destination = crate::kernel::program_expression::variable(CONTRACT_RESULT);
     let field = crate::kernel::program_expression::cast(
         crate::kernel::program_expression::pointer_offset_bytes(destination.clone(), 8),
         ProgramType::Int32Pointer,
@@ -150,13 +150,11 @@ fn construction_return_preserves_exact_destination_through_two_factories() {
             name,
             program_seq(
                 program_call_construct(
-                    C_CONTRACT_RESULT_NAME,
+                    CONTRACT_RESULT,
                     callee,
                     vec![crate::kernel::program_expression::variable("input")],
                 ),
-                program_return(crate::kernel::program_expression::variable(
-                    C_CONTRACT_RESULT_NAME,
-                )),
+                program_return(crate::kernel::program_expression::variable(CONTRACT_RESULT)),
             ),
         )
     };
@@ -248,19 +246,17 @@ fn construction_return_rejects_missing_binding_authority_and_partial_values() {
         "partial_node",
         program_seq(
             program_typed_store(
-                crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME),
+                crate::kernel::program_expression::variable(CONTRACT_RESULT),
                 crate::kernel::program_expression::cast(
                     crate::kernel::program_expression::pointer_offset_bytes(
-                        crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME),
+                        crate::kernel::program_expression::variable(CONTRACT_RESULT),
                         8,
                     ),
                     ProgramType::Int32Pointer,
                 ),
                 ProgramType::Int32Pointer,
             ),
-            program_return(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
-            )),
+            program_return(crate::kernel::program_expression::variable(CONTRACT_RESULT)),
         ),
     );
     let paths = execute_program_function_call_paths(
@@ -281,7 +277,7 @@ fn construction_return_rejects_missing_binding_authority_and_partial_values() {
 #[test]
 fn construction_destination_can_alias_an_argument_without_becoming_fresh() {
     let _session = crate::kernel::VerificationSession::enter();
-    let result = crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME);
+    let result = crate::kernel::program_expression::variable(CONTRACT_RESULT);
     let field = crate::kernel::program_expression::cast(
         crate::kernel::program_expression::pointer_offset_bytes(result.clone(), 8),
         ProgramType::Int32Pointer,
@@ -366,7 +362,7 @@ fn construction_destination_can_alias_an_argument_without_becoming_fresh() {
 fn construction_temporary_retirement_preserves_copies_and_external_backing() {
     for points_to_self in [false, true] {
         let _session = crate::kernel::VerificationSession::enter();
-        let result = crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME);
+        let result = crate::kernel::program_expression::variable(CONTRACT_RESULT);
         let field = crate::kernel::program_expression::cast(
             crate::kernel::program_expression::pointer_offset_bytes(result.clone(), 8),
             ProgramType::Int32Pointer,
