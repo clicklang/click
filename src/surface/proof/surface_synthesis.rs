@@ -109,8 +109,8 @@ pub(in crate::surface) struct SynthesisStructOwners {
     callback_sources: std::sync::Arc<BTreeMap<crate::kernel::BindingName, syntax::CExpression>>,
     /// The function's global and static arrays by kernel and source name: the source name and
     /// declared shape an element read is spelled with.
-    storage_arrays: BTreeMap<String, (String, Vec<u32>)>,
-    storage_scalars: BTreeMap<Pointer, (String, ProgramType)>,
+    storage_arrays: BTreeMap<crate::kernel::BindingName, (crate::kernel::BindingName, Vec<u32>)>,
+    storage_scalars: BTreeMap<Pointer, (crate::kernel::BindingName, ProgramType)>,
     /// Declaration spellings for kernel identifiers in retained C arguments.
     storage_source_names: BTreeMap<String, ContractExpression>,
 }
@@ -150,18 +150,18 @@ impl LocalStructLayoutScope {
             .global_arrays()
             .values()
             .filter_map(|array| {
-                let spelling = (array.name().to_string(), array.shape()?.to_vec());
+                let spelling = (array.kernel_name().clone(), array.shape()?.to_vec());
                 Some([
-                    (array.kernel_name().to_string(), spelling.clone()),
-                    (array.name().to_string(), spelling),
+                    (array.kernel_name().clone(), spelling.clone()),
+                    (array.name().into(), spelling),
                 ])
             })
             .flatten()
             .chain(function.static_arrays().values().flat_map(|array| {
-                let spelling = (array.name().to_string(), array.shape().to_vec());
+                let spelling = (array.kernel_name().clone(), array.shape().to_vec());
                 [
-                    (array.kernel_name().to_string(), spelling.clone()),
-                    (array.name().to_string(), spelling),
+                    (array.kernel_name().clone(), spelling.clone()),
+                    (array.name().into(), spelling),
                 ]
             }))
             .collect();
@@ -172,7 +172,7 @@ impl LocalStructLayoutScope {
                 (
                     Memory::global_pointer(global.kernel_name()),
                     (
-                        global.name().to_string(),
+                        global.kernel_name().clone(),
                         global.interface_type().to_kernel_type(),
                     ),
                 )
@@ -181,7 +181,7 @@ impl LocalStructLayoutScope {
                 (
                     Memory::static_pointer(function.name(), local.kernel_name()),
                     (
-                        local.name().to_string(),
+                        local.kernel_name().clone(),
                         local.interface_type().to_kernel_type(),
                     ),
                 )
@@ -227,13 +227,13 @@ impl LocalStructLayoutScope {
                     .values()
                     .map(|object| (object.kernel_name(), object.name())),
             )
-            .map(|(kernel, source)| {
-                (
-                    kernel.to_owned(),
+            .filter_map(|(kernel, source)| {
+                Some((
+                    kernel.named()?.to_owned(),
                     ContractExpression::ProgramExpression(ProgramExpression::Variable(
                         (source.to_owned()).into(),
                     )),
-                )
+                ))
             })
             .collect();
         let owners = SynthesisStructOwners {
@@ -1292,7 +1292,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. }))
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Value(value.clone()),
@@ -5655,7 +5655,7 @@ fn synthesize_static_storage_array_element_load(
             if element_type.byte_width() != 4 || element_type.pointee_type().is_some() {
                 return None;
             }
-            let (source, shape) = name.named_in(&owners.storage_arrays)?;
+            let (source, shape) = owners.storage_arrays.get(name)?;
             let index = pointer.shared_element_index_from_base_with_width(slot, 4)?;
             let base = ProgramExpression::Variable((source.clone()).into());
             if shape.len() <= 1 {
@@ -5967,7 +5967,9 @@ fn synthesize_surface_pointer(
     }
     if matches!(
         pointer.block,
-        PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. }
+        PointerBlock::StringLiteral { .. }
+            | PointerBlock::AutomaticLocal { .. }
+            | PointerBlock::StaticObject { .. }
     ) {
         return Some(ProgramExpression::Value(ProgramValue::typed_pointer(
             pointer.clone(),

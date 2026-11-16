@@ -925,7 +925,7 @@ impl Parser {
                 }),
             ContractExpression::ProgramExpression(lowered)
             | ContractExpression::CUnary { lowered, .. } => match lowered {
-                ProgramExpression::Variable(crate::kernel::BindingName::Local(id)) => id
+                ProgramExpression::Variable(name) if name.named().is_none() => name
                     .program_type()
                     .map(crate::surface::generics::interface_type_from_program_type),
                 ProgramExpression::Value(value) => {

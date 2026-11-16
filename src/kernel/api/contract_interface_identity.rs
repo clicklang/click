@@ -254,7 +254,7 @@ impl Names {
         match expression {
             Variable(name) => match name {
                 BindingName::Named(source) => self.reference(source),
-                BindingName::Local(_) => {
+                BindingName::Local(_) | BindingName::Static(_) => {
                     if let Some(bound) = self.program_bindings.get(name) {
                         *name = bound.clone();
                     }
@@ -393,7 +393,7 @@ impl Names {
             } => {
                 match parameter {
                     BindingName::Named(name) => self.reference(name),
-                    BindingName::Local(_) => {
+                    BindingName::Local(_) | BindingName::Static(_) => {
                         if let Some(bound) = self.program_bindings.get(parameter) {
                             *parameter = bound.clone();
                         }

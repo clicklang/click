@@ -842,6 +842,7 @@ pub(super) fn c_layouts(
                 frontend_contracts.entry(name.clone()).or_insert(contract);
             }
         }
+        tables.register_file_static_bindings(&unit);
         for function in unit.functions {
             tables.register_local_bindings(&function);
             tables.register_string_literals(&function);

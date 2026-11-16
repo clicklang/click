@@ -48,6 +48,9 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
 
 fn write_havoc_block(identity: &mut String, block: PointerBlock) {
     match block {
+        PointerBlock::StaticObject { binding } => {
+            write_havoc_string(identity, "bst", &binding.to_string())
+        }
         PointerBlock::AutomaticLocal { binding, instance } => {
             write_havoc_string(identity, "bl", &binding.to_string());
             let _ = write!(identity, "{instance:?};");
@@ -1303,7 +1306,7 @@ impl LocalEnvironment {
                 .and_then(|entries| entries.last())
                 .map(|(_, binding)| binding.clone())
                 .unwrap_or_else(|| name.clone()),
-            BindingName::Local(_) => name.clone(),
+            BindingName::Local(_) | BindingName::Static(_) => name.clone(),
         }
     }
     /// The source spelling of this active lexical binding, for source-name
@@ -1311,6 +1314,7 @@ impl LocalEnvironment {
     pub(crate) fn active_source_name<'a>(&self, name: &'a BindingName) -> Option<&'a str> {
         let source = match name {
             BindingName::Local(id) => id.spelling()?,
+            BindingName::Static(id) => id.spelling(),
             BindingName::Named(name) => name,
         };
         (self.resolve_binding(&BindingName::from(source)) == *name).then_some(source)
@@ -7535,6 +7539,7 @@ impl Memory {
                 binding,
                 instance: LocalStorageInstance::ValueParameter,
             },
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:value-parameter:{name}").into(),
         };
         Pointer {
@@ -7550,6 +7555,7 @@ impl Memory {
                 binding,
                 instance: LocalStorageInstance::Implicit,
             },
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:{name}").into(),
         };
         Pointer {
@@ -7568,6 +7574,7 @@ impl Memory {
                 binding,
                 instance: LocalStorageInstance::Lifetime(lifetime),
             },
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:lifetime:{lifetime}:{name}").into(),
         };
         Pointer {
@@ -7576,13 +7583,14 @@ impl Memory {
         }
     }
 
-    pub(crate) fn global_pointer(name: &str) -> Pointer {
-        Self::global_pointer_named(name)
-    }
-
-    fn global_pointer_named(name: &str) -> Pointer {
+    pub(crate) fn global_pointer(name: impl Into<BindingName>) -> Pointer {
+        let block = match name.into() {
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
+            BindingName::Named(name) => format!("global:{name}").into(),
+            BindingName::Local(_) => unreachable!("automatic declaration used as a global"),
+        };
         Pointer {
-            block: format!("global:{name}").into(),
+            block,
             offset: PointerOffsetTerm::Constant(0),
         }
     }
@@ -7597,9 +7605,14 @@ impl Memory {
         }
     }
 
-    pub(crate) fn static_pointer(function: &str, name: &str) -> Pointer {
+    pub(crate) fn static_pointer(function: &str, name: impl Into<BindingName>) -> Pointer {
+        let block = match name.into() {
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
+            BindingName::Named(name) => format!("static:{function}:{name}").into(),
+            BindingName::Local(_) => unreachable!("automatic declaration used as a static"),
+        };
         Pointer {
-            block: format!("static:{function}:{name}").into(),
+            block,
             offset: PointerOffsetTerm::Constant(0),
         }
     }
@@ -7614,6 +7627,10 @@ impl Memory {
                     binding,
                     instance: LocalStorageInstance::Frame(frame),
                 },
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            BindingName::Static(binding) => Pointer {
+                block: PointerBlock::StaticObject { binding },
                 offset: PointerOffsetTerm::Constant(0),
             },
             BindingName::Named(name) => Pointer {

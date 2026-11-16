@@ -654,7 +654,9 @@ impl ResourceContextIndex {
             let mode = fact.is_own();
             if !matches!(
                 block,
-                PointerBlock::Concrete(_) | PointerBlock::AutomaticLocal { .. }
+                PointerBlock::Concrete(_)
+                    | PointerBlock::StaticObject { .. }
+                    | PointerBlock::AutomaticLocal { .. }
             ) {
                 result.nonconcrete_memory_count += 1;
             }
@@ -957,7 +959,9 @@ impl ResourceContextIndex {
             let mode = fact.is_own();
             if !matches!(
                 block,
-                PointerBlock::Concrete(_) | PointerBlock::AutomaticLocal { .. }
+                PointerBlock::Concrete(_)
+                    | PointerBlock::StaticObject { .. }
+                    | PointerBlock::AutomaticLocal { .. }
             ) {
                 result.nonconcrete_memory_count -= 1;
             }
