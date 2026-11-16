@@ -1690,6 +1690,29 @@ pub(in crate::kernel) fn add_required_proof_obligation_without_search(
     );
 }
 
+// An explicit obligation can name an already held machine comparison using
+// shared observations. Select its original premise from the existing endpoint
+// indexes; do not expose new aliases to general automatic condition search.
+fn selected_obligation_is_stated(assumptions: &PureFactContext, proposition: &Proposition) -> bool {
+    if assumptions.proves_exact(proposition) {
+        return true;
+    }
+    match proposition {
+        Proposition::ConditionIs(condition, truth) => {
+            let Some(source) = assumptions.selected_comparison_source(condition, *truth) else {
+                return false;
+            };
+            crate::kernel::assumptions::record_implicit_reasoning_provenance(assumptions, source);
+            true
+        }
+        Proposition::And(left, right) => {
+            selected_obligation_is_stated(assumptions, left)
+                && selected_obligation_is_stated(assumptions, right)
+        }
+        _ => false,
+    }
+}
+
 fn add_required_proof_obligation_without_search_and_site(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -1698,7 +1721,9 @@ fn add_required_proof_obligation_without_search_and_site(
     introductions: Option<&std::sync::Arc<LoweringIntroductions>>,
     call_site: Option<&std::sync::Arc<CallRequirementSource>>,
 ) {
-    if !assumptions.retains_required_obligations() && assumptions.proves_exact(&proposition) {
+    if !assumptions.retains_required_obligations()
+        && selected_obligation_is_stated(assumptions, &proposition)
+    {
         return;
     }
     let mut obligation = ProofObligation::new(proposition).with_shared_introductions(introductions);
@@ -2666,6 +2691,114 @@ mod mandatory_integer_obligation_tests {
 #[cfg(test)]
 mod native_observation_guard_tests {
     use super::*;
+
+    #[test]
+    fn explicit_obligations_reuse_selected_comparison_sources() {
+        use crate::kernel::assumptions::{
+            capture_implicit_reasoning_provenance, collect_reasoning_provenance,
+        };
+        use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+        use crate::kernel::{
+            KernelTermExport, KernelTermImport, MachineBinaryOp, MachineOperandView,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let variable = |id| MachineTerm::Variable(Variable(id));
+            let expression = MachineTerm::Binary {
+                format,
+                op: MachineBinaryOp::Add,
+                left: Box::new(variable(850_010)),
+                right: Box::new(variable(850_011)),
+            };
+            let shared = KernelTermImport::default()
+                .machine_arithmetic(format, &expression)
+                .unwrap();
+            let right = variable(850_012);
+            for relation in [
+                CompareRelation::Equal,
+                CompareRelation::LessThan,
+                CompareRelation::GreaterEqual,
+            ] {
+                let native = ConditionTerm::machine_compare(
+                    format,
+                    relation,
+                    expression.clone(),
+                    right.clone(),
+                );
+                let observed = condition_for_operand_views(
+                    format,
+                    relation,
+                    [
+                        MachineOperandView::Shared(&shared),
+                        MachineOperandView::Legacy(&right),
+                    ],
+                );
+                for truth in [false, true] {
+                    let source = Proposition::ConditionIs(native.clone(), truth);
+                    let query = Proposition::ConditionIs(observed.clone(), truth);
+                    let parent = PureFactContext::new();
+                    let context = parent.clone().assume_proposition(source.clone());
+                    let discharge = |context: &PureFactContext, query| {
+                        let mut obligations = Vec::new();
+                        add_required_proof_obligation_without_search(
+                            &mut obligations,
+                            context,
+                            query,
+                            None,
+                            None,
+                        );
+                        obligations
+                    };
+                    let exports = KernelTermExport::machine_export_count();
+                    let (obligations, used) = collect_reasoning_provenance(|| {
+                        capture_implicit_reasoning_provenance(|| discharge(&context, query.clone()))
+                    });
+                    assert!(obligations.is_empty(), "{format:?} {relation:?} {truth}");
+                    assert!(used.contains(&source));
+                    assert!(!context.contains_assumed_exact(&query));
+                    assert_eq!(discharge(&parent, query.clone()).len(), 1);
+                    assert_eq!(
+                        discharge(
+                            &context.clone().retaining_required_obligations(),
+                            query.clone()
+                        )
+                        .len(),
+                        1
+                    );
+                    assert_eq!(
+                        discharge(&context, Proposition::ConditionIs(observed.clone(), !truth))
+                            .len(),
+                        1
+                    );
+                    let missing = Proposition::ConditionIs(
+                        ConditionTerm::equal(variable(850_013), variable(850_014)),
+                        true,
+                    );
+                    assert_eq!(
+                        discharge(
+                            &context,
+                            Proposition::And(Box::new(query.clone()), Box::new(missing))
+                        )
+                        .len(),
+                        1
+                    );
+                    assert!(
+                        discharge(
+                            &context,
+                            Proposition::And(Box::new(query.clone()), Box::new(query))
+                        )
+                        .is_empty()
+                    );
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                }
+            }
+        }
+    }
 
     fn equalities(ty: MachineIntegerType) -> (ConditionTerm, ConditionTerm) {
         let value = MachineTerm::Variable(Variable(912_801));
