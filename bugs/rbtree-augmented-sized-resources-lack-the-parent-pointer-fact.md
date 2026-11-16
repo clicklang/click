@@ -219,3 +219,19 @@ The C, original insertion contracts, existing tree-resource definitions, and
 verifier are unchanged by this repair. Other context sidecars and the
 full-directory audit remain outside this completed repair; keep this report
 open.
+
+## Mirrored context rotation
+
+All three selected proofs in
+`rbtree_size_insert_mirrored_context_rotation.click` now verify at default
+limits. The right-right rotation retains ancestor links and complete tagged-parent
+relationships across initialization and read-only steps, explicitly executes the
+local declaration and middle-child store, and retains unchanged and newly written
+child links through the parent-update helper. Empty children are refolded at the
+established null pointer.
+
+Expansion, cold-replay, and fixed-point checks pass all 10 audit sites across
+the insertion and its two wrappers. This mirrors the completed context-rotation
+repair. The C, original insertion
+contracts, existing tree-resource definitions, and verifier are unchanged. The
+remaining context sidecars and full-directory audit still leave this report open.
