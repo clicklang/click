@@ -83,7 +83,7 @@ fn termination_consumes_concrete_exit_authority_without_walking_unrelated_body()
         let attempt = root.begin_attempt();
         completed_body(attempt.root(), execution, vec![]).publish(false);
         attempt.commit();
-        let rule = root.finish().unwrap().into_rule().unwrap();
+        let rule = root.finish().unwrap().to_reusable_rule().unwrap();
         let rules = [rule];
         let heights = program_termination_height_plan(&rules, &[]);
         let goals = super::super::super::obligations::TerminationObligations::generate(

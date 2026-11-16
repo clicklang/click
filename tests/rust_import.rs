@@ -3055,8 +3055,7 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
         // Recheck the complete mutated function and its dependencies, while
         // the initial successful run covers every body in the fixture.
         let error = verify_rust_function(&invalid, &prepared, function)
-            .err()
-            .expect("a claim the box program does not meet must fail");
+            .expect_err("a claim the box program does not meet must fail");
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
@@ -3200,8 +3199,7 @@ fn charon_option_values_read_as_click_options() {
         // the fixture's unrelated functions again for every negative case.
         let function = expected.split('.').next().unwrap();
         let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
-            .err()
-            .expect("a claim the option program does not meet must fail");
+            .expect_err("a claim the option program does not meet must fail");
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
@@ -3302,8 +3300,7 @@ fn charon_result_values_read_as_click_results() {
         // the fixture's unrelated functions again for every negative case.
         let function = expected.split('.').next().unwrap();
         let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
-            .err()
-            .expect("a claim the result program does not meet must fail");
+            .expect_err("a claim the result program does not meet must fail");
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
@@ -3434,8 +3431,7 @@ fn charon_option_references_read_and_write_through_borrows() {
         // the fixture's unrelated functions again for every negative case.
         let function = expected.split('.').next().unwrap();
         let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
-            .err()
-            .expect("a claim the reference program does not meet must fail");
+            .expect_err("a claim the reference program does not meet must fail");
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
@@ -3468,8 +3464,7 @@ fn charon_held_value_locals_are_spelled_by_name() {
         let invalid = HELD_VALUE_SIDECAR.replacen(&before, &after, 1);
         let error =
             verify_rust_proof_after(&invalid, &prepared, &format!("fn held_values::{function}"))
-                .err()
-                .expect("a claim the facts do not give must fail");
+                .expect_err("a claim the facts do not give must fail");
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
@@ -3572,8 +3567,7 @@ fn charon_vec_values_read_as_the_library_vec() {
         let invalid = VEC_VALUE_SIDECAR.replacen(before, after, 1);
         let function = expected.split('.').next().unwrap();
         let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
-            .err()
-            .expect("a claim the vector program does not meet must fail");
+            .expect_err("a claim the vector program does not meet must fail");
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);

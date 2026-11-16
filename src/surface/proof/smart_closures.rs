@@ -4645,7 +4645,7 @@ fn source_backed_call_requirement_surface(
                 .names_holding_integer(term)
                 .next()?;
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                (crate::kernel::program_local_source_name(local).to_owned()).into(),
+                crate::kernel::program_local_source_name(local).to_owned(),
             ))
         };
         substitutions.insert(name.clone(), expression);

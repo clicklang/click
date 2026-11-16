@@ -3236,7 +3236,7 @@ fn observable_projection_ignores_excluded_loan_bindings_when_hashing() {
         let reader = ledger.fresh_participant().unwrap();
         for index in 0..size {
             let range = MemoryRange::new(
-                Memory::local_pointer(&format!("hidden_{index}")),
+                Memory::local_pointer(format!("hidden_{index}")),
                 0u32.into(),
                 1u32.into(),
             );

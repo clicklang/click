@@ -640,11 +640,11 @@ fn constant(format: MachineIntegerType, value: u32) -> KernelTerm {
 fn word(term: &KernelTerm) -> Option<u32> {
     literal(term)?.as_const()
 }
-pub(super) fn binary<'a>(
-    term: &'a KernelTerm,
+pub(super) fn binary(
+    term: &KernelTerm,
     format: MachineIntegerType,
     op: MachineBinaryOp,
-) -> Option<&'a [KernelTerm; 2]> {
+) -> Option<&[KernelTerm; 2]> {
     match term.node() {
         KernelTermNode::MachineBinary {
             format: found,

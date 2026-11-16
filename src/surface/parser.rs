@@ -19142,7 +19142,8 @@ mod rewrite_syntax_tests {
         ] {
             let tactic = Parser::new(source).unwrap().parse_proof_tactic().unwrap();
             let printed =
-                crate::surface::printing::format_proof_tactics(&[tactic.clone()]).unwrap();
+                crate::surface::printing::format_proof_tactics(std::slice::from_ref(&tactic))
+                    .unwrap();
             let reparsed = Parser::new(&printed)
                 .unwrap()
                 .parse_proof_clause_or_default()

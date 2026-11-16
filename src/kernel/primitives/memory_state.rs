@@ -1547,6 +1547,7 @@ impl LocalEnvironment {
         );
     }
 
+    #[cfg(test)]
     pub(in crate::kernel) fn set_array_object_at(
         &mut self,
         name: impl Into<BindingName>,
@@ -6356,6 +6357,7 @@ impl Memory {
     /// (`design/effective-types.md`). Like the initialized bytes, the record
     /// changes with the cell under the one store edge, so the memory history
     /// stays connected.
+    #[cfg(test)]
     pub(in crate::kernel) fn store_classed_with_context(
         self,
         pointer: Pointer,
@@ -8010,6 +8012,7 @@ impl ExecutionState {
     /// diagnostic, or `None` when the states are equal. A differing resource
     /// context names a resource fact held on one side only; every other part
     /// is named by what it is.
+    #[cfg(test)]
     pub(crate) fn first_difference(&self, other: &ExecutionState) -> Option<String> {
         if self.resources != other.resources {
             let only_in = |left: &ResourceContext, right: &ResourceContext| {

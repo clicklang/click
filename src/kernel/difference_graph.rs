@@ -2607,7 +2607,7 @@ impl Residues {
     const DEPTH: u32 = 6;
 
     fn admission_key(&mut self, term: V<'_>) -> OperandKey {
-        let key = if let V::Legacy(written) = term {
+        if let V::Legacy(written) = term {
             if let Some(key) = self.native_keys.get(written) {
                 return key.clone();
             }
@@ -2622,8 +2622,7 @@ impl Residues {
         } else {
             self.has_shared_sources = true;
             OperandKey::for_format(MachineIntegerType::Int64, term)
-        };
-        key
+        }
     }
 
     fn query_key(&self, term: V<'_>) -> OperandKey {

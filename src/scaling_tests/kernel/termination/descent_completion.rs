@@ -33,7 +33,7 @@ fn termination_consumes_completed_descent_without_walking_unrelated_source() {
         let attempt = root.begin_attempt();
         completed_body(attempt.root(), execution, vec![]).publish(false);
         attempt.commit();
-        let mut rule = root.finish().unwrap().into_rule().unwrap();
+        let mut rule = root.finish().unwrap().to_reusable_rule().unwrap();
         // A conservative dependency may retain a recursive edge even when
         // the proof avoids it. The completed ordinary proof already owns its
         // descent; the consumer must not revisit the body to rediscover it.

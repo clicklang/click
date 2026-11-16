@@ -2177,14 +2177,13 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
     {
         return true;
     }
-    if let Some((first, rest)) = inputs.split_first() {
-        if (premises.len() == 1 && float_reflexive(first, goal))
+    if let Some((first, rest)) = inputs.split_first()
+        && ((premises.len() == 1 && float_reflexive(first, goal))
             || pointer_translation(first, rest, goal)
             || pointer_word_equality(first, rest, goal)
-            || pointer_word_from_alignment(&inputs, goal)
-        {
-            return true;
-        }
+            || pointer_word_from_alignment(&inputs, goal))
+    {
+        return true;
     }
     if let Proposition::ConditionIs(condition, truth) = goal
         && matches!(
@@ -2366,12 +2365,11 @@ fn pointer_translation(
                     }
                     if let Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [left, right])) =
                         value.binary()
+                        && sum_is_defined(left, right)
                     {
-                        if sum_is_defined(left, right) {
-                            pending.push(OffsetPart::Scaled(left, width));
-                            pending.push(OffsetPart::Scaled(right, width));
-                            continue;
-                        }
+                        pending.push(OffsetPart::Scaled(left, width));
+                        pending.push(OffsetPart::Scaled(right, width));
+                        continue;
                     }
                     PointerOffsetTerm::Int32Scaled {
                         value: value.retain(MachineIntegerType::Int32),
@@ -2397,12 +2395,11 @@ fn pointer_translation(
                     }
                     if let Some((MachineIntegerType::UInt64, MachineBinaryOp::Add, [left, right])) =
                         value.binary()
+                        && wide_sum_is_exact(left, right)
                     {
-                        if wide_sum_is_exact(left, right) {
-                            pending.push(OffsetPart::Scaled64(left, width));
-                            pending.push(OffsetPart::Scaled64(right, width));
-                            continue;
-                        }
+                        pending.push(OffsetPart::Scaled64(left, width));
+                        pending.push(OffsetPart::Scaled64(right, width));
+                        continue;
                     }
                     PointerOffsetTerm::Int64Scaled {
                         value: value.retain(MachineIntegerType::Int64),

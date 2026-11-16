@@ -5004,7 +5004,7 @@ impl PureFactContext {
                         relation: CompareRelation::Equal,
                         left: Box::new(MachineTerm::Variable(*variable)),
                         right: Box::new(MachineTerm::MemoryLoad(
-                            ProgramPoint::at(&memory),
+                            ProgramPoint::at(memory),
                             Box::new(address.clone()),
                             kind,
                         )),
@@ -5387,6 +5387,7 @@ impl PureFactContext {
     /// A full-width observer result can name the same unchanged cell at a
     /// later state. Inspect only equality neighbors of the queried values;
     /// never search unrelated conditions for a matching load.
+    #[cfg(test)]
     pub(in crate::kernel) fn uint64_values_equal_for_range_resolution(
         &self,
         left: &MachineTerm,
@@ -9550,6 +9551,7 @@ fn exact_equality_constant(candidate: MachineOperandView<'_>) -> Option<i64> {
 /// `unsigned` says how the scaling reads it, and the two readings are
 /// different numbers: `size_t` `4294967295` displaces forwards by that many
 /// elements, while the same word read signed is the element below the base.
+#[cfg(test)]
 pub(in crate::kernel) fn exact_sixty_four_bit_constant(
     term: &MachineTerm,
     unsigned: bool,
@@ -9613,6 +9615,7 @@ pub(in crate::kernel) fn exact_wide_scaled_offset_constant(
     }
 }
 
+#[cfg(test)]
 pub(in crate::kernel) fn bitvector_index_in_range_shallow(
     index: &MachineTerm,
     start: &MachineTerm,
@@ -11007,7 +11010,7 @@ mod dynamic_current_load_tests {
     fn observed(root: crate::kernel::KernelTerm, format: MachineIntegerType) -> Term {
         let value = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
         assert!(!value.has_boxed_operand());
-        Term::Integer(IntegerTerm::Machine(value).into())
+        Term::Integer(IntegerTerm::Machine(value))
     }
 
     fn load_payload(memory: &Memory, format: MachineIntegerType) -> SharedIntegerTerm {
@@ -11107,19 +11110,16 @@ mod dynamic_current_load_tests {
             .unwrap();
         assert!(!endpoint.machine_operand().has_boxed_operand());
         let exports = KernelTermExport::machine_export_count();
-        let fold = Term::Integer(
-            IntegerTerm::RangeFold {
-                index: IntegerRangeFoldIndex::UInt64 {
-                    start: endpoint.clone(),
-                    end: endpoint,
-                },
-                initial: IntegerTerm::constant_i64(0).into(),
-                accumulator: Variable(995002),
-                item: Variable(995003),
-                body: IntegerTerm::constant_i64(0).into(),
-            }
-            .into(),
-        );
+        let fold = Term::Integer(IntegerTerm::RangeFold {
+            index: IntegerRangeFoldIndex::UInt64 {
+                start: endpoint.clone(),
+                end: endpoint,
+            },
+            initial: IntegerTerm::constant_i64(0).into(),
+            accumulator: Variable(995002),
+            item: Variable(995003),
+            body: IntegerTerm::constant_i64(0).into(),
+        });
         assert_eq!(
             current_memory_loads_in_term(&fold, &memory).unwrap(),
             vec![(pointer(), 8)]
@@ -13182,7 +13182,7 @@ mod shared_load_atom_comparison_tests {
                 &memory,
                 &pointer,
                 kind,
-                ty.format().bits() as u32 / 8,
+                ty.format().bits() / 8,
             );
             (
                 MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer), kind),

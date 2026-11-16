@@ -20,15 +20,10 @@ fn contract_refusal_sample_ignores_unprinted_facts() {
             .chain(all[all.len() - 24..].iter())
             .cloned()
             .collect::<Vec<_>>();
-        let obligation = ProofObligation::verification_condition(Proposition::ConditionIs(
-            ConditionTerm::Constant(false),
-            true,
-        ));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
                 let failure = unproved_contract_path_condition(
                     "missing premise".into(),
-                    &obligation,
                     &context,
                 );
                 assert_eq!(failure.available_count, all.len());

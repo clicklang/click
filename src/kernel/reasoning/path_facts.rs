@@ -515,6 +515,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset(
 /// unsigned symbolic values require their native upper bound. Checked scalar
 /// aliases preserve that bound, including a constant subtraction whose bound
 /// the proof establishes explicitly. No low-word fact establishes high bits.
+#[cfg(test)]
 pub(in crate::kernel) fn element_index_from_offset_with_facts(
     offset: &PointerOffsetTerm,
     element_width: u32,

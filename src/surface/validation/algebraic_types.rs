@@ -1362,13 +1362,13 @@ pub(super) fn validate_algebraic_type_uses(
                                 (Some((name, format)), ClickType::Parameter(parameter))
                                     if parameter == *name =>
                                 {
-                                    ClickType::Program(format.clone())
+                                    ClickType::Program(*format)
                                 }
                                 (Some((name, format)), ClickType::Algebraic(application))
                                     if application.name == *name
                                         && application.arguments.is_empty() =>
                                 {
-                                    ClickType::Program(format.clone())
+                                    ClickType::Program(*format)
                                 }
                                 (_, click_type) => click_type,
                             },

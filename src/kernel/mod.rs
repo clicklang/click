@@ -182,6 +182,7 @@ pub(crate) use eval::proposition_mentions_scalar_read;
 pub(crate) use eval::read_over_write_program_value;
 pub(crate) use eval::read_over_write_value;
 #[cfg(test)]
+#[cfg(test)]
 pub(crate) use eval::record_load_variable_defining_fact;
 pub(crate) use eval::registered_load_bytes_for_variable;
 pub(crate) use eval::registered_load_for_variable;

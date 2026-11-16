@@ -2967,7 +2967,7 @@ fn verify_program_in_context(
                 .entry(executing_name)
                 .or_default()
                 .extend_from_slice(body_proof.loop_rules());
-            if let Some(rule) = body_proof.into_rule() {
+            if let Some(rule) = body_proof.to_reusable_rule() {
                 function_environment = function_environment.with_verified_function_rule(rule);
             }
         } else {
@@ -8759,9 +8759,9 @@ pub(in crate::surface) fn program_contract_failure(
                             &callback,
                             refusal,
                             &verdicts.refusals,
-                            &declared_diverging,
+                            declared_diverging,
                             None,
-                            &tactic_names,
+                            tactic_names,
                         ),
                         None => "it has no termination evidence".to_string(),
                     };
@@ -8776,9 +8776,9 @@ pub(in crate::surface) fn program_contract_failure(
                             &name,
                             refusal,
                             &verdicts.refusals,
-                            &declared_diverging,
+                            declared_diverging,
                             verdicts.unsuitable_callbacks.first(),
-                            &tactic_names
+                            tactic_names
                         )
                     ))
                     .at_declaration(&name)

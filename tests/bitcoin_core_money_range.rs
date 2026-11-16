@@ -1700,7 +1700,8 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
         6,
         "audit must cover every upstream smart tactic"
     );
-    for claim in ["MoneyRange.contract"] {
+    {
+        let claim = "MoneyRange.contract";
         assert!(
             sites.iter().any(|site| site.claim_label == claim),
             "{claim} has no source-selectable smart tactic"

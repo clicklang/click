@@ -37,6 +37,7 @@ impl PureFactContext {
     }
 
     /// Direct unsigned constant extrema, maintained separately from signed facts.
+    #[cfg(test)]
     pub(in crate::kernel) fn indexed_unsigned32_constant_interval(
         &self,
         term: &MachineTerm,
@@ -1177,16 +1178,15 @@ impl PureFactContext {
             let (c, d) = self.signed_interval_view(right)?;
             return Some((a.min(c), b.max(d)));
         }
-        if let MachineOperandView::Legacy(term) = term {
-            if let Some(resolved) = self.resolve_memory_load_term(term)
-                && resolved != *term
-                && let Some((lo, hi)) = self
-                    .checked_order_bounds
-                    .interval_with_strict(&crate::kernel::eval::canonical_term(&resolved))
-            {
-                lower = lower.max(lo);
-                upper = upper.min(hi);
-            }
+        if let MachineOperandView::Legacy(term) = term
+            && let Some(resolved) = self.resolve_memory_load_term(term)
+            && resolved != *term
+            && let Some((lo, hi)) = self
+                .checked_order_bounds
+                .interval_with_strict(&crate::kernel::eval::canonical_term(&resolved))
+        {
+            lower = lower.max(lo);
+            upper = upper.min(hi);
         }
         (lower <= upper).then_some((lower, upper))
     }

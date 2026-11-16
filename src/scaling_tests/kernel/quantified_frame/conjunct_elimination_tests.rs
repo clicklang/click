@@ -126,7 +126,7 @@ fn load_equality_work(earlier: u32, between: u32, written: bool) -> usize {
     let ai = crate::kernel::intern_memory_ref(&after);
     let load = |m: &SharedMemory| {
         MachineTerm::MemoryLoad(
-            ProgramPoint::at(&m),
+            ProgramPoint::at(m),
             Box::new(base.clone()),
             LoadKind::UInt8,
         )

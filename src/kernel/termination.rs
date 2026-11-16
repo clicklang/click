@@ -66,7 +66,7 @@ fn variable_minus_positive(expression: &ProgramExpression, variable: &BindingNam
     let ProgramExpression::Subtract(left, right) = expression else {
         return None;
     };
-    if left.as_ref() != &ProgramExpression::Variable(variable.clone().into()) {
+    if left.as_ref() != &ProgramExpression::Variable(variable.clone()) {
         return None;
     }
     int32_literal(right).filter(|step| *step > 0)

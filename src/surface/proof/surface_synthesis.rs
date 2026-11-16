@@ -560,7 +560,7 @@ fn named_range_bases(
 ) -> Vec<NamedRangeBase> {
     let mut bases = named_pointer_bases(parameter_binding, state)
         .map(|(name, pointer, width)| {
-            let lowered = ProgramExpression::Variable((name).into());
+            let lowered = ProgramExpression::Variable(name);
             NamedRangeBase {
                 surface: ContractExpression::ProgramExpression(lowered.clone()),
                 lowered,
@@ -706,7 +706,7 @@ fn synthesize_held_value_local(
         *slot == pointer
     })?;
     matches!(state.held_local_value(name), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
-        .then(|| ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone().into())))
+        .then(|| ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())))
 }
 
 /// `at(point, o)` for a read of a held-value local's object that no nearer
@@ -4190,7 +4190,7 @@ pub(super) fn synthesize_surface_resource_subject(
     // A scalar's storage is its address, not its current value or the zero
     // offset within its block. The slot index supplies the exact local name.
     let surface_base = if let Some(name) = state.locals().name_for_slot(range.base()) {
-        let object = ProgramExpression::Variable(surface_local_name(&name));
+        let object = ProgramExpression::Variable(surface_local_name(name));
         let address = if state.locals().array_object_element_type(name).is_some() {
             object
         } else {
@@ -5192,7 +5192,7 @@ fn synthesize_surface_bitvector(
                 (crate::kernel::LoadKind::of_type(*ty) == Some(*kind)).then(|| name.clone())
             }) {
                 return Some(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable((name).into()),
+                    ProgramExpression::Variable(name),
                 ));
             }
             if let Some(name) = state.locals().name_for_slot(kernel_pointer)
@@ -5297,7 +5297,7 @@ fn synthesize_surface_bitvector(
                     state.local_name_holding_bitvector_variable_at(*variable, &pointer)
             {
                 return Some(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable(name.clone().into()),
+                    ProgramExpression::Variable(name.clone()),
                 ));
             }
             // A memory-resident scalar local holding exactly this variable
@@ -5308,7 +5308,7 @@ fn synthesize_surface_bitvector(
                 && let Some(name) = state.local_name_holding_bitvector_variable(*variable)
             {
                 return Some(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable(name.clone().into()),
+                    ProgramExpression::Variable(name.clone()),
                 ));
             }
             if let Some(load) = registered_load_in_state(variable, state) {
@@ -5862,7 +5862,7 @@ fn synthesize_local_aggregate_field(
                     if value_term != *term {
                         return None;
                     }
-                    let base = ProgramExpression::Variable(surface_local_name(&name));
+                    let base = ProgramExpression::Variable(surface_local_name(name));
                     let lowered_pointer = if field.offset_bytes() == 0 {
                         base.clone()
                     } else {
@@ -6012,7 +6012,7 @@ fn synthesize_static_storage_array_element_load(
             }
             let (source, shape) = owners.storage_arrays.get(name)?;
             let index = pointer.shared_element_index_from_base_with_width(slot, 4)?;
-            let base = ProgramExpression::Variable((source.clone()).into());
+            let base = ProgramExpression::Variable(source.clone());
             if shape.len() <= 1 {
                 if !pointer_indices::load_free(index.operand_view()) {
                     return None;
@@ -6440,7 +6440,7 @@ fn synthesize_surface_pointer(
                         .map(crate::languages::interface::RecordLayout::size_bytes)
                 })
                 .unwrap_or(element_width);
-            let name = ProgramExpression::Variable(surface_local_name(&name));
+            let name = ProgramExpression::Variable(surface_local_name(name));
             let Some(index) = synthesis_element_index(pointer, base, element_width) else {
                 let bytes = pointer
                     .element_index_from_base_with_width(base, 1)?
@@ -6505,7 +6505,7 @@ fn synthesize_surface_pointer(
                     return None;
                 };
                 let bytes = u32::try_from(at.checked_sub(*start)?).ok()?;
-                let base = ProgramExpression::Variable(surface_local_name(&name));
+                let base = ProgramExpression::Variable(surface_local_name(name));
                 Some(if bytes == 0 {
                     base
                 } else {

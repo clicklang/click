@@ -394,10 +394,10 @@ fn collect_program_expression_variables(expression: &ProgramExpression, names: &
     while let Some(expression) = pending.pop() {
         match expression {
             ProgramExpression::Variable(name) => {
-                if let Some(name) = name.named() {
-                    if !names.contains(&name.to_owned()) {
-                        names.push(name.to_owned());
-                    }
+                if let Some(name) = name.named()
+                    && !names.contains(&name.to_owned())
+                {
+                    names.push(name.to_owned());
                 }
             }
             ProgramExpression::StringLiteral(_)

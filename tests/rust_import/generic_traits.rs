@@ -297,8 +297,7 @@ fn charon_generic_struct_fields_are_verified_once_for_every_type() {
         // Recheck the affected method or caller, including its dependencies.
         // The positive run above still covers the entire fixture.
         let error = verify_rust_proof_after(&invalid, &prepared, head)
-            .err()
-            .expect("a claim the generic contracts do not justify must fail");
+            .expect_err("a claim the generic contracts do not justify must fail");
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);

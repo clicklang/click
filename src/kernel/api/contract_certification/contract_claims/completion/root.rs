@@ -411,7 +411,7 @@ mod tests {
         let unrelated_body = unrelated.finish().unwrap();
         assert!(
             matches!(
-                finish_program(program, unrelated_body.into_rule().unwrap()),
+                finish_program(program, unrelated_body.to_reusable_rule().unwrap()),
                 Err(crate::kernel::ProgramContractFailure::UnfinishedBody(_))
             ),
             "another root's completed body cannot close the captured parent goal"
@@ -440,7 +440,7 @@ mod tests {
             "cached completion does not publish twice"
         );
         assert_eq!(
-            finish_program(program, body.into_rule().unwrap())
+            finish_program(program, body.to_reusable_rule().unwrap())
                 .unwrap_or_else(|_| panic!("both body and termination closed"))
                 .len(),
             1
@@ -471,7 +471,7 @@ mod tests {
         );
         attempt.commit();
         let completed = root.finish().unwrap();
-        assert!(completed.into_rule().is_some());
+        assert!(completed.to_reusable_rule().is_some());
         assert!(
             Arc::ptr_eq(&completed, &root.finish().unwrap()),
             "reading a completed root performs no new checking"

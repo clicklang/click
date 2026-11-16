@@ -4705,7 +4705,7 @@ impl AlgebraicTermNode {
     /// address as it reaches a scalar load's.
     pub(crate) fn memory_load_carrier(memory: &SharedMemory, pointer: &Pointer) -> MachineTerm {
         MachineTerm::MemoryLoad(
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(memory),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         )
@@ -14812,6 +14812,7 @@ pub struct ExecutionPureFact {
 /// and hashing remain proposition-oriented. Allocate the event list only for
 /// facts carrying source events; ordinary pure facts keep one optional pointer.
 #[derive(Clone, Debug, Default)]
+#[allow(clippy::box_collection)] // Pure facts retain only one optional provenance pointer.
 pub(crate) struct GeneratedLoadSourceEvents(Option<Box<Vec<GeneratedLoadSourceEvent>>>);
 
 impl GeneratedLoadSourceEvents {
@@ -15224,16 +15225,6 @@ impl CheckedFunctionExecution {
 
     pub(crate) fn function_arguments(&self) -> &[ProgramExpression] {
         &self.arguments
-    }
-
-    /// A complete proof checked its returned resource units jointly on every path.
-    pub(crate) fn has_checked_resource_transitions(&self) -> bool {
-        !self.execution.paths.is_empty()
-            && self.checked_resource_transitions.len() == self.execution.paths.len()
-            && self
-                .checked_resource_transitions
-                .iter()
-                .all(|checked| *checked)
     }
 
     /// Allocation return accounting reads borrowed inputs in the immutable
