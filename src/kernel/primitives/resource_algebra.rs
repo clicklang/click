@@ -652,7 +652,10 @@ impl ResourceContextIndex {
         if let Some(range) = fact.memory_range() {
             let block = range.base().block.clone();
             let mode = fact.is_own();
-            if !matches!(block, PointerBlock::Concrete(_)) {
+            if !matches!(
+                block,
+                PointerBlock::Concrete(_) | PointerBlock::AutomaticLocal { .. }
+            ) {
                 result.nonconcrete_memory_count += 1;
             }
             result.memory_by_block =
@@ -952,7 +955,10 @@ impl ResourceContextIndex {
         if let Some(range) = fact.memory_range() {
             let block = range.base().block.clone();
             let mode = fact.is_own();
-            if !matches!(block, PointerBlock::Concrete(_)) {
+            if !matches!(
+                block,
+                PointerBlock::Concrete(_) | PointerBlock::AutomaticLocal { .. }
+            ) {
                 result.nonconcrete_memory_count -= 1;
             }
             result.memory_by_block =

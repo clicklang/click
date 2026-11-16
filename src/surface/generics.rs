@@ -742,9 +742,9 @@ pub(super) fn syntactic_expression_type(
             Some(click_type_from_program_value(value))
         }
         ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-            variables.get(name).cloned()
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => variables.get(name).cloned(),
         ContractExpression::Old(inner)
         | ContractExpression::At {
             expression: inner, ..

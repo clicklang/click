@@ -220,7 +220,7 @@ fn retained_return_and_caller_receipt_do_not_export_growing_prefixes() {
                 .unwrap();
                 crate::kernel::loops::assign_call_result(
                     &mut state,
-                    "received",
+                    &("received").into(),
                     value,
                     &mut obligations,
                     &PureFactContext::new(),

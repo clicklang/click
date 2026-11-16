@@ -10,6 +10,7 @@
 //! no escaping borrows, allocation, exceptions, cancellation, or detachment.
 //! Join assumes success only for this context's live, unique, terminating child.
 
+use crate::kernel::BindingName;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -190,7 +191,7 @@ impl PendingThreadCreate {
         NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub(super) fn protects_local(&self, state: &ExecutionState, name: &str) -> bool {
+    pub(super) fn protects_local(&self, state: &ExecutionState, name: &BindingName) -> bool {
         state
             .locals
             .slots

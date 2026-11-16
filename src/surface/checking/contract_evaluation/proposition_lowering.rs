@@ -38,7 +38,7 @@ pub(in crate::surface) fn lower_outcome_proposition_with_auxiliary_facts(
     crate::surface::proof::lower_fixed_state_proposition_through_kernel_with_facts(
         proposition,
         assumptions,
-        ContractEnvironment::new(&values, &array_refs),
+        ContractEnvironment::new(&values, &array_refs).with_parameters(parameter_binding),
         FixedStateFrame::new(pre_state, post_state, Some(result), &RecordedStates::new()),
         spec_definitions,
         FixedStateLoweringOptions::default(),
@@ -74,7 +74,7 @@ pub(in crate::surface) fn lower_outcome_proposition_with_assumptions(
     crate::surface::proof::lower_fixed_state_proposition_through_kernel(
         proposition,
         assumptions,
-        ContractEnvironment::new(&values, &array_refs),
+        ContractEnvironment::new(&values, &array_refs).with_parameters(parameter_binding),
         FixedStateFrame::new(pre_state, post_state, Some(result), &RecordedStates::new()),
         spec_definitions,
     )
@@ -98,7 +98,7 @@ pub(in crate::surface) fn lower_outcome_proposition_with_recorded_states(
     crate::surface::proof::lower_fixed_state_proposition_through_kernel(
         proposition,
         &assumptions,
-        ContractEnvironment::new(&values, &array_refs),
+        ContractEnvironment::new(&values, &array_refs).with_parameters(parameter_binding),
         FixedStateFrame::new(pre_state, post_state, Some(result), recorded_states),
         spec_definitions,
     )

@@ -11,7 +11,7 @@ use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, S
 use crate::kernel::population_authority::storage_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
-use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{BindingName, CompareRelation, MachineIntegerType};
 use crate::kernel::{
     CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
     ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MachineTerm,
@@ -2760,7 +2760,7 @@ fn checked_borrowing_fold_hold(
 pub(crate) struct CheckedAutomaticLifetimeEnd {
     before_state: ExecutionState,
     after_state: ExecutionState,
-    names: Vec<String>,
+    names: Vec<BindingName>,
 }
 
 impl CheckedAutomaticLifetimeEnd {
@@ -9134,9 +9134,8 @@ impl ExecutionProofCore {
         // Binding micro-steps and handler heads are meaningful only while
         // a `try` frame is open; without one there is nothing to route to.
         let frame_binding_matches = |frame: &EvidenceTryFrame| match proved_statement {
-            ProgramStatement::Declare { name, .. } | ProgramStatement::Assign { name, .. } => {
-                *name == frame.binding
-            }
+            ProgramStatement::Declare { name, .. } => name.binding().is_named(&frame.binding),
+            ProgramStatement::Assign { name, .. } => name.is_named(&frame.binding),
             _ => false,
         };
         if let Some(frame) = self.evidence_try_stack.last()
@@ -10322,7 +10321,7 @@ impl ExecutionProofCore {
     pub(crate) fn record_automatic_lifetime_end(
         &mut self,
         state: &ExecutionState,
-        names: &[String],
+        names: &[BindingName],
     ) -> Result<ExecutionState, RuntimeError> {
         self.last_footprint = None;
         if names.is_empty() {

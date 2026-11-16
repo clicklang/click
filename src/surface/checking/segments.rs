@@ -32,7 +32,7 @@ pub(in crate::surface) fn evaluate_requirement_segment(
     evaluate_segment_bounds(
         segment,
         &PureFactContext::new(),
-        ContractEnvironment::new(&parameter_values, &array_refs),
+        ContractEnvironment::new(&parameter_values, &array_refs).with_parameters(parameter_binding),
         entry_state,
         contract_segment_element_width(parameter_binding.parameters, segment),
     )
@@ -56,7 +56,8 @@ pub(in crate::surface) fn evaluate_requirement_segment_base(
         crate::surface::proof::evaluate_program_expression_through_kernel(
             &segment.base,
             &PureFactContext::new(),
-            ContractEnvironment::new(&parameter_values, &array_refs),
+            ContractEnvironment::new(&parameter_values, &array_refs)
+                .with_parameters(parameter_binding),
             entry_state,
             None,
         )?

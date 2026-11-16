@@ -1617,7 +1617,7 @@ mod tests {
         let mut obligations = Vec::new();
         crate::kernel::loops::assign_call_result(
             &mut caller,
-            "received",
+            &("received").into(),
             value.clone(),
             &mut obligations,
             &PureFactContext::new(),
@@ -1674,6 +1674,7 @@ mod tests {
             state
                 .locals
                 .names_holding_kernel_integer(&root)
+                .map(BindingName::source_name)
                 .collect::<Vec<_>>(),
             vec!["source"]
         );
@@ -1740,6 +1741,7 @@ mod tests {
                 state
                     .locals
                     .names_holding_kernel_integer(&root)
+                    .map(BindingName::source_name)
                     .collect::<Vec<_>>(),
                 vec![name]
             );

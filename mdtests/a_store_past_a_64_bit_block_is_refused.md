@@ -28,5 +28,5 @@ int32 past(size_t n) {
 ```
 
 ```expect
-fail: missing resource fact `owns ((char *)p)[(n * 4)..((n + 1) * 4)]`
+fail: missing resource fact `owns ((char *)"a_store_past_a_64_bit_block_is_refused.c"::past.local(0))[(n * 4)..((n + 1) * 4)]`
 ```

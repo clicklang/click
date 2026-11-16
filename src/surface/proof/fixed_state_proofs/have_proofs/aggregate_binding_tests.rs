@@ -106,7 +106,7 @@ fn proof_lowering_retains_each_selected_aggregate_copy() {
     let environment = ContractEnvironment::new(&values, &arrays);
     for preserve_places in [false, true] {
         let selected = FixedStateLowering::for_names(
-            values.keys().cloned().collect(),
+            values.keys().cloned().map(Into::into).collect(),
             environment,
             &entry,
             &current,
@@ -127,7 +127,7 @@ fn retired_aggregate_copy_uses_the_contract_argument_image() {
     let arrays = ClickArrayRefs::new();
     let environment = ContractEnvironment::new(&values, &arrays);
     let selected = FixedStateLowering::for_names(
-        values.keys().cloned().collect(),
+        values.keys().cloned().map(Into::into).collect(),
         environment,
         &entry,
         &retired,
@@ -163,7 +163,7 @@ fn returned_proof_uses_argument_image_even_with_retained_private_storage() {
     let arrays = ClickArrayRefs::new();
     for result in [ProgramValue::Void, crate::kernel::int32(0)] {
         let selected = FixedStateLowering::for_names(
-            values.keys().cloned().collect(),
+            values.keys().cloned().map(Into::into).collect(),
             ContractEnvironment::new(&values, &arrays),
             &entry,
             &entry,

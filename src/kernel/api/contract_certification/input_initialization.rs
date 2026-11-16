@@ -23,7 +23,7 @@ pub(super) fn initialized_input_range_fact(
     if let Some(constructed) = constructed {
         let mut names = BTreeSet::new();
         crate::kernel::loops::collect_variable_names(&segment.base, &mut names);
-        if names.contains(constructed) {
+        if names.contains(&constructed.into()) {
             return Ok(None);
         }
     }

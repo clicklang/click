@@ -1502,8 +1502,20 @@ impl CellStore {
                 Bound::Unbounded,
             ))
             .take_while(|(key, _)| key.block.starts_with("local:"));
+        // Typed automatic storage follows Temporary in PointerBlock order.
+        // Seek its interval directly, just as for the legacy local interval.
+        let automatic_cells = reachable
+            .range::<_, Pointer>((
+                Bound::Excluded(Pointer {
+                    block: PointerBlock::Temporary(u64::MAX),
+                    offset: PointerOffsetTerm::Constant(i64::MAX),
+                }),
+                Bound::Unbounded,
+            ))
+            .filter(|(key, _)| matches!(key.block, PointerBlock::AutomaticLocal { .. }));
         let mut visited = 0usize;
         let rejected = local_cells
+            .chain(automatic_cells)
             .chain(own_block)
             .filter(|(pointer, value)| {
                 visited += 1;

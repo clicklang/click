@@ -207,7 +207,7 @@ impl Analysis<'_> {
         bindings: &BTreeMap<String, Origins>,
     ) -> Origins {
         match expression {
-            ProgramExpression::Variable(name) => bindings.get(name).cloned().flatten(),
+            ProgramExpression::Variable(name) => name.named_in(bindings).cloned().flatten(),
             ProgramExpression::Value(ProgramValue::Pointer(p)) if p.is_null() => {
                 Some(null_origins())
             }

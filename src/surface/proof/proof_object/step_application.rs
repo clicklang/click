@@ -3969,7 +3969,7 @@ fn trace_function_pointer_load(
     )
     .ok()?;
     Some(crate::surface::proof_trace::TraceLoad {
-        target: name.clone(),
+        target: name.to_string(),
         value,
         address,
         memory: crate::kernel::intern_memory_ref(state.memory()),

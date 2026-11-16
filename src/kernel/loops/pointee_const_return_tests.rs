@@ -212,7 +212,7 @@ fn pointee_const_return_assignment_preserves_destination_and_temporary_qualifier
                 );
                 let result = assign_call_result(
                     &mut state,
-                    "text",
+                    &("text").into(),
                     value,
                     &mut Vec::new(),
                     &PureFactContext::new(),
@@ -237,7 +237,7 @@ fn pointee_const_return_assignment_preserves_destination_and_temporary_qualifier
     assert!(
         assign_call_result(
             &mut state,
-            "temporary",
+            &("temporary").into(),
             value,
             &mut Vec::new(),
             &PureFactContext::new()
@@ -264,7 +264,7 @@ fn call_result_cannot_overwrite_reserved_mutex_storage() {
     assert!(matches!(
         assign_call_result(
             &mut state,
-            "result",
+            &("result").into(),
             int32(1),
             &mut Vec::new(),
             &PureFactContext::new()

@@ -292,7 +292,7 @@ mod tests {
 
     fn leaf(index: i32) -> Arc<ProgramStatement> {
         Arc::new(ProgramStatement::Assign {
-            name: format!("x{index}"),
+            name: format!("x{index}").into(),
             expression: crate::kernel::program_expression::int32_literal(index as u32),
             source: Default::default(),
             prior_result: None,

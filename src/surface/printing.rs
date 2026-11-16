@@ -2770,11 +2770,11 @@ mod tests {
     fn marked_conjunction_uses_parseable_click_connectives() {
         let equality = |name: &str| ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                name.to_string(),
+                (name.to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                name.to_string(),
+                (name.to_string()).into(),
             )),
         };
         let proposition = ClickProposition::At {

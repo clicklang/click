@@ -6739,7 +6739,7 @@ fn call_value_arguments(
         }
         let is_parameter = |argument: &ProgramExpression| {
             matches!(argument, ProgramExpression::Variable(name)
-                if parameters.iter().any(|parameter| parameter.name() == name))
+                if parameters.iter().any(|parameter| parameter.binding_name() == name))
         };
         let clause = interface.resource_requires().iter().find_map(|spec| {
             match spec.term() {
@@ -6751,7 +6751,7 @@ fn call_value_arguments(
             } => arguments
                 .iter()
                 .position(|argument| {
-                    matches!(argument, ProgramExpression::Variable(name) if name == parameter.name())
+                    matches!(argument, ProgramExpression::Variable(name) if name == parameter.binding_name())
                 })
                 .map(|position| {
                     (spec, name, arguments, argument_state_sources, parameter_types, position)
@@ -9588,13 +9588,14 @@ pub(crate) fn initialize_program_function_globals(
 pub(crate) fn with_static_pointer_read_cached(
     state: &ExecutionState,
     memory: Memory,
-    name: &str,
+    name: impl Into<BindingName>,
 ) -> Memory {
+    let name = name.into();
     let locals = state.locals();
-    let (Some(program_type), Some(slot)) = (locals.object_type(name), locals.slot(name)) else {
+    let (Some(program_type), Some(slot)) = (locals.object_type(&name), locals.slot(&name)) else {
         return memory;
     };
-    if !locals.is_global_object(name)
+    if !locals.is_global_object(&name)
         || !program_type.is_object_pointer()
         || !slot.block.is_static_storage_block()
         || !memory.has_block(&slot.block)
@@ -13509,7 +13510,7 @@ fn held_child_witness(
     let child_name = definition.contains().iter().find_map(|spec| {
         let arguments = spec.declared_arguments()?;
         (spec.family() == ResourceFamily::Composite
-            && matches!(arguments, [ProgramExpression::Variable(argument)] if argument == witness))
+            && matches!(arguments, [ProgramExpression::Variable(argument)] if argument.is_named(witness)))
         .then(|| spec.declared_name().expect("composite spec has a name"))
     })?;
     let mut candidates = resources
@@ -13551,7 +13552,7 @@ fn witness_origin_word<'a>(fact: &'a SpecProposition, witness: &str) -> Option<&
                 target_type: ProgramType::UInt64 | ProgramType::Int64,
                 ..
             }) => {
-                matches!(expression.as_ref(), ProgramExpression::Variable(name) if name == witness)
+                matches!(expression.as_ref(), ProgramExpression::Variable(name) if name.is_named(witness))
             }
             SpecExpression::Add(left, right) => {
                 mentions_witness_address(left, witness) || mentions_witness_address(right, witness)
@@ -17979,9 +17980,7 @@ fn matched_argument_classes(
 ) -> Vec<(usize, crate::kernel::effective_type::CAccessClass)> {
     fn variable(expression: &SpecExpression) -> Option<&str> {
         match expression {
-            SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-                Some(name.as_str())
-            }
+            SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => name.named(),
             _ => None,
         }
     }
@@ -18101,7 +18100,7 @@ fn spec_proposition_mentions_any_name(fact: &SpecProposition, names: &BTreeSet<S
         SpecExpression::Value(_) => false,
         SpecExpression::ProgramExpression(expression) => names
             .iter()
-            .any(|name| program_expression_mentions_variable(expression, name)),
+            .any(|name| program_expression_mentions_variable(expression, &name.into())),
         _ => true,
     })
 }
@@ -18506,7 +18505,7 @@ fn resolve_retained_aggregate_fields(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<()> {
     budget.consume_expression_step()?;
-    fn projection(expression: &ProgramExpression) -> Option<(&str, SpecExpression)> {
+    fn projection(expression: &ProgramExpression) -> Option<(&BindingName, SpecExpression)> {
         match expression {
             ProgramExpression::Variable(name) => {
                 Some((name, SpecExpression::ProgramExpression(expression.clone())))
@@ -18552,7 +18551,7 @@ fn resolve_retained_aggregate_fields(
         )
     {
         let field = SpecExpression::AggregateFieldValue {
-            parameter: parameter.to_string(),
+            parameter: parameter.clone(),
             pointer: Box::new(pointer),
             value_type: *value_type,
         };

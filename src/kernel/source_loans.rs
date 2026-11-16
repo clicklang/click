@@ -96,8 +96,12 @@ impl ScalarReferenceSourcePlan {
     pub(crate) fn key(&self) -> &ScalarReferencePlanKey {
         &self.key
     }
-    pub(super) fn validates_assignment(&self, name: &str, expression: &ProgramExpression) -> bool {
-        name == self.child && expression == &self.assignment
+    pub(super) fn validates_assignment(
+        &self,
+        name: &BindingName,
+        expression: &ProgramExpression,
+    ) -> bool {
+        name.named() == Some(self.child.as_str()) && expression == &self.assignment
     }
     pub(super) fn begin(
         &self,
@@ -160,7 +164,7 @@ impl ScalarReferenceSourcePlan {
         let value = ProgramValue::Pointer(child);
         // Assignment already checked this private local's storage; attaching
         // custody changes its permission identity, not the pointer's address.
-        eval::sync_stack_local(&mut state, &self.child, &value);
+        eval::sync_stack_local(&mut state, &self.child.clone().into(), &value);
         state.locals.set(self.child.clone(), value);
         Ok(state)
     }

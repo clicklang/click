@@ -3642,12 +3642,22 @@ impl PureFactContext {
         // coverage checks separately.
         if let (Resource::Memory(left_range), Resource::Memory(right_range)) = (left, right) {
             let rebase = |range: &MemoryRange| {
+                // A union-find representative need not itself be storage:
+                // typed local blocks can order after a loaded pointer in the
+                // class. Use its maintained storage anchor before the class
+                // coordinate, preserving exact allocation identities.
+                let storage = self.equality_graph.storage_address(range.base());
+                if storage != *range.base() {
+                    let (start, end) = range.bound_terms();
+                    return Some(range.with_bounds(storage, start.clone(), end.clone()));
+                }
                 let coordinate = self.equality_graph.canonical_pointer(range.base())?;
                 if coordinate.representative == range.base().block
                     || !matches!(coordinate.representative, PointerBlock::ExternalArgument)
                         && !matches!(
                             coordinate.representative,
                             PointerBlock::Heap(_)
+                                | PointerBlock::AutomaticLocal { .. }
                                 | PointerBlock::Temporary(_)
                                 | PointerBlock::StringLiteral { .. }
                         )

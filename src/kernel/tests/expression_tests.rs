@@ -23,7 +23,7 @@ fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
     let _specification = crate::kernel::eval::SpecificationReadScope::enter();
     for expression in [
         ProgramExpression::Value(ProgramValue::Pointer(value.clone())),
-        ProgramExpression::Variable("p".to_owned()),
+        ProgramExpression::Variable(("p".to_owned()).into()),
     ] {
         for context in [&PureFactContext::new(), &facts] {
             let paths = evaluate_program_expression_paths(

@@ -52,5 +52,5 @@ int32 probe(int32 *left, int32 *visited, int32 n, int32 cur) {
 ```
 
 ```expect
-fail: unproved obligation: `left[cur] < 0`
+fail: unproved obligation: `"probe.c"::probe.parameter(0)["probe.c"::probe.parameter(3)] < 0`
 ```
