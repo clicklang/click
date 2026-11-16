@@ -8753,7 +8753,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
                 rewrite(then_branch, ranges);
                 rewrite(else_branch, ranges);
             }
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 effect_checks,
                 body,
                 ..
@@ -8799,7 +8799,7 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 else_branch,
                 ..
             } => has_inherited_loop_frame(then_branch) || has_inherited_loop_frame(else_branch),
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 effect_checks,
                 body,
                 ..
@@ -8856,7 +8856,7 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 }
                 check_statement(else_branch)
             }
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 effect_checks,
                 body,
                 ..

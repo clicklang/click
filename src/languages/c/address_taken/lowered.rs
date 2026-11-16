@@ -120,7 +120,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
                 expressions.push((condition, false));
                 statements.extend([then_branch.as_ref(), else_branch.as_ref()]);
             }
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 condition, body, ..
             } => {
                 expressions.push((condition, false));

@@ -6967,7 +6967,7 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         ProgramStatement::LoopTest { condition, .. } => {
             format!("the loop's test ({})", describe_c_guard(condition))
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition,
             do_while,
             ..

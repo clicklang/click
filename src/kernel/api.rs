@@ -2644,7 +2644,7 @@ pub fn program_while_with_invariant_and_effect_checks(
     effect_checks: Vec<LoopEffectCheck>,
     body: ProgramStatement,
 ) -> ProgramStatement {
-    ProgramStatement::While {
+    ProgramStatement::Loop {
         condition,
         invariant,
         invariant_checks,
@@ -2675,7 +2675,7 @@ impl ProgramStatement {
         if specs.is_empty() {
             return self;
         }
-        if let Self::While { resource_specs, .. } = &mut self {
+        if let Self::Loop { resource_specs, .. } = &mut self {
             *resource_specs = specs;
         }
         self
@@ -2691,7 +2691,7 @@ impl ProgramStatement {
         if measures.is_empty() {
             return self;
         }
-        if let Self::While {
+        if let Self::Loop {
             ranking_measures, ..
         } = &mut self
         {
@@ -2710,7 +2710,7 @@ impl ProgramStatement {
         if measure.is_none() {
             return self;
         }
-        if let Self::While {
+        if let Self::Loop {
             structural_measure, ..
         } = &mut self
         {
@@ -2723,7 +2723,7 @@ impl ProgramStatement {
     /// wrapper is an internal loop region; its body still contains the
     /// original checked `goto` statement.
     pub fn with_backedge_target(mut self, target: ControlTargetId) -> Self {
-        if let Self::While {
+        if let Self::Loop {
             backedge_target, ..
         } = &mut self
         {
@@ -2734,7 +2734,7 @@ impl ProgramStatement {
 
     /// Retains the explicit forward exit target of a proof-only natural cycle.
     pub fn with_natural_exit_target(mut self, target: ControlTargetId) -> Self {
-        if let Self::While {
+        if let Self::Loop {
             natural_exit_target,
             ..
         } = &mut self
@@ -2755,7 +2755,7 @@ pub fn program_do_while_with_invariant_and_effect_checks(
     effect_checks: Vec<LoopEffectCheck>,
     body: ProgramStatement,
 ) -> ProgramStatement {
-    ProgramStatement::While {
+    ProgramStatement::Loop {
         condition,
         invariant: Vec::new(),
         invariant_checks,
@@ -4920,7 +4920,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     } = statement.into();
     let loop_evidence =
         loop_evidence.map(|evidence| evidence.executed_under(LoopSemantics::ApplyVerifiedRules));
-    let Some(while_loop) = crate::kernel::loops::WhileLoop::of(&statement) else {
+    let Some(program_loop) = crate::kernel::loops::ProgramLoop::of(&statement) else {
         return (
             SymbolicExecution {
                 paths: Vec::new(),
@@ -4930,9 +4930,9 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
         );
     };
     let mut variables = statement_kernel_variables(&state, &statement, &assumptions, &environment);
-    let execution = execute_program_while_exit_paths_with_proven_phases(
+    let execution = execute_program_loop_exit_paths_with_proven_phases(
         &state,
-        while_loop,
+        program_loop,
         &assumptions,
         ExecutionContext::apply_verified_rules(&environment),
         initialization_proven,
@@ -4980,7 +4980,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
     // path leaves the function from inside the loop; the rule carries it so
     // the enclosing execution continues with it as a returned path instead of
     // certifying the function on the exit path alone.
-    let loop_rule = (matches!(statement, ProgramStatement::While { .. })
+    let loop_rule = (matches!(statement, ProgramStatement::Loop { .. })
         && paths.iter().all(|path| {
             (matches!(
                 path.outcome,
@@ -4989,7 +4989,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
                     | StatementOutcome::VerificationDiverges
             ) || matches!(
                 (&statement, &path.outcome),
-                (ProgramStatement::While {
+                (ProgramStatement::Loop {
                     backedge_target: Some(_),
                     natural_exit_target: Some(exit_target),
                     ..

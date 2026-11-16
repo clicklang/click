@@ -830,7 +830,7 @@ fn execute_concrete_loop_head_step(
     let tactic_index = proof_context.tactic_index;
 
     execution.core.concrete_loop_execution = true;
-    let ProgramStatement::While {
+    let ProgramStatement::Loop {
         condition,
         invariant,
         invariant_checks,
@@ -843,7 +843,7 @@ fn execute_concrete_loop_head_step(
         ..
     } = loop_statement.clone()
     else {
-        unreachable!("concrete loop stepping requires a while statement");
+        unreachable!("concrete loop stepping requires a loop statement");
     };
 
     record_statement_program_state(
@@ -861,7 +861,7 @@ fn execute_concrete_loop_head_step(
         current_state.clone(),
     );
 
-    let loop_head = ProgramStatement::While {
+    let loop_head = ProgramStatement::Loop {
         condition: condition.clone(),
         invariant: invariant.clone(),
         invariant_checks: invariant_checks.clone(),
@@ -2350,12 +2350,12 @@ fn execute_step_from_frontier_position_selecting_path(
             ))
         })?;
     }
-    if matches!(source_statement, ProgramStatement::While { .. }) && loop_index.is_none() {
+    if matches!(source_statement, ProgramStatement::Loop { .. }) && loop_index.is_none() {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve the source loop at region({statement_index})"
         )));
     }
-    if let (Some(loop_index), ProgramStatement::While { .. }) = (loop_index, &source_statement)
+    if let (Some(loop_index), ProgramStatement::Loop { .. }) = (loop_index, &source_statement)
         && matches!(loop_step_policy, LoopStepPolicy::EnterBody)
     {
         execute_concrete_loop_head_step(
@@ -4449,7 +4449,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
                 describe_program_expression(condition)
             )
         }
-        ProgramStatement::While { condition, .. } => {
+        ProgramStatement::Loop { condition, .. } => {
             format!("while ({})", describe_program_expression(condition))
         }
         ProgramStatement::Switch { expression, .. } => {

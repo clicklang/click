@@ -1023,6 +1023,7 @@ fn symbolic_memory_block_sizes_are_free_and_substitutable() {
     let block = PointerBlock::Concrete("symbolic-size".to_string());
     let memory = Memory {
         construction: None,
+        pending_steps: None,
         blocks: std::sync::Arc::new(MemoryBlocks::from_iter([(
             block.clone(),
             MemoryBlock::with_symbolic_size(HeapExtent::int32(MachineTerm::Variable(
@@ -1076,6 +1077,7 @@ fn nested_state_load_named(depth: usize, name: impl Fn(MachineTerm) -> MachineTe
     )]));
     let level_memory = |cells| Memory {
         construction: None,
+        pending_steps: None,
         blocks: blocks.clone(),
         cells: std::sync::Arc::new(cells),
         union_cells: std::sync::Arc::default(),

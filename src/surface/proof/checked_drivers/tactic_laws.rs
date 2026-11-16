@@ -392,7 +392,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         execution.core.frontier_loop_rules.push(rule);
     }
     let loop_exit_condition = match &current_loop {
-        ProgramStatement::While { condition, .. } => Some(ClickProposition::Not(Box::new(
+        ProgramStatement::Loop { condition, .. } => Some(ClickProposition::Not(Box::new(
             surface_program_condition(condition, &execution.core.state)?,
         ))),
         _ => None,

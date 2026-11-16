@@ -1034,7 +1034,7 @@ pub(super) fn statement_writes_aggregate_parameter(
         ProgramStatement::ForStep { step, .. } => {
             statement_writes_aggregate_parameter(step, parameter_name, writes, unknown_write);
         }
-        ProgramStatement::While { body, .. } => {
+        ProgramStatement::Loop { body, .. } => {
             statement_writes_aggregate_parameter(body, parameter_name, writes, unknown_write);
         }
         ProgramStatement::Switch { cases, .. } => {

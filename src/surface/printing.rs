@@ -169,6 +169,15 @@ fn machine_arithmetic(
         retained_state = true;
         inner = next;
     }
+    // A negative literal prints with a unary minus. Specification parsing
+    // reads that as Integer arithmetic, so retain its machine type explicitly.
+    if matches!(inner,
+        ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::Int64(crate::kernel::int64_constant!(bits))
+        )) if crate::kernel::constant_i64(*bits) < 0)
+    {
+        return Some("int64");
+    }
     // Surface addition/subtraction may be pointer arithmetic. A typed
     // literal nested inside it does not determine the result type:
     // `a + (i + 1u64)` can be a pointer. Preserve its source semantics;
@@ -1594,6 +1603,31 @@ pub(super) fn spell_source_names(context: &str, source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn negative_int64_source_barrier_does_not_change_diagnostic_spelling() {
+        let word = |n| {
+            ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
+                crate::kernel::MachineTerm::int64_constant(n),
+            )))
+        };
+        let proposition = ClickProposition::Comparison {
+            left: word(-9),
+            operator: ComparisonOperator::LessEqual,
+            right: word(100),
+        };
+        assert_eq!(
+            source_click_proposition(&proposition),
+            "-9i64 as int64 <= 100i64"
+        );
+        for mode in [
+            PropositionSpelling::Authored,
+            PropositionSpelling::Diagnostic,
+            PropositionSpelling::Refusal,
+        ] {
+            assert_eq!(print_proposition(&proposition, mode), "-9i64 <= 100i64");
+        }
+    }
 
     #[test]
     fn population_count_comparisons_preserve_their_numeric_type_when_reparsed() {

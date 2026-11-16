@@ -1443,7 +1443,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                         panic!("fill3 suffix should contain the loop and return");
                     };
                     let (loop_statement, result) = (statements.first().clone(), statements.rest());
-                    let ProgramStatement::While {
+                    let ProgramStatement::Loop {
                         condition,
                         invariant,
                         invariant_checks,

@@ -6865,3 +6865,121 @@ fn pthread_handle_words_use_c_names_and_retained_states() {
         root.with_machine_observation_type(view.format)
     );
 }
+
+fn check_int64_literal_comparison_round_trips(values: &[i64]) {
+    use crate::kernel::proof::ProofFacts;
+    for value in values {
+        for operator in ["<", "<=", ">", ">="] {
+            for reverse in [false, true] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let state = ExecutionState::new().with_local(
+                    "x",
+                    ProgramValue::Int64(MachineTerm::Variable(Variable(999707))),
+                );
+                let parse = |text: &str| {
+                    let file = parser::parse(&format!(
+                        "theorem probe() {{ requires {text}; ensures true; }}"
+                    ))
+                    .unwrap();
+                    let Requirement::Proposition(p) = &file.theorem_definitions()[0].requires()[0]
+                    else {
+                        panic!("expected a proposition")
+                    };
+                    p.clone()
+                };
+                let equality = relower_written_proposition(
+                    &parse(&format!("x == ({value}i64 as int64)")),
+                    &state,
+                )
+                .unwrap();
+                let expression = if reverse {
+                    format!("100i64 {operator} x")
+                } else {
+                    format!("x {operator} 100i64")
+                };
+                let original = relower_written_proposition(&parse(&expression), &state).unwrap();
+                let rewritten = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+                    .check_equality_rewrite(&original, &equality)
+                    .unwrap()
+                    .proposition()
+                    .clone();
+                let Proposition::ConditionIs(condition, true) = rewritten else {
+                    panic!("expected a comparison")
+                };
+                for truth in [true, false] {
+                    let produced = Proposition::ConditionIs(condition.clone(), truth);
+                    let raised = synthesize_surface_proposition(
+                        &produced,
+                        ParameterBinding::default(),
+                        &state,
+                    )
+                    .unwrap();
+                    let text = crate::surface::printing::source_click_proposition(&raised);
+                    let restored = relower_written_proposition(&parse(&text), &state).unwrap();
+                    assert_eq!(
+                        restored, produced,
+                        "value={value} reverse={reverse} {operator}, truth={truth}: {text}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn negative_int64_comparisons_round_trip_after_rewrite() {
+    check_int64_literal_comparison_round_trips(&[-10, -1]);
+}
+
+#[test]
+fn int64_boundary_comparisons_round_trip_after_rewrite() {
+    check_int64_literal_comparison_round_trips(&[i64::MIN, i64::MAX]);
+}
+
+#[test]
+fn nonnegative_int64_comparisons_round_trip_after_rewrite() {
+    check_int64_literal_comparison_round_trips(&[0, 9]);
+}
+
+#[test]
+fn negative_int64_comparisons_round_trip_under_point_selectors() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = ExecutionState::new();
+    let word = |n| {
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
+            MachineTerm::int64_constant(n),
+        )))
+    };
+    for left in [
+        word(-9),
+        ContractExpression::Old(Box::new(word(-9))),
+        ContractExpression::At {
+            selector: ProgramPointSelector::from(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Entry,
+            }),
+            expression: Box::new(word(-9)),
+        },
+    ] {
+        let original = ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::LessEqual,
+            right: word(100),
+        };
+        let expected = relower_written_proposition(&original, &state).unwrap();
+        let text = crate::surface::printing::source_click_proposition(&original);
+        let parsed = parser::parse(&format!(
+            "theorem probe() {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(written) = &parsed.theorem_definitions()[0].requires()[0]
+        else {
+            panic!("expected a proposition")
+        };
+        assert_eq!(
+            relower_written_proposition(written, &state).unwrap(),
+            expected,
+            "{text}"
+        );
+    }
+}
