@@ -140,6 +140,7 @@ fn pthread_handle_leaf_lookup_is_independent_of_other_handles() {
 }
 
 #[test]
+#[ignore = "nightly: growing pthread handle equality stars and chains"]
 fn forwarded_handle_lookup_ignores_equality_class_and_context_population() {
     use crate::kernel::{ConditionTerm, Proposition, PureFactContext};
     let mut samples = Vec::new();

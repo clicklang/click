@@ -6822,6 +6822,7 @@ fn narrow_symbolic_comparisons_keep_their_existing_normal_forms() {
 }
 
 #[test]
+#[ignore = "nightly: retained pthread value parse/lower round trip"]
 fn pthread_handle_words_use_c_names_and_retained_states() {
     use crate::kernel::{KernelTermImport, ThreadHandleId};
     let _session = crate::kernel::VerificationSession::enter();
