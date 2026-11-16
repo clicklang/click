@@ -1862,7 +1862,7 @@ mod tests {
         let (root, path) = temporary_project(
             "omitted-have-location",
             "int helper(void) { return 1; }\nint f(void) { int x; x = helper(); return x; }",
-            "verifying \"program.c\";\nint32 helper() { ensures result == 1; }\nint32 f() { ensures result == 1; } by {\n    step();\n    step();\n    have x == 2;\n}",
+            "verifying \"program.c\";\nint32 helper() { ensures result == 1; }\nint32 f() { ensures result == 1; } by {\n    step();\n    step_until(statement(2));\n    have x == 2;\n}",
         );
         let report = entry_with([path.display().to_string()]).expect_err("x is 1, not 2");
         fs::remove_dir_all(root).unwrap();

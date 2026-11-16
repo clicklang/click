@@ -2212,9 +2212,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
             &[
                 ProofStep::Have {
                     proposition: proposition.clone(),
-                    proof: Box::new(
-                        ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()
-                    ),
+                    proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
                 },
                 ProofStep::Known,
             ]
@@ -4047,8 +4045,8 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
                 ProofStep::Rewrite(root_equality),
                 ProofStep::Both { left_proof: left, right_proof: right },
             ] if root_equality == &equality
-                && matches!(left.steps(), [ProofStep::Rewrite(_), ProofStep::Normalize])
-                && matches!(right.steps(), [ProofStep::Rewrite(_), ProofStep::Normalize])
+                && matches!(left.steps(), [ProofStep::Rewrite(_), ProofStep::Known])
+                && matches!(right.steps(), [ProofStep::Rewrite(_), ProofStep::Known])
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
@@ -6318,9 +6316,18 @@ fn fixed_state_transport_can_follow_another_checked_step() {
         );
         assert_eq!(
             transported.certificate().steps(),
-            &[ProofStep::Extract(extracted.clone()), transport,]
+            &[
+                ProofStep::Extract(extracted.clone()),
+                ProofStep::Have {
+                    proposition: source.clone(),
+                    proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
+                },
+            ]
         );
-        assert_eq!(transported.added_facts(), &[]);
+        assert_eq!(
+            transported.added_facts(),
+            std::slice::from_ref(&kernel_source)
+        );
         assert_eq!(root.certificate().steps(), &[]);
     }
 }
@@ -6551,7 +6558,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
         assert!(closed.is_complete());
         assert!(matches!(
             closed.certificate().steps(),
-            [ProofStep::Rewrite(_), ProofStep::Normalize]
+            [ProofStep::Rewrite(_), ProofStep::Known]
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
@@ -6666,7 +6673,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
         assert!(closed.is_complete());
         assert!(matches!(
             closed.certificate().steps(),
-            [ProofStep::Rewrite(_), ProofStep::Normalize]
+            [ProofStep::Rewrite(_), ProofStep::Known]
         ));
     }
 }
@@ -8726,12 +8733,12 @@ fn selected_disjunction_solve_retains_checked_cases_and_scales() {
             }] if retained == &disjunction
                 && matches!(
                     left_proof.steps(),
-                    [ProofStep::Rewrite(equality), ProofStep::Normalize]
+                    [ProofStep::Rewrite(equality), ProofStep::Known]
                         if equality == &equal_zero
                 )
                 && matches!(
                     right_proof.steps(),
-                    [ProofStep::Rewrite(equality), ProofStep::Normalize]
+                    [ProofStep::Rewrite(equality), ProofStep::Known]
                         if equality == &equal_one
                 )
         ));
@@ -10409,11 +10416,17 @@ fn execution_transport_forks_without_copying_unrelated_state() {
 
         assert!(root.state.shares_state_with(&retained_root.state));
         assert_eq!(root.certificate().steps(), &[]);
-        assert_eq!(successor.certificate().steps(), &[step]);
-        assert!(successor.added_facts().is_empty());
+        assert_eq!(
+            successor.certificate().steps(),
+            &[ProofStep::Have {
+                proposition: surface.clone(),
+                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
+            }]
+        );
+        assert_eq!(successor.added_facts(), std::slice::from_ref(&kernel));
         assert_eq!(
             successor.state().checked_facts(),
-            &[kernel.clone(), kernel.clone()]
+            std::slice::from_ref(&kernel)
         );
         let root_execution = root.execution().expect("root execution state");
         let successor_execution = successor.execution().expect("successor execution state");
@@ -10567,14 +10580,12 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
             transported.certificate().steps(),
             [
                 ProofStep::Step,
-                ProofStep::TransportUsing {
-                    source: retained_source,
-                    target,
-                    premises,
+                ProofStep::Have {
+                    proposition,
+                    proof,
                 },
-            ] if retained_source == &source
-                && target == &source
-                && premises == std::slice::from_ref(&source)
+            ] if proposition == &source
+                && matches!(proof.steps(), [ProofStep::Known])
         ));
         assert!(root.certificate().steps().is_empty());
     }

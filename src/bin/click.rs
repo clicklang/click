@@ -786,10 +786,8 @@ mod tests {
                 "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        preserve by {{\n            step();\n        }}\n    }}\n    step();\n    solve();\n}}\n"
             )
         };
-        // Each case's `known()` must fail. A goal that is a mirrored
-        // spelling of a fact (`0 <= n` beside `requires n >= 0`, or `i <= n`
-        // with `i == 0`) is closed by `known`, so the loop cases ask for
-        // `-1 < n`, which is true but no spelling of any fact.
+        // Give each selected `known()` a false goal, so improvements to
+        // reasoning about the surrounding true goal cannot make it pass.
         let cases = [
             (
                 "if_arm",
@@ -833,6 +831,13 @@ mod tests {
             ),
         ];
         for (name, source, line) in cases {
+            let mut lines = source.lines().map(str::to_string).collect::<Vec<_>>();
+            let target = &mut lines[line - 1];
+            assert_eq!(target.trim(), "known();", "{name}");
+            let indent = &target[..target.len() - target.trim_start().len()];
+            *target = format!("{indent}have false by {{\n{indent}    known();\n{indent}}}");
+            let source = lines.join("\n");
+            let line = line + 1;
             let sidecar = directory.join(format!("{name}.click"));
             fs::write(&sidecar, &source).unwrap();
             let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();

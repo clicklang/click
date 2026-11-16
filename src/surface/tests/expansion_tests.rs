@@ -17410,7 +17410,7 @@ fn normalize_using_transported_int32_loads_expands_and_rechecks() {
     )
     .expect("transport composition should expand");
     verify_c_sources(&expanded, &c_sources).expect("expanded transport composition should recheck");
-    assert!(expanded.contains("transport("));
+    assert!(expanded.contains("preserve("));
     assert!(expanded.contains("normalize() using"));
     let omitted_indices = source.replace("requires i == j;", "");
     assert_ne!(omitted_indices, source);
@@ -18765,17 +18765,16 @@ fn peeled_empty_fold_order_rejects_false_comparisons() {
     }
     let expanded = expand_c_claim_source_by_label(source, &[], "empty_order.ensures_0").unwrap();
     verify_c_sources(&expanded, &[]).expect("expanded empty order must verify before mutation");
-    // Expansion now normalizes using the peeled equality. Check both its
-    // conclusion and its selected evidence, without assuming a certificate form.
-    for (before, after) in [
-        ("0 <= marks(end)", "0 < marks(end)"),
-        ("marks(end) == 0", "marks(end) == 1"),
-    ] {
-        let invalid = expanded.replacen(before, after, 1);
-        assert_ne!(invalid, expanded, "missing mutation target: {before}");
-        verify_c_sources(&invalid, &[])
-            .expect_err("false expanded conclusion or forged premise accepted");
-    }
+    let false_conclusion = expanded.replacen("0 <= marks(end)", "0 < marks(end)", 1);
+    assert_ne!(false_conclusion, expanded);
+    verify_c_sources(&false_conclusion, &[]).expect_err("false expanded conclusion accepted");
+    // The selected evidence is now the bound supplied to `peel`, rather
+    // than a separately spelled equality about its result.
+    let peel = expanded.find("peel(marks(end)) using {").unwrap();
+    let forged_evidence = expanded[peel..].replacen("end <= 0;", "end < 0;", 1);
+    assert_ne!(forged_evidence, expanded[peel..]);
+    let forged = format!("{}{forged_evidence}", &expanded[..peel]);
+    verify_c_sources(&forged, &[]).expect_err("unavailable peel premise accepted");
 }
 
 // The arithmetic planner's affine sum is constant even though this goal
@@ -18815,14 +18814,14 @@ fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
     }
     let expanded = expand_function_proof_source(&source, &borrowed, "f").unwrap();
     verify_c_sources(&expanded, &borrowed).expect("expanded subtraction must verify");
-    // Expansion normalizes the comparison using the stated bounds. Reject
-    // both a false conclusion and a stronger bound that was never established.
+    // The comparison may close directly with `known`, without retaining a
+    // bound premise. Reject a false comparison and a false public claim.
     for (before, after) in [
         (
             "(8 - to_integer(x)) <= ((8 - to_integer(x)) + 4)",
             "(8 - to_integer(x)) <= ((8 - to_integer(x)) - 4)",
         ),
-        ("4 <= x;\n", "5 <= x;\n"),
+        ("ensures result == 0;", "ensures result == 1;"),
     ] {
         let forged = expanded.replacen(before, after, 1);
         assert_ne!(forged, expanded, "missing mutation target: {before}");

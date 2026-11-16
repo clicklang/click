@@ -1810,7 +1810,7 @@ fn resource_proof_expansions_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (relative, expected_sites) in [
         ("mdtests/resource_witness_unfold_fold.md", 3),
-        ("mdtests/rb_parent_family.md", 20),
+        ("mdtests/rb_parent_family.md", 12),
         ("mdtests/population_count_states_its_transition.md", 2),
     ] {
         let path = root.join(relative);
@@ -2122,10 +2122,10 @@ fn expanded_loop_claims_stay_within_checking_work_bounds() {
 
 #[test]
 #[ignore = "nightly: resource output expansion and retained/cold rechecks"]
-fn single_resource_claims_retain_their_implicit_return_folds() {
+fn resource_output_proofs_retain_their_implicit_return_folds() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     for (fixture, claim) in [
-        ("cstr_at_folds_at_a_constant_length", "empty.produces_0"),
+        ("cstr_at_folds_at_a_constant_length", "empty.contract"),
         (
             "fold_symbolic_quantity_without_search",
             "mint_positive.produces_0",
