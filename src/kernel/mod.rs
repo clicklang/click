@@ -262,10 +262,10 @@ pub(crate) use reasoning::{
 pub(crate) use spec::is_verified_load_variable_defining_fact;
 pub(crate) use spec::program_value_word32_term;
 pub(crate) use termination::{
-    OrdinaryTerminationScope, ProgramContractBodies, ProgramContractFailure, ProgramContractGoal,
-    ProgramContractProof, ProgramTerminationInputs, ProgramTerminationProof,
-    ProvedProgramContracts, TerminationAtomKind, TerminationCause, TerminationCheck,
-    TerminationCheckReport, termination_predicate_spelling,
+    IndependentTerminationInputs, OrdinaryTerminationScope, ProgramContractBodies,
+    ProgramContractFailure, ProgramContractGoal, ProgramContractProof, ProgramTerminationInputs,
+    ProgramTerminationProof, ProvedProgramContracts, TerminationAtomKind, TerminationCause,
+    TerminationCheck, TerminationCheckReport, termination_predicate_spelling,
 };
 pub use termination::{
     TerminationRefusal, TerminationVerdicts, UnsuitableCallback, program_function_callees,

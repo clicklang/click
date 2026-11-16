@@ -741,9 +741,11 @@ mod tests {
         let owner = ProgramContractProof::open(requested, BTreeSet::new(), &BTreeSet::new());
         owner
             .generate_termination(ProgramTerminationInputs {
-                partial_rules: &rules,
+                independent: crate::kernel::IndependentTerminationInputs {
+                    rules: &rules,
+                    bodies: &[],
+                },
                 plans: &[],
-                inline_bodies: &[],
                 assumed_terminating: &BTreeSet::new(),
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,

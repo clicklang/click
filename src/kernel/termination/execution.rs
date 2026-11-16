@@ -8,6 +8,29 @@ impl TerminationObligations {
         &self,
         name: &String,
     ) -> Result<Option<TerminationRefusal>, TerminationError> {
+        match &self.function_goals[name].input {
+            super::inputs::LocalTerminationInput::Completed(completed) => {
+                // Ordinary completion owns descent; its loop producers own
+                // ranking eligibility and concrete-exit coverage. No legacy
+                // plan or source analyzer is an alternative on this route.
+                let (ranked, _) = verified_loop_ranking_measures(
+                    self.loop_rules.get(name).map_or(&[], Vec::as_slice),
+                );
+                let refusal = (0..completed.exits.count)
+                    .find(|index| !completed.exits.contains(index) && !ranked.contains_key(index))
+                    .map(|index| TerminationRefusal::UnrankedLoop { index });
+                Ok(refusal.or_else(|| self.function_goals[name].recursion.refusal.clone()))
+            }
+            super::inputs::LocalTerminationInput::Independent => {
+                self.prove_independent_local_descent(name)
+            }
+        }
+    }
+
+    fn prove_independent_local_descent(
+        &self,
+        name: &String,
+    ) -> Result<Option<TerminationRefusal>, TerminationError> {
         let functions = &self.functions;
         let function = &functions[name];
         let plans = &self.plans;
