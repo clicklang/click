@@ -6246,6 +6246,7 @@ pub fn checked_owned_resource_count_lower_bound(
         Resource::Memory(_)
         | Resource::PopulationAuthority(_)
         | Resource::Instance(_)
+        | Resource::ConditionalMutexGuard(_)
         | Resource::MutexGuard(_)
         | Resource::MutexLive(_)
         | Resource::MutexUse(_)

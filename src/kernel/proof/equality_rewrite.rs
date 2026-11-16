@@ -1668,6 +1668,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 | Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -2413,6 +2414,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         | Resource::Token { .. }
         | Resource::PopulationAuthority(_)
         | Resource::Instance(_)
+        | Resource::ConditionalMutexGuard(_)
         | Resource::MutexGuard(_)
         | Resource::MutexLive(_)
         | Resource::MutexUse(_)

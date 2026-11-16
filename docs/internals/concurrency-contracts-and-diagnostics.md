@@ -357,13 +357,16 @@ Checked remainder arithmetic establishes parity after increment without
 changing the C source or treating a bounded unrolling as an induction proof.
 
 The direct loop clause `if i % 2 == 1 { owns mutex_guard(&object->mutex); }`
-also verifies the frozen source. Its private ordinary resource captures the
-head condition as a scalar field; a pointer-indexed lookup locates the owned
-instance for checked unfolding at a mutex operation. The lookup supplies no
-ownership. At each backedge, checked folding establishes the newly evaluated
-condition before the models are normalized for comparison. Changing the index
-without performing the required mutex transition therefore fails, even when
-the mutex ledger itself has not changed.
+also verifies the frozen source. A typed conditional guard occurrence retains
+the head condition, mutex initialization, and abstract acquisition identity.
+The mutex index locates this owned occurrence; it supplies no ownership.
+Opening consumes the occurrence and, only when its frozen condition is true,
+transfers its exact guard. There is no generated resource definition or scalar
+field. At each backedge, a checked custody exchange consumes the current guard
+when the new condition is true and restores the head occurrence directly.
+Changing the index without the required mutex transition therefore fails,
+even when the mutex ledger itself has not changed. Duplicate occurrences and
+stale initializations or acquisitions are refused.
 
 The public proposition `held(mutex)` lowers to a typed `SpecProposition::MutexHeld`
 observation and then the selected protocol's Boolean condition. It is not a

@@ -8227,6 +8227,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     ));
                 }
             }
+            Resource::ConditionalMutexGuard(_) => {}
             Resource::MutexGuard(identity) => {
                 if let Some(bytes) = self.mutex_storage_bytes {
                     self.ranges.push(MemoryRange::new_with_element_width(
@@ -10152,6 +10153,7 @@ fn evaluate_resource_population_body_resources(
             Resource::Memory(_)
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -18579,6 +18581,7 @@ fn resource_clause_supply_with_fact(
                 Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -19987,6 +19990,7 @@ fn resource_fact_transfer_priority(resource: &ResourceFact) -> u8 {
             | Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)

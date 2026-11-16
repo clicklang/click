@@ -11053,6 +11053,8 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_memory_range_counts: PersistentMap<MemoryRange, usize>,
     owned_count: usize,
     owned_composite_count: usize,
+    /// Exclusive occurrence identities: named instances and conditional loop
+    /// guard custody. Shape/pointer indexes below contain only named instances.
     pub(super) instances: PersistentMap<Variable, ResourceEntryIds>,
     /// Only duplicated or malformed mutex authority atoms need a validity check.
     pub(super) suspect_mutex_authorities: PersistentMap<Resource, ()>,
@@ -11512,6 +11514,8 @@ pub enum Resource {
     Instance(ResourceInstance),
     /// Opaque exclusive authority for one acquisition of a modeled mutex.
     MutexGuard(MutexIdentity),
+    /// Exclusive custody of a loop guard, conditional on its frozen head condition.
+    ConditionalMutexGuard(Arc<ConditionalMutexGuard>),
     /// Exclusive lifecycle authority for one initialized mutex.
     MutexLive(MutexIdentity),
     /// Owned permission to use one checked loan share of an initialized mutex.
@@ -11602,6 +11606,25 @@ pub struct MutexIdentity {
     pub(in crate::kernel) mutex: Pointer,
 }
 
+/// A loop-owned occurrence. Protocol metadata and the condition never create
+/// this resource: only checked entry/backedge ownership exchanges do.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ConditionalMutexGuard {
+    pub(in crate::kernel) identity: Variable,
+    pub(in crate::kernel) guard: MutexIdentity,
+    pub(in crate::kernel) initialization: MutexIdentity,
+    pub(in crate::kernel) held: ConditionTerm,
+}
+
+impl ConditionalMutexGuard {
+    pub(crate) fn mutex(&self) -> &Pointer {
+        self.guard.mutex()
+    }
+    pub(crate) fn condition(&self) -> &ConditionTerm {
+        &self.held
+    }
+}
+
 /// Opaque identity of one use-share resource occurrence. The pointer is
 /// diagnostic provenance, not a constructor for loan authority. Substitution
 /// must preserve this identity just as it preserves a concrete acquisition.
@@ -11644,6 +11667,7 @@ impl Resource {
             Resource::Memory(_) => "memory",
             Resource::PopulationAuthority(_) => "population authority",
             Resource::MutexGuard(_) => "mutex guard",
+            Resource::ConditionalMutexGuard(_) => "conditional mutex guard",
             Resource::MutexLive(_) => "mutex lifetime",
             Resource::MutexUse(_) => "mutex use",
             Resource::Publication(_) => "publication right",

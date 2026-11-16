@@ -2027,6 +2027,7 @@ fn program_function_contract_entry_facts(
                     Resource::Composite { name, .. } => format!("composite {name}"),
                     Resource::Token { name, .. } => format!("token {name}"),
                     Resource::MutexGuard(_) => "mutex guard".to_string(),
+                    Resource::ConditionalMutexGuard(_) => "conditional mutex guard".to_string(),
                     Resource::MutexLive(_) => "mutex lifetime".to_string(),
                     Resource::MutexUse(_) => "mutex use".to_string(),
                     Resource::Publication(_) => "publication right".to_string(),
@@ -2072,6 +2073,7 @@ fn program_function_contract_entry_facts(
             }
             Resource::Instance(instance) => (instance.name(), instance.arguments()),
             Resource::Memory(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)

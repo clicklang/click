@@ -1073,6 +1073,9 @@ pub(crate) fn render_resource_fact_labeled(
         trace_facts: true,
     };
     match fact {
+        ResourceFact::Own(resource @ Resource::ConditionalMutexGuard(_), _) => {
+            renderer.resource(resource)
+        }
         ResourceFact::Own(resource, quantity) => {
             renderer.push("owns ");
             renderer.resource(resource);
@@ -2446,6 +2449,13 @@ impl Renderer<'_> {
             }
             Resource::Footprint(fp) => self.push(&fp.source),
             Resource::Parameter(v) => self.push(&format!("resource#{:?}", v)),
+            Resource::ConditionalMutexGuard(carrier) => {
+                self.push("if ");
+                self.condition(carrier.condition());
+                self.push(" { owns mutex_guard(");
+                self.pointer(carrier.mutex());
+                self.push("); }");
+            }
             Resource::MutexGuard(identity) => {
                 self.push("mutex_guard(");
                 self.pointer(identity.mutex());

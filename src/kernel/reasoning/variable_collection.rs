@@ -1681,6 +1681,9 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
                 collect_pointer_bitvector_variables(&identity.mutex, variables);
             }
         }
+        Resource::ConditionalMutexGuard(carrier) => {
+            collect_condition_bitvector_variables(&carrier.held, variables)
+        }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
                 let pointer = &identity.mutex;
