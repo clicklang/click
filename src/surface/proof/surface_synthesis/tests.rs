@@ -4580,7 +4580,7 @@ fn range_fold_surface_preserves_scope_and_alpha_identity() {
         };
         assert!(
             synthesized_surface_matches_proposition(
-                &spelled,
+                spelled,
                 &lowered,
                 ParameterBinding::default(),
                 &state

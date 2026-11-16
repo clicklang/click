@@ -28,80 +28,6 @@ impl ConditionTerm {
     }
 }
 
-#[cfg(test)]
-mod construction_tests {
-    use super::*;
-
-    #[test]
-    fn domain_construction_retains_symbolic_truths_for_obligation_discharge() {
-        let value = IntegerTerm::from_machine(
-            MachineIntegerType::Int64,
-            MachineTerm::Variable(Variable(987000)),
-        )
-        .unwrap();
-        // An already written symbolic bound stays a proposition. The domain
-        // builder's root-type rule below does not fold ordinary comparisons.
-        let domain = Proposition::And(
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::integer_less_equal(
-                    value.clone(),
-                    IntegerTerm::constant_i64(i64::MAX),
-                ),
-                true,
-            )),
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::integer_greater_equal(value, IntegerTerm::constant_i64(i64::MIN)),
-                true,
-            )),
-        );
-        // A machine value fits its type, but proving that is not construction.
-        let (retained, work) = crate::instrumentation::measure_deterministic_work(|| {
-            Proposition::arithmetic_domain([domain.clone()])
-        });
-        assert_eq!(retained, Some(domain));
-        assert_eq!(
-            work, 3,
-            "only the conjunction and its two conditions are visited"
-        );
-        assert_eq!(
-            Proposition::arithmetic_domain([
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
-                Proposition::ConditionIs(ConditionTerm::Constant(false), false),
-            ]),
-            None
-        );
-        let falsehood = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
-        assert_eq!(
-            Proposition::arithmetic_domain([falsehood.clone()]),
-            Some(falsehood)
-        );
-    }
-
-    #[test]
-    fn an_exact_machine_value_needs_a_range_only_for_a_noncontaining_type() {
-        use MachineIntegerType as Ty;
-        for (source, destination, fits) in [
-            (Ty::Int32, Ty::Int32, true),
-            (Ty::Int8, Ty::Int32, true),
-            (Ty::UInt32, Ty::Int64, true),
-            (Ty::Int32, Ty::Int8, false),
-            (Ty::UInt32, Ty::Int32, false),
-            (Ty::Int32, Ty::UInt32, false),
-        ] {
-            let value =
-                IntegerTerm::from_machine(source, MachineTerm::Variable(Variable(987001))).unwrap();
-            let range = Proposition::arithmetic_result_range(destination, value);
-            assert_eq!(
-                matches!(
-                    range,
-                    Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-                ),
-                fits
-            );
-        }
-    }
-}
-
 impl Proposition {
     pub(crate) fn signed_division_exclusion(
         format: MachineIntegerType,
@@ -339,5 +265,79 @@ impl ConditionTerm {
             masked,
         );
         Self::machine_compare(format, CompareRelation::LessEqual, left, bound)
+    }
+}
+
+#[cfg(test)]
+mod construction_tests {
+    use super::*;
+
+    #[test]
+    fn domain_construction_retains_symbolic_truths_for_obligation_discharge() {
+        let value = IntegerTerm::from_machine(
+            MachineIntegerType::Int64,
+            MachineTerm::Variable(Variable(987000)),
+        )
+        .unwrap();
+        // An already written symbolic bound stays a proposition. The domain
+        // builder's root-type rule below does not fold ordinary comparisons.
+        let domain = Proposition::And(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::integer_less_equal(
+                    value.clone(),
+                    IntegerTerm::constant_i64(i64::MAX),
+                ),
+                true,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::integer_greater_equal(value, IntegerTerm::constant_i64(i64::MIN)),
+                true,
+            )),
+        );
+        // A machine value fits its type, but proving that is not construction.
+        let (retained, work) = crate::instrumentation::measure_deterministic_work(|| {
+            Proposition::arithmetic_domain([domain.clone()])
+        });
+        assert_eq!(retained, Some(domain));
+        assert_eq!(
+            work, 3,
+            "only the conjunction and its two conditions are visited"
+        );
+        assert_eq!(
+            Proposition::arithmetic_domain([
+                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                Proposition::ConditionIs(ConditionTerm::Constant(false), false),
+            ]),
+            None
+        );
+        let falsehood = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+        assert_eq!(
+            Proposition::arithmetic_domain([falsehood.clone()]),
+            Some(falsehood)
+        );
+    }
+
+    #[test]
+    fn an_exact_machine_value_needs_a_range_only_for_a_noncontaining_type() {
+        use MachineIntegerType as Ty;
+        for (source, destination, fits) in [
+            (Ty::Int32, Ty::Int32, true),
+            (Ty::Int8, Ty::Int32, true),
+            (Ty::UInt32, Ty::Int64, true),
+            (Ty::Int32, Ty::Int8, false),
+            (Ty::UInt32, Ty::Int32, false),
+            (Ty::Int32, Ty::UInt32, false),
+        ] {
+            let value =
+                IntegerTerm::from_machine(source, MachineTerm::Variable(Variable(987001))).unwrap();
+            let range = Proposition::arithmetic_result_range(destination, value);
+            assert_eq!(
+                matches!(
+                    range,
+                    Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+                ),
+                fits
+            );
+        }
     }
 }

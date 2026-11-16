@@ -5872,9 +5872,11 @@ pub(super) fn prepare_loop_top_state(
     let include_mutable_summaries = statement_may_write_memory(entry_state, body);
     // The locals whose address a body that writes memory may write through,
     // found once for the write set below and the head's havoc.
-    let escaped = include_mutable_summaries
-        .then(|| address_escaped_scalar_locals(entry_state, body))
-        .unwrap_or_default();
+    let escaped = if include_mutable_summaries {
+        address_escaped_scalar_locals(entry_state, body)
+    } else {
+        Default::default()
+    };
     let (effect_ranges, all_ranges_evaluable) = evaluate_whole_loop_effect_ranges(
         entry_state,
         &effect_checks,
@@ -8895,12 +8897,11 @@ pub(super) fn address_escaped_scalar_locals(
         }
     };
     for name in state.locals.bindings.keys() {
-        if let Some(value) = state.locals.get(name) {
-            if let Some(pointer) = value.pointer()
-                && let Some(name) = state.locals.name_for_slot(pointer.pointer())
-            {
-                escaped.insert(name.clone());
-            }
+        if let Some(value) = state.locals.get(name)
+            && let Some(pointer) = value.pointer()
+            && let Some(name) = state.locals.name_for_slot(pointer.pointer())
+        {
+            escaped.insert(name.clone());
         }
     }
     for value in state.memory.cells.concrete().values() {

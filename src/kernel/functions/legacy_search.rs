@@ -27,13 +27,11 @@ impl crate::kernel::search::ProofSearch<ProgramFunction> {
         for (name, _) in residual.owned_composite_families() {
             if let Some(found) = definition(name)
                 && found.has_argument_direct_body()
-            {
-                if direct
+                && direct
                     .last()
                     .is_none_or(|last: &CompositeResourceDefinition| last.name() != name)
-                {
-                    direct.push(found.clone());
-                }
+            {
+                direct.push(found.clone());
             }
         }
         CallKeptOwnership::new(

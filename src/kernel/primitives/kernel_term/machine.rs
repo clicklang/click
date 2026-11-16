@@ -258,6 +258,7 @@ impl KernelTerm {
 
     /// Construct one arithmetic operation structurally from shared children.
     /// Signed definedness belongs to the evaluator's separate obligations.
+    #[cfg(test)]
     pub(crate) fn arithmetic_binary(
         format: MachineIntegerType,
         operator: MachineBinaryOp,
@@ -814,11 +815,7 @@ impl KernelTermExport {
                 memory,
                 address,
                 kind,
-            } => Old::MemoryLoad(
-                ProgramPoint::at(&memory),
-                Box::new(address.export()?),
-                *kind,
-            ),
+            } => Old::MemoryLoad(ProgramPoint::at(memory), Box::new(address.export()?), *kind),
             Node::BoolCast {
                 destination,
                 operand,

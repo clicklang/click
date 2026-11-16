@@ -127,9 +127,9 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
             let normalized = match term.node() {
                 KernelTermNode::Match(matched) => {
                     let mut matched = matched.clone();
-                    matched.arguments = matched.arguments.iter().map(|child| get(child)).collect();
+                    matched.arguments = matched.arguments.iter().map(&get).collect();
                     for arm in &mut matched.arms {
-                        arm.bindings = arm.bindings.iter().map(|child| get(child)).collect();
+                        arm.bindings = arm.bindings.iter().map(&get).collect();
                     }
                     let root = matched.into_term();
                     if matches!(term.ty(), KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some()) {
@@ -140,7 +140,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                     index: fold.index,
                     accumulator: fold.accumulator,
                     item: fold.item,
-                    arguments: fold.arguments.each_ref().map(|child| get(child)),
+                    arguments: fold.arguments.each_ref().map(&get),
                 }
                 .into_term()
                 .with_machine_observation_type(format),
@@ -172,23 +172,23 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 }
                 KernelTermNode::AlgebraicIf { arguments } => {
                     let KernelType::Algebraic(ty) = term.ty() else { unreachable!() };
-                    KernelTerm::algebraic_if_raw(ty.clone(), arguments.each_ref().map(|arg| get(arg)))
+                    KernelTerm::algebraic_if_raw(ty.clone(), arguments.each_ref().map(&get))
                 }
                 KernelTermNode::AlgebraicCall(call) => {
                     let mut call = call.clone();
-                    call.arguments = call.arguments.iter().map(|arg| get(arg)).collect();
+                    call.arguments = call.arguments.iter().map(&get).collect();
                     call.into_term()
                 }
                 KernelTermNode::ProgramParameter { operand } => KernelTerm::program_parameter(get(operand)),
                 KernelTermNode::FloatCall(call) => {
                     let mut call = call.clone();
-                    call.arguments = call.arguments.iter().map(|arg| get(arg)).collect();
+                    call.arguments = call.arguments.iter().map(&get).collect();
                     call.into_term()
                 }
                 KernelTermNode::Constructor(constructor) => {
                     let mut constructor = constructor.clone();
                     constructor.fields =
-                        constructor.fields.iter().map(|child| get(child)).collect();
+                        constructor.fields.iter().map(&get).collect();
                     constructor.into_term()
                 }
                 KernelTermNode::BoolCast {
@@ -204,7 +204,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                     KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatNegate { operand: get(operand) })
                 }
                 KernelTermNode::FloatBinary { operator, arguments } => {
-                    KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatBinary { operator: *operator, arguments: arguments.each_ref().map(|arg| get(arg)) })
+                    KernelTerm::intern(term.ty().clone(), KernelTermNode::FloatBinary { operator: *operator, arguments: arguments.each_ref().map(&get) })
                 }
                 KernelTermNode::FloatRead(read) => {
                     let (_, address) = read.parts();
@@ -266,14 +266,14 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 }
                 KernelTermNode::FloatCompare { format, operator, arguments } => KernelTerm::intern(
                     KernelType::Bool,
-                    KernelTermNode::FloatCompare { format: *format, operator: *operator, arguments: arguments.each_ref().map(|arg| get(arg)) },
+                    KernelTermNode::FloatCompare { format: *format, operator: *operator, arguments: arguments.each_ref().map(&get) },
                 ),
                 KernelTermNode::FloatClassify { format, classification, operand } => KernelTerm::intern(
                     KernelType::Bool,
                     KernelTermNode::FloatClassify { format: *format, classification: *classification, operand: get(operand) },
                 ),
                 KernelTermNode::AlgebraicEqual { arguments } => {
-                    KernelTerm::algebraic_equal_raw(arguments.each_ref().map(|arg| get(arg)))
+                    KernelTerm::algebraic_equal_raw(arguments.each_ref().map(&get))
                 }
                 KernelTermNode::IntegerCompare {
                     operator,
@@ -282,7 +282,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                     KernelType::Bool,
                     KernelTermNode::IntegerCompare {
                         operator: *operator,
-                        arguments: arguments.each_ref().map(|arg| get(arg)),
+                        arguments: arguments.each_ref().map(&get),
                     },
                 ),
                 KernelTermNode::IntegerOperation {
@@ -292,7 +292,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                     KernelType::Integer,
                     KernelTermNode::IntegerOperation {
                         operator: *operator,
-                        arguments: arguments.iter().map(|arg| get(arg)).collect(),
+                        arguments: arguments.iter().map(&get).collect(),
                     },
                 ),
                 KernelTermNode::MachineObservation { format, operand } => KernelTerm::intern(
@@ -303,18 +303,18 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                     },
                 ),
                 KernelTermNode::MachineIf { arguments } => {
-                    KernelTerm::machine_if_shared(format, arguments.each_ref().map(|arg| get(arg)))
+                    KernelTerm::machine_if_shared(format, arguments.each_ref().map(&get))
                 }
                 KernelTermNode::BoolIf { arguments } => KernelTerm::intern(
                     KernelType::Bool,
                     KernelTermNode::BoolIf {
-                        arguments: arguments.each_ref().map(|arg| get(arg)),
+                        arguments: arguments.each_ref().map(&get),
                     },
                 ),
                 KernelTermNode::BoolEqual { arguments } => KernelTerm::intern(
                     KernelType::Bool,
                     KernelTermNode::BoolEqual {
-                        arguments: arguments.each_ref().map(|arg| get(arg)),
+                        arguments: arguments.each_ref().map(&get),
                     },
                 ),
                 KernelTermNode::BoolOverflow {
@@ -324,7 +324,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 } => KernelTerm::boolean_overflow_raw(
                     *format,
                     *operation,
-                    arguments.each_ref().map(|arg| get(arg)),
+                    arguments.each_ref().map(&get),
                 ),
                 KernelTermNode::BoolCompare {
                     format,
@@ -335,7 +335,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                     KernelTermNode::BoolCompare {
                         format: *format,
                         relation: *relation,
-                        arguments: arguments.each_ref().map(|arg| get(arg)),
+                        arguments: arguments.each_ref().map(&get),
                     },
                 ),
                 KernelTermNode::Call { name, arguments } if term.ty() == &KernelType::Bool => {
@@ -343,7 +343,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                         KernelType::Bool,
                         KernelTermNode::Call {
                             name: name.clone(),
-                            arguments: arguments.iter().map(|arg| get(arg)).collect(),
+                            arguments: arguments.iter().map(&get).collect(),
                         },
                     )
                 }
@@ -375,6 +375,52 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 _ => term.clone(),
             };
             roots.borrow_mut().insert(term.id(), normalized);
+        }
+        get(root)
+    })
+}
+
+// The same immutable observation normalization memo extends to address
+// components. Do not rewalk an old offset prefix for every new guard root.
+// As with ROOTS, end each borrow before normalizing a nested numeric child.
+fn normalize_offset(root: &SharedPointerOffset) -> SharedPointerOffset {
+    OFFSET_ROOTS.with(|roots| {
+        let get = |root: &SharedPointerOffset| roots.borrow()[root].clone();
+        let mut pending = vec![(root, false)];
+        while let Some((offset, finish)) = pending.pop() {
+            if roots.borrow().contains_key(offset) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            let node = match offset.node() {
+                KernelPointerOffset::Add([a, b]) => {
+                    if !finish {
+                        pending.extend([(offset, true), (b, false), (a, false)]);
+                        continue;
+                    }
+                    KernelPointerOffset::Add([get(a), get(b)])
+                }
+                KernelPointerOffset::Int32Scaled { value, byte_width } => {
+                    KernelPointerOffset::Int32Scaled {
+                        value: normalize(value),
+                        byte_width: *byte_width,
+                    }
+                }
+                KernelPointerOffset::Int64Scaled {
+                    value,
+                    byte_width,
+                    unsigned,
+                } => KernelPointerOffset::Int64Scaled {
+                    value: normalize(value),
+                    byte_width: *byte_width,
+                    unsigned: *unsigned,
+                },
+                node => node.clone(),
+            };
+            roots.borrow_mut().insert(
+                offset.clone(),
+                node.into_shared().expect("normalized offset types"),
+            );
         }
         get(root)
     })
@@ -516,50 +562,4 @@ mod recursive_call_tests {
             SharedMachineIntegerTerm::intern(format, different_argument_sort)
         );
     }
-}
-
-// The same immutable observation normalization memo extends to address
-// components. Do not rewalk an old offset prefix for every new guard root.
-// As with ROOTS, end each borrow before normalizing a nested numeric child.
-fn normalize_offset(root: &SharedPointerOffset) -> SharedPointerOffset {
-    OFFSET_ROOTS.with(|roots| {
-        let get = |root: &SharedPointerOffset| roots.borrow()[root].clone();
-        let mut pending = vec![(root, false)];
-        while let Some((offset, finish)) = pending.pop() {
-            if roots.borrow().contains_key(offset) {
-                continue;
-            }
-            crate::instrumentation::record_deterministic_work(1);
-            let node = match offset.node() {
-                KernelPointerOffset::Add([a, b]) => {
-                    if !finish {
-                        pending.extend([(offset, true), (b, false), (a, false)]);
-                        continue;
-                    }
-                    KernelPointerOffset::Add([get(a), get(b)])
-                }
-                KernelPointerOffset::Int32Scaled { value, byte_width } => {
-                    KernelPointerOffset::Int32Scaled {
-                        value: normalize(value),
-                        byte_width: *byte_width,
-                    }
-                }
-                KernelPointerOffset::Int64Scaled {
-                    value,
-                    byte_width,
-                    unsigned,
-                } => KernelPointerOffset::Int64Scaled {
-                    value: normalize(value),
-                    byte_width: *byte_width,
-                    unsigned: *unsigned,
-                },
-                node => node.clone(),
-            };
-            roots.borrow_mut().insert(
-                offset.clone(),
-                node.into_shared().expect("normalized offset types"),
-            );
-        }
-        get(root)
-    })
 }

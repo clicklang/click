@@ -1112,14 +1112,14 @@ struct CertifiedFunctionClaimPath {
     effect_projection: Option<Arc<Result<FunctionMemoryEffectProjection, String>>>,
 }
 
-/// Diagnostic evidence from a failed contract path preparation. This carries
-/// no authority into certification; only the failed obligation and a bounded
-/// view of the facts available to its exact check are retained.
+/// A failed contract path's reason. Tests also retain a bounded fact sample
+/// to inspect the context at the exact failed check.
 #[derive(Clone, Debug)]
 pub(crate) struct ContractPathPreparationFailure {
     pub reason: String,
-    pub obligation: Option<Proposition>,
+    #[cfg(test)]
     pub available: Vec<Proposition>,
+    #[cfg(test)]
     pub available_count: usize,
 }
 
@@ -1127,8 +1127,9 @@ impl From<String> for ContractPathPreparationFailure {
     fn from(reason: String) -> Self {
         Self {
             reason,
-            obligation: None,
+            #[cfg(test)]
             available: Vec::new(),
+            #[cfg(test)]
             available_count: 0,
         }
     }
@@ -1136,18 +1137,19 @@ impl From<String> for ContractPathPreparationFailure {
 
 fn unproved_contract_path_condition(
     reason: String,
-    obligation: &ProofObligation,
-    assumptions: &PureFactContext,
+    _assumptions: &PureFactContext,
 ) -> ContractPathPreparationFailure {
     // Sample both ends of the fact index without retaining the whole context.
     // Its order is index order, not execution order. These are the facts
     // consulted by certification, including resource population facts,
     // rather than a second execution or a speculative proof search.
-    let (available, available_count) = assumptions.diagnostic_fact_sample(8, 24);
+    #[cfg(test)]
+    let (available, available_count) = _assumptions.diagnostic_fact_sample(8, 24);
     ContractPathPreparationFailure {
         reason,
-        obligation: Some(obligation.proposition().clone()),
+        #[cfg(test)]
         available,
+        #[cfg(test)]
         available_count,
     }
 }
@@ -1451,7 +1453,7 @@ fn prepare_closing_path(
                 unproved_path_obligation_message(obligation)
             );
             return Err(if capture_failure {
-                unproved_contract_path_condition(reason, obligation, &assumptions)
+                unproved_contract_path_condition(reason, &assumptions)
             } else {
                 reason.into()
             });
@@ -1581,7 +1583,7 @@ fn prepare_closing_path(
     post_state.population_effects = raw_exit_state.population_effects.clone();
     if exceptional {
         post_state.locals.set_typed(
-            C_EXCEPTIONAL_RESULT_NAME.to_string(),
+            CONTRACT_EXCEPTION,
             value.clone().into_native(),
             ProgramType::Int32,
         );
@@ -1649,7 +1651,7 @@ fn prepare_closing_path(
             unproved_path_obligation_message(obligation)
         );
         return Err(if capture_failure {
-            unproved_contract_path_condition(reason, obligation, &assumptions)
+            unproved_contract_path_condition(reason, &assumptions)
         } else {
             reason.into()
         });
@@ -2704,7 +2706,7 @@ fn exceptional_goals_at_entry(
         .with_memory(throw_state.memory().clone());
     post_state.observed_population_families = throw_state.observed_population_families.clone();
     post_state.locals.set_typed(
-        C_EXCEPTIONAL_RESULT_NAME.to_string(),
+        CONTRACT_EXCEPTION,
         value.clone().into_native(),
         ProgramType::Int32,
     );
@@ -3399,6 +3401,7 @@ pub fn program_unverified_function_contract_claims(
 /// Diagnostic counterpart to checked-proposition-aware finalization. Keeping
 /// the same evidence here ensures a later failing claim does not make an
 /// already checked proposition look unproved in the reported claim list.
+#[cfg(test)]
 pub(crate) fn program_unverified_function_contract_claims_with_checked_propositions(
     function: &ProgramFunction,
     contract_execution: &FunctionContractExecution,
@@ -3412,6 +3415,7 @@ pub(crate) fn program_unverified_function_contract_claims_with_checked_propositi
     .map_err(|failure| failure.reason)
 }
 
+#[cfg(test)]
 pub(crate) fn program_unverified_function_contract_claims_diagnostic(
     function: &ProgramFunction,
     contract_execution: &FunctionContractExecution,

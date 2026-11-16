@@ -203,6 +203,7 @@ fn record_resource_clause_attempt() {
 /// outputs still pass through description admission.
 #[derive(Clone, Copy)]
 enum ReturnResourceComposition<'a> {
+    #[cfg(test)]
     RestoreEntryBorrows,
     ApplyTransfers(&'a ConsumedCellReturns),
     BodyAllocations {
@@ -1165,13 +1166,13 @@ fn candidate_memory_ranges_proven_separate(
         );
         assumptions.decide(&crate::kernel::assumptions::index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(&anchor.end()),
+            MachineOperandView::Legacy(anchor.end()),
             other_start.operand_view(),
         )) == Some(true)
             || assumptions.decide(&crate::kernel::assumptions::index_comparison(
                 CompareRelation::LessEqual,
                 other_end.operand_view(),
-                MachineOperandView::Legacy(&anchor.start()),
+                MachineOperandView::Legacy(anchor.start()),
             )) == Some(true)
     };
     separate_in_frame(left, right) || separate_in_frame(right, left)
@@ -4928,11 +4929,9 @@ fn exceptional_direct_function_path(
 
     let payload = symbolic_call_result(ProgramType::Int32, payload_identity);
     let mut post_state = entry_state.clone().with_memory(memory.clone());
-    post_state.locals.set_typed(
-        C_EXCEPTIONAL_RESULT_NAME.to_string(),
-        payload.clone(),
-        ProgramType::Int32,
-    );
+    post_state
+        .locals
+        .set_typed(CONTRACT_EXCEPTION, payload.clone(), ProgramType::Int32);
     let post_contract_state =
         with_contract_interface_argument_views(&post_state, interface, argument_values);
     add_verified_function_ensure_facts_selected_with_interface(
@@ -19722,10 +19721,10 @@ fn uint64_allocation_extent_argument(
     bytes: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<ProgramValue, RuntimeError> {
-    if let Some(constant) = bytes.uint64_as_const() {
-        if (1..=i32::MAX as u64).contains(&constant) {
-            return Ok(int32(MachineTerm::constant(constant as u32)));
-        }
+    if let Some(constant) = bytes.uint64_as_const()
+        && (1..=i32::MAX as u64).contains(&constant)
+    {
+        return Ok(int32(MachineTerm::constant(constant as u32)));
     }
     if assumptions.should_assume_entry_clause_extents()
         || crate::kernel::eval::uint64_heap_extent_bytes_are_exact(bytes, assumptions)

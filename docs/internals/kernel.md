@@ -1690,6 +1690,13 @@ value-only bookkeeping slot is `PointerBlock::ContractResult`, spelled
 C storage or grant memory ownership. Aggregate results still bind their actual
 returned object address. No string is decoded into a contract-result identity.
 
+The thrown `int32` payload likewise uses `BindingName::ContractException` and
+its own `PointerBlock::ContractException` bookkeeping slot. Exceptional
+postconditions bind `exception` to that typed payload. The exact slot address
+spells `exception.storage()` and grants no storage or ownership. Neither `exception` nor the former internal
+spelling `__click_exception` is decoded into a kernel identity, so a source
+variable of either name cannot replace the payload or alias its slot.
+
 Bare `result` lowers to that typed binding, while `c(result)` resolves the
 source C binding, including inside casts, field projections, and array indices.
 Kernel post-state reconstruction and fixed-state proof lowering preserve a

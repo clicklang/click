@@ -827,7 +827,7 @@ mod tests {
                     let T::Binary { left, .. } = &mut replaced else {
                         unreachable!()
                     };
-                    *left = Box::new(constant(3));
+                    **left = constant(3);
                     let after = classes.intern_typed_machine(&replaced, width);
                     let again = classes.intern_shared_machine(&shared, width);
                     assert_eq!(classes.root(after), classes.root(again));

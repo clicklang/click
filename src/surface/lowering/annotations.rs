@@ -2784,7 +2784,7 @@ pub(in crate::surface) fn function_contract_summary(
     exceptional_context.values.insert(
         "exception".to_string(),
         SpecExpression::ProgramExpression(ProgramExpression::Variable(
-            (crate::kernel::C_EXCEPTIONAL_RESULT_NAME.to_string()).into(),
+            crate::kernel::CONTRACT_EXCEPTION,
         )),
     );
     for clause in function_block.exceptional_ensures() {
@@ -2948,10 +2948,10 @@ fn collect_local_pointer_element_types(
                     ProgramType::Float64Array(_) => Some(ProgramType::Float64),
                     _ => None,
                 });
-                if let Some(element) = element {
-                    if let Some(name) = name.named() {
-                        types.insert(name.to_owned(), element);
-                    }
+                if let Some(element) = element
+                    && let Some(name) = name.named()
+                {
+                    types.insert(name.to_owned(), element);
                 }
             }
             ProgramStatement::Seq(statements) => {
@@ -7158,15 +7158,15 @@ impl AnnotationLowerer<'_> {
                                 .is_some())
                 });
                 let mut projection_environment = environment.clone();
-                if let Some(parameter) = projection {
-                    if let Some(name) = parameter.named() {
-                        projection_environment.values.insert(
-                            name.to_owned(),
-                            SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                                parameter.clone(),
-                            )),
-                        );
-                    }
+                if let Some(parameter) = projection
+                    && let Some(name) = parameter.named()
+                {
+                    projection_environment.values.insert(
+                        name.to_owned(),
+                        SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                            parameter.clone(),
+                        )),
+                    );
                 }
                 let array_ref = self.lower_array_ref_to_spec(base, &projection_environment)?;
                 let index = self.lower_contract_expression_to_spec(index, environment)?;
@@ -9140,7 +9140,7 @@ impl AnnotationLowerer<'_> {
                 }
             }
             None => Ok(SpecExpression::ProgramExpression(
-                ProgramExpression::Variable(name.clone().into()),
+                ProgramExpression::Variable(name.clone()),
             )),
         }
     }

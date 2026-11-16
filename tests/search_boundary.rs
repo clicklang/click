@@ -1005,8 +1005,7 @@ fn active_memory_loan_presence_cannot_scan_ledger_history_or_indices() {
     }
 }
 
-#[path = "../build_support/proof_search_boundary.rs"]
-mod proof_search_boundary;
+use boundary::proof_search_boundary;
 
 #[test]
 fn new_operation_search_edges_are_rejected_even_through_aliases_and_macros() {

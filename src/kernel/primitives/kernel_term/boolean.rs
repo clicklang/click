@@ -64,10 +64,10 @@ impl<'a> BooleanOperandView<'a> {
         let mut seen = std::collections::HashSet::new();
         while let Some((left, right)) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
-            if let (Self::Shared(a), Self::Shared(b)) = (left, right) {
-                if a == b || !seen.insert((a.id(), b.id())) {
-                    continue;
-                }
+            if let (Self::Shared(a), Self::Shared(b)) = (left, right)
+                && (a == b || !seen.insert((a.id(), b.id())))
+            {
+                continue;
             }
             if let (Some(a), Some(b)) = (left.native_leaf(), right.native_leaf()) {
                 if a != b {

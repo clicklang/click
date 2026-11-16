@@ -656,12 +656,11 @@ fn integer_expression_kind(
     }
     match expression {
         ContractExpression::Apply { function, .. } => {
-            if let ContractExpression::Binding(name) = function.as_ref() {
-                if let Some(ClickType::Function { result, .. }) =
+            if let ContractExpression::Binding(name) = function.as_ref()
+                && let Some(ClickType::Function { result, .. }) =
                     callback_binding_type(name, click_functions)
-                {
-                    return Some(*result == ClickType::Integer);
-                }
+            {
+                return Some(*result == ClickType::Integer);
             }
             lambdas::application_result_type(function)
                 .ok()
@@ -726,12 +725,11 @@ fn integer_expression_kind(
                 if let Ok(result) = lambdas::application_result_type(step) {
                     return Some(result == ClickType::Integer);
                 }
-                if let ContractExpression::Binding(name) = step {
-                    if let Some(ClickType::Function { result, .. }) =
+                if let ContractExpression::Binding(name) = step
+                    && let Some(ClickType::Function { result, .. }) =
                         callback_binding_type(name, click_functions)
-                    {
-                        return Some(*result == ClickType::Integer);
-                    }
+                {
+                    return Some(*result == ClickType::Integer);
                 }
             }
             let start_kind =
@@ -3823,12 +3821,11 @@ pub(super) fn infer_contract_expression_type(
             "a specification lambda is not a scalar value",
         )),
         ContractExpression::Apply { function, .. } => {
-            if let ContractExpression::Binding(name) = function.as_ref() {
-                if let Some(ClickType::Function { result, .. }) =
+            if let ContractExpression::Binding(name) = function.as_ref()
+                && let Some(ClickType::Function { result, .. }) =
                     callback_binding_type(name, click_functions)
-                {
-                    return Ok(result.interface_type());
-                }
+            {
+                return Ok(result.interface_type());
             }
             Ok(lambdas::application_result_type(function)
                 .map_err(ClickError::new)?
@@ -4369,6 +4366,7 @@ pub(in crate::surface) fn infer_program_expression_type(
         ProgramExpression::Variable(name) => match name {
             crate::kernel::BindingName::Named(name) => variables.get(name).copied(),
             crate::kernel::BindingName::ContractResult => variables.get("result").copied(),
+            crate::kernel::BindingName::ContractException => Some(InterfaceType::Int32),
             crate::kernel::BindingName::Local(_) | crate::kernel::BindingName::Static(_) => name
                 .program_type()
                 .and_then(|ty| interface_type_from_program_type(&ty)),
@@ -5195,13 +5193,12 @@ fn validate_contract_expression_calls(
         function,
         arguments,
     } = expression
+        && matches!(function.as_ref(), ContractExpression::Binding(_))
     {
-        if matches!(function.as_ref(), ContractExpression::Binding(_)) {
-            for argument in arguments {
-                validate_contract_expression_calls(argument, click_functions, context)?;
-            }
-            return Ok(());
+        for argument in arguments {
+            validate_contract_expression_calls(argument, click_functions, context)?;
         }
+        return Ok(());
     }
     if let Some(reduced) = lambdas::reduce_head(expression).map_err(ClickError::new)? {
         if let ContractExpression::Let { value, .. } = expression {
@@ -5556,8 +5553,8 @@ fn validate_lambda_value(
         context,
         *result == ClickType::Integer,
     )?;
-    if !spec_value_matches_click_type(&actual, result) {
-        if let Some(narrow) =
+    if !spec_value_matches_click_type(&actual, result)
+        && let Some(narrow) =
             narrow_arithmetic_value_type(body, result, "lambda result", &mut |leaf| {
                 infer_scoped_spec_value_type(
                     leaf,
@@ -5568,9 +5565,8 @@ fn validate_lambda_value(
                     false,
                 )
             })?
-        {
-            actual = narrow;
-        }
+    {
+        actual = narrow;
     }
     if !spec_value_matches_click_type(&actual, result)
         || (*result == ClickType::Program(InterfaceType::Bool)
