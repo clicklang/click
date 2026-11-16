@@ -2201,6 +2201,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     rewrite(old(arena->occupied), arena->occupied);
                     known();
                 }
+                have contains(memory(*arena), memory(arena->capacity)) by { normalize(); }
+                have separate(memory(arena->capacity), memory(arena->occupied[i])) by {
+                    apply(selected_array_cell(memory(*arena), memory(arena->capacity), arena->occupied, arena->capacity, i)) using {
+                        separate(memory(*arena), memory(arena->occupied[0..arena->capacity]));
+                        contains(memory(*arena), memory(arena->capacity)); 0 <= i; i < arena->capacity;
+                    };
+                }
                 step();
                 have separate(statement(13).statement(0).footprint, memory(arena->occupied)) by {
                     normalize() using {
@@ -2216,13 +2223,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         at(opened, arena->occupied) == old(arena->occupied);
                     };
                 }
-                transport(at(opened, arena->capacity) == old(arena->capacity), arena->capacity == old(arena->capacity)) using {
-                    at(opened, arena->capacity) == old(arena->capacity);
-                    at(opened, separate(memory(*arena),
-                        memory(arena->occupied[0..arena->capacity])));
-                    0 <= at(opened, i);
-                    at(opened, i) < at(opened, arena->capacity);
-                };
+                have at(opened, separate(statement(13).statement(0).footprint, memory(arena->capacity))) by {
+                    normalize() using { at(opened, separate(memory(arena->capacity), memory(arena->occupied[i]))); };
+                }
+                have arena->capacity == at(opened, arena->capacity) by {
+                    preserve(at(opened, separate(statement(13).statement(0).footprint, memory(arena->capacity))));
+                }
+                have arena->capacity == old(arena->capacity) by { known(); }
                 have separate(statement(13).statement(0).footprint, memory(arena->data)) by {
                     normalize() using {
                         separate(memory(arena->data), memory(old(arena->occupied)[i]));
@@ -2300,20 +2307,15 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             conclusion 2;
                         }
                     }
-                    transport(at(opened, arena->occupied[k]) == 0, arena->occupied[k] == 0) using {
-                        at(opened, arena->occupied) == old(arena->occupied);
-                        arena->occupied == old(arena->occupied);
-                        at(opened, separate(memory(*arena),
-                            memory(arena->occupied[0..arena->capacity])));
-                        at(opened, separate(memory(*arena),
-                            memory(arena->data[0..arena->capacity])));
-                        at(opened, arena->occupied[k]) == 0;
-                        at(opened, i) < k;
-                        0 <= at(opened, i);
-                        at(opened, i) < at(opened, arena->capacity);
-                        0 <= k;
-                        k < at(opened, arena->capacity);
-                    };
+                    have at(opened, i) != k by { solve() using { at(opened, i) < k; }; }
+                    have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                        apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using { at(opened, i) != k; };
+                    }
+                    have at(opened, separate(statement(13).statement(0).footprint, memory(arena->occupied[k]))) by {
+                        normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                    }
+                    rewrite(arena->occupied, at(opened, arena->occupied));
+                    known();
                 }
                 have forall (k: int32) { start <= k and to_integer(k) < (to_integer(at(opened, i)) + 1) implies arena->occupied[k] == 1 } by {
                     intro();
@@ -2390,13 +2392,15 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                                 conclusion 22;
                             }
                         }
-                        transport(at(opened, arena->occupied[k]) == 1, arena->occupied[k] == 1) using {
-                            at(opened, arena->occupied[k]) == 1;
-                            k < at(opened, i);
-                            0 <= k;
-                            0 <= at(opened, i);
-                            at(opened, i) < arena->capacity;
-                        };
+                        have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
+                        have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                            apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using { at(opened, i) != k; };
+                        }
+                        have at(opened, separate(statement(13).statement(0).footprint, memory(arena->occupied[k]))) by {
+                            normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                        }
+                        rewrite(arena->occupied, at(opened, arena->occupied));
+                        known();
                     } else {
                         have k <= at(opened, i) by {
                             arithmetic_certificate {
@@ -2450,14 +2454,15 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             conclusion 2;
                         }
                     }
-                    transport(at(opened, arena->occupied[k]) == at(mark_free_run.entry, arena->occupied[k]), arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k])) using {
-                        at(opened, arena->occupied[k]) == at(mark_free_run.entry,
-                            arena->occupied[k]);
-                        k < at(opened, i);
-                        0 <= k;
-                        0 <= at(opened, i);
-                        at(opened, i) < arena->capacity;
-                    };
+                    have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
+                    have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                        apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using { at(opened, i) != k; };
+                    }
+                    have at(opened, separate(statement(13).statement(0).footprint, memory(arena->occupied[k]))) by {
+                        normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                    }
+                    rewrite(arena->occupied, at(opened, arena->occupied));
+                    known();
                 }
                 have forall (k: int32) { end <= k and k < arena->capacity implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } by {
                     intro();
@@ -2506,15 +2511,15 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             conclusion 2;
                         }
                     }
-                    transport(at(opened, arena->occupied[k]) == at(mark_free_run.entry, arena->occupied[k]), arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k])) using {
-                        at(opened, arena->occupied[k]) == at(mark_free_run.entry,
-                            arena->occupied[k]);
-                        at(opened, i) < k;
-                        0 <= at(opened, i);
-                        at(opened, i) < arena->capacity;
-                        0 <= k;
-                        k < arena->capacity;
-                    };
+                    have at(opened, i) != k by { solve() using { at(opened, i) < k; }; }
+                    have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                        apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using { at(opened, i) != k; };
+                    }
+                    have at(opened, separate(statement(13).statement(0).footprint, memory(arena->occupied[k]))) by {
+                        normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                    }
+                    rewrite(arena->occupied, at(opened, arena->occupied));
+                    known();
                 }
                 have forall (k: int32) { i <= k and k < end implies arena->occupied[k] == 0 } by {
                     intro();
@@ -2694,13 +2699,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         to_integer(k) < (to_integer(at(opened, i)) + 1);
                     };
                 }
-                transport(at(opened, viewable(arena->occupied[0..arena->capacity])), viewable(arena->occupied[0..arena->capacity])) using {
-                    at(opened, viewable(arena->occupied[0..arena->capacity]));
-                    at(opened, arena->occupied) == old(arena->occupied);
-                    arena->occupied == old(arena->occupied);
-                    at(opened, arena->capacity) == old(arena->capacity);
-                    arena->capacity == old(arena->capacity);
-                };
+                observe(at(opened, arena->occupied)[0..at(opened, arena->capacity)]);
                 have forall (k: int32) { i <= k and k < end implies load_int32((old(arena->occupied) + k)) == 0 } by {
                     intro();
                     intro();

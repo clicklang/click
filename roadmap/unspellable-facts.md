@@ -63,10 +63,11 @@ Already landed:
 evaluation, calls, execution handoffs, range folds, numeric/algebraic match
 results, and complete pointers/read addresses. Chunk 7 covers pointer formation,
 arithmetic, calls, branches, locals, returns, temporary statement results and
-memory storage/receipt. Remaining packages are Boolean and opaque result
-families (8), the general raise/lower and certificate boundary (9), and duplicate
+memory storage/receipt. Package 8 completes supported Boolean, algebraic and floating-point payloads
+through 8ad ([PR #2920](https://github.com/clicklang/click/pull/2920)). Remaining
+packages are the general raise/lower and certificate boundary (9), and duplicate
 storage removal/final closure (10). Named native checking, ABI, nonpointer-cell
-and presentation compatibility consumers remain explicit; closing chunk 7 does
+and presentation compatibility consumers remain explicit; closing chunk 8 does
 not close those packages. These are
 representation boundaries, not a count of every remaining verifier defect.
 
@@ -85,14 +86,93 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | --- | --- | --- |
 | 1 | Let bindings and local value handoffs | Merged in [PR #2617](https://github.com/clicklang/click/pull/2617); specification bindings retain shared values through selected lookups, with shadowing and state scope preserved. |
 | 2 | Symbolic conditional joins | Merged [PR #2638](https://github.com/clicklang/click/pull/2638). Typed guards and shared arms survive checking, transport, state matching and Surface spelling. The full gate passed 7,294 unit/API tests, 5,240 fixtures and all examples; its 15m54s run exceeded the ten-minute target. The final conditional-equality follow-up passed 1,884 selected checks, including all scaling, Rust import and expansion tests. Its full-corpus fact-stability audit passed all 5,240 fixtures with zero differences. |
-| 3 | Pure-function arguments and results | In progress. [PR #2643](https://github.com/clicklang/click/pull/2643) retained shared machine values during argument assembly. [PR #2647](https://github.com/clicklang/click/pull/2647) retains them in call payloads and migrates argument collection, rewriting, alpha keys, congruence and fold-read consumers. Typed semantic application identity is separate from exact producer payloads; numeric indexes share native/retained call identities, and comparison cycle guards permit narrow-to-wide checking. Repeated native/shared readings do not accumulate payload versions. The integer machine call-result sequence 3a–3f below completes common result production and its consumers; pointer, algebraic, Boolean and floating-point result families remain separate work. |
+| 3 | Pure-function arguments and results | Machine sequence implemented; remaining family producers completed in packages 7–8. [PR #2643](https://github.com/clicklang/click/pull/2643) retained shared machine values during argument assembly. [PR #2647](https://github.com/clicklang/click/pull/2647) retains them in call payloads and migrates argument collection, rewriting, alpha keys, congruence and fold-read consumers. Typed semantic application identity is separate from exact producer payloads; numeric indexes share native/retained call identities, and comparison cycle guards permit narrow-to-wide checking. Repeated native/shared readings do not accumulate payload versions. The integer machine call-result sequence 3a–3f below completes common result production and its consumers; pointer, algebraic, Boolean and floating-point result families are covered by packages 7–8. Remaining boundary adapters belong to package 9. |
 | 4 | Mixed-width arithmetic and casts | Implemented as subchunks 4a–4j below, one PR per subchunk. Numeric producers retain shared operands and results within the existing supported profile. General call and nonnumeric compatibility boundaries belong to the remaining packages; the previous combined branch stays unmerged reference material. |
 | 5 | C/Rust execution result carriers | Supported machine handoffs implemented in 5a–5g below: expression paths, local bindings, returns and caller receipt retain common roots. Native memory-cell, specification and presentation boundaries remain explicit. |
 | 6 | Folds, binders and algebraic matches | Implemented as 6a–6n below. Common fold and numeric/algebraic match results retain scoped children; remaining native consumers are named compatibility boundaries. |
 | 7 | Complete pointers and read addresses | Implemented as 7a–7u below, one PR per slice. Supported pointer producers and execution/storage handoffs retain common roots; checking and Surface consumers preserve metadata, state identity and existing rules. |
-| 8 | Remaining Boolean and opaque expression payloads | Inventory and authorized PR sequence below; implementation open. |
-| 9 | Unified raising/lowering and certificate boundaries | Open |
+| 8 | Remaining Boolean and opaque expression payloads | Implemented through 8ad, ending in [PR #2920](https://github.com/clicklang/click/pull/2920); remaining native boundaries are enumerated below. |
+| 9 | Unified raising/lowering and certificate boundaries | Authorized as 9a–9z below; 9a inventory delivered and 9b common entry implemented. Remaining slices are open. |
 | 10 | Duplicate storage removal and final closure | Open |
+
+## Chunk 9: unified Surface and certificate boundaries
+
+The authorized sequence is one PR per slice, one open task PR at a time.
+Inventory baseline: `db3b5622c`. Package 9 consolidates representation boundaries;
+it does not add syntax, change proof admission, introduce search indexes or
+raise budgets. Package 10 removes duplicate storage after consumers migrate.
+Already-shared numeric/float operations and fold/match producers are reused.
+
+| Subchunk | Boundary | Completion criterion |
+| --- | --- | --- |
+| 9a | Boundary inventory | Enumerate live conversions and distinguish package 10 storage. |
+| 9b | Common raising entry point | Use one shared-root interface, retaining existing numeric and float renderers. |
+| 9c | Algebraic constructors | Raise constructor fields directly from shared children. |
+| 9d | Algebraic conditionals and reads | Preserve branches, types and memory identity without whole-tree export. |
+| 9e | Boolean raising | Remove native-condition detours for logical and scalar Boolean forms. |
+| 9f | Pointer raising | Consolidate comparisons and addresses while preserving exact source-name policy. |
+| 9g | Call raising | Use consistent argument rendering across result families and nested calls. |
+| 9h | Fold raising | Consolidate existing spelling with typed binder scope. |
+| 9i | Match raising | Consolidate existing spelling with arm bindings. |
+| 9j | Common lowering results | Expose typed shared roots with separately scoped obligations. |
+| 9k | Integer lowering | Remove remaining native Integer result detours. |
+| 9l | Machine-integer lowering | Preserve widths, casts and definedness through the common interface. |
+| 9m | Boolean lowering | Keep logical terms distinct from C Boolean carriers. |
+| 9n | Algebraic lowering | Retain constructors, abstract types and program-parameter argument forms. |
+| 9o | Pointer lowering | Preserve complete metadata, state and address identities. |
+| 9p | Float lowering | Preserve exact bits, widths and existing conversions. |
+| 9q | Mixed call assembly | Pass shared arguments without export and reconstruction. |
+| 9r | Scoped lowering | Consolidate fold and match binder handoffs without changing evaluation. |
+| 9s | Numeric certification | Retain numeric syntax with existing admission rules. |
+| 9t | Boolean and algebraic certification | Consolidate native/shared comparison adapters. |
+| 9u | Pointer and state certification | Preserve exact metadata, read state and evidence. |
+| 9v | Contract-claim inputs | Keep shared operands through preparation and checking. |
+| 9w | Contract-result publication | Keep shared results through publication and caller handoffs. |
+| 9x | Certificate expansion and replay | Use consolidated boundaries for explicit proof steps and replay. |
+| 9y | Retire superseded entry points | Remove obsolete conversion APIs after migrating callers. |
+| 9z | Closure audit | Account for remaining adapters and round-trip, refusal, stability and scaling coverage. |
+
+### 9a live boundary inventory
+
+Delivered in [PR #2930](https://github.com/clicklang/click/pull/2930).
+
+| Location / entry point | Live boundary and assigned work |
+| --- | --- |
+| `src/surface/proof/surface_synthesis.rs`: `raise_kernel_term`, `raise_kernel_term_dispatch` | Existing common dispatcher and bounded integer recursion are the foundation for 9b. Constructor/read/variable argument exports belong to 9c–9d; condition exports to 9e–9f. Existing numeric and float operation renderers stay shared. |
+| Same file: `raise_call_argument`, `synthesize_legacy_call_argument`, `synthesize_surface_call` | 9g consolidates call consumers. Complete pointer arguments require the exact proof-local source name; generic pointer synthesis is not an interchangeable fallback. Leaf literal views are distinct from whole-tree export. |
+| `src/surface/proof/surface_synthesis/{folds,matches}.rs` | 9h–9i consolidate scoped readers; preserve existing binders and fold evaluation/spelling. |
+| `src/surface/lowering/annotations.rs` and `src/kernel/spec.rs` and `src/kernel/spec/result.rs` | 9j–9p cover typed result handoffs and remaining export/import adapters. Unevaluated Surface syntax remains distinct from evaluated Kernel roots; obligations retain their scope. |
+| `src/kernel/spec.rs`, `src/kernel/spec/result.rs`: `SpecCallArgument::into_payload`, `into_typed_call_operand` | 9q covers mixed argument assembly, including program-parameter envelopes versus logical algebraic arguments. 9r covers scoped fold/match handoffs. |
+| `src/kernel/api/contract_certification/retained_syntax.rs` | 9s–9u consolidate native/shared comparison readers. Existing refusal/admission rules and exact pointer evidence remain unchanged. |
+| `src/kernel/api/contract_certification/contract_claims.rs`, `contract_claims/publication.rs` | 9v–9w cover native input conversion and published result conversion. |
+| `src/surface/proof/surface_certificates.rs`, `src/surface/proof_certificate.rs`, fixed-state proof and transition-certification consumers | 9x covers explicit certificate operand construction, expansion and replay. No proof-search changes. |
+| All migrated call sites | 9y removes superseded entry points; 9z records remaining intentional adapters with consumer and regression evidence. |
+
+The 8ad native-boundary inventory remains authoritative for unsupported/untyped
+payloads, raw C Boolean words, observation descriptors and exact native checker
+inputs. This sequence does not make those payloads structurally representable
+by guessing signatures or adding float conditional semantics. Cached native
+trees and native Eq/Ord/Hash views are package 10 work, unless an adapter must be
+removed to complete a specific package 9 consumer.
+
+Each implementation slice includes relevant native/shared parity, supported
+raise/lower identity, refusal and fact-stability checks. Representation changes
+include deterministic scaling coverage and run all scaling tests. Preserve
+exact producer metadata separately from observation equality, historical memory
+identity, float bits, lexical binding and existing source spellings. The closure
+audit collects this evidence; it does not defer testing until 9z.
+
+### 9b common raising entry point
+
+The shared dispatcher already handles supported numeric and float operations;
+this slice removes the native root clone/re-intern from its Integer adapter.
+Integer comparison operands and legacy call arguments now pass their existing
+`SharedIntegerTerm` carrier into the session-aware importer, then use
+`raise_kernel_term`. Family-specific leaf policies remain explicit for the
+following slices. No source spelling, proof rule or budget changes.
+
+Validation: 1,837 selected Surface synthesis and scaling tests passed;
+`scripts/check.sh --ci-quality` passed.
 
 ## Chunk 3: machine-valued pure-function results
 

@@ -16,6 +16,7 @@ use std::sync::{Arc, OnceLock};
 mod bindings;
 pub use bindings::{
     BindingDeclaration, BindingName, LocalBindingId, LocalFunctionId, LocalStorageInstance,
+    StaticBindingId, StaticBindingMetadata, StaticBindingOwner,
 };
 
 pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
@@ -816,7 +817,7 @@ pub enum MachineTerm {
     /// The kind is part of the load's identity: two reads of one address
     /// that differ in width or, below four bytes, in signedness return
     /// different values, so they are different terms. See [`LoadKind`].
-    MemoryLoad(SharedMemory, Box<Pointer>, LoadKind),
+    MemoryLoad(ProgramPoint, Box<Pointer>, LoadKind),
     /// The physical LP64 address bits of an object pointer. This numeric
     /// observation carries no designation or selected extent. Complete C
     /// integer copies retain that information separately in PointerInteger.
@@ -2510,7 +2511,8 @@ impl PointerValue {
         let known_root = is_function
             || matches!(
                 pointer.block,
-                PointerBlock::AutomaticLocal { .. }
+                PointerBlock::StaticObject { .. }
+                    | PointerBlock::AutomaticLocal { .. }
                     | PointerBlock::Concrete(_)
                     | PointerBlock::Heap(_)
                     | PointerBlock::Temporary(_)
@@ -3025,6 +3027,9 @@ pub enum PointerBlock {
         binding: LocalBindingId,
         instance: LocalStorageInstance,
     },
+    StaticObject {
+        binding: StaticBindingId,
+    },
 }
 
 impl std::hash::Hash for PointerBlock {
@@ -3033,6 +3038,10 @@ impl std::hash::Hash for PointerBlock {
         // Pointer hashes feed deterministic load-variable identities, so
         // inserting a new enum variant must not renumber existing blocks.
         match self {
+            Self::StaticObject { binding } => {
+                12u64.hash(state);
+                binding.hash(state);
+            }
             Self::AutomaticLocal { binding, instance } => {
                 11u64.hash(state);
                 binding.hash(state);
@@ -3118,12 +3127,14 @@ impl PointerBlock {
 
     /// A file-scope object with external linkage.
     pub(crate) fn is_global_block(&self) -> bool {
-        self.starts_with(GLOBAL_BLOCK_PREFIX)
+        matches!(self, Self::StaticObject { binding } if binding.function().is_none())
+            || self.starts_with(GLOBAL_BLOCK_PREFIX)
     }
 
     /// A file-scope or function-scope `static` object.
     pub(crate) fn is_static_block(&self) -> bool {
-        self.starts_with(STATIC_BLOCK_PREFIX)
+        matches!(self, Self::StaticObject { binding } if binding.function().is_some())
+            || self.starts_with(STATIC_BLOCK_PREFIX)
     }
 
     /// Static storage of either linkage.
@@ -3165,7 +3176,8 @@ impl PointerBlock {
     pub(crate) fn strip_prefix<'a>(&'a self, prefix: &str) -> Option<&'a str> {
         match self {
             Self::Concrete(name) => name.strip_prefix(prefix),
-            Self::AutomaticLocal { .. }
+            Self::StaticObject { .. }
+            | Self::AutomaticLocal { .. }
             | Self::StringLiteral { .. }
             | Self::Function(_)
             | Self::FunctionSymbolic(_)
@@ -3273,7 +3285,10 @@ impl PointerBlock {
             matches!(left, Self::StringLiteral { .. })
                 && matches!(
                     right,
-                    Self::AutomaticLocal { .. } | Self::Concrete(_) | Self::Function(_)
+                    Self::StaticObject { .. }
+                        | Self::AutomaticLocal { .. }
+                        | Self::Concrete(_)
+                        | Self::Function(_)
                 )
         };
         self != other
@@ -3290,10 +3305,17 @@ impl PointerBlock {
                     (self, other),
                     (Self::Concrete(left), Self::Concrete(right)) if left != right
                 )
-                || (matches!(self, Self::AutomaticLocal { .. })
-                    && matches!(other, Self::AutomaticLocal { .. } | Self::Concrete(_)))
-                || (matches!(other, Self::AutomaticLocal { .. })
-                    && matches!(self, Self::Concrete(_)))
+                || (matches!(
+                    self,
+                    Self::AutomaticLocal { .. } | Self::StaticObject { .. }
+                ) && matches!(
+                    other,
+                    Self::AutomaticLocal { .. } | Self::StaticObject { .. } | Self::Concrete(_)
+                ))
+                || (matches!(
+                    other,
+                    Self::AutomaticLocal { .. } | Self::StaticObject { .. }
+                ) && matches!(self, Self::Concrete(_)))
                 || literal_versus_declared(self, other)
                 || literal_versus_declared(other, self)
                 || local_versus_argument(self, other)
@@ -3351,6 +3373,7 @@ impl From<&str> for PointerBlock {
 impl std::fmt::Display for PointerBlock {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
             Self::AutomaticLocal { binding, instance } => {
                 write!(formatter, "{binding}.storage({instance})")
             }
@@ -4669,7 +4692,11 @@ impl AlgebraicTermNode {
     /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
     /// address as it reaches a scalar load's.
     pub(crate) fn memory_load_carrier(memory: &SharedMemory, pointer: &Pointer) -> MachineTerm {
-        MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
+        MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer.clone()),
+            LoadKind::Bits64,
+        )
     }
 
     /// The [`AlgebraicTermNode::MemoryLoad`] whose carrier a rewrite of
@@ -4679,7 +4706,7 @@ impl AlgebraicTermNode {
         match carrier {
             ProgramValue::UInt64(MachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64)) => {
                 Some(Self::MemoryLoad {
-                    memory: memory.clone(),
+                    memory: memory.shared_memory().clone(),
                     pointer: pointer.clone(),
                 })
             }
@@ -5892,7 +5919,7 @@ pub struct ProgramParameter {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Global {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) program_type: ProgramType,
     pub(super) initial_value: ProgramValue,
     pub(super) volatile: bool,
@@ -5907,7 +5934,7 @@ pub struct Global {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct GlobalArray {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) element_type: ProgramType,
     pub(super) length: u32,
     pub(super) initial_values: ArrayContents,
@@ -5923,7 +5950,7 @@ pub struct GlobalArray {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct GlobalAggregate {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) layout: AggregateLayout,
     pub(super) initializers: Vec<AggregateInitializer>,
     pub(super) constant: bool,
@@ -5938,7 +5965,7 @@ pub struct GlobalAggregate {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct GlobalAggregateArray {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) layout: AggregateLayout,
     pub(super) length: u32,
     pub(super) initializers: Vec<AggregateInitializer>,
@@ -5951,7 +5978,7 @@ pub struct GlobalAggregateArray {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StaticLocal {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) program_type: ProgramType,
     pub(super) initial_value: ProgramValue,
     pub(super) volatile: bool,
@@ -5963,7 +5990,7 @@ pub struct StaticLocal {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StaticArray {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) element_type: ProgramType,
     pub(super) length: u32,
     pub(super) initial_values: ArrayContents,
@@ -6157,7 +6184,7 @@ impl ZeroCell {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StaticAggregate {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) layout: AggregateLayout,
     pub(super) initializers: Vec<AggregateInitializer>,
     pub(super) constant: bool,
@@ -6167,7 +6194,7 @@ pub struct StaticAggregate {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StaticAggregateArray {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) layout: AggregateLayout,
     pub(super) length: u32,
     pub(super) initializers: Vec<AggregateInitializer>,
@@ -9204,6 +9231,50 @@ pub struct MemoryBlock {
     /// declared scalar or an array of one scalar type. An access through any
     /// pointer is checked against it (`design/effective-types.md`).
     pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
+}
+
+/// A program point: a node a proof path reached, which Surface names with
+/// `at(point, ...)`. A memory read is lowered to its version point, the point
+/// back to which the recorded steps show the cell unchanged, and holds that
+/// point.
+///
+/// For now a point is identified by the interned memory state there. That is
+/// an implementation detail callers must not rely on.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ProgramPoint(SharedMemory);
+
+impl ProgramPoint {
+    pub fn at(memory: &SharedMemory) -> Self {
+        Self(memory.clone())
+    }
+
+    /// The point a `Memory` value stands at, interning it first. Callers
+    /// that already hold an interned state use [`ProgramPoint::at`].
+    pub(crate) fn of_memory(memory: &Memory) -> Self {
+        Self(intern_memory(memory.clone()))
+    }
+
+    pub(crate) fn shared_memory(&self) -> &SharedMemory {
+        &self.0
+    }
+
+    /// The interned memory state this point stands for, by value.
+    pub(crate) fn into_shared_memory(self) -> SharedMemory {
+        self.0
+    }
+
+    pub(crate) fn memory(&self) -> &Memory {
+        self.0.memory()
+    }
+
+    /// True when this point is later in the recorded history than `other`.
+    /// Memory state ids strictly increase along derivation edges, so comparing
+    /// them orders two points of one arena without walking.
+    pub(crate) fn is_later_than(&self, other: &Self) -> bool {
+        let (arena, id) = self.0.arena_id();
+        let (other_arena, other_id) = other.0.arena_id();
+        arena == other_arena && id > other_id
+    }
 }
 
 /// An interned, immutable memory state for embedding inside terms.

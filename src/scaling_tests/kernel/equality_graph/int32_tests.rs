@@ -344,8 +344,11 @@ fn scalar_support_tracking_does_not_compare_unrelated_state_contents_across_aren
                 address.clone(),
                 ProgramValue::Int32(MachineTerm::constant(7)),
             ));
-            let load =
-                MachineTerm::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Int32);
+            let load = MachineTerm::MemoryLoad(
+                ProgramPoint::at(&memory),
+                Box::new(address),
+                crate::kernel::LoadKind::Int32,
+            );
             crate::instrumentation::measure_deterministic_work(|| {
                 PureFactContext::new().assume_condition(eq(&load, &MachineTerm::constant(7)), true)
             })
@@ -603,7 +606,7 @@ fn constant_queries_ignore_other_state_candidates() {
                     None,
                 );
                 let load = MachineTerm::MemoryLoad(
-                    intern_memory(memory.clone()),
+                    ProgramPoint::at(&(intern_memory(memory.clone()))),
                     Box::new(address),
                     LoadKind::Int32,
                 );

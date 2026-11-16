@@ -142,7 +142,7 @@ mod tests {
         let source = Variable(55);
         let replacement = Pointer::symbolic(Variable(56));
         let read = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(Pointer::symbolic(source)),
             LoadKind::Int32,
         );
@@ -167,7 +167,10 @@ mod tests {
         let MachineTerm::MemoryLoad(retained_state, pointer, _) = *body else {
             unreachable!()
         };
-        assert_eq!(retained_state, crate::kernel::intern_memory_ref(&memory));
+        assert_eq!(
+            retained_state,
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory)))
+        );
         assert_eq!(*pointer, replacement);
 
         let condition = ConditionTerm::Variable(Variable(59));

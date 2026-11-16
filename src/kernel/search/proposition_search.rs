@@ -1903,8 +1903,11 @@ mod condition_premise_tests {
             },
             ProgramValue::Int32(term(70)),
         );
-        let load =
-            MachineTerm::MemoryLoad(intern_memory(memory), Box::new(pointer), LoadKind::Int32);
+        let load = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&(intern_memory(memory))),
+            Box::new(pointer),
+            LoadKind::Int32,
+        );
         let fact = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,

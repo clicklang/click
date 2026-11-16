@@ -1295,12 +1295,12 @@ fn signed_addition_matches_interval_facts_across_unchanged_states() {
     let before = Memory::new();
     let after = before.clone().with_block("local:temporary", 4);
     let before_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before))),
         Box::new(cell.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let after_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(after),
+        ProgramPoint::at(&(crate::kernel::intern_memory(after))),
         Box::new(cell),
         crate::kernel::LoadKind::Int32,
     );

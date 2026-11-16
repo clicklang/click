@@ -3629,8 +3629,7 @@ pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
     ) -> Option<ProgramType> {
         match expression {
             ProgramExpression::Variable(name) => name
-                .local_id()
-                .and_then(|id| id.program_type())
+                .program_type()
                 .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()))
                 .or_else(|| name.named_in(types).copied()),
             ProgramExpression::Add(left, right) => {

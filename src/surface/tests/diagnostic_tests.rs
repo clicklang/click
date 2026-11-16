@@ -2972,7 +2972,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
     );
     let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            intern_memory(memory.clone()),
+            crate::kernel::ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(read.clone()),
             LoadKind::Bits64,
         )
@@ -3563,7 +3563,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory),
+                crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -3686,7 +3686,11 @@ void symbolic(int32* p, const struct callbacks* cb) {
                 trace.contains("function `target#inline:callbacks.c`"),
                 "{trace}"
             );
-            assert!(trace.contains("table#file-static:callbacks.c"), "{trace}");
+            assert!(
+                trace.contains("\"callbacks.c\"::static(0).storage()"),
+                "{trace}"
+            );
+            assert!(!trace.contains("#file-static"), "{trace}");
         });
     }
 }
@@ -3716,7 +3720,7 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
                         Int32,
                         Subtract,
                         Box::new(MachineTerm::MemoryLoad(
-                            intern_memory(memory),
+                            crate::kernel::ProgramPoint::at(&(intern_memory(memory))),
                             Box::new(read.clone()),
                             LoadKind::Int32,
                         )),

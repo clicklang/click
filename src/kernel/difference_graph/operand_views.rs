@@ -930,8 +930,11 @@ mod tests {
                     .clone()
                     .store(address.clone(), ProgramValue::Int32(17u32.into())),
             );
-            let other =
-                MachineTerm::MemoryLoad(changed, Box::new(address.clone()), LoadKind::Int32);
+            let other = MachineTerm::MemoryLoad(
+                crate::kernel::ProgramPoint::at(&changed),
+                Box::new(address.clone()),
+                LoadKind::Int32,
+            );
             assert_eq!(
                 graph.decide(&ConditionTerm::signed_less_than(other, upper.clone())),
                 None

@@ -3425,7 +3425,7 @@ pub(super) fn describe_unseparated_write(
             pointer: &load,
             bytes: crate::kernel::load_access_width_or_widest(&memory, &load),
         },
-        &resource_tracker::VersionPoint::at(&memory),
+        &resource_tracker::ProgramPoint::at(&memory),
     );
     describe_resource_version_mismatch(
         &explanation,
@@ -3683,8 +3683,8 @@ pub(super) fn describe_two_sided_version_mismatch(
             pointer: &left_load,
             bytes: crate::kernel::load_access_width_or_widest(&left_memory, &left_load),
         },
-        &resource_tracker::VersionPoint::at(&left_memory),
-        &resource_tracker::VersionPoint::at(&right_memory),
+        &resource_tracker::ProgramPoint::at(&left_memory),
+        &resource_tracker::ProgramPoint::at(&right_memory),
     );
     // Both labels name real program points, so the sentence is written
     // against the earlier of the two: that is the one the value may have
@@ -4001,7 +4001,7 @@ struct AccessWidths {
 /// the whole byte question, so it is read back off the recorded edge the walk
 /// stopped below — the same edge the tracker classified. `None` for every
 /// other step, and for a point that records no edge at all.
-fn recorded_store_byte_width(at: Option<&resource_tracker::VersionPoint>) -> Option<u32> {
+fn recorded_store_byte_width(at: Option<&resource_tracker::ProgramPoint>) -> Option<u32> {
     match at?.shared_memory().derivation()?.as_ref() {
         crate::kernel::MemoryDerivation::Store { value, .. } => {
             Some(value.program_type().byte_width())
@@ -4957,6 +4957,7 @@ pub(super) fn describe_memory_block(
         }
     }
     match block {
+        PointerBlock::StaticObject { binding } => Some(binding.spelling().to_owned()),
         PointerBlock::AutomaticLocal { binding, .. } => binding.spelling().map(str::to_owned),
         // A block's spelling carries where the storage lives, which is the
         // verifier's business; the reader wrote only the name. `local:` covers
@@ -5085,7 +5086,10 @@ pub(in crate::surface) fn describe_pointer(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
-    if matches!(pointer.block, PointerBlock::AutomaticLocal { .. }) {
+    if matches!(
+        pointer.block,
+        PointerBlock::AutomaticLocal { .. } | PointerBlock::StaticObject { .. }
+    ) {
         return if pointer.offset == PointerOffsetTerm::Constant(0) {
             pointer.block.to_string()
         } else {
@@ -5710,7 +5714,9 @@ pub(super) fn describe_program_value(
         ProgramValue::Pointer(pointer)
             if matches!(
                 pointer.pointer().block,
-                PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. }
+                PointerBlock::StringLiteral { .. }
+                    | PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::StaticObject { .. }
             ) =>
         {
             let base = describe_pointer(pointer, parameter_binding);

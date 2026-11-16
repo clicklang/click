@@ -1313,7 +1313,7 @@ fn describe_unnamed_cell_addition(
             pointer,
             bytes: crate::kernel::resource_tracker::widest_scalar_access_bytes(),
         },
-        &crate::kernel::resource_tracker::VersionPoint::at(base),
+        &crate::kernel::resource_tracker::ProgramPoint::at(base),
     ) {
         Some(version) => {
             let (version_arena, version_id) = version.shared_memory().arena_id();

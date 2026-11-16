@@ -4031,7 +4031,7 @@ mod tests {
         let address = Pointer::symbolic(Variable(997151));
         let read = |offset, kind| {
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                crate::kernel::ProgramPoint::at(&memory),
                 Box::new(address.offset_by_bytes(offset)),
                 kind,
             )
@@ -4071,7 +4071,7 @@ mod tests {
     fn checked_atom_matches_its_explicit_read_but_not_another_cell() {
         let read = |offset| {
             MachineTerm::MemoryLoad(
-                crate::kernel::Memory::new().into(),
+                crate::kernel::ProgramPoint::of_memory(&crate::kernel::Memory::new()),
                 Box::new(crate::kernel::Pointer {
                     block: "arithmetic-read-identity".into(),
                     offset: crate::kernel::PointerOffsetTerm::Constant(offset),

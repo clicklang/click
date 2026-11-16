@@ -2026,14 +2026,15 @@ fn load_defining_equation_round_trips() {
         ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
     );
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(state.memory()),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
     let MachineTerm::MemoryLoad(memory, address, kind) = load else {
         unreachable!()
     };
-    let defining_load = crate::kernel::canonical_form_of_load(memory, *address, kind);
+    let defining_load =
+        crate::kernel::canonical_form_of_load(memory.into_shared_memory(), *address, kind);
     let requirement = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -2070,7 +2071,7 @@ fn load_defining_equation_uses_entry_state() {
             .store(pointer.clone(), int32(7)),
     );
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(entry.memory()),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(entry.memory()))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -2128,7 +2129,7 @@ fn load_defining_equation_uses_saved_state() {
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         );
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(base.memory()),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(base.memory()))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -2213,7 +2214,7 @@ fn example_load_defining_requirement(
             ),
         );
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(state.memory()),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -2304,7 +2305,9 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
             relation: CompareRelation::Equal,
             left: left.clone(),
             right: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(state.memory()),
+                crate::kernel::ProgramPoint::at(
+                    &(crate::kernel::intern_memory_ref(state.memory())),
+                ),
                 Box::new(wrong_pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -2326,7 +2329,7 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
             relation: CompareRelation::Equal,
             left: left.clone(),
             right: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(&wrong_memory),
+                crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&wrong_memory))),
                 Box::new(Pointer {
                     block: PointerBlock::Concrete("owned-string:wrong-retained_state".into()),
                     offset: PointerOffsetTerm::Constant(0),
@@ -2374,7 +2377,7 @@ fn actual_struct_field_load_equation(
     let pointer = base.offset_by_bytes(field_offset as u32);
     let memory = Memory::new().with_block(block, 16);
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(&memory),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -3179,7 +3182,7 @@ fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
     // The call leaves the cell's contents unknown; its contract says 5.
     let middle = blocks();
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(&middle),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&middle))),
         Box::new(cell.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -3709,7 +3712,9 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     _ => PointerOffsetTerm::scaled_int64_node(index, width, true),
                 };
                 let load = MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory_ref(state.memory()),
+                    crate::kernel::ProgramPoint::at(
+                        &(crate::kernel::intern_memory_ref(state.memory())),
+                    ),
                     Box::new(Pointer {
                         block: base.block.clone(),
                         offset,
@@ -4165,7 +4170,7 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         );
     let raw = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(state.memory()),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -5144,7 +5149,9 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
                 )
                 .unwrap();
             let read = MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(state.memory()),
+                crate::kernel::ProgramPoint::at(
+                    &(crate::kernel::intern_memory_ref(state.memory())),
+                ),
                 Box::new(pointer.clone()),
                 kind,
             );
@@ -5181,7 +5188,7 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
                 ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
             );
         let read = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(state.memory()),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
             Box::new(pointer),
             format.load_kind(),
         );
@@ -5248,7 +5255,7 @@ fn common_float_reads_retain_old_and_recorded_states() {
             .clone()
             .with_memory(selected.memory().clone().with_block("later-block", 8));
         let read = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(selected.memory()),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(selected.memory()))),
             Box::new(pointer),
             format.load_kind(),
         );

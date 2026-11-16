@@ -192,15 +192,15 @@ pub(super) fn produced(read: &MachineTerm, source: &MachineTerm) {
     if *kind != LoadKind::Bits64 {
         return;
     }
-    let Some(id) = existing(memory, pointer, *kind) else {
+    let Some(id) = existing(memory.shared_memory(), pointer, *kind) else {
         return;
     };
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     STATE.with(|state| {
-        state
-            .borrow_mut()
-            .latest
-            .insert((epoch, id), (origin.clone(), address.as_ref().clone()));
+        state.borrow_mut().latest.insert(
+            (epoch, id),
+            (origin.shared_memory().clone(), address.as_ref().clone()),
+        );
     });
 }
 
@@ -208,7 +208,7 @@ pub(super) fn latest(read: &MachineTerm) -> Option<MachineTerm> {
     let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
         return None;
     };
-    let id = existing(memory, pointer, *kind)?;
+    let id = existing(memory.shared_memory(), pointer, *kind)?;
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     STATE.with(|state| {
         state
@@ -216,7 +216,7 @@ pub(super) fn latest(read: &MachineTerm) -> Option<MachineTerm> {
             .latest
             .get(&(epoch, id))
             .map(|(memory, pointer)| {
-                MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), *kind)
+                MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer.clone()), *kind)
             })
     })
 }
@@ -300,7 +300,7 @@ mod tests {
         let memory = intern_memory(Memory::new());
         let pointer = Pointer::symbolic(Variable(998_709));
         let untyped = canonical_scalar_read(&MachineTerm::MemoryLoad(
-            memory.clone(),
+            ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         ));
@@ -312,7 +312,7 @@ mod tests {
         );
         record_load_access_width(memory.memory(), &pointer, 4);
         let typed = canonical_scalar_read(&MachineTerm::MemoryLoad(
-            memory.clone(),
+            ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         ));
@@ -327,8 +327,8 @@ mod tests {
         let MachineTerm::MemoryLoad(selected, address, kind) = &typed else {
             unreachable!()
         };
-        record(selected, address, *kind, &memory, 8);
-        record(selected, address, *kind, &memory, 4);
+        record(selected.shared_memory(), address, *kind, &memory, 8);
+        record(selected.shared_memory(), address, *kind, &memory, 4);
         assert_eq!(
             for_operand(MachineOperandView::Legacy(&typed))
                 .unwrap()
@@ -342,8 +342,11 @@ mod tests {
         let _session = VerificationSession::enter();
         let memory = intern_memory(Memory::new());
         let pointer = Pointer::symbolic(Variable(998_707));
-        let read =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer.clone()),
+            LoadKind::Int32,
+        );
         assert_eq!(
             for_operand(MachineOperandView::Legacy(&read))
                 .unwrap()
@@ -367,8 +370,11 @@ mod tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let memory = intern_memory(Memory::new().with_block(pointer.block.clone(), 4));
-        let read =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer.clone()),
+            LoadKind::Int32,
+        );
         let bound = Variable(998_800 + index);
         let range = MemoryRange::new_with_element_width(
             Pointer {
@@ -512,7 +518,11 @@ mod tests {
             };
             assert_eq!(address.as_ref(), &pointer);
             assert_eq!(
-                canonical_form_of_load(retained_state.clone(), pointer.clone(), *kind),
+                canonical_form_of_load(
+                    retained_state.shared_memory().clone(),
+                    pointer.clone(),
+                    *kind
+                ),
                 read
             );
             assert!(facts.is_empty());

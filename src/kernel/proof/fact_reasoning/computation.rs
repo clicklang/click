@@ -305,6 +305,41 @@ fn integer_product_identity(term: &IntegerTerm) -> Option<&SharedIntegerTerm> {
     }
 }
 
+/// One written distributivity step, with opaque operands. This never
+/// expands a polynomial or chooses a rewrite location.
+pub(super) fn integer_distribution_step(condition: &ConditionTerm) -> bool {
+    fn product(a: &SharedIntegerTerm, b: &SharedIntegerTerm) -> SharedIntegerTerm {
+        IntegerTerm::multiply(a.as_ref().clone(), b.as_ref().clone()).into()
+    }
+    fn direction(a: &SharedIntegerTerm, b: &SharedIntegerTerm) -> bool {
+        let IntegerTerm::Multiply(x, y) = a.as_ref() else {
+            return false;
+        };
+        for (sum, factor, left) in [(x, y, true), (y, x, false)] {
+            let (p, q, subtract) = match sum.as_ref() {
+                IntegerTerm::Add(p, q) => (p, q, false),
+                IntegerTerm::Subtract(p, q) => (p, q, true),
+                _ => continue,
+            };
+            let (u, v) = if left {
+                (product(p, factor), product(q, factor))
+            } else {
+                (product(factor, p), product(factor, q))
+            };
+            let expected = if subtract {
+                IntegerTerm::subtract(u.as_ref().clone(), v.as_ref().clone())
+            } else {
+                IntegerTerm::add(u.as_ref().clone(), v.as_ref().clone())
+            };
+            if &expected == b.as_ref() {
+                return true;
+            }
+        }
+        false
+    }
+    matches!(condition, ConditionTerm::IntegerEqual(a,b) if direction(a,b) || direction(b,a))
+}
+
 /// Explicit `normalize` also distributes constant Integer coefficients.
 /// `known` continues to use `integer_affine_comparison`: adding this rule to
 /// explicit normalization does not expand its computational leaf. Calls,
@@ -380,7 +415,7 @@ pub(super) fn integer_linear_comparison(condition: &ConditionTerm) -> Option<boo
     let mut weights: HashMap<u64, BigInt> = HashMap::new();
     *weights.entry(left.id()).or_default() += 1;
     *weights.entry(right.id()).or_default() -= 1;
-    let mut atoms: BTreeMap<u64, BigInt> = BTreeMap::new();
+    let mut atoms: BTreeMap<Vec<u64>, BigInt> = BTreeMap::new();
     let mut constant = BigInt::zero();
     for term in order.iter().rev() {
         if crate::instrumentation::deadline_exceeded_with_work(1) {
@@ -424,10 +459,43 @@ pub(super) fn integer_linear_comparison(condition: &ConditionTerm) -> Option<boo
                     }
                     *weights.entry(value.id()).or_default() += weight * scale;
                 } else {
-                    *atoms.entry(term.id()).or_default() += weight;
+                    // Collect one monomial without distributing any sum.
+                    // Its factors are opaque shared roots. Work follows the
+                    // written product, never the surrounding fact context.
+                    let mut factors = Vec::new();
+                    let mut coefficient = weight;
+                    let mut pending = vec![term];
+                    while let Some(factor) = pending.pop() {
+                        if crate::instrumentation::deadline_exceeded_with_work(1) {
+                            return None;
+                        }
+                        if let Some(value) = constants.get(&factor.id()) {
+                            if crate::instrumentation::deadline_exceeded_with_work(
+                                (value.bits() as usize + 1)
+                                    .saturating_mul(coefficient.bits() as usize + 1),
+                            ) {
+                                return None;
+                            }
+                            coefficient *= value;
+                        } else {
+                            match factor.as_ref() {
+                                IntegerTerm::Multiply(a, b) => {
+                                    pending.push(a);
+                                    pending.push(b);
+                                }
+                                IntegerTerm::Negate(a) => {
+                                    coefficient = -coefficient;
+                                    pending.push(a);
+                                }
+                                _ => factors.push(factor.id()),
+                            }
+                        }
+                    }
+                    factors.sort_unstable();
+                    *atoms.entry(factors).or_default() += coefficient;
                 }
             }
-            _ => *atoms.entry(term.id()).or_default() += weight,
+            _ => *atoms.entry(vec![term.id()]).or_default() += weight,
         }
     }
     if atoms.values().any(|weight| !weight.is_zero()) {

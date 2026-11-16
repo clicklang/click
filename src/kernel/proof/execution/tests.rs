@@ -2949,13 +2949,21 @@ fn interface_load_definition_rejects_wrong_variable_address_and_state() {
             true,
         )
     };
-    let correct = equation(variable, memory.clone(), pointer.clone());
+    let correct = equation(
+        variable,
+        crate::kernel::ProgramPoint::at(&memory),
+        pointer.clone(),
+    );
     let definition = CheckedInterfaceLoadDefinition::check(&correct).unwrap();
     assert!(definition.matches_goal_exactly(&correct));
-    let wrong_variable = equation(Variable(17), memory.clone(), pointer.clone());
+    let wrong_variable = equation(
+        Variable(17),
+        crate::kernel::ProgramPoint::at(&memory),
+        pointer.clone(),
+    );
     let wrong_address = equation(
         variable,
-        memory,
+        crate::kernel::ProgramPoint::at(&memory),
         Pointer {
             block: "other".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -2963,7 +2971,9 @@ fn interface_load_definition_rejects_wrong_variable_address_and_state() {
     );
     let wrong_state = equation(
         variable,
-        crate::kernel::intern_memory(Memory::new().with_block("different", 4)),
+        crate::kernel::ProgramPoint::at(
+            &(crate::kernel::intern_memory(Memory::new().with_block("different", 4))),
+        ),
         pointer,
     );
     for wrong in [wrong_variable, wrong_address, wrong_state] {

@@ -109,8 +109,8 @@ pub(in crate::surface) struct SynthesisStructOwners {
     callback_sources: std::sync::Arc<BTreeMap<crate::kernel::BindingName, syntax::CExpression>>,
     /// The function's global and static arrays by kernel and source name: the source name and
     /// declared shape an element read is spelled with.
-    storage_arrays: BTreeMap<String, (String, Vec<u32>)>,
-    storage_scalars: BTreeMap<Pointer, (String, ProgramType)>,
+    storage_arrays: BTreeMap<crate::kernel::BindingName, (crate::kernel::BindingName, Vec<u32>)>,
+    storage_scalars: BTreeMap<Pointer, (crate::kernel::BindingName, ProgramType)>,
     /// Declaration spellings for kernel identifiers in retained C arguments.
     storage_source_names: BTreeMap<String, ContractExpression>,
 }
@@ -150,18 +150,18 @@ impl LocalStructLayoutScope {
             .global_arrays()
             .values()
             .filter_map(|array| {
-                let spelling = (array.name().to_string(), array.shape()?.to_vec());
+                let spelling = (array.kernel_name().clone(), array.shape()?.to_vec());
                 Some([
-                    (array.kernel_name().to_string(), spelling.clone()),
-                    (array.name().to_string(), spelling),
+                    (array.kernel_name().clone(), spelling.clone()),
+                    (array.name().into(), spelling),
                 ])
             })
             .flatten()
             .chain(function.static_arrays().values().flat_map(|array| {
-                let spelling = (array.name().to_string(), array.shape().to_vec());
+                let spelling = (array.kernel_name().clone(), array.shape().to_vec());
                 [
-                    (array.kernel_name().to_string(), spelling.clone()),
-                    (array.name().to_string(), spelling),
+                    (array.kernel_name().clone(), spelling.clone()),
+                    (array.name().into(), spelling),
                 ]
             }))
             .collect();
@@ -172,7 +172,7 @@ impl LocalStructLayoutScope {
                 (
                     Memory::global_pointer(global.kernel_name()),
                     (
-                        global.name().to_string(),
+                        global.kernel_name().clone(),
                         global.interface_type().to_kernel_type(),
                     ),
                 )
@@ -181,7 +181,7 @@ impl LocalStructLayoutScope {
                 (
                     Memory::static_pointer(function.name(), local.kernel_name()),
                     (
-                        local.name().to_string(),
+                        local.kernel_name().clone(),
                         local.interface_type().to_kernel_type(),
                     ),
                 )
@@ -227,13 +227,13 @@ impl LocalStructLayoutScope {
                     .values()
                     .map(|object| (object.kernel_name(), object.name())),
             )
-            .map(|(kernel, source)| {
-                (
-                    kernel.to_owned(),
+            .filter_map(|(kernel, source)| {
+                Some((
+                    kernel.named()?.to_owned(),
                     ContractExpression::ProgramExpression(ProgramExpression::Variable(
                         (source.to_owned()).into(),
                     )),
-                )
+                ))
             })
             .collect();
         let owners = SynthesisStructOwners {
@@ -682,9 +682,9 @@ fn recorded_point_of_load(
         let slot = slot.borrow();
         let points = slot.as_ref()?;
         points
-            .point_reading_memory(memory)
+            .point_reading_memory(memory.shared_memory())
             .into_iter()
-            .chain(points.points_near_memory(memory))
+            .chain(points.points_near_memory(memory.shared_memory()))
             .find_map(|(selector, state)| {
                 let load = scalar_read_in_state(read, state)?;
                 Some((selector.clone(), state.clone(), load))
@@ -1292,7 +1292,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. }))
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Value(value.clone()),
@@ -2418,7 +2418,7 @@ fn synthesize_surface_atomic_proposition(
     {
         return synthesize_load_defining_equation(
             variable,
-            memory,
+            memory.shared_memory(),
             pointer,
             parameter_binding,
             state,
@@ -3146,12 +3146,14 @@ pub(super) fn integer_typed_expression(value: ContractExpression) -> ContractExp
 /// `to_integer` around each observation and named truncating operations.
 /// Opaque specification applications retain their source boundary.
 fn synthesize_surface_integer(
-    term: &crate::kernel::IntegerTerm,
+    term: &crate::kernel::SharedIntegerTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
-    let term = crate::kernel::KernelTermImport::default().integer(&term.clone().into());
+    // Keep the carrier's bridge identity: a native clone and re-intern here
+    // discards the caller's shared handoff before reaching the common renderer.
+    let term = crate::kernel::KernelTermImport::default().integer(term);
     raise_kernel_term(&term, parameter_binding, state, bound_variables)
 }
 
@@ -4285,7 +4287,13 @@ fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<Ma
     let memory = crate::kernel::intern_memory_ref(state.memory());
     let selected =
         crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
-    (selected == *read).then(|| MachineTerm::MemoryLoad(memory, pointer.clone(), *kind))
+    (selected == *read).then(|| {
+        MachineTerm::MemoryLoad(
+            crate::kernel::ProgramPoint::at(&memory),
+            pointer.clone(),
+            *kind,
+        )
+    })
 }
 
 // Unsigned division and remainder use the usual C conversion of both
@@ -4427,8 +4435,11 @@ fn synthesize_typed_word_read(
     let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
         return None;
     };
-    let read =
-        crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
+    let read = crate::kernel::canonical_form_of_load(
+        memory.shared_memory().clone(),
+        pointer.as_ref().clone(),
+        *kind,
+    );
     let at_state = |load: &MachineTerm, state: &ExecutionState| {
         let MachineTerm::MemoryLoad(_, pointer, _) = load else {
             return None;
@@ -4741,7 +4752,7 @@ fn synthesize_surface_bitvector(
         }
         MachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
             let read = crate::kernel::canonical_form_of_load(
-                memory.clone(),
+                memory.shared_memory().clone(),
                 kernel_pointer.as_ref().clone(),
                 *kind,
             );
@@ -5695,7 +5706,7 @@ fn synthesize_static_storage_array_element_load(
             if element_type.byte_width() != 4 || element_type.pointee_type().is_some() {
                 return None;
             }
-            let (source, shape) = name.named_in(&owners.storage_arrays)?;
+            let (source, shape) = owners.storage_arrays.get(name)?;
             let index = pointer.shared_element_index_from_base_with_width(slot, 4)?;
             let base = ProgramExpression::Variable((source.clone()).into());
             if shape.len() <= 1 {
@@ -6028,7 +6039,9 @@ fn synthesize_surface_pointer(
     }
     if matches!(
         pointer.block,
-        PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. }
+        PointerBlock::StringLiteral { .. }
+            | PointerBlock::AutomaticLocal { .. }
+            | PointerBlock::StaticObject { .. }
     ) {
         return Some(ProgramExpression::Value(ProgramValue::typed_pointer(
             pointer.clone(),
@@ -6618,7 +6631,8 @@ fn raise_float_read(
     // Float producers retain the raw state, rather than the integer load's
     // canonical selection. Spelling must reproduce that same producer input.
     let reads_state = |state: &ExecutionState| {
-        crate::kernel::intern_memory_ref(state.memory()).arena_id() == memory.arena_id()
+        crate::kernel::intern_memory_ref(state.memory()).arena_id()
+            == memory.shared_memory().arena_id()
     };
     if !reads_state(state) {
         if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
@@ -6634,7 +6648,7 @@ fn raise_float_read(
         let (selector, recorded) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
             let slot = slot.borrow();
             let points = slot.as_ref()?;
-            let (selector, recorded) = points.point_reading_memory(memory)?;
+            let (selector, recorded) = points.point_reading_memory(memory.shared_memory())?;
             reads_state(recorded).then(|| (selector.clone(), recorded.clone()))
         })?;
         return Some(SurfaceTerm::At {

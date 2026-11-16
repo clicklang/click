@@ -4374,7 +4374,7 @@ pub(in crate::surface) fn infer_program_expression_type(
         ProgramExpression::Value(ProgramValue::Pointer(_)) => None,
         ProgramExpression::Variable(name) => match name {
             crate::kernel::BindingName::Named(name) => variables.get(name).copied(),
-            crate::kernel::BindingName::Local(id) => id
+            crate::kernel::BindingName::Local(_) | crate::kernel::BindingName::Static(_) => name
                 .program_type()
                 .and_then(|ty| interface_type_from_program_type(&ty)),
         },

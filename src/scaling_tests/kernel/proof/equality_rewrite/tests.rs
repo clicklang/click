@@ -441,7 +441,7 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
     );
     let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -739,7 +739,7 @@ fn rewrite_capture_collection_does_not_visit_state_contents() {
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::Variable(free)),
                 right: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(Pointer::symbolic(address)),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -969,8 +969,11 @@ fn pointer_read_chain_rewrite_work(
         if native {
             Pointer::version_read(&memory, address)
         } else {
-            let term =
-                MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
+            let term = MachineTerm::MemoryLoad(
+                ProgramPoint::at(&memory),
+                Box::new(address.clone()),
+                LoadKind::Int32,
+            );
             let (variable, _) =
                 crate::kernel::load_variable_for_term(&term).expect("legacy read adapter");
             Pointer::symbolic(variable)
@@ -1319,7 +1322,7 @@ fn selected_rewrite_does_not_discover_a_load_equality_chain() {
     let x = MachineTerm::Variable(Variable(800_001));
     let y = MachineTerm::Variable(Variable(800_002));
     let read = MachineTerm::MemoryLoad(
-        intern_memory(Memory::new()),
+        ProgramPoint::at(&(intern_memory(Memory::new()))),
         Box::new(Pointer::symbolic(Variable(800_003))),
         crate::kernel::LoadKind::Int32,
     );

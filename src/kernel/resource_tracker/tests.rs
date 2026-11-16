@@ -20,8 +20,8 @@ fn one() -> ProgramValue {
     ProgramValue::Int32(MachineTerm::constant(1))
 }
 
-fn point(memory: &Memory) -> VersionPoint {
-    VersionPoint::at(&intern_memory(memory.clone()))
+fn point(memory: &Memory) -> ProgramPoint {
+    ProgramPoint::at(&intern_memory(memory.clone()))
 }
 
 fn entry_memory() -> Memory {
@@ -687,7 +687,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         .store(at(PointerBlock::Symbolic(Variable(80)), 0), one());
     let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            intern_memory(memory.clone()),
+            ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -1389,7 +1389,7 @@ fn named_cell_stop_retains_the_decision_made_by_its_walk() {
     let read = Pointer::symbolic(crate::kernel::Variable(981_201));
     let write = Pointer::symbolic(crate::kernel::Variable(981_202));
     let memory = intern_memory(Memory::new().store(write.clone(), one()));
-    let here = VersionPoint::at(&memory);
+    let here = ProgramPoint::at(&memory);
     let named = last_same_named_cell(&read, 4, &here).expect("named cell");
     assert!(matches!(
         named.stopped_by.reason,
@@ -1457,15 +1457,15 @@ fn a_forgotten_observation_retains_only_its_complete_typed_value() {
             |memory| MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32);
         assert!(
             crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                &load(source.clone()),
-                &load(forgotten),
+                &load(ProgramPoint::at(&source)),
+                &load(ProgramPoint::at(&forgotten)),
                 &assumptions,
             )
         );
         assert!(
             !crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                &load(source),
-                &load(changed),
+                &load(ProgramPoint::at(&source)),
+                &load(ProgramPoint::at(&changed)),
                 &assumptions,
             )
         );
@@ -1488,14 +1488,15 @@ fn structural_read_dependencies_keep_the_observed_point_and_exact_width() {
         panic!("structural read")
     };
     assert_ne!(
-        selected, &origin,
+        selected.shared_memory(),
+        &origin,
         "selection should cross the unrelated store"
     );
     let fact = Proposition::ConditionIs(ConditionTerm::equal(read.clone(), 0u32.into()), true);
     let reads = reads_of_proposition(&fact);
     assert_eq!(reads.len(), 1);
     assert_eq!(reads[0].resource, OwnedResource::Cell { pointer, bytes: 4 });
-    assert_eq!(reads[0].point, VersionPoint::at(&origin));
+    assert_eq!(reads[0].point, ProgramPoint::at(&origin));
     assert_eq!(crate::kernel::eval::load_variable_registry_len(), 0);
 }
 
@@ -1543,7 +1544,7 @@ fn retained_boolean_dependencies_keep_read_order_and_opaque_calls() {
     let memory = intern_memory(entry_memory());
     let read = |name| {
         MachineTerm::MemoryLoad(
-            memory.clone(),
+            ProgramPoint::at(&memory),
             Box::new(at(block(name), 0)),
             LoadKind::Int32,
         )
@@ -1586,7 +1587,7 @@ fn shared_offset_condition_resource_reads_keep_native_right_first_order() {
     let offset = |name| {
         PointerOffsetTerm::scaled_int32_node(
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
                 LoadKind::Int32,
             ),
@@ -1616,7 +1617,7 @@ fn raw_pointer_condition_reads_keep_block_and_displacement_order() {
     let offset = |name| {
         PointerOffsetTerm::scaled_int32_node(
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
                 LoadKind::Int32,
             ),
@@ -1645,7 +1646,7 @@ fn complete_pointer_conditions_keep_read_order() {
     let offset = |name| {
         PointerOffsetTerm::scaled_int32_node(
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
                 LoadKind::Int32,
             ),
@@ -1678,7 +1679,7 @@ fn boolean_reads_report_only_the_one_byte_cell() {
         block: PointerBlock::Symbolic(Variable(999350)),
         offset: PointerOffsetTerm::scaled_int32_node(
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(at(block("global:g"), 0)),
                 LoadKind::Int32,
             ),

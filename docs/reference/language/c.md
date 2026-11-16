@@ -1684,6 +1684,25 @@ pointer casts and `byte_offset` retain the ordinary pointer syntax.
 <!-- verified-example: mdtests/c_declaration_references.md -->
 <!-- verified-example: mdtests/c_aggregate_declaration_references.md -->
 
+## Static declaration references
+
+A function's `static` objects use `f.static(i)`, counting static declarations
+in source order separately from automatic locals. A file-static object uses
+`"file.c"::static(i)` (or a declared source alias); compatible redeclarations
+keep the same ordinal. The file owner is the root translation unit, including
+for code brought in through a header. Externally linked objects retain their
+ordinary C symbol names.
+
+These references preserve scalar types, struct layouts, and array dimensions.
+They remain usable from another function after a static object's pointer
+escapes. Each static declaration has one storage identity for the whole program,
+spelled `f.static(i).storage()` or `"file.c"::static(i).storage()`. These storage
+forms are byte pointers and supply no permission to read or write. Scalar reads
+use the surrounding selected memory, including `old(...)`; volatile reads are
+subject to the ordinary specification restrictions.
+
+<!-- verified-example: mdtests/c_static_declaration_references.md -->
+
 ## String literals
 
 A proof names a function body's literal object with `f.string_literal(i)`.

@@ -64,7 +64,7 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
         let goals: Vec<_> = (0..selected)
             .map(|index| {
                 let read = MachineTerm::MemoryLoad(
-                    memory.clone(),
+                    ProgramPoint::at(&memory),
                     Box::new(address(index)),
                     LoadKind::Int32,
                 );

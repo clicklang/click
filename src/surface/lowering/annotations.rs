@@ -3019,8 +3019,7 @@ fn loop_resource_declarations(
             .filter_map(|name| {
                 let element = bindings
                     .and_then(|bindings| bindings.get(&name))
-                    .and_then(|(_, binding)| binding.local_id())
-                    .and_then(|id| id.program_type())
+                    .and_then(|(_, binding)| binding.program_type())
                     .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()))
                     .or_else(|| lowerer.pointer_element_types.get(&name).copied())?;
                 Some((name, element))
@@ -3666,8 +3665,8 @@ impl AnnotationLowerer<'_> {
         name: impl Into<crate::kernel::BindingName>,
     ) -> Option<ProgramType> {
         let name = self.source_binding(name.into());
-        if let Some(id) = name.local_id() {
-            return id
+        if name.named().is_none() {
+            return name
                 .program_type()
                 .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()));
         }
@@ -5552,8 +5551,8 @@ impl AnnotationLowerer<'_> {
     /// its typed entry value or the live declaration state.
     fn c_variable_type(&self, name: impl Into<crate::kernel::BindingName>) -> Option<ProgramType> {
         let name = self.source_binding(name.into());
-        if let Some(id) = name.local_id() {
-            return id.program_type();
+        if name.named().is_none() {
+            return name.program_type();
         }
         name.named_in(&self.program_parameter_types)
             .copied()
@@ -7372,8 +7371,8 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<ProgramType> {
         let name = self.source_binding(name.into());
-        if let Some(id) = name.local_id() {
-            return id.program_type();
+        if name.named().is_none() {
+            return name.program_type();
         }
         if name.named_in(&environment.algebraic_values).is_some() {
             return None;
@@ -8999,6 +8998,51 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecExpression, String> {
         let name = name.into();
         crate::instrumentation::record_deterministic_work(1);
+        if let Some(id) = name.static_id() {
+            let metadata = id
+                .metadata()
+                .ok_or_else(|| format!("unknown C static declaration `{id}`"))?;
+            let pointer = crate::kernel::Memory::global_pointer(&name);
+            if metadata.aggregate || metadata.array_shape.is_some() {
+                let pointer_type = if metadata.aggregate {
+                    ProgramType::UInt8Pointer
+                } else {
+                    metadata
+                        .program_type
+                        .array_element_type()
+                        .and_then(ProgramType::pointer_to)
+                        .ok_or_else(|| format!("static array `{id}` has no element pointer type"))?
+                };
+                return Ok(SpecExpression::Value(
+                    ProgramValue::typed_pointer_with_pointee_constant(
+                        pointer,
+                        pointer_type,
+                        metadata.constant,
+                    ),
+                ));
+            }
+            if metadata.volatile {
+                return Err(format!(
+                    "volatile object `{id}` cannot be read in a specification"
+                ));
+            }
+            // A typed read names its scalar type separately from the storage
+            // address. Use the byte-address carrier also for bools and pointer
+            // cells whose C pointer-to-type has no kernel carrier.
+            let pointer_type = ProgramType::UInt8Pointer;
+            return Ok(SpecExpression::MemoryLoad {
+                memory: environment.current_memory.clone(),
+                pointer: Box::new(SpecExpression::Value(
+                    ProgramValue::typed_pointer_with_pointee_constant(
+                        pointer,
+                        pointer_type,
+                        metadata.constant,
+                    ),
+                )),
+                value_type: metadata.program_type,
+            });
+        }
+
         if name.local_id().is_some()
             && let Some(state) = environment.reference_state.as_ref().or_else(|| {
                 (environment.at_function_entry && !environment.function_contract)
@@ -9113,6 +9157,32 @@ impl AnnotationLowerer<'_> {
         expression: &ProgramExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
+        if let ProgramExpression::AddressOf(target)
+        | ProgramExpression::CheckedObjectAddress(target) = expression
+            && let ProgramExpression::Variable(name) = target.as_ref()
+            && let Some(id) = name.static_id()
+        {
+            let metadata = id
+                .metadata()
+                .ok_or_else(|| format!("unknown C static declaration `{id}`"))?;
+            let pointer_type = if metadata.aggregate {
+                ProgramType::UInt8Pointer
+            } else {
+                metadata
+                    .program_type
+                    .array_element_type()
+                    .unwrap_or(metadata.program_type)
+                    .pointer_to()
+                    .ok_or_else(|| format!("static object `{id}` has no address type"))?
+            };
+            return Ok(SpecExpression::Value(
+                ProgramValue::typed_pointer_with_pointee_constant(
+                    crate::kernel::Memory::global_pointer(name),
+                    pointer_type,
+                    metadata.constant,
+                ),
+            ));
+        }
         if !environment.checking_definedness
             && let ProgramExpression::AddressOf(target)
             | ProgramExpression::CheckedObjectAddress(target) = expression

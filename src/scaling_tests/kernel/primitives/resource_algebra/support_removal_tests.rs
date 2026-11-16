@@ -179,7 +179,7 @@ fn shared_pointer_load_footprints_keep_depth_refusal_without_tree_expansion() {
             Memory::new().store(address.clone(), crate::kernel::int32(7)),
         );
         let load = MachineTerm::MemoryLoad(
-            memory,
+            ProgramPoint::at(&memory),
             Box::new(address.clone()),
             crate::kernel::LoadKind::Int32,
         );

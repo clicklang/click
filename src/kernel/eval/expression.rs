@@ -1272,6 +1272,40 @@ pub(super) fn evaluate_native_expression_paths(
             }]
         }
         ProgramExpression::Variable(name)
+            if state.locals.binding(name).is_none()
+                && name
+                    .static_id()
+                    .and_then(|id| id.metadata())
+                    .is_some_and(|metadata| {
+                        metadata.aggregate || metadata.array_shape.is_some()
+                    }) =>
+        {
+            let metadata = name
+                .static_id()
+                .and_then(|id| id.metadata())
+                .expect("prepared static object");
+            let pointer_type = if metadata.aggregate {
+                ProgramType::UInt8Pointer
+            } else {
+                metadata
+                    .program_type
+                    .array_element_type()
+                    .and_then(ProgramType::pointer_to)
+                    .expect("static scalar array element has a pointer type")
+            };
+            vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(
+                    ProgramValue::typed_pointer_with_pointee_constant(
+                        Memory::global_pointer(name),
+                        pointer_type,
+                        metadata.constant,
+                    ),
+                ),
+                facts: Vec::new().into(),
+                obligations: Vec::new(),
+            }]
+        }
+        ProgramExpression::Variable(name)
             if state.locals.is_array_object(name) || state.locals.is_aggregate_object(name) =>
         {
             let pointer = state
@@ -2852,9 +2886,22 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                 Some(LocalBinding::AggregateObject { layout, .. }) => LValueOutcome::LValue(
                     LValue::local(name.clone(), ProgramType::UInt8Array(layout.size_bytes())),
                 ),
-                None => {
-                    LValueOutcome::RuntimeError(RuntimeError::UnboundVariable(name.to_string()))
-                }
+                None => match name.static_id().and_then(|id| id.metadata()) {
+                    Some(metadata) if metadata.array_shape.is_none() => LValueOutcome::LValue(
+                        LValue::memory_with_qualifiers(
+                            Memory::global_pointer(name),
+                            metadata.program_type,
+                            metadata.volatile,
+                            metadata.pointee_volatile,
+                        )
+                        .with_constant(metadata.constant)
+                        .with_pointee_constant(metadata.pointee_constant),
+                    ),
+                    Some(_) => LValueOutcome::RuntimeError(RuntimeError::TypeMismatch),
+                    None => {
+                        LValueOutcome::RuntimeError(RuntimeError::UnboundVariable(name.to_string()))
+                    }
+                },
             },
             facts: Vec::new().into(),
             obligations: Vec::new(),
@@ -3638,7 +3685,9 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                             state.locals.binding(name),
                             Some(LocalBinding::AggregateObject { .. })
                         ),
-                        LValueStorage::Memory { .. } => false,
+                        LValueStorage::Memory { .. } => matches!(target,
+                            ProgramExpression::Variable(name) if name.static_id().and_then(|id| id.metadata())
+                                .is_some_and(|metadata| metadata.aggregate && metadata.array_shape.is_none())),
                     };
                     let pointer_type = if is_aggregate {
                         Some(ProgramType::Int32Pointer)
@@ -3739,7 +3788,19 @@ pub(in crate::kernel) fn program_expression_pointee_type(
             Some(LocalBinding::GlobalObject { program_type, .. }) => program_type.pointee_type(),
             Some(LocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
             Some(LocalBinding::AggregateObject { .. }) => Some(ProgramType::UInt8),
-            None => None,
+            None => name
+                .static_id()
+                .and_then(|id| id.metadata())
+                .and_then(|metadata| {
+                    if metadata.aggregate {
+                        Some(ProgramType::UInt8)
+                    } else {
+                        metadata
+                            .program_type
+                            .array_element_type()
+                            .or_else(|| metadata.program_type.pointee_type())
+                    }
+                }),
         },
         // A call's result has the callee's declared type.
         ProgramExpression::StringLiteral(identity) => state
@@ -3792,7 +3853,19 @@ pub(in crate::kernel) fn program_expression_lvalue_type(
     expression: &ProgramExpression,
 ) -> Option<ProgramType> {
     match expression {
-        ProgramExpression::Variable(name) => state.locals.object_type(name),
+        ProgramExpression::Variable(name) => state.locals.object_type(name).or_else(|| {
+            let metadata = name.static_id()?.metadata()?;
+            if metadata.aggregate && metadata.array_shape.is_none() {
+                None
+            } else {
+                Some(
+                    metadata
+                        .program_type
+                        .array_element_type()
+                        .unwrap_or(metadata.program_type),
+                )
+            }
+        }),
         ProgramExpression::Load(pointer) => program_expression_pointee_type(state, pointer),
         ProgramExpression::TypedLoad { value_type, .. } => Some(*value_type),
         ProgramExpression::Index(base, _) => program_expression_pointee_type(state, base),
