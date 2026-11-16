@@ -115,7 +115,6 @@ documentation inventory keep the following accepted words synchronized.
 | `close_invariants` | Retired loop tactic, still reserved. The parser rejects it with `` `close_invariants` is retired ``; a loop's back edge now closes each bundle member with `solve()`, helped by `have` facts proved before it. |
 | `split`, `left`, `right` | Retired tactic spellings. Unless a user-defined tactic has the name, the parser rejects each with a diagnostic that names `known()`. |
 | `preserve` | Preserve a selected read or its definedness across an explicitly separated region footprint; also introduces a loop preservation proof. |
-| `changes_only` | Transition proposition naming recorded before/after points and the resources allowed to change. |
 | `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate rules { ... }`. Its step words are listed under [Arithmetic-certificate words](#arithmetic-certificate-words). |
 | `rewrite`, `transport`, `instantiate`, `solve`, `induct` | Equality, transport, quantifier, closing, and induction tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also writes numeric and pointer casts (including `as float` and `as double`) and introduces the target contract's proof instances on an `executes` conclusion. |

@@ -1006,8 +1006,7 @@ pub(in crate::surface) fn walk_written_expressions_in_proposition(
                 walk_written_expressions(argument, visit);
             }
         }
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => {}
