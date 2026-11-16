@@ -6935,6 +6935,9 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         ProgramStatement::Return(expression) => {
             format!("return {};", describe_program_expression(expression))
         }
+        ProgramStatement::ThrowOpaque(payload_type) => {
+            format!("throw opaque {}", payload_type.name())
+        }
         ProgramStatement::Throw(expression) => {
             format!("throw {};", describe_program_expression(expression))
         }

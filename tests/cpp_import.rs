@@ -20114,3 +20114,204 @@ void abandon(int32* value) throws int32 {
         error.report()
     );
 }
+
+#[test]
+#[ignore = "nightly: user-defined opaque exception construction and replay"]
+fn typed_aggregate_exceptions_check_initializers_and_return_memory() {
+    let project = Project::with_fixture(
+        "errors.cpp",
+        "relay",
+        r#"
+namespace errors { struct ParseError { int code; }; }
+struct Other { int code; };
+void raise(int* counter, int code, bool fail) {
+    if (fail) { *counter = code; throw errors::ParseError{code + 1}; }
+    *counter = 0;
+}
+void relay(int* counter, int code, bool fail, Other* marker) {
+    raise(counter, code, fail);
+}
+"#,
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "errors.cpp", true, "typed");
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let prepared = load_import(&project.config()).unwrap();
+    let source = r#"verifying "errors.cpp";
+void raise(int32* counter, int32 code, bool fail) throws errors::ParseError {
+    requires code < 2147483647;
+    owns counter[0];
+    ensures counter[0] == 0;
+    exceptional ensures counter[0] == code;
+}
+void relay(int32* counter, int32 code, bool fail, struct Other* marker) throws errors::ParseError {
+    requires code < 2147483647;
+    owns counter[0];
+    ensures counter[0] == 0;
+    exceptional ensures counter[0] == code;
+}
+"#;
+    check_return_call_sidecar(&project, &prepared, source);
+    let sidecar_path = project.directory.join("arithmetic.click");
+    let parsed = read_click_project(&sidecar_path, source).unwrap();
+    let mut rewritten = parsed.clone();
+    for label in ["raise.contract", "relay.contract"] {
+        let expanded = expand_project_claim_source_by_label(
+            &rewritten,
+            &ProgramInputs::program(&prepared),
+            label,
+        )
+        .unwrap();
+        let (session, _) =
+            ProgramVerificationSession::new_program_prepared_project(&rewritten, &prepared)
+                .unwrap();
+        rewritten = parsed.with_entry_source(expanded.clone());
+        let position = project_tactic_source_position(
+            &rewritten,
+            &ProgramInputs::program(&prepared),
+            label,
+            0,
+        )
+        .unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .unwrap();
+    }
+    click::surface::without_implicit_solve(|| {
+        verify_program_prepared_project(&rewritten, &prepared)
+    })
+    .unwrap();
+    let sidecar = project.directory.join("bad.click");
+    for (name, bad) in [
+        (
+            "different nominal type",
+            source.replace("throws errors::ParseError", "throws Other"),
+        ),
+        (
+            "unresolved type",
+            source.replace("throws errors::ParseError", "throws Missing"),
+        ),
+        (
+            "initializer overflow",
+            source.replace("    requires code < 2147483647;\n", ""),
+        ),
+        (
+            "lost mutable authority",
+            source.replace("owns counter[0];", "views counter[0];"),
+        ),
+        (
+            "false exceptional memory",
+            source.replace(
+                "exceptional ensures counter[0] == code;",
+                "exceptional ensures counter[0] == 0;",
+            ),
+        ),
+        (
+            "opaque payload fields",
+            source.replace(
+                "exceptional ensures counter[0] == code;",
+                "exceptional ensures exception.code == code + 1;",
+            ),
+        ),
+    ] {
+        fs::write(&sidecar, &bad).unwrap();
+        let accepted = read_click_project(&sidecar, &bad)
+            .ok()
+            .is_some_and(|parsed| verify_program_prepared_project(&parsed, &prepared).is_ok());
+        assert!(!accepted, "accepted {name}");
+    }
+}
+
+#[test]
+#[ignore = "nightly: empty user exception tags and initializer read authority"]
+fn typed_empty_exception_tags_and_checked_payload_reads() {
+    for (file, selected, cpp, source) in [
+        (
+            "tag.cpp",
+            "marker",
+            "namespace errors { struct End {}; } void marker(bool fail) { if (fail) { throw errors::End{}; } }",
+            r#"verifying "tag.cpp";
+void marker(bool fail) throws errors::End { ensures true; exceptional ensures true; }
+"#,
+        ),
+        (
+            "read.cpp",
+            "from_reference",
+            "struct ReadError { int code; }; void from_reference(const int& value) { throw ReadError{value}; }",
+            r#"verifying "read.cpp";
+void from_reference(const int32& value) throws ReadError { views value; ensures true; exceptional ensures true; }
+"#,
+        ),
+    ] {
+        let project = Project::with_fixture(file, selected, cpp);
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_exception_behavior(selected, file, true, "typed");
+        refresh_import(&project.config()).unwrap();
+        let prepared = load_import(&project.config()).unwrap();
+        check_return_call_sidecar(&project, &prepared, source);
+        if selected == "from_reference" {
+            let bad = source.replace("views value;", "");
+            let sidecar = project.directory.join("bad.click");
+            fs::write(&sidecar, &bad).unwrap();
+            let parsed = read_click_project(&sidecar, &bad).unwrap();
+            verify_program_prepared_project(&parsed, &prepared)
+                .expect_err("opaque construction must still read its initializer with authority");
+        }
+    }
+}
+
+#[test]
+#[ignore = "nightly: user exception source and artifact admission controls"]
+fn typed_exceptions_refuse_unmodeled_construction_and_corrupt_fields() {
+    for cpp in [
+        // Preserve the existing const-pointer parameter refusal. The positive
+        // initializer-read fixture uses the already-supported const reference.
+        "struct ReadError { int code; }; void probe(const int* p) { throw ReadError{p[0]}; }",
+        "struct Error { int code; explicit Error(int n) noexcept : code(n) {} }; void probe() { throw Error{1}; }",
+        "struct Error { int code; ~Error() noexcept {} }; void probe() { throw Error{1}; }",
+        "struct Error { int code; }; void probe(Error& e) { throw e; }",
+        "struct Error { int code; }; void probe() { throw Error{}; }",
+        "struct Error {}; void probe() noexcept { throw Error{}; }",
+    ] {
+        let project = Project::with_fixture("refused.cpp", "probe", cpp);
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_exception_behavior("probe", "refused.cpp", true, "typed");
+        assert!(refresh_import(&project.config()).is_err(), "admitted {cpp}");
+    }
+    let project = Project::with_fixture(
+        "error.cpp",
+        "probe",
+        "struct Error { int code; }; void probe() { throw Error{1}; }",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("probe", "error.cpp", true, "typed");
+    refresh_import(&project.config()).unwrap();
+    let original: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..4 {
+        let mut artifact = original.clone();
+        let statement = &mut artifact["functions"][0]["body"][0];
+        match mutation {
+            0 => statement["fields"] = serde_json::json!([]),
+            1 => statement["fields"][0]["field"]["record_declaration_id"] = "wrong".into(),
+            2 => statement["value_type"]["name"] = "Missing".into(),
+            3 => artifact["exception_behavior"] = "scalar_int32".into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
+        let mut locked = lock.clone();
+        use sha2::{Digest, Sha256};
+        lock_source_mut(&mut locked)["artifact"]["sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_source_mut(&mut locked)["artifact"]["bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec_pretty(&locked).unwrap()).unwrap();
+        assert!(
+            load_import(&project.config()).is_err(),
+            "accepted artifact mutation {mutation}"
+        );
+    }
+}

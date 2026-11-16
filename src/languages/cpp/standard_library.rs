@@ -386,7 +386,7 @@ pub(super) fn contracts(
             libraries.push(library);
         }
     }
-    if export.exception_behavior == super::schema::CppExceptionBehavior::IosFailure {
+    if export.uses_ios_failure_factory() {
         models.insert(IOS_FAILURE_FACTORY.to_string());
         libraries.push(
             "extern std::ios_base::failure __click_cpp_decl_ios_failure() { ensures true; }\n",

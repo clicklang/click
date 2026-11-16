@@ -348,6 +348,7 @@ pub enum CppExceptionBehavior {
     NormalOnly,
     ScalarInt32,
     IosFailure,
+    Typed,
 }
 
 impl CppExceptionBehavior {
@@ -356,6 +357,7 @@ impl CppExceptionBehavior {
             Self::NormalOnly => "normal_only",
             Self::ScalarInt32 => "scalar_int32",
             Self::IosFailure => "ios_failure",
+            Self::Typed => "typed",
         }
     }
 }
@@ -1261,6 +1263,13 @@ pub enum CppStatement {
         value: CppExpression,
         span: CppSpan,
     },
+    /// A checked aggregate prvalue, erased to an opaque nominal payload only
+    /// after every initializer has been evaluated. Runtime storage is private.
+    ThrowAggregate {
+        value_type: CppType,
+        fields: Vec<CppFieldInitializer>,
+        span: CppSpan,
+    },
     /// The exact pinned standard constructor with its default error code.
     /// The runtime owns the opaque exception object and its destruction.
     ThrowIosFailure {
@@ -1327,6 +1336,47 @@ pub struct CppSpan {
 }
 
 impl CppExport {
+    pub(crate) fn uses_ios_failure_factory(&self) -> bool {
+        match self.exception_behavior {
+            CppExceptionBehavior::IosFailure => return true,
+            CppExceptionBehavior::Typed => {}
+            _ => return false,
+        }
+        let mut pending = self
+            .functions
+            .iter()
+            .chain(&self.reachable_functions)
+            .map(|function| function.body.as_slice())
+            .collect::<Vec<_>>();
+        while let Some(body) = pending.pop() {
+            for statement in body {
+                crate::instrumentation::record_deterministic_work(1);
+                match statement {
+                    CppStatement::ThrowIosFailure { .. } => return true,
+                    CppStatement::If {
+                        then_branch,
+                        else_branch,
+                        ..
+                    } => {
+                        pending.push(then_branch);
+                        pending.push(else_branch);
+                    }
+                    CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+                        pending.push(body)
+                    }
+                    CppStatement::TryCatchInt32 {
+                        try_body, handler, ..
+                    } => {
+                        pending.push(try_body);
+                        pending.push(handler);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        false
+    }
+
     pub(crate) fn validate(
         &self,
         logical_source: &str,
@@ -1497,6 +1547,14 @@ impl CppExport {
                 "exception- or RTTI-enabled normal-only C++ records require trivial destruction"
                     .into(),
             );
+        }
+        if self.exception_behavior != CppExceptionBehavior::Typed
+            && self.records.iter().any(|record| {
+                crate::instrumentation::record_deterministic_work(1);
+                record.fields.is_empty() && record.base.is_none() && !record.polymorphic
+            })
+        {
+            return Err("empty C++ record tags require the typed exception profile".into());
         }
         let records =
             validate_record_inventory(&self.records, logical_source, &declaration_sources)?;
@@ -2018,6 +2076,9 @@ fn validate_reachable_records(
             for statement in body {
                 crate::instrumentation::record_deterministic_work(1);
                 match statement {
+                    CppStatement::ThrowAggregate { value_type, .. } => {
+                        reference(value_type, &mut referenced)
+                    }
                     CppStatement::Declare { local, .. } => {
                         reference(&local.value_type, &mut referenced)
                     }
@@ -2244,8 +2305,7 @@ impl CppRecord {
             }
             destructor.span.validate(logical_source)?;
         }
-        if (self.fields.is_empty() && self.base.is_none() && !self.polymorphic)
-            || self.alignment_bytes == 0
+        if self.alignment_bytes == 0
             || !self.alignment_bytes.is_power_of_two()
             || self.size_bytes == 0
             || !self.size_bytes.is_multiple_of(self.alignment_bytes)
@@ -2695,13 +2755,13 @@ impl CppFunction {
                 self.name
             ));
         }
-        if exception_behavior == CppExceptionBehavior::IosFailure
-            && self.declared_noexcept
+        if matches!(
+            exception_behavior,
+            CppExceptionBehavior::IosFailure | CppExceptionBehavior::Typed
+        ) && self.declared_noexcept
             && self.axiom.is_none()
         {
-            return Err(
-                "user noexcept bodies are outside the ios_failure exception profile".into(),
-            );
+            return Err("user noexcept bodies are outside the opaque exception profiles".into());
         }
         let mut places = ValidationPlaces::new();
         for parameter in &self.parameters {
@@ -3064,8 +3124,18 @@ impl CppFunction {
             for statement in body {
                 crate::instrumentation::record_deterministic_work(1);
                 match statement {
+                    CppStatement::ThrowAggregate { .. }
+                        if exception_behavior != CppExceptionBehavior::Typed =>
+                    {
+                        return Err(
+                            "aggregate exceptions require the typed exception profile".into()
+                        );
+                    }
                     CppStatement::ThrowIosFailure { .. }
-                        if exception_behavior != CppExceptionBehavior::IosFailure =>
+                        if !matches!(
+                            exception_behavior,
+                            CppExceptionBehavior::IosFailure | CppExceptionBehavior::Typed
+                        ) =>
                     {
                         return Err(
                             "opaque ios failure requires the ios_failure exception profile".into(),
@@ -3900,6 +3970,21 @@ impl CppStatement {
                     return Err("C++ library assertion requires a supported scalar condition without side effects or partial arithmetic; field reads require normal memory authority".into());
                 }
                 Ok(())
+            }
+            Self::ThrowAggregate { value_type, fields, span } => {
+                span.validate(logical_source)?;
+                let CppType::Record { declaration_id, name, is_const: false } = value_type else {
+                    return Err("aggregate exception requires an unqualified record value".into());
+                };
+                let record = validate_record_reference(records, declaration_id, name)?;
+                record.require_flat_local_layout()?;
+                if record.destructor.is_some() || record.polymorphic || record.base.is_some() {
+                    return Err("aggregate exceptions require trivial destruction and no bases".into());
+                }
+                if record.fields.iter().any(|field| Scalar::of(&field.value_type).is_none()) {
+                    return Err("aggregate exception fields must have supported scalar value types".into());
+                }
+                validate_aggregate_fields(fields, declaration_id, name, places, records, logical_source)
             }
             Self::ThrowIosFailure { constructor, declaration_file, message, span } => {
                 constructor.validate()?;
@@ -5331,7 +5416,9 @@ fn validate_loop_body(
 
 fn sequence_contains_throw(statements: &[CppStatement]) -> bool {
     statements.iter().any(|statement| match statement {
-        CppStatement::Throw { .. } | CppStatement::ThrowIosFailure { .. } => true,
+        CppStatement::Throw { .. }
+        | CppStatement::ThrowIosFailure { .. }
+        | CppStatement::ThrowAggregate { .. } => true,
         CppStatement::If {
             then_branch,
             else_branch,
@@ -5357,6 +5444,7 @@ impl CppStatement {
             | Self::ReturnCall { .. }
             | Self::Throw { .. }
             | Self::ThrowIosFailure { .. }
+            | Self::ThrowAggregate { .. }
             | Self::Unreachable { .. } => true,
             Self::If {
                 condition,
@@ -6014,6 +6102,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             CppStatement::Unreachable { .. }
             | CppStatement::Throw { .. }
             | CppStatement::ThrowIosFailure { .. }
+            | CppStatement::ThrowAggregate { .. }
             | CppStatement::Assume { .. }
             | CppStatement::LibraryAssert { .. }
             | CppStatement::Assign { .. }
@@ -6071,7 +6160,7 @@ fn collect_statement_expression_calls<'a>(
             collect_expression_calls(pointer, calls);
             collect_expression_calls(value, calls);
         }
-        CppStatement::NewObject { fields, .. } => {
+        CppStatement::NewObject { fields, .. } | CppStatement::ThrowAggregate { fields, .. } => {
             for field in fields {
                 collect_expression_calls(&field.value, calls);
             }
@@ -6700,7 +6789,8 @@ fn validate_statement_constant_references(
                     referenced_constants,
                 )?;
             }
-            CppStatement::NewObject { fields, .. } => {
+            CppStatement::NewObject { fields, .. }
+            | CppStatement::ThrowAggregate { fields, .. } => {
                 for field in fields {
                     field.value.validate_constant_references(
                         logical_source,

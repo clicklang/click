@@ -308,6 +308,13 @@ The C++ `ios_failure` import profile also supports
 that type, with no addressable layout, message or `what()` accessor
 ([import boundary](../cli/import.md)).
 
+For ordinary imported C++ aggregates, the `typed` profile permits
+`throws Error` or `throws errors::ParseError`. The name resolves to an
+imported class; two classes with the same fields remain distinct exception
+types. The payload is opaque, so `exception.code` is refused. Initializers in
+`throw Error{expression}` are checked normally; opaque payloads do not hide
+invalid reads or arithmetic overflow. Empty tag classes are supported too.
+
 Throwing named callback contracts remain pure and accept only `throws int32`.
 An `extern` declaration may carry the same direct throwing interface. A call
 through a pointer under a throwing contract, or to a throwing `extern`, has

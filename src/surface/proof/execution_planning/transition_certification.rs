@@ -614,7 +614,8 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
             cases.iter().any(|case| statement_contains_call(&case.body))
         }
         ProgramStatement::ForStep { step, .. } => statement_contains_call(step),
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break

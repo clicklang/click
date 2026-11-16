@@ -29,7 +29,7 @@ pub(super) fn prepare(
             }
         })
         .collect::<Vec<_>>();
-    if import.export().exception_behavior == super::schema::CppExceptionBehavior::IosFailure {
+    if import.export().uses_ios_failure_factory() {
         functions.push(crate::languages::interface::ImportedFunction::external(
             InterfaceType::Parameter(crate::kernel::TypeParameterName::intern(
                 "std::ios_base::failure",

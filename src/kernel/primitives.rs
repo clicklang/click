@@ -5726,6 +5726,9 @@ pub enum ProgramStatement {
     /// Produce a checked exceptional outcome. The first internal slice carries
     /// one int32 payload; source-language handler matching lands separately.
     Throw(ProgramExpression),
+    /// Throw a fresh opaque value of a nominal type. The frontend has checked
+    /// construction and trivial destruction; the outcome names it `exception`.
+    ThrowOpaque(TypeParameterName),
     /// Catch an int32 exceptional outcome from `try_body` and bind its payload
     /// for the handler. Other outcomes retain their original path and state.
     TryCatchInt32 {

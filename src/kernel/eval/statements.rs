@@ -3475,6 +3475,7 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<Bi
         | ProgramStatement::Switch { .. }
         | ProgramStatement::TryCatchInt32 { .. }
         // Everything else declares nothing.
+        | ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
@@ -3872,7 +3873,9 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
         ProgramStatement::Assert { .. } => "verification statement: assert",
         ProgramStatement::StepValue { .. } => "verification statement: step value",
         ProgramStatement::Return(_) => "verification statement: return",
-        ProgramStatement::Throw(_) => "verification statement: throw",
+        ProgramStatement::Throw(_) | ProgramStatement::ThrowOpaque(_) => {
+            "verification statement: throw"
+        }
         ProgramStatement::TryCatchInt32 { .. } => "verification statement: int32 handler",
         ProgramStatement::Store { .. } => "verification statement: store",
         ProgramStatement::TypedStore { .. } => "verification statement: typed store",
@@ -4760,6 +4763,28 @@ fn execute_execution_statement_leaf_paths(
         }
         ProgramStatement::Return(expression) => {
             execute_program_return_expression_paths(state, expression, assumptions, budget)?
+        }
+        ProgramStatement::ThrowOpaque(payload_type) => {
+            let outcome = if payload_type.is_enum() {
+                StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
+            } else if let Some(refusal) = return_authority_refusal(state) {
+                refusal
+            } else {
+                let variable = budget.allocate_kernel_variable()?;
+                StatementOutcome::Throw {
+                    value: crate::kernel::functions::symbolic_call_result(
+                        ProgramType::Parameter(*payload_type),
+                        variable,
+                    )
+                    .into(),
+                    state: Box::new(state.clone()),
+                }
+            };
+            vec![StatementExecutionPath::new(
+                outcome,
+                Vec::new().into(),
+                Vec::new(),
+            )]
         }
         ProgramStatement::Throw(expression) => {
             let mut paths = Vec::new();

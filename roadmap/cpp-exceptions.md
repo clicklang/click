@@ -10,10 +10,16 @@ cold checking and retained-session replay. `throws int32` and exact opaque
 exits. The selected constructor profile authenticates its declaration and
 records allocation-failure termination as a library assumption.
 
+Ordinary user-defined aggregate exceptions now use the `typed` profile and
+resolved `throws T` names. Trivial aggregate prvalues and empty tags propagate
+with opaque payloads; initializer reads and arithmetic remain checked. The
+regressions cover qualified names, exact nominal type separation, borrowed
+memory, expansion and retained checking.
+
 Still pending: `SpanReader::read`, decoded serialization through that real
-reader, and exact/base-class typed catches. Resource transitions, general
-exception classes and full C++ unwinding remain refused. No false acceptance
-is known.
+reader, and exact/base-class typed catches. User constructors, lvalue throws,
+nontrivial exception classes, resource transitions and full C++ unwinding
+remain refused. No false acceptance is known.
 
 ## Motivation
 

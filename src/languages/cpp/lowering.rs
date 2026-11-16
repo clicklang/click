@@ -1305,6 +1305,7 @@ impl LoweringContext<'_> {
             | CppStatement::ReturnCall { .. }
             | CppStatement::Throw { .. }
             | CppStatement::ThrowIosFailure { .. }
+            | CppStatement::ThrowAggregate { .. }
             | CppStatement::TryCatchInt32 { .. }
             | CppStatement::Scope { .. }
             | CppStatement::If { .. }
@@ -1566,6 +1567,36 @@ impl LoweringContext<'_> {
                     &state.exit(0).collect::<Vec<_>>(),
                     &state.exit(unwind_base).collect::<Vec<_>>(),
                 )
+            }
+            CppStatement::ThrowAggregate {
+                value_type, fields, ..
+            } => {
+                let CppType::Record { name, .. } = value_type else {
+                    unreachable!("checked aggregate exception")
+                };
+                let mut operation = self.lower_throwing_statement(
+                    ProgramStatement::ThrowOpaque(super::names::opaque_exception_type(name)),
+                    state.exit(unwind_base),
+                )?;
+                // Braced aggregate initialization is sequenced left to right.
+                // Discarding an opaque field never discards its reads or UB checks.
+                let initializers = fields
+                    .iter()
+                    .map(|field| self.lower_expression(&field.value))
+                    .collect::<Result<Vec<_>, _>>()?;
+                for expression in initializers.into_iter().rev() {
+                    operation = program_seq(
+                        ProgramStatement::StepValue {
+                            aggregate_layout: None,
+                            steps: Vec::new(),
+                            expression,
+                            value_type: None,
+                            pointee_constant: false,
+                        },
+                        operation,
+                    );
+                }
+                Ok(operation)
             }
             CppStatement::ThrowIosFailure { .. } => {
                 let capture = self.fresh_call_capture()?;

@@ -1493,7 +1493,8 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
         ProgramStatement::Switch { cases, .. } => cases
             .iter()
             .find_map(|case| kernel_loop_by_index(&case.body, target, next_loop_index)),
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break

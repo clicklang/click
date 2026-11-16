@@ -568,6 +568,17 @@ impl Metadata<'_> {
                 CppStatement::Unreachable { span } | CppStatement::ThrowIosFailure { span, .. } => {
                     span
                 }
+                CppStatement::ThrowAggregate {
+                    value_type,
+                    fields,
+                    span,
+                } => {
+                    self.value_type(value_type)?;
+                    for field in fields {
+                        self.expression(&field.value)?;
+                    }
+                    span
+                }
                 CppStatement::Throw { value, span }
                 | CppStatement::Assume {
                     condition: value,

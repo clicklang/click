@@ -111,7 +111,8 @@ pub(super) fn statement_expressions<'a>(
         ProgramStatement::Update { operand, .. } => expressions.push((operand, false)),
         ProgramStatement::ForStep { step, .. } => statement_expressions(step, expressions),
         ProgramStatement::Seq(statements) => statement_expressions(statements.first(), expressions),
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::Break

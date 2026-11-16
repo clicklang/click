@@ -81,7 +81,8 @@ fn children_all(
             try_body, handler, ..
         } => visit(try_body) && visit(handler),
         ProgramStatement::ForStep { step, .. } => visit(step),
-        ProgramStatement::Skip
+        ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
         | ProgramStatement::EndAutomaticLifetimes { .. }

@@ -154,6 +154,14 @@ resource-return and loan-recovery operations. Outcome claim cells keep borrowed
 resource ensures open on throws instead of marking every normal-family cell
 vacuous. Named callback refinement remains pure `int32`.
 
+The `typed` profile also admits ordinary trivial aggregate prvalues and
+empty exception tags. It evaluates explicit scalar field initializers in
+source order through ordinary value steps, then `ThrowOpaque` allocates a
+fresh value of the imported nominal type and returns the current state.
+Class types use an elaborated `struct Name` identity distinct from generic
+type parameters. Construction has no trusted user-constructor contract;
+nontrivial copying, destruction and class handlers remain refused.
+
 C++ void fallthrough lowers to an explicit kernel return, as C void fallthrough
 does. This gives a final maybe-throwing call a normal continuation for `outcomes`
 without adding a statement to the original source.

@@ -375,6 +375,20 @@ bodies, nontrivial user cleanup, typed class catches, base-class matching,
 rethrow, message inspection and general class exceptions remain refused.
 The existing `normal_only` and `scalar_int32` profiles retain their rules.
 
+A source may select `"exception_behavior": "typed"`, with `"exceptions": true`,
+for ordinary user-defined exception aggregates. `throw Error{code}` constructs
+an opaque value of that exact imported class; `throws Error` (including a
+qualified name such as `errors::ParseError`) names it in the sidecar. The
+class must be a trivially copyable aggregate with trivial destruction, no
+bases, and supported scalar fields. Empty tags such as `struct End {};` are
+also supported. Every field must have an explicit initializer; its reads and
+arithmetic definedness are checked in source order even though the payload
+fields cannot be inspected. Construction and copying need no user-constructor
+axiom. Scalar `int32` throws also work in this profile. A pinned
+`std::ios_base::failure` construction still requires its library assertion.
+User constructors, lvalue throws, nontrivial cleanup, class catches, rethrow
+and user `noexcept` bodies remain refused.
+
 A source's separate `"exception_behavior": "scalar_int32"` requires
 `"exceptions": true`. Its locked artifact may contain a source `throw` of a
 typed `int` payload in an object-free function; the importer lowers that node

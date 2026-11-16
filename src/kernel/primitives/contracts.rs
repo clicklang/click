@@ -3582,7 +3582,7 @@ impl FunctionContract {
 
 fn statement_contains_internal_throw(statement: &ProgramStatement) -> bool {
     match statement {
-        ProgramStatement::Throw(_) => true,
+        ProgramStatement::Throw(_) | ProgramStatement::ThrowOpaque(_) => true,
         ProgramStatement::ForStep { step, .. } => statement_contains_internal_throw(step),
         ProgramStatement::Seq(statements) => statements
             .iter()

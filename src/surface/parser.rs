@@ -5878,36 +5878,24 @@ impl Parser {
         };
         let exceptional_type = if self.peek_ident() == Some("throws") {
             self.position += 1;
-            if self
-                .peek_ident()
-                .is_some_and(|name| name == "std" || name == "std::ios_base::failure")
+            let parsed = self.parse_type()?;
+            if parsed.constant
+                || parsed.pointee_constant
+                || parsed.reference
+                || parsed.struct_pointer
             {
-                let mut name = self.expect_ident("exception class")?;
-                while self.peek() == Some(&Token::ColonColon) {
-                    self.position += 1;
-                    name.push_str("::");
-                    name.push_str(&self.expect_ident("exception class component")?);
-                }
-                if name != "std::ios_base::failure" {
+                return Err(self.error("an exception payload is an unqualified value type"));
+            }
+            match (parsed.interface_type, parsed.struct_name) {
+                (_, Some(name)) if self.verifies_cpp() => Some(InterfaceType::Parameter(
+                    crate::languages::cpp::names::opaque_exception_type(&name),
+                )),
+                (ty @ (InterfaceType::Int32 | InterfaceType::Parameter(_)), None) => Some(ty),
+                _ => {
                     return Err(self.error(
-                        "the supported opaque exception class is `std::ios_base::failure`",
+                        "the exceptional payload must be int32 or a resolved opaque value type",
                     ));
                 }
-                Some(InterfaceType::Parameter(
-                    crate::kernel::TypeParameterName::intern(&name),
-                ))
-            } else {
-                let parsed = self.parse_type()?;
-                if parsed.constant
-                    || parsed.pointee_constant
-                    || parsed.struct_name.is_some()
-                    || parsed.interface_type != InterfaceType::Int32
-                {
-                    return Err(self.error(
-                        "the exceptional payload type must be `int32` or `std::ios_base::failure`",
-                    ));
-                }
-                Some(InterfaceType::Int32)
             }
         } else {
             None

@@ -369,3 +369,9 @@ mod tests {
         include!("../../scaling_tests/languages/cpp/names/tests.rs");
     }
 }
+
+/// Nominal exception sorts are distinct from generic type parameters with the
+/// same identifier. Their name is an existing, parseable elaborated type.
+pub(crate) fn opaque_exception_type(record: &str) -> crate::kernel::TypeParameterName {
+    crate::kernel::TypeParameterName::intern(&format!("struct {record}"))
+}

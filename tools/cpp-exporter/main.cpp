@@ -223,7 +223,7 @@ std::optional<Options> parse_options(int argc, const char **argv) {
         }
       }
     } else if (option == "--exception-behavior") {
-      if (value != "normal_only" && value != "scalar_int32" && value != "ios_failure") {
+      if (value != "normal_only" && value != "scalar_int32" && value != "ios_failure" && value != "typed") {
         llvm::errs() << "error: unsupported exception behavior `" << value << "`\n";
         return std::nullopt;
       }
@@ -568,9 +568,9 @@ private:
            "the supported C++ function must have a prototype");
       return std::nullopt;
     }
-    if (exception_behavior_ == "ios_failure" && prototype->isNothrow()) {
+    if ((exception_behavior_ == "ios_failure" || exception_behavior_ == "typed") && prototype->isNothrow()) {
       fail(declaration->getLocation(),
-           "user noexcept bodies are outside the ios_failure exception profile");
+           "user noexcept bodies are outside the opaque exception profiles");
       return std::nullopt;
     }
     if (exception_behavior_ == "scalar_int32" && prototype->isNothrow() &&
@@ -1745,6 +1745,59 @@ private:
     return Json(std::move(result));
   }
 
+  std::optional<Json> lower_typed_throw(const clang::CXXThrowExpr *statement,
+                                      const clang::FunctionDecl *function,
+                                      bool cleanup_effects = false) {
+    const clang::Expr *value = statement->getSubExpr();
+    if (!value) { fail(statement->getThrowLoc(), "rethrow is outside the typed exception profile"); return std::nullopt; }
+    const auto *record = value->getType()->getAsCXXRecordDecl();
+    if (record && record->getQualifiedNameAsString() == "std::ios_base::failure")
+      return lower_ios_failure_throw(statement);
+    if (!record || !value->isPRValue() || !record->isAggregate() ||
+        !record->isTriviallyCopyable() || !record->hasTrivialDestructor() ||
+        record->getNumBases() != 0 || record->isPolymorphic() || cleanup_effects) {
+      fail(statement->getThrowLoc(), "typed class throws require an aggregate prvalue with trivial copying/destruction and no cleanup effects");
+      return std::nullopt;
+    }
+    value = value->IgnoreParenImpCasts();
+    if (const auto *cast = llvm::dyn_cast<clang::CXXFunctionalCastExpr>(value))
+      value = cast->getSubExpr()->IgnoreParenImpCasts();
+    const auto *list = llvm::dyn_cast<clang::InitListExpr>(value);
+    const auto *written = list && list->getSyntacticForm() ? list->getSyntacticForm() : list;
+    const unsigned count = std::distance(record->field_begin(), record->field_end());
+    if (!list || !written || written->getNumInits() != count || has_stateless_field(record)) {
+      fail(statement->getThrowLoc(), "aggregate throws require one explicit initializer per field");
+      return std::nullopt;
+    }
+    auto type = lower_type(statement->getSubExpr()->getType().getUnqualifiedType(), statement->getThrowLoc());
+    if (!type) return std::nullopt;
+    llvm::json::Array fields;
+    unsigned index = 0;
+    for (const auto *field : record->fields()) {
+      if (field->getType()->isRecordType() || field->getType()->isArrayType() || field->getType()->isReferenceType()) {
+        fail(field->getLocation(), "opaque aggregate exception fields require supported scalar values"); return std::nullopt;
+      }
+      auto expression = lower_expression(list->getInit(index), function);
+      if (!expression) return std::nullopt;
+      llvm::json::Object reference;
+      reference["record_declaration_id"] = declaration_id(record);
+      reference["declaration_id"] = declaration_id(field);
+      reference["name"] = field->getNameAsString();
+      reference["span"] = span(field->getSourceRange());
+      llvm::json::Object initializer;
+      initializer["field"] = std::move(reference);
+      initializer["value"] = std::move(*expression);
+      initializer["span"] = span(written->getInit(index++)->getSourceRange());
+      fields.push_back(std::move(initializer));
+    }
+    llvm::json::Object result;
+    result["kind"] = "throw_aggregate";
+    result["value_type"] = std::move(*type);
+    result["fields"] = std::move(fields);
+    result["span"] = span(statement->getSourceRange());
+    return Json(std::move(result));
+  }
+
   std::optional<Json> lower_statement(const clang::Stmt *statement,
                                       const clang::FunctionDecl *function,
                                       bool allow_local_declaration,
@@ -1775,9 +1828,10 @@ private:
       return Json(std::move(result));
     }
     if (const auto *cleanups = llvm::dyn_cast<clang::ExprWithCleanups>(statement)) {
-      if (exception_behavior_ == "ios_failure")
-        if (const auto *throwing = llvm::dyn_cast<clang::CXXThrowExpr>(cleanups->getSubExpr()))
-          return lower_ios_failure_throw(throwing);
+      if (const auto *throwing = llvm::dyn_cast<clang::CXXThrowExpr>(cleanups->getSubExpr())) {
+        if (exception_behavior_ == "typed") return lower_typed_throw(throwing, function, cleanups->cleanupsHaveSideEffects());
+        if (exception_behavior_ == "ios_failure") return lower_ios_failure_throw(throwing);
+      }
       const auto *call = llvm::dyn_cast<clang::CallExpr>(cleanups->getSubExpr());
       const auto *callee = call == nullptr ? nullptr : call->getDirectCallee();
       // A trivial record assignment still materializes the RHS temporary. Its
@@ -1801,10 +1855,13 @@ private:
     }
     if (const auto *throw_expression =
             llvm::dyn_cast<clang::CXXThrowExpr>(statement)) {
+      if (exception_behavior_ == "typed" && throw_expression->getSubExpr() != nullptr &&
+          !throw_expression->getSubExpr()->getType()->isSpecificBuiltinType(clang::BuiltinType::Int))
+        return lower_typed_throw(throw_expression, function);
       if (exception_behavior_ == "ios_failure" && throw_expression->getSubExpr() != nullptr &&
           !throw_expression->getSubExpr()->getType()->isSpecificBuiltinType(clang::BuiltinType::Int))
         return lower_ios_failure_throw(throw_expression);
-      if (exception_behavior_ != "scalar_int32" && exception_behavior_ != "ios_failure") {
+      if (exception_behavior_ != "scalar_int32" && exception_behavior_ != "ios_failure" && exception_behavior_ != "typed") {
         fail(throw_expression->getThrowLoc(),
              "throw expressions are outside the normal-only C++ profile");
         return std::nullopt;
@@ -5406,9 +5463,11 @@ private:
     bool has_state = false;
     for (const clang::FieldDecl *field : record->fields())
       has_state = has_state || !stateless_field(field);
-    // `field_empty` is kept as the first test: it is what refuses a record
-    // Clang has not completed, as it did before stateless members existed.
-    if ((record->field_empty() || !has_state) && record->getNumBases() == 0) {
+    // Complete empty records are usable as opaque exception tags. A record
+    // whose only fields were erased still has no supported storage layout.
+    if ((!record->isCompleteDefinition() ||
+         (record->field_empty() && exception_behavior_ != "typed") ||
+         (!record->field_empty() && !has_state)) && record->getNumBases() == 0) {
       fail(record->getLocation(),
            "the supported C++ record must contain at least one field");
       return false;

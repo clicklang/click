@@ -1998,7 +1998,8 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
                     .statement_steps
                     .saturating_add(scope.cleared_locals().len());
             }
-            ProgramStatement::Skip
+            ProgramStatement::ThrowOpaque(_)
+            | ProgramStatement::Skip
             | ProgramStatement::EndScalarReference(_)
             | ProgramStatement::EndAutomaticLifetimes { .. }
             | ProgramStatement::Break
