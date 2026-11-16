@@ -1761,13 +1761,15 @@ impl<'a> Proof<'a> {
                     // costs its introduced facts rather than its whole history.
                     let mut additional_facts = crate::kernel::ExecutionFacts::new();
                     for proposition in &introduced {
-                        let fact = ExecutionPureFact::new(proposition.clone());
-                        if !arm_case_facts.contains(&fact)
-                            && !path.facts().contains(&fact)
-                            && !path.effect_facts().contains(&fact)
-                            && !additional_facts.contains(&fact)
+                        // This is an ordinary logical introduction, not a new
+                        // producer record. An existing certified occurrence
+                        // already states it and retains its producer metadata.
+                        if !arm_case_facts.contains_proposition(proposition)
+                            && !path.facts().contains_proposition(proposition)
+                            && !path.effect_facts().contains_proposition(proposition)
+                            && !additional_facts.contains_proposition(proposition)
                         {
-                            additional_facts.push(fact);
+                            additional_facts.push(ExecutionPureFact::new(proposition.clone()));
                         }
                     }
                     // Equal-looking outcomes can carry different checked case
