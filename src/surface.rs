@@ -8605,6 +8605,8 @@ struct ReportDetail {
     /// The prepared program's accessor spellings, retained for lazy reports.
     model_accessors: Option<diagnostics::CapturedModelAccessors>,
     missing_tactic_requirement: Option<String>,
+    /// Instantiated declared theorem prerequisite, for discovery diagnostics only.
+    missing_theorem_requirement: Option<String>,
     /// The Click declaration (a function block, named contract or theorem)
     /// this failure is about, when no C statement has run and no tactic has
     /// been checked: a contract that could not be set up at entry, or an
@@ -11320,6 +11322,20 @@ impl ClickError {
         std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).goal = Some(goal);
         self.rendered = std::sync::OnceLock::new();
         self
+    }
+
+    pub(in crate::surface) fn with_missing_theorem_requirement(mut self, fact: String) -> Self {
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default())
+            .missing_theorem_requirement = Some(fact);
+        self.rendered = std::sync::OnceLock::new();
+        self
+    }
+
+    pub(in crate::surface) fn missing_theorem_requirement(&self) -> Option<&str> {
+        self.report_detail
+            .as_ref()?
+            .missing_theorem_requirement
+            .as_deref()
     }
 
     pub(in crate::surface) fn unresolved_requirement(&self) -> Option<&UnresolvedRequirement> {

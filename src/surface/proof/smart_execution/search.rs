@@ -1138,7 +1138,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         &[],
                         &[],
                         &requirement,
-                    ),
+                    )
+                    .0,
                     crate::surface::proof::theorem_application::requirement_search_miss(
                         &crate::surface::printing::source_click_proposition(&surface)
                     )

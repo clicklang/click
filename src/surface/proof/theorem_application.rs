@@ -338,19 +338,21 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         }) && !mirrored_order_listed()
             && !matches!(normalize_proposition(&lowered), NormalizedProposition::True)
         {
-            return Err(theorem_application_error(
-                claim_label,
-                path_index,
-                tactic_index,
-                describe_unavailable_theorem_requirement(
-                    theorem.name(),
-                    requirement_index,
-                    requirement,
-                    theorem.parameters(),
-                    &requirement_source_bindings(&theorem, application),
-                    &lowered,
-                ),
-            ));
+            let (message, fact) = describe_unavailable_theorem_requirement(
+                theorem.name(),
+                requirement_index,
+                requirement,
+                theorem.parameters(),
+                &requirement_source_bindings(&theorem, application),
+                &lowered,
+            );
+            return Err(
+                theorem_application_error(claim_label, path_index, tactic_index, message)
+                    .with_missing_theorem_requirement(format!(
+                        "theorem `{}` needs listed prerequisite `{fact}`",
+                        theorem.name()
+                    )),
+            );
         }
         // A range premise states two things, and the theorem's own proof
         // assumed both: that `a..b` is a valid 32-bit byte extent, and that
@@ -464,7 +466,7 @@ pub(super) fn describe_unavailable_theorem_requirement(
     parameters: &[FunctionParameter],
     bindings: &[(String, ContractExpression)],
     lowered: &Proposition,
-) -> String {
+) -> (String, String) {
     // Substitute the actual written arguments rather than asking a kernel
     // load to recover the program point selector the author already supplied. A
     // native comparison keeps its observations, so the instantiation reads
@@ -484,13 +486,14 @@ pub(super) fn describe_unavailable_theorem_requirement(
             )
         })
         .collect::<Vec<_>>();
-    describe_unavailable_theorem_requirement_spelled(
+    let message = describe_unavailable_theorem_requirement_spelled(
         theorem_name,
         requirement_index,
         requirement,
         &names,
         &instantiation,
-    )
+    );
+    (message, instantiation)
 }
 
 /// [`describe_unavailable_theorem_requirement`] with the instantiation

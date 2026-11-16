@@ -9530,7 +9530,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_single_theorem_using");
-        let goal = search_input.surface_goal()?;
+        use crate::surface::planning::theorems::TheoremConclusionMatch;
+        use attempt::SearchFailureKind;
+        let mut scope = attempt::search_scope("theorem discovery");
+        let mut matched = false;
+        let Some(goal) = search_input.surface_goal() else {
+            attempt::record_theorem_discovery_note(
+                SearchFailureKind::Unsupported,
+                "no surface goal is available for theorem discovery".into(),
+            );
+            return None;
+        };
         let environment = match search_input.context.as_ref() {
             ProofContext::Pure(context) => context.theorem_environment,
             ProofContext::FixedState(context) => context.theorem_environment,
@@ -9538,7 +9548,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         for candidate in environment.conclusion_candidates(goal) {
             if crate::instrumentation::deadline_exceeded_with_work(1) {
-                attempt::record_search_note("single theorem", "theorem discovery budget exhausted");
+                attempt::record_theorem_discovery_note(
+                    SearchFailureKind::Exhausted,
+                    "theorem discovery budget exhausted".into(),
+                );
                 return None;
             }
             if search_input
@@ -9549,11 +9562,32 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             }
             let definition = environment.get(&candidate.name)?;
-            for application in crate::surface::planning::theorems::match_theorem_conclusion(
+            for outcome in crate::surface::planning::theorems::theorem_conclusion_matches(
                 definition,
                 candidate.ensure,
                 goal,
             ) {
+                matched = true;
+                let application = match outcome {
+                    TheoremConclusionMatch::Application(application) => application,
+                    TheoremConclusionMatch::UndeterminedArgument(name) => {
+                        attempt::record_theorem_discovery_note(
+                            SearchFailureKind::UndeterminedArgument,
+                            format!(
+                                "theorem `{}`: argument `{name}` cannot be inferred from the goal; supply it with explicit apply(...) using {{ ... }}",
+                                candidate.name
+                            ),
+                        );
+                        continue;
+                    }
+                    TheoremConclusionMatch::Exhausted => {
+                        attempt::record_theorem_discovery_note(
+                            SearchFailureKind::Exhausted,
+                            "theorem discovery budget exhausted".into(),
+                        );
+                        return None;
+                    }
+                };
                 let step = ProofStep::ApplyTheoremUsing {
                     application,
                     premises: surfaces.to_vec(),
@@ -9562,6 +9596,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     attempt::candidate_outcome(search_input.driver().apply_step(step)).ok()?
                 {
                     if proof.is_complete() || proof.focused_discharged() {
+                        scope.succeed();
                         return Some(proof);
                     }
                     // The matched conclusion may use the opposite comparison
@@ -9572,10 +9607,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             .ok()?
                         && (closed.is_complete() || closed.focused_discharged())
                     {
+                        scope.succeed();
                         return Some(closed);
                     }
                 }
             }
+        }
+        // Index lookup can spend the remaining work even when its bucket is
+        // empty. Observe that exhaustion without charging another checkpoint.
+        if crate::instrumentation::deadline_exceeded_with_work(0) {
+            attempt::record_theorem_discovery_note(
+                SearchFailureKind::Exhausted,
+                "theorem discovery budget exhausted".into(),
+            );
+        } else if !matched {
+            attempt::record_theorem_discovery_note(
+                SearchFailureKind::NoMatch,
+                "no available theorem conclusion matched the goal in the supported structural fragment".into(),
+            );
         }
         None
     }

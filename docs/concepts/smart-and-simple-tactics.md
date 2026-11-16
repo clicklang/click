@@ -32,6 +32,13 @@ work expands into simple tactics:
   adds arithmetic's reason. Theorem discovery infers arguments from a
   structurally matching conclusion and checks prerequisites against only the
   listed facts. It expands to ordinary `apply(...) using { ... }`.
+  A failed discovery reports a bounded sample from candidates already examined:
+  a missing listed prerequisite (instantiated with the inferred arguments), an
+  argument the goal does not determine (use explicit `apply`), no conclusion
+  matching the supported structural fragment, or exhausted search work. A
+  structural miss does not mean that no theorem could prove the goal; discovery
+  does not invent witnesses or chain applications. Successful search discards
+  failed alternatives' explanations.
   Integer composition expands to ordinary `have`, `apply(...) using`, and
   explicit normalization steps. Arithmetic families still awaiting migration
   use `arithmetic_certificate`.

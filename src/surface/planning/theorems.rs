@@ -226,14 +226,33 @@ impl TheoremConclusionIndex {
     }
 }
 
-/// Lazy structural matches, including both orientations of symmetric
-/// comparisons. Keep alternatives so later occurrences and listed theorem
-/// prerequisites can disambiguate the argument assignment.
+/// Outcomes from the existing structural walk; no additional candidate search.
+pub(in crate::surface) enum TheoremConclusionMatch<'a> {
+    Application(TheoremApplication),
+    UndeterminedArgument(&'a str),
+    Exhausted,
+}
+
+#[cfg(test)]
 pub(in crate::surface) fn match_theorem_conclusion<'a>(
     theorem: &'a TheoremDefinition,
     ensure: usize,
     goal: &'a ClickProposition,
 ) -> impl Iterator<Item = TheoremApplication> + 'a {
+    theorem_conclusion_matches(theorem, ensure, goal).filter_map(|outcome| match outcome {
+        TheoremConclusionMatch::Application(application) => Some(application),
+        _ => None,
+    })
+}
+
+/// Lazy structural matches, including both orientations of symmetric
+/// comparisons. Keep alternatives so later occurrences and listed theorem
+/// prerequisites can disambiguate the argument assignment.
+pub(in crate::surface) fn theorem_conclusion_matches<'a>(
+    theorem: &'a TheoremDefinition,
+    ensure: usize,
+    goal: &'a ClickProposition,
+) -> impl Iterator<Item = TheoremConclusionMatch<'a>> + 'a {
     use ClickProposition as P;
     use ContractExpression as E;
     #[derive(Clone, Copy)]
@@ -267,7 +286,7 @@ pub(in crate::surface) fn match_theorem_conclusion<'a>(
             while let Some(pair) = pending.pop() {
                 if crate::instrumentation::deadline_exceeded_with_work(1) {
                     alternatives.clear();
-                    return None;
+                    return Some(TheoremConclusionMatch::Exhausted);
                 }
                 match pair {
                     Pair::Proposition(pattern, actual) => match (pattern, actual) {
@@ -293,7 +312,7 @@ pub(in crate::surface) fn match_theorem_conclusion<'a>(
                                     arguments.len() + pending.len() + 1,
                                 ) {
                                     alternatives.clear();
-                                    return None;
+                                    return Some(TheoremConclusionMatch::Exhausted);
                                 }
                                 let mut reversed = pending.clone();
                                 reversed
@@ -440,21 +459,25 @@ pub(in crate::surface) fn match_theorem_conclusion<'a>(
                     }
                 }
             }
-            if let Some(arguments) = theorem
-                .parameters()
-                .iter()
-                .map(|parameter| {
-                    arguments
-                        .get(parameter.name())
-                        .map(|expression| (*expression).clone())
-                })
-                .collect::<Option<Vec<_>>>()
-            {
-                return Some(TheoremApplication {
-                    name: theorem.name().into(),
-                    arguments,
-                });
-            }
+            return Some(
+                match theorem
+                    .parameters()
+                    .iter()
+                    .map(|parameter| {
+                        arguments
+                            .get(parameter.name())
+                            .map(|expression| (*expression).clone())
+                            .ok_or(parameter.name())
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(arguments) => TheoremConclusionMatch::Application(TheoremApplication {
+                        name: theorem.name().into(),
+                        arguments,
+                    }),
+                    Err(name) => TheoremConclusionMatch::UndeterminedArgument(name),
+                },
+            );
         }
         None
     })
