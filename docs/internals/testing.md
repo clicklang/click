@@ -1866,7 +1866,8 @@ artifact. `an_expansion_that_does_more_work_fails_the_comparison_deterministical
 and `an_audit_under_cpu_load_spends_the_same_work` pin both directions.
 
 Each phase has a deterministic work budget: `--session-work-limit` (default
-100 million units), `--expansion-work-limit` and `--verification-work-limit`
+100 million units, spent separately by each source's smart-site inventory
+and session initialization), `--expansion-work-limit` and `--verification-work-limit`
 (default 50 million each). On 2026-09-26 the largest session measured was
 `examples/arena`'s at 6.5 million units, and the largest expansion or
 proof-unit verification under half a million. A process's first verification
@@ -1888,7 +1889,7 @@ prints a restart of the same selection, preserving any supplied cursor.
 
 | Option | Default | Bounds |
 | --- | --- | --- |
-| `--session-work-limit` | 100000000 | work of original-sidecar session initialization |
+| `--session-work-limit` | 100000000 | work of one source's smart-site inventory, and of its original-sidecar session initialization |
 | `--expansion-work-limit` | 50000000 | work of one expansion, and of the re-expansion check |
 | `--verification-work-limit` | 50000000 | work of one retained or cold proof-unit verification |
 | `--performance-slack` | 10000 | minimum expanded-over-original work increase, beside the 2x ratio |

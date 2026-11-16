@@ -2085,7 +2085,7 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
                 pending.push(then_branch);
                 pending.push(else_branch);
             }
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 condition, body, ..
             } => {
                 cost.add_expression(program_expression_source_steps(condition));

@@ -5744,7 +5744,8 @@ pub enum ProgramStatement {
         aggregate_steps: Vec<u32>,
         condition: ProgramExpression,
     },
-    While {
+    /// Shared loop form for structured loops and checked natural cycles.
+    Loop {
         condition: ProgramExpression,
         invariant: Vec<Proposition>,
         invariant_checks: Vec<LoopInvariantCheck>,

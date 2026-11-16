@@ -1445,7 +1445,7 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
             collect_address_taken_locals(then_branch, names);
             collect_address_taken_locals(else_branch, names);
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition, body, ..
         } => {
             escapes(condition);
@@ -1778,7 +1778,7 @@ fn statement_calls_visiting(
             statement_calls_visiting(then_branch, calls, visit);
             statement_calls_visiting(else_branch, calls, visit);
         }
-        ProgramStatement::While { body, .. } => statement_calls_visiting(body, calls, visit),
+        ProgramStatement::Loop { body, .. } => statement_calls_visiting(body, calls, visit),
         ProgramStatement::Switch {
             expression: _,
             cases,
@@ -1850,7 +1850,7 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
             statement_declared_variables(then_branch, names);
             statement_declared_variables(else_branch, names);
         }
-        ProgramStatement::While { body, .. } => statement_declared_variables(body, names),
+        ProgramStatement::Loop { body, .. } => statement_declared_variables(body, names),
         ProgramStatement::Switch { cases, .. } => {
             for case in cases {
                 statement_declared_variables(&case.body, names);
@@ -1920,7 +1920,7 @@ fn weakest_lower_bound(paths: Vec<i64>) -> Vec<i64> {
 /// empty list, which is right for a loop body, where the loop discards its
 /// body's answer anyway, and wrong for a `switch`, where it is the ordinary
 /// way a case ends. An empty list then propagates: `Seq` keeps it empty, and
-/// `If` and `While` iterate over it, so every later branch and loop body in
+/// `If` and `Loop` iterate over it, so every later branch and loop body in
 /// the function went unwalked.
 struct WalkPaths<P> {
     continuing: Vec<P>,
@@ -2051,7 +2051,7 @@ fn walk_termination_paths<W: TerminationWalk>(
                 broken: walk.join(broken),
             })
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition, body, ..
         } => {
             // A `break` in the body lands where the loop's own exit lands,
@@ -3498,7 +3498,7 @@ fn collect_loops_in_order<'a>(
 ) {
     charge_termination_work(1);
     match statement {
-        ProgramStatement::While { body, .. } => {
+        ProgramStatement::Loop { body, .. } => {
             loops.push(statement);
             collect_loops_in_order(body, loops);
         }
@@ -3586,13 +3586,13 @@ fn same_statement_shape(left: &ProgramStatement, right: &ProgramStatement) -> bo
                 && same_statement_shape(left_else, right_else)
         }
         (
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 condition: left_condition,
                 do_while: left_do_while,
                 body: left_body,
                 ..
             },
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 condition: right_condition,
                 do_while: right_do_while,
                 body: right_body,
@@ -3777,7 +3777,7 @@ fn canonical_ranking_term(term: &MachineTerm) -> MachineTerm {
 fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a ProgramStatement>) {
     charge_termination_work(1);
     match statement {
-        ProgramStatement::While { body, .. } => {
+        ProgramStatement::Loop { body, .. } => {
             loops.push(statement);
             collect_loops(body, loops);
         }
@@ -3884,7 +3884,7 @@ fn independent_loop_exit_evidence(
             if ruled_loops.contains(index) {
                 return false;
             }
-            let ProgramStatement::While {
+            let ProgramStatement::Loop {
                 invariant,
                 invariant_checks,
                 effect_checks,
@@ -3960,7 +3960,7 @@ fn loops_executed_to_exit(
 
 fn contains_natural_control_loop(statement: &ProgramStatement) -> bool {
     match statement {
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             backedge_target: Some(_),
             ..
         } => true,
@@ -4036,7 +4036,7 @@ fn visit_loop_obligations(
             visit_loop_obligations(try_body, next_index, visit)?;
             visit_loop_obligations(handler, next_index, visit)
         }
-        ProgramStatement::While { body, .. } => {
+        ProgramStatement::Loop { body, .. } => {
             let index = *next_index;
             *next_index += 1;
             visit_loop_obligations(body, next_index, visit)?;
@@ -4406,7 +4406,7 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
             statement_function_addresses(then_branch, taken);
             statement_function_addresses(else_branch, taken);
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             condition, body, ..
         } => {
             visit(condition);
@@ -4658,7 +4658,7 @@ fn self_call_loop_indices(
                 found.extend(enclosing.iter().copied());
             }
         }
-        ProgramStatement::While { body, .. } => {
+        ProgramStatement::Loop { body, .. } => {
             let index = *next_index;
             *next_index += 1;
             enclosing.push(index);
@@ -5039,7 +5039,7 @@ mod address_escape_tests {
             then_branch: Box::new(ProgramStatement::Skip),
             else_branch: Box::new(escape),
         };
-        let body = ProgramStatement::While {
+        let body = ProgramStatement::Loop {
             ranking_measures: Vec::new(),
             structural_measure: None,
             condition: variable("c"),
@@ -6785,7 +6785,7 @@ mod local_descent_tests {
     fn self_call_in_loop_rule(name: &str) -> VerifiedFunctionRule {
         let body = ProgramStatement::seq(
             Arc::new(ProgramStatement::Skip),
-            Arc::new(ProgramStatement::While {
+            Arc::new(ProgramStatement::Loop {
                 condition: crate::kernel::program_expression::int32_literal(1),
                 invariant: vec![Proposition::ConditionIs(
                     ConditionTerm::Constant(true),
@@ -6858,7 +6858,7 @@ mod local_descent_tests {
         let function = self_call_in_loop_rule("drain").function;
         let first = loop_rule_for(&function, None);
         let mut second = first.clone();
-        let ProgramStatement::While {
+        let ProgramStatement::Loop {
             ranking_measures, ..
         } = &mut second.loop_statement
         else {
@@ -6896,7 +6896,7 @@ mod local_descent_tests {
             )
             .unwrap();
         }
-        let ProgramStatement::While {
+        let ProgramStatement::Loop {
             ranking_measures, ..
         } = &mut second.loop_statement
         else {

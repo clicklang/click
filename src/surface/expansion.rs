@@ -2160,7 +2160,7 @@ fn returning_then_arms(statement: &ProgramStatement) -> BTreeSet<usize> {
                 }
                 then_returns.zip(else_returns).map(|(a, b)| a && b)
             }
-            ProgramStatement::While { body, .. } => {
+            ProgramStatement::Loop { body, .. } => {
                 visit(body, index, returns, catches_exceptions);
                 None
             }
