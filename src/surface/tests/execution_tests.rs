@@ -2592,3 +2592,25 @@ test_batches! {
         a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name,
     ],
 }
+
+/// Two paths reaching equal states are named separately: each recorded name
+/// is found by its own path's point, whatever the memories hold.
+#[test]
+fn recorded_points_are_named_by_the_point_each_path_reached() {
+    let start = ExecutionState::new().with_memory(crate::kernel::Memory::new());
+    let left = start.clone().with_memory(crate::kernel::Memory::new());
+    let right = start.with_memory(crate::kernel::Memory::new());
+    assert_eq!(left, right);
+    let mut states = RecordedStates::default();
+    states.insert(ProgramPointSelector::Mark("left".into()), left.clone());
+    states.insert(ProgramPointSelector::Mark("right".into()), right.clone());
+    let name = |state: &ExecutionState| states.point_name(state.reached_point().id().unwrap());
+    assert_eq!(
+        name(&left),
+        Some(&ProgramPointSelector::Mark("left".into()))
+    );
+    assert_eq!(
+        name(&right),
+        Some(&ProgramPointSelector::Mark("right".into()))
+    );
+}

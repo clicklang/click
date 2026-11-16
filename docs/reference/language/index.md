@@ -423,9 +423,10 @@ int32 drain(int32 box[4]) {
 }
 ```
 
-An expression measure is not an analysis of the body, and this is the one
-place the two function-level shapes differ. Click reads the declared
-expression once at the function's own entry, giving the value M0 the recursion
+Every numeric measure, including a bare parameter such as `decreases n`,
+creates ordinary call obligations rather than requesting an analysis of the
+body. Click reads the declared expression once at the function's own entry,
+giving the value M0 the recursion
 starts from, and again at each call to that function inside it, at the state
 the callee's preconditions are read at. The call then owes two ordinary
 verification conditions, which the proof discharges before its `step()`, just
@@ -453,8 +454,7 @@ changes — only the carrier the two obligations are stated in. The
 the C counts into the Integer the measure names. See
 `mdtests/c_decreases_integer_measure_recursion.md`.
 
-A bare parameter of another numeric type is an expression measure as well:
-only an `int32` parameter has the body analysis `decreases n` names, so
+A bare parameter of another numeric type uses the same call obligations:
 `decreases b` on a `uint32` parameter is ranked by the descent obligations
 above. Euclid's `gcd(b, a % b)` discharges `a % b < b` with
 `click::integer`'s `integer::uint32_remainder_less_than_divisor`
@@ -519,8 +519,8 @@ measure over a resource binder's model, such as `decreases links_len(x.model)`,
 is an expression measure too, so it ranks mutual structural recursion down a
 data structure
 (`mdtests/c_decreases_model_measure_mutual_recursion.md`).
-`decreases <int32 parameter>`, whose analysis reads the body rather than the
-call steps, also ranks that shape. A self-recursive `static inline` helper
+A bare `int32` parameter uses those same call obligations. A self-recursive
+`static inline` helper
 with a contract is called through its contract, so an expression measure
 ranks it like any function
 (`mdtests/inline_helper_expression_measure_recursion.md`).
@@ -537,8 +537,8 @@ int32 tree_depth_ok(struct node* root) {
 }
 ```
 
-The declaration must exactly name an owned or viewed entry resource, or one of
-the contract's own resource binders. The structural analysis supports
+An anonymous resource measure such as `decreases list(node)` must exactly
+name an owned or viewed entry resource. Its legacy structural analysis supports
 direct and mutual recursion, a directly recursive composite definition, and a
 simple resource guard: in a component of two or more, every member is ranked
 by the same resource family, and a call to another member must pass a direct
@@ -560,9 +560,9 @@ consume or mutate resources; postorder recursive deallocation is supported.
 This proves descent of the finite resource witness, not descent of a pointer
 value.
 
-In a recursive component of two or more, a binder measure is ranked at each
-call instead, as an expression measure is: every member declares `decreases`
-on one of its own binders, of a resource with a `match model` body, and the
+A named binder measure is ranked at every call, for both self-recursion and
+mutual recursion. Every member declares `decreases` on one of its own binders,
+of a resource with a `match model` body, and the
 instance a call passes for the callee's measured binder must hold a model
 strictly contained in the model the caller's binder held at its entry. The
 decision is the one a loop's `decreases` binder makes at its back edge: it
@@ -718,15 +718,14 @@ loop {
     invariant i >= 0;
 }
 ```
-The function-level `decreases <int32 parameter>` analysis still requires the
-parameter to be unchanged, and each recursive edge to pass `measure - K` for
-a positive constant `K`. Mutually recursive functions all declare their
-corresponding numeric parameter. Any other descent, such as `gcd(b, a % b)`,
-is written as an expression or tuple measure. Every variable mentioned by a numeric measure must also remain
-unaddressed: if its address is taken anywhere (`&measure`), a store through
-that pointer, directly or inside a callee, could change the measure without a
-ranked update, so the plan is rejected. Structural measures do not support
-mutual C recursion.
+A function-level numeric measure is compared with its immutable entry value.
+The C parameter may be reassigned or addressed; the actual call must still
+prove nonnegativity and strict descent. A decrement followed by a call on the
+updated parameter is valid
+(`mdtests/c_decreases_parameter_reassignment_descends.md`); an increment
+followed by `n - 1` leaves the entry value unchanged and is refused
+(`mdtests/c_decreases_rejects_updated_parameter.md`). Numeric loop measures
+retain their own address-escape restrictions.
 
 A loop may name one of its own resource binders instead of int32 components:
 `decreases sub;` on a loop that declares `owns sub: tree_at(cur);`. The rule at
@@ -3495,13 +3494,17 @@ A tactic may apply itself. That is what makes it more than an abbreviation: a
 recursive tactic covers a structure of symbolic size, such as converting a
 linked list of any length one node at a time, which no fixed sequence of
 `fold`s can. The recursive application is the induction hypothesis, so the
-tactic must be ranked by an expression `decreases` measure, written after the
-binders it reads (`decreases links_len(x.model);`). Each recursive application
+tactic must declare a `decreases` measure, written after the binders it reads
+(`decreases links_len(x.model);`). Each recursive application of a numeric measure
 owes the measure's descent as available facts: the measure at the
 application is nonnegative and smaller than at the tactic's entry
 (`mdtests/user_tactic_recursion_converts_a_list.md`). A recursion with no
-measure is refused, and so is a structural or parameter measure: those read
-recursive calls in a C body, and a tactic's recursion is in its proof.
+measure is refused. A bare numeric parameter uses the same obligations.
+A named structural binder (`decreases x;`) instead requires the passed
+instance's model to be strictly contained in its entry model, through the
+constructor arms established on the path
+(`mdtests/user_tactic_recursion_uses_a_structural_measure.md`). An anonymous
+resource measure still requires a C body and cannot rank tactic recursion.
 
 Tactic parameters use Click's `name: type` spelling and are C scalars and
 pointers in this release. The literal `0` supplies a typed null pointer at a

@@ -11250,7 +11250,7 @@ impl ExecutionProofCore {
                 produced.state.resources(),
             )?;
             let mut retained = produced.state.clone().with_resource_context(resources);
-            retained.memory = before_state.memory().clone();
+            retained.keep_memory_of(&before_state);
             retained.locals = before_state.locals().clone();
             retained.enclosing_frame_holds_locals = before_state.enclosing_frame_holds_locals;
             Arc::make_mut(&mut retained.population_effects).predicate_count_permissions =
@@ -11408,7 +11408,7 @@ impl ExecutionProofCore {
                 format!("return resource exchange changed its retained frame: {error}")
             })?;
         let mut retained_after_state = after_state.clone().with_resource_context(resources);
-        retained_after_state.memory = before_state.memory().clone();
+        retained_after_state.keep_memory_of(&before_state);
         retained_after_state.locals = before_state.locals().clone();
         retained_after_state.enclosing_frame_holds_locals =
             before_state.enclosing_frame_holds_locals;
@@ -11554,7 +11554,8 @@ impl ExecutionProofCore {
             old_reference,
         )?;
         let interface_effect_facts = branch.interface_effect_facts().clone();
-        let joined_state = branch.joined_state().clone();
+        let mut joined_state = branch.joined_state().clone();
+        joined_state.join_reached_points(arms[0].reached_state(), arms[1].reached_state());
         // The kernel recomputed the abstraction, so it also knows where the
         // abstraction left the counter. Installing that mark here is what
         // makes the successor's counter kernel-owned: a caller cannot take

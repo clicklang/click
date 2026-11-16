@@ -170,3 +170,57 @@ fn a_32_bit_equality_is_one_fact_at_either_signedness() {
         "lookup work grew with unrelated equalities: {samples:?}"
     );
 }
+
+#[test]
+fn arithmetic_evaluation_domains_do_not_force_unrelated_stated_facts() {
+    use crate::kernel::machine_integer::{Operation, definedness};
+    let format = MachineIntegerType::Int32;
+    let index = MachineTerm::Variable(Variable(880_000));
+    let exact = Operation::Add.exact(
+        IntegerTerm::from_machine(format, index.clone()).unwrap(),
+        IntegerTerm::constant(1.into()),
+    );
+    let [upper, lower] = definedness::ordinary_bounds(format, exact);
+    let goal = Proposition::And(Box::new(upper), Box::new(lower));
+    for mode in 0..4 {
+        let mut samples = Vec::new();
+        for count in [4, 16, 64] {
+            let mut context = PureFactContext::new();
+            if mode == 1 {
+                context = context
+                    .assume_condition(
+                        ConditionTerm::signed_less_equal(MachineTerm::constant(0), index.clone()),
+                        true,
+                    )
+                    .assume_condition(
+                        ConditionTerm::signed_less_equal(index.clone(), MachineTerm::constant(64)),
+                        true,
+                    );
+            } else if mode == 2 {
+                context = context.assume_proposition(goal.clone());
+            } else if mode == 3 {
+                let Proposition::And(first, second) = &goal else {
+                    unreachable!()
+                };
+                context = context
+                    .assume_proposition((**first).clone())
+                    .assume_proposition((**second).clone());
+            }
+            for offset in 0..count {
+                context = context.assume_proposition(requirement(890_000 + offset, "unrelated"));
+            }
+            // Deliberately leave the stated-proposition index cold.
+            let (established, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::ProofObligation::evaluation_requirement_is_established(
+                    &context, &goal,
+                )
+            });
+            assert_eq!(established, mode != 0);
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "mode={mode}: {samples:?}"
+        );
+    }
+}
