@@ -3686,7 +3686,11 @@ void symbolic(int32* p, const struct callbacks* cb) {
                 trace.contains("function `target#inline:callbacks.c`"),
                 "{trace}"
             );
-            assert!(trace.contains("table#file-static:callbacks.c"), "{trace}");
+            assert!(
+                trace.contains("\"callbacks.c\"::static(0).storage()"),
+                "{trace}"
+            );
+            assert!(!trace.contains("#file-static"), "{trace}");
         });
     }
 }

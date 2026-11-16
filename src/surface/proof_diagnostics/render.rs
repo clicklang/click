@@ -2394,6 +2394,9 @@ impl Renderer<'_> {
         }
         self.push("pointer(");
         match &p.block {
+            crate::kernel::PointerBlock::StaticObject { binding } => {
+                self.fmt(format_args!("{binding}.storage()"))
+            }
             crate::kernel::PointerBlock::AutomaticLocal { binding, instance } => {
                 self.fmt(format_args!("{binding} [{instance:?}]"))
             }

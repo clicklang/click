@@ -4957,6 +4957,7 @@ pub(super) fn describe_memory_block(
         }
     }
     match block {
+        PointerBlock::StaticObject { binding } => Some(binding.spelling().to_owned()),
         PointerBlock::AutomaticLocal { binding, .. } => binding.spelling().map(str::to_owned),
         // A block's spelling carries where the storage lives, which is the
         // verifier's business; the reader wrote only the name. `local:` covers
@@ -5085,7 +5086,10 @@ pub(in crate::surface) fn describe_pointer(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
-    if matches!(pointer.block, PointerBlock::AutomaticLocal { .. }) {
+    if matches!(
+        pointer.block,
+        PointerBlock::AutomaticLocal { .. } | PointerBlock::StaticObject { .. }
+    ) {
         return if pointer.offset == PointerOffsetTerm::Constant(0) {
             pointer.block.to_string()
         } else {
@@ -5710,7 +5714,9 @@ pub(super) fn describe_program_value(
         ProgramValue::Pointer(pointer)
             if matches!(
                 pointer.pointer().block,
-                PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. }
+                PointerBlock::StringLiteral { .. }
+                    | PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::StaticObject { .. }
             ) =>
         {
             let base = describe_pointer(pointer, parameter_binding);

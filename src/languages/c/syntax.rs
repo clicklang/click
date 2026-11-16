@@ -1,6 +1,9 @@
 //! C syntax import for the executable C model.
 
-use crate::kernel::{BindingDeclaration, BindingName, LocalBindingId, LocalFunctionId};
+use crate::kernel::{
+    BindingDeclaration, BindingName, LocalBindingId, LocalFunctionId, StaticBindingId,
+    StaticBindingMetadata, StaticBindingOwner,
+};
 use crate::languages::interface::pointer_array_element_type;
 use crate::languages::interface::record_value_type;
 
@@ -207,7 +210,7 @@ impl CStringLiteral {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CGlobal {
     name: String,
-    kernel_name: String,
+    kernel_name: BindingName,
     interface_type: InterfaceType,
     struct_name: Option<String>,
     initializer: Option<CExpression>,
@@ -231,7 +234,7 @@ impl CGlobal {
         struct_name: Option<String>,
     ) -> Self {
         Self {
-            kernel_name: name.clone(),
+            kernel_name: name.clone().into(),
             name,
             interface_type,
             struct_name,
@@ -253,7 +256,7 @@ impl CGlobal {
         initializer: CExpression,
     ) -> Self {
         Self {
-            kernel_name: name.clone(),
+            kernel_name: name.clone().into(),
             name,
             interface_type,
             struct_name,
@@ -270,7 +273,7 @@ impl CGlobal {
 
     fn file_static_definition(
         name: String,
-        kernel_name: String,
+        kernel_name: BindingName,
         interface_type: InterfaceType,
         struct_name: Option<String>,
         initializer: CExpression,
@@ -302,7 +305,7 @@ impl CGlobal {
         self
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -446,7 +449,7 @@ impl CGlobal {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CGlobalArray {
     name: String,
-    kernel_name: String,
+    kernel_name: BindingName,
     element_type: InterfaceType,
     length: Option<u32>,
     shape: Option<Vec<u32>>,
@@ -464,7 +467,7 @@ pub struct CGlobalArray {
 impl CGlobalArray {
     fn declaration(
         name: String,
-        kernel_name: String,
+        kernel_name: BindingName,
         element_type: InterfaceType,
         shape: Option<Vec<u32>>,
         incomplete_shape: Option<Vec<u32>>,
@@ -490,7 +493,7 @@ impl CGlobalArray {
 
     fn definition(
         name: String,
-        kernel_name: String,
+        kernel_name: BindingName,
         element_type: InterfaceType,
         shape: Vec<u32>,
         initializer: CArrayInitializer,
@@ -527,7 +530,7 @@ impl CGlobalArray {
         self
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -648,7 +651,7 @@ impl CGlobalArray {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CGlobalAggregate {
     name: String,
-    kernel_name: String,
+    kernel_name: BindingName,
     struct_name: String,
     layout: RecordLayout,
     initializer: Option<Vec<CAggregateInitializer>>,
@@ -665,7 +668,7 @@ pub struct CGlobalAggregate {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CGlobalAggregateArray {
     name: String,
-    kernel_name: String,
+    kernel_name: BindingName,
     struct_name: String,
     layout: RecordLayout,
     length: Option<u32>,
@@ -678,7 +681,7 @@ pub struct CGlobalAggregateArray {
 impl CGlobalAggregateArray {
     fn declaration(
         name: String,
-        kernel_name: String,
+        kernel_name: BindingName,
         struct_name: String,
         layout: RecordLayout,
         length: Option<u32>,
@@ -699,7 +702,7 @@ impl CGlobalAggregateArray {
 
     fn definition(
         name: String,
-        kernel_name: String,
+        kernel_name: BindingName,
         struct_name: String,
         layout: RecordLayout,
         length: u32,
@@ -723,7 +726,7 @@ impl CGlobalAggregateArray {
         &self.name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -830,7 +833,7 @@ impl CGlobalAggregateArray {
 impl CGlobalAggregate {
     fn declaration(
         name: String,
-        kernel_name: String,
+        kernel_name: BindingName,
         struct_name: String,
         layout: RecordLayout,
         file_static: bool,
@@ -850,7 +853,7 @@ impl CGlobalAggregate {
 
     fn definition(
         name: String,
-        kernel_name: String,
+        kernel_name: BindingName,
         struct_name: String,
         layout: RecordLayout,
         initializer: Vec<CAggregateInitializer>,
@@ -873,7 +876,7 @@ impl CGlobalAggregate {
         &self.name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -1180,7 +1183,7 @@ fn kernel_aggregate_initializer_value(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CStaticLocal {
     source_name: String,
-    kernel_name: String,
+    kernel_name: BindingName,
     interface_type: InterfaceType,
     initializer: CExpression,
     volatile: bool,
@@ -1195,7 +1198,7 @@ pub struct CStaticLocal {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CStaticArray {
     source_name: String,
-    kernel_name: String,
+    kernel_name: BindingName,
     element_type: InterfaceType,
     length: u32,
     shape: Vec<u32>,
@@ -1208,7 +1211,7 @@ pub struct CStaticArray {
 impl CStaticArray {
     fn new(
         source_name: String,
-        kernel_name: String,
+        kernel_name: BindingName,
         element_type: InterfaceType,
         length: u32,
         initializer: CArrayInitializer,
@@ -1243,7 +1246,7 @@ impl CStaticArray {
         self
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -1300,7 +1303,7 @@ impl CStaticArray {
 impl CStaticLocal {
     fn new(
         source_name: String,
-        kernel_name: String,
+        kernel_name: BindingName,
         interface_type: InterfaceType,
         initializer: CExpression,
     ) -> Self {
@@ -1320,7 +1323,7 @@ impl CStaticLocal {
         &self.source_name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -1738,7 +1741,7 @@ fn zero_initializer(interface_type: InterfaceType) -> CExpression {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CStaticAggregate {
     source_name: String,
-    kernel_name: String,
+    kernel_name: BindingName,
     struct_name: String,
     layout: RecordLayout,
     initializer: Vec<CAggregateInitializer>,
@@ -1751,7 +1754,7 @@ pub struct CStaticAggregate {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CStaticAggregateArray {
     source_name: String,
-    kernel_name: String,
+    kernel_name: BindingName,
     struct_name: String,
     layout: RecordLayout,
     length: u32,
@@ -1762,7 +1765,7 @@ pub struct CStaticAggregateArray {
 impl CStaticAggregateArray {
     fn new(
         source_name: String,
-        kernel_name: String,
+        kernel_name: BindingName,
         struct_name: String,
         layout: RecordLayout,
         length: u32,
@@ -1783,7 +1786,7 @@ impl CStaticAggregateArray {
         &self.source_name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -1839,7 +1842,7 @@ impl CStaticAggregateArray {
 impl CStaticAggregate {
     fn new(
         source_name: String,
-        kernel_name: String,
+        kernel_name: BindingName,
         struct_name: String,
         layout: RecordLayout,
         initializer: Vec<CAggregateInitializer>,
@@ -1858,7 +1861,7 @@ impl CStaticAggregate {
         &self.source_name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -3088,27 +3091,27 @@ pub struct CSyntaxError {
 }
 
 impl ImportedFunction {
-    pub fn static_locals(&self) -> &BTreeMap<String, CStaticLocal> {
+    pub fn static_locals(&self) -> &BTreeMap<BindingName, CStaticLocal> {
         &self.static_locals
     }
 
-    pub fn static_arrays(&self) -> &BTreeMap<String, CStaticArray> {
+    pub fn static_arrays(&self) -> &BTreeMap<BindingName, CStaticArray> {
         &self.static_arrays
     }
 
-    pub fn static_aggregates(&self) -> &BTreeMap<String, CStaticAggregate> {
+    pub fn static_aggregates(&self) -> &BTreeMap<BindingName, CStaticAggregate> {
         &self.static_aggregates
     }
 
-    pub fn static_aggregate_arrays(&self) -> &BTreeMap<String, CStaticAggregateArray> {
+    pub fn static_aggregate_arrays(&self) -> &BTreeMap<BindingName, CStaticAggregateArray> {
         &self.static_aggregate_arrays
     }
 
-    fn static_object_address(&self, name: &str) -> Option<StaticAddress> {
+    fn static_object_address(&self, name: &BindingName) -> Option<StaticAddress> {
         if let Some(global) = self
             .globals
             .values()
-            .find(|global| global.name() == name || global.kernel_name() == name)
+            .find(|global| name.is_named(global.name()) || global.kernel_name() == name)
         {
             return Some(StaticAddress {
                 extent: None,
@@ -3120,7 +3123,7 @@ impl ImportedFunction {
         if let Some(global_array) = self
             .global_arrays
             .values()
-            .find(|global| global.name() == name || global.kernel_name() == name)
+            .find(|global| name.is_named(global.name()) || global.kernel_name() == name)
         {
             let interface_type = global_array.complete_c_type()?;
             return Some(StaticAddress {
@@ -3133,7 +3136,7 @@ impl ImportedFunction {
         if let Some(global_aggregate) = self
             .global_aggregates
             .values()
-            .find(|global| global.name() == name || global.kernel_name() == name)
+            .find(|global| name.is_named(global.name()) || global.kernel_name() == name)
         {
             return Some(StaticAddress {
                 extent: None,
@@ -3145,7 +3148,7 @@ impl ImportedFunction {
         if let Some(global_aggregate_array) = self
             .global_aggregate_arrays
             .values()
-            .find(|global| global.name() == name || global.kernel_name() == name)
+            .find(|global| name.is_named(global.name()) || global.kernel_name() == name)
         {
             let interface_type = global_aggregate_array.complete_c_type()?;
             return Some(StaticAddress {
@@ -3157,11 +3160,9 @@ impl ImportedFunction {
                 constant: global_aggregate_array.is_constant(),
             });
         }
-        if let Some(static_local) = self
-            .static_locals
-            .values()
-            .find(|static_local| static_local.name() == name || static_local.kernel_name() == name)
-        {
+        if let Some(static_local) = self.static_locals.values().find(|static_local| {
+            name.is_named(static_local.name()) || static_local.kernel_name() == name
+        }) {
             return Some(StaticAddress {
                 extent: None,
                 pointer: crate::kernel::Memory::static_pointer(
@@ -3172,11 +3173,9 @@ impl ImportedFunction {
                 constant: static_local.is_constant(),
             });
         }
-        if let Some(static_array) = self
-            .static_arrays
-            .values()
-            .find(|static_array| static_array.name() == name || static_array.kernel_name() == name)
-        {
+        if let Some(static_array) = self.static_arrays.values().find(|static_array| {
+            name.is_named(static_array.name()) || static_array.kernel_name() == name
+        }) {
             return Some(StaticAddress {
                 extent: None,
                 pointer: crate::kernel::Memory::static_pointer(
@@ -3188,7 +3187,7 @@ impl ImportedFunction {
             });
         }
         if let Some(static_aggregate) = self.static_aggregates.values().find(|static_aggregate| {
-            static_aggregate.name() == name || static_aggregate.kernel_name() == name
+            name.is_named(static_aggregate.name()) || static_aggregate.kernel_name() == name
         }) {
             return Some(StaticAddress {
                 extent: None,
@@ -3203,7 +3202,7 @@ impl ImportedFunction {
         self.static_aggregate_arrays
             .values()
             .find(|static_aggregate_array| {
-                static_aggregate_array.name() == name
+                name.is_named(static_aggregate_array.name())
                     || static_aggregate_array.kernel_name() == name
             })
             .map(|static_aggregate_array| StaticAddress {
@@ -3231,7 +3230,7 @@ impl ImportedFunction {
                 constant: false,
                 extent: None,
             }),
-            CExpression::Variable(name) => self.static_object_address(name.named()?),
+            CExpression::Variable(name) => self.static_object_address(name),
             CExpression::Field {
                 pointer,
                 field_type,
@@ -7229,6 +7228,9 @@ impl CVariableStructs {
         if let Some(id) = name.local_id() {
             id.initialize_struct_name(&value);
         }
+        if let Some(id) = name.static_id() {
+            id.initialize_struct_name(&value);
+        }
         self.0.insert(name, value)
     }
 }
@@ -7291,7 +7293,8 @@ struct Parser {
     /// function. A call can only change an automatic scalar through such an
     /// escaped address; static-storage scalars are handled separately.
     address_taken_variables: BTreeSet<BindingName>,
-    next_scoped_name: u32,
+    next_static_binding: u32,
+    file_static_bindings: BTreeMap<String, StaticBindingId>,
     /// The number the next call inside an expression gets: its result is
     /// `CExpression::StepResult` with that number.
     next_call_result: u32,
@@ -7335,10 +7338,10 @@ struct Parser {
     global_aggregates: DeclarationMap<CGlobalAggregate>,
     global_aggregate_arrays: DeclarationMap<CGlobalAggregateArray>,
     referenced_external_objects: BTreeSet<String>,
-    static_locals: BTreeMap<String, CStaticLocal>,
-    static_arrays: BTreeMap<String, CStaticArray>,
-    static_aggregates: BTreeMap<String, CStaticAggregate>,
-    static_aggregate_arrays: BTreeMap<String, CStaticAggregateArray>,
+    static_locals: BTreeMap<BindingName, CStaticLocal>,
+    static_arrays: BTreeMap<BindingName, CStaticArray>,
+    static_aggregates: BTreeMap<BindingName, CStaticAggregate>,
+    static_aggregate_arrays: BTreeMap<BindingName, CStaticAggregateArray>,
     string_literals: Vec<CStringLiteral>,
     header_mode: bool,
     source_identity: Option<String>,
@@ -7877,7 +7880,8 @@ impl Parser {
             next_local_binding: 0,
             out_of_scope_names: BTreeSet::new(),
             address_taken_variables: BTreeSet::new(),
-            next_scoped_name: 0,
+            next_static_binding: 0,
+            file_static_bindings: BTreeMap::new(),
             next_call_result: 0,
             aggregate_expression_steps: Vec::new(),
             callback_statement_sources: imbl::OrdMap::new(),
@@ -8055,19 +8059,19 @@ impl Parser {
             || self
                 .globals
                 .values()
-                .any(|global| name.is_named(global.kernel_name()))
+                .any(|global| name == global.kernel_name())
             || self
                 .global_arrays
                 .values()
-                .any(|global| name.is_named(global.kernel_name()))
+                .any(|global| name == global.kernel_name())
             || self
                 .global_aggregates
                 .values()
-                .any(|global| name.is_named(global.kernel_name()))
+                .any(|global| name == global.kernel_name())
             || self
                 .global_aggregate_arrays
                 .values()
-                .any(|global| name.is_named(global.kernel_name()))
+                .any(|global| name == global.kernel_name())
     }
 
     /// Whether `source_name`, as spelled in the source, names an object this
@@ -8134,7 +8138,7 @@ impl Parser {
             || self
                 .globals
                 .values()
-                .find(|global| name.is_named(global.kernel_name()))
+                .find(|global| name == global.kernel_name())
                 .is_some_and(CGlobal::is_constant)
             || name
                 .named()
@@ -8143,7 +8147,7 @@ impl Parser {
             || self
                 .global_arrays
                 .values()
-                .find(|global| name.is_named(global.kernel_name()))
+                .find(|global| name == global.kernel_name())
                 .is_some_and(CGlobalArray::is_constant)
             || name
                 .named()
@@ -8152,7 +8156,7 @@ impl Parser {
             || self
                 .global_aggregates
                 .values()
-                .find(|global| name.is_named(global.kernel_name()))
+                .find(|global| name == global.kernel_name())
                 .is_some_and(CGlobalAggregate::is_constant)
             || name
                 .named()
@@ -8161,7 +8165,7 @@ impl Parser {
             || self
                 .global_aggregate_arrays
                 .values()
-                .find(|global| name.is_named(global.kernel_name()))
+                .find(|global| name == global.kernel_name())
                 .is_some_and(CGlobalAggregateArray::is_constant)
     }
 
@@ -8265,7 +8269,7 @@ impl Parser {
             CExpression::Index(base, _, _) => matches!(
                 base.as_ref(),
                 CExpression::Variable(name)
-                    if name.named_in(&self.static_arrays)
+                    if self.static_arrays.get(name)
                         .is_some_and(CStaticArray::pointee_is_constant)
             ),
             _ => false,
@@ -8329,25 +8333,24 @@ impl Parser {
     }
 
     fn static_object_type(&self, name: &BindingName) -> Option<(InterfaceType, bool)> {
-        let name = name.named()?;
         if let Some(global) = self
             .globals
             .values()
-            .find(|global| global.name() == name || global.kernel_name() == name)
+            .find(|global| name.is_named(global.name()) || global.kernel_name() == name)
         {
             return Some((global.interface_type(), global.is_constant()));
         }
         if let Some(global_array) = self
             .global_arrays
             .values()
-            .find(|global| global.name() == name || global.kernel_name() == name)
+            .find(|global| name.is_named(global.name()) || global.kernel_name() == name)
         {
             return Some((global_array.complete_c_type()?, global_array.is_constant()));
         }
         if let Some(global_aggregate) = self
             .global_aggregates
             .values()
-            .find(|global| global.name() == name || global.kernel_name() == name)
+            .find(|global| name.is_named(global.name()) || global.kernel_name() == name)
         {
             return Some((
                 record_value_type(global_aggregate.layout()),
@@ -8357,29 +8360,25 @@ impl Parser {
         if let Some(global_aggregate_array) = self
             .global_aggregate_arrays
             .values()
-            .find(|global| global.name() == name || global.kernel_name() == name)
+            .find(|global| name.is_named(global.name()) || global.kernel_name() == name)
         {
             return Some((
                 global_aggregate_array.complete_c_type()?,
                 global_aggregate_array.is_constant(),
             ));
         }
-        if let Some(static_local) = self
-            .static_locals
-            .values()
-            .find(|static_local| static_local.name() == name || static_local.kernel_name() == name)
-        {
+        if let Some(static_local) = self.static_locals.values().find(|static_local| {
+            name.is_named(static_local.name()) || static_local.kernel_name() == name
+        }) {
             return Some((static_local.interface_type(), static_local.is_constant()));
         }
-        if let Some(static_array) = self
-            .static_arrays
-            .values()
-            .find(|static_array| static_array.name() == name || static_array.kernel_name() == name)
-        {
+        if let Some(static_array) = self.static_arrays.values().find(|static_array| {
+            name.is_named(static_array.name()) || static_array.kernel_name() == name
+        }) {
             return Some((static_array.interface_type(), static_array.is_constant()));
         }
         if let Some(static_aggregate) = self.static_aggregates.values().find(|static_aggregate| {
-            static_aggregate.name() == name || static_aggregate.kernel_name() == name
+            name.is_named(static_aggregate.name()) || static_aggregate.kernel_name() == name
         }) {
             return Some((
                 record_value_type(static_aggregate.layout()),
@@ -8389,7 +8388,7 @@ impl Parser {
         self.static_aggregate_arrays
             .values()
             .find(|static_aggregate_array| {
-                static_aggregate_array.name() == name
+                name.is_named(static_aggregate_array.name())
                     || static_aggregate_array.kernel_name() == name
             })
             .map(|static_aggregate_array| {
@@ -8563,11 +8562,19 @@ impl Parser {
         }
     }
 
-    fn file_static_kernel_name(&self, source_name: &str) -> String {
-        format!(
-            "{source_name}#file-static:{}",
-            self.source_identity.as_deref().unwrap_or("source")
-        )
+    fn file_static_kernel_name(&mut self, source_name: &str) -> BindingName {
+        let next = self.file_static_bindings.len() as u32;
+        self.file_static_bindings
+            .entry(source_name.to_owned())
+            .or_insert_with(|| {
+                StaticBindingId::new(
+                    StaticBindingOwner::File(self.source_identity.clone()),
+                    next,
+                    source_name.to_owned(),
+                )
+            })
+            .clone()
+            .into()
     }
 
     fn inline_function_kernel_name(&self, source_name: &str) -> String {
@@ -8754,7 +8761,7 @@ impl Parser {
     /// Records a static local with an identity that remains unique even when
     /// two sibling blocks reuse the same C spelling. The source spelling is
     /// retained in the scope table so later expressions resolve normally.
-    fn declare_static_name(&mut self, name: &str) -> Result<String, CSyntaxError> {
+    fn declare_static_name(&mut self, name: &str) -> Result<BindingName, CSyntaxError> {
         if matches!(name, "pthread_create" | "pthread_join") {
             self.shadowed_pthread_names.insert(name.to_string());
         }
@@ -8773,8 +8780,17 @@ impl Parser {
             );
         }
         self.out_of_scope_names.remove(name);
-        let kernel_name: String = format!("{name}#static{}", self.next_scoped_name).into();
-        self.next_scoped_name = self.next_scoped_name.saturating_add(1);
+        let kernel_name: BindingName = StaticBindingId::new(
+            StaticBindingOwner::Function(
+                self.binding_function
+                    .clone()
+                    .expect("C static belongs to a function"),
+            ),
+            self.next_static_binding,
+            name.to_owned(),
+        )
+        .into();
+        self.next_static_binding = self.next_static_binding.saturating_add(1);
         let previous_visible = self.visible_bindings.insert(
             name.to_owned(),
             (
@@ -8994,6 +9010,7 @@ impl Parser {
         let function = self.parse_function_definition(false)?;
         self.parse_declarations()?;
         self.expect_end(function.name())?;
+        self.prepare_file_static_bindings();
         self.link_function_global_objects(function)
     }
 
@@ -9099,6 +9116,7 @@ impl Parser {
             }
             self.parse_declarations()?;
         }
+        self.prepare_file_static_bindings();
         let functions = functions
             .into_iter()
             .map(|function| self.link_function_global_objects(function))
@@ -9257,6 +9275,7 @@ impl Parser {
         &mut self,
         header: CFunctionHeader,
     ) -> Result<ImportedFunction, CSyntaxError> {
+        self.next_static_binding = 0;
         let previous_function_source_name = self
             .current_function_source_name
             .replace(header.source_name.clone());
@@ -9307,6 +9326,18 @@ impl Parser {
         }
         let control_targets = validate_direct_forward_gotos(&body)?;
 
+        for object in self.static_locals.values() {
+            object.prepare_static_binding();
+        }
+        for object in self.static_arrays.values() {
+            object.prepare_static_binding();
+        }
+        for object in self.static_aggregates.values() {
+            object.prepare_static_binding();
+        }
+        for object in self.static_aggregate_arrays.values() {
+            object.prepare_static_binding();
+        }
         let static_locals = std::mem::take(&mut self.static_locals);
         let local_struct_pointers = std::mem::take(&mut self.local_struct_pointers)
             .into_iter()
@@ -14456,11 +14487,11 @@ impl Parser {
     }
 
     fn variable_has_static_storage(&self, name: &BindingName) -> bool {
-        name.named_in(&self.static_locals).is_some()
+        self.static_locals.get(name).is_some()
             || self
                 .globals
                 .values()
-                .any(|global| name.is_named(global.kernel_name()))
+                .any(|global| name == global.kernel_name())
     }
 
     fn convert_struct_array_decay(
@@ -15311,10 +15342,10 @@ impl Parser {
                 let volatile = if let Some(global) = self
                     .globals
                     .values()
-                    .find(|global| name.is_named(global.kernel_name()))
+                    .find(|global| name == global.kernel_name())
                 {
                     global.is_volatile()
-                } else if let Some(static_local) = name.named_in(&self.static_locals) {
+                } else if let Some(static_local) = self.static_locals.get(name) {
                     static_local.is_volatile()
                 } else if self.address_taken_variables.contains(name) {
                     // An address-taken local's qualifiers are not tracked here.
@@ -21082,5 +21113,188 @@ impl ImportedParameter {
             parameter = parameter.with_fixed_reference_extent(bytes);
         }
         parameter
+    }
+}
+
+impl CGlobal {
+    fn prepare_static_binding(&self) {
+        let Some(id) = self.kernel_name.static_id() else {
+            return;
+        };
+
+        id.initialize_metadata(StaticBindingMetadata {
+            program_type: self.interface_type.to_kernel_type(),
+            array_shape: None,
+            struct_name: (self.struct_name.as_deref()).map(std::sync::Arc::from),
+            aggregate: false,
+            volatile: self.volatile,
+            pointee_volatile: self.pointee_volatile,
+            constant: self.constant,
+            pointee_constant: self.pointee_constant,
+        });
+    }
+}
+
+impl CGlobalArray {
+    fn prepare_static_binding(&self) {
+        let Some(id) = self.kernel_name.static_id() else {
+            return;
+        };
+        let Some(length) = self.length else {
+            return;
+        };
+        id.initialize_metadata(StaticBindingMetadata {
+            program_type: array_type_for_element(self.element_type, length)
+                .expect("complete global array type")
+                .to_kernel_type(),
+            array_shape: (self.shape.as_deref()).map(std::sync::Arc::from),
+            struct_name: None,
+            aggregate: false,
+            volatile: false,
+            pointee_volatile: false,
+            constant: self.constant,
+            pointee_constant: false,
+        });
+    }
+}
+
+impl CGlobalAggregate {
+    fn prepare_static_binding(&self) {
+        let Some(id) = self.kernel_name.static_id() else {
+            return;
+        };
+
+        id.initialize_metadata(StaticBindingMetadata {
+            program_type: InterfaceType::UInt8Array(self.layout.size_bytes()).to_kernel_type(),
+            array_shape: None,
+            struct_name: (Some(self.struct_name.as_str())).map(std::sync::Arc::from),
+            aggregate: true,
+            volatile: false,
+            pointee_volatile: false,
+            constant: self.constant,
+            pointee_constant: false,
+        });
+    }
+}
+
+impl CGlobalAggregateArray {
+    fn prepare_static_binding(&self) {
+        let Some(id) = self.kernel_name.static_id() else {
+            return;
+        };
+        let Some(length) = self.length else {
+            return;
+        };
+        id.initialize_metadata(StaticBindingMetadata {
+            program_type: InterfaceType::UInt8Array(length * self.layout.size_bytes())
+                .to_kernel_type(),
+            array_shape: (Some(&[length][..])).map(std::sync::Arc::from),
+            struct_name: (Some(self.struct_name.as_str())).map(std::sync::Arc::from),
+            aggregate: true,
+            volatile: false,
+            pointee_volatile: false,
+            constant: self.constant,
+            pointee_constant: false,
+        });
+    }
+}
+
+impl CStaticLocal {
+    fn prepare_static_binding(&self) {
+        let Some(id) = self.kernel_name.static_id() else {
+            return;
+        };
+
+        id.initialize_metadata(StaticBindingMetadata {
+            program_type: self.interface_type.to_kernel_type(),
+            array_shape: None,
+            struct_name: (self
+                .kernel_name
+                .static_id()
+                .and_then(StaticBindingId::struct_name))
+            .map(std::sync::Arc::from),
+            aggregate: false,
+            volatile: self.volatile,
+            pointee_volatile: self.pointee_volatile,
+            constant: self.constant,
+            pointee_constant: self.pointee_constant,
+        });
+    }
+}
+
+impl CStaticArray {
+    fn prepare_static_binding(&self) {
+        let Some(id) = self.kernel_name.static_id() else {
+            return;
+        };
+
+        id.initialize_metadata(StaticBindingMetadata {
+            program_type: array_type_for_element(self.element_type, self.length)
+                .expect("complete static array type")
+                .to_kernel_type(),
+            array_shape: (Some(self.shape.as_slice())).map(std::sync::Arc::from),
+            struct_name: None,
+            aggregate: false,
+            volatile: false,
+            pointee_volatile: false,
+            constant: self.constant,
+            pointee_constant: self.pointee_constant,
+        });
+    }
+}
+
+impl CStaticAggregate {
+    fn prepare_static_binding(&self) {
+        let Some(id) = self.kernel_name.static_id() else {
+            return;
+        };
+
+        id.initialize_metadata(StaticBindingMetadata {
+            program_type: InterfaceType::UInt8Array(self.layout.size_bytes()).to_kernel_type(),
+            array_shape: None,
+            struct_name: (Some(self.struct_name.as_str())).map(std::sync::Arc::from),
+            aggregate: true,
+            volatile: false,
+            pointee_volatile: false,
+            constant: self.constant,
+            pointee_constant: false,
+        });
+    }
+}
+
+impl CStaticAggregateArray {
+    fn prepare_static_binding(&self) {
+        let Some(id) = self.kernel_name.static_id() else {
+            return;
+        };
+
+        id.initialize_metadata(StaticBindingMetadata {
+            program_type: InterfaceType::UInt8Array(self.length * self.layout.size_bytes())
+                .to_kernel_type(),
+            array_shape: (Some(&[self.length][..])).map(std::sync::Arc::from),
+            struct_name: (Some(self.struct_name.as_str())).map(std::sync::Arc::from),
+            aggregate: true,
+            volatile: false,
+            pointee_volatile: false,
+            constant: self.constant,
+            pointee_constant: false,
+        });
+    }
+}
+
+impl Parser {
+    fn prepare_file_static_bindings(&self) {
+        for object in self.globals.values() {
+            object.prepare_static_binding();
+        }
+        for object in self.global_arrays.values() {
+            object.prepare_static_binding();
+        }
+        for object in self.global_aggregates.values() {
+            object.prepare_static_binding();
+        }
+        for object in self.global_aggregate_arrays.values() {
+            object.prepare_static_binding();
+        }
     }
 }
