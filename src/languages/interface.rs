@@ -1732,7 +1732,7 @@ pub(super) fn declared_pointer_locals(
                 pending.push(then_branch);
                 pending.push(else_branch);
             }
-            ProgramStatement::While { body, .. } => pending.push(body),
+            ProgramStatement::Loop { body, .. } => pending.push(body),
             ProgramStatement::ForStep { step, .. } => pending.push(step),
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
