@@ -599,7 +599,7 @@ fn int32_load_identity_keeps_states_separate() {
     ));
     let load = |memory: &SharedMemory| {
         MachineTerm::MemoryLoad(
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         )

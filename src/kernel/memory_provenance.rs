@@ -3839,7 +3839,7 @@ impl LoadCellWalks {
         }
         let kind = self.kind;
         let load = |memory: &SharedMemory| {
-            MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer.clone()), kind)
+            MachineTerm::MemoryLoad(ProgramPoint::at(memory), Box::new(pointer.clone()), kind)
         };
         let pins = |cell: &MemoryDagCell, other: &MachineTerm| {
             matches!(cell, MemoryDagCell::Stored { .. })
@@ -7898,7 +7898,7 @@ mod opaque_pointer_frame_tests {
         ));
         let cell_bits = |memory: &SharedMemory| {
             MachineTerm::MemoryLoad(
-                ProgramPoint::at(&memory),
+                ProgramPoint::at(memory),
                 Box::new(field.clone()),
                 LoadKind::Int32,
             )

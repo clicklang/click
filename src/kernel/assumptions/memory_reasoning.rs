@@ -793,7 +793,7 @@ impl PureFactContext {
                     && self.decide(&wide_index_comparison(
                         CompareRelation::LessThan,
                         index.operand_view(),
-                        MachineOperandView::Legacy(&elements),
+                        MachineOperandView::Legacy(elements),
                     )) == Some(true)
                     && self.decide(&ConditionTerm::uint64_less_equal(elements.clone(), limit))
                         == Some(true)
@@ -1277,7 +1277,7 @@ impl PureFactContext {
         self.decide(&index_comparison(
             CompareRelation::LessEqual,
             access_end.operand_view(),
-            MachineOperandView::Legacy(&range_bytes),
+            MachineOperandView::Legacy(range_bytes),
         )) == Some(true)
     }
 
@@ -1656,7 +1656,7 @@ impl PureFactContext {
             return self.decide(&index_comparison(
                 CompareRelation::LessEqual,
                 access_end.operand_view(),
-                MachineOperandView::Legacy(&range_bytes),
+                MachineOperandView::Legacy(range_bytes),
             )) == Some(true);
         }
 
@@ -2376,12 +2376,12 @@ impl PureFactContext {
             structural_element_index(pointer, range.base(), width, self).is_some_and(|index| {
                 self.proves_range_bound(index_comparison(
                     CompareRelation::LessEqual,
-                    MachineOperandView::Legacy(&range.start()),
+                    MachineOperandView::Legacy(range.start()),
                     index.operand_view(),
                 )) && self.proves_range_bound(index_comparison(
                     CompareRelation::LessThan,
                     index.operand_view(),
-                    MachineOperandView::Legacy(&range.end()),
+                    MachineOperandView::Legacy(range.end()),
                 ))
             })
         };
@@ -2558,13 +2558,13 @@ impl PureFactContext {
         };
         self.selected_comparison_value(&index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(&range.start()),
+            MachineOperandView::Legacy(range.start()),
             index.operand_view(),
         )) == Some(true)
             && self.selected_comparison_value(&index_comparison(
                 CompareRelation::LessThan,
                 index.operand_view(),
-                MachineOperandView::Legacy(&range.end()),
+                MachineOperandView::Legacy(range.end()),
             )) == Some(true)
     }
 
@@ -3151,12 +3151,12 @@ impl PureFactContext {
         };
         proves(index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(&start),
+            MachineOperandView::Legacy(start),
             index.operand_view(),
         )) && proves(index_comparison(
             CompareRelation::LessThan,
             index.operand_view(),
-            MachineOperandView::Legacy(&end),
+            MachineOperandView::Legacy(end),
         ))
     }
 
@@ -5094,7 +5094,7 @@ impl PureFactContext {
                 && self.decide(&index_comparison(
                     CompareRelation::LessThan,
                     index.operand_view(),
-                    MachineOperandView::Legacy(&end),
+                    MachineOperandView::Legacy(end),
                 )) == Some(true);
         }
 
@@ -5522,11 +5522,11 @@ impl PureFactContext {
                 && self.decide(&index_comparison(
                     CompareRelation::LessThan,
                     index.operand_view(),
-                    MachineOperandView::Legacy(&range.start()),
+                    MachineOperandView::Legacy(range.start()),
                 )) == Some(true)
                 || self.decide(&index_comparison(
                     CompareRelation::LessEqual,
-                    MachineOperandView::Legacy(&range.end()),
+                    MachineOperandView::Legacy(range.end()),
                     index.operand_view(),
                 )) == Some(true)
             {
@@ -5567,7 +5567,7 @@ impl PureFactContext {
                 let range_start = index_binary(
                     MachineBinaryOp::Add,
                     forward_offset.operand_view(),
-                    MachineOperandView::Legacy(&range.start()),
+                    MachineOperandView::Legacy(range.start()),
                 );
                 if self.decide(&index_comparison(
                     CompareRelation::LessThan,
@@ -5702,12 +5702,12 @@ impl PureFactContext {
         let range_start = index_binary(
             MachineBinaryOp::Add,
             base_delta.operand_view(),
-            MachineOperandView::Legacy(&range.start()),
+            MachineOperandView::Legacy(range.start()),
         );
         let range_end = index_binary(
             MachineBinaryOp::Add,
             base_delta.operand_view(),
-            MachineOperandView::Legacy(&range.end()),
+            MachineOperandView::Legacy(range.end()),
         );
 
         crate::instrumentation::measure_operation(
@@ -5717,13 +5717,13 @@ impl PureFactContext {
             || {
                 self.decide(&index_comparison(
                     CompareRelation::LessEqual,
-                    MachineOperandView::Legacy(&start),
+                    MachineOperandView::Legacy(start),
                     range_start.operand_view(),
                 )) == Some(true)
                     && self.decide(&index_comparison(
                         CompareRelation::LessEqual,
                         range_end.operand_view(),
-                        MachineOperandView::Legacy(&end),
+                        MachineOperandView::Legacy(end),
                     )) == Some(true)
             },
         )

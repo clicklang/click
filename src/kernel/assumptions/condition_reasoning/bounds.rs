@@ -263,6 +263,7 @@ impl PureFactContext {
 
     /// Whether a recorded upper bound of `left` lies at or below `right`
     /// (below it when the bound is not strict), so `left < right`.
+    #[cfg(test)]
     pub(in crate::kernel) fn has_upper_bound_below(
         &self,
         left: &MachineTerm,

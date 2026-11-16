@@ -2073,7 +2073,7 @@ mod tests {
                 );
                 let required = Proposition::ConditionIs(retained.clone(), true);
                 assert!(
-                    listed_comparison_fact_is_available(&required, &[written.clone()]),
+                    listed_comparison_fact_is_available(&required, std::slice::from_ref(&written)),
                     "{format:?} {relation:?}: {required:?} versus {written:?}"
                 );
                 assert!(listed_comparison_fact_is_available(&written, &[required]));
@@ -2087,7 +2087,7 @@ mod tests {
                 ));
                 assert!(!listed_comparison_fact_is_available(
                     &Proposition::ConditionIs(retained, false),
-                    &[written.clone()]
+                    std::slice::from_ref(&written)
                 ));
                 let changed = condition_for_operand_views(
                     format,
@@ -3718,7 +3718,7 @@ mod integer_reflexivity_tests {
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
                     MachineTerm::MemoryLoad(
-                        ProgramPoint::at(&memory),
+                        ProgramPoint::at(memory),
                         Box::new(pointer.clone()),
                         crate::kernel::LoadKind::Int32,
                     ),

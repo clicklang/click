@@ -526,6 +526,23 @@ impl std::fmt::Display for LocalStorageInstance {
     }
 }
 
+impl From<String> for BindingDeclaration {
+    fn from(name: String) -> Self {
+        BindingName::from(name).into()
+    }
+}
+impl From<&str> for BindingDeclaration {
+    fn from(name: &str) -> Self {
+        BindingName::from(name).into()
+    }
+}
+
+impl From<StaticBindingId> for BindingName {
+    fn from(id: StaticBindingId) -> Self {
+        Self::Static(id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -632,22 +649,5 @@ mod tests {
                 assert!(address.block.proven_distinct(&other.block));
             }
         }
-    }
-}
-
-impl From<String> for BindingDeclaration {
-    fn from(name: String) -> Self {
-        BindingName::from(name).into()
-    }
-}
-impl From<&str> for BindingDeclaration {
-    fn from(name: &str) -> Self {
-        BindingName::from(name).into()
-    }
-}
-
-impl From<StaticBindingId> for BindingName {
-    fn from(id: StaticBindingId) -> Self {
-        Self::Static(id)
     }
 }

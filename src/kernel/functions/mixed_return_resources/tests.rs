@@ -48,7 +48,7 @@ fn mixed_composition_restores_symbolic_borrows_and_keeps_emitted_occurrence_orde
             )
             .unwrap();
         assert!(prepared.frame.contains_exact_representation(&borrow));
-        assert_eq!(prepared.pending.facts(), &[produced.clone()]);
+        assert_eq!(prepared.pending.facts(), std::slice::from_ref(&produced));
         let (context, inserted) = prepared.finish(&facts).unwrap();
         assert_eq!(context.facts().len(), 3);
         assert_eq!(inserted.len(), outputs.len());
@@ -296,7 +296,7 @@ fn consumed_scalar_transfer_retains_entry_and_emitted_occurrences_on_branches() 
         let remaining = result
             .without_exact_representation_for_occurrence(mapping[0].destination)
             .unwrap();
-        assert_eq!(remaining.facts(), &[held.clone()]);
+        assert_eq!(remaining.facts(), std::slice::from_ref(&held));
     }
     assert_eq!(caller.facts().len(), 2);
     assert_eq!(
@@ -323,7 +323,7 @@ fn changed_scalar_output_keeps_description_validation_and_rejects_overlap() {
         assert!(transfer.consumed_cell_returns.get(0).is_none());
         let evaluated = EvaluatedReturnResources::new(&facts)
             .admit(
-                owner(pointer.clone(), start as u32, end as u32),
+                owner(pointer.clone(), start, end),
                 ReturnOwnershipOrigin::Description,
                 &facts,
             )

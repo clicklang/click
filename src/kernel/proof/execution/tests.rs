@@ -2016,7 +2016,7 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
     let premise = facts.with_fact(strong);
     let derivable_delta = premise.with_fact(weak.clone());
     assert!(crate::kernel::search::ProofSearch::proves(
-        &(premise.assumptions()),
+        premise.assumptions(),
         &weak
     ));
     assert!(!premise.assumptions().proves_exact(&weak));
@@ -2472,7 +2472,7 @@ fn checked_event_premises_require_exact_facts_or_ground_comparisons() {
     ));
     let derived = empty.with_fact(stronger);
     assert!(
-        crate::kernel::search::ProofSearch::proves(&(derived.assumptions()), &required),
+        crate::kernel::search::ProofSearch::proves(derived.assumptions(), &required),
         "the retired fallback would find this proof"
     );
     assert!(!checked_evidence_premises_hold(
@@ -2894,7 +2894,7 @@ fn interface_assertion_requires_an_available_proof_not_derivability() {
         true,
     ));
     assert!(
-        crate::kernel::search::ProofSearch::proves(&(facts.assumptions()), &goal),
+        crate::kernel::search::ProofSearch::proves(facts.assumptions(), &goal),
         "the removed contextual checker could derive this consequence"
     );
     assert!(

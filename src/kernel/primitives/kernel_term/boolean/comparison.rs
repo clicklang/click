@@ -40,23 +40,25 @@ impl KernelTerm {
             }
         }
         let views = arguments.each_ref().map(MachineOperandView::Shared);
-        if format == T::UInt32 && relation != R::Equal {
-            if let Some(bound) = views[1].word32_constant() {
-                let upper = views[0].unsigned32_upper_bound();
-                let folded = match relation {
-                    R::LessThan if upper < bound => Some(true),
-                    R::LessEqual if upper <= bound => Some(true),
-                    R::GreaterThan if upper <= bound => Some(false),
-                    R::GreaterEqual if upper < bound => Some(false),
-                    _ => None,
-                };
-                if let Some(value) = folded {
-                    return boolean(value);
-                }
+        if format == T::UInt32
+            && relation != R::Equal
+            && let Some(bound) = views[1].word32_constant()
+        {
+            let upper = views[0].unsigned32_upper_bound();
+            let folded = match relation {
+                R::LessThan if upper < bound => Some(true),
+                R::LessEqual if upper <= bound => Some(true),
+                R::GreaterThan if upper <= bound => Some(false),
+                R::GreaterEqual if upper < bound => Some(false),
+                _ => None,
+            };
+            if let Some(value) = folded {
+                return boolean(value);
             }
         }
-        if format == T::Int64 && relation != R::Equal {
-            if let Some(value) = crate::kernel::primitives::int64_signed_order_by_width_views(
+        if format == T::Int64
+            && relation != R::Equal
+            && let Some(value) = crate::kernel::primitives::int64_signed_order_by_width_views(
                 views[0],
                 views[1],
                 |a, b| match relation {
@@ -66,9 +68,9 @@ impl KernelTerm {
                     R::GreaterEqual => a >= b,
                     R::Equal => unreachable!(),
                 },
-            ) {
-                return boolean(value);
-            }
+            )
+        {
+            return boolean(value);
         }
         if format == T::UInt64 && relation != R::Equal {
             let [left, right] = views.map(|view| view.uint64_constant());

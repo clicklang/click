@@ -368,7 +368,7 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
     let other = Pointer::symbolic(Variable(940_001));
     let base = intern_memory(Memory::new());
     let load = |memory: &SharedMemory, pointer: &Pointer, kind| {
-        MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer.clone()), kind)
+        MachineTerm::MemoryLoad(ProgramPoint::at(memory), Box::new(pointer.clone()), kind)
     };
     let first = load(&base, &pointer, LoadKind::Bits64);
     let (word, _) = load_variable_for_term(&first).unwrap();

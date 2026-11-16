@@ -374,6 +374,7 @@ pub(crate) enum Division {
 /// read at `ty`. The operation's signedness is the format's: an unsigned
 /// format's quotient is `Divide` at that format, as a signed one's is. Narrow
 /// and 128-bit formats have none.
+#[cfg(test)]
 pub(crate) fn word_division(
     ty: MachineIntegerType,
     value: &MachineTerm,

@@ -137,12 +137,12 @@ fn offsets<K: Clone>(
             continue;
         }
         crate::instrumentation::record_deterministic_work(1);
-        if let O::Add(children) = offset.node() {
-            if !finish {
-                pending.push((offset.clone(), true));
-                pending.extend(children.iter().rev().cloned().map(|child| (child, false)));
-                continue;
-            }
+        if let O::Add(children) = offset.node()
+            && !finish
+        {
+            pending.push((offset.clone(), true));
+            pending.extend(children.iter().rev().cloned().map(|child| (child, false)));
+            continue;
         }
         let children = if let O::Add([a, b]) = offset.node() {
             Some([memo[a].clone(), memo[b].clone()])

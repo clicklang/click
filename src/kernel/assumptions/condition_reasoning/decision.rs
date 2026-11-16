@@ -1486,6 +1486,7 @@ impl PureFactContext {
             })
     }
 
+    #[cfg(test)]
     pub(in crate::kernel) fn decide_bitvector_equality_shallow(
         &self,
         left: &MachineTerm,
@@ -2371,6 +2372,7 @@ impl PureFactContext {
         lower == upper && lower == i64::from(constant as i32)
     }
 
+    #[cfg(test)]
     pub(in crate::kernel) fn signed_constant_known_equal(&self, term: &MachineTerm) -> Option<i64> {
         self.signed_constant_known_equal_view(MachineOperandView::Legacy(term))
     }
@@ -2382,10 +2384,10 @@ impl PureFactContext {
         if let Some(value) = term.word32_constant() {
             return Some(i64::from(value as i32));
         }
-        if let MachineOperandView::Legacy(term) = term {
-            if let Some(value) = self.equality_graph.known_atom_constant(term) {
-                return Some(value);
-            }
+        if let MachineOperandView::Legacy(term) = term
+            && let Some(value) = self.equality_graph.known_atom_constant(term)
+        {
+            return Some(value);
         }
         match self.equality_graph.scalar_normalization_class_view(term)?.1 {
             SignedConstantResolution::Known(value) => Some(value),

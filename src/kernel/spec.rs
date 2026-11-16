@@ -3253,7 +3253,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 .find(|schema| schema.name == arm.variant)
                 .ok_or(ExecutionLimit::Paths)?;
             let bindings = symbolic_algebraic_match_binders_in(
-                &scrutinee_path.value.algebraic_type(),
+                scrutinee_path.value.algebraic_type(),
                 schema,
                 budget,
             )?;
@@ -4055,7 +4055,7 @@ fn evaluate_spec_algebraic_non_call_in(
                             return Err(ExecutionLimit::Paths);
                         };
                         let bindings = symbolic_algebraic_match_binders_in(
-                            &scrutinee_path.value.algebraic_type(),
+                            scrutinee_path.value.algebraic_type(),
                             schema,
                             budget,
                         )?;
@@ -6589,7 +6589,7 @@ fn evaluate_resource_count_paths(
                         let no_overflow = Proposition::signed_arithmetic_domain(
                             MachineIntegerType::Int32,
                             MachineBinaryOp::Add,
-                            &quantity,
+                            quantity,
                             &MachineTerm::constant(symbolic.delta as u32),
                         );
                         if !path_assumptions.proves_exact(&no_overflow)
@@ -6891,7 +6891,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         };
                         let mut variables = Vec::with_capacity(schema.fields.len());
                         let bindings = symbolic_algebraic_fields(
-                            &scrutinee_path.value.algebraic_type(),
+                            scrutinee_path.value.algebraic_type(),
                             schema,
                             || {
                                 let variable = budget.allocate_match_binder_variable()?;
@@ -9181,7 +9181,7 @@ fn evaluate_spec_if_paths_in(
                             continue;
                         };
                         branch_paths.push(SpecExpressionPath {
-                            value: value.into(),
+                            value,
                             facts,
                             obligations,
                         });

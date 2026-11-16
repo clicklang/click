@@ -629,7 +629,7 @@ fn seeded_scalar_loads_frame_unknown_cells_with_constant_work() {
             assert_eq!(earlier.node(), &original);
             for edge in [&current, &first] {
                 assert_eq!(
-                    seeded_edge_justification(&edge, &other, 4, &assumptions),
+                    seeded_edge_justification(edge, &other, 4, &assumptions),
                     MemoryDagHopJustification::SeededLoadsOfBase
                 );
             }

@@ -24,6 +24,7 @@ int64 CFeeRate::GetFee(int32 virtual_bytes) const {
 } by {
     step(); step();
     let { result: empty } = step(FeeFrac::IsEmpty, { });
+    step();
     branch {
         have this->m_feerate.base.size == 0;
         step_until(function.exit); solve();

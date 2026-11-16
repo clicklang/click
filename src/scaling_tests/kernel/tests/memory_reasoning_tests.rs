@@ -42,7 +42,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
         for i in 0..count {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(
                 MemoryRange::new_with_element_width(
-                    Memory::local_pointer(&format!("hidden_{i}")),
+                    Memory::local_pointer(format!("hidden_{i}")),
                     0u32.into(),
                     4u32.into(),
                     1,

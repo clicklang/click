@@ -453,13 +453,12 @@ pub(super) fn common_variables(
                         leaf_variables.insert(*variable);
                     }
                 }
-                KernelType::Bool => {
-                    if mode == FoldVariableRead::MachineCapture
+                KernelType::Bool
+                    if (mode == FoldVariableRead::MachineCapture
                         || (mode == FoldVariableRead::ExpressionFree
-                            && collecting_connection_variables())
-                    {
-                        leaf_variables.insert(*variable);
-                    }
+                            && collecting_connection_variables())) =>
+                {
+                    leaf_variables.insert(*variable);
                 }
                 _ => {}
             },

@@ -16,7 +16,7 @@ fn construction_destination_binding_work_ignores_unrelated_caller_objects() {
         let at = caller.locals.slot("node").unwrap().clone();
         caller = caller.with_aggregate_return_destination(at, node_layout());
         for index in 0..count {
-            let unrelated = Memory::frame_local_pointer(10, &format!("unrelated{index}"));
+            let unrelated = Memory::frame_local_pointer(10, format!("unrelated{index}"));
             caller.memory = caller.memory.with_block(unrelated.block.clone(), 4);
             caller.resources = caller
                 .resources

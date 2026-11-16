@@ -259,6 +259,18 @@ fn failure_error(proof: &Proof<'_>) -> Option<ClickError> {
     )
 }
 
+pub(in crate::surface) fn predicate_spelling(name: &str) -> Option<ClickProposition> {
+    let (kind, function) = crate::kernel::termination_predicate_spelling(name)?;
+    Some(ClickProposition::PredicateCall {
+        name: kind.spelling().into(),
+        arguments: if kind == crate::kernel::TerminationAtomKind::Callbacks {
+            vec![]
+        } else {
+            vec![ContractExpression::Binding(function.to_string())]
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -428,16 +440,4 @@ termination by {{ check_termination_component("missing", normal); }}
         let source = "theorem forged() { requires termination_returns(\"leaf\"); ensures true; }";
         assert!(verify_click_theorems(source).is_err());
     }
-}
-
-pub(in crate::surface) fn predicate_spelling(name: &str) -> Option<ClickProposition> {
-    let (kind, function) = crate::kernel::termination_predicate_spelling(name)?;
-    Some(ClickProposition::PredicateCall {
-        name: kind.spelling().into(),
-        arguments: if kind == crate::kernel::TerminationAtomKind::Callbacks {
-            vec![]
-        } else {
-            vec![ContractExpression::Binding(function.to_string())]
-        },
-    })
 }

@@ -2320,7 +2320,7 @@ fn shared_narrow_sources_widen_without_export_and_follow_context_changes() {
                     g.decide(&query)
                         .or_else(|| g.decide_shared_order(&comparison_view(&query, true).unwrap()))
                 };
-                assert_eq!(decide(&parent.graph(Vec::new)), None);
+                assert_eq!(decide(parent.graph(Vec::new)), None);
                 let exports = KernelTermExport::machine_export_count();
                 let mut child = parent.clone();
                 child.assume(&query, truth);

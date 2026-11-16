@@ -22654,8 +22654,7 @@ fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
     let error = verify_c_sources(&source, &wrong_refs)
-        .err()
-        .expect("a null store cannot produce the nonempty tree");
+        .expect_err("a null store cannot produce the nonempty tree");
     assert!(!error.message().contains("no Surface spelling"), "{error}");
 }
 
