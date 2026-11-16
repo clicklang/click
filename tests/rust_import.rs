@@ -1041,9 +1041,8 @@ fn charon_chunk_project() -> Project {
     p
 }
 /// The imports and the slice spelling a claim about a library iterator
-/// cites the `chunks_exact` contract with.
-const LIBRARY_CHUNKS: &str = "import click::rust::slice; import click::rust::chunks_exact;";
-const BYTES_SLICE: &str = "Slice<u8>::Slice(bytes, bytes.len())";
+/// needs.
+const LIBRARY_CHUNKS: &str = "import click::integer;";
 
 #[test]
 #[ignore = "nightly: 12 s, over the gate's per-test budget (2026-10-06)"]
@@ -1061,25 +1060,17 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         (7, u64::MAX),
         (7, 4294967296),
     ] {
-        // Each claim cites the contract: what `chunks_exact` builds for the
-        // remainder, the count and the first chunk.
+        // Each claim follows from `core`'s own `chunks_exact`, `remainder`
+        // and `next`, run over the iterator's fields.
         let claim = format!(
-            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == {size}u64; ensures result == {}u64; }} by {{ have size != 0u64; step_until(function.exit); apply(chunks_exact::remainder_chunks_exact({BYTES_SLICE}, size)); solve(); }}",
+            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == {size}u64; ensures result == {}u64; }} by {{ have size != 0u64; step_until(function.exit); solve(); }}",
             length % size
         );
         ProgramVerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
     for length in [0u64, 3, 4, 7, 8] {
         let result = if length < 4 { 0 } else { 4 };
-        let proof = if length < 4 {
-            format!(
-                "apply(chunks_exact::len_chunks_exact({BYTES_SLICE}, 4u64)); step_until(assignment(chunks_tail, 0)); have chunks_exact::len(chunks) == 0u64; step_until(function.exit); solve();"
-            )
-        } else {
-            format!(
-                "have 0u64 < bytes.len() / 4u64; apply(chunks_exact::len_chunks_exact({BYTES_SLICE}, 4u64)); apply(chunks_exact::nth_chunks_exact({BYTES_SLICE}, 4u64, 0u64)); step_until(assignment(chunks_tail, 0)); have 0u64 < chunks_exact::len(chunks); step_until(function.exit); solve();"
-            )
-        };
+        let proof = "step_until(function.exit); solve();";
         let claim = format!(
             "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn next_len(bytes: &[u8]) -> usize {{ requires bytes.len() == {length}u64; ensures result == {result}u64; }} by {{ {proof} }}"
         );
@@ -1089,7 +1080,7 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         let offset = length - length % 4;
         let tail = length % 4;
         let claim = format!(
-            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() % 4u64 == {tail}u64; have bytes.len() - bytes.len() % 4u64 == {offset}u64; apply(chunks_exact::remainder_chunks_exact({BYTES_SLICE}, 4u64)); step_until(assignment(tail_len, 0)); step(); have tail_len == {tail}u64; have tail == bytes + {offset}u64; step_until(function.exit); solve(); }}"
+            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() % 4u64 == {tail}u64; have bytes.len() - bytes.len() % 4u64 == {offset}u64; step_until(assignment(tail_len, 0)); step(); have tail_len == {tail}u64; have tail == bytes + {offset}u64; step_until(function.exit); solve(); }}"
         );
         ProgramVerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
@@ -1637,9 +1628,11 @@ fn charon_chunk_view_loop_reborrows_shared_subslices_at_symbolic_heads() {
     for (before, after) in [
         ("views bytes[0..16];", ""),
         ("views bytes[0..4];", "views bytes[0..17];"),
+        // The chunk iterator's `v` stands where its length says, not a
+        // chunk further on.
         (
-            "invariant to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);",
-            "invariant to_integer(iter.len()) + iterations + 1 == to_integer(bytes.len() / 4u64);",
+            "invariant iter.v == bytes + (16u64 - iter.v.len());",
+            "invariant iter.v == bytes + ((16u64 - iter.v.len()) + 4u64);",
         ),
         ("ensures result == 0u32;", "ensures result == 1u32;"),
     ] {
@@ -1861,7 +1854,7 @@ fn charon_loop_array_copy_empty_input_never_reads_uninitialized_storage() {
         .expect("the sidecar states `walk` after its helper")
         .0;
     let claim = format!(
-        "{helper} fn quad::walk(bytes: &[u8]) -> u32 {{ requires bytes.len() == 0u64; ensures result == 0u32; }} by {{ step_until(loop(0)); apply(chunks_exact::len_chunks_exact({BYTES_SLICE}, 4u64)); have loop(0).iter.len() == 0u64; step_until(function.exit); solve(); }}"
+        "{helper} fn quad::walk(bytes: &[u8]) -> u32 {{ requires bytes.len() == 0u64; ensures result == 0u32; }} by {{ step_until(loop(0)); have loop(0).iter.v.len() == 0u64; step_until(function.exit); solve(); }}"
     );
     ProgramVerificationSession::new_program_prepared(&claim, &prepared).unwrap();
 }
@@ -5591,15 +5584,12 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
     let p = Project::new(source);
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    let sidecar = "import click::rust::slice;
-    import click::rust::chunks_exact;
-    verifying \"borrow.rs\";
+    let sidecar = "verifying \"borrow.rs\";
     fn tail_len(bytes: &[u8], size: usize) -> usize {
         requires size != 0u64;
         ensures result == bytes.len() % size;
     } by {
         step_until(function.exit);
-        apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), size));
         solve();
     }
     fn tail_byte(bytes: &[u8]) -> u8 {
@@ -5608,7 +5598,6 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
     } by {
         have bytes.len() % 2u64 == 1u64;
         have bytes.len() - bytes.len() % 2u64 == 4u64;
-        apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 2u64));
         step_until(assignment(tail_len, 0));
         step();
         have tail_len == 1u64;
@@ -5626,56 +5615,64 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
     }
 }
 
-/// A `ChunksExact` is one value of the library's type, and a proof reads it through that type's contract: the
-/// remainder from what `chunks_exact` builds, and a loop's count from what
-/// each `next()` leaves. No cursor or remaining-byte count is named.
+/// A `ChunksExact` is held as its own fields, `v`, `rem` and `chunk_size`,
+/// and a proof reads them: the remainder from what `chunks_exact` builds,
+/// and a loop's count from what each `next()` leaves of `v`.
 #[test]
 #[ignore = "nightly: 12s in the parallel gate"]
-fn chunks_exact_is_proved_by_its_library_contract() {
+fn chunks_exact_is_proved_from_its_fields() {
     let source = "pub fn tail_len(bytes: &[u8], size: usize) -> usize { let chunks = bytes.chunks_exact(size); let tail = chunks.remainder(); tail.len() }
     pub fn count(bytes: &[u8]) -> usize { let mut n = 0; for _chunk in bytes.chunks_exact(4) { n += 1; } n }";
     let p = Project::new(source);
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    let sidecar = "import click::rust::slice;
-    import click::rust::chunks_exact;
-    verifying \"borrow.rs\";
+    let sidecar = "verifying \"borrow.rs\";
     fn tail_len(bytes: &[u8], size: usize) -> usize {
         requires size != 0u64;
         ensures result == bytes.len() % size;
     } by {
         step_until(function.exit);
-        apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), size));
         solve();
     }
     fn count(bytes: &[u8]) -> usize {
-        ensures result == bytes.len() / 4u64;
+        views bytes[0..bytes.len()];
+        ensures to_integer(result) * 4 <= to_integer(bytes.len());
+        ensures to_integer(bytes.len()) < to_integer(result) * 4 + 8;
     } by {
         step_until(loop(0));
-        have loop(0).iter.len() == bytes.len() / 4u64 by {
-            apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
-            solve();
-        }
         loop {
-            decreases iter.len();
-            invariant n + iter.len() == bytes.len() / 4u64;
+            decreases iter.v.len();
+            views bytes[0..bytes.len()];
+            invariant iter.chunk_size == 4u64;
+            invariant iter.v.len() <= bytes.len() - bytes.len() % 4u64;
+            invariant iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
+            invariant to_integer(n) * 4 + to_integer(iter.v.len()) == to_integer(bytes.len()) - to_integer(bytes.len() % 4u64);
+            initialize by {
+                have bytes.len() % 4u64 <= bytes.len();
+                solve();
+            }
             preserve by {
-                step(); step(); step(); step();
-                if 0u64 < iter.len() {
-                    have n < bytes.len() / 4u64;
-                    apply(chunks_exact::len_after_next(iter));
+                if 4u64 <= iter.v.len() {
+                    have to_integer(n) * 4 <= to_integer(bytes.len());
+                    have bytes.len() % 4u64 <= bytes.len();
+                    have to_integer(bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4 <= to_integer(bytes.len());
+                    have to_integer((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64) <= to_integer(bytes.len());
+                    have to_integer(bytes.len() - bytes.len() % 4u64 - iter.v.len()) < to_integer(bytes.len());
+                    have to_integer(bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4 <= 18446744073709551615;
+                    have (bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len())) + 4u64 == bytes + ((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64);
                     mark taken;
                     step_until(loop(0).back_edge());
-                    have iter.len() == at(taken, iter.len()) - 1u64;
-                    have n == at(taken, n) + 1u64;
-                    have n + iter.len() == bytes.len() / 4u64;
-                    have iter.len() < at(taken, iter.len());
+                    have to_integer(iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;
+                    have (bytes.len() - bytes.len() % 4u64 - at(taken, iter.v.len())) + 4u64 == bytes.len() - bytes.len() % 4u64 - iter.v.len();
+                    have iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
+                    have to_integer(n) == to_integer(at(taken, n)) + 1;
+                    have iter.v.len() < at(taken, iter.v.len());
                 } else {
-                    step();
+                    step(); step(); step();
                 }
             }
         }
-        have loop(0).iter.len() == 0u64;
+        have loop(0).iter.v.len() < 4u64;
         step_until(function.exit);
         solve();
     }";
@@ -5688,14 +5685,20 @@ fn chunks_exact_is_proved_by_its_library_contract() {
             "result == bytes.len() / size",
         ),
         sidecar.replace(
-            "result == bytes.len() / 4u64",
-            "result == bytes.len() / 4u64 + 1u64",
+            "ensures to_integer(bytes.len()) < to_integer(result) * 4 + 8;",
+            "ensures to_integer(bytes.len()) < to_integer(result) * 4;",
         ),
-        // `next()` yields a chunk only from an iterator that has one.
-        sidecar.replace("if 0u64 < iter.len() {", "if 0u64 <= iter.len() {"),
+        // Each `next()` yields one chunk, so the count goes up by one.
+        sidecar.replace(
+            "have to_integer(n) == to_integer(at(taken, n)) + 1;",
+            "have to_integer(n) == to_integer(at(taken, n)) + 2;",
+        ),
     ] {
         assert_ne!(invalid, sidecar);
-        assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        assert!(
+            ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+            "accepted {invalid}"
+        );
     }
 }
 
@@ -5711,9 +5714,9 @@ fn chunks_loop_project(by_reference: bool) -> (Project, String) {
     };
     let sidecar = include_str!("../examples/rust-chunks-exact/chunks.click")
         .replace("chunks.rs", "borrow.rs");
-    // The proof names the loop's iterator as `iter` and the library's
-    // contract, so it is the same proof whether the loop consumes the
-    // iterator or borrows it.
+    // The proof names the loop's iterator as `iter` and reads its fields,
+    // so it is the same proof whether the loop consumes the iterator or
+    // borrows it.
     let p = Project::with_library_iterators(&source);
     p.refresh().unwrap();
     (p, sidecar)
@@ -5730,13 +5733,13 @@ fn check_chunks_loop_claims(by_reference: bool) {
         ),
         sidecar.replace("views bytes[0..bytes.len()];", ""),
         sidecar.replace(
-            "invariant to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);",
-            "invariant to_integer(iter.len()) + iterations + 1 == to_integer(bytes.len() / 4u64);",
+            "invariant iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());",
+            "invariant iter.v == bytes + ((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64);",
         ),
         sidecar.replace("bytes[k] == old(bytes[k])", "bytes[k] != old(bytes[k])"),
-        // The second read is of the chunk's last byte: its bound is owed.
+        // `next` moves `v` on by a chunk: that sum's bound is owed.
         sidecar.replace(
-            "                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64 + 3u64) < to_integer(bytes.len());\n",
+            "                have to_integer((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64) <= to_integer(bytes.len());\n",
             "",
         ),
     ] {
@@ -5800,7 +5803,7 @@ fn rust_chunks_exact_boundaries_and_full_width_sizes() {
         (5, u64::MAX),
     ] {
         let sidecar = format!(
-            "{LIBRARY_CHUNKS} verifying \"borrow.rs\"; fn length(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == {size}u64; ensures result == {}u64; }} by {{ step_until(function.exit); apply(chunks_exact::remainder_chunks_exact({BYTES_SLICE}, size)); solve(); }}",
+            "{LIBRARY_CHUNKS} verifying \"borrow.rs\"; fn length(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == {size}u64; ensures result == {}u64; }} by {{ step_until(function.exit); solve(); }}",
             length % size
         );
         ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -5813,9 +5816,7 @@ fn rust_chunks_exact_boundaries_and_full_width_sizes() {
             .err()
             .expect("zero size must fail");
         assert!(
-            error
-                .message()
-                .contains("unproved obligation: `size != 0u64`"),
+            error.message().contains("Rust chunks_exact panic check"),
             "{}",
             error.message()
         );
@@ -5834,14 +5835,11 @@ fn rust_chunks_exact_evaluates_size_once_and_keeps_shadowed_iterators_distinct()
     fn size(p: &mut i32) -> usize {{ requires *p == 0; owns *p; ensures *p == 1; ensures result == 4u64; }}
     fn length(bytes: &[u8], p: &mut i32) -> usize {{ requires bytes.len() == 5u64; requires *p == 0; owns *p; ensures *p == 1; ensures result == 1u64; }} by {{
         step_until(function.exit);
-        apply(chunks_exact::remainder_chunks_exact({BYTES_SLICE}, 4u64));
         solve();
     }}
     fn shadow(bytes: &[u8]) -> usize {{ requires bytes.len() == 5u64; ensures result == 0u64; }} by {{
-        apply(chunks_exact::remainder_chunks_exact({BYTES_SLICE}, 4u64));
         step_until(assignment(tail_len, 0));
         step();
-        apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(tail, tail_len), 1u64));
         step_until(function.exit);
         solve();
     }}");

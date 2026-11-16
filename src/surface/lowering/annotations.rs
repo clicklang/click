@@ -3356,7 +3356,7 @@ pub(in crate::surface) fn lower_integer_certificate_proposition(
 
 /// The decimal spelling of an integer literal, negated or not.
 /// The C type of each local of `function` that holds a library-valued loop
-/// iterator, `ChunksExact<uint8>`: a clause read with no state in hand, such
+/// iterator, `SliceIter<uint8>`: a clause read with no state in hand, such
 /// as a loop's `decreases`, still knows the local holds a spec value.
 fn library_iterator_local_types(
     function: &crate::languages::interface::ImportedFunction,
