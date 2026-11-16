@@ -1445,9 +1445,125 @@ impl MemoryQuery<'_> {
 }
 
 impl ResourceContext {
-    /// A decisive overlap query only for an already-published, complete
-    /// constant-coordinate ownership fragment. Unsupported is dispatch to
-    /// the existing legacy operation, never a failed indexed search.
+    /// The raw producer already maintains interval trees and origin counts.
+    /// When every held owner is in this exact block and has this exact origin,
+    /// no graph preparation or alias recovery is needed. Other blocks remain
+    /// unsupported here: a loaded query can acquire a cross-block definition.
+    fn structural_owned_overlap(
+        &self,
+        fact: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> ConstantOwnedOverlap {
+        use ConstantOwnedOverlap::*;
+        let Some(range) = fact.memory_own_range() else {
+            return Unsupported;
+        };
+        if assumptions.has_pointer_block_aliases()
+            || matches!(range.base().block, PointerBlock::StringLiteral { .. })
+        {
+            return Unsupported;
+        }
+        let Some((origin, start, end)) =
+            super::resource_algebra::constant_memory_coordinates(range)
+        else {
+            return Unsupported;
+        };
+        if start >= end {
+            return Clear;
+        }
+        let blocks = &self.storage.index.owned_memory_by_block;
+        if blocks.len() != 1 {
+            return Unsupported;
+        }
+        let Some(members) = blocks.get(&origin.block) else {
+            return Unsupported;
+        };
+        if self
+            .storage
+            .index
+            .concrete_memory_by_base
+            .get(&(origin, true))
+            .copied()
+            != Some(members.len())
+        {
+            return Unsupported;
+        }
+        let raw = &self.storage.index.memory_addresses;
+        let Some(bucket) = raw.classes.get(&range.base().block) else {
+            return Unsupported;
+        };
+        if raw.incomplete || bucket.write_intervals.len() != members.len() {
+            return Unsupported;
+        }
+        let Some(start) = AffineOffset::of(&range.start_pointer().offset)
+            .and_then(|offset| offset.checked_add(&bucket.origin))
+        else {
+            return Unsupported;
+        };
+        let Some(end) = AffineOffset::of(&range.end_pointer().offset)
+            .and_then(|offset| offset.checked_add(&bucket.origin))
+        else {
+            return Unsupported;
+        };
+        match bucket
+            .write_intervals
+            .first_overlap(&AddressCoordinate(start), &AddressCoordinate(end))
+        {
+            Some(entry) => Overlap(entry),
+            None => Clear,
+        }
+    }
+
+    /// A symbolic query may use an enclosing interval established by direct
+    /// indexed endpoint bounds. Disjointness of that envelope is sufficient;
+    /// an intersecting envelope is a miss, never invented overlap evidence.
+    fn bounded_owned_overlap(
+        &self,
+        fact: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> ConstantOwnedOverlap {
+        use ConstantOwnedOverlap::*;
+        let Some(range) = fact.memory_own_range() else {
+            return Unsupported;
+        };
+        let Some((start, end)) = range.int32_bounds() else {
+            return Unsupported;
+        };
+        let bound = |term: &MachineTerm| {
+            term.as_const()
+                .map(|value| {
+                    let value = i64::from(value as i32);
+                    (value, value)
+                })
+                .or_else(|| assumptions.indexed_constant_interval(term))
+        };
+        let (Some((start_lo, start_hi)), Some((end_lo, end_hi))) = (bound(start), bound(end))
+        else {
+            return Unsupported;
+        };
+        if start_lo > start_hi || end_lo > end_hi {
+            return Unsupported;
+        }
+        let (Ok(start), Ok(end)) = (i32::try_from(start_lo), i32::try_from(end_hi)) else {
+            return Unsupported;
+        };
+        let envelope = ResourceFact::own_memory(MemoryRange::new_with_element_width(
+            range.base().clone(),
+            MachineTerm::constant(start as u32),
+            MachineTerm::constant(end as u32),
+            range.element_width(),
+        ));
+        match self.constant_owned_overlap(&envelope, assumptions) {
+            Clear => Clear,
+            Overlap(entry) if start_lo == start_hi && end_lo == end_hi => Overlap(entry),
+            Overlap(_) | Unsupported => Unsupported,
+        }
+    }
+
+    /// Decide overlap from producer-maintained structural intervals or a
+    /// published complete address-class index. Symbolic query bounds can
+    /// establish a constant enclosing interval. Unsupported is an explicit
+    /// fragment miss, never absence of overlap or an implicit search.
     pub(super) fn constant_owned_overlap(
         &self,
         fact: &ResourceFact,
@@ -1457,12 +1573,29 @@ impl ResourceContext {
         let Some(range) = fact.memory_own_range() else {
             return Unsupported;
         };
-        let Some(extent) = read_extent(fact) else {
+        if !fact
+            .owned_quantity_term()
+            .and_then(MachineTerm::as_const)
+            .is_some_and(|quantity| (quantity as i32) > 0)
+        {
             return Unsupported;
-        };
+        }
         if self.flat_owned_memory_ranges().is_empty() {
             return Clear;
         }
+        if super::resource_algebra::constant_memory_coordinates(range)
+            .is_some_and(|(_, start, end)| start >= end)
+        {
+            return Clear;
+        }
+        if let decided @ (Clear | Overlap(_)) = self.structural_owned_overlap(fact, assumptions) {
+            return decided;
+        }
+        let Some(extent) = read_extent(fact) else {
+            // This recursive query has constant endpoints and cannot repeat
+            // the symbolic-bound route.
+            return self.bounded_owned_overlap(fact, assumptions);
+        };
         // The memory algebra deliberately permits pooling of equal-content
         // string literal descriptions. Keep that policy on its existing path.
         if matches!(range.base().block, PointerBlock::StringLiteral { .. }) {

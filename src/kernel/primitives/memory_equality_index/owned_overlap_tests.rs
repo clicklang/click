@@ -121,7 +121,7 @@ fn a_query_read_definition_is_registered_in_the_paired_namespace() {
 }
 
 #[test]
-fn incomplete_or_cold_ownership_indexes_never_produce_a_decisive_miss() {
+fn incomplete_indexes_refuse_but_cold_maintained_coordinates_decide() {
     let facts = PureFactContext::new();
     let p = at(2);
     let symbolic = ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -141,7 +141,7 @@ fn incomplete_or_cold_ownership_indexes_never_produce_a_decisive_miss() {
     let raw = ResourceContext::new().unchecked_with_fact(owner(p.clone(), 4, 8));
     assert!(matches!(
         raw.constant_owned_overlap(&owner(p, 0, 4), &facts),
-        ConstantOwnedOverlap::Unsupported
+        ConstantOwnedOverlap::Clear
     ));
 }
 
@@ -172,4 +172,85 @@ fn pooled_literal_ownership_keeps_the_existing_memory_algebra_policy() {
             .try_compose_into_valid_context_delaying_normalization([owner(right, 0, 2)], &facts)
             .is_ok()
     );
+}
+
+#[test]
+fn cold_ownership_uses_produced_intervals_without_preparing_a_graph() {
+    let facts = PureFactContext::new();
+    let p = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(8_760_010)),
+    };
+    let long = owner(p.clone(), 0, 100);
+    // A nested old interval must not hide the long interval from a query.
+    let parent = ResourceContext::new().unchecked_with_facts([long, owner(p.clone(), 2, 3)]);
+    let _fast =
+        crate::kernel::search::FastOperationScope::enter("cold produced ownership intervals");
+    assert!(matches!(
+        parent.constant_owned_overlap(&owner(p.clone(), 5, 6), &facts),
+        ConstantOwnedOverlap::Overlap(_)
+    ));
+    assert!(matches!(
+        parent.constant_owned_overlap(&owner(p.clone(), 100, 104), &facts),
+        ConstantOwnedOverlap::Clear
+    ));
+    assert!(parent.memory_equalities.lock().unwrap().published.is_none());
+    let removed = parent
+        .clone()
+        .without_exact_representation(&owner(p.clone(), 0, 100))
+        .unwrap();
+    assert!(matches!(
+        removed.constant_owned_overlap(&owner(p.clone(), 5, 6), &facts),
+        ConstantOwnedOverlap::Clear
+    ));
+    assert!(matches!(
+        parent.constant_owned_overlap(&owner(p, 5, 6), &facts),
+        ConstantOwnedOverlap::Overlap(_)
+    ));
+}
+
+#[test]
+fn symbolic_boundary_uses_direct_bounds_and_does_not_invent_an_overlap() {
+    let p = at(30);
+    let x = MachineTerm::Variable(Variable(8_760_030));
+    let empty = PureFactContext::new();
+    let parent = ResourceContext::new().unchecked_with_fact(owner(p.clone(), 8, 12));
+    let query = ResourceFact::own_memory(MemoryRange::new_with_element_width(
+        p.clone(),
+        0u32.into(),
+        x.clone(),
+        1,
+    ));
+    let bounded = |lo: u32, hi: u32| {
+        empty
+            .clone()
+            .assume_condition(ConditionTerm::signed_less_equal(lo.into(), x.clone()), true)
+            .assume_condition(ConditionTerm::signed_less_equal(x.clone(), hi.into()), true)
+    };
+    let _fast =
+        crate::kernel::search::FastOperationScope::enter("explicit symbolic return boundary");
+    assert!(matches!(
+        parent.constant_owned_overlap(&query, &empty),
+        ConstantOwnedOverlap::Unsupported
+    ));
+    assert!(matches!(
+        parent.constant_owned_overlap(&query, &bounded(2, 4)),
+        ConstantOwnedOverlap::Clear
+    ));
+    assert!(matches!(
+        parent.constant_owned_overlap(&query, &bounded(2, 10)),
+        ConstantOwnedOverlap::Unsupported
+    ));
+    assert!(matches!(
+        parent.constant_owned_overlap(&query, &bounded(9, 9)),
+        ConstantOwnedOverlap::Overlap(_)
+    ));
+    assert!(matches!(
+        parent.constant_owned_overlap(&query, &bounded(0, 0)),
+        ConstantOwnedOverlap::Clear
+    ));
+    assert!(matches!(
+        parent.constant_owned_overlap(&query, &empty),
+        ConstantOwnedOverlap::Unsupported
+    ));
 }
