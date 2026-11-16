@@ -1416,8 +1416,13 @@ impl ProgramLayouts {
                         else_branch,
                         ..
                     } => pending.extend([then_branch.as_ref(), else_branch.as_ref()]),
-                    ProgramStatement::Loop { body, .. } => pending.push(body),
-                    ProgramStatement::ForStep { step, .. } => pending.push(step),
+                    ProgramStatement::Loop {
+                        body, update, test, ..
+                    } => pending.extend(crate::kernel::program_loop_regions(
+                        body,
+                        update.as_deref(),
+                        test.as_ref(),
+                    )),
                     ProgramStatement::Switch { cases, .. } => {
                         pending.extend(cases.iter().map(|case| case.body.as_ref()))
                     }
