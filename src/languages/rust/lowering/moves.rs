@@ -795,8 +795,15 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     iterator,
                     option,
                     option_type,
+                    payload,
                     taken,
-                } => cx.range_next(iterator, option, option_type, *taken)?,
+                } => cx.range_next(
+                    iterator,
+                    option.as_deref(),
+                    option_type,
+                    payload.as_deref(),
+                    *taken,
+                )?,
                 S::ChunkNext { iterator, option } => cx.chunk_next(iterator, option)?,
                 S::Assign {
                     target: E::Local { name },
