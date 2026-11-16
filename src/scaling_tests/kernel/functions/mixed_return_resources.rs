@@ -1564,3 +1564,234 @@ fn recursive_call_preparation_does_not_deepen_a_decided_tail() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn specialized_return_producers_ignore_retained_state_and_scale_with_their_bodies() {
+    use super::specialized_return_tests::{
+        anchor, authority, constructor, control, ledger, matched, named,
+    };
+    use crate::kernel::program_expression::{int32_literal, variable};
+    for external in [false, true] {
+        for family in ["named", "control", "matched"] {
+            for axis in [
+                "owners",
+                "related instances",
+                "aliases",
+                "definitions",
+                "ledger",
+                "body",
+            ] {
+                let mut samples = Vec::new();
+                for count in [4_u32, 16, 64] {
+                    let _session = crate::kernel::VerificationSession::enter();
+                    let pointer = if external {
+                        anchor(8_880_000)
+                    } else if family == "control" {
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: PointerOffsetTerm::Constant(0),
+                        }
+                    } else {
+                        Pointer::symbolic(Variable(8_880_000))
+                    };
+                    let mut facts = PureFactContext::new();
+                    let (head, mut definition) = match family {
+                        "named" => named(pointer.clone(), 8_880_001),
+                        "control" => control(pointer.clone()),
+                        _ => matched(constructor(pointer.clone()), 8_880_001),
+                    };
+                    let mut state = if family == "control" {
+                        ledger(pointer.clone())
+                    } else {
+                        ExecutionState::new()
+                    };
+                    let mut frame = ResourceContext::new_with_equalities(&facts);
+                    let mut definitions = Vec::new();
+                    for index in 0..count {
+                        let other = anchor(8_881_000 + u64::from(index));
+                        match axis {
+                            "owners" => {
+                                frame = frame.unchecked_with_fact(ResourceFact::own_memory(
+                                    MemoryRange::new(other, 0u32.into(), 1u32.into()),
+                                ))
+                            }
+                            "related instances" => {
+                                let (instance, _) =
+                                    named(pointer.clone(), 8_882_000 + u64::from(index));
+                                frame = frame.unchecked_with_fact(instance);
+                            }
+                            "aliases" => {
+                                facts = facts.assume_condition(
+                                    ConditionTerm::pointer_equal(pointer.clone(), other),
+                                    true,
+                                )
+                            }
+                            "definitions" => definitions.push(CompositeResourceDefinition::new(
+                                format!("unrelated_{index:04}"),
+                                vec![],
+                                None,
+                                false,
+                                vec![],
+                                vec![],
+                            )),
+                            "ledger" if family == "control" => {
+                                let authority = authority(other, "unrelated");
+                                state = state
+                                    .clone()
+                                    .with_resource_context(
+                                        state
+                                            .resources()
+                                            .clone()
+                                            .unchecked_with_fact(authority.clone()),
+                                    )
+                                    .import_opaque_population(&authority, 0)
+                                    .unwrap();
+                            }
+                            "body" => {
+                                let spec = ResourceSpec::owned_memory(MemorySegment::new(
+                                    variable(if family == "matched" { "ptr" } else { "p" }),
+                                    int32_literal(index * 2 + 10),
+                                    int32_literal(index * 2 + 11),
+                                ));
+                                if let Some(matched) = definition.matched.as_mut() {
+                                    matched.arms[1].contains.push(spec);
+                                } else {
+                                    definition.contains.push(spec);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    state = state.with_resource_context(frame.clone());
+                    definitions.push(definition);
+                    definitions.sort_by(|a, b| a.name().cmp(b.name()));
+                    frame.synchronize_memory_equalities(&facts);
+                    let outputs = EvaluatedReturnResources::new(&facts)
+                        .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
+                        .unwrap();
+                    let source = outputs.occurrences[0].source;
+                    let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                        let _fast = crate::kernel::search::FastOperationScope::enter(
+                            "selected specialized return construction",
+                        );
+                        let bodies = ConstructedReturnBodies::construct(
+                            &outputs,
+                            &definitions,
+                            &state,
+                            &facts,
+                        );
+                        if bodies.1.contains(&source) {
+                            assert!(
+                                external
+                                    || (family == "control" && axis == "body")
+                                    || (family == "matched" && axis == "aliases"),
+                                "unexpected geometry miss: {family}, {axis}, {count}"
+                            );
+                            assert!(bodies.get(source).is_none());
+                            return;
+                        }
+                        assert!(bodies.1.is_empty());
+                        let body = bodies.get(source).unwrap();
+                        assert!(body.specialized.is_some());
+                        assert_eq!(
+                            body.transfers.len(),
+                            (if family == "named" { 1 } else { 2 })
+                                + if axis == "body" { count as usize } else { 0 }
+                        );
+                        // General external-address frames remain an explicit
+                        // geometry miss. This producer test must not invoke their
+                        // legacy discovery or call a miss established separation.
+                        match frame.admit_returned_flat_body(body, &facts) {
+                            FlatBodyAdmission::Admitted | FlatBodyAdmission::Unsupported => {}
+                            FlatBodyAdmission::Conflict { .. } => {
+                                panic!("fixture has no stated overlap")
+                            }
+                        }
+                    });
+                    samples.push(work);
+                }
+                if axis == "body" {
+                    assert!(
+                        samples[2] <= samples[0] * 24 + 128,
+                        "{family}, {axis}: {samples:?}"
+                    );
+                } else {
+                    assert!(
+                        samples.iter().all(|work| *work <= samples[0] + 128),
+                        "{family}, {axis}: {samples:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn matched_return_constructor_hits_and_opaque_misses_do_not_walk_model_aliases() {
+    use super::specialized_return_tests::{constructor, matched, matched_type};
+    for known in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let model = AlgebraicTerm {
+                algebraic_type: matched_type(),
+                node: AlgebraicTermNode::Variable(Variable(8_883_000)),
+            };
+            let empty = AlgebraicTerm {
+                algebraic_type: matched_type(),
+                node: AlgebraicTermNode::Constructor {
+                    variant: "Empty".into(),
+                    fields: vec![],
+                },
+            };
+            let mut facts = PureFactContext::new();
+            for index in 0..count {
+                let alias = AlgebraicTerm {
+                    algebraic_type: matched_type(),
+                    node: AlgebraicTermNode::Variable(Variable(8_883_100 + index)),
+                };
+                facts = facts
+                    .assume_proposition(Proposition::Equal(
+                        Term::Algebraic(model.clone()),
+                        Term::Algebraic(alias.clone()),
+                    ))
+                    .assume_proposition(Proposition::Not(Box::new(Proposition::Equal(
+                        Term::Algebraic(alias),
+                        Term::Algebraic(empty.clone()),
+                    ))));
+            }
+            if known {
+                facts = facts.assume_proposition(Proposition::Equal(
+                    Term::Algebraic(model.clone()),
+                    Term::Algebraic(constructor(Pointer::symbolic(Variable(8_884_000)))),
+                ));
+            }
+            let (head, definition) = matched(model, 8_884_001);
+            let outputs = EvaluatedReturnResources::new(&facts)
+                .admit(head, ReturnOwnershipOrigin::Description, &facts)
+                .unwrap();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "selected matched constructor",
+                );
+                let bodies = ConstructedReturnBodies::construct(
+                    &outputs,
+                    &[definition],
+                    &ExecutionState::new(),
+                    &facts,
+                );
+                let body = bodies.get(outputs.occurrences[0].source).unwrap();
+                assert_eq!(
+                    body.specialized.as_ref().unwrap().constructor.is_some(),
+                    known
+                );
+                assert_eq!(body.folded.len(), usize::from(!known));
+            });
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 96),
+            "known={known}: {samples:?}"
+        );
+    }
+}

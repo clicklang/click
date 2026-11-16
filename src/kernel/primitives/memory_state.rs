@@ -8739,6 +8739,30 @@ impl ExecutionState {
     ) -> Result<(Vec<ResourceFact>, Vec<MachineTerm>), String> {
         let (children, descriptions) =
             self.authority_wrapper_candidates(selected, definition, assumptions, require_folded)?;
+        let counts = self.authority_counts_for_descriptions(descriptions)?;
+        Ok((children, counts))
+    }
+
+    /// Connect newly emitted authority descriptions to the live ledger. This
+    /// grants no authority and never re-evaluates the producing body.
+    pub(in crate::kernel) fn returned_authority_counts(
+        &self,
+        authorities: &[ResourceFact],
+    ) -> Result<Vec<MachineTerm>, String> {
+        let descriptions = authorities
+            .iter()
+            .map(|fact| match fact.resource() {
+                Resource::PopulationAuthority(description) => Ok(description.clone()),
+                _ => Err("expected an emitted authority".into()),
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        self.authority_counts_for_descriptions(descriptions)
+    }
+
+    fn authority_counts_for_descriptions(
+        &self,
+        descriptions: Vec<ResourceDescription>,
+    ) -> Result<Vec<MachineTerm>, String> {
         let mut counts = Vec::with_capacity(descriptions.len());
         for description in descriptions {
             let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
@@ -8785,7 +8809,7 @@ impl ExecutionState {
             };
             counts.push(count);
         }
-        Ok((children, counts))
+        Ok(counts)
     }
 
     /// A standalone helper's typed lock returns a fresh authority-bearing

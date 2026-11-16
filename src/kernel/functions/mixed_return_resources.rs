@@ -122,9 +122,13 @@ impl ConsumedCellReturns {
             }
             return;
         }
+        let term = match spec.term() {
+            ResourceTerm::Instance { resource, .. } => resource.as_ref(),
+            term => term,
+        };
         let ResourceTerm::Composite {
             name, arguments, ..
-        } = spec.term()
+        } = term
         else {
             return;
         };
@@ -136,7 +140,7 @@ impl ConsumedCellReturns {
         };
         let definition = &definitions[index];
         if definition.is_recursive()
-            || definition.instance_schema.is_some()
+            || !definition.children.is_empty()
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || !active.insert(name.clone())
@@ -565,6 +569,8 @@ pub(in crate::kernel) struct ConstructedReturnBody {
     // Projection and admission consume its expansion without rebinding it.
     #[allow(dead_code)]
     witnesses: BTreeMap<ResourceOccurrenceId, Vec<ProgramValue>>,
+    #[allow(dead_code)]
+    specialized: Option<specialized_returns::SpecializedReturnEvidence>,
     // Explicit cut points of this finite construction. A recursive child is
     // retained with its emitted identity, never followed through memory.
     #[allow(dead_code)]
@@ -588,7 +594,7 @@ impl ConstructedReturnBody {
             .filter(|piece| piece.memory_own_range().is_some())
     }
 
-    pub(super) fn boundary(&self) -> &[ResourceFact] {
+    pub(in crate::kernel) fn boundary(&self) -> &[ResourceFact] {
         &self.boundary
     }
 }
@@ -628,6 +634,32 @@ impl ConstructedReturnBodies {
             else {
                 continue;
             };
+            if let Some(family) = specialized_returns::classify(support, definitions) {
+                match specialized_returns::construct(
+                    family,
+                    support,
+                    occurrence.source,
+                    occurrence.clause,
+                    definitions,
+                    state,
+                    composition,
+                    occurrence.origin == ReturnOwnershipOrigin::EntryBorrow
+                        && composition.restores_entry_borrows(),
+                    assumptions,
+                )? {
+                    specialized_returns::Construction::Body(body) => {
+                        bodies.insert(occurrence.source, *body);
+                    }
+                    specialized_returns::Construction::Unsupported => {
+                        legacy.insert(occurrence.source);
+                    }
+                }
+                continue;
+            }
+            if matches!(support.resource(), Resource::Instance(_)) {
+                legacy.insert(occurrence.source);
+                continue;
+            }
             let Resource::Composite { name, .. } = support.resource() else {
                 continue;
             };
@@ -772,6 +804,7 @@ impl ConstructedReturnBodies {
         .to_vec();
         let expansion = normalize(context).facts().to_vec();
         Some(ConstructedReturnBody {
+            specialized: None,
             witnesses,
             folded,
             frontier,
@@ -928,8 +961,10 @@ impl ConstructedReturnBodies {
     ) -> Option<&ConstructedReturnBody> {
         let body = self.0.get(&source);
         assert!(
-            !matches!(fact.resource(), Resource::Composite { .. })
-                || body.is_some()
+            !matches!(
+                fact.resource(),
+                Resource::Composite { .. } | Resource::Instance(_)
+            ) || body.is_some()
                 || self.1.contains(&source),
             "returned composite must carry its construction or an explicit legacy route"
         );
@@ -1101,9 +1136,13 @@ mod fresh_allocation_tests;
 #[cfg(test)]
 mod recursive_return_tests;
 #[cfg(test)]
+mod specialized_return_tests;
+#[cfg(test)]
 pub(super) mod tests;
 
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/mixed_return_resources.rs");
 }
+
+mod specialized_returns;
