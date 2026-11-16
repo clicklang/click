@@ -1310,7 +1310,12 @@ impl LoweringContext<'_> {
                 let operation = if temporaries.is_empty() {
                     operation
                 } else {
-                    program_seq(operation, program_end_automatic_lifetimes(temporaries))
+                    program_seq(
+                        operation,
+                        program_end_automatic_lifetimes(
+                            temporaries.into_iter().map(Into::into).collect(),
+                        ),
+                    )
                 };
                 Ok(evaluate_then(prefix, operation))
             }

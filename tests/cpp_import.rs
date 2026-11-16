@@ -19805,7 +19805,7 @@ fn record_prvalue_arguments_construct_forward_and_end_at_the_full_expression() {
                 }
             }
             click::kernel::ProgramStatement::EndAutomaticLifetimes { names, .. } => {
-                result.push(names.clone())
+                result.push(names.iter().map(ToString::to_string).collect())
             }
             _ => {}
         }

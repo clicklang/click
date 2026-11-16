@@ -354,12 +354,10 @@ preserves the compact recording of contiguous constant-offset runs. Unit
 controls cover absent/partial observations and unwritten output; deterministic
 scaling grows unrelated cached cells and dropped runs through 65,536 slots.
 
-The next boundary is the byte-value preservation proof. Retaining the first
-two output-byte equalities succeeds; the third still exhausts bounded smart
-work, and selected intermediate pointer facts lack round-tripping source
-spellings. A pointer call-result naming prototype did not repair the actual
-store's separation spelling and was not retained. Reduce that spelling gap
-before continuing the proof, then require a positive
+The next boundary is the byte-value preservation proof. The first two
+output-byte equalities close; the third exhausts bounded smart work. The
+selected intermediate pointer facts also expose source-spelling gaps. Reduce
+those gaps before continuing the proof, then require a positive
 ordinary/expanded/cold/retained witness before counting serialization coverage.
 
 The delivered prerequisites are narrower:
