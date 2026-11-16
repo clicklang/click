@@ -8680,16 +8680,6 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     {
         return crate::languages::rust::names::vec_type_name(&spelling(element));
     }
-    // The library's `SliceIter<uint8>`, which a sidecar names
-    // `SliceIter<u8>`.
-    if let Some((primitive, arguments)) = generics::primitive_instance_of(&algebraic_type.name)
-        && primitive == "SliceIter"
-        && let [element] = arguments.as_slice()
-    {
-        let mut name = primitive;
-        crate::languages::rust::names::push_type_argument(&mut name, &spelling(element));
-        return name;
-    }
     match algebraic_type.arguments.as_slice() {
         // The library's `Slice<T>` is named `Slice<u8>`.
         [element] if algebraic_type.name == "Slice" => {

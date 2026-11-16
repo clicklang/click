@@ -3253,8 +3253,7 @@ mod tests {
     }
 
     fn check_plan(goal: &Proposition, premises: &[Proposition]) -> SignedArithmeticPlan {
-        let plan = plan_signed_arithmetic(goal, premises).expect("planner should find proof");
-        plan
+        plan_signed_arithmetic(goal, premises).expect("planner should find proof")
     }
 
     /// A `uint32` order goal is planned from its operands' signed

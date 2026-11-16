@@ -3160,6 +3160,24 @@ fn raise_call_argument(
     }
 }
 
+fn raise_call(
+    name: &str,
+    arguments: &[crate::kernel::KernelTerm],
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<SurfaceTerm> {
+    Some(SurfaceTerm::Call {
+        name: generic_instance_source_name(name).into(),
+        arguments: arguments
+            .iter()
+            .map(|argument| {
+                raise_call_argument(argument, parameter_binding, state, bound_variables)
+            })
+            .collect::<Option<Vec<_>>>()?,
+    })
+}
+
 // Keep the float-only temporaries out of the recursive shared renderer's
 // frame, which is also used for deeply nested integer expressions.
 fn raise_float_expression(
@@ -3190,16 +3208,13 @@ fn raise_float_expression(
                 crate::kernel::FloatBinaryOperator::Divide => SurfaceTerm::Divide(left, right),
             }
         }
-        Node::FloatCall(call) => SurfaceTerm::Call {
-            name: generic_instance_source_name(&call.name).into(),
-            arguments: call
-                .arguments
-                .iter()
-                .map(|argument| {
-                    raise_call_argument(argument, parameter_binding, state, bound_variables)
-                })
-                .collect::<Option<Vec<_>>>()?,
-        },
+        Node::FloatCall(call) => raise_call(
+            &call.name,
+            &call.arguments,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
         Node::FloatCompare {
             operator,
             arguments,
@@ -3667,26 +3682,15 @@ fn raise_kernel_term_dispatch(
             else_branch: Box::new(integer_typed_expression(recurse(&arguments[2])?)),
         },
         Node::IntegerOperation { .. } => unreachable!("integer operation dispatch"),
-        Node::AlgebraicCall(call) => SurfaceTerm::Call {
-            name: generic_instance_source_name(&call.name).into(),
-            arguments: call
-                .arguments
-                .iter()
-                .map(|argument| {
-                    raise_call_argument(argument, parameter_binding, state, bound_variables)
-                })
-                .collect::<Option<Vec<_>>>()?,
-        },
+        Node::AlgebraicCall(call) => raise_call(
+            &call.name,
+            &call.arguments,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
         Node::Call { name, arguments } => {
-            let call = SurfaceTerm::Call {
-                name: generic_instance_source_name(name).into(),
-                arguments: arguments
-                    .iter()
-                    .map(|argument| {
-                        raise_call_argument(argument, parameter_binding, state, bound_variables)
-                    })
-                    .collect::<Option<Vec<_>>>()?,
-            };
+            let call = raise_call(name, arguments, parameter_binding, state, bound_variables)?;
             // The root may read a call's word at the other signedness. Its
             // declaration alone cannot recover that selected interpretation.
             // Native 128-bit calls refuse even identity casts, so their
@@ -5485,7 +5489,7 @@ fn synthesize_surface_call(
             if !consume_surface_synthesis_work("function-argument") {
                 return None;
             }
-            raise_kernel_term(
+            raise_call_argument(
                 &importer.argument(value),
                 parameter_binding,
                 state,

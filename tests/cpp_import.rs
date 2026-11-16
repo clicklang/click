@@ -183,22 +183,21 @@ fn check_trivial_record_parameter_copy(tools: bool) {
     )
     .unwrap();
     let proof = proof_source.as_str();
-    click::surface::with_proof_trace("probe", || {
-        check_arithmetic_sidecar_with_tools(&project, &import, proof, tools);
-    });
     if tools {
+        fs::write(project.directory.join("arithmetic.click"), proof).unwrap();
         let parsed =
             read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
-        let expanded = expand_project_claim_source_by_label(
-            &parsed,
-            &ProgramInputs::program(&import),
+        // One ordinary baseline supplies the certificates and the retained
+        // environment. Do not run the tactic-level round trip as well.
+        let (session, verified) =
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+        let expanded = click::surface::expand_verified_function_claim_source_by_label(
+            proof,
+            &verified,
             "probe.contract",
         )
+        .unwrap()
         .unwrap();
-        verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
-            .unwrap();
-        let (session, _) =
-            ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let rewritten = parsed.with_entry_source(expanded.clone());
         let position = project_tactic_source_position(
             &rewritten,
@@ -207,9 +206,33 @@ fn check_trivial_record_parameter_copy(tools: bool) {
             0,
         )
         .unwrap();
-        session
-            .verify_at_project(&expanded, position.line, position.column)
-            .unwrap();
+        click::surface::without_implicit_solve(|| {
+            session.verify_at_project(&expanded, position.line, position.column)
+        })
+        .unwrap();
+        // Expand the earlier callee after the later caller, keeping the
+        // original certificate positions valid. Finish printing before the
+        // independent cold check resets the kernel tables.
+        let expanded = click::surface::expand_verified_function_claim_source_by_label(
+            &expanded,
+            &verified,
+            "change.contract",
+        )
+        .unwrap()
+        .unwrap();
+        drop(session);
+        let rewritten = parsed.with_entry_source(expanded);
+        assert!(
+            project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&import))
+                .unwrap()
+                .is_empty()
+        );
+        click::surface::without_implicit_solve(|| {
+            verify_program_prepared_project(&rewritten, &import)
+        })
+        .unwrap();
+    } else {
+        check_arithmetic_sidecar_with_tools(&project, &import, proof, false);
     }
     let invalid = proof.replace("owns input.data[0..1];", "views input.data[0..1];");
     fs::write(project.directory.join("invalid.click"), &invalid).unwrap();
@@ -7074,19 +7097,8 @@ fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
         // Session construction cold-verifies this complete program once.
         let (session, _) =
             ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
-        let next_sites =
-            project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&import))
-                .unwrap();
-        let next = next_sites.first().unwrap();
-        let next = project_tactic_source_position(
-            &rewritten,
-            &ProgramInputs::program(&import),
-            &next.claim_label,
-            next.source_index,
-        )
-        .unwrap();
         session
-            .verify_at_project(&expanded, next.line, next.column)
+            .verify_at_project(&expanded, site.line, site.column)
             .expect("audit session checks the expanded method proof");
     }
 }
@@ -7104,7 +7116,7 @@ fn value_methods_reject_false_claims_missing_authority_and_overflow() {
         ("FeeFrac::operator+=", add.replace("ensures this->fee == old(this->fee) + old(other.fee);", "ensures this->fee == old(this->fee);"), "unclosed goal"),
         ("FeeFrac::operator+=", add.replace("    owns this->fee;\n", ""), "missing resource fact"),
         ("FeeFrac::operator+=", add.replace("    requires -4611686018427387904 <= this->fee;\n    requires this->fee <= 4611686018427387903;\n", ""), "overflow"),
-        ("FeeFrac::operator+=", add.replace("    requires -1073741824 <= this->size;\n    requires this->size <= 1073741823;\n", ""), "overflow"),
+        ("FeeFrac::operator+=", add.replace("    requires -1073741824 <= this->size;\n    requires this->size <= 1073741823;\n", ""), "could not establish `-1073741824 <= this->size`"),
     ] {
         let project = Project::with_fixture("value_methods.cpp", selector, source);
         refresh_import(&project.config()).unwrap();
@@ -13222,9 +13234,7 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let certificate = |_goal: &str| {
-            format!(
-                r#"solve() using {{ -9223372036854775808 <= to_integer(a); to_integer(a) <= 9223372036854775807; 1 <= to_integer(b); to_integer(b) <= 2147483647; }};"#
-            )
+            r#"solve() using { -9223372036854775808 <= to_integer(a); to_integer(a) <= 9223372036854775807; 1 <= to_integer(b); to_integer(b) <= 2147483647; };"#.to_owned()
         };
         let expression = format!("{pure}(to_integer(a), to_integer(b))");
         let observed = format!("to_integer(a {op} b)");

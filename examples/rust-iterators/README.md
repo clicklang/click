@@ -6,13 +6,12 @@ exact mathematical sum of the bytes at function entry. The sidecar chooses a
 prefix invariant and bounds each intermediate sum by 255 times that prefix's
 length.
 
-The unit sets `"iterators": "library"` (`docs/reference/rust.md`, Slice
-iterators as library values), so the iterator is imported through its Rust
-interface: `bytes` is iterated by a call to `SliceIter::iter`, and each pass
-calls `SliceIter::next(&mut iter)` and matches the `Option<&u8>` it returns.
-The proof observes the iterator through Rust's own methods, `iter.len()` and
-`iter.as_slice().as_ptr()`, and carries where it stands as an invariant,
-`iter.as_slice().as_ptr() == bytes + (bytes.len() - iter.len())`. The
+The iterator is held as the slice it still covers (`docs/reference/rust.md`,
+Slice iterator loops): each pass's `next()` yields the element at
+`iter.as_slice()` and moves the slice on by one, as `core`'s does. The proof
+observes the iterator through Rust's own methods, `iter.len()` and
+`iter.as_slice()`, and carries where it stands as an invariant,
+`iter.as_slice() == bytes + (bytes.len() - iter.len())`. The
 `preserve` script splits on `0u64 < iter.len()`; the copied pattern reads the
 yielded address, and an exhausted iterator performs no read.
 

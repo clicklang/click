@@ -112,30 +112,8 @@ pub(in crate::surface::proof) fn raise_machine_fold(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
-    let MachineTerm::RangeFold {
-        start,
-        end,
-        initial,
-        accumulator,
-        item,
-        body,
-    } = term
-    else {
-        return None;
-    };
-    raise_parts(
-        KernelFoldIndex::Int32,
-        false,
-        *accumulator,
-        *item,
-        [
-            start.as_ref(),
-            end.as_ref(),
-            initial.as_ref(),
-            body.as_ref(),
-        ],
-        |term| synthesize_surface_bitvector(term, parameter_binding, state, bound_variables),
-    )
+    let fold = KernelFold::import_machine(&mut crate::kernel::KernelTermImport::default(), term)?;
+    raise_fold(&fold, parameter_binding, state, bound_variables)
 }
 
 fn raise_parts<T>(

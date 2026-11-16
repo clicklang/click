@@ -375,9 +375,7 @@ fn typed_binding_variable(
             }
         }
         (expected, AlgebraicValue::Program(value)) if expected.accepts_program_value(value) => {
-            program_value_declaration_variable(value)
-                .or_else(|| bool_binder_variable(value))
-                .map(|variable| (BindingCarrier::Program, variable))
+            program_declaration_variable(value).map(|variable| (BindingCarrier::Program, variable))
         }
         (
             AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_),
@@ -452,6 +450,11 @@ fn typed_field_replacement(
         return Some(TypedProgramValueReplacement::Bitvector(operand.clone()));
     }
     typed_program_replacement(field)
+}
+
+/// Read a stored program declaration without cloning its descriptor.
+pub(crate) fn program_declaration_variable(value: &ProgramValue) -> Option<Variable> {
+    program_value_declaration_variable(value).or_else(|| bool_binder_variable(value))
 }
 
 fn program_value_declaration_variable(value: &ProgramValue) -> Option<Variable> {

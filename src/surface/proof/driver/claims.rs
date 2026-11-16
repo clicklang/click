@@ -56,9 +56,7 @@ struct ContractClosingInput {
 fn contract_closing_input(
     root: Option<&Proof<'_>>,
     execution: &CheckedFunctionExecution,
-    _function: &ProgramFunction,
     path_index: usize,
-    certified_path_index: usize,
     has_return_resource_rewrite: bool,
     post_return_facts: &[(usize, ProofFacts)],
 ) -> Result<ContractClosingInput, ClickError> {
@@ -87,13 +85,13 @@ fn contract_closing_input(
     };
     let path = match &returned {
         Some(returned) => returned.path(),
-        None => execution.paths().get(certified_path_index).ok_or_else(|| {
+        None => execution.paths().get(path_index).ok_or_else(|| {
             ClickError::new("return instance fold changed execution path coverage")
         })?,
     }
     .clone();
     let specification = returned.as_ref().map_or_else(
-        || execution.published_outcome(certified_path_index).clone(),
+        || execution.published_outcome(path_index).clone(),
         |returned| returned.publication().clone(),
     );
     Ok(ContractClosingInput {
@@ -108,14 +106,11 @@ enum ClosingProofMode {
     Implicit,
 }
 
-#[allow(clippy::too_many_arguments)]
 fn prove_next_contract_closing_goal<'a>(
     outcome_proof: &mut Option<Proof<'a>>,
     input: &mut Option<ContractClosingInput>,
     execution: &CheckedFunctionExecution,
-    function: &ProgramFunction,
     path_index: usize,
-    certified_path_index: usize,
     has_return_resource_rewrite: bool,
     post_return_facts: &[(usize, ProofFacts)],
     mode: ClosingProofMode,
@@ -131,9 +126,7 @@ fn prove_next_contract_closing_goal<'a>(
         *input = Some(contract_closing_input(
             Some(root),
             execution,
-            function,
             path_index,
-            certified_path_index,
             has_return_resource_rewrite,
             post_return_facts,
         )?);
@@ -2106,9 +2099,8 @@ fn apply_post_execution_arithmetic_using<'a>(
                 {
                     return Ok(closed);
                 }
-                return Err(focused.step_error(
-                    "post-execution Integer arithmetic needs an ordinary composition",
-                ));
+                Err(focused
+                    .step_error("post-execution Integer arithmetic needs an ordinary composition"))
             }
             ArithmeticPlan::SignedInt32(plan) => {
                 let certificate = focused
@@ -3366,19 +3358,6 @@ pub(super) fn finish_ordered_proof<'a>(
         )?;
         let (mut outcome_substrate, _, outcome_branches) =
             proof.split_checked_function_outcomes(&completed_execution)?;
-        // The completed paths are the proof's candidates in order, so each
-        // candidate's certified path is its own index. A candidate the
-        // Proof-owned outcome derivation rejected under an exact
-        // contradictory path fact owns no goal and is not finished.
-        let certified_path_for_proof: Vec<Option<usize>> = (0..execution.paths().len())
-            .map(|path_index| {
-                let rejected = !matches!(
-                    execution.paths()[path_index].outcome(),
-                    FunctionOutcome::VerificationDiverges
-                ) && !outcome_branches.contains_key(&path_index);
-                (!rejected).then_some(path_index)
-            })
-            .collect();
         let resource_prefix = claims
             .iter()
             .filter_map(|claim| match claim_targets.get(&claim.key()) {
@@ -3589,11 +3568,13 @@ pub(super) fn finish_ordered_proof<'a>(
                         &proof_label,
                         "execution path preparation",
                     );
-                    let Some(certified_path_index) = certified_path_for_proof[path_index] else {
+                    if !matches!(path.outcome(), FunctionOutcome::VerificationDiverges)
+                        && !outcome_branches.contains_key(&path_index)
+                    {
                         // The outcome derivation rejected this candidate under
                         // an exact contradictory path fact; it owns no goal.
                         continue 'execution_path;
-                    };
+                    }
                     let mut path_grouped_surface_closers = Vec::new();
                     let mut path_surface_post_tactics = Vec::new();
                     let mut path_deferred_capture_tactics = Vec::new();
@@ -4059,9 +4040,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 &mut outcome_proof,
                                 &mut closing_input,
                                 &completed_execution,
-                                function,
                                 path_index,
-                                certified_path_index,
                                 has_return_resource_rewrite,
                                 &post_return_facts,
                                 ClosingProofMode::Explicit,
@@ -5073,9 +5052,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &mut outcome_proof,
                                         &mut closing_input,
                                         &completed_execution,
-                                        function,
                                         path_index,
-                                        certified_path_index,
                                         has_return_resource_rewrite,
                                         &post_return_facts,
                                         ClosingProofMode::Implicit,
@@ -5185,7 +5162,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                     }
                     drop(_post_execution_timing);
-                    let _path_certification_timing = crate::instrumentation::OperationTiming::new(
+                    let _path_closing_timing = crate::instrumentation::OperationTiming::new(
                         function_block.signature().name(),
                         &proof_label,
                         "path closure and theorem assembly",
@@ -5331,9 +5308,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             &mut outcome_proof,
                             &mut closing_input,
                             &completed_execution,
-                            function,
                             path_index,
-                            certified_path_index,
                             has_return_resource_rewrite,
                             &post_return_facts,
                             ClosingProofMode::Implicit,
@@ -5363,9 +5338,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         None => contract_closing_input(
                             outcome_proof.as_ref(),
                             &completed_execution,
-                            function,
                             path_index,
-                            certified_path_index,
                             has_return_resource_rewrite,
                             &post_return_facts,
                         )?,
@@ -5493,7 +5466,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         outcome_substrate =
                             root.complete_outcome_in(&outcome_substrate, &mut contract_owner)?;
                     }
-                    drop(_path_certification_timing);
+                    drop(_path_closing_timing);
                 }
                 Ok(())
             },
@@ -5651,7 +5624,7 @@ pub(super) fn finish_ordered_proof<'a>(
             }
             // Surface synthesis follows proof contexts, not the number of
             // semantic execution paths they contribute. A proof branch can
-            // be vacuous after certified-path filtering while its checked
+            // be vacuous after outcome filtering while its checked
             // surface arm is still required to check the surrounding `if`.
             // Record exactly one builder per declared claim for this context;
             // tying builders to produced theorems silently dropped such arms

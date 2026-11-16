@@ -7356,7 +7356,7 @@ impl ResourceContext {
             };
             suppliers.insert_fact(supplier);
         }
-        Some(suppliers.normalized_with_byte_endpoints(assumptions, true))
+        Some(suppliers.normalized_with_byte_endpoints(assumptions, true, false))
     }
 
     fn without_fact_from_local_indexes(
@@ -7902,7 +7902,17 @@ impl ResourceContext {
     }
 
     pub(in crate::kernel) fn normalized(self, assumptions: &PureFactContext) -> Self {
-        self.normalized_with_byte_endpoints(assumptions, false)
+        self.normalized_with_byte_endpoints(assumptions, false, false)
+    }
+
+    /// Optional coalescing of one explicit constructed body. Only written
+    /// endpoints and exact resources nominate one neighbour per key. Missing
+    /// an alias-based merge retains both valid facts; it does not start search.
+    pub(in crate::kernel) fn normalized_without_discovery(
+        self,
+        assumptions: &PureFactContext,
+    ) -> Self {
+        self.normalized_with_byte_endpoints(assumptions, false, true)
     }
 
     // Bytewise regrouping belongs to explicitly selected memory suppliers.
@@ -7911,6 +7921,7 @@ impl ResourceContext {
         mut self,
         assumptions: &PureFactContext,
         byte_endpoints: bool,
+        written_only: bool,
     ) -> Self {
         if !self.storage.supported_by.is_empty()
             || !self.storage.expansions_by_support_occurrence.is_empty()
@@ -7934,7 +7945,7 @@ impl ResourceContext {
             self.clear_cached_support_expansions();
             self.advance_observable_expansions_cleared(&previous);
             return self
-                .normalized_with_byte_endpoints(assumptions, byte_endpoints)
+                .normalized_with_byte_endpoints(assumptions, byte_endpoints, written_only)
                 .restore_supported_projection_pairs(supported)
                 .restore_cached_support_expansions(expansions);
         }
@@ -7961,6 +7972,7 @@ impl ResourceContext {
         let mut slots = retained.iter().cloned().map(Some).collect::<Vec<_>>();
         let mut index = ResourceNormalizationIndex {
             byte_endpoints,
+            written_only,
             ..Default::default()
         };
         for (position, (_, fact)) in retained.iter().enumerate() {
@@ -8297,6 +8309,7 @@ fn memory_normalization_relative_byte_position(
 #[derive(Default)]
 struct ResourceNormalizationIndex {
     byte_endpoints: bool,
+    written_only: bool,
     positions: BTreeMap<ResourceNormalizationKey, BTreeSet<usize>>,
 }
 
@@ -8458,6 +8471,41 @@ impl ResourceNormalizationIndex {
             fact.resource().clone(),
         )];
         match fact.resource() {
+            Resource::Memory(range) if self.written_only => {
+                if let Some((base, start, end)) = native_wide_normalization_key(range) {
+                    keys.push(ResourceNormalizationKey::MemoryNativeEnd(
+                        base.clone(),
+                        range.element_width(),
+                        fact.is_own(),
+                        start,
+                    ));
+                    keys.push(ResourceNormalizationKey::MemoryNativeStart(
+                        base,
+                        range.element_width(),
+                        fact.is_own(),
+                        end,
+                    ));
+                }
+                if range.wide_bounds().is_none() {
+                    keys.push(ResourceNormalizationKey::MemoryEnd(
+                        memory_base_root(range.base()),
+                        fact.is_own(),
+                        memory_normalization_position(
+                            range,
+                            MachineOperandView::Legacy(range.start()),
+                        ),
+                    ));
+                    keys.push(ResourceNormalizationKey::MemoryStart(
+                        memory_base_root(range.base()),
+                        fact.is_own(),
+                        memory_normalization_position(
+                            range,
+                            MachineOperandView::Legacy(range.end()),
+                        ),
+                    ));
+                }
+            }
+            _ if self.written_only => {}
             Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
             }
             Resource::Instance(instance) => {
@@ -8612,7 +8660,11 @@ impl ResourceNormalizationIndex {
         let mut candidates = BTreeSet::new();
         for key in keys {
             if let Some(positions) = self.positions.get(&key) {
-                candidates.extend(positions.range((position + 1)..).copied());
+                if self.written_only {
+                    candidates.extend(positions.range((position + 1)..).next().copied());
+                } else {
+                    candidates.extend(positions.range((position + 1)..).copied());
+                }
             }
         }
         candidates.into_iter().collect()
@@ -13279,6 +13331,47 @@ mod shared_wide_bound_tests {
         include!("../../scaling_tests/kernel/primitives/resource_algebra/shared_wide_bounds.rs");
         include!(
             "../../scaling_tests/kernel/primitives/resource_algebra/coverage_separation_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod constructed_normalization_tests {
+    use super::*;
+
+    #[test]
+    fn written_normalization_keeps_both_facts_when_a_merge_needs_an_alias() {
+        let pointer = Pointer::symbolic(Variable(8_853_001));
+        let alias = Pointer::symbolic(Variable(8_853_002));
+        let facts = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(pointer.clone(), alias.clone()),
+            true,
+        );
+        let pieces = [
+            ResourceFact::View(Resource::Memory(MemoryRange::new(
+                pointer,
+                0u32.into(),
+                1u32.into(),
+            ))),
+            ResourceFact::View(Resource::Memory(MemoryRange::new(
+                alias,
+                1u32.into(),
+                2u32.into(),
+            ))),
+        ];
+        let normalized = ResourceContext::new_with_equalities(&facts)
+            .unchecked_with_facts(pieces.clone())
+            .normalized_without_discovery(&facts);
+        assert_eq!(normalized.facts().len(), 2);
+        for piece in pieces {
+            assert!(normalized.contains_exact_representation(&piece));
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../scaling_tests/kernel/primitives/resource_algebra/constructed_normalization.rs"
         );
     }
 }
