@@ -116,7 +116,7 @@ Already-shared numeric/float operations and fold/match producers are reused.
 | 9i | Match raising | Consolidate existing spelling with arm bindings. |
 | 9j | Common lowering results | Expose typed shared roots with separately scoped obligations. |
 | 9k | Integer lowering | Remove remaining native Integer result detours. |
-| 9l | Machine-integer lowering | Symbolic Integer-to-machine results now retain common roots with unchanged bounds (2,014 focused/scaling tests and quality checks passed; conversion fixture fact audit clean). Explicit obligation discharge and branch-interface checks now select existing native/shared comparison sources without changing general search. C-expression retention remains a separate follow-up. |
+| 9l | Machine-integer lowering | Integer-to-machine results and C-expression handoffs retain common roots with unchanged bounds and obligations. Comparison, quantified-fact and compound-fact consumers recognize the retained carriers; binder matching preserves free names. The handoff is covered by exact-root, disabled-retention parity, zero-export and scaling regressions. |
 | 9m | Boolean lowering | Keep logical terms distinct from C Boolean carriers. |
 | 9n | Algebraic lowering | Retain constructors, abstract types and program-parameter argument forms. |
 | 9o | Pointer lowering | Preserve complete metadata, state and address identities. |
@@ -239,6 +239,82 @@ spelling parity; growing unused extent payloads incur constant rendering work
 and zero machine exports. All 1,850 Surface/scaling tests and quality checks
 passed. The pointer-address-equality fixture passed with zero fact-stability
 differences.
+
+### 9g common call raising
+
+Machine, Integer, algebraic and float call roots now share call assembly and
+argument rendering. Numeric result casts remain at the result boundary. The
+native call entry point uses the same argument policy, including exact proof-local
+names for complete pointer arguments, while retaining its existing work accounting.
+
+Validation: all 1,860 Surface/scaling tests and quality checks passed, including
+nested mixed-family calls and exact pointer-name admission/refusal. Pure-pointer
+call fixtures passed with zero fact-stability differences.
+
+### 9h common fold raising
+
+The native machine-fold entry now uses the existing typed fold importer and
+common renderer. Shared and native inputs therefore use the same child rendering
+and typed binder scopes. This preserves the native Int32 range-fold profile;
+no fold syntax, evaluation or result-family admission changes are introduced.
+
+Validation: all 1,860 Surface/scaling tests and quality checks passed, including
+nested fold/match/call scope scaling. The alpha-equivalence fixture passed with
+zero fact-stability differences. Nightly was not run.
+
+### 9i common match declaration raising
+
+Shared match arms now read typed declaration IDs directly, without exporting
+binding vectors. Native and shared arms use one scope/arm renderer; stored legacy
+program declarations are borrowed through the existing bounded declaration reader.
+Program, Integer and algebraic namespaces, written names and native refusals stay
+unchanged, including C Boolean conversion binders and exact zero-offset pointers.
+
+Validation: native/shared declaration admission and refusal parity with zero
+machine exports; existing typed-ID, name-capture, nested-result and selected-body
+scaling regressions passed. All 1,992 Surface, rewrite and scaling tests and quality checks
+passed. Algebraic Integer match fixtures passed with zero fact-stability differences.
+
+### 9j common lowering result interface
+
+Scalar, Integer, algebraic, field and call-argument evaluator paths now share a
+typed result container with separately scoped facts and obligations. Mapping a
+result moves that context unchanged. The retained expression-capture API exposes
+a common root without exporting its tree; the native API remains an explicit
+compatibility output and now moves its selected result rather than cloning it.
+
+Validation: typed root/native value parity and exact preservation of conversion
+obligations and path facts; growing arithmetic capture has linear work and zero
+machine exports. All 2,000 API, specification and scaling tests and quality
+checks passed. Selected integer read-back and freed-pointer conversion fixtures
+passed with zero fact-stability differences.
+
+### 9k Integer comparison lowering
+
+Certificate comparisons now lower their operands directly into a typed common
+comparison root. The native condition is constructed only at the final proposition
+storage boundary. The intermediate `SpecIntegerExpression` result/export cycle is
+removed from this path. The compatibility helper remains for theorem, witness,
+search and deferred-expression consumers until those callers migrate.
+
+Validation: all six comparison operators retain the existing native fact shape;
+certificate work remains linear and independent of unrelated bindings. All 1,786
+annotation-lowering and scaling tests and quality checks passed. Integer
+certificate fixtures passed with zero fact-stability differences.
+
+### 9m Boolean lowering
+
+Specification values, resource fields, call results and C-expression handoffs now
+retain the existing admitted logical Boolean roots. They reuse the exact argument
+import policy: raw C words, widths, variable carriers and constant-cast syntax
+keep their native representation. Retention does not apply the nonzero truth
+conversion to those payloads. Facts and obligations remain separately scoped.
+
+Validation: logical roots and native carriers retain exact values, facts and
+obligations across enabled/disabled retention. Growing logical expressions have
+linear deterministic work. All 2,013 API, specification, execution-value and
+scaling tests and quality checks passed. Boolean fixtures passed with zero
+fact-stability differences; C expression admission remains unchanged.
 
 ## Chunk 3: machine-valued pure-function results
 

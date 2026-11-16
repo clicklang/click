@@ -27,13 +27,13 @@
               "path": ".click/quad/quad.rs.ullbc",
               "sha256": "517d51347377a83e578be02473149f78d662b684c400e40937f03ebcc5eccb88"
             },
-            "identity": "9a89b1b44a7b9b7acc961d8ace002a79a6ef48092a9d0a50476cf8f255d051d9",
+            "identity": "e1685d738c8cf8eb2c11d2cc79ad141179c5384bb437d98cc4c26e1724f2e63a",
             "inputs": {
               "quad.rs": "59689d5acee3153d2aad58d21246f3de25cc659db07f689f6efbe3d86e3436c1"
             }
           }
         },
-        "unit": "fa3ba563238a729fb721a21485a676f7f80f755f176720cd57b5d922862e65aa"
+        "unit": "ca2a2807846ba7a0fef121595821cf20e2d8f16e3c4d610d600ebbbf33428bc1"
       }
     }
   }

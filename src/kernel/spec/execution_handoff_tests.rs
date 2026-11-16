@@ -157,3 +157,179 @@ fn symbolic_integer_conversions_produce_shared_roots_with_the_same_bounds() {
         assert_eq!(retained.value.into_native(), native.value.into_native());
     }
 }
+
+#[test]
+fn specification_machine_expression_handoff_keeps_the_execution_root() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let source = ProgramExpression::Add(
+            Box::new(ProgramExpression::Value(
+                format.value_from_term(MachineTerm::Variable(Variable(999997))),
+            )),
+            Box::new(ProgramExpression::Value(
+                format.value_from_term(MachineTerm::Variable(Variable(999998))),
+            )),
+        );
+        let state = ExecutionState::new();
+        let assumptions = PureFactContext::new();
+        let expected = {
+            let _scope = crate::kernel::eval::SpecificationReadScope::enter();
+            evaluate_expression_value_paths(
+                &state,
+                &source,
+                &assumptions,
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+            .into_iter()
+            .find(|path| matches!(path.outcome, ExpressionOutcome::Value(_)))
+            .expect("the defined execution path")
+        };
+        let ExpressionOutcome::Value(expected_value) = expected.outcome else {
+            panic!()
+        };
+        assert!(expected_value.shared().is_some());
+        let expression = SpecExpression::ProgramExpression(source);
+        let evaluate = |disabled| {
+            let mut budget = ExecutionBudget::new();
+            let mut evaluation = SpecEvaluation::logical(&mut budget);
+            evaluation.machine_result_production_disabled = disabled;
+            evaluate_spec_expression_paths_with_bindings_in(
+                &state,
+                &expression,
+                &assumptions,
+                &BTreeMap::new(),
+                &mut evaluation,
+            )
+            .unwrap()
+            .pop()
+            .unwrap()
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let actual = evaluate(false);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert_eq!(actual.value.shared(), expected_value.shared());
+        assert_eq!(actual.obligations, expected.obligations);
+        assert_eq!(actual.facts, expected.facts);
+        let native = evaluate(true);
+        assert!(native.value.shared().is_none());
+        assert_eq!(actual.obligations, native.obligations);
+        assert_eq!(actual.facts, native.facts);
+        assert_eq!(actual.value.into_native(), native.value.into_native());
+    }
+}
+
+#[test]
+fn boolean_lowering_preserves_logical_roots_and_exact_c_carriers() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let condition = ConditionTerm::Variable(Variable(999991));
+    let cases = [
+        (
+            MachineTerm::Constant {
+                format: MachineIntegerType::UInt8,
+                bits: 0,
+            },
+            true,
+        ),
+        (
+            MachineTerm::Constant {
+                format: MachineIntegerType::UInt8,
+                bits: 1,
+            },
+            true,
+        ),
+        (
+            MachineTerm::BoolCast {
+                to: MachineIntegerType::UInt8,
+                value: Box::new(condition),
+            },
+            true,
+        ),
+        (
+            MachineTerm::Constant {
+                format: MachineIntegerType::UInt8,
+                bits: 2,
+            },
+            false,
+        ),
+        (
+            MachineTerm::Constant {
+                format: MachineIntegerType::UInt32,
+                bits: 1,
+            },
+            false,
+        ),
+        (MachineTerm::Variable(Variable(999992)), false),
+        (
+            MachineTerm::BoolCast {
+                to: MachineIntegerType::UInt8,
+                value: Box::new(ConditionTerm::Constant(true)),
+            },
+            false,
+        ),
+        (
+            MachineTerm::BoolCast {
+                to: MachineIntegerType::UInt32,
+                value: Box::new(ConditionTerm::Variable(Variable(999993))),
+            },
+            false,
+        ),
+    ];
+    for (word, logical) in cases {
+        // The C evaluator rejects malformed Bool values before this handoff.
+        // Specification payloads must still preserve those exact carriers.
+        let valid_c_value = matches!(
+            &word,
+            MachineTerm::Constant {
+                format: MachineIntegerType::UInt8,
+                bits: 0 | 1
+            } | MachineTerm::Variable(_)
+                | MachineTerm::BoolCast {
+                    to: MachineIntegerType::UInt8,
+                    ..
+                }
+        );
+        let value = ProgramValue::Bool(word);
+        let mut expressions = vec![SpecExpression::Value(value.clone())];
+        if valid_c_value {
+            expressions.push(SpecExpression::ProgramExpression(ProgramExpression::Value(
+                value.clone(),
+            )));
+        }
+        for expression in expressions {
+            let evaluate = |disabled| {
+                let mut budget = ExecutionBudget::new();
+                let mut evaluation = SpecEvaluation::logical(&mut budget);
+                evaluation.machine_result_production_disabled = disabled;
+                evaluate_spec_expression_paths_with_bindings_in(
+                    &ExecutionState::new(),
+                    &expression,
+                    &PureFactContext::new(),
+                    &BTreeMap::new(),
+                    &mut evaluation,
+                )
+                .unwrap()
+                .pop()
+                .unwrap()
+            };
+            let retained = evaluate(false);
+            let native = evaluate(true);
+            assert_eq!(retained.value.shared().is_some(), logical, "{value:?}");
+            if logical {
+                let expected = KernelTermImport::default()
+                    .argument(&PureFunctionArgument::Value(value.clone()));
+                assert_eq!(retained.value.shared(), Some(&expected));
+            }
+            assert!(native.value.shared().is_none());
+            assert_eq!(retained.facts, native.facts);
+            assert_eq!(retained.obligations, native.obligations);
+            assert_eq!(retained.value.into_native(), value);
+            assert_eq!(native.value.into_native(), value);
+        }
+    }
+}

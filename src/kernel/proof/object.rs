@@ -1076,7 +1076,30 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .iter()
             .any(&available)
         };
-        if available(proposition) || spelled_otherwise() || observed_otherwise() {
+        // Query the existing compound comparison index once per maximal
+        // disjunction under the goal's conjunction spine. These selected
+        // clauses are disjoint: nested connective traversal must not rebuild
+        // a key for every overlapping prefix of a growing goal.
+        let mut compound_available = std::collections::HashSet::new();
+        let mut selected = vec![proposition];
+        while let Some(part) = selected.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match part {
+                Proposition::And(left, right) => {
+                    selected.push(right);
+                    selected.push(left);
+                }
+                Proposition::Or(..) if facts.assumptions().contains_proposition_fact(part) => {
+                    compound_available.insert(std::ptr::from_ref(part));
+                }
+                _ => {}
+            }
+        }
+        if compound_available.contains(&std::ptr::from_ref(proposition))
+            || available(proposition)
+            || spelled_otherwise()
+            || observed_otherwise()
+        {
             return Ok(self.closed_focused());
         }
         if super::fact_reasoning::computes_leaf(proposition) {
@@ -1090,7 +1113,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             return Err(PropositionCloseError::Unavailable);
         }
         let side_available = |side: &Proposition| {
-            available(side)
+            compound_available.contains(&std::ptr::from_ref(side))
+                || available(side)
                 || facts.contains(side)
                 || super::fact_reasoning::order_claim_forms(side)
                     .iter()
