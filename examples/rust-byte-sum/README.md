@@ -17,7 +17,7 @@ bridge. The loop body's arithmetic is `have P;`: the solver reads
 the `uint64` and `int32` facts as Integer facts, proves the addition defined,
 relates each machine sum to its Integer sum, and closes each bound by a
 checked certificate. What remains explicit is memory transport for the read
-and the fold laws (`peel`).
+and the fold laws (`unfold`).
 
 The sidecar uses explicit low-word casts for the fold endpoints. Checked
 full-width order and range premises justify those casts; truncation alone

@@ -162,10 +162,7 @@ theorem count_step(n: uint64{parameters}) {{
     requires full_width_count(n - 1u64) == to_integer(n - 1u64);
     requires to_integer(n - 1u64) == to_integer(n) - to_integer(1u64);
     ensures full_width_count(n) == to_integer(n) by {{
-        peel(full_width_count(n)) using {{
-            to_integer(0u64) <= to_integer(n - 1u64);
-            to_integer(n - 1u64) < to_integer(18446744073709551615u64);
-        }};
+        unfold(full_width_count(n));
         rewrite(full_width_count(n - 1u64), to_integer(n - 1u64));
         rewrite(to_integer(n - 1u64), to_integer(n) - to_integer(1u64));
         solve() using {{}};
@@ -3310,7 +3307,7 @@ fn array_fact_across_local_stores(statement_count: usize) -> (String, String) {
     c_source.push_str("}\n");
 
     let mut click_source = String::from(
-        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    step();\n    step();\n    have 0 <= 0 by { solve(); }\n    have icount(a, 0, 0) == 0 by {\n        peel(icount(a, 0, 0)) using { 0 <= 0; }\n        normalize();\n    }\n",
+        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    step();\n    step();\n    have 0 <= 0 by { solve(); }\n    have icount(a, 0, 0) == 0 by {\n        unfold(icount(a, 0, 0));\n        normalize();\n    }\n",
     );
     // One use of the fact after every step: the walk is asked from a fresh
     // state each time, which is the shape that goes quadratic when an
@@ -3333,7 +3330,7 @@ fn array_fact_across_declarations(statement_count: usize) -> (String, String) {
     c_source.push_str("}\n");
 
     let mut click_source = String::from(
-        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    have 0 <= 0 by { solve(); }\n    have icount(a, 0, 0) == 0 by {\n        peel(icount(a, 0, 0)) using { 0 <= 0; }\n        normalize();\n    }\n",
+        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    have 0 <= 0 by { solve(); }\n    have icount(a, 0, 0) == 0 by {\n        unfold(icount(a, 0, 0));\n        normalize();\n    }\n",
     );
     for _ in 0..statement_count {
         click_source.push_str("    step();\n");
@@ -3355,7 +3352,7 @@ fn array_fact_across_calls(statement_count: usize) -> (String, String) {
     c_source.push_str("    return h[0];\n}\n");
 
     let mut click_source = String::from(
-        "verifying \"keep_h.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid touch_g() {\n    owns g[0..1];\n}\n\nint32 keep_h() {\n    requires h[0] == 5;\n    owns g[0..1];\n    views h[0..1];\n    ensures result == 5;\n} by {\n    have 0 <= 0 by { solve(); }\n    have icount(h, 0, 0) == 0 by {\n        peel(icount(h, 0, 0)) using { 0 <= 0; }\n        normalize();\n    }\n",
+        "verifying \"keep_h.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid touch_g() {\n    owns g[0..1];\n}\n\nint32 keep_h() {\n    requires h[0] == 5;\n    owns g[0..1];\n    views h[0..1];\n    ensures result == 5;\n} by {\n    have 0 <= 0 by { solve(); }\n    have icount(h, 0, 0) == 0 by {\n        unfold(icount(h, 0, 0));\n        normalize();\n    }\n",
     );
     for _ in 0..statement_count {
         click_source.push_str("    step();\n");

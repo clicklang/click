@@ -1,16 +1,9 @@
-# unfolding a fold-bodied function appends its last cell
+# Unfolding a fold-bodied function appends its last cell
 
-With the two append guards listed, `peel(f(args)) using { ... }` opens the
-append-last-cell equation instead: `f(.., hi)` equals `f(.., hi - 1)` plus the
-fold's body at `hi - 1`. The split endpoint is the fold's own end minus one; it
-is not named separately, because the guards the kernel law needs at that
-endpoint are exactly the `lo <= hi - 1` and `hi - 1 < 2147483647` a reader
-would write anyway.
-
-Both sides are the same function, so the shorter range is still described by
-`icount`, not by a retyped fold. The range is symbolic at both ends and the
-body reads the array. This is a C proof, which is where the last cell can also
-be written down at the proof site.
+With the nonempty range established, `unfold(f(args))` opens the append-last-cell
+equation over the same function at the predecessor endpoint. Ordinary
+obligations establish the law's remaining guards. The body reads the array,
+and the C proof can name the last cell at its execution frontier.
 
 ```c filename=unfold_fold_function_appends_last_cell.c
 int32 prefix_sum_equation(int32 a[], int32 n) {
@@ -32,10 +25,7 @@ int32 prefix_sum_equation(int32 a[], int32 n) {
     ensures icount(a, 0, n) == icount(a, 0, n - 1) + to_integer(a[n - 1]) by {
         step_until(function.exit);
         have 0 <= to_integer(n - 1);
-        peel(icount(a, 0, n)) using {
-            0 <= to_integer(n - 1);
-            to_integer(n - 1) < 2147483647;
-        };
+        unfold(icount(a, 0, n));
         solve();
     }
 }

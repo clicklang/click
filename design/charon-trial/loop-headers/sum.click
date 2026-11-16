@@ -11,9 +11,7 @@ fn sum(bytes: &[u8]) -> i32 {
 } by {
     step_until(region(7));
     have prefix(bytes, ((i as uint32) as int32)) == 0 by {
-        peel(prefix(bytes, ((i as uint32) as int32))) using {
-            0 >= ((i as uint32) as int32);
-        } solve();
+        unfold(prefix(bytes, ((i as uint32) as int32))); solve();
     }
     have to_integer(total) == 0 by {
         solve();
@@ -118,10 +116,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have prefix(bytes, ((i as uint32) as int32) + 1) == prefix(bytes, ((i as uint32) as int32)) + to_integer((bytes[((i as uint32) as int32)] as int32)) by {
-                peel(prefix(bytes, ((i as uint32) as int32) + 1)) using {
-                    0 <= ((i as uint32) as int32);
-                    (((i as uint32) as int32)) < 2147483647;
-                }
+                unfold(prefix(bytes, ((i as uint32) as int32) + 1));
                 solve();
             }
             have to_integer(total + (bytes[((i as uint32) as int32)] as int32)) == prefix(bytes, ((i as uint32) as int32) + 1) by {

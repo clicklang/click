@@ -18612,27 +18612,27 @@ fn empty_fold_difference_source() -> &'static str {
 theorem empty_difference(end: int32, x: int32, y: int32) {
  requires end <= 0;
  ensures marks(end, x) - marks(end, y) == 0 by {
-  peel(marks(end, x)) using { end <= 0; }
-  peel(marks(end, y)) using { end <= 0; }
+  unfold(marks(end, x));
+  unfold(marks(end, y));
   solve() using { }
  }
 }
 theorem empty_product(end: int32, x: int32, y: int32, z: int32) {
  requires end <= 0;
  ensures marks(end, x) - marks(end, y) == (to_integer(y) - to_integer(z)) * marks(end, z) by {
-  peel(marks(end, x)) using { end <= 0; }
-  peel(marks(end, y)) using { end <= 0; }
-  peel(marks(end, z)) using { end <= 0; }
+  unfold(marks(end, x));
+  unfold(marks(end, y));
+  unfold(marks(end, z));
   solve() using { }
  }
 }
 "#
 }
 
-// Peeling the last fold must leave a checked spelling for arithmetic expansion.
+// Unfolding the last fold must leave a checked spelling for arithmetic expansion.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_78")]
-fn peeled_empty_fold_differences_keep_checked_integer_spelling() {
+fn unfolded_empty_fold_differences_keep_checked_integer_spelling() {
     let source = empty_fold_difference_source();
     verify_c_sources(source, &[]).unwrap();
     for claim in ["empty_difference.ensures_0", "empty_product.ensures_0"] {
@@ -18643,7 +18643,7 @@ fn peeled_empty_fold_differences_keep_checked_integer_spelling() {
 
 #[test]
 #[ignore = "nightly: empty-fold result mutation"]
-fn peeled_empty_fold_differences_reject_nonzero_results() {
+fn unfolded_empty_fold_differences_reject_nonzero_results() {
     let source = empty_fold_difference_source();
     let invalid = source.replace("marks(end, y) == 0 by", "marks(end, y) == 1 by");
     assert_ne!(invalid, source);
@@ -18662,22 +18662,22 @@ fn empty_fold_order_source() -> &'static str {
 theorem empty_order(end: int32) {
  requires end <= 0;
  ensures 0 <= marks(end) by {
-  peel(marks(end)) using { end <= 0; }
+  unfold(marks(end));
   solve() using { marks(end) == 0; }
  }
  ensures marks(end) <= 0 by {
-  peel(marks(end)) using { end <= 0; }
+  unfold(marks(end));
   solve() using { }
  }
 }
 "#
 }
 
-// A constant order after peeling must retain its relation at the conclusion,
+// A constant order after unfolding must retain its relation at the conclusion,
 // rather than print the generic equality certificate for Boolean truth.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_78")]
-fn peeled_empty_fold_order_keeps_its_checked_conclusion() {
+fn unfolded_empty_fold_order_keeps_its_checked_conclusion() {
     let source = empty_fold_order_source();
     verify_c_sources(source, &[]).unwrap();
     for claim in ["empty_order.ensures_0", "empty_order.ensures_1"] {
@@ -18688,7 +18688,7 @@ fn peeled_empty_fold_order_keeps_its_checked_conclusion() {
 
 #[test]
 #[ignore = "nightly: empty-fold order and expanded-proof mutations"]
-fn peeled_empty_fold_order_rejects_false_comparisons() {
+fn unfolded_empty_fold_order_rejects_false_comparisons() {
     let source = empty_fold_order_source();
     for (before, after) in [
         ("0 <= marks(end)", "1 <= marks(end)"),
@@ -21947,8 +21947,8 @@ test_batches! {
     expansion_batch_78: [
         whole_function_expansion_validates_against_imported_pure_declarations,
         c_style_click_comments_preserve_loading_and_expansion_offsets,
-        peeled_empty_fold_differences_keep_checked_integer_spelling,
-        peeled_empty_fold_order_keeps_its_checked_conclusion,
+        unfolded_empty_fold_differences_keep_checked_integer_spelling,
+        unfolded_empty_fold_order_keeps_its_checked_conclusion,
     ],
     expansion_batch_79: [
         signed_bounded_subtraction_preserves_generated_child_sum,

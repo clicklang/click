@@ -18,8 +18,8 @@ function adler_weighted_sum_u64(bytes: uint8[], end: uint64, weight_end: Integer
 }
 
 theorem adler_sum_empty_u64(bytes: uint8[], weight_end: Integer) {
- ensures adler_byte_sum_u64(bytes, 0u64) == 0 by { peel(adler_byte_sum_u64(bytes, 0u64)) using { 0u64 >= 0u64; }; solve(); }
- ensures adler_weighted_sum_u64(bytes, 0u64, weight_end) == 0 by { peel(adler_weighted_sum_u64(bytes, 0u64, weight_end)) using { 0u64 >= 0u64; }; solve(); }
+ ensures adler_byte_sum_u64(bytes, 0u64) == 0 by { unfold(adler_byte_sum_u64(bytes, 0u64)); solve(); }
+ ensures adler_weighted_sum_u64(bytes, 0u64, weight_end) == 0 by { unfold(adler_weighted_sum_u64(bytes, 0u64, weight_end)); solve(); }
 }
 
 theorem adler_sum_append_u64(bytes: uint8[], n: uint64) {
@@ -27,7 +27,7 @@ theorem adler_sum_append_u64(bytes: uint8[], n: uint64) {
  ensures adler_byte_sum_u64(bytes, n) == adler_byte_sum_u64(bytes, n - 1u64) + to_integer(bytes[n - 1u64]) by {
   have to_integer(0u64) <= to_integer(n - 1u64) by normalize();
   have to_integer(n - 1u64) < to_integer(18446744073709551615u64) by solve() using { 0u64 < n; };
-  peel(adler_byte_sum_u64(bytes, n)) using { to_integer(0u64) <= to_integer(n - 1u64); to_integer(n - 1u64) < to_integer(18446744073709551615u64); };
+  unfold(adler_byte_sum_u64(bytes, n));
   normalize();
  }
 }
@@ -37,7 +37,7 @@ theorem adler_weighted_append_u64(bytes: uint8[], n: uint64, weight_end: Integer
  ensures adler_weighted_sum_u64(bytes, n, weight_end) == adler_weighted_sum_u64(bytes, n - 1u64, weight_end) + (weight_end - to_integer(n - 1u64)) * to_integer(bytes[n - 1u64]) by {
   have to_integer(0u64) <= to_integer(n - 1u64) by normalize();
   have to_integer(n - 1u64) < to_integer(18446744073709551615u64) by solve() using { 0u64 < n; };
-  peel(adler_weighted_sum_u64(bytes, n, weight_end)) using { to_integer(0u64) <= to_integer(n - 1u64); to_integer(n - 1u64) < to_integer(18446744073709551615u64); };
+  unfold(adler_weighted_sum_u64(bytes, n, weight_end));
   normalize();
  }
 }

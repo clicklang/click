@@ -74,8 +74,8 @@ needle = "unfold(clamp_nonpositive(n));"
 
 [[form]]
 id = "peel-function"
-path = "mdtests/unfold_fold_function_empty_range.md"
-needle = "peel(icount(p, lo, hi, x)) using {"
+path = "mdtests/legacy_peel_syntax.md"
+needle = "peel(tally(lo, hi)) using {"
 
 [[form]]
 id = "unfold-resource"

@@ -3934,7 +3934,6 @@ mod entry_authority_tests {
                 ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
                     facts: ProofFacts::default(),
-                    unfolded_predicates: Default::default(),
                     execution: None,
                 },
             ),

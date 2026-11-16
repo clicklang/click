@@ -1,5 +1,8 @@
 # Peel rejects a listed guard after a have proved by rewrite and normalize
 
+Historical reproduction for legacy `peel`. Active proofs use `unfold`; the
+original spelling below preserves the reported defect until legacy removal.
+
 Soundness: incomplete. A valid proof is refused, and `click expand` writes
 an expansion that does not re-verify; nothing false is accepted.
 

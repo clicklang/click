@@ -1118,7 +1118,7 @@ step is still checked.
 | `apply(theorem(args))` | smart | Core | Apply a theorem, looking up its premises. | [Reference](#theorem-application) |
 | `apply(theorem(args)) using { P; ... }` | simple | Expansion output | Apply a theorem using written premises. | [Reference](#theorem-application-with-selected-premises) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
-| `peel(function(args)) using { P; ... }` | simple | Specialized | Open a function using written branch evidence. | [Reference](#peeling-a-pure-function) |
+| `peel(function(args)) using { P; ... }` | simple | Specialized | Legacy fold spelling; use ordinary `unfold`. | [Reference](#peeling-a-pure-function) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
 | `induct(n) as ih` | simple | Core | Introduce strong induction on a nonnegative `int32` or a `uint64`. | [Reference](#scalar-induction) |
 | `induct(xs) as ih { Type::Variant(fields) => { ... } ... }` | control | Core | Prove constructor cases with recursive hypotheses. | [Reference](#algebraic-induction) |
@@ -2770,6 +2770,10 @@ layer, and any implicit guard proofs.
 
 **Form:** `peel(function(args)) using { P; ... }`
 
+Legacy compatibility syntax. Proofs and examples use ordinary
+`unfold(function(args))`; the parser and its dedicated compatibility fixtures
+remain until the legacy tactic is removed.
+
 **Specialized.** Write it to open one step of a range-fold function, such as a
 sum over an array prefix, in an induction over its end. The single produced
 fact is a range-fold law stated over the call itself, and the goal is
@@ -2827,7 +2831,7 @@ established guards without retaining `peel` or its `using` list. The expanded
 step checks those guards without implicit solving. Profiling charges one law
 instance.
 
-**Checked examples:** [`unfold_fold_function_empty_range.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_empty_range.md), [`unfold_fold_function_appends_last_cell.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_appends_last_cell.md), [`fold_function_is_nonnegative_by_induction.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_function_is_nonnegative_by_induction.md), [`unfold_fold_function_requires_a_range_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_requires_a_range_guard.md), [`peel_at_a_constant_range_gives_the_defining_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_at_a_constant_range_gives_the_defining_equation.md), [`peel_requires_its_using_list.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_requires_its_using_list.md)
+**Checked examples:** [`legacy_peel_syntax.md`](https://github.com/clicklang/click/blob/master/mdtests/legacy_peel_syntax.md), [`peel_requires_its_using_list.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_requires_its_using_list.md), [`peel_using_names_its_missing_premise.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_using_names_its_missing_premise.md)
 
 ### Constructor matches
 

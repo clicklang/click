@@ -4237,7 +4237,7 @@ theorem fold_case(end: int32) {
 }
 
 #[test]
-fn peel_expansion_keeps_array_fold_reads_at_the_execution_frontier() {
+fn ordinary_fold_expansion_keeps_array_reads_at_the_execution_frontier() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/unfold_fold_function_appends_last_cell.md");
     let fixture = crate::cli::read_mdtest(&path).unwrap();

@@ -16,7 +16,7 @@ One explicit `transport` carries the entry invariant across `visited[i] = 1`.
 `v[lo..hi]`, and the store writes the cell at the prefix's end, so the fold
 read frame equates the two applications without a frame lemma or a per-cell
 quantified transport. The enlarged prefix after `i++` still needs the fold's
-append law, which `peel` opens. An omitted proof reaches the same
+append law, which `unfold` opens. An omitted proof reaches the same
 transport (`sweep_prefix_survives_its_endpoint_store_by_solve.md`).
 
 ```c filename=sweep_maintains_a_zero_unmarked_count.c
@@ -41,7 +41,7 @@ void sweep(int32 visited[], int32 n) {
     step();
     have 0 <= 0;
     have unmarked(visited, 0, 0) == 0 by {
-        peel(unmarked(visited, 0, 0)) using { 0 <= 0; };
+        unfold(unmarked(visited, 0, 0));
         normalize();
     }
     loop {
@@ -67,10 +67,7 @@ void sweep(int32 visited[], int32 n) {
                 known();
             }
             have unmarked(visited, 0, i + 1) == 0 by {
-                peel(unmarked(visited, 0, i + 1)) using {
-                    0 <= to_integer((i + 1) - 1);
-                    to_integer((i + 1) - 1) < 2147483647;
-                };
+                unfold(unmarked(visited, 0, i + 1));
                 solve();
             }
             step();

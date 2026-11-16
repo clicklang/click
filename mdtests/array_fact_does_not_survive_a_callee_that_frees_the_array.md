@@ -66,12 +66,12 @@ int32 caller(int32 a[], int32 n) {
     unfold(allocated_int32s(a, n));
     have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
-        peel(icount(a, 0, 0)) using { 0 <= 0; };
+        unfold(icount(a, 0, 0));
         normalize();
     }
     have to_integer(a[0]) == 5 by { solve() using { a[0] == 5; }; }
     have icount(a, 0, 1) == 5 by {
-        peel(icount(a, 0, 1)) using { 0 <= 0; 0 < 2147483647; };
+        unfold(icount(a, 0, 1));
         solve() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; };
     }
     fold(allocated_int32s(a, n));

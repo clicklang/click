@@ -27,8 +27,8 @@ theorem same_weighted(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
     ensures weighted(p, lo, hi) == weighted(q, lo, hi) by {
         induct(hi) as ih;
         if hi <= lo {
-            peel(weighted(p, lo, hi)) using { hi <= lo; };
-            peel(weighted(q, lo, hi)) using { hi <= lo; };
+            unfold(weighted(p, lo, hi));
+            unfold(weighted(q, lo, hi));
             known();
         } else {
             have lo < hi;
@@ -52,8 +52,8 @@ theorem same_weighted(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
             };
             have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
             have to_integer(hi - 1) < 2147483647 by { solve(); }
-            peel(weighted(p, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
-            peel(weighted(q, lo, hi)) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < 2147483647; };
+            unfold(weighted(p, lo, hi));
+            unfold(weighted(q, lo, hi));
             rewrite(p[hi - 1], q[hi - 1]);
             known();
         }
