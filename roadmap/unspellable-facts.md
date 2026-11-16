@@ -316,6 +316,20 @@ linear deterministic work. All 2,013 API, specification, execution-value and
 scaling tests and quality checks passed. Boolean fixtures passed with zero
 fact-stability differences; C expression admission remains unchanged.
 
+### 9n Algebraic lowering
+
+Program-carried algebraic constructor fields now retain the existing
+program-parameter envelope around their shared child. Logical algebraic fields
+remain bare roots. C-expression handoffs preserve shared algebraic results instead
+of exporting and reconstructing them. Native result mode remains available.
+
+Validation: field types, envelope identity, abstract types and native output agree
+with the prior boundary. Expression handoffs preserve roots, facts and obligations;
+wrapping growing retained constructor prefixes performs constant work and no
+algebraic exports. All 2,015 API, specification, execution-value and scaling tests
+passed after upstream integration. Quality and algebraic/Boolean fixtures passed
+with zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
