@@ -71,7 +71,7 @@ impl<'a> Proof<'a> {
         let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
             return Err(self.step_error("an outcome state requires a focused outcome goal"));
         };
-        let value = (*goal.data.core.result).clone();
+        let value = goal.data.core.result.clone();
         let state = (*goal.data.core.state).clone();
         Ok(if goal.data.core.is_exceptional {
             FunctionOutcome::Throw {
@@ -126,7 +126,7 @@ impl<'a> Proof<'a> {
         if !data.core.identity.same_as(&current.core.identity) {
             return Err(self.step_error("outcome refresh belongs to another execution outcome"));
         }
-        if data.core.result != current.core.result
+        if !data.core.result.same_native_value(&current.core.result)
             || data.core.is_exceptional != current.core.is_exceptional
         {
             return Err(self.step_error("outcome refresh cannot change the checked result"));
@@ -346,7 +346,7 @@ impl<'a> Proof<'a> {
         // pre-fold state. ExecutionState's components are shared immutable roots, so
         // this update is constant-size rather than a resource/history
         // materialization.
-        data.core.result = Arc::new(value.clone().into_native());
+        data.core.result = value.clone();
         data.core.state = (*state.clone()).into();
         let data = Arc::new(data);
         let obligation = match self.focused_obligation() {
@@ -1023,7 +1023,7 @@ impl<'a> Proof<'a> {
                     publication: None,
                     identity: crate::kernel::proof::OutcomeIdentity::fresh(),
                     store_consequences_available: false,
-                    result: Arc::new(result.into_native()),
+                    result,
                     state: (*state).into(),
                     is_exceptional,
                     effect_facts: crate::kernel::proof::OutcomeExecutionFacts::merging(

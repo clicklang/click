@@ -274,7 +274,7 @@ fn charon_array_field_layout_and_verification_work_are_independent_of_extent() {
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_chunk_metadata_work_is_independent_of_input_length() {
-    let mut export = decode(CHUNK_ARTIFACT, "chunks.rs", CHUNK_SOURCE).unwrap();
+    let export = decode(CHUNK_ARTIFACT, "chunks.rs", CHUNK_SOURCE).unwrap();
     let prepared = super::super::super::import::prepared_for_test(export).unwrap();
     let mut samples = Vec::new();
     for length in [0u64, 8, 1024, 1_000_000] {

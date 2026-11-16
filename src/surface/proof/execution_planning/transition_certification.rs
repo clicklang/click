@@ -609,11 +609,20 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
             else_branch,
             ..
         } => statement_contains_call(then_branch) || statement_contains_call(else_branch),
-        ProgramStatement::While { body, .. } => statement_contains_call(body),
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
+            statement_contains_call(body)
+                || test
+                    .as_ref()
+                    .is_some_and(|test| statement_contains_call(&test.statement))
+                || update
+                    .as_ref()
+                    .is_some_and(|update| statement_contains_call(update))
+        }
         ProgramStatement::Switch { cases, .. } => {
             cases.iter().any(|case| statement_contains_call(&case.body))
         }
-        ProgramStatement::ForStep { step, .. } => statement_contains_call(step),
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)

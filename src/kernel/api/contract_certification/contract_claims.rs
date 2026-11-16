@@ -5,8 +5,6 @@ mod publication;
 pub(crate) use publication::PublishedFunctionOutcome;
 
 mod completion;
-#[cfg(test)]
-pub(crate) use completion::WholeContractProof;
 pub(crate) use completion::{
     CompletedContractExecution, ContractBodyProof, ContractCompletionGoal, ContractExecutionOwner,
     ContractProofProgress, WholeContractRoot,
@@ -182,7 +180,7 @@ pub(crate) fn program_checked_function_proposition_with_reason(
             _ => return false,
         };
         completed.is_exceptional == exceptional
-            && value.matches_native(completed.result.as_ref())
+            && value == &completed.result
             && memories_match_up_to_cached_reads(completed.state.memory(), state.memory())
             && completed.state.locals() == state.locals()
             && completed.state.aggregate_destination == state.aggregate_destination
@@ -324,7 +322,7 @@ mod cached_read_completion_tests {
                             OutcomeProofCore {
                                 publication: None,
                                 identity: OutcomeIdentity::fresh(),
-                                result: Arc::new(int32(0)),
+                                result: int32(0).into(),
                                 state: ExecutionState::new().with_memory(memory).into(),
                                 store_consequences_available: false,
                                 is_exceptional: false,
@@ -1582,15 +1580,17 @@ fn prepare_closing_path(
     // entry used to bind locals.
     post_state.population_effects = raw_exit_state.population_effects.clone();
     if exceptional {
-        post_state.locals.set_typed(
+        bind_contract_exit_value(
+            &mut post_state,
             CONTRACT_EXCEPTION,
-            value.clone().into_native(),
+            value,
             value.native().program_type(),
         );
     } else if function.return_type() != ProgramType::Void {
-        post_state.locals.set_typed(
+        bind_contract_exit_value(
+            &mut post_state,
             CONTRACT_RESULT,
-            value.clone().into_native(),
+            value,
             function.return_type(),
         );
     }
@@ -2470,6 +2470,25 @@ fn contract_view_of_entry(
     entry_state
 }
 
+/// Bind the checked exit value without crossing a native representation.
+/// These are the same unqualified local rules used by the contract view before.
+fn bind_contract_exit_value(
+    state: &mut ExecutionState,
+    name: crate::kernel::BindingName,
+    value: &StoredExecutionValue,
+    ty: ProgramType,
+) {
+    state.locals.set_retained_typed_with_all_qualifiers(
+        name,
+        value.clone(),
+        ty,
+        false,
+        false,
+        false,
+        false,
+    );
+}
+
 /// Entry and exit views prepared for lowering return claims at one fixed
 /// frontier. The producer owns the states and facts; callers discard the
 /// context when the outcome, ambient facts, or resource representation changes.
@@ -2554,9 +2573,10 @@ impl<'a> FunctionEnsureGoalContext<'a> {
         // Preserve checked body consumption evidence when reconstructing the exit.
         post_state.population_effects = return_state.population_effects.clone();
         if function.return_type() != ProgramType::Void {
-            post_state.locals.set_typed(
+            bind_contract_exit_value(
+                &mut post_state,
                 CONTRACT_RESULT,
-                value.clone().into_native(),
+                value,
                 function.return_type(),
             );
         }
@@ -2709,9 +2729,10 @@ fn exceptional_goals_at_entry(
         .clone()
         .with_memory(throw_state.memory().clone());
     post_state.observed_population_families = throw_state.observed_population_families.clone();
-    post_state.locals.set_typed(
+    bind_contract_exit_value(
+        &mut post_state,
         CONTRACT_EXCEPTION,
-        value.clone().into_native(),
+        value,
         value.native().program_type(),
     );
     let lowering_assumptions = assumptions
@@ -4227,7 +4248,7 @@ mod claim_requirement_tests {
                 OutcomeProofCore {
                     publication: None,
                     identity: OutcomeIdentity::fresh(),
-                    result: Arc::new(int32(0)),
+                    result: int32(0).into(),
                     state: ExecutionState::new().into(),
                     store_consequences_available: false,
                     is_exceptional,
@@ -4473,6 +4494,111 @@ mod contract_closing_tests {
         use super::*;
         include!(
             "../../../scaling_tests/kernel/api/contract_certification/contract_claims/closing_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod retained_contract_input_tests {
+    use super::*;
+    use crate::kernel::{
+        AlgebraicType, ExecutionValue, KernelTermExport, KernelTermImport, KernelType,
+        LocalBinding, SharedPointerValue, StoredExecutionValue,
+    };
+
+    fn prepared_input(value: StoredExecutionValue) -> StoredExecutionValue {
+        let state = ExecutionState::new();
+        let function = ProgramFunction::new(
+            value.program_type(),
+            "retained_input",
+            vec![],
+            ProgramStatement::Skip,
+        );
+        let outcome = FunctionOutcome::Return {
+            value,
+            state: Box::new(state.clone()),
+        };
+        let context = FunctionEnsureGoalContext::at_entry(
+            &function,
+            &state,
+            state.clone(),
+            &outcome,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        assert!(
+            context
+                .entry_state
+                .locals
+                .binding(CONTRACT_RESULT)
+                .is_none()
+        );
+        let LocalBinding::Object { value, .. } =
+            context.post_state.locals.binding(CONTRACT_RESULT).unwrap()
+        else {
+            panic!("contract result binding")
+        };
+        value.clone()
+    }
+
+    #[test]
+    fn contract_input_preparation_preserves_roots_and_native_binding_rules() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(996801)),
+            ProgramType::Int32Pointer,
+        );
+        let roots = vec![
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(996802)),
+            KernelTerm::variable(KernelType::Program(ProgramType::Float64), Variable(996803)),
+            KernelTermImport::default().condition(&ConditionTerm::Variable(Variable(996804))),
+            KernelTerm::variable(
+                KernelType::Algebraic(AlgebraicType::parameter("T".into())),
+                Variable(996805),
+            ),
+            KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer)),
+            KernelTerm::shared_pointer_value(SharedPointerValue::import(
+                &pointer.with_pointee_constant(true),
+            )),
+        ];
+        for root in roots {
+            let input = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+            let actual = prepared_input(input.clone());
+            assert!(actual.shared().is_some());
+            let mut old = ExecutionState::new();
+            old.locals.set_typed(
+                CONTRACT_RESULT,
+                input.clone().into_native(),
+                input.program_type(),
+            );
+            let LocalBinding::Object {
+                value: expected, ..
+            } = old.locals.binding(CONTRACT_RESULT).unwrap()
+            else {
+                panic!()
+            };
+            let expected = expected.clone().into_native();
+            if let ProgramValue::Pointer(pointer) = &expected {
+                assert!(
+                    actual
+                        .shared()
+                        .unwrap()
+                        .pointer_payload()
+                        .unwrap()
+                        .same_source_payload(&SharedPointerValue::import(pointer))
+                );
+            } else {
+                assert_eq!(actual.shared(), Some(&root));
+            }
+            assert_eq!(actual.into_native(), expected);
+        }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../../scaling_tests/kernel/api/contract_certification/contract_claims/retained_inputs.rs"
         );
     }
 }

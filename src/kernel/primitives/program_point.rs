@@ -11,7 +11,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{Memory, SharedMemory, intern_memory, intern_memory_ref};
+use super::{Memory, MemoryDerivation, SharedMemory, intern_memory, intern_memory_ref};
 
 /// The identity of one point an execution path reached.
 ///
@@ -28,12 +28,75 @@ impl ProgramPointId {
     }
 }
 
+/// The steps a path took between two points, newest first: each recorded
+/// memory step and the memory it produced.
+///
+/// A step is added where it is recorded ([`super::record_memory_derivation`])
+/// to the log of the memory value the path is executing, so the log follows
+/// the path that ran even when the arena shares the resulting content with
+/// another path. The point a state reaches next takes the log.
+pub(crate) struct StepLog {
+    step: Arc<MemoryDerivation>,
+    produced: SharedMemory,
+    previous: Option<Arc<StepLog>>,
+}
+
+impl StepLog {
+    /// `previous` with `step`, which produced `produced`, added as newest.
+    pub(crate) fn push(
+        previous: Option<Arc<Self>>,
+        step: Arc<MemoryDerivation>,
+        produced: SharedMemory,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            step,
+            produced,
+            previous,
+        })
+    }
+
+    /// The steps, newest first, each with the memory it produced.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn newest_first(&self) -> impl Iterator<Item = (&MemoryDerivation, &SharedMemory)> {
+        std::iter::successors(Some(self), |log| log.previous.as_deref())
+            .map(|log| (log.step.as_ref(), &log.produced))
+    }
+}
+
+impl std::fmt::Debug for StepLog {
+    /// A count, not the steps: a log can be long and its memories large.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let count = std::iter::successors(Some(self), |log| log.previous.as_deref()).count();
+        write!(f, "StepLog({count} steps)")
+    }
+}
+
+impl Drop for StepLog {
+    /// Drop a long log one step at a time.
+    fn drop(&mut self) {
+        let mut previous = self.previous.take();
+        while let Some(log) = previous {
+            previous = match Arc::try_unwrap(log) {
+                Ok(mut log) => log.previous.take(),
+                Err(_) => None,
+            };
+        }
+    }
+}
+
 #[derive(Debug)]
 struct PointNode {
     id: ProgramPointId,
+    /// The memory state the path had here.
+    memory: SharedMemory,
+    /// The steps the path took from its predecessor to here, newest first;
+    /// none when it reached here without a recorded step.
+    steps: Option<Arc<StepLog>>,
     /// The points this one was reached from on its path: one after an
     /// ordinary transition, two after a branch join, none at the start.
     predecessors: Box<[PathLink]>,
+    /// For a branch join, the point where its arms split.
+    split: Option<PathLink>,
 }
 
 impl Drop for PointNode {
@@ -41,11 +104,13 @@ impl Drop for PointNode {
     /// stack flat however many transitions the path made.
     fn drop(&mut self) {
         let mut pending = std::mem::take(&mut self.predecessors).into_vec();
+        pending.extend(self.split.take());
         while let Some(PathLink(node)) = pending.pop() {
             if let Some(node) = node
                 && let Ok(mut node) = Arc::try_unwrap(node)
             {
                 pending.extend(std::mem::take(&mut node.predecessors).into_vec());
+                pending.extend(node.split.take());
             }
         }
     }
@@ -62,17 +127,29 @@ impl Drop for PointNode {
 pub(crate) struct PathLink(Option<Arc<PointNode>>);
 
 impl PathLink {
-    /// A new point reached from this one.
-    pub(crate) fn after(&self) -> Self {
-        Self::reached_from(Box::new([self.clone()]))
+    /// A new point reached from this one by `steps`, where the path has
+    /// `memory`.
+    pub(crate) fn after(&self, memory: SharedMemory, steps: Option<Arc<StepLog>>) -> Self {
+        Self::reached_from(memory, steps, Box::new([self.clone()]), None)
     }
 
-    /// A new point where two arms rejoin.
-    pub(crate) fn joining(left: &Self, right: &Self) -> Self {
-        Self::reached_from(Box::new([left.clone(), right.clone()]))
+    /// A new point where two arms that split at `split` rejoin with
+    /// `memory`.
+    pub(crate) fn joining(left: &Self, right: &Self, split: &Self, memory: SharedMemory) -> Self {
+        Self::reached_from(
+            memory,
+            None,
+            Box::new([left.clone(), right.clone()]),
+            Some(split.clone()),
+        )
     }
 
-    fn reached_from(predecessors: Box<[PathLink]>) -> Self {
+    fn reached_from(
+        memory: SharedMemory,
+        steps: Option<Arc<StepLog>>,
+        predecessors: Box<[PathLink]>,
+        split: Option<PathLink>,
+    ) -> Self {
         let predecessors = predecessors
             .into_vec()
             .into_iter()
@@ -80,8 +157,37 @@ impl PathLink {
             .collect();
         Self(Some(Arc::new(PointNode {
             id: ProgramPointId::fresh(),
+            memory,
+            steps,
             predecessors,
+            split: split.filter(|point| point.0.is_some()),
         })))
+    }
+
+    /// The steps the path took from its predecessor to this point.
+    pub(crate) fn steps(&self) -> Option<&StepLog> {
+        self.0.as_ref().and_then(|node| node.steps.as_deref())
+    }
+
+    /// For a branch join, the point where its arms split.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn split(&self) -> Option<&Self> {
+        self.0.as_ref().and_then(|node| node.split.as_ref())
+    }
+
+    /// The memory state the path had at this point.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn memory(&self) -> Option<&SharedMemory> {
+        self.0.as_ref().map(|node| &node.memory)
+    }
+
+    /// The points this one was reached from.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn predecessors(&self) -> &[Self] {
+        self.0
+            .as_ref()
+            .map(|node| node.predecessors.as_ref())
+            .unwrap_or(&[])
     }
 
     pub(crate) fn id(&self) -> Option<ProgramPointId> {
@@ -238,13 +344,87 @@ mod tests {
             .store(slot, ProgramValue::Int32(MachineTerm::constant(value)))
     }
 
+    fn slot() -> Pointer {
+        Pointer {
+            block: "local:slot".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        }
+    }
+
+    fn stored(state: &ExecutionState, value: u32) -> ExecutionState {
+        let memory = state
+            .memory()
+            .clone()
+            .store(slot(), ProgramValue::Int32(MachineTerm::constant(value)));
+        state.clone().with_memory(memory)
+    }
+
+    /// Two paths store different values and then the same one, so they end
+    /// in one interned memory, whose arena history is the first path's. Each
+    /// final point still holds the store its own path made, from its own
+    /// predecessor's memory.
+    #[test]
+    fn each_point_holds_the_steps_its_own_path_took() {
+        let start = ExecutionState::default().with_memory(memory_holding(0));
+        let left_mid = stored(&start, 1);
+        let right_mid = stored(&start, 2);
+        let left = stored(&left_mid, 3);
+        let right = stored(&right_mid, 3);
+        assert_eq!(left.program_point(), right.program_point());
+
+        let base_of_only_step = |state: &ExecutionState| {
+            let steps = state.path_link().steps().expect("a store is a step");
+            let mut steps = steps.newest_first();
+            let (step, produced) = steps.next().unwrap();
+            assert!(steps.next().is_none());
+            assert_eq!(produced, state.program_point().shared_memory());
+            step.base().clone()
+        };
+        assert_eq!(
+            base_of_only_step(&left),
+            *left_mid.program_point().shared_memory()
+        );
+        assert_eq!(
+            base_of_only_step(&right),
+            *right_mid.program_point().shared_memory()
+        );
+        assert!(left.memory().pending_steps.is_none());
+    }
+
+    /// A join records where its arms split.
+    #[test]
+    fn a_join_records_where_its_arms_split() {
+        let start = ExecutionState::default().with_memory(memory_holding(0));
+        let left = stored(&start, 1);
+        let right = stored(&start, 1);
+        let mut joined = left.clone();
+        joined.join_program_points(&left, &right, start.path_link());
+        assert_eq!(
+            joined.path_link().split().and_then(PathLink::id),
+            start.program_point().id()
+        );
+    }
+
+    /// The arena's stored instance carries no path's steps.
+    #[test]
+    fn the_arena_keeps_no_steps() {
+        let start = ExecutionState::default().with_memory(memory_holding(0));
+        let memory = start
+            .memory()
+            .clone()
+            .store(slot(), ProgramValue::Int32(MachineTerm::constant(5)));
+        assert!(memory.pending_steps.is_some());
+        assert!(intern_memory_ref(&memory).memory().pending_steps.is_none());
+    }
+
     /// A path is a chain of points; dropping a long one must not recurse
     /// once per link.
     #[test]
     fn a_long_path_drops_without_recursing_per_point() {
+        let memory = intern_memory(Memory::new());
         let mut point = PathLink::default();
         for _ in 0..200_000 {
-            point = point.after();
+            point = point.after(memory.clone(), None);
         }
         drop(point);
     }
@@ -273,7 +453,7 @@ mod tests {
         );
 
         let mut joined = left.clone();
-        joined.join_program_points(&left, &right);
+        joined.join_program_points(&left, &right, start.path_link());
         assert_eq!(
             joined.program_point().predecessor_ids(),
             vec![

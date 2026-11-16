@@ -489,6 +489,9 @@ pub(crate) fn rust_iterator_accessors(
         }
         crate::languages::interface::RustIteratorKind::Range => &["start", "end", "len()"],
         crate::languages::interface::RustIteratorKind::RangeInclusive => &["start()", "end()"],
+        // A crate's own iterator is a struct the program holds: a proof
+        // reads its fields through the local, `iter.n`.
+        crate::languages::interface::RustIteratorKind::User => &[],
         crate::languages::interface::RustIteratorKind::Chunks => {
             &["v", "v.len()", "rem", "rem.len()", "chunk_size", "len()"]
         }
@@ -537,6 +540,7 @@ pub(crate) fn rust_iterator_method(
                     K::Enumerate => "enumerated",
                     K::Range => "range",
                     K::RangeInclusive => "inclusive range",
+                    K::User => "crate",
                     K::Chunks => "`chunks_exact`",
                 },
                 match rust_iterator_accessors(iterator.kind) {
@@ -7433,7 +7437,7 @@ pub enum SmartTactic {
 pub(in crate::surface) struct FixedStateFrame<'a> {
     pub(in crate::surface) pre_state: &'a ExecutionState,
     pub(in crate::surface) state: &'a ExecutionState,
-    pub(in crate::surface) result: Option<&'a ProgramValue>,
+    pub(in crate::surface) result: Option<FixedStateResult<'a>>,
     pub(in crate::surface) recorded_states: &'a RecordedStates,
 }
 
@@ -7447,10 +7451,31 @@ impl<'a> FixedStateFrame<'a> {
         Self {
             pre_state,
             state,
-            result,
+            result: result.map(FixedStateResult::Native),
             recorded_states,
         }
     }
+    pub(in crate::surface) fn with_retained_result(
+        mut self,
+        result: &'a crate::kernel::StoredExecutionValue,
+    ) -> Self {
+        self.result = Some(FixedStateResult::Retained(result));
+        self
+    }
+
+    pub(in crate::surface) fn native_result(self) -> Option<std::borrow::Cow<'a, ProgramValue>> {
+        self.result.map(|result| match result {
+            FixedStateResult::Native(value) => std::borrow::Cow::Borrowed(value),
+            FixedStateResult::Retained(value) => value.native(),
+        })
+    }
+}
+
+/// Borrow the published carrier; only a selected native consumer materializes it.
+#[derive(Clone, Copy)]
+pub(in crate::surface) enum FixedStateResult<'a> {
+    Native(&'a ProgramValue),
+    Retained(&'a crate::kernel::StoredExecutionValue),
 }
 
 /// A C function's parameters and the argument expressions bound to them,
@@ -7728,42 +7753,7 @@ struct ClickFunctionEnvironment {
     /// See [`memory_independent_click_functions`].
     memory_independent: BTreeSet<String>,
     pointer_results: BTreeMap<String, Option<std::sync::Arc<crate::kernel::PurePointerResult>>>,
-    /// Library functions that are one field of an argument. See
-    /// [`field_projection`].
-    projections: BTreeMap<String, crate::kernel::PureProjection>,
     pointer_type_error: Option<(String, String)>,
-}
-
-/// The field a function's body selects, when the body is exactly `match
-/// parameter { Variant(.., field, ..) => field }`. Applied to a value built
-/// with that constructor, such a function is the field, by its definition.
-fn field_projection(definition: &ClickFunctionDefinition) -> Option<crate::kernel::PureProjection> {
-    let names = |expression: &ContractExpression| match expression {
-        ContractExpression::Binding(name)
-        | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            crate::kernel::BindingName::Named(name),
-        )) => Some(name.clone()),
-        _ => None,
-    };
-    let ContractExpression::AlgebraicMatch { scrutinee, arms } = definition.body()? else {
-        return None;
-    };
-    let [arm] = arms.as_slice() else {
-        return None;
-    };
-    let scrutinee = names(scrutinee)?;
-    let selected = names(&arm.body)?;
-    Some(crate::kernel::PureProjection::new(
-        definition
-            .parameters()
-            .iter()
-            .position(|parameter| parameter.name() == scrutinee)?,
-        arm.variant.clone(),
-        arm.bindings
-            .iter()
-            .position(|binding| binding == &selected)?,
-    ))
 }
 
 impl ClickFunctionEnvironment {
@@ -7787,15 +7777,6 @@ impl ClickFunctionEnvironment {
                 .map(|definition| (definition.name().to_string(), definition.clone()))
                 .collect(),
             memory_independent: memory_independent_click_functions(definitions),
-            // Only the library's: a program's own function stays the call
-            // its proofs wrote, which they rewrite under and unfold.
-            projections: definitions
-                .iter()
-                .filter(|definition| definition.name().starts_with("click::"))
-                .filter_map(|definition| {
-                    Some((definition.name().to_string(), field_projection(definition)?))
-                })
-                .collect(),
             pointer_results,
             pointer_type_error,
         }
@@ -11356,3 +11337,11 @@ impl Eq for ClickError {}
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod retained_frame_tests {
+    use super::*;
+    mod scaling_tests {
+        include!("scaling_tests/surface/retained_frame_tests.rs");
+    }
+}

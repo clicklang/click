@@ -31,5 +31,5 @@ int32 fill_too_many() {
 ```
 
 ```expect
-fail: could not show `0 <= "loop_body_store_past_its_array.c"::fill_too_many.local(1) && "loop_body_store_past_its_array.c"::fill_too_many.local(1) < 4` from the facts `"loop_body_store_past_its_array.c"::fill_too_many.local(1) <= 4`, `"loop_body_store_past_its_array.c"::fill_too_many.local(1) >= 0`
+fail: could not show `0 <= i && i < 4` from the facts `i <= 4`, `i >= 0`
 ```

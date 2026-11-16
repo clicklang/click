@@ -64,5 +64,5 @@ int32 run() {
 ```
 
 ```expect
-fail: missing resource fact `owns *"borrowed_destination.c"::run.local(0)`
+fail: missing resource fact `owns *shared`
 ```

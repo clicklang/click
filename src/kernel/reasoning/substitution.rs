@@ -950,15 +950,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             initializer: None, ..
         }
         | ProgramStatement::DeclareAggregate { .. } => statement.clone(),
-        ProgramStatement::ForStep {
-            step,
-            exited_locals,
-            continue_after,
-        } => ProgramStatement::ForStep {
-            exited_locals: exited_locals.clone(),
-            continue_after: *continue_after,
-            step: Box::new(walk_execution_statement(step, s)),
-        },
+
         ProgramStatement::Declare {
             initializer: Some(expression),
             ..
@@ -1158,7 +1150,9 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             then_branch: Box::new(walk_execution_statement(then_branch, s)),
             else_branch: Box::new(walk_execution_statement(else_branch, s)),
         },
-        ProgramStatement::While {
+        ProgramStatement::Loop {
+            test,
+            update,
             condition,
             invariant,
             invariant_checks,
@@ -1170,7 +1164,14 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             do_while,
             backedge_target,
             natural_exit_target,
-        } => ProgramStatement::While {
+        } => ProgramStatement::Loop {
+            test: test.as_ref().map(|test| LoopTestRegion {
+                statement: std::sync::Arc::new(walk_execution_statement(&test.statement, s)),
+                position: test.position,
+            }),
+            update: update
+                .as_ref()
+                .map(|step| std::sync::Arc::new(walk_execution_statement(step, s))),
             structural_measure: structural_measure.clone(),
             condition: s.program_expression(condition),
             ranking_measures: ranking_measures
@@ -1970,7 +1971,9 @@ mod resource_frame_substitution_tests {
                 Box::new(MachineTerm::constant(1)),
             ),
         );
-        let statement = ProgramStatement::While {
+        let statement = ProgramStatement::Loop {
+            test: None,
+            update: None,
             condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
@@ -1988,7 +1991,7 @@ mod resource_frame_substitution_tests {
             from,
             &MachineTerm::constant(4),
         );
-        let ProgramStatement::While { effect_checks, .. } = substituted else {
+        let ProgramStatement::Loop { effect_checks, .. } = substituted else {
             panic!("substitution changed the statement shape");
         };
         let actual = effect_checks[0]
@@ -2014,7 +2017,9 @@ mod resource_frame_substitution_tests {
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         );
-        let statement = ProgramStatement::While {
+        let statement = ProgramStatement::Loop {
+            test: None,
+            update: None,
             condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
@@ -2029,7 +2034,7 @@ mod resource_frame_substitution_tests {
         };
         let substituted =
             substitute_pointer_variable_in_execution_statement(&statement, from, &replacement);
-        let ProgramStatement::While { effect_checks, .. } = substituted else {
+        let ProgramStatement::Loop { effect_checks, .. } = substituted else {
             panic!("substitution changed the statement shape");
         };
         assert_eq!(
@@ -2753,9 +2758,7 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
             initializer: None, ..
         }
         | ProgramStatement::DeclareAggregate { .. } => {}
-        ProgramStatement::ForStep { step, .. } => {
-            collect_execution_statement_bound_variables(step, variables);
-        }
+
         ProgramStatement::Declare {
             initializer: Some(expression),
             ..
@@ -2823,7 +2826,9 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
             collect_execution_statement_bound_variables(then_branch, variables);
             collect_execution_statement_bound_variables(else_branch, variables);
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
+            test,
+            update,
             condition,
             invariant,
             invariant_checks,
@@ -2842,6 +2847,12 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
                 collect_loop_effect_bound_variables(check.effect(), variables);
             }
             collect_execution_statement_bound_variables(body, variables);
+            if let Some(test) = test {
+                collect_execution_statement_bound_variables(&test.statement, variables);
+            }
+            if let Some(update) = update {
+                collect_execution_statement_bound_variables(update, variables);
+            }
         }
         ProgramStatement::Switch { expression, cases } => {
             collect_program_expression_bound_variables(expression, variables);
@@ -5348,6 +5359,44 @@ mod spec_carrier_substitution_binder_tests {
 mod machine_integer_substitution_tests {
     use super::*;
 
+    #[test]
+    fn narrow_order_substitution_retains_literal_comparisons_in_both_carriers() {
+        use crate::kernel::{CompareRelation as R, MachineIntegerType as T};
+        for format in [T::Int8, T::UInt8, T::Int16, T::UInt16] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let variable = Variable(999705);
+            let word = |n: i64| {
+                crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
+            };
+            for relation in [R::LessThan, R::LessEqual, R::GreaterThan, R::GreaterEqual] {
+                let condition = ConditionTerm::Compare {
+                    format,
+                    relation,
+                    left: Box::new(MachineTerm::Variable(variable)),
+                    right: Box::new(word(5)),
+                };
+                let expected = ConditionTerm::Compare {
+                    format,
+                    relation,
+                    left: Box::new(word(9)),
+                    right: Box::new(word(5)),
+                };
+                assert_eq!(
+                    substitute_bitvector_variable_in_condition(&condition, variable, &word(9)),
+                    expected
+                );
+                let root = crate::kernel::KernelTermImport::default().condition(&condition);
+                let mapped =
+                    substitute_bitvector_variable_in_common_condition(&root, variable, &word(9))
+                        .unwrap();
+                assert_eq!(
+                    crate::kernel::KernelTermExport::condition(&mapped).unwrap(),
+                    expected
+                );
+            }
+        }
+    }
+
     #[cfg(test)]
     mod scaling_tests {
         include!(
@@ -5442,7 +5491,11 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                 let closed_order = *relation != CompareRelation::Equal
                     && matches!(
                         format,
-                        MachineIntegerType::Int32
+                        MachineIntegerType::Int8
+                    | MachineIntegerType::UInt8
+                    | MachineIntegerType::Int16
+                    | MachineIntegerType::UInt16
+                    | MachineIntegerType::Int32
                             | MachineIntegerType::UInt32
                             | MachineIntegerType::Int64
                             | MachineIntegerType::UInt64
@@ -5739,7 +5792,11 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
         } if *relation != CompareRelation::Equal
             && matches!(
                 format,
-                MachineIntegerType::Int32
+                MachineIntegerType::Int8
+                    | MachineIntegerType::UInt8
+                    | MachineIntegerType::Int16
+                    | MachineIntegerType::UInt16
+                    | MachineIntegerType::Int32
                     | MachineIntegerType::UInt32
                     | MachineIntegerType::Int64
                     | MachineIntegerType::UInt64
@@ -6404,6 +6461,7 @@ fn substitute_bitvector_variable_in_memory_contents(
     ));
     let mut result = Memory {
         construction: None,
+        pending_steps: None,
         blocks: std::sync::Arc::new(
             memory
                 .blocks
@@ -7091,6 +7149,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
 ) -> Memory {
     let mut result = Memory {
         construction: None,
+        pending_steps: None,
         blocks: std::sync::Arc::new(
             memory
                 .blocks
@@ -7587,7 +7646,6 @@ fn substitute_pointer_variable_in_spec_expression(
             result_type,
             pointer_result,
             result_object_class,
-            projection,
         } => SpecExpression::PureFunctionApplication {
             name: name.clone(),
             arguments: arguments
@@ -7599,7 +7657,6 @@ fn substitute_pointer_variable_in_spec_expression(
             result_type: *result_type,
             pointer_result: pointer_result.clone(),
             result_object_class: result_object_class.clone(),
-            projection: projection.clone(),
         },
         SpecExpression::LoopEntryState(expression) => SpecExpression::LoopEntryState(Box::new(
             substitute_pointer_variable_in_spec_expression(expression, from, to),

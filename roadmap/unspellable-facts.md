@@ -330,6 +330,195 @@ algebraic exports. All 2,015 API, specification, execution-value and scaling tes
 passed after upstream integration. Quality and algebraic/Boolean fixtures passed
 with zero fact-stability differences.
 
+### 9o Pointer lowering
+
+Specification pointer values and resource fields retain complete shared payloads;
+C-expression handoffs preserve supported pointer producer roots. Removing a
+constructor field's `const` qualifier now updates metadata through the existing
+pointer payload API, preserving the address, call/read producer, historical memory,
+other qualifiers, extents and object/local-reference evidence. Native nominal
+object-class refinement remains an explicit checker boundary. Explicit pointer
+casts still run the existing metadata rules before retaining their result: even
+a same-type `void*` cast clears the selected extent, while byte-to-byte casts
+preserve it.
+
+Validation: exact producer/payload parity and unchanged facts/obligations passed.
+Qualifier updates on growing pointer indices take constant work with zero machine
+exports. All 2,129 API, specification, execution-value, expression and scaling
+tests passed, including the reproduced cast regression and retained/native extent
+parity. Quality checks and all 575 regular pointer fixtures passed; the audit reported zero fact
+stability differences. A broad fixture selector also selected 23 nightly cases;
+the ten failures were identical before 9o and were left outside this task.
+
+### 9p Float-producing conversions
+
+Supported symbolic machine-to-float and float-width conversions retain their
+shared operands. Float constant arithmetic is read through the existing views
+and numeric bit helpers, preserving the prior normalization of signed zeros,
+NaN payloads, infinities and subnormals. Integer literal rounding and
+float-to-integer finite/range obligations remain at their existing native
+producer boundaries; no conversion admission or rounding rules changed.
+
+Validation: exact native result, root and scoped-context parity passed across
+both float widths and four machine formats. Growing operands remain shared with
+linear work and zero float exports. All 2,019 API, specification, execution-value
+and scaling tests and quality checks passed. Regular float fixtures passed with
+zero fact-stability differences.
+
+### 9q Mixed call assembly
+
+Machine and Boolean call results assemble supported typed arguments directly
+from common roots. Float expressions, logical algebraic fields, program-parameter
+envelopes, Integer and Boolean operands, and complete shared pointer values retain
+their argument identity. Native opaque descriptors and unsupported carriers use
+the existing application-owned compatibility boundary. Existing float/algebraic
+call producers remain shared; pointer-result metadata and native Integer-result
+storage remain explicit boundaries.
+
+Validation: native/retained result and scoped-context parity covers mixed argument
+families, program-parameter envelopes and complete pointer payloads. Growing float
+arguments use linear work with zero float exports. All 2,021 API, specification,
+execution-value and scaling tests passed. The six combined float, mixed-call and
+pointer-cast regressions and three serial scaling checks also passed with the
+9o cast fix integrated. Quality and four regular mixed-call proof fixtures passed
+with zero fact-stability differences.
+
+### 9r Scoped fold and match handoffs
+
+Concrete and symbolic fold bodies and all three match result families use one
+scoped binding handoff. Selected common constructor fields keep their roots;
+native fields use one borrowed dispatch. Fold accumulators keep the existing
+retained-local binding rules, including C-expression context. Lexical shadowing,
+old-state lookup, binder allocation and path obligations are unchanged. Native
+algebraic bindings are copied only when a native algebraic field is inserted.
+Integer binders still use the existing typed stack required by native Integer
+result storage; removing that storage is package 10 work.
+
+Validation: 42 focused fold/match tests and all 2,135 API, specification,
+execution-value, expression and scaling tests passed. A growing accumulator keeps
+its root through repeated fold-body bindings with constant deterministic work and
+zero machine exports; old-state lookup and outer binding restoration are covered.
+Quality checks and five exact regular fold/match fixtures passed, with zero
+fact-stability differences.
+
+### 9s Numeric certification
+
+Retained machine and float calls use one numeric call reader, comparing their
+common arguments without first assembling a native call. Supported argument
+syntax keeps its prior admission; unsupported float expressions still refuse.
+Integer-to-machine conversions retain the existing native-syntax refusal without
+exporting the Integer operand solely to reach it. Shared-root identity and the
+existing numeric cast, width, order and conversion checks are unchanged.
+
+Validation: all 14 focused certification tests passed, including native/shared
+admission parity and zero float exports. Growing unsupported float and Integer
+operands refuse with constant deterministic work. All 2,138 API, specification,
+execution-value, expression and scaling tests passed, including three serial
+scaling checks. Quality and four exact regular certification fixtures passed,
+with zero fact-stability differences.
+
+### 9t Boolean and algebraic certification adapters
+
+Boolean call arguments use bounded literal/raw-C-variable readings. Other logical
+roots retain the native `BoolCast` refusal without exporting their conditions.
+Mixed algebraic variables compare directly; unsupported constructors, matches and
+conditionals refuse before importing their payloads. Admitted mixed calls retain
+the selected argument-import adapter: its established common-root identity rule
+is deliberately different from native syntax comparison. This distinction is
+covered explicitly, so consolidating the boundary does not change proof admission.
+
+Validation: 17 focused certification tests and all 2,141 API, specification,
+execution-value, expression and scaling tests passed. Growing Boolean and
+algebraic refusal payloads take constant deterministic work. Quality checks and
+four exact regular logical fixtures passed, with zero fact-stability differences.
+
+### 9u Pointer and state certification
+
+Complete pointer and captured-array arguments borrow their native/shared
+payloads. Address roles and scaled indices use one written-syntax traversal;
+shared address DAGs are not expanded into native trees. Algebraic read comparison
+retains exact memory identity and reads its shared addresses directly. A common
+metadata projection preserves type, cv qualifiers, known extent, declared class,
+unchecked evidence and local-reference identity, including equivalent default
+qualifier storage shapes.
+
+The selected extent-width adapter remains native because this route's width
+admission is native-syntax based; common-root identity would accept additional
+widths. Opaque index leaves keep the native reading used by the old exporter.
+No address aliasing, proof rules, search indexes or budgets changed.
+
+Validation: all 22 focused certification cases passed in the 2,148-test broad
+and serial suite, including a complete metadata matrix, captured memory and
+algebraic-read state parity, opaque-index refusal and linear traversal of growing
+shared address DAGs with zero machine exports. Quality and five exact regular
+pointer fixtures passed, with zero fact-stability differences.
+
+### 9v Contract-claim inputs
+
+Contract exit views bind retained return and exception values directly into
+locals instead of exporting them to native values first. The common binding
+helper uses the same unqualified local rules, including pointer qualifier
+normalization. Entry-state views and claim obligations are unchanged.
+
+Focused coverage preserves machine, float, logical Boolean, algebraic and
+complete pointer roots while comparing the former native binding behavior.
+Growing return operands take constant deterministic preparation work and cause
+zero machine exports. All 2,152 API, specification, execution-value, expression
+and scaling checks passed, as did quality checks and five exact regular
+return/exception fixtures with zero fact-stability differences.
+
+### 9w Contract-result publication
+
+Checked outcomes retain their `StoredExecutionValue` through publication,
+reopening, return completion and Surface outcome successors. Fixed-state proof
+frames borrow either the native or retained result instead of requiring an
+export while the view is constructed. Storage comparisons keep their existing identity contract; outcome refresh
+keeps its exact native-payload comparison with an unchanged-root fast path.
+Publication ownership remains generative.
+
+Resource lowering, allocation checks, embedded Surface value syntax and native
+fixed-state lowering still use explicit selected compatibility readings. These
+readings are not additional stored copies; a lowering operation reuses its
+selected native result view. No proof rules or search policy change.
+
+Focused coverage includes return/exception publication, pointer metadata and
+native identity parity, publication ownership, and constant deterministic work
+with zero machine exports for growing published operands and borrowed frames.
+All 3,182 selected API, proof, specification, execution and scaling checks
+passed. Two wall-clock outliers passed isolated serial checks under the unchanged
+30-second cap; no test or budget was relaxed. Five exact regular return/exception
+fixtures passed with zero fact-stability differences.
+
+### 9x Certificate capture and replay
+
+Fixed-state program argument capture uses the common retained lowering result.
+Conversion and load obligations follow the same checks, and certificate guard
+selection keeps its operand shared. Native theorem bindings make their selected
+conversion at the value consumer. Certificate syntax and explicit replay rules
+are unchanged.
+
+Focused tests cover scalar and complete pointer payload parity, growing argument
+capture with zero machine exports, and machine, Integer and model argument
+expansions whose erased guards still refuse. The deep capture test uses the
+repository's documented fixture-thread stack; no verifier limit changes.
+All 3,184 selected API, proof, specification, execution and scaling checks
+passed. Quality and six exact regular argument/domain fixtures passed, with
+zero fact-stability differences.
+
+### 9y Retire the private native capture entry point
+
+The last resource-field initializer caller uses the common retained result,
+checks its type, then converts at the existing native field-storage boundary.
+The superseded private checked-obligation capture wrapper is removed. The public
+native evaluation API projects the same common path directly, with its signature,
+value and obligation behavior preserved. Strict resource evaluation keeps its
+separate checked-load contract.
+
+All 3,188 selected API, proof, specification, execution and scaling checks passed
+with current upstream integrated. Six exact regular resource/initializer fixtures
+passed, including the unchanged wrong-type refusals, with zero fact-stability
+differences. Quality checks passed; nightly was not run.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

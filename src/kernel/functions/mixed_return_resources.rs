@@ -122,9 +122,13 @@ impl ConsumedCellReturns {
             }
             return;
         }
+        let term = match spec.term() {
+            ResourceTerm::Instance { resource, .. } => resource.as_ref(),
+            term => term,
+        };
         let ResourceTerm::Composite {
             name, arguments, ..
-        } = spec.term()
+        } = term
         else {
             return;
         };
@@ -136,7 +140,7 @@ impl ConsumedCellReturns {
         };
         let definition = &definitions[index];
         if definition.is_recursive()
-            || definition.instance_schema.is_some()
+            || !definition.children.is_empty()
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || !active.insert(name.clone())
@@ -565,6 +569,12 @@ pub(in crate::kernel) struct ConstructedReturnBody {
     // Projection and admission consume its expansion without rebinding it.
     #[allow(dead_code)]
     witnesses: BTreeMap<ResourceOccurrenceId, Vec<ProgramValue>>,
+    #[allow(dead_code)]
+    specialized: Option<specialized_returns::SpecializedReturnEvidence>,
+    // Explicit cut points of this finite construction. A recursive child is
+    // retained with its emitted identity, never followed through memory.
+    #[allow(dead_code)]
+    folded: Vec<(ResourceFact, ResourceOccurrenceId)>,
     pub(super) frontier: Vec<ResourceFact>,
     viewed_children: Vec<(ResourceFact, ResourceOccurrenceId)>,
     expansion: Vec<ResourceFact>,
@@ -584,7 +594,7 @@ impl ConstructedReturnBody {
             .filter(|piece| piece.memory_own_range().is_some())
     }
 
-    pub(super) fn boundary(&self) -> &[ResourceFact] {
+    pub(in crate::kernel) fn boundary(&self) -> &[ResourceFact] {
         &self.boundary
     }
 }
@@ -624,6 +634,32 @@ impl ConstructedReturnBodies {
             else {
                 continue;
             };
+            if let Some(family) = specialized_returns::classify(support, definitions) {
+                match specialized_returns::construct(
+                    family,
+                    support,
+                    occurrence.source,
+                    occurrence.clause,
+                    definitions,
+                    state,
+                    composition,
+                    occurrence.origin == ReturnOwnershipOrigin::EntryBorrow
+                        && composition.restores_entry_borrows(),
+                    assumptions,
+                )? {
+                    specialized_returns::Construction::Body(body) => {
+                        bodies.insert(occurrence.source, *body);
+                    }
+                    specialized_returns::Construction::Unsupported => {
+                        legacy.insert(occurrence.source);
+                    }
+                }
+                continue;
+            }
+            if matches!(support.resource(), Resource::Instance(_)) {
+                legacy.insert(occurrence.source);
+                continue;
+            }
             let Resource::Composite { name, .. } = support.resource() else {
                 continue;
             };
@@ -656,7 +692,8 @@ impl ConstructedReturnBodies {
     // Classify definitions before producing any body. Existential migration
     // is deliberately separate: one pointer witness with flat memory/token
     // children. Its binder examines only this definition, never held children.
-    // More complex existential, authority, matched and recursive bodies stay legacy.
+    // Guarded direct recursion emits a finite frontier and retains its child
+    // folded. Complex existential, authority and matched bodies stay legacy.
     fn supports(
         name: &str,
         definitions: &[CompositeResourceDefinition],
@@ -687,7 +724,7 @@ impl ConstructedReturnBodies {
             });
         let valid = definition.instance_schema.is_none()
             && definition.matched.is_none()
-            && !definition.is_recursive()
+            && (!definition.is_recursive() || definition.condition.is_some())
             && (definition.witnesses.is_empty() || flat_existential)
             && definition.children.is_empty()
             && definition.contains().iter().all(|child| {
@@ -699,7 +736,8 @@ impl ConstructedReturnBodies {
                     ResourceTerm::Memory(_) | ResourceTerm::Token { .. } => true,
                     ResourceTerm::Composite { name, .. } => {
                         child.quantity() == &ResourceQuantity::One
-                            && Self::supports(name, definitions, supported, active)
+                            && ((name == definition.name() && definition.is_recursive())
+                                || Self::supports(name, definitions, supported, active))
                     }
                     _ => false,
                 }
@@ -725,6 +763,7 @@ impl ConstructedReturnBodies {
             .unchecked_with_facts_and_occurrences([support.clone()]);
         let mut transfers = Vec::new();
         let mut witnesses = BTreeMap::new();
+        let mut folded = Vec::new();
         let (context, frontier, viewed_children) = Self::open(
             singleton,
             support,
@@ -739,11 +778,12 @@ impl ConstructedReturnBodies {
             borrowed,
             &mut transfers,
             &mut witnesses,
+            &mut folded,
         )?;
         // Normalize descriptions only after the transfer producer has finished.
         // Source/parent identities remain the actual pre-normalization IDs.
         let normalize = |context: ResourceContext| {
-            if witnesses.is_empty() {
+            if witnesses.is_empty() && folded.is_empty() {
                 context.normalized(assumptions)
             } else {
                 context.normalized_without_discovery(assumptions)
@@ -764,7 +804,9 @@ impl ConstructedReturnBodies {
         .to_vec();
         let expansion = normalize(context).facts().to_vec();
         Some(ConstructedReturnBody {
+            specialized: None,
             witnesses,
+            folded,
             frontier,
             viewed_children,
             expansion,
@@ -788,6 +830,7 @@ impl ConstructedReturnBodies {
         borrowed: bool,
         transfers: &mut Vec<CompositeChildTransfer>,
         witnesses: &mut BTreeMap<ResourceOccurrenceId, Vec<ProgramValue>>,
+        folded: &mut Vec<(ResourceFact, ResourceOccurrenceId)>,
     ) -> Option<(
         ResourceContext,
         Vec<ResourceFact>,
@@ -811,6 +854,7 @@ impl ConstructedReturnBodies {
             Some(selected),
         )?;
         if !body.opened {
+            folded.push((support.clone(), parent));
             return Some((body.expanded, Vec::new(), Vec::new()));
         }
         if !body.witnesses.is_empty() {
@@ -864,7 +908,20 @@ impl ConstructedReturnBodies {
                 fact: fact.clone(),
                 origin,
             });
-            if matches!(fact.resource(), Resource::Composite { .. }) {
+            if let Resource::Composite {
+                name: child_name, ..
+            } = fact.resource()
+            {
+                if child_name == name && definition.is_recursive() {
+                    let _checking = crate::instrumentation::CheckingWorkScope::new(
+                        "retain recursive return frontier",
+                        1,
+                    );
+                    crate::instrumentation::record_deterministic_work(1);
+                    folded.push((fact, child_source));
+                    path.pop();
+                    continue;
+                }
                 let invariant_arguments = match spec.term() {
                     ResourceTerm::Composite { arguments, .. } => {
                         arguments.iter().all(|argument| match argument {
@@ -889,6 +946,7 @@ impl ConstructedReturnBodies {
                     borrowed && invariant_arguments && fact.is_own(),
                     transfers,
                     witnesses,
+                    folded,
                 )?;
             }
             path.pop();
@@ -903,8 +961,10 @@ impl ConstructedReturnBodies {
     ) -> Option<&ConstructedReturnBody> {
         let body = self.0.get(&source);
         assert!(
-            !matches!(fact.resource(), Resource::Composite { .. })
-                || body.is_some()
+            !matches!(
+                fact.resource(),
+                Resource::Composite { .. } | Resource::Instance(_)
+            ) || body.is_some()
                 || self.1.contains(&source),
             "returned composite must carry its construction or an explicit legacy route"
         );
@@ -955,7 +1015,7 @@ pub(super) struct ProjectedReturnResource {
     pub(super) destination: ResourceOccurrenceId,
     pub(super) expansion: Vec<ResourceFact>,
     pub(super) projected: Vec<ResourceFact>,
-    pub(super) frontier: Option<Vec<ResourceFact>>,
+    pub(super) frontier: Vec<ResourceFact>,
     pub(super) viewed_children: Option<Vec<(ResourceFact, ResourceOccurrenceId)>>,
 }
 
@@ -977,8 +1037,6 @@ impl ProjectedReturnResource {
         };
         Some(
             self.frontier
-                .as_ref()
-                .expect("a constructed body carries its frontier")
                 .iter()
                 .filter(|piece| piece.is_view())
                 .map(|piece| ProducedBorrowingPiece {
@@ -1013,6 +1071,24 @@ pub(super) fn project_return_resource_cores(
         })
         .map(|(support, source_occurrence, destination_occurrence)| {
             let body = bodies.for_return(source_occurrence, support);
+            // Every projection carries its finite one-level frontier. Legacy
+            // families construct it here; loan recovery never reconstructs it.
+            let frontier = if let Some(body) = body {
+                body.frontier.clone()
+            } else if matches!(support.resource(), Resource::Composite { .. }) {
+                expand_composite_resource_fact_with_children(
+                    &ResourceContext::new_with_equalities(assumptions)
+                        .unchecked_with_fact(support.clone()),
+                    support,
+                    definitions,
+                    post_state.memory(),
+                    assumptions,
+                )
+                .map(|(_, children, _)| children)
+                .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
             let expansion = if let Some(body) = body {
                 body.expansion.clone()
             } else if matches!(
@@ -1047,13 +1123,7 @@ pub(super) fn project_return_resource_cores(
                 expansion,
                 projected,
                 viewed_children: body.map(|body| body.viewed_children.clone()),
-                frontier: body.map(|body| body.frontier.clone()).or_else(|| {
-                    matches!(
-                        support.resource(),
-                        Resource::Memory(_) | Resource::Token { .. }
-                    )
-                    .then(Vec::new)
-                }),
+                frontier,
             })
         })
         .collect()
@@ -1064,9 +1134,15 @@ mod existential_return_tests;
 #[cfg(test)]
 mod fresh_allocation_tests;
 #[cfg(test)]
+mod recursive_return_tests;
+#[cfg(test)]
+mod specialized_return_tests;
+#[cfg(test)]
 pub(super) mod tests;
 
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/mixed_return_resources.rs");
 }
+
+mod specialized_returns;

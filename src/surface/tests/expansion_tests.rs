@@ -1719,7 +1719,7 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
     let expanded = expand_checked_grouped_claim(&click_source, &verified_for_expansion, "use_pick")
         .unwrap_or_else(|error| panic!("the caller proof should expand: {}", error.message()));
     assert!(
-        expanded.contains(" if at(region(3).entry, \"pick_cases.c\"::use_pick.local(0))"),
+        expanded.contains(" if at(region(3).entry, copied)"),
         "{expanded}"
     );
     assert!(
@@ -3883,9 +3883,7 @@ int32 early(int32 x) {
     let expanded = expand_checked_function_claim(click, &verified_for_label, "early.contract")
         .unwrap_or_else(|error| panic!("{}", error.message()));
     assert!(
-        expanded.contains(
-            "if at(region(3).entry, \"early.c\"::early.parameter(0)) == at(region(3).entry, 1) {"
-        ),
+        expanded.contains("if at(region(3).entry, x) == at(region(3).entry, 1) {"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources)
@@ -8127,8 +8125,8 @@ fn post_execution_solve_unfolds_predicate_goal_explicitly() {
     let corrupted_result = { verify_c_sources(&corrupted, &[("compare_swap2.c", c_source)]) };
     corrupted_result.expect_err("a corrupted branched predicate expansion must be rejected");
 
-    let condition = "at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[1]) < at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[0])";
-    let wrong_condition = "at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[0]) < at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[1])";
+    let condition = "at(region(1).entry, p[1]) < at(region(1).entry, p[0])";
+    let wrong_condition = "at(region(1).entry, p[0]) < at(region(1).entry, p[1])";
     let corrupted = expanded.replacen(condition, wrong_condition, 1);
     assert_ne!(
         corrupted, expanded,
@@ -16083,14 +16081,11 @@ int32 select_when_positive(int32 limit, int32 left, int32 right) {
     verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!("expanded conditional proof failed independent verification: {error:?}\n{expanded}")
     });
-    let uncited = expanded.replacen(
-        "normalize() using {\n        limit > 0;\n    }",
-        "normalize();",
-        1,
-    );
-    assert_ne!(uncited, expanded, "{expanded}");
-    verify_c_sources(&uncited, &sources)
-        .expect_err("dropping the cited premise must leave the branch unresolved");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    let unguarded = expanded.replace("    requires limit > 0;\n", "");
+    assert_ne!(unguarded, expanded, "{expanded}");
+    verify_c_sources(&unguarded, &sources)
+        .expect_err("dropping the guard must leave the branch unresolved");
     let wrong_branch = click_source.replace(
         "if limit > 0 { left } else { right }",
         "if limit > 0 { right } else { left }",
@@ -16556,8 +16551,7 @@ fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the automatic preservation should expand");
     assert!(
-        expanded.contains("::two_ifs.local(1) == 0")
-            && expanded.contains("::two_ifs.local(2) == 0"),
+        expanded.contains("if x == 0 {") && expanded.contains("if y == 0 {"),
         "both sibling C `if`s should expand to proof cases: {expanded}"
     );
     verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
@@ -17224,7 +17218,11 @@ fn restricted_solve_does_not_borrow_the_ambient_equality_graph() {
     for source in [source.to_string(), source.replace("int32", "int32*")] {
         for goal in ["a == c", "(if a == c { 7 } else { 0 }) == 7"] {
             let omitted = source.replace("ensures a == c", &format!("ensures {goal}"));
-            assert!(verify_c_sources(&omitted, &[]).is_err());
+            assert!(
+                verify_c_sources(&omitted, &[]).is_err(),
+                "{omitted}\n{}",
+                expand_c_claim_source_by_label(&omitted, &[], "restricted.ensures_0").unwrap()
+            );
             let selected = omitted.replace("using { a == b; }", "using { a == b; b == c; }");
             verify_c_sources(&selected, &[]).expect("the selected graph establishes transitivity");
             // The simple tactic deliberately has broader ambient semantics.

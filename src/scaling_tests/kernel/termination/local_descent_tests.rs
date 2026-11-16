@@ -109,7 +109,7 @@ fn independent_loop_measure_ownership_costs_its_explicit_strategy_outputs() {
         let rules = (0..count)
             .map(|index| {
                 let mut rule = template.clone();
-                let ProgramStatement::While {
+                let ProgramStatement::Loop {
                     ranking_measures, ..
                 } = &mut rule.loop_statement
                 else {

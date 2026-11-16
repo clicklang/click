@@ -200,6 +200,23 @@ their memory state. Surface records the name of each point it records a state
 at (`RecordedStates::point_name`); naming and the version walk are to move
 onto these identities.
 
+Each point also records the memory the path had there and the steps the path
+took to reach it from its predecessor: `record_memory_derivation` adds each
+step to a log the executing `Memory` value carries (`pending_steps`, which is
+not part of equality or the interning key and is never kept in the arena),
+and the next point takes the log. So a point's steps are the ones its own
+path took, even where the arena shares the resulting memory with another
+path and keeps that path's derivation. A branch join records the point where
+its arms split.
+
+`resource_tracker::cell_version_on_path` walks these points: from the point a
+read is made at, it asks the step rules about each point's steps, newest
+first, with the empty naming context, and stops at the first point a step may
+have changed the cell at. It crosses a branch join only when both arms leave
+the cell alone back to their split, and a point reached with no recorded step
+only when its memory is its predecessor's. The answer is a point on the
+reader's own path. Reads are not yet named by it.
+
 An interface join retains the identities of all incoming states in
 `join_inputs`, including through read projections. Two joins with empty cell
 maps must not become the same state when their incoming histories differ.

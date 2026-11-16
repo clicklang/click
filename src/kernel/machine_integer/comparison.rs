@@ -164,7 +164,11 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     };
     if !matches!(
         format,
-        MachineIntegerType::Int32
+        MachineIntegerType::Int8
+            | MachineIntegerType::UInt8
+            | MachineIntegerType::Int16
+            | MachineIntegerType::UInt16
+            | MachineIntegerType::Int32
             | MachineIntegerType::UInt32
             | MachineIntegerType::Int64
             | MachineIntegerType::UInt64
@@ -218,6 +222,61 @@ fn closed_order_for_operand_views(
         relation,
         left: Box::new(left),
         right: Box::new(right),
+    })
+}
+
+/// An order-guard conditional over literal or variable roots is a fixed-size
+/// native comparison atom. Read only these roots, never an arithmetic DAG.
+fn order_conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
+    use crate::kernel::{KernelTermNode as N, MachineOperandView as V};
+    let N::MachineIf { arguments } = root.node() else {
+        return None;
+    };
+    if !matches!(
+        root.ty(),
+        crate::kernel::KernelType::Program(
+            crate::kernel::ProgramType::Int32
+                | crate::kernel::ProgramType::UInt32
+                | crate::kernel::ProgramType::Int64
+                | crate::kernel::ProgramType::UInt64
+        )
+    ) {
+        return None;
+    }
+    crate::instrumentation::record_deterministic_work(1);
+    let N::BoolCompare {
+        format,
+        relation,
+        arguments: guard,
+    } = arguments[0].node()
+    else {
+        return None;
+    };
+    if *relation == crate::kernel::CompareRelation::Equal
+        || !matches!(format.format().bits(), 32 | 64)
+    {
+        return None;
+    }
+    let atom = |root| {
+        let view = V::Shared(root);
+        view.literal()
+            .or_else(|| view.variable().copied().map(MachineTerm::Variable))
+    };
+    let mut left = atom(&guard[0])?;
+    let mut right = atom(&guard[1])?;
+    if format.format().bits() == 32 {
+        left = left.into_word32();
+        right = right.into_word32();
+    }
+    Some(MachineTerm::If {
+        condition: Box::new(ConditionTerm::Compare {
+            format: *format,
+            relation: *relation,
+            left: Box::new(left),
+            right: Box::new(right),
+        }),
+        then_term: Box::new(atom(&arguments[1])?),
+        else_term: Box::new(atom(&arguments[2])?),
     })
 }
 
@@ -309,7 +368,8 @@ pub(crate) fn condition_for_operand_views(
                     *destination,
                     MachineTerm::Variable(*variable),
                 ))
-            }),
+            })
+            .or_else(|| order_conditional_atom(root)),
         V::Legacy(_) => None,
     });
     let operands: [V<'_>; 2] = std::array::from_fn(|index| {
@@ -1084,11 +1144,22 @@ pub(crate) fn integer_observations_of_native_comparison(
 #[cfg(test)]
 mod borrowed_comparison_tests {
     use super::*;
+
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/machine_integer/comparison/borrowed_comparison_tests.rs"
+        );
+    }
+
     use crate::kernel::{CompareRelation as R, MachineOperandView, Variable};
 
     #[test]
     fn literal_native_orders_are_builtin_truths_without_ambient_facts() {
         for format in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt16,
             MachineIntegerType::Int32,
             MachineIntegerType::UInt32,
             MachineIntegerType::Int64,

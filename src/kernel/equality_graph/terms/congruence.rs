@@ -635,6 +635,20 @@ impl TermClasses {
                     if let Some(other) = equivalent.and_then(|child| integer_values.get(child)) {
                         self.close(vec![(value, *other)]);
                     }
+                    // Surface writes a negative literal as one constant, while
+                    // theorem substitution retains Negate(Constant). Connect
+                    // these spellings without rewriting either stored term or
+                    // evaluating symbolic arithmetic beneath a negation.
+                    if let I::Negate(child) = term.as_ref()
+                        && let I::Constant(number) = child.as_ref()
+                    {
+                        crate::instrumentation::record_deterministic_work(
+                            number.bits() as usize + 1,
+                        );
+                        let literal =
+                            self.intern_node(Node::IntegerAtom(I::Constant(-number).into()));
+                        self.close(vec![(value, literal)]);
+                    }
                     integer_values.insert(term, value);
                     continue;
                 }

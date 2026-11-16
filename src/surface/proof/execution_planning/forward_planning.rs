@@ -100,7 +100,9 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             *next_statement_index = source_region.continuation_node;
             Ok(joined)
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
+            test,
+            update,
             condition,
             invariant_checks,
             effect_checks,
@@ -205,6 +207,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 // The loop head invents identities for everything the body can
                 // change, from this execution's counter rather than from the
                 // base of the identity range.
+                let pass_body =
+                    crate::kernel::program_loop_pass(body, update.as_deref(), test.as_ref());
                 let preservation_contexts = if *do_while {
                     program_do_while_preservation_contexts(
                         &context.state,
@@ -213,7 +217,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         effect_checks,
                         resource_specs,
                         environment.function.composite_resource_definitions(),
-                        body,
+                        &pass_body,
                         &assumptions,
                         context.next_kernel_variable,
                     )
@@ -225,7 +229,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         effect_checks,
                         resource_specs,
                         environment.function.composite_resource_definitions(),
-                        body,
+                        &pass_body,
                         &assumptions,
                         context.next_kernel_variable,
                     )
@@ -262,6 +266,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                                     &pure_facts,
                                     &context.recorded_states,
                                     body,
+                                    update.as_ref(),
+                                    test.as_ref(),
                                     environment,
                                 )
                                 .map_err(|error| {
@@ -311,6 +317,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                             structural_measure.as_deref(),
                             condition,
                             body,
+                            update.as_ref(),
+                            test.as_ref(),
                             *do_while,
                             environment,
                         )
@@ -695,7 +703,7 @@ fn advance_execution_proof_statement(
                 &mut context.next_kernel_variable,
             )?,
         };
-        if matches!(statement, ProgramStatement::While { .. }) {
+        if matches!(statement, ProgramStatement::Loop { .. }) {
             let loop_index = loop_index.ok_or_else(|| {
                 ClickError::new(format!(
                     "execution proof traversal region({statement_index}) is a loop without a loop index"
@@ -764,8 +772,8 @@ fn advance_execution_proof_statement(
                     );
                 }
             }
-            if matches!(statement, ProgramStatement::While { .. }) {
-                let loop_index = loop_index.expect("a while statement has a checked loop index");
+            if matches!(statement, ProgramStatement::Loop { .. }) {
+                let loop_index = loop_index.expect("a loop statement has a checked loop index");
                 let loop_labels = environment
                     .function_block
                     .structural_clauses()
@@ -814,7 +822,7 @@ fn advance_execution_proof_statement(
                             loop_index,
                         )?;
                     }
-                    if let ProgramStatement::While { condition, .. } = statement {
+                    if let ProgramStatement::Loop { condition, .. } = statement {
                         let exit_condition = ClickProposition::Not(Box::new(
                             surface_program_condition(condition, exit_state)?,
                         ));

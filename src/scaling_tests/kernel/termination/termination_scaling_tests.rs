@@ -179,7 +179,9 @@ fn a_layered_dag_costs_linear_termination_work() {
 fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
     let ranked_loop = || {
         let i = ProgramExpression::Variable(("i".to_string()).into());
-        ProgramStatement::While {
+        ProgramStatement::Loop {
+            test: None,
+            update: None,
             condition: ProgramExpression::LessThan(
                 Box::new(i.clone()),
                 Box::new(crate::kernel::program_expression::int32_literal(4)),

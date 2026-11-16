@@ -2644,7 +2644,9 @@ pub fn program_while_with_invariant_and_effect_checks(
     effect_checks: Vec<LoopEffectCheck>,
     body: ProgramStatement,
 ) -> ProgramStatement {
-    ProgramStatement::While {
+    ProgramStatement::Loop {
+        test: None,
+        update: None,
         condition,
         invariant,
         invariant_checks,
@@ -2659,7 +2661,112 @@ pub fn program_while_with_invariant_and_effect_checks(
     }
 }
 
+/// Child source regions in executable order, without copying their statements.
+pub(crate) fn program_loop_regions<'a>(
+    body: &'a ProgramStatement,
+    update: Option<&'a ProgramStatement>,
+    test: Option<&'a LoopTestRegion>,
+) -> impl Iterator<Item = &'a ProgramStatement> {
+    [
+        test.filter(|test| test.position == LoopTestPosition::BeforeBody)
+            .map(|test| test.statement.as_ref()),
+        Some(body),
+        update,
+        test.filter(|test| test.position == LoopTestPosition::AfterBody)
+            .map(|test| test.statement.as_ref()),
+    ]
+    .into_iter()
+    .flatten()
+}
+
+/// The source body including a loop's shared pre-test, if it has one.
+pub(crate) fn program_loop_body_region(
+    body: &ProgramStatement,
+    test: Option<&LoopTestRegion>,
+) -> ProgramStatement {
+    match test {
+        Some(test) if test.position == LoopTestPosition::BeforeBody => {
+            ProgramStatement::seq(test.statement.clone(), std::sync::Arc::new(body.clone()))
+        }
+        _ => body.clone(),
+    }
+}
+
+/// The destination of every continuing edge, shared independently of its
+/// incoming proof state: update, then the post-test when this loop has one.
+pub(crate) fn program_loop_continuation(
+    update: Option<&ProgramStatement>,
+    test: Option<&LoopTestRegion>,
+) -> Option<std::sync::Arc<ProgramStatement>> {
+    let post_test = test.filter(|test| test.position == LoopTestPosition::AfterBody);
+    match (update, post_test) {
+        (Some(update), Some(test)) => Some(std::sync::Arc::new(ProgramStatement::seq(
+            std::sync::Arc::new(update.clone()),
+            test.statement.clone(),
+        ))),
+        (Some(update), None) => Some(std::sync::Arc::new(update.clone())),
+        (None, Some(test)) => Some(test.statement.clone()),
+        (None, None) => None,
+    }
+}
+
+pub(crate) fn program_loop_pass(
+    body: &ProgramStatement,
+    update: Option<&ProgramStatement>,
+    test: Option<&LoopTestRegion>,
+) -> ProgramStatement {
+    let body = program_loop_body_region(body, test);
+    match program_loop_continuation(update, test) {
+        Some(tail) => ProgramStatement::seq(std::sync::Arc::new(body), tail),
+        None => body,
+    }
+}
+
 impl ProgramStatement {
+    /// Retain an effectful test once, outside the body and its scopes.
+    pub fn with_loop_test(
+        mut self,
+        statement: ProgramStatement,
+        position: LoopTestPosition,
+    ) -> Self {
+        if let Self::Loop {
+            test,
+            condition,
+            do_while,
+            ..
+        } = &mut self
+        {
+            *test = Some(LoopTestRegion {
+                statement: std::sync::Arc::new(statement),
+                position,
+            });
+            // The shared region owns the test and its placement. The shell
+            // has an unconditional guard, including on its initial visit.
+            *do_while = false;
+            *condition = crate::kernel::program_expression::int32_literal(1);
+        }
+        self
+    }
+
+    pub(crate) fn with_optional_loop_test(
+        self,
+        test: Option<ProgramStatement>,
+        position: LoopTestPosition,
+    ) -> Self {
+        match test {
+            Some(test) => self.with_loop_test(test, position),
+            None => self,
+        }
+    }
+
+    /// The single update region reached by fallthrough and `continue`.
+    pub fn with_loop_update(mut self, step: ProgramStatement) -> Self {
+        if let Self::Loop { update, .. } = &mut self {
+            *update = Some(std::sync::Arc::new(step));
+        }
+        self
+    }
+
     /// The pair `Seq(first, second)`: `first`, then `second`.
     pub fn seq(first: Arc<ProgramStatement>, second: Arc<ProgramStatement>) -> Self {
         Self::Seq(ProgramStatementSequence::pair(first, second))
@@ -2675,7 +2782,7 @@ impl ProgramStatement {
         if specs.is_empty() {
             return self;
         }
-        if let Self::While { resource_specs, .. } = &mut self {
+        if let Self::Loop { resource_specs, .. } = &mut self {
             *resource_specs = specs;
         }
         self
@@ -2691,7 +2798,7 @@ impl ProgramStatement {
         if measures.is_empty() {
             return self;
         }
-        if let Self::While {
+        if let Self::Loop {
             ranking_measures, ..
         } = &mut self
         {
@@ -2710,7 +2817,7 @@ impl ProgramStatement {
         if measure.is_none() {
             return self;
         }
-        if let Self::While {
+        if let Self::Loop {
             structural_measure, ..
         } = &mut self
         {
@@ -2723,7 +2830,7 @@ impl ProgramStatement {
     /// wrapper is an internal loop region; its body still contains the
     /// original checked `goto` statement.
     pub fn with_backedge_target(mut self, target: ControlTargetId) -> Self {
-        if let Self::While {
+        if let Self::Loop {
             backedge_target, ..
         } = &mut self
         {
@@ -2734,7 +2841,7 @@ impl ProgramStatement {
 
     /// Retains the explicit forward exit target of a proof-only natural cycle.
     pub fn with_natural_exit_target(mut self, target: ControlTargetId) -> Self {
-        if let Self::While {
+        if let Self::Loop {
             natural_exit_target,
             ..
         } = &mut self
@@ -2755,7 +2862,9 @@ pub fn program_do_while_with_invariant_and_effect_checks(
     effect_checks: Vec<LoopEffectCheck>,
     body: ProgramStatement,
 ) -> ProgramStatement {
-    ProgramStatement::While {
+    ProgramStatement::Loop {
+        test: None,
+        update: None,
         condition,
         invariant: Vec::new(),
         invariant_checks,
@@ -2768,86 +2877,6 @@ pub fn program_do_while_with_invariant_and_effect_checks(
         natural_exit_target: None,
         body: Box::new(body),
     }
-}
-
-/// Lowers the body of a C `for` loop to the existing `while` representation.
-/// A normal body completion reaches the appended step through the sequence;
-/// a `continue` must execute that same step before returning to the loop head.
-/// Nested loops are opaque here because their `continue` statements target
-/// those inner loops instead.
-pub fn program_for_body_with_step(
-    body: ProgramStatement,
-    step: ProgramStatement,
-) -> ProgramStatement {
-    fn rewrite(
-        statement: ProgramStatement,
-        step: &ProgramStatement,
-        scopes: &mut Vec<BindingName>,
-    ) -> ProgramStatement {
-        match statement {
-            ProgramStatement::Continue => ProgramStatement::ForStep {
-                step: Box::new(step.clone()),
-                exited_locals: scopes.clone(),
-                continue_after: true,
-            },
-            ProgramStatement::Seq(statements) => ProgramStatement::Seq(
-                statements.map(|statement| Arc::new(rewrite((**statement).clone(), step, scopes))),
-            ),
-            ProgramStatement::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
-                let mut arm = |body: ProgramStatement| {
-                    let parent_len = scopes.len();
-                    scopes.extend(crate::kernel::eval::scope_declared_names(&body));
-                    let body = rewrite(body, step, scopes);
-                    scopes.truncate(parent_len);
-                    body
-                };
-                program_if(condition, arm(*then_branch), arm(*else_branch))
-            }
-            ProgramStatement::Switch { expression, cases } => {
-                let parent_len = scopes.len();
-                for case in &cases {
-                    scopes.extend(crate::kernel::eval::scope_declared_names(&case.body));
-                }
-                let cases = cases
-                    .into_iter()
-                    .map(|case| SwitchCase {
-                        value: case.value,
-                        body: Box::new(rewrite(*case.body, step, scopes)),
-                    })
-                    .collect();
-                scopes.truncate(parent_len);
-                program_switch(expression, cases)
-            }
-            statement => statement,
-        }
-    }
-    fn first_step(step: ProgramStatement, names: Vec<BindingName>) -> ProgramStatement {
-        match step {
-            ProgramStatement::Seq(statements) => ProgramStatement::Seq(statements.with_statement(
-                0,
-                Arc::new(first_step((**statements.first()).clone(), names)),
-            )),
-            step => ProgramStatement::ForStep {
-                step: Box::new(step),
-                exited_locals: names,
-                continue_after: false,
-            },
-        }
-    }
-    let names = crate::kernel::eval::scope_declared_names(&body);
-    let rewritten = rewrite(body, &step, &mut names.clone());
-    // No wrapper is needed when the body declares nothing. This preserves
-    // the ordinary scalar update and its direct producer facts.
-    let step = if names.is_empty() {
-        step
-    } else {
-        first_step(step, names)
-    };
-    program_seq(rewritten, step)
 }
 
 pub fn program_parameter(
@@ -3369,30 +3398,14 @@ pub fn program_evaluate_speprogram_expression_at_state(
     entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
 ) -> Result<(ProgramValue, Vec<Proposition>), String> {
-    let (value, obligations) = program_evaluate_speprogram_expression_with_checked_obligations(
-        state,
-        expression,
-        entry_state,
-        assumptions,
-    )?;
+    let path = evaluate_speprogram_expression_path(state, expression, entry_state, assumptions)?;
     Ok((
-        value,
-        obligations
+        path.value.into_native(),
+        path.obligations
             .into_iter()
             .map(|obligation| obligation.proposition().clone())
             .collect(),
     ))
-}
-
-/// Retains mandatory conversion conditions for proof-side expression capture.
-pub(crate) fn program_evaluate_speprogram_expression_with_checked_obligations(
-    state: &ExecutionState,
-    expression: &SpecExpression,
-    entry_state: Option<&ExecutionState>,
-    assumptions: &PureFactContext,
-) -> Result<(ProgramValue, Vec<ProofObligation>), String> {
-    let path = evaluate_speprogram_expression_path(state, expression, entry_state, assumptions)?;
-    Ok((path.value.into_native(), path.obligations))
 }
 
 /// Capture a typed common root without materializing its native expression tree.
@@ -4920,7 +4933,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     } = statement.into();
     let loop_evidence =
         loop_evidence.map(|evidence| evidence.executed_under(LoopSemantics::ApplyVerifiedRules));
-    let Some(while_loop) = crate::kernel::loops::WhileLoop::of(&statement) else {
+    let Some(program_loop) = crate::kernel::loops::ProgramLoop::of(&statement) else {
         return (
             SymbolicExecution {
                 paths: Vec::new(),
@@ -4930,9 +4943,9 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
         );
     };
     let mut variables = statement_kernel_variables(&state, &statement, &assumptions, &environment);
-    let execution = execute_program_while_exit_paths_with_proven_phases(
+    let execution = execute_program_loop_exit_paths_with_proven_phases(
         &state,
-        while_loop,
+        program_loop,
         &assumptions,
         ExecutionContext::apply_verified_rules(&environment),
         initialization_proven,
@@ -4980,7 +4993,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
     // path leaves the function from inside the loop; the rule carries it so
     // the enclosing execution continues with it as a returned path instead of
     // certifying the function on the exit path alone.
-    let loop_rule = (matches!(statement, ProgramStatement::While { .. })
+    let loop_rule = (matches!(statement, ProgramStatement::Loop { .. })
         && paths.iter().all(|path| {
             (matches!(
                 path.outcome,
@@ -4989,7 +5002,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
                     | StatementOutcome::VerificationDiverges
             ) || matches!(
                 (&statement, &path.outcome),
-                (ProgramStatement::While {
+                (ProgramStatement::Loop {
                     backedge_target: Some(_),
                     natural_exit_target: Some(exit_target),
                     ..

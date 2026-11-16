@@ -11,15 +11,23 @@ pub(in crate::surface) fn count_loops(statement: &syntax::CStatement) -> usize {
             else_branch,
             ..
         } => count_loops(then_branch) + count_loops(else_branch),
-        syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
-            1 + count_loops(body)
+        syntax::CStatement::While { test, body, .. }
+        | syntax::CStatement::DoWhile { test, body, .. } => {
+            1 + count_loops(body) + test.as_ref().map_or(0, |test| count_loops(test))
         }
         syntax::CStatement::For {
+            test,
             initializer,
             step,
             body,
             ..
-        } => count_loops(initializer) + 1 + count_loops(body) + count_loops(step),
+        } => {
+            count_loops(initializer)
+                + 1
+                + count_loops(body)
+                + count_loops(step)
+                + test.as_ref().map_or(0, |test| count_loops(test))
+        }
         syntax::CStatement::Switch { cases, .. } => {
             cases.iter().map(|case| count_loops(case.body())).sum()
         }
@@ -49,9 +57,17 @@ pub(in crate::surface) fn count_loop_regions(
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => pending.extend([try_body.as_ref(), handler.as_ref()]),
-            ProgramStatement::While { body, .. } => {
+            ProgramStatement::Loop {
+                test, update, body, ..
+            } => {
                 count += 1;
                 pending.push(body);
+                if let Some(test) = test {
+                    pending.push(&test.statement);
+                }
+                if let Some(update) = update {
+                    pending.push(update);
+                }
             }
             _ => {}
         }
@@ -74,8 +90,10 @@ struct SourceExecutionLayoutData {
     reads: Vec<usize>,
     automatic_exits: BTreeMap<usize, Vec<crate::kernel::BindingName>>,
     automatic_abrupt_exits: BTreeMap<usize, Vec<crate::kernel::BindingName>>,
+    automatic_continue_exits: BTreeMap<usize, Vec<crate::kernel::BindingName>>,
     automatic_break_heads: BTreeMap<usize, usize>,
     loop_bodies: BTreeMap<usize, usize>,
+    loop_updates: BTreeMap<usize, usize>,
     natural_loop_targets: BTreeMap<usize, crate::kernel::ControlTargetId>,
     natural_exit_targets: BTreeMap<usize, crate::kernel::ControlTargetId>,
     natural_exit_statement_indices: BTreeMap<usize, usize>,
@@ -245,7 +263,7 @@ fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
             condition: expression,
             ..
         }
-        | ProgramStatement::While {
+        | ProgramStatement::Loop {
             condition: expression,
             ..
         }
@@ -344,6 +362,10 @@ fn aggregate_result_fields(layout: &crate::kernel::AggregateLayout) -> Aggregate
 }
 
 impl SourceExecutionLayout {
+    pub(in crate::surface) fn loop_update_entry(&self, index: usize) -> Option<usize> {
+        self.data.loop_updates.get(&index).copied()
+    }
+
     pub(in crate::surface) fn for_function(
         function: &crate::languages::interface::ImportedFunction,
     ) -> Result<Self, ClickError> {
@@ -490,12 +512,46 @@ impl SourceExecutionLayout {
                     );
                     Ok(statement_index)
                 }
-                ProgramStatement::While { body, .. } => {
+                ProgramStatement::Loop {
+                    test, update, body, ..
+                } => {
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
                     let loop_index = layout.loop_bodies.len();
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
+                    if let Some(test) = test
+                        .as_ref()
+                        .filter(|test| test.position == crate::kernel::LoopTestPosition::BeforeBody)
+                    {
+                        visit(
+                            &test.statement,
+                            next_statement_index,
+                            layout,
+                            aggregate_objects,
+                        )?;
+                    }
                     visit(body, next_statement_index, layout, aggregate_objects)?;
+                    if let Some(update) = update {
+                        layout
+                            .loop_updates
+                            .insert(loop_index, *next_statement_index);
+                        visit(update, next_statement_index, layout, aggregate_objects)?;
+                    }
+                    if let Some(test) = test
+                        .as_ref()
+                        .filter(|test| test.position == crate::kernel::LoopTestPosition::AfterBody)
+                    {
+                        layout
+                            .loop_updates
+                            .entry(loop_index)
+                            .or_insert(*next_statement_index);
+                        visit(
+                            &test.statement,
+                            next_statement_index,
+                            layout,
+                            aggregate_objects,
+                        )?;
+                    }
                     layout.statements.insert(
                         statement_index,
                         SourceStatementRegion {
@@ -988,8 +1044,8 @@ impl SourceExecutionLayout {
                     );
                     statement_index
                 }
-                syntax::CStatement::While { body, .. }
-                | syntax::CStatement::DoWhile { body, .. } => {
+                syntax::CStatement::While { test, body, .. }
+                | syntax::CStatement::DoWhile { test, body, .. } => {
                     let statement_index = *next_statement_index;
                     let own = record_site(layout, statement_index, statement, enclosing);
                     let loop_index = *next_loop_index;
@@ -999,6 +1055,16 @@ impl SourceExecutionLayout {
                     *next_statement_index += 1;
                     *next_loop_index += 1;
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
+                    let post_test = matches!(statement, syntax::CStatement::DoWhile { .. });
+                    if !post_test && let Some(test) = test {
+                        visit(
+                            test,
+                            next_statement_index,
+                            next_loop_index,
+                            layout,
+                            own.as_ref(),
+                        );
+                    }
                     visit(
                         body,
                         next_statement_index,
@@ -1006,6 +1072,18 @@ impl SourceExecutionLayout {
                         layout,
                         own.as_ref(),
                     );
+                    if post_test && let Some(test) = test {
+                        layout
+                            .loop_updates
+                            .insert(loop_index, *next_statement_index);
+                        visit(
+                            test,
+                            next_statement_index,
+                            next_loop_index,
+                            layout,
+                            own.as_ref(),
+                        );
+                    }
                     layout.statements.insert(
                         statement_index,
                         SourceStatementRegion {
@@ -1016,6 +1094,7 @@ impl SourceExecutionLayout {
                     statement_index
                 }
                 syntax::CStatement::For {
+                    test,
                     initializer,
                     body,
                     step,
@@ -1038,6 +1117,15 @@ impl SourceExecutionLayout {
                     *next_statement_index += 1;
                     *next_loop_index += 1;
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
+                    if let Some(test) = test {
+                        visit(
+                            test,
+                            next_statement_index,
+                            next_loop_index,
+                            layout,
+                            own.as_ref(),
+                        );
+                    }
                     visit(
                         body,
                         next_statement_index,
@@ -1045,6 +1133,9 @@ impl SourceExecutionLayout {
                         layout,
                         own.as_ref(),
                     );
+                    layout
+                        .loop_updates
+                        .insert(loop_index, *next_statement_index);
                     visit(
                         step,
                         next_statement_index,
@@ -1223,6 +1314,17 @@ impl SourceExecutionLayout {
             .exited_branch_regions
             .get(&index)
             .map_or(&[], Vec::as_slice)
+    }
+
+    pub(in crate::surface) fn automatic_continue_exits(
+        &self,
+        index: usize,
+    ) -> &[crate::kernel::BindingName] {
+        self.data
+            .automatic_continue_exits
+            .get(&index)
+            .map(Vec::as_slice)
+            .unwrap_or_else(|| self.automatic_exits(index, true))
     }
 
     pub(in crate::surface) fn automatic_exits(
@@ -1839,6 +1941,58 @@ pub(in crate::surface) fn collect_program_expression_referenced_bindings<N: Refe
 /// scope exits with the same pre-order numbering and scope rules as C syntax.
 /// Root function storage belongs to the call frame; only nested scopes expire
 /// here. Walking scope spines visits declarations once per containing scope.
+/// Persistent exit lists for the active lexical scope. A switch's outgoing
+/// continue reads these directly instead of searching its enclosing scopes.
+struct AutomaticScope {
+    names: Vec<crate::kernel::BindingName>,
+    all_exits: imbl::Vector<crate::kernel::BindingName>,
+    continue_exits: imbl::Vector<crate::kernel::BindingName>,
+    loop_head: Option<usize>,
+}
+
+impl AutomaticScope {
+    fn new(
+        parent: Option<&Self>,
+        names: Vec<crate::kernel::BindingName>,
+        loop_head: Option<usize>,
+    ) -> Self {
+        crate::instrumentation::record_deterministic_work(1 + names.len());
+        let mut all_exits = parent
+            .map(|parent| parent.all_exits.clone())
+            .unwrap_or_default();
+        let mut continue_exits = if loop_head.is_some() {
+            imbl::Vector::new()
+        } else {
+            parent
+                .map(|parent| parent.continue_exits.clone())
+                .unwrap_or_default()
+        };
+        for name in names.iter().rev() {
+            all_exits.push_front(name.clone());
+            continue_exits.push_front(name.clone());
+        }
+        Self {
+            names,
+            all_exits,
+            continue_exits,
+            loop_head: loop_head.or_else(|| parent.and_then(|parent| parent.loop_head)),
+        }
+    }
+
+    fn exits(scopes: &[Self], continuing: bool) -> Vec<crate::kernel::BindingName> {
+        let Some(scope) = scopes.last() else {
+            return Vec::new();
+        };
+        let names = if continuing {
+            &scope.continue_exits
+        } else {
+            &scope.all_exits
+        };
+        crate::instrumentation::record_deterministic_work(names.len());
+        names.iter().cloned().collect()
+    }
+}
+
 fn collect_kernel_automatic_exits(
     source: &ProgramStatement,
     return_parameters: Vec<crate::kernel::BindingName>,
@@ -1865,16 +2019,16 @@ fn collect_kernel_automatic_exits(
     fn scope(
         s: &ProgramStatement,
         index: &mut usize,
-        scopes: &mut Vec<(Vec<crate::kernel::BindingName>, Option<usize>)>,
+        scopes: &mut Vec<AutomaticScope>,
         loop_head: Option<usize>,
         layout: &mut SourceExecutionLayoutData,
         return_parameters: &[crate::kernel::BindingName],
     ) -> Vec<usize> {
         let mut names = Vec::new();
         declarations(s, &mut names);
-        scopes.push((names, loop_head));
+        scopes.push(AutomaticScope::new(scopes.last(), names, loop_head));
         let tails = visit(s, index, scopes, layout, return_parameters);
-        let (names, _) = scopes.pop().unwrap();
+        let names = scopes.pop().unwrap().names;
         for tail in &tails {
             layout
                 .automatic_exits
@@ -1887,7 +2041,7 @@ fn collect_kernel_automatic_exits(
     fn visit(
         s: &ProgramStatement,
         index: &mut usize,
-        scopes: &mut Vec<(Vec<crate::kernel::BindingName>, Option<usize>)>,
+        scopes: &mut Vec<AutomaticScope>,
         layout: &mut SourceExecutionLayoutData,
         return_parameters: &[crate::kernel::BindingName],
     ) -> Vec<usize> {
@@ -1954,25 +2108,47 @@ fn collect_kernel_automatic_exits(
                 ));
                 tails
             }
-            ProgramStatement::While { body, .. } => {
+            ProgramStatement::Loop {
+                test, update, body, ..
+            } => {
+                if let Some(test) = test
+                    .as_ref()
+                    .filter(|test| test.position == crate::kernel::LoopTestPosition::BeforeBody)
+                {
+                    visit(&test.statement, index, scopes, layout, return_parameters);
+                }
                 scope(body, index, scopes, Some(head), layout, return_parameters);
+                if let Some(update) = update {
+                    visit(update, index, scopes, layout, return_parameters);
+                }
+                if let Some(test) = test
+                    .as_ref()
+                    .filter(|test| test.position == crate::kernel::LoopTestPosition::AfterBody)
+                {
+                    visit(&test.statement, index, scopes, layout, return_parameters);
+                }
+                vec![head]
+            }
+            ProgramStatement::Switch { .. } => {
+                layout
+                    .automatic_continue_exits
+                    .insert(head, AutomaticScope::exits(scopes, true));
+                layout
+                    .automatic_abrupt_exits
+                    .insert(head, AutomaticScope::exits(scopes, false));
                 vec![head]
             }
             ProgramStatement::Break
             | ProgramStatement::Continue
             | ProgramStatement::Return(_)
             | ProgramStatement::Goto { .. } => {
-                let mut names = Vec::new();
-                for (declared, loop_head) in scopes.iter().rev() {
-                    names.extend(declared.iter().cloned());
-                    if let Some(loop_head) = loop_head
-                        && matches!(s, ProgramStatement::Break | ProgramStatement::Continue)
-                    {
-                        if matches!(s, ProgramStatement::Break) {
-                            layout.automatic_break_heads.insert(head, *loop_head);
-                        }
-                        break;
-                    }
+                let loop_control =
+                    matches!(s, ProgramStatement::Break | ProgramStatement::Continue);
+                let mut names = AutomaticScope::exits(scopes, loop_control);
+                if matches!(s, ProgramStatement::Break)
+                    && let Some(head_loop) = scopes.last().and_then(|scope| scope.loop_head)
+                {
+                    layout.automatic_break_heads.insert(head, head_loop);
                 }
                 if matches!(s, ProgramStatement::Return(_)) {
                     names.extend(return_parameters.iter().cloned());
@@ -2018,15 +2194,15 @@ fn collect_automatic_exits(source: &syntax::CStatement, layout: &mut SourceExecu
     fn scope(
         s: &S,
         index: &mut usize,
-        scopes: &mut Vec<(Vec<crate::kernel::BindingName>, Option<usize>)>,
+        scopes: &mut Vec<AutomaticScope>,
         loop_head: Option<usize>,
         layout: &mut SourceExecutionLayoutData,
     ) -> Vec<usize> {
         let mut names = Vec::new();
         declarations(s, &mut names);
-        scopes.push((names, loop_head));
+        scopes.push(AutomaticScope::new(scopes.last(), names, loop_head));
         let tails = visit(s, index, scopes, layout);
-        let (names, _) = scopes.pop().unwrap();
+        let names = scopes.pop().unwrap().names;
         for tail in &tails {
             layout
                 .automatic_exits
@@ -2039,7 +2215,7 @@ fn collect_automatic_exits(source: &syntax::CStatement, layout: &mut SourceExecu
     fn visit(
         s: &S,
         index: &mut usize,
-        scopes: &mut Vec<(Vec<crate::kernel::BindingName>, Option<usize>)>,
+        scopes: &mut Vec<AutomaticScope>,
         layout: &mut SourceExecutionLayoutData,
     ) -> Vec<usize> {
         if let S::Seq(a, b) = s {
@@ -2047,6 +2223,7 @@ fn collect_automatic_exits(source: &syntax::CStatement, layout: &mut SourceExecu
             return visit(b, index, scopes, layout);
         }
         if let S::For {
+            test,
             initializer,
             body,
             step,
@@ -2059,7 +2236,10 @@ fn collect_automatic_exits(source: &syntax::CStatement, layout: &mut SourceExecu
             let mut names = Vec::new();
             declarations(initializer, &mut names);
             // The initializer belongs to the for statement, not its body.
-            scopes.push((names.clone(), None));
+            scopes.push(AutomaticScope::new(scopes.last(), names.clone(), None));
+            if let Some(test) = test {
+                visit(test, index, scopes, layout);
+            }
             scope(body, index, scopes, Some(head), layout);
             visit(step, index, scopes, layout);
             scopes.pop();
@@ -2083,22 +2263,33 @@ fn collect_automatic_exits(source: &syntax::CStatement, layout: &mut SourceExecu
                 tails.extend(scope(else_branch, index, scopes, None, layout));
                 tails
             }
-            S::While { body, .. } | S::DoWhile { body, .. } => {
+            S::While { test, body, .. } | S::DoWhile { test, body, .. } => {
+                let post_test = matches!(s, S::DoWhile { .. });
+                if !post_test && let Some(test) = test {
+                    visit(test, index, scopes, layout);
+                }
                 scope(body, index, scopes, Some(head), layout);
+                if post_test && let Some(test) = test {
+                    visit(test, index, scopes, layout);
+                }
+                vec![head]
+            }
+            S::Switch { .. } => {
+                layout
+                    .automatic_continue_exits
+                    .insert(head, AutomaticScope::exits(scopes, true));
+                layout
+                    .automatic_abrupt_exits
+                    .insert(head, AutomaticScope::exits(scopes, false));
                 vec![head]
             }
             S::Break | S::Continue | S::Return(_, _) | S::Goto { .. } => {
-                let mut names = Vec::new();
-                for (declared, loop_head) in scopes.iter().rev() {
-                    names.extend(declared.iter().cloned());
-                    if let Some(loop_head) = loop_head
-                        && matches!(s, S::Break | S::Continue)
-                    {
-                        if matches!(s, S::Break) {
-                            layout.automatic_break_heads.insert(head, *loop_head);
-                        }
-                        break;
-                    }
+                let loop_control = matches!(s, S::Break | S::Continue);
+                let names = AutomaticScope::exits(scopes, loop_control);
+                if matches!(s, S::Break)
+                    && let Some(head_loop) = scopes.last().and_then(|scope| scope.loop_head)
+                {
+                    layout.automatic_break_heads.insert(head, head_loop);
                 }
                 layout.automatic_abrupt_exits.insert(head, names);
                 vec![head]
@@ -2389,8 +2580,10 @@ mod source_execution_layout_tests {
                 reads: Vec::new(),
                 automatic_exits: BTreeMap::new(),
                 automatic_abrupt_exits: BTreeMap::new(),
+                automatic_continue_exits: BTreeMap::new(),
                 automatic_break_heads: BTreeMap::new(),
                 loop_bodies: BTreeMap::new(),
+                loop_updates: BTreeMap::new(),
                 natural_loop_targets: BTreeMap::new(),
                 natural_exit_targets: BTreeMap::new(),
                 natural_exit_statement_indices: BTreeMap::new(),
@@ -2559,4 +2752,10 @@ mod source_execution_layout_tests {
             "../../scaling_tests/surface/lowering/source_layout/source_execution_layout_tests.rs"
         );
     }
+}
+
+#[cfg(test)]
+mod shared_loop_scope_scaling_tests {
+    use super::*;
+    include!("../../scaling_tests/surface/lowering/source_layout/shared_loop_scopes.rs");
 }

@@ -2162,8 +2162,8 @@ int32 compare_swap2(int32 p[2]) {
         .expect("the implicit tail should expand its branch from retained Proof steps");
     verify_c_sources(&expanded_tail, &[("compare_swap2.c", c_source)])
         .expect("the expanded implicit tail should verify normally");
-    let original_condition = "if at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[1]) < at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[0]) {";
-    let corrupted_condition = "if at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[1]) >= at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[0]) {";
+    let original_condition = "if at(region(1).entry, p[1]) < at(region(1).entry, p[0]) {";
+    let corrupted_condition = "if at(region(1).entry, p[1]) >= at(region(1).entry, p[0]) {";
     let corrupted_tail = expanded_tail.replacen(original_condition, corrupted_condition, 1);
     assert_ne!(
         corrupted_tail, expanded_tail,
@@ -2188,7 +2188,7 @@ fn expanded_branch_condition_names_a_struct_pointer_field() {
     )
     .expect("a branch over a field should expand");
     assert!(
-        expanded.contains("if at(region(0).entry, \"pick.c\"::pick.parameter(0)->second) > at(region(0).entry, 0) {"),
+        expanded.contains("if at(region(0).entry, p->second) > at(region(0).entry, 0) {"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &[("pick.c", c_source)])
@@ -2228,14 +2228,8 @@ fn expanded_branch_condition_names_nested_and_pointer_fields() {
         0,
     )
     .expect("branches over nested fields should expand");
-    assert!(
-        expanded.contains("\"pick.c\"::pick.parameter(0)->in.y) > "),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("\"pick.c\"::pick.parameter(0)->next"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("p->in.y) > "), "{expanded}");
+    assert!(expanded.contains("p->next"), "{expanded}");
     assert!(!expanded.contains("load_"), "{expanded}");
     verify_c_sources(&expanded, &[("pick.c", c_source)])
         .expect("the expansion naming the fields should verify");
@@ -2255,20 +2249,17 @@ fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
         0,
     )
     .expect("a branch over a field through a loaded pointer should expand");
-    assert!(
-        expanded.contains("\"pick.c\"::pick.parameter(0)->next->second) > "),
-        "{expanded}"
-    );
+    assert!(expanded.contains("p->next->second) > "), "{expanded}");
     assert!(!expanded.contains("load_"), "{expanded}");
     verify_c_sources(&expanded, &[("pick.c", c_source)])
         .expect("the expansion naming the field should verify");
 }
 
-/// `arithmetic` on a `uint64` goal expands to the bridge steps it took,
-/// and the expansion verifies with no `arithmetic()` left to plan. A
+/// `solve() using` on a `uint64` goal expands to the bridge steps it took,
+/// and the expansion verifies with no `solve()` left to plan. A
 /// comparison and its observed reading are one fact, so an order premise is
-/// carried by `known()`; a type range is its explicit `type_range`
-/// certificate, and each sum its in-range identity from its two Integer
+/// carried by `known()`; type ranges and each sum's in-range identity use
+/// `known()` after the two exact-result Integer
 /// bounds, with no standard-library bridge theorem.
 #[test]
 fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
@@ -2278,9 +2269,8 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
         .expect("the uint64 arithmetic step expands");
     for step in [
         "have to_integer((i + 1u64)) < to_integer(length) by {\n            known();",
-        "have 0 <= to_integer(i) by {\n            normalize();",
+        "have 0 <= to_integer(i) by {\n            known();",
         "have to_integer((i + 2u64)) ==",
-        "normalize() using {",
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }

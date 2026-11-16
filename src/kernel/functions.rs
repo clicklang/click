@@ -4456,7 +4456,12 @@ fn execute_verified_function_applications_with_suspension(
             &post_state,
         );
         drop(allocation_delta_timing);
-        let (memory, allocation_effects, retired_creations) = match allocation_delta {
+        let VerifiedAllocationDelta {
+            memory,
+            effects: allocation_effects,
+            retired_creations,
+            continued_tokens,
+        } = match allocation_delta {
             Ok(result) => result,
             Err(VerifiedAllocationDeltaError::Runtime(error)) => {
                 paths.push(FunctionPath::new(
@@ -4467,6 +4472,19 @@ fn execute_verified_function_applications_with_suspension(
                 continue;
             }
             Err(VerifiedAllocationDeltaError::InconsistentReturnedAllocation) => continue,
+        };
+        // The caller receives back the very token it lent for an allocation
+        // the call continues, so its creation anchor, its live heap claim, and
+        // a later `free` all name the block the caller allocated.
+        let Some((output_resources, return_resources)) =
+            with_continued_allocation_tokens(output_resources, &continued_tokens).zip(
+                with_continued_allocation_tokens(return_resources, &continued_tokens),
+            )
+        else {
+            paths.push(resource_call_failure(
+                "a continued allocation token is not among the call's returned resources",
+            ));
+            continue;
         };
         facts.extend(allocation_effects);
         post_state.set_memory(memory);
@@ -5913,15 +5931,7 @@ fn prepare_verified_function_call<'a>(
             )
         };
         opened
-            .map(|opened| {
-                let opened = expand_decidable_composite_resource_frontier(
-                    &opened,
-                    definitions,
-                    entry_contract_state.memory(),
-                    &path_assumptions,
-                );
-                entry_contract_state.clone().with_resource_context(opened)
-            })
+            .map(|opened| entry_contract_state.clone().with_resource_context(opened))
             .unwrap_or_else(|| entry_contract_state.clone())
     } else {
         entry_contract_state.clone()
@@ -8850,7 +8860,9 @@ pub(crate) fn establish_resource_derived_loop_frames(
                 rewrite(then_branch, ranges);
                 rewrite(else_branch, ranges);
             }
-            ProgramStatement::While {
+            ProgramStatement::Loop {
+                test,
+                update,
                 effect_checks,
                 body,
                 ..
@@ -8861,13 +8873,19 @@ pub(crate) fn establish_resource_derived_loop_frames(
                     }
                 }
                 rewrite(body, ranges);
+                if let Some(test) = test {
+                    rewrite(std::sync::Arc::make_mut(&mut test.statement), ranges);
+                }
+                if let Some(update) = update {
+                    rewrite(std::sync::Arc::make_mut(update), ranges);
+                }
             }
             ProgramStatement::Switch { cases, .. } => {
                 for case in cases {
                     rewrite(&mut case.body, ranges);
                 }
             }
-            ProgramStatement::ForStep { step, .. } => rewrite(step, ranges),
+
             _ => {}
         }
     }
@@ -8896,7 +8914,9 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 else_branch,
                 ..
             } => has_inherited_loop_frame(then_branch) || has_inherited_loop_frame(else_branch),
-            ProgramStatement::While {
+            ProgramStatement::Loop {
+                test,
+                update,
                 effect_checks,
                 body,
                 ..
@@ -8905,11 +8925,17 @@ pub(crate) fn validate_resource_derived_loop_frames(
                     .iter()
                     .any(|check| check.origin() == LoopEffectOrigin::InheritedResourceDerived)
                     || has_inherited_loop_frame(body)
+                    || update
+                        .as_ref()
+                        .is_some_and(|update| has_inherited_loop_frame(update))
+                    || test
+                        .as_ref()
+                        .is_some_and(|test| has_inherited_loop_frame(&test.statement))
             }
             ProgramStatement::Switch { cases, .. } => cases
                 .iter()
                 .any(|case| has_inherited_loop_frame(&case.body)),
-            ProgramStatement::ForStep { step, .. } => has_inherited_loop_frame(step),
+
             _ => false,
         }
     }
@@ -8953,7 +8979,9 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 }
                 check_statement(else_branch)
             }
-            ProgramStatement::While {
+            ProgramStatement::Loop {
+                test,
+                update,
                 effect_checks,
                 body,
                 ..
@@ -8961,7 +8989,19 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 if let Err(error) = check(effect_checks)? {
                     return Ok(Err(error));
                 }
-                check_statement(body)
+                if let Err(error) = check_statement(body)? {
+                    return Ok(Err(error));
+                }
+                if let Some(update) = update
+                    && let Err(error) = check_statement(update)?
+                {
+                    return Ok(Err(error));
+                }
+                if let Some(test) = test {
+                    check_statement(&test.statement)
+                } else {
+                    Ok(Ok(()))
+                }
             }
             ProgramStatement::Switch { cases, .. } => {
                 for case in cases {
@@ -8971,7 +9011,7 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 }
                 Ok(Ok(()))
             }
-            ProgramStatement::ForStep { step, .. } => check_statement(step),
+
             _ => Ok(Ok(())),
         }
     }
@@ -9564,9 +9604,10 @@ fn apply_verified_heap_allocation_delta(
     ledger: Option<&LoanLedger>,
     mutex_state: &ExecutionState,
     output_state: &ExecutionState,
-) -> Result<(Memory, ExecutionFacts, Vec<PointerBlock>), VerifiedAllocationDeltaError> {
+) -> Result<VerifiedAllocationDelta, VerifiedAllocationDeltaError> {
     let mut effects = Vec::new();
     let mut retired_creations = Vec::new();
+    let mut continued_tokens = Vec::new();
     // What the callee consumed is read where it was consumed: at the call's
     // entry. The post-call memory may have rewritten a pointer field the lent
     // resources owned, so an allocation named through it at the post state
@@ -9633,12 +9674,26 @@ fn apply_verified_heap_allocation_delta(
     // unless its block is proven distinct: a different block spelling is not
     // a different allocation (two reads of `p->data` are two blocks), and a
     // missed candidate would assert a free the contract never promised.
+    // The call's own returned tokens, as the contract states them; a token
+    // inside a returned composite is not one the caller holds directly.
+    let returned_tokens = output_resources
+        .facts()
+        .iter()
+        .filter(|fact| fact.allocation().is_some())
+        .collect::<Vec<_>>();
     let output_allocations = output
         .facts()
         .iter()
         .chain(preserved.facts())
-        .filter_map(ResourceFact::allocation_extent)
-        .map(|(base, bytes)| (base.pointer().clone(), bytes))
+        .filter_map(|fact| {
+            fact.allocation_extent().map(|(base, bytes)| {
+                (
+                    base.pointer().clone(),
+                    bytes,
+                    returned_tokens.contains(&fact).then_some(fact),
+                )
+            })
+        })
         .collect::<Vec<_>>();
 
     for (fact, base, bytes) in input_allocations {
@@ -9657,16 +9712,41 @@ fn apply_verified_heap_allocation_delta(
             )
             .is_some()
         {
+            // The call returns the consumed allocation. When it spells the
+            // returned token by another block (`result` proven equal to
+            // `p`), that token continues the consumed one, and its creation
+            // anchor returns under the consumed block's name. Only the
+            // call's own returned tokens are compared.
+            for (output_base, output_bytes, returned) in &output_allocations {
+                if let Some(returned) = returned
+                    && output_base.block != base.block
+                    && matches!(
+                        allocation_continuity(
+                            &base,
+                            &bytes,
+                            output_base,
+                            output_bytes,
+                            &allocation_assumptions,
+                        ),
+                        AllocationContinuity::Same
+                    )
+                    && !continued_tokens
+                        .iter()
+                        .any(|(token, _): &(ResourceFact, ResourceFact)| token == *returned)
+                {
+                    continued_tokens.push(((*returned).clone(), fact.clone()));
+                }
+            }
             continue;
         }
         let candidates = output_allocations
             .iter()
-            .filter(|(output_base, _)| !base.blocks_proven_distinct(output_base))
+            .filter(|(output_base, _, _)| !base.blocks_proven_distinct(output_base))
             .collect::<Vec<_>>();
         if !candidates.is_empty() {
             let mut retained = false;
             let mut continuity_is_undecided = false;
-            for (output_base, output_bytes) in candidates {
+            for (output_base, output_bytes, returned) in candidates {
                 match allocation_continuity(
                     &base,
                     &bytes,
@@ -9674,7 +9754,15 @@ fn apply_verified_heap_allocation_delta(
                     output_bytes,
                     &allocation_assumptions,
                 ) {
-                    AllocationContinuity::Same => retained = true,
+                    AllocationContinuity::Same => {
+                        retained = true;
+                        if let Some(returned) = returned
+                            && output_base.block != base.block
+                            && !continued_tokens.iter().any(|(token, _)| token == *returned)
+                        {
+                            continued_tokens.push(((*returned).clone(), fact.clone()));
+                        }
+                    }
                     AllocationContinuity::Distinct => {}
                     AllocationContinuity::Undecided(_) => continuity_is_undecided = true,
                     AllocationContinuity::Inconsistent => {
@@ -9815,7 +9903,42 @@ fn apply_verified_heap_allocation_delta(
                 ))
             })?;
     }
-    Ok((memory, effects.into(), retired_creations))
+    Ok(VerifiedAllocationDelta {
+        memory,
+        effects: effects.into(),
+        retired_creations,
+        continued_tokens,
+    })
+}
+
+/// Replaces each returned allocation token that continues a consumed one by
+/// the consumed token: the same allocation, spelled by the block the caller
+/// lent.
+fn with_continued_allocation_tokens(
+    context: ResourceContext,
+    continued_tokens: &[(ResourceFact, ResourceFact)],
+) -> Option<ResourceContext> {
+    continued_tokens
+        .iter()
+        .try_fold(context, |context, (returned, consumed)| {
+            Some(
+                context
+                    .without_exact_representation(returned)?
+                    .unchecked_with_fact(consumed.clone()),
+            )
+        })
+}
+
+/// The memory and facts after a verified call's allocation effects, with
+/// the consumed blocks the call retires and, for each returned allocation
+/// token proven to continue a consumed one under another block spelling
+/// (`result` proven equal to `p`), that returned token and the consumed
+/// token it continues.
+struct VerifiedAllocationDelta {
+    memory: Memory,
+    effects: ExecutionFacts,
+    retired_creations: Vec<PointerBlock>,
+    continued_tokens: Vec<(ResourceFact, ResourceFact)>,
 }
 
 mod call_arguments;
@@ -12198,12 +12321,6 @@ fn prepare_contract_resource_transfer_unexplained(
             bounded_contract_resource_frontier(&required_resources)
         ))));
     };
-    let canonical_resources = expand_decidable_composite_resource_frontier(
-        &canonical_resources,
-        interface.composite_resource_definitions(),
-        callee_state.memory(),
-        assumptions,
-    );
     let population_body_resources = match evaluate_resource_population_body_resources(
         &required_resources,
         callee_state,
@@ -12267,14 +12384,6 @@ fn prepare_contract_resource_transfer_unexplained(
             callee_state.memory(),
             assumptions,
         )
-        .map(|expanded| {
-            expand_decidable_composite_resource_frontier(
-                &expanded,
-                interface.composite_resource_definitions(),
-                callee_state.memory(),
-                assumptions,
-            )
-        })
         .unwrap_or(singleton);
         for fact in expanded.facts() {
             if callee_resources.satisfies_fact(fact, assumptions) {
@@ -13189,8 +13298,6 @@ fn opened_composite_read_views(
     else {
         return Vec::new();
     };
-    let opened =
-        expand_decidable_composite_resource_frontier(&opened, definitions, memory, assumptions);
     opened
         .facts()
         .iter()
@@ -13307,7 +13414,7 @@ fn evaluate_contract_return_resources(
         Err(error) => return Ok(Err(error)),
     };
     let ensured_resources = &evaluated.resources;
-    let Some(flat_bodies) = ConstructedReturnBodies::try_construct(
+    let Some(return_bodies) = ConstructedReturnBodies::try_construct(
         &evaluated,
         interface.composite_resource_definitions(),
         post_state,
@@ -13359,7 +13466,7 @@ fn evaluate_contract_return_resources(
                     &retained,
                     prepared
                         .frontier_sources(ensured_resources, true)
-                        .map(|(source, fact)| (fact, flat_bodies.for_return(source, fact))),
+                        .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
                     interface.composite_resource_definitions(),
                     post_state.memory(),
                     assumptions,
@@ -13380,7 +13487,7 @@ fn evaluate_contract_return_resources(
                 &destination,
                 prepared
                     .frontier_sources(ensured_resources, false)
-                    .map(|(source, fact)| (fact, flat_bodies.for_return(source, fact))),
+                    .map(|(source, fact)| (fact, return_bodies.for_return(source, fact))),
                 interface.composite_resource_definitions(),
                 post_state.memory(),
                 assumptions,
@@ -13422,7 +13529,7 @@ fn evaluate_contract_return_resources(
             project_return_resource_cores(
                 ensured_resources,
                 &inserted_ensured_occurrences,
-                &flat_bodies,
+                &return_bodies,
                 interface.composite_resource_definitions(),
                 post_state,
                 assumptions,
@@ -13473,29 +13580,16 @@ fn evaluate_contract_return_resources(
             if let Some(pieces) = constructed_borrowing_pieces {
                 produced_borrowing_pieces.extend(pieces);
             } else {
-                let children = frontier.or_else(|| {
-                    expand_composite_resource_fact_with_children(
-                        &ResourceContext::new_with_equalities(assumptions)
-                            .unchecked_with_fact(support.head.clone()),
-                        &support.head,
-                        interface.composite_resource_definitions(),
-                        post_state.memory(),
-                        assumptions,
-                    )
-                    .map(|(_, children, _)| children)
-                });
-                if let Some(children) = children {
-                    produced_borrowing_pieces.extend(
-                        children
-                            .into_iter()
-                            .filter(|piece| piece.is_view())
-                            .map(|piece| ProducedBorrowingPiece {
-                                support: support.clone(),
-                                piece,
-                                sources: None,
-                            }),
-                    );
-                }
+                produced_borrowing_pieces.extend(
+                    frontier
+                        .into_iter()
+                        .filter(|piece| piece.is_view())
+                        .map(|piece| ProducedBorrowingPiece {
+                            support: support.clone(),
+                            piece,
+                            sources: None,
+                        }),
+                );
             }
         }
         return_resources = return_resources
@@ -13555,8 +13649,10 @@ fn produced_composite_frontier_conflict<'a>(
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
     for (produced, body) in ensured {
-        let Resource::Composite { name, .. } = produced.resource() else {
-            continue;
+        let name = match produced.resource() {
+            Resource::Composite { name, .. } => name.as_str(),
+            Resource::Instance(instance) if body.is_some() => instance.name(),
+            _ => continue,
         };
         if !produced.is_own() {
             continue;
@@ -15861,7 +15957,7 @@ fn construct_composite_resource_body(
         "composite expansion",
         "composite child composition",
         || {
-            if selected.is_some() && !witnesses.is_empty() {
+            if selected.is_some() && (!witnesses.is_empty() || definition.is_recursive()) {
                 ResourceContext::new_with_equalities(assumptions)
                     .try_compose_with_legacy_discovery_and_occurrences(child_facts, assumptions)
                     .map(|(context, _)| context.normalized_without_discovery(assumptions))
@@ -16261,46 +16357,6 @@ pub(super) fn expand_all_composite_resource_facts_at_state(
     let (expanded, _) =
         expand_checked_authority_controls(context, definitions, state, assumptions)?;
     expand_all_composite_resource_facts(&expanded, definitions, state.memory(), assumptions)
-}
-
-/// Continues through recursive composites only while their guards are
-/// decidable in the current contract path. Unknown branches remain folded.
-fn expand_decidable_composite_resource_frontier(
-    context: &ResourceContext,
-    definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
-    assumptions: &PureFactContext,
-) -> ResourceContext {
-    let mut expanded = context.clone();
-    let mut seen = BTreeSet::new();
-    let mut pending = VecDeque::from(
-        context
-            .facts()
-            .iter()
-            .filter(|fact| matches!(fact.resource(), Resource::Composite { .. }))
-            .cloned()
-            .collect::<Vec<_>>(),
-    );
-    while let Some(composite) = pending.pop_front() {
-        if !seen.insert(composite.clone()) || !expanded.facts().contains(&composite) {
-            continue;
-        }
-        let Some(next) =
-            expand_composite_resource_fact(&expanded, &composite, definitions, memory, assumptions)
-        else {
-            continue;
-        };
-        if next == expanded {
-            continue;
-        }
-        for child in next.facts().iter().filter(|fact| {
-            matches!(fact.resource(), Resource::Composite { .. }) && !seen.contains(*fact)
-        }) {
-            pending.push_back(child.clone());
-        }
-        expanded = next;
-    }
-    expanded
 }
 
 /// Expands only the folded branches needed to expose `target`, leaving

@@ -8,7 +8,7 @@
 //! the premises and the goal is shown to stay in range (an unsigned one does
 //! not wrap, a signed one is defined) and then observed term by term by its
 //! in-range identity, the Integer claim is composed with ordinary library
-//! laws, and `known` concludes the goal. Normalization checks type ranges
+//! laws, and `known` concludes the goal. Known checks intrinsic type ranges
 //! and the exact operation identities from their two stated bounds. The
 //! checked steps are retained directly for expansion.
 use super::*;
@@ -452,18 +452,18 @@ pub(super) fn have(proposition: ClickProposition, proof: Vec<ProofStep>) -> Proo
     }
 }
 
-/// Context-free normalization of the observed machine value's type range.
+/// Check the observed machine value's intrinsic type range.
 pub(super) fn type_range(_bound: ClickProposition) -> ProofStep {
-    ProofStep::Normalize
+    ProofStep::Known
 }
 
-/// Normalize the machine identity using the two stated exact-result bounds.
+/// Check the machine identity after its two exact-result bounds were proved.
 pub(super) fn operation_identity(
-    lower: ClickProposition,
-    upper: ClickProposition,
+    _lower: ClickProposition,
+    _upper: ClickProposition,
     _identity: ClickProposition,
 ) -> ProofStep {
-    ProofStep::NormalizeUsing(vec![lower, upper])
+    ProofStep::Known
 }
 
 thread_local! {

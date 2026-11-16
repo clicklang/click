@@ -1391,7 +1391,7 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
             initializer: None, ..
         }
         | ProgramStatement::DeclareAggregate { .. } => {}
-        ProgramStatement::ForStep { step, .. } => collect_address_taken_locals(step, names),
+
         ProgramStatement::Declare {
             initializer: Some(expression),
             ..
@@ -1447,11 +1447,21 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
             collect_address_taken_locals(then_branch, names);
             collect_address_taken_locals(else_branch, names);
         }
-        ProgramStatement::While {
-            condition, body, ..
+        ProgramStatement::Loop {
+            test,
+            update,
+            condition,
+            body,
+            ..
         } => {
             escapes(condition);
             collect_address_taken_locals(body, names);
+            if let Some(test) = test {
+                collect_address_taken_locals(&test.statement, names);
+            }
+            if let Some(update) = update {
+                collect_address_taken_locals(update, names);
+            }
         }
         ProgramStatement::Switch { expression, cases } => {
             escapes(expression);
@@ -1780,7 +1790,17 @@ fn statement_calls_visiting(
             statement_calls_visiting(then_branch, calls, visit);
             statement_calls_visiting(else_branch, calls, visit);
         }
-        ProgramStatement::While { body, .. } => statement_calls_visiting(body, calls, visit),
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
+            statement_calls_visiting(body, calls, visit);
+            if let Some(test) = test {
+                statement_calls_visiting(&test.statement, calls, visit);
+            }
+            if let Some(update) = update {
+                statement_calls_visiting(update, calls, visit);
+            }
+        }
         ProgramStatement::Switch {
             expression: _,
             cases,
@@ -1789,7 +1809,6 @@ fn statement_calls_visiting(
                 statement_calls_visiting(&case.body, calls, visit);
             }
         }
-        ProgramStatement::ForStep { step, .. } => statement_calls_visiting(step, calls, visit),
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
@@ -1853,13 +1872,22 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
             statement_declared_variables(then_branch, names);
             statement_declared_variables(else_branch, names);
         }
-        ProgramStatement::While { body, .. } => statement_declared_variables(body, names),
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
+            statement_declared_variables(body, names);
+            if let Some(test) = test {
+                statement_declared_variables(&test.statement, names);
+            }
+            if let Some(update) = update {
+                statement_declared_variables(update, names);
+            }
+        }
         ProgramStatement::Switch { cases, .. } => {
             for case in cases {
                 statement_declared_variables(&case.body, names);
             }
         }
-        ProgramStatement::ForStep { step, .. } => statement_declared_variables(step, names),
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
@@ -1924,7 +1952,7 @@ fn weakest_lower_bound(paths: Vec<i64>) -> Vec<i64> {
 /// empty list, which is right for a loop body, where the loop discards its
 /// body's answer anyway, and wrong for a `switch`, where it is the ordinary
 /// way a case ends. An empty list then propagates: `Seq` keeps it empty, and
-/// `If` and `While` iterate over it, so every later branch and loop body in
+/// `If` and `Loop` iterate over it, so every later branch and loop body in
 /// the function went unwalked.
 struct WalkPaths<P> {
     continuing: Vec<P>,
@@ -2005,7 +2033,6 @@ fn walk_termination_paths<W: TerminationWalk>(
         walk_termination_paths(walk, statement, paths)
     };
     match statement {
-        ProgramStatement::ForStep { step, .. } => descend(step, paths),
         ProgramStatement::Return(_)
         | ProgramStatement::Throw(_)
         | ProgramStatement::ThrowOpaque(_) => Ok(WalkPaths::none()),
@@ -2057,13 +2084,24 @@ fn walk_termination_paths<W: TerminationWalk>(
                 broken: walk.join(broken),
             })
         }
-        ProgramStatement::While {
-            condition, body, ..
+        ProgramStatement::Loop {
+            test,
+            update,
+            condition,
+            body,
+            ..
         } => {
             // A `break` in the body lands where the loop's own exit lands,
             // carrying what the incoming paths already carry, so it is
             // covered by the incoming paths this returns.
-            descend(body, walk.refine(condition, true, paths.clone()))?;
+            if let Some(test) = test {
+                descend(&test.statement, paths.clone())?;
+            }
+            let entered = walk.refine(condition, true, paths.clone());
+            let body_paths = descend(body, entered.clone())?;
+            if let Some(update) = update {
+                descend(update, body_paths.continuing)?;
+            }
             Ok(WalkPaths::continuing(paths))
         }
         ProgramStatement::Switch { cases, .. } => {
@@ -3505,9 +3543,13 @@ fn collect_loops_in_order<'a>(
 ) {
     charge_termination_work(1);
     match statement {
-        ProgramStatement::While { body, .. } => {
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
             loops.push(statement);
-            collect_loops_in_order(body, loops);
+            for region in program_loop_regions(body, update.as_deref(), test.as_ref()) {
+                collect_loops_in_order(region, loops);
+            }
         }
         ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
@@ -3534,7 +3576,7 @@ fn collect_loops_in_order<'a>(
             collect_loops_in_order(try_body, loops);
             collect_loops_in_order(handler, loops);
         }
-        ProgramStatement::ForStep { step, .. } => collect_loops_in_order(step, loops),
+
         // Spelled out, as in `check_loops`: the two walks number the same
         // loops only while they descend into the same statements, so a new
         // statement kind must be placed in both.
@@ -3594,13 +3636,17 @@ fn same_statement_shape(left: &ProgramStatement, right: &ProgramStatement) -> bo
                 && same_statement_shape(left_else, right_else)
         }
         (
-            ProgramStatement::While {
+            ProgramStatement::Loop {
+                test: left_test,
+                update: left_update,
                 condition: left_condition,
                 do_while: left_do_while,
                 body: left_body,
                 ..
             },
-            ProgramStatement::While {
+            ProgramStatement::Loop {
+                test: right_test,
+                update: right_update,
                 condition: right_condition,
                 do_while: right_do_while,
                 body: right_body,
@@ -3608,6 +3654,8 @@ fn same_statement_shape(left: &ProgramStatement, right: &ProgramStatement) -> bo
             },
         ) => {
             left_condition == right_condition
+                && left_test == right_test
+                && left_update == right_update
                 && left_do_while == right_do_while
                 && same_statement_shape(left_body, right_body)
         }
@@ -3627,22 +3675,7 @@ fn same_statement_shape(left: &ProgramStatement, right: &ProgramStatement) -> bo
                     left.value == right.value && same_statement_shape(&left.body, &right.body)
                 })
         }
-        (
-            ProgramStatement::ForStep {
-                step: left_step,
-                exited_locals: left_locals,
-                continue_after: left_continue,
-            },
-            ProgramStatement::ForStep {
-                step: right_step,
-                exited_locals: right_locals,
-                continue_after: right_continue,
-            },
-        ) => {
-            left_locals == right_locals
-                && left_continue == right_continue
-                && same_statement_shape(left_step, right_step)
-        }
+
         _ => left == right,
     }
 }
@@ -3785,9 +3818,13 @@ fn canonical_ranking_term(term: &MachineTerm) -> MachineTerm {
 fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a ProgramStatement>) {
     charge_termination_work(1);
     match statement {
-        ProgramStatement::While { body, .. } => {
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
             loops.push(statement);
-            collect_loops(body, loops);
+            for region in program_loop_regions(body, update.as_deref(), test.as_ref()) {
+                collect_loops(region, loops);
+            }
         }
         ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
@@ -3814,7 +3851,6 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
                 collect_loops(&case.body, loops);
             }
         }
-        ProgramStatement::ForStep { step, .. } => collect_loops(step, loops),
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
@@ -3893,7 +3929,7 @@ fn independent_loop_exit_evidence(
             if ruled_loops.contains(index) {
                 return false;
             }
-            let ProgramStatement::While {
+            let ProgramStatement::Loop {
                 invariant,
                 invariant_checks,
                 effect_checks,
@@ -3969,7 +4005,7 @@ fn loops_executed_to_exit(
 
 fn contains_natural_control_loop(statement: &ProgramStatement) -> bool {
     match statement {
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             backedge_target: Some(_),
             ..
         } => true,
@@ -3989,7 +4025,7 @@ fn contains_natural_control_loop(statement: &ProgramStatement) -> bool {
         ProgramStatement::Switch { cases, .. } => cases
             .iter()
             .any(|case| contains_natural_control_loop(&case.body)),
-        ProgramStatement::ForStep { step, .. } => contains_natural_control_loop(step),
+
         _ => false,
     }
 }
@@ -4045,10 +4081,14 @@ fn visit_loop_obligations(
             visit_loop_obligations(try_body, next_index, visit)?;
             visit_loop_obligations(handler, next_index, visit)
         }
-        ProgramStatement::While { body, .. } => {
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
             let index = *next_index;
             *next_index += 1;
-            visit_loop_obligations(body, next_index, visit)?;
+            for region in program_loop_regions(body, update.as_deref(), test.as_ref()) {
+                visit_loop_obligations(region, next_index, visit)?;
+            }
             visit(index)
         }
         ProgramStatement::Switch { cases, .. } => {
@@ -4057,7 +4097,6 @@ fn visit_loop_obligations(
             }
             Ok(())
         }
-        ProgramStatement::ForStep { step, .. } => visit_loop_obligations(step, next_index, visit),
         ProgramStatement::ThrowOpaque(_)
         | ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
@@ -4395,7 +4434,7 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
             visit(target);
             visit(operand);
         }
-        ProgramStatement::ForStep { step, .. } => statement_function_addresses(step, taken),
+
         ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
             for statement in statements.iter() {
@@ -4417,11 +4456,21 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
             statement_function_addresses(then_branch, taken);
             statement_function_addresses(else_branch, taken);
         }
-        ProgramStatement::While {
-            condition, body, ..
+        ProgramStatement::Loop {
+            test,
+            update,
+            condition,
+            body,
+            ..
         } => {
             visit(condition);
             statement_function_addresses(body, taken);
+            if let Some(test) = test {
+                statement_function_addresses(&test.statement, taken);
+            }
+            if let Some(update) = update {
+                statement_function_addresses(update, taken);
+            }
         }
         ProgramStatement::Switch { expression, cases } => {
             visit(expression);
@@ -4669,11 +4718,15 @@ fn self_call_loop_indices(
                 found.extend(enclosing.iter().copied());
             }
         }
-        ProgramStatement::While { body, .. } => {
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => {
             let index = *next_index;
             *next_index += 1;
             enclosing.push(index);
-            self_call_loop_indices(body, callee, next_index, enclosing, found);
+            for region in program_loop_regions(body, update.as_deref(), test.as_ref()) {
+                self_call_loop_indices(region, callee, next_index, enclosing, found);
+            }
             enclosing.pop();
         }
         ProgramStatement::Seq(statements) => {
@@ -4701,7 +4754,7 @@ fn self_call_loop_indices(
                 descend(&case.body, next_index);
             }
         }
-        ProgramStatement::ForStep { step, .. } => descend(step, next_index),
+
         // Spelled out, as in `loop_at_index` and `check_loops`: these walks
         // number the same loops only while they descend into the same
         // statements, so a new statement kind must be placed in all of them.
@@ -5051,7 +5104,9 @@ mod address_escape_tests {
             then_branch: Box::new(ProgramStatement::Skip),
             else_branch: Box::new(escape),
         };
-        let body = ProgramStatement::While {
+        let body = ProgramStatement::Loop {
+            test: None,
+            update: None,
             ranking_measures: Vec::new(),
             structural_measure: None,
             condition: variable("c"),
@@ -6797,7 +6852,9 @@ mod local_descent_tests {
     fn self_call_in_loop_rule(name: &str) -> VerifiedFunctionRule {
         let body = ProgramStatement::seq(
             Arc::new(ProgramStatement::Skip),
-            Arc::new(ProgramStatement::While {
+            Arc::new(ProgramStatement::Loop {
+                test: None,
+                update: None,
                 condition: crate::kernel::program_expression::int32_literal(1),
                 invariant: vec![Proposition::ConditionIs(
                     ConditionTerm::Constant(true),
@@ -6870,7 +6927,7 @@ mod local_descent_tests {
         let function = self_call_in_loop_rule("drain").function;
         let first = loop_rule_for(&function, None);
         let mut second = first.clone();
-        let ProgramStatement::While {
+        let ProgramStatement::Loop {
             ranking_measures, ..
         } = &mut second.loop_statement
         else {
@@ -6908,7 +6965,7 @@ mod local_descent_tests {
             )
             .unwrap();
         }
-        let ProgramStatement::While {
+        let ProgramStatement::Loop {
             ranking_measures, ..
         } = &mut second.loop_statement
         else {

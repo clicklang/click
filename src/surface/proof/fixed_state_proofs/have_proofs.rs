@@ -404,12 +404,13 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
     } = options;
     let integer_values = integer_values.unwrap_or(&no_integer_values);
     let obligation_assumptions = obligation_assumptions.unwrap_or(assumptions);
+    let native_result = fixed_state.native_result();
     let states = FixedStateLowering::for_proposition(
         proposition,
         contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
-        fixed_state.result,
+        native_result.as_deref(),
     );
     let spec = crate::surface::lowering::elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
         proposition,
@@ -421,7 +422,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
         states.current_values,
         algebraic_values.cloned().unwrap_or_default(),
         integer_values,
-        fixed_state.result,
+        native_result.as_deref(),
         fixed_state.recorded_states,
         spec_definitions,
         opaque_click_functions.cloned().unwrap_or_default(),
@@ -542,7 +543,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
 ) -> Result<ProgramValue, String> {
-    capture_fixed_state_native_expression_with_guards(
+    capture_fixed_state_retained_expression_with_guards(
         expression,
         assumptions,
         contract_environment,
@@ -552,13 +553,13 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
         spec_definitions,
         opaque_click_functions,
     )
-    .map(|(value, _)| value)
+    .map(|(value, _)| crate::kernel::ExecutionValue::Shared(value).into_native())
 }
 
 // Argument selection retains exactly the mandatory domains checked by the
 // ordinary evaluator. Logical load observations do not request extra access
 // authority merely because a theorem takes their values as arguments.
-pub(in crate::surface) fn capture_fixed_state_native_expression_with_guards(
+pub(in crate::surface) fn capture_fixed_state_retained_expression_with_guards(
     expression: &ContractExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
@@ -567,18 +568,19 @@ pub(in crate::surface) fn capture_fixed_state_native_expression_with_guards(
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
-) -> Result<(ProgramValue, Vec<Proposition>), String> {
+) -> Result<(crate::kernel::KernelTerm, Vec<Proposition>), String> {
     let mut click_function_calls = BTreeSet::new();
     crate::surface::validation::collect_click_function_calls(expression, &mut click_function_calls);
     let symbolic_load_assumptions =
         (!click_function_calls.is_empty()).then(|| assumptions.clone().keep_spec_loads_symbolic());
     let assumptions = symbolic_load_assumptions.as_ref().unwrap_or(assumptions);
+    let native_result = fixed_state.native_result();
     let states = FixedStateLowering::for_expression_values(
         expression,
         contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
-        fixed_state.result,
+        native_result.as_deref(),
     );
     let spec = crate::surface::lowering::elaborate_fixed_state_expression_with_algebraic_and_integer_values(
         expression,
@@ -588,19 +590,19 @@ pub(in crate::surface) fn capture_fixed_state_native_expression_with_guards(
         states.current_values,
         algebraic_values,
         integer_values,
-        fixed_state.result,
+        native_result.as_deref(),
         fixed_state.recorded_states,
         spec_definitions,
         opaque_click_functions.clone(),
         BTreeMap::new(),
     )?;
-    let (value, obligations) =
-        crate::kernel::program_evaluate_speprogram_expression_with_checked_obligations(
-            &states.lowering_state,
-            &spec,
-            Some(&states.entry_state),
-            assumptions,
-        )?;
+    let path = crate::kernel::program_evaluate_retained_spec_expression(
+        &states.lowering_state,
+        &spec,
+        Some(&states.entry_state),
+        assumptions,
+    )?;
+    let (value, obligations) = (path.value, path.obligations);
     refuse_unproved_conversion_bounds(
         &obligations,
         assumptions,
@@ -657,12 +659,13 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
     spec_definitions: SpecDefinitions<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
 ) -> Result<(crate::kernel::IntegerTerm, Vec<Proposition>), String> {
+    let native_result = fixed_state.native_result();
     let states = FixedStateLowering::for_expression(
         expression,
         contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
-        fixed_state.result,
+        native_result.as_deref(),
     );
     let spec =
         crate::surface::lowering::elaborate_fixed_state_integer_expression_with_integer_values(
@@ -673,7 +676,7 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
             states.current_values,
             integer_values,
             algebraic_values,
-            fixed_state.result,
+            native_result.as_deref(),
             fixed_state.recorded_states,
             spec_definitions,
             BTreeSet::new(),
@@ -741,12 +744,13 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecAlgebraicExpression, String> {
+    let native_result = fixed_state.native_result();
     let states = FixedStateLowering::for_expression_values(
         expression,
         contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
-        fixed_state.result,
+        native_result.as_deref(),
     );
     crate::surface::lowering::elaborate_fixed_state_algebraic_expression(
         expression,
@@ -755,7 +759,7 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
         states.entry_values,
         states.current_values,
         algebraic_values,
-        fixed_state.result,
+        native_result.as_deref(),
         fixed_state.recorded_states,
         spec_definitions,
         BTreeSet::new(),
@@ -842,17 +846,22 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 BTreeSet::new(),
                 BTreeMap::new(),
             )?;
-            let (value, obligations) =
-                crate::kernel::program_evaluate_speprogram_expression_with_checked_obligations(
-                    &states.lowering_state,
-                    &spec,
-                    Some(&states.entry_state),
-                    assumptions,
-                )?;
+            let path = crate::kernel::program_evaluate_retained_spec_expression(
+                &states.lowering_state,
+                &spec,
+                Some(&states.entry_state),
+                assumptions,
+            )?;
+            let value = crate::kernel::ExecutionValue::Shared(path.value);
             if value.program_type() != *expected {
                 return Err("fold initializer has the wrong type".into());
             }
-            Ok((crate::kernel::AlgebraicValue::Program(value), obligations))
+            // Resource fields still store a native ProgramValue; convert only
+            // after checking the common root's type at this storage boundary.
+            Ok((
+                crate::kernel::AlgebraicValue::Program(value.into_native()),
+                path.obligations,
+            ))
         }
         crate::kernel::ResourceFieldType::Integer => {
             let spec = crate::surface::lowering::elaborate_fixed_state_integer_expression(
@@ -1715,3 +1724,60 @@ mod integer_capture_scaling_tests {
 
 #[cfg(test)]
 mod aggregate_binding_tests;
+
+#[cfg(test)]
+mod retained_capture_tests {
+    use super::*;
+    use crate::kernel::{ExecutionValue, KernelTerm, KernelTermExport, MachineTerm, Variable};
+
+    fn capture(expression: &ContractExpression) -> Result<(KernelTerm, Vec<Proposition>), String> {
+        let state = ExecutionState::new();
+        capture_fixed_state_retained_expression_with_guards(
+            expression,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&BTreeMap::new(), &ClickArrayRefs::new()),
+            BTreeMap::new(),
+            &crate::persistent::PersistentMap::default(),
+            FixedStateFrame::new(&state, &state, None, &RecordedStates::default()),
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            ),
+            &BTreeSet::new(),
+        )
+    }
+
+    #[test]
+    fn retained_capture_keeps_scalar_types_and_exact_pointer_payloads() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let values = [
+            crate::kernel::int32(7),
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(997001))),
+            ProgramValue::Bool(MachineTerm::constant(1)),
+            ProgramValue::Float64(MachineTerm::Variable(Variable(997002))),
+            ProgramValue::Pointer(
+                crate::kernel::PointerValue::new(
+                    crate::kernel::Pointer::symbolic(Variable(997003)),
+                    ProgramType::Int32Pointer,
+                )
+                .with_pointee_constant(true),
+            ),
+        ];
+        for value in values {
+            let expression =
+                ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone()));
+            let exports = KernelTermExport::machine_export_count();
+            let (root, guards) = capture(&expression).unwrap();
+            assert!(guards.is_empty());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert_eq!(ExecutionValue::Shared(root).into_native(), value);
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../../scaling_tests/surface/proof/fixed_state_proofs/have_proofs/retained_capture.rs"
+        );
+    }
+}

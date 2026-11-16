@@ -2379,6 +2379,19 @@ struct PointerQualifiers {
     local_reference: Option<super::loans::LocalScalarReference>,
 }
 
+/// Exact non-address metadata shared by native and retained certification.
+/// Optional default qualifier storage is not itself part of this reading.
+#[derive(PartialEq, Eq)]
+pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
+    program_type: ProgramType,
+    volatile: bool,
+    constant: bool,
+    extent_known: bool,
+    declared_class: Option<&'a crate::kernel::effective_type::CAccessClass>,
+    evidence: Option<&'a ObjectTypeEvidence>,
+    local_reference: Option<&'a super::loans::LocalScalarReference>,
+}
+
 /// The subobject a pointer was formed from, narrower than its complete
 /// object (`design/pointer-subobject-extents.md`). C11 6.5.6p7-p8 and C++
 /// [expr.add] bound pointer arithmetic and access by the designated object,
@@ -2627,21 +2640,19 @@ impl PointerValue {
 
     /// Exact retained qualifiers for syntax certification. Address-bearing
     /// metadata is compared separately through its written term structure.
-    pub(in crate::kernel) fn retained_nonaddress_metadata_eq(&self, other: &Self) -> bool {
-        let declared_class = |value: &Self| {
-            value
+    pub(in crate::kernel) fn retained_nonaddress_metadata(&self) -> RetainedPointerMetadata<'_> {
+        RetainedPointerMetadata {
+            program_type: self.program_type,
+            volatile: self.pointee_volatile(),
+            constant: self.pointee_constant(),
+            extent_known: self.extent_is_known(),
+            declared_class: self
                 .qualifiers
                 .as_ref()
-                .and_then(|q| q.object_class.as_ref())
-                .cloned()
-        };
-        self.program_type == other.program_type
-            && self.pointee_volatile() == other.pointee_volatile()
-            && self.pointee_constant() == other.pointee_constant()
-            && self.extent_is_known() == other.extent_is_known()
-            && declared_class(self) == declared_class(other)
-            && self.object_origin_evidence() == other.object_origin_evidence()
-            && self.local_reference() == other.local_reference()
+                .and_then(|q| q.object_class.as_ref()),
+            evidence: self.object_origin_evidence(),
+            local_reference: self.local_reference(),
+        }
     }
 
     pub(crate) fn pointee_volatile(&self) -> bool {
@@ -3418,7 +3429,7 @@ impl std::fmt::Display for PointerBlock {
             Self::ContractException => formatter.write_str("exception.storage()"),
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
             Self::AutomaticLocal { binding, instance } => {
-                write!(formatter, "{binding}.storage({instance})")
+                write!(formatter, "{}.storage({instance})", binding.canonical())
             }
             Self::PureFunctionApplication(application) => write!(
                 formatter,
@@ -4098,30 +4109,6 @@ pub struct PurePointerResult {
     pub(crate) arguments: BTreeSet<usize>,
 }
 
-/// A pure function that is one field of its argument: `match s {
-/// V(.., x, ..) => x }` over parameter `argument`. Applied to a value built
-/// with constructor `variant`, it is that value's field `field`.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct PureProjection {
-    pub(crate) argument: usize,
-    pub(crate) variant: String,
-    pub(crate) field: usize,
-}
-
-impl PureProjection {
-    pub(crate) fn argument_index(&self) -> usize {
-        self.argument
-    }
-
-    pub(crate) fn new(argument: usize, variant: String, field: usize) -> Self {
-        Self {
-            argument,
-            variant,
-            field,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecExpression {
     Value(ProgramValue),
@@ -4197,9 +4184,6 @@ pub enum SpecExpression {
         /// The class of the object a pointer result designates, from the
         /// function's declared return type (`design/effective-types.md`).
         result_object_class: Option<crate::kernel::effective_type::CAccessClass>,
-        /// When the function is a field projection, the field a constructed
-        /// argument is built with is the result, by the function's definition.
-        projection: Option<PureProjection>,
     },
     LoopEntryState(Box<SpecExpression>),
     Subobject {
@@ -5583,14 +5567,7 @@ pub enum ProgramStatement {
     Goto {
         target: ControlTargetId,
     },
-    /// A for-loop update, after leaving the body scope. On a source
-    /// `continue` this also transfers control to the loop head; on ordinary
-    /// fallthrough it is the first statement of the update clause.
-    ForStep {
-        step: Box<ProgramStatement>,
-        exited_locals: Vec<BindingName>,
-        continue_after: bool,
-    },
+
     Declare {
         /// A scalar construction initializer, evaluated after fresh allocation.
         /// This is the only declaration transition permitted to initialize const storage.
@@ -5781,7 +5758,12 @@ pub enum ProgramStatement {
         aggregate_steps: Vec<u32>,
         condition: ProgramExpression,
     },
-    While {
+    /// Shared loop form for structured loops and checked natural cycles.
+    Loop {
+        /// The loop's shared effectful test, outside the body scope.
+        test: Option<LoopTestRegion>,
+        /// Shared update region, entered after leaving the body scope.
+        update: Option<std::sync::Arc<ProgramStatement>>,
         condition: ProgramExpression,
         invariant: Vec<Proposition>,
         invariant_checks: Vec<LoopInvariantCheck>,
@@ -5827,6 +5809,20 @@ pub enum ProgramStatement {
         names: Vec<BindingName>,
         steps: Vec<u32>,
     },
+}
+
+/// Where an effectful loop test runs relative to its body.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum LoopTestPosition {
+    BeforeBody,
+    AfterBody,
+}
+
+/// The one shared source region that prepares and decides an effectful test.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct LoopTestRegion {
+    pub statement: std::sync::Arc<ProgramStatement>,
+    pub position: LoopTestPosition,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -8602,6 +8598,11 @@ pub struct ForgottenKnowledge {
 #[derive(Clone, Debug, Default)]
 pub struct Memory {
     pub(super) construction: Option<Arc<MemoryConstruction>>,
+    /// The steps taken on this value's path since its state last reached a
+    /// point ([`program_point::StepLog`]). Not part of equality, hashing or
+    /// the interning key, and never kept in the arena: it follows the value
+    /// a path executes, not the content.
+    pub(super) pending_steps: Option<Arc<program_point::StepLog>>,
     pub(super) blocks: std::sync::Arc<MemoryBlocks>,
     pub(super) cells: std::sync::Arc<CellStore>,
     /// Typed views of address-overlapping union storage. A union member is
@@ -8772,6 +8773,7 @@ impl Memory {
     pub(crate) fn with_fresh_storage_roots(&self) -> Self {
         let mut result = Self {
             construction: None,
+            pending_steps: None,
             blocks: std::sync::Arc::new((*self.blocks).clone()),
             cells: std::sync::Arc::new((*self.cells).clone()),
             union_cells: std::sync::Arc::new((*self.union_cells).clone()),
@@ -10063,6 +10065,9 @@ pub(crate) fn intern_derivation_base(memory: &mut Memory) -> SharedMemory {
 pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDerivation) {
     let variable_base = derivation.base().clone();
     let derivation = Arc::new(derivation);
+    // The log this value carries from the path that made it; the step is
+    // added once the result's arena identity is known.
+    let inherited = result.pending_steps.take();
     result.construction = Some(Arc::new(MemoryConstruction {
         roots: result.diagnostic_roots(),
         kind: MemoryConstructionKind::Transition(derivation.clone()),
@@ -10071,6 +10076,12 @@ pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDe
         // Already this base's recorded child: its derivation slot is filled,
         // so recording would change nothing but the storage handed back.
         *result = child;
+        let produced = intern_memory_ref(result);
+        result.pending_steps = Some(program_point::StepLog::push(
+            inherited,
+            derivation.clone(),
+            produced,
+        ));
         return;
     }
     // Interning borrows the arena, so it has to finish before the write.
@@ -10104,6 +10115,11 @@ pub(crate) fn record_memory_derivation(result: &mut Memory, derivation: MemoryDe
     if !result.same_storage_roots(derived.memory()) {
         *result = derived.memory().clone();
     }
+    result.pending_steps = Some(program_point::StepLog::push(
+        inherited,
+        derivation.clone(),
+        derived.clone(),
+    ));
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();
         if arena.0 != derived.arena || arena.0 != derivation.base().arena {
@@ -10281,6 +10297,8 @@ pub fn intern_memory(memory: Memory) -> SharedMemory {
         }
         let id = u32::try_from(arena.identities.len()).expect("memory arena exhausted");
         let content_hash = memory_content_hash(&memory);
+        let mut memory = memory;
+        memory.pending_steps = None;
         let stored = std::sync::Arc::new(memory);
         arena.identities.insert(stored.clone(), (id, content_hash));
         arena
@@ -10369,7 +10387,9 @@ fn intern_memory_ref_with_read_identity(
         }
         let id = u32::try_from(arena.identities.len()).expect("memory arena exhausted");
         let content_hash = memory_content_hash(memory);
-        let stored = std::sync::Arc::new(memory.clone());
+        let mut stored = memory.clone();
+        stored.pending_steps = None;
+        let stored = std::sync::Arc::new(stored);
         arena.identities.insert(stored.clone(), (id, content_hash));
         arena
             .shallow_identities
@@ -15063,6 +15083,7 @@ pub(super) struct CertifiedMemoryStore {
     pub(super) value: ProgramValue,
     pub(super) authorized_range: Option<MemoryRange>,
     pub(super) source: super::StatementStoreSource,
+    pub(super) value_equation: Option<Proposition>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -15515,8 +15536,11 @@ pub struct FunctionExecutionCandidate {
 /// An immutable candidate record retained across distinct terminal frontiers.
 /// Adding facts shares the original outcome and obligations as well as the
 /// unchanged fact streams. This is untrusted publication, never a theorem.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub(super) struct FunctionExecutionCandidateData {
+    /// Selected producer delta for a retained completion context. It changes
+    /// neither the candidate's facts nor its untrusted publication semantics.
+    pub(super) completion_delta: Option<ExecutionFacts>,
     pub(super) outcome: Arc<FunctionOutcome>,
     pub(super) facts: ExecutionFacts,
     pub(super) effect_facts: ExecutionFacts,
@@ -15526,6 +15550,18 @@ pub(super) struct FunctionExecutionCandidateData {
     pub(super) obligations: Arc<Vec<ProofObligation>>,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
 }
+
+impl PartialEq for FunctionExecutionCandidateData {
+    fn eq(&self, other: &Self) -> bool {
+        self.outcome == other.outcome
+            && self.facts == other.facts
+            && self.effect_facts == other.effect_facts
+            && self.effects_public_first == other.effects_public_first
+            && self.obligations == other.obligations
+            && self.loan_evidence == other.loan_evidence
+    }
+}
+impl Eq for FunctionExecutionCandidateData {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SymbolicConditionEvaluation {

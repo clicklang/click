@@ -3471,7 +3471,7 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<Bi
         }
         // Nested scopes retire their own declarations.
         ProgramStatement::If { .. }
-        | ProgramStatement::While { .. }
+        | ProgramStatement::Loop { .. }
         | ProgramStatement::Switch { .. }
         | ProgramStatement::TryCatchInt32 { .. }
         // Everything else declares nothing.
@@ -3482,7 +3482,6 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<Bi
         | ProgramStatement::Break
         | ProgramStatement::Continue
         | ProgramStatement::Goto { .. }
-        | ProgramStatement::ForStep { .. }
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::CopyAggregate { .. }
         | ProgramStatement::InitializeScalarArray { .. }
@@ -3826,12 +3825,56 @@ pub(in crate::kernel) fn execute_statement_paths_with_prefix(
     Ok(paths)
 }
 
+/// Run the loop's one update after the body scopes have been exited.
+/// Both normal completion and `continue` reach this region; other transfers
+/// retain their successor without evaluating the update.
+pub(in crate::kernel) fn paths_after_loop_update(
+    paths: Vec<StatementExecutionPath>,
+    update: Option<&ProgramStatement>,
+    assumptions: &PureFactContext,
+    execution_context: ExecutionContext<'_>,
+    budget: &mut ExecutionBudget,
+    judgment: &mut StatementJudgment<'_, '_>,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let Some(update) = update else {
+        return Ok(paths);
+    };
+    let mut successors = Vec::new();
+    for path in paths {
+        let (state, continued) = match &path.outcome {
+            StatementOutcome::Normal(state) => (state, false),
+            StatementOutcome::Continue(state) => (state, true),
+            _ => {
+                successors.push(path);
+                continue;
+            }
+        };
+        for mut successor in execute_statement_paths_with_prefix(
+            state,
+            update,
+            assumptions,
+            execution_context,
+            &path.facts,
+            &path.obligations,
+            &path.loan_evidence,
+            budget,
+            judgment,
+        )? {
+            if continued && let StatementOutcome::Normal(state) = successor.outcome {
+                successor.outcome = StatementOutcome::Continue(state);
+            }
+            successors.push(successor);
+        }
+    }
+    Ok(successors)
+}
+
 /// A loop with invariant, effect or termination checks: the verification
 /// judgment steps it as its checked abstraction.
 fn is_annotated_loop(statement: &ProgramStatement) -> bool {
     matches!(
         statement,
-        ProgramStatement::While {
+        ProgramStatement::Loop {
             invariant_checks,
             effect_checks,
             ranking_measures,
@@ -3853,7 +3896,7 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
         ProgramStatement::LoopTest { .. } => "verification statement: loop test",
         ProgramStatement::Continue => "verification statement: continue",
         ProgramStatement::Goto { .. } => "verification statement: goto",
-        ProgramStatement::ForStep { .. } => "verification statement: continue with for step",
+
         ProgramStatement::EndAutomaticLifetimes { .. } => {
             "verification statement: automatic lifetime end"
         }
@@ -3880,7 +3923,7 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
         ProgramStatement::Store { .. } => "verification statement: store",
         ProgramStatement::TypedStore { .. } => "verification statement: typed store",
         ProgramStatement::Update { .. } => "verification statement: update",
-        ProgramStatement::While { .. } => "verification statement: while",
+        ProgramStatement::Loop { .. } => "verification statement: loop",
         ProgramStatement::Switch { .. } => "verification statement: switch",
         ProgramStatement::If { .. } => "verification statement: if",
         ProgramStatement::Seq(_) => "verification statement: sequence",
@@ -4031,8 +4074,7 @@ fn execute_execution_statement_leaf_paths(
             ProgramStatement::Call { .. }
                 | ProgramStatement::CallConstruct { .. }
                 | ProgramStatement::CallResult { .. }
-                | ProgramStatement::While { .. }
-                | ProgramStatement::ForStep { .. }
+                | ProgramStatement::Loop { .. }
                 | ProgramStatement::CopyAggregate { .. }
                 | ProgramStatement::InitializeScalarArray { .. }
                 | ProgramStatement::DeclareAggregate { .. }
@@ -4153,44 +4195,7 @@ fn execute_execution_statement_leaf_paths(
                 Vec::new(),
             )]
         }
-        ProgramStatement::ForStep {
-            step,
-            exited_locals,
-            continue_after,
-        } => {
-            let retired = match end_scope_automatic_lifetimes(state, exited_locals) {
-                Ok(state) => state,
-                Err(refusal) => {
-                    return Ok(vec![StatementExecutionPath::new(
-                        StatementOutcome::RuntimeError(refusal),
-                        Vec::new().into(),
-                        Vec::new(),
-                    )]);
-                }
-            };
-            let mut paths = Vec::new();
-            for step_path in execute_statement_paths(
-                &retired,
-                step,
-                assumptions,
-                execution_context,
-                budget,
-                judgment,
-            )? {
-                let outcome = match step_path.outcome {
-                    StatementOutcome::Normal(next_state) if *continue_after => {
-                        StatementOutcome::Continue(next_state)
-                    }
-                    outcome => outcome,
-                };
-                paths.push(StatementExecutionPath::new(
-                    outcome,
-                    step_path.facts,
-                    step_path.obligations,
-                ));
-            }
-            paths
-        }
+
         ProgramStatement::Declare {
             name,
             program_type,
@@ -5017,7 +5022,9 @@ fn execute_execution_statement_leaf_paths(
             }
             paths
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
+            test,
+            update,
             condition,
             invariant,
             invariant_checks: _,
@@ -5048,12 +5055,14 @@ fn execute_execution_statement_leaf_paths(
             };
             match abstracted {
                 Some(paths) => paths,
-                None => execute_program_while_paths(
+                None => execute_program_loop_paths(
                     state,
                     condition,
                     invariant,
                     *do_while,
                     body,
+                    update.as_deref(),
+                    test.as_ref(),
                     assumptions,
                     execution_context,
                     budget,
@@ -5419,17 +5428,23 @@ pub(in crate::kernel) fn assertion_truthiness_obligation(
     }
 }
 
-pub(in crate::kernel) fn execute_program_while_paths(
+pub(in crate::kernel) fn execute_program_loop_paths(
     state: &ExecutionState,
     condition: &ProgramExpression,
     invariant: &[Proposition],
     do_while: bool,
     body: &ProgramStatement,
+    update: Option<&ProgramStatement>,
+    test: Option<&LoopTestRegion>,
     assumptions: &PureFactContext,
     execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     judgment: &mut StatementJudgment<'_, '_>,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let body_region = program_loop_body_region(body, test);
+    let body = &body_region;
+    let continuation = program_loop_continuation(update, test);
+    let update = continuation.as_deref();
     struct PendingLoopPath {
         state: ExecutionState,
         facts: ExecutionFacts,
@@ -5561,7 +5576,7 @@ pub(in crate::kernel) fn execute_program_while_paths(
                         // The body is a scope, and every way out of an
                         // iteration leaves it: the back edge, `break`,
                         // `continue`, and every transfer out of the loop.
-                        for body_path in paths_after_scope_exit(
+                        let body_paths = paths_after_scope_exit(
                             execute_statement_paths(
                                 &current_state,
                                 body,
@@ -5571,7 +5586,15 @@ pub(in crate::kernel) fn execute_program_while_paths(
                                 judgment,
                             )?,
                             &body_declared,
-                        ) {
+                        );
+                        for body_path in paths_after_loop_update(
+                            body_paths,
+                            update,
+                            &body_assumptions,
+                            execution_context,
+                            budget,
+                            judgment,
+                        )? {
                             let Some((step_facts, step_obligations)) =
                                 merge_execution_pure_facts_and_obligations(
                                     &truthiness_path.facts,

@@ -503,3 +503,26 @@ fn shared_conditional_guard_reads_keep_state_identity_in_linear_work() {
         assert!(work <= size * 32 + 16, "size={size}, work={work}");
     }
 }
+
+/// Naming a cell on a path visits the points back to the store that wrote
+/// it, not the path before that store.
+#[test]
+fn a_path_version_costs_the_points_after_the_cells_last_store() {
+    let mut samples = Vec::new();
+    for earlier in [10u32, 100, 1_000] {
+        let mut stores = vec![("other", 0u32); earlier as usize];
+        stores.push(("slot", 1));
+        stores.extend([("other", 2), ("other", 3), ("other", 4)]);
+        let states = path_of_stores(&start_with(&["slot", "other"]), &stores);
+        let reader = states.last().unwrap();
+        clear_version_memos();
+        let (version, work) =
+            crate::instrumentation::measure_deterministic_work(|| version_on_path(reader, "slot"));
+        assert_eq!(version, states[earlier as usize].program_point().id());
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "naming grew with the path before the store: {samples:?}"
+    );
+}

@@ -40,5 +40,5 @@ int32 caller(struct Pair *pair, struct holder *h) {
 ```
 
 ```expect
-fail: unproved obligation: `h->value == &load_int32(byte_offset("fields.c"::caller.parameter(0), 4))`
+fail: unproved obligation: `h->value == &load_int32(byte_offset(pair, 4))`
 ```

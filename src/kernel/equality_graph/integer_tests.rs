@@ -422,3 +422,33 @@ fn narrow_call_bounds_preserve_retained_argument_observation_identity() {
         "widened graph authority"
     );
 }
+
+#[test]
+fn negated_integer_literals_keep_their_terms_and_share_known_facts() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let x = I::var(Variable(993501));
+    for number in [-19, 0, 4] {
+        let raw = I::Negate(I::constant_i64(number).into());
+        let literal = I::constant_i64(-number);
+        assert_ne!(raw, literal);
+        let premise = Proposition::ConditionIs(
+            ConditionTerm::IntegerLessEqual(raw.clone().into(), x.clone().into()),
+            true,
+        );
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::IntegerLessEqual(literal.clone().into(), x.clone().into()),
+            true,
+        );
+        for (premise, goal) in [(premise.clone(), goal.clone()), (goal, premise)] {
+            assert!(!PureFactContext::new().contains_known(&goal));
+            assert!(
+                PureFactContext::new()
+                    .assume_proposition(premise)
+                    .contains_known(&goal)
+            );
+        }
+        assert!(EqualityGraph::default().are_integer_equal(&raw, &literal));
+    }
+    let symbolic = I::Negate(I::Multiply(x.clone().into(), x.into()).into());
+    assert!(!EqualityGraph::default().are_integer_equal(&symbolic, &I::constant_i64(-4)));
+}

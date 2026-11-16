@@ -1,5 +1,11 @@
 # Repeated retains cannot overflow the population count
 
+The entry bound permits the first retain. It does not permit a second one:
+if the initial count is `2147483646`, the first call raises it to
+`2147483647`, violating the next call's strict upper bound. Require the
+precondition refusal at tactic 1 (the second call), rather than a later
+failure while constructing returned resources.
+
 ```c filename=retain.c
 struct child {
     int32 refs;
@@ -70,5 +76,5 @@ void retain_many(struct child* obj) {
 ```
 
 ```expect
-fail: could not instantiate the checked returned resource bodies
+fail: `retain_many.contract` tactic 1: `step()` requires an explicit prerequisite proof (precondition clause 1 of `child_retain`)
 ```

@@ -4908,3 +4908,128 @@ path = "reference/language/grammar.md#proposition-valued-lambdas"
 [[item]]
 id = "language.proposition-value"
 path = "reference/language/grammar.md#proposition-valued-lambdas"
+
+[[item]]
+id = "library.theorem.integer::multiply_commutative"
+path = "reference/library/index.md#integermultiply_commutative"
+
+[[item]]
+id = "library.theorem.integer::multiply_negate"
+path = "reference/library/index.md#integermultiply_negate"
+
+[[item]]
+id = "library.theorem.integer::negate_order"
+path = "reference/library/index.md#integernegate_order"
+
+[[item]]
+id = "library.theorem.integer::le_transitive"
+path = "reference/library/index.md#integerle_transitive"
+
+[[item]]
+id = "library.theorem.integer::product_lower_bound"
+path = "reference/library/index.md#integerproduct_lower_bound"
+
+[[item]]
+id = "library.theorem.integer::product_upper_bound"
+path = "reference/library/index.md#integerproduct_upper_bound"
+
+
+[[item]]
+id = "library.theorem.integer::lt_le"
+path = "reference/library/index.md#integerlt_le"
+
+[[item]]
+id = "library.theorem.integer::add_right_order"
+path = "reference/library/index.md#integeradd_right_order"
+
+[[item]]
+id = "library.theorem.integer::subtract_right_order"
+path = "reference/library/index.md#integersubtract_right_order"
+
+[[item]]
+id = "library.theorem.integer::subtract_left_order"
+path = "reference/library/index.md#integersubtract_left_order"
+
+[[item]]
+id = "library.theorem.integer::negate_multiply"
+path = "reference/library/index.md#integernegate_multiply"
+
+[[item]]
+id = "library.theorem.integer::equal_negate"
+path = "reference/library/index.md#integerequal_negate"
+
+[[item]]
+id = "library.theorem.integer::sum_commute"
+path = "reference/library/index.md#integersum_commute"
+
+[[item]]
+id = "library.theorem.integer::sum_difference"
+path = "reference/library/index.md#integersum_difference"
+
+[[item]]
+id = "library.theorem.integer::positive_divisor_quotient_upper_rounded"
+path = "reference/library/index.md#integerpositive_divisor_quotient_upper_rounded"
+
+[[item]]
+id = "library.theorem.integer::positive_divisor_quotient_lower_rounded"
+path = "reference/library/index.md#integerpositive_divisor_quotient_lower_rounded"
+
+[[item]]
+id = "library.theorem.integer::nonnegative_dividend_remainder_upper"
+path = "reference/library/index.md#integernonnegative_dividend_remainder_upper"
+
+[[item]]
+id = "library.theorem.integer::nonpositive_dividend_remainder_lower"
+path = "reference/library/index.md#integernonpositive_dividend_remainder_lower"
+
+[[item]]
+id = "library.theorem.integer::quotient_upper_interval_nonnegative"
+path = "reference/library/index.md#integerquotient_upper_interval_nonnegative"
+
+[[item]]
+id = "library.theorem.integer::quotient_lower_interval_nonpositive"
+path = "reference/library/index.md#integerquotient_lower_interval_nonpositive"
+
+[[item]]
+id = "library.theorem.integer::quotient_upper_interval_negative"
+path = "reference/library/index.md#integerquotient_upper_interval_negative"
+
+[[item]]
+id = "library.theorem.integer::quotient_lower_interval_positive"
+path = "reference/library/index.md#integerquotient_lower_interval_positive"
+
+[[item]]
+id = "library.theorem.integer::remainder_lower_from_dividend"
+path = "reference/library/index.md#integerremainder_lower_from_dividend"
+
+[[item]]
+id = "library.theorem.integer::remainder_lower_from_divisor"
+path = "reference/library/index.md#integerremainder_lower_from_divisor"
+
+[[item]]
+id = "library.theorem.integer::remainder_upper_from_dividend"
+path = "reference/library/index.md#integerremainder_upper_from_dividend"
+
+[[item]]
+id = "library.theorem.integer::remainder_upper_from_divisor"
+path = "reference/library/index.md#integerremainder_upper_from_divisor"
+
+[[item]]
+id = "library.theorem.integer::small_remainder_interval"
+path = "reference/library/index.md#integersmall_remainder_interval"
+
+[[item]]
+id = "library.theorem.integer::nonzero_from_one"
+path = "reference/library/index.md#integernonzero_from_one"
+
+[[item]]
+id = "library.theorem.integer::nonzero_from_negative_one"
+path = "reference/library/index.md#integernonzero_from_negative_one"
+
+[[item]]
+id = "library.theorem.integer::quotient_negate_divisor"
+path = "reference/library/index.md#integerquotient_negate_divisor"
+
+[[item]]
+id = "library.theorem.integer::remainder_negate_divisor"
+path = "reference/library/index.md#integerremainder_negate_divisor"

@@ -237,3 +237,11 @@ apply_signed_interval_composition
 apply_specialized_composition
 prepare_integer_read_domain
 try_single_theorem_using
+try_product_bound_using
+try_multiply_order_using
+try_division_bound_using
+apply_division_steps
+apply_division_have
+known_bridge_using
+try_machine_bridge_using
+try_conditional_bridge_using

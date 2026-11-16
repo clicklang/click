@@ -27,7 +27,7 @@ are longer-term work, after those priorities (maintainer, 2026-10-14 and
 | Smart planning and proof search | No | Part of `src/surface` | `src/surface/planning`, `src/surface/proof/smart_*` |
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
-| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 159 theorems, 39 of them kernel standard, in 7,700 lines | `library/` |
+| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 188 theorems, 41 of them kernel standard, in 8,835 lines | `library/` |
 | Library models: contracts for code Click does not verify | Yes: assumptions | Eight families, each reported by `click verify` ([Library models](#library-models)) | `library/c/`, `src/languages/c/`, `src/languages/cpp/standard_library.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
@@ -119,11 +119,11 @@ call to one is checked against its [library model](#library-models). See
 
 ## The Click library
 
-The `library/` modules declare 159 theorems. `verify_standard_library`
+The `library/` modules declare 188 theorems. `verify_standard_library`
 checks each one, in one of two ways; the gate runs it
 (`standard_library_theorems_are_proved_by_their_own_entry_point`):
 
-- **120 are proved.** Their written or default proofs are checked like any
+- **147 are proved.** Their written or default proofs are checked like any
   other proof. They include the `int32` increment, predecessor, order and
   definedness lemmas, the in-range `+` and `-` observation laws at `int32`,
   `int64`, `uint32` and `uint64`, the `uint32` and `uint64` product laws,
@@ -134,7 +134,7 @@ checks each one, in one of two ways; the gate runs it
   lemmas (`u32::multiply_to_integer`), each with a pinned proof of explicit
   steps (`known()`, `normalize()`, and
   `apply` of earlier library theorems).
-- **39 are kernel standard theorems.** They have no proof. The check is
+- **41 are kernel standard theorems.** They have no proof. The check is
   only that the declaration's parameters, premises and conclusion match the
   proposition a Rust kernel builder constructs (`prove_*`, mostly in
   `src/kernel/api.rs`); the theorem is then recorded as an axiom
@@ -144,7 +144,7 @@ checks each one, in one of two ways; the gate runs it
   trusted kernel. They are 13 machine-integer laws in `integer.click`
   (`int32_remainder_to_integer`; the `uint32` and `uint64` divide and
   remainder laws; 16-bit packing; and the
-  `uint32_from_le_bytes` byte layout), 5 Integer truncation laws, 6 `Nat`
+  `uint32_from_le_bytes` byte layout), 7 Integer truncation laws, 6 `Nat`
   conversion laws and 15 separation laws. `separation::separate_elements` and
   `separation::distinct_elements` are generic over their index type, which
   has no rigid C form, so each is checked at each index type its builder
@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 13 `axiom`s, which are trusted, not proved.
+The library also declares 15 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -170,6 +170,14 @@ runs `core`'s code over them. Another is `integer::uint32_difference_decreases_a
 `value < bound`, `(0 - value) + (bound - 1)` is below `(0 - value) + bound`
 as integers, because neither `bound - value` nor `(bound - 1) - value`
 wraps.
+
+Two elementary Integer multiplication axioms in `library/integer.click`,
+`multiply_commutative` and `multiply_negate`, state `a * b == b * a` and
+`a * -b == -(a * b)`. They expose these mathematical identities as named
+library applications. Product interval bounds and multiplication order for
+nonpositive factors are proved from these equations and the existing order
+laws. The independent BigInt oracle checks the new declarations across
+negative, zero, positive, and large operands.
 
 Five foundational Integer order axioms in `library/integer.click` expose
 rules that ordinary arithmetic proofs already used: `add_le` adds two
@@ -275,3 +283,11 @@ current scope is stated in
 [Rbtree launch roadmap](../internals/roadmap.md#current-rbtree-status). Beyond
 the trusted base above, they also trust a hand-written header that stands in
 for the Linux `rbtree.h` and `rbtree_augmented.h`.
+
+The divisor-sign laws `integer::quotient_negate_divisor` and
+`integer::remainder_negate_divisor` are registered local truncation laws:
+for a nonzero divisor, changing its sign negates the quotient and preserves
+the remainder. Their constructors read only the two explicit Integer operands.
+The signed, arbitrary-width BigInt oracle checks both laws. Named positive-divisor
+quotient bounds and interval bounds are ordinary proofs from truncation,
+remainder, rounding, and order laws; they add no interval axioms.

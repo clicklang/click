@@ -1653,10 +1653,39 @@ permitted stores or a transition that drops the fact:
   neighbour per key without enumerating aliases or endpoint classes. A missed
   merge retains both facts. Internal composition still checks ownership using
   the full assumptions through incremental admission. Ordinary body producers
-  retain their existing normalization. Multiple
-  witnesses, existential bodies containing composites, recursive, matched
-  and authority cases retain explicitly classified legacy routes. Failure constructing a
-  migrated body refuses the return rather than retrying legacy reconstruction.
+  retain their existing normalization. Guarded direct recursive bodies without
+  witnesses or named fields now construct a finite frontier: open the selected
+  body once and retain each recursive child with its emitted occurrence ID.
+  Known deeper guards do not trigger further opening; an undecided root stays
+  folded, and a false root contributes emp. Visible leaves use incremental
+  admission and projections reuse this same construction. Recursive frontiers
+  use the bounded optional normalization described above. Every return
+  projection carries its one-level frontier, including explicit legacy
+  projections; escaping-loan recovery no longer reconstructs a missing frontier.
+  Call precondition, canonical-entry, population-entry and dependent-return
+  views now use their finite expansion directly. The obsolete second pass
+  that repeatedly opened every decidable recursive tail has been removed;
+  deeper opening requires explicit unfold steps.
+  Flat, unmatched named instances now carry their selected field/argument
+  values and emitted child occurrence IDs through return construction. Fixed
+  parameter memory can carry a consumed-input reservation selected at call
+  entry; model-field pointers do not acquire that custody by matching geometry.
+  Fieldless authority controls carry the actual ledger count observations
+  beside their emitted authority IDs. Exact exclusive-resource indexes check
+  these authority leaves against the retained boundary, including when there
+  is no memory conflict. Ledger identities are never recovered through pointer
+  aliases. Flat matched named instances select one indexed constructor and
+  retain its payload bindings and body; a missing constructor keeps the head
+  opaque, without enumerating variant-refutation premises. Projection uses the
+  constructed body without selecting the arm again. These named-instance
+  fragments preserve the existing owned-unit clause restriction. Multiple
+  witnesses, existential bodies containing composites, named children,
+  field-bearing authority protocols and nested/recursive matched arms retain
+  explicitly classified legacy routes. Specialized producers also return an
+  explicit unsupported result for geometry outside the maintained ownership
+  index; that result dispatches to compatibility without invoking discovery
+  inside construction. A conflicting or invalid migrated body refuses the
+  return rather than retrying legacy reconstruction.
   Monotone memory-evidence admission walks a smaller incoming contract or a
   shared persistent delta, without enumerating absent caller facts. Scalar
   refresh seeks only the equality class's concrete `local:` block interval,

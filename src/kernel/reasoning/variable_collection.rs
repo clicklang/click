@@ -983,9 +983,7 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
             initializer: None, ..
         }
         | ProgramStatement::DeclareAggregate { .. } => {}
-        ProgramStatement::ForStep { step, .. } => {
-            collect_execution_statement_bitvector_variables(step, variables);
-        }
+
         ProgramStatement::Declare {
             initializer: Some(expression),
             ..
@@ -1060,7 +1058,9 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
             collect_execution_statement_bitvector_variables(then_branch, variables);
             collect_execution_statement_bitvector_variables(else_branch, variables);
         }
-        ProgramStatement::While {
+        ProgramStatement::Loop {
+            test,
+            update,
             condition,
             invariant,
             invariant_checks,
@@ -1088,6 +1088,12 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
                 collect_ranking_component_variables(measure, variables);
             }
             collect_execution_statement_bitvector_variables(body, variables);
+            if let Some(test) = test {
+                collect_execution_statement_bitvector_variables(&test.statement, variables);
+            }
+            if let Some(update) = update {
+                collect_execution_statement_bitvector_variables(update, variables);
+            }
         }
         ProgramStatement::Switch { expression, cases } => {
             collect_program_expression_bitvector_variables(expression, variables);

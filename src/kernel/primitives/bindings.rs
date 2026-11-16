@@ -8,6 +8,10 @@ struct LocalFunctionIdentity {
     source: Option<String>,
     function: String,
     fingerprint: u64,
+    /// Each source spelling the function's declarations use, and whether it
+    /// names one declaration that shadows nothing. Presentation metadata
+    /// only: it is never part of identity.
+    spellings: std::sync::Mutex<BTreeMap<String, bool>>,
 }
 impl LocalFunctionId {
     pub fn new(source: Option<String>, function: String) -> Self {
@@ -17,7 +21,27 @@ impl LocalFunctionId {
             source,
             function,
             fingerprint: hasher.finish(),
+            spellings: std::sync::Mutex::new(BTreeMap::new()),
         }))
+    }
+    /// Records a declaration's source spelling as the C parser declares it.
+    /// A spelling is unique when one declaration of the function uses it and
+    /// that declaration shadows no visible name, local or file-scope.
+    pub fn record_declaration_spelling(&self, spelling: &str, shadows: bool) {
+        let mut spellings = self.0.spellings.lock().expect("spelling table lock");
+        spellings
+            .entry(spelling.to_owned())
+            .and_modify(|unique| *unique = false)
+            .or_insert(!shadows);
+    }
+    fn spelling_is_unique(&self, spelling: &str) -> bool {
+        self.0
+            .spellings
+            .lock()
+            .expect("spelling table lock")
+            .get(spelling)
+            .copied()
+            .unwrap_or(false)
     }
     fn identity(&self) -> (&Option<String>, &str) {
         (&self.0.source, &self.0.function)
@@ -112,6 +136,15 @@ impl LocalBindingId {
     pub fn spelling(&self) -> Option<&str> {
         self.0.spelling.as_deref()
     }
+    /// The C spelling a proof writes for this declaration, when that spelling
+    /// names no other declaration of its function and no file-scope object,
+    /// and is not a Click word. Wherever the declaration is in scope, the
+    /// spelling resolves back to it; the typed identity spells it otherwise.
+    pub fn source_spelling(&self) -> Option<&str> {
+        let spelling = self.spelling()?;
+        (self.0.owner.spelling_is_unique(spelling) && !is_click_expression_word(spelling))
+            .then_some(spelling)
+    }
     /// Source type metadata is filled by the C declaration builder before lowering.
     pub(crate) fn initialize_program_type(&self, ty: ProgramType) {
         let _ = self.0.program_type.set(ty);
@@ -157,21 +190,44 @@ impl Hash for LocalBindingId {
         self.identity().hash(state);
     }
 }
+/// A declaration is written by its C spelling where that names it
+/// ([`LocalBindingId::source_spelling`]), and by its typed identity,
+/// `"file.c"::function.local(N)`, otherwise.
 impl std::fmt::Display for LocalBindingId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(source) = self.source() {
+        match self.source_spelling() {
+            Some(spelling) => f.write_str(spelling),
+            None => self.canonical().fmt(f),
+        }
+    }
+}
+
+/// The typed declaration selector, `"file.c"::f.local(i)`, which names the
+/// declaration everywhere and is the only head a `.storage(...)` suffix takes.
+pub struct CanonicalLocalBinding<'a>(&'a LocalBindingId);
+
+impl LocalBindingId {
+    pub fn canonical(&self) -> CanonicalLocalBinding<'_> {
+        CanonicalLocalBinding(self)
+    }
+}
+
+impl std::fmt::Display for CanonicalLocalBinding<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let id = self.0;
+        if let Some(source) = id.source() {
             write!(f, "{source:?}::")?;
         }
         write!(
             f,
             "{}.{}({})",
-            self.function(),
-            if self.is_parameter() {
+            id.function(),
+            if id.is_parameter() {
                 "parameter"
             } else {
                 "local"
             },
-            self.ordinal()
+            id.ordinal()
         )
     }
 }
@@ -460,6 +516,41 @@ impl From<LocalBindingId> for BindingName {
         Self::Local(id)
     }
 }
+/// Words a Surface expression reads as something other than a program
+/// variable, so a C declaration with one of these spellings is written by its
+/// typed identity.
+fn is_click_expression_word(spelling: &str) -> bool {
+    matches!(
+        spelling,
+        "result"
+            | "exception"
+            | "true"
+            | "false"
+            | "and"
+            | "or"
+            | "not"
+            | "implies"
+            | "iff"
+            | "forall"
+            | "exists"
+            | "old"
+            | "at"
+            | "function"
+            | "loop"
+            | "region"
+            | "statement"
+            | "iteration"
+            | "null"
+            | "nullptr"
+            | "sizeof"
+            | "in"
+            | "if"
+            | "else"
+            | "let"
+            | "by"
+    )
+}
+
 impl std::fmt::Display for BindingName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -698,5 +789,31 @@ mod tests {
                 assert!(address.block.proven_distinct(&other.block));
             }
         }
+    }
+
+    #[test]
+    fn a_declaration_is_written_by_its_spelling_only_when_unambiguous() {
+        let owner = LocalFunctionId::new(Some("unit.c".into()), "f".into());
+        let declare = |ordinal, name: &str, shadows| {
+            owner.record_declaration_spelling(name, shadows);
+            LocalBindingId::new(owner.clone(), false, ordinal, Some(name.into()))
+        };
+        let unique = declare(0, "count", false);
+        let first = declare(1, "i", false);
+        let reused = declare(2, "i", false);
+        let shadowing = declare(3, "total", true);
+        let reserved = declare(4, "result", false);
+        assert_eq!(unique.to_string(), "count");
+        assert_eq!(first.to_string(), "\"unit.c\"::f.local(1)");
+        assert_eq!(reused.to_string(), "\"unit.c\"::f.local(2)");
+        assert_eq!(shadowing.to_string(), "\"unit.c\"::f.local(3)");
+        assert_eq!(reserved.to_string(), "\"unit.c\"::f.local(4)");
+        // A declaration the parser never recorded keeps its typed identity.
+        let unrecorded = LocalBindingId::new(owner.clone(), true, 0, Some("n".into()));
+        assert_eq!(unrecorded.to_string(), "\"unit.c\"::f.parameter(0)");
+        // Spellings are per function: another function's `count` is its own.
+        let other = LocalFunctionId::new(Some("unit.c".into()), "g".into());
+        other.record_declaration_spelling("count", false);
+        assert_eq!(unique.to_string(), "count");
     }
 }
