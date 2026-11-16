@@ -262,6 +262,19 @@ Validation: all 1,860 Surface/scaling tests and quality checks passed, including
 nested fold/match/call scope scaling. The alpha-equivalence fixture passed with
 zero fact-stability differences. Nightly was not run.
 
+### 9i common match declaration raising
+
+Shared match arms now read typed declaration IDs directly, without exporting
+binding vectors. Native and shared arms use one scope/arm renderer; stored legacy
+program declarations are borrowed through the existing bounded declaration reader.
+Program, Integer and algebraic namespaces, written names and native refusals stay
+unchanged, including C Boolean conversion binders and exact zero-offset pointers.
+
+Validation: native/shared declaration admission and refusal parity with zero
+machine exports; existing typed-ID, name-capture, nested-result and selected-body
+scaling regressions passed. All 1,992 Surface, rewrite and scaling tests and quality checks
+passed. Algebraic Integer match fixtures passed with zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
