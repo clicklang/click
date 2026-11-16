@@ -285,7 +285,7 @@ compatibility output and now moves its selected result rather than cloning it.
 
 Validation: typed root/native value parity and exact preservation of conversion
 obligations and path facts; growing arithmetic capture has linear work and zero
-machine exports. All 2,013 specification, Surface and scaling tests and quality
+machine exports. All 2,000 API, specification and scaling tests and quality
 checks passed. Selected integer read-back and freed-pointer conversion fixtures
 passed with zero fact-stability differences.
 
