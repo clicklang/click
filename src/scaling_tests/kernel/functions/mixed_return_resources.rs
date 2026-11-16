@@ -104,6 +104,7 @@ fn projecting_equal_return_descriptions_uses_selected_occurrences() {
                 project_return_resource_cores(
                     &evaluated.resources,
                     &transfers,
+                    &FlatReturnBodies::default(),
                     &[],
                     &state,
                     &facts,
@@ -755,5 +756,96 @@ fn fresh_allocation_return_work_scales_with_selected_return_pieces() {
             "{samples:?}"
         );
         assert!(*maps <= samples[0].2 * growth * 4, "{samples:?}");
+    }
+}
+
+#[test]
+fn flat_return_body_consumers_scale_with_output_and_ignore_ambient_state() {
+    for axis in ["outputs", "owners", "aliases", "definitions"] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let pointer = Pointer::symbolic(Variable(8_839_001));
+            let mut facts = PureFactContext::new();
+            let mut frame = ResourceContext::new();
+            let mut definitions = vec![tests::flat_body_definition(
+                "selected",
+                &pointer,
+                if axis == "outputs" { count } else { 1 },
+            )];
+            for index in 0..count {
+                let other = Pointer::symbolic(Variable(8_839_100 + u64::from(index)));
+                match axis {
+                    "owners" => {
+                        frame = frame.unchecked_with_fact(ResourceFact::own_memory(
+                            MemoryRange::new(other, 0u32.into(), 1u32.into()),
+                        ))
+                    }
+                    "aliases" => {
+                        facts = facts.assume_condition(
+                            ConditionTerm::pointer_equal(pointer.clone(), other),
+                            true,
+                        )
+                    }
+                    "definitions" => definitions.push(tests::flat_body_definition(
+                        &format!("unused_{index:04}"),
+                        &other,
+                        1,
+                    )),
+                    _ => {}
+                }
+            }
+            definitions.sort_by(|a, b| a.name().cmp(b.name()));
+            frame.synchronize_memory_equalities(&facts);
+            let evaluated = EvaluatedReturnResources::new(&facts)
+                .admit(
+                    ResourceFact::own_composite("selected".into(), vec![]),
+                    ReturnOwnershipOrigin::Description,
+                    &facts,
+                )
+                .unwrap();
+            let state = ExecutionState::new();
+            let bodies = FlatReturnBodies::construct(&evaluated, &definitions, &state, &facts);
+            assert_eq!(bodies.0.len(), 1);
+            let prepared = evaluated
+                .restore_entry_borrows(
+                    frame,
+                    ReturnResourceComposition::RestoreEntryBorrows,
+                    &facts,
+                )
+                .unwrap();
+            let (destination, transfers) = prepared.finish(&facts).unwrap();
+            let (projected, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _operation =
+                    crate::kernel::search::FastOperationScope::enter("carried flat return body");
+                project_return_resource_cores(
+                    &evaluated.resources,
+                    &transfers,
+                    &bodies,
+                    &[],
+                    &state,
+                    &facts,
+                    &destination,
+                )
+                .unwrap()
+            });
+            assert_eq!(
+                projected[0].expansion.len(),
+                if axis == "outputs" {
+                    count as usize + 1
+                } else {
+                    2
+                }
+            );
+            samples.push(work);
+        }
+        if axis == "outputs" {
+            assert!(samples[2] <= samples[0] * 24 + 64, "{axis}: {samples:?}");
+        } else {
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 48),
+                "{axis}: {samples:?}"
+            );
+        }
     }
 }

@@ -412,11 +412,120 @@ impl PreparedReturnComposition {
     }
 }
 
+/// A flat body's construction belongs to the emitted occurrence, including
+/// when another output has exactly the same head description. The caller
+/// checks its frontier against the retained frame, then publishes observations
+/// of that same body; neither consumer opens the definition again.
+#[derive(Default)]
+pub(super) struct FlatReturnBodies(BTreeMap<ResourceOccurrenceId, FlatReturnBody>);
+
+pub(super) struct FlatReturnBody {
+    pub(super) frontier: Vec<ResourceFact>,
+    expansion: Vec<ResourceFact>,
+}
+
+impl FlatReturnBodies {
+    pub(super) fn construct(
+        evaluated: &EvaluatedReturnResources,
+        definitions: &[CompositeResourceDefinition],
+        state: &ExecutionState,
+        assumptions: &PureFactContext,
+    ) -> Self {
+        let mut bodies = BTreeMap::new();
+        for occurrence in &evaluated.occurrences {
+            let Some(support) = evaluated
+                .resources
+                .owned_fact_for_occurrence(occurrence.source)
+            else {
+                continue;
+            };
+            let Resource::Composite { name, .. } = support.resource() else {
+                continue;
+            };
+            if support.owned_quantity_term() != Some(&MachineTerm::constant(1)) {
+                continue;
+            }
+            let Ok(index) = definitions.binary_search_by(|definition| {
+                crate::instrumentation::record_deterministic_work(1);
+                definition.name().cmp(name)
+            }) else {
+                continue;
+            };
+            let definition = &definitions[index];
+            // Leave recursive, conditional, existential and authority bodies
+            // on the legacy path. A flat body's full expansion is precisely
+            // its one-level expansion, including its packaged views.
+            if definition.instance_schema.is_some()
+                || definition.matched.is_some()
+                || definition.condition.is_some()
+                || !definition.witnesses.is_empty()
+                || !definition.children.is_empty()
+                || definition.contains().iter().any(|child| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    child.guard().is_some()
+                        || !matches!(
+                            child.term(),
+                            ResourceTerm::Memory(_) | ResourceTerm::Token { .. }
+                        )
+                })
+            {
+                continue;
+            }
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(support.clone());
+            if let Some((expanded, frontier, _)) = expand_composite_resource_fact_with_children(
+                &singleton,
+                support,
+                definitions,
+                state.memory(),
+                assumptions,
+            ) {
+                bodies.insert(
+                    occurrence.source,
+                    FlatReturnBody {
+                        frontier,
+                        expansion: expanded.facts().to_vec(),
+                    },
+                );
+            }
+        }
+        Self(bodies)
+    }
+
+    pub(super) fn get(&self, source: ResourceOccurrenceId) -> Option<&FlatReturnBody> {
+        self.0.get(&source)
+    }
+}
+
+impl PreparedReturnComposition {
+    pub(super) fn frontier_sources<'a>(
+        &'a self,
+        source: &'a ResourceContext,
+        borrowed: bool,
+    ) -> impl Iterator<Item = (ResourceOccurrenceId, &'a ResourceFact)> + 'a {
+        self.occurrences.iter().filter_map(move |entry| {
+            let selected = if borrowed {
+                entry.origin == ReturnOwnershipOrigin::EntryBorrow
+            } else {
+                entry.origin == ReturnOwnershipOrigin::Description
+            };
+            selected
+                .then(|| {
+                    source
+                        .owned_fact_for_occurrence(entry.source)
+                        .map(|fact| (entry.source, fact))
+                })
+                .flatten()
+        })
+    }
+}
+
 pub(super) struct ProjectedReturnResource {
     pub(super) support: ResourceFact,
     pub(super) destination: ResourceOccurrenceId,
     pub(super) expansion: Vec<ResourceFact>,
     pub(super) projected: Vec<ResourceFact>,
+    pub(super) frontier: Option<Vec<ResourceFact>>,
 }
 
 /// Read each owned output by its selected source identity. Equal descriptions
@@ -424,6 +533,7 @@ pub(super) struct ProjectedReturnResource {
 pub(super) fn project_return_resource_cores(
     source: &ResourceContext,
     transfers: &[ReturnResourceTransfer],
+    bodies: &FlatReturnBodies,
     definitions: &[CompositeResourceDefinition],
     post_state: &ExecutionState,
     assumptions: &PureFactContext,
@@ -435,19 +545,24 @@ pub(super) fn project_return_resource_cores(
         .filter_map(|transfer| {
             source
                 .owned_fact_for_occurrence(transfer.source)
-                .map(|support| (support, transfer.destination))
+                .map(|support| (support, transfer.source, transfer.destination))
         })
-        .map(|(support, destination_occurrence)| {
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(support.clone());
-            let projection_state = post_state.clone().with_resource_context(singleton.clone());
-            let expanded = expand_all_composite_resource_facts_at_state(
-                &singleton,
-                definitions,
-                &projection_state,
-                assumptions,
-            )?;
-            let expansion = expanded.facts().to_vec();
+        .map(|(support, source_occurrence, destination_occurrence)| {
+            let body = bodies.get(source_occurrence);
+            let expansion = if let Some(body) = body {
+                body.expansion.clone()
+            } else {
+                let singleton = ResourceContext::new_with_equalities(assumptions)
+                    .unchecked_with_fact(support.clone());
+                let projection_state = post_state.clone().with_resource_context(singleton.clone());
+                let expanded = expand_all_composite_resource_facts_at_state(
+                    &singleton,
+                    definitions,
+                    &projection_state,
+                    assumptions,
+                )?;
+                expanded.facts().to_vec()
+            };
             let projected = expansion
                 .iter()
                 .filter_map(|fact| fact.core_with_assumptions(assumptions))
@@ -462,6 +577,7 @@ pub(super) fn project_return_resource_cores(
                 destination: destination_occurrence,
                 expansion,
                 projected,
+                frontier: body.map(|body| body.frontier.clone()),
             })
         })
         .collect()

@@ -24,8 +24,8 @@ mod literal_objects;
 mod mixed_return_resources;
 mod produced_argument_supply;
 use mixed_return_resources::{
-    ConsumedCellReturns, EvaluatedReturnResources, FreshAllocationReturn, ProjectedReturnResource,
-    ReturnOwnershipOrigin, project_return_resource_cores,
+    ConsumedCellReturns, EvaluatedReturnResources, FlatReturnBodies, FreshAllocationReturn,
+    ProjectedReturnResource, ReturnOwnershipOrigin, project_return_resource_cores,
 };
 pub(in crate::kernel) use mixed_return_resources::{
     ReturnResourceTransfer, ReturnedConsumedCell, ReturnedFreshAllocation,
@@ -13073,6 +13073,12 @@ fn evaluate_contract_return_resources(
         Err(error) => return Ok(Err(error)),
     };
     let ensured_resources = &evaluated.resources;
+    let flat_bodies = FlatReturnBodies::construct(
+        &evaluated,
+        interface.composite_resource_definitions(),
+        post_state,
+        assumptions,
+    );
     // Entry borrows rejoin their selected frame before newly described
     // ownership is checked, including the bodies of produced composites.
     let prepared = match crate::instrumentation::measure_operation(
@@ -13111,7 +13117,9 @@ fn evaluate_contract_return_resources(
                     );
                 if let Some(error) = produced_composite_frontier_conflict(
                     &retained,
-                    &prepared.entry_borrow_outputs,
+                    prepared
+                        .frontier_sources(ensured_resources, true)
+                        .map(|(source, fact)| (fact, flat_bodies.get(source))),
                     interface.composite_resource_definitions(),
                     post_state.memory(),
                     assumptions,
@@ -13130,7 +13138,9 @@ fn evaluate_contract_return_resources(
                 .unchecked_with_facts(escrowed_owners.iter().cloned());
             produced_composite_frontier_conflict(
                 &destination,
-                &prepared.pending,
+                prepared
+                    .frontier_sources(ensured_resources, false)
+                    .map(|(source, fact)| (fact, flat_bodies.get(source))),
                 interface.composite_resource_definitions(),
                 post_state.memory(),
                 assumptions,
@@ -13172,6 +13182,7 @@ fn evaluate_contract_return_resources(
             project_return_resource_cores(
                 ensured_resources,
                 &inserted_ensured_occurrences,
+                &flat_bodies,
                 interface.composite_resource_definitions(),
                 post_state,
                 assumptions,
@@ -13196,6 +13207,7 @@ fn evaluate_contract_return_resources(
         destination: support_occurrence,
         expansion,
         projected,
+        frontier,
     } in projected_cores_by_support
     {
         // Only the one-level frontier names the borrows this composite
@@ -13211,8 +13223,8 @@ fn evaluate_contract_return_resources(
             }
             _ => false,
         };
-        if let Some((_, children, _)) = (!is_population)
-            .then(|| {
+        if !is_population {
+            let children = frontier.or_else(|| {
                 expand_composite_resource_fact_with_children(
                     &ResourceContext::new_with_equalities(assumptions)
                         .unchecked_with_fact(support.clone()),
@@ -13221,15 +13233,16 @@ fn evaluate_contract_return_resources(
                     post_state.memory(),
                     assumptions,
                 )
-            })
-            .flatten()
-        {
-            produced_borrowing_pieces.extend(
-                children
-                    .into_iter()
-                    .filter(|piece| piece.is_view())
-                    .map(|piece| (support.clone(), piece)),
-            );
+                .map(|(_, children, _)| children)
+            });
+            if let Some(children) = children {
+                produced_borrowing_pieces.extend(
+                    children
+                        .into_iter()
+                        .filter(|piece| piece.is_view())
+                        .map(|piece| (support.clone(), piece)),
+                );
+            }
         }
         return_resources = return_resources
             .unchecked_with_supported_facts_from_occurrence_with_memory(
@@ -13275,33 +13288,43 @@ pub(crate) struct ContractReturnResources {
 /// Only the one-level checked frontier is compared. A nested composite child
 /// is itself a fact here, not a body to reason inside; that is the same
 /// "no reasoning inside composites" rule the composite lend follows.
-fn produced_composite_frontier_conflict(
+fn produced_composite_frontier_conflict<'a>(
     destination: &ResourceContext,
-    ensured: &ResourceContext,
+    ensured: impl Iterator<
+        Item = (
+            &'a ResourceFact,
+            Option<&'a mixed_return_resources::FlatReturnBody>,
+        ),
+    >,
     definitions: &[CompositeResourceDefinition],
     memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
-    for produced in ensured.facts() {
+    for (produced, body) in ensured {
         let Resource::Composite { name, .. } = produced.resource() else {
             continue;
         };
         if !produced.is_own() {
             continue;
         }
-        let singleton =
-            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(produced.clone());
-        // An opaque head — no definition, an instance schema, a matched arm,
-        // or a guard this path has not decided — exposes no frontier to
-        // compare, and expansion is the only thing that could name one.
-        let Some((_, frontier, _)) = expand_composite_resource_fact_with_children(
-            &singleton,
-            produced,
-            definitions,
-            memory,
-            assumptions,
-        ) else {
-            continue;
+        let legacy_frontier;
+        let frontier = if let Some(body) = body {
+            &body.frontier
+        } else {
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(produced.clone());
+            // Opaque and unmigrated heads retain their legacy expansion.
+            let Some((_, children, _)) = expand_composite_resource_fact_with_children(
+                &singleton,
+                produced,
+                definitions,
+                memory,
+                assumptions,
+            ) else {
+                continue;
+            };
+            legacy_frontier = children;
+            &legacy_frontier
         };
         // A token-only body holds no memory, instance, or nested composite a
         // destination fact could overlap: token units are a count, and counts
