@@ -2231,7 +2231,10 @@ impl<'a> Proof<'a> {
             let equality = ClickProposition::Comparison {
                 left: whole.clone(),
                 operator: ComparisonOperator::Equal,
-                right: candidate,
+                // The call supplied its Integer carrier. Keep that carrier
+                // when its replacement is a bare numeral, especially in an
+                // order comparison after the last function call disappears.
+                right: crate::surface::lowering::pure_function_result_value(definition, candidate),
             };
             let Some(rewritten) =
                 rewrite_click_proposition_by_surface_equality(surface_goal, &equality)

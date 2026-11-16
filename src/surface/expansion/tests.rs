@@ -4135,3 +4135,150 @@ theorem append_tally(lo: int32, hi: int32) {
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&invalid, &[]))
         .expect_err("a different last-step value must be rejected");
 }
+
+#[test]
+fn peel_expansion_uses_unfold_and_replays_without_implicit_solving() {
+    for source in [
+        r#"
+function tally(end: int32) -> Integer { (0..end).fold(0, |acc, k| { acc + 1 }) }
+theorem fold_case(end: int32) {
+    requires end <= 0;
+    ensures tally(end) == 0 by {
+        peel(tally(end)) using { end <= 0; };
+        normalize();
+    }
+}
+"#,
+        r#"
+function tally(lo: int32, hi: int32) -> Integer { (lo..hi).fold(0, |acc, k| { acc + 1 }) }
+theorem fold_case(lo: int32, hi: int32) {
+    requires lo <= hi;
+    requires hi < 2147483647;
+    ensures tally(lo, hi + 1) == tally(lo, hi) + 1 by {
+        peel(tally(lo, hi + 1)) using { lo <= hi; hi < 2147483647; };
+        solve();
+    }
+}
+"#,
+        r#"
+function tally(lo: uint64, hi: uint64) -> Integer { (lo..hi).fold(0, |acc, k| { acc + 1 }) }
+theorem fold_case(lo: uint64, hi: uint64) {
+    requires lo <= hi;
+    requires hi < 18446744073709551615u64;
+    ensures tally(lo, hi + 1u64) == tally(lo, hi) + 1 by {
+        peel(tally(lo, hi + 1u64)) using { lo <= hi; hi < 18446744073709551615u64; };
+        solve();
+    }
+}
+"#,
+        r#"
+function tally(step: fn(Integer, Integer) -> Integer, lo: Integer, hi: Integer) -> Integer {
+    (lo..hi).fold(0, step)
+}
+theorem fold_case(lo: Integer, hi: Integer) {
+    requires lo <= hi;
+    ensures tally(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi + 1)
+        == tally(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi) + hi by {
+        have hi + 1 - 1 == hi by solve();
+        have lo <= hi + 1 - 1 by solve();
+        have tally(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi + 1)
+            == tally(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi) + hi by {
+            peel(tally(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi + 1))
+                using { lo <= hi + 1 - 1; };
+            solve();
+        }
+        known();
+    }
+}
+"#,
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, &[], "fold_case.ensures_0")
+            .expect("checked peel should expand");
+        assert!(!expanded.contains("peel("), "{expanded}");
+        assert!(expanded.contains("unfold(tally("), "{expanded}");
+        crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+            .expect("ordinary unfold must replay using the established guards");
+        // Expanding an expanded certificate must keep the ordinary form.
+        let repeated = expand_c_claim_source_by_label(&expanded, &[], "fold_case.ensures_0")
+            .expect("ordinary expansion should remain expandable");
+        assert!(!repeated.contains("peel("), "{repeated}");
+    }
+}
+
+#[test]
+fn peel_expansion_requires_the_original_empty_range_guard() {
+    let source = r#"
+function tally(end: int32) -> Integer { (0..end).fold(0, |acc, k| { acc + 1 }) }
+theorem fold_case(end: int32) {
+    requires end <= 0;
+    ensures tally(end) == 0 by {
+        peel(tally(end)) using { end <= 0; };
+        normalize();
+    }
+}
+"#;
+    let expanded = expand_c_claim_source_by_label(source, &[], "fold_case.ensures_0").unwrap();
+    let invalid = expanded.replacen("requires end <= 0;", "requires end <= 1;", 1);
+    assert_ne!(invalid, expanded);
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&invalid, &[]))
+        .expect_err("unfold cannot retain the empty law without its range guard");
+    let nested = source.replace(
+        "peel(tally(end)) using { end <= 0; };\n        normalize();",
+        "have tally(end) == 0 by { peel(tally(end)) using { end <= 0; }; solve(); }\n        known();",
+    );
+    assert_ne!(nested, source);
+    let position = position_at_offset(&nested, nested.find("have tally").unwrap());
+    let selected = expand_c_tactic_source_at(&nested, &[], position.line, position.column)
+        .expect("a selected smart have expands its nested peel to unfold");
+    assert!(!selected.contains("peel("), "{selected}");
+    assert!(selected.contains("unfold(tally(end));"), "{selected}");
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&selected, &[]))
+        .expect("selected expansion replays without implicit solving");
+}
+
+#[test]
+fn peel_expansion_keeps_array_fold_reads_at_the_execution_frontier() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/unfold_fold_function_appends_last_cell.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    let expanded =
+        expand_c_claim_source_by_label(source, &sources, "prefix_sum_equation.ensures_0").unwrap();
+    assert!(!expanded.contains("peel("), "{expanded}");
+    assert!(expanded.contains("unfold(icount(a, 0, n));"), "{expanded}");
+    without_implicit_solve_for_claim("prefix_sum_equation.ensures_0", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .expect("the memory-reading fold and its guard proofs replay without search");
+}
+
+#[test]
+fn peel_expansion_in_both_keeps_source_guard_validation() {
+    let source = r#"
+function tally(end: int32) -> Integer { (0..end).fold(0, |acc, k| { acc + 1 }) }
+theorem fold_case(end: int32) {
+    requires end <= 0;
+    ensures tally(end) == 0 and 0 <= tally(end) by {
+        both {
+            peel(tally(end)) using { end <= 0; };
+            normalize();
+        } and {
+            peel(tally(end)) using { end <= 0; };
+            normalize();
+        }
+    }
+}
+"#;
+    let invalid = source.replacen("using { end <= 0; }", "using { end < 0; }", 1);
+    let error = verify_c_sources(&invalid, &[])
+        .expect_err("a source certificate must check the original using list");
+    assert!(
+        error.message().contains("unavailable exact premise"),
+        "{error}"
+    );
+    let expanded = expand_c_claim_source_by_label(source, &[], "fold_case.ensures_0").unwrap();
+    assert!(!expanded.contains("peel("), "{expanded}");
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+        .expect("both checked branches replay with ordinary unfolds");
+}

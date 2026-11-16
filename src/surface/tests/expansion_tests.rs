@@ -18708,13 +18708,7 @@ fn peeled_empty_fold_order_rejects_false_comparisons() {
     let false_conclusion = expanded.replacen("0 <= marks(end)", "0 < marks(end)", 1);
     assert_ne!(false_conclusion, expanded);
     verify_c_sources(&false_conclusion, &[]).expect_err("false expanded conclusion accepted");
-    // The selected evidence is now the bound supplied to `peel`, rather
-    // than a separately spelled equality about its result.
-    let peel = expanded.find("peel(marks(end)) using {").unwrap();
-    let forged_evidence = expanded[peel..].replacen("end <= 0;", "end < 0;", 1);
-    assert_ne!(forged_evidence, expanded[peel..]);
-    let forged = format!("{}{forged_evidence}", &expanded[..peel]);
-    verify_c_sources(&forged, &[]).expect_err("unavailable peel premise accepted");
+    assert!(expanded.contains("unfold(marks(end));"), "{expanded}");
 }
 
 // The arithmetic planner's affine sum is constant even though this goal

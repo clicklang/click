@@ -578,6 +578,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::ApplyTheoremUsing { application, .. } => Some(application.clone()),
             _ => None,
         };
+        // Successful peel checking has established every listed guard.
+        // Record its ordinary unfolding, which checks those same guards
+        // from the retained facts. Normalize only checked provenance: source
+        // certificates must still validate their legacy using lists.
+        let step = match step {
+            ProofStep::PeelFunction { application, .. } => ProofStep::UnfoldFunction(application),
+            step => step,
+        };
         let applied = Proof {
             site: driver_proof.site.clone(),
             context: driver_proof.context.clone(),

@@ -2822,7 +2822,10 @@ wants ("The empty-range equation needs `hi <= lo`; the append-last-cell
 equation needs `to_integer(hi - 1) < 2147483647`"). A guard over machine `+`,
 `-` or `*` is named by its observation, which lowers to the native guard;
 the spelling `hi - 1 < 2147483647` is exact Integer arithmetic, a different
-proposition. Expansion is unchanged, and profiling charges one law instance.
+proposition. Expansion writes ordinary `unfold(f(args))`, using the already
+established guards without retaining `peel` or its `using` list. The expanded
+step checks those guards without implicit solving. Profiling charges one law
+instance.
 
 **Checked examples:** [`unfold_fold_function_empty_range.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_empty_range.md), [`unfold_fold_function_appends_last_cell.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_appends_last_cell.md), [`fold_function_is_nonnegative_by_induction.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_function_is_nonnegative_by_induction.md), [`unfold_fold_function_requires_a_range_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_function_requires_a_range_guard.md), [`peel_at_a_constant_range_gives_the_defining_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_at_a_constant_range_gives_the_defining_equation.md), [`peel_requires_its_using_list.md`](https://github.com/clicklang/click/blob/master/mdtests/peel_requires_its_using_list.md)
 
