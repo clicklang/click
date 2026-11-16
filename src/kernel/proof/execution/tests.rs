@@ -692,6 +692,7 @@ fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
         .into();
         let candidate = crate::kernel::FunctionExecutionCandidate {
             data: Arc::new(crate::kernel::FunctionExecutionCandidateData {
+                completion_delta: None,
                 outcome: Arc::new(FunctionOutcome::Return {
                     value: int32(0).into(),
                     state: Box::new(state.clone()),
