@@ -3293,6 +3293,14 @@ private:
       return std::nullopt;
     }
 
+    // A direct record lvalue receiver has a fixed object identity. Evaluating
+    // one argument first cannot rebind it, unlike a receiver loaded through
+    // a pointer or a member access.
+    const auto *receiver_name = receiver == nullptr ? nullptr :
+        llvm::dyn_cast<clang::DeclRefExpr>(receiver->IgnoreParenImpCasts());
+    const bool stable_receiver = receiver_name != nullptr &&
+        llvm::isa<clang::VarDecl>(receiver_name->getDecl()) &&
+        receiver->getType()->isRecordType();
     if (allow_nested) {
       unsigned nested_calls = 0;
       for (unsigned index = argument_offset; index < call->getNumArgs();
@@ -3307,7 +3315,7 @@ private:
         if (nested != nullptr && !is_numeric_limits_max_call(nested))
           ++nested_calls;
       }
-      if (nested_calls > 1 || (nested_calls != 0 && has_receiver)) {
+      if (nested_calls > 1 || (nested_calls != 0 && has_receiver && !stable_receiver)) {
         fail(call->getExprLoc(),
              "nested C++ call arguments require one call and order-independent scalar "
              "siblings to preserve evaluation order");
@@ -3355,7 +3363,7 @@ private:
       std::optional<Json> argument;
       if (allow_nested && nested != nullptr &&
           !is_numeric_limits_max_call(nested)) {
-        if (has_receiver ||
+        if ((has_receiver && !stable_receiver) ||
             definition->getParamDecl(index)->getType()->isReferenceType() ||
             !context_.hasSameType(source_argument->getType(),
                                   definition->getParamDecl(index)->getType())) {
@@ -3473,9 +3481,48 @@ private:
                                          caller);
     llvm::json::Object result;
     if (parameter_type->getAsCXXRecordDecl() != nullptr) {
-      const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(argument->IgnoreParenImpCasts());
+      const auto *operand = argument->IgnoreParenImpCasts();
+      if (const auto *cast = llvm::dyn_cast<clang::CXXFunctionalCastExpr>(operand);
+          cast != nullptr && cast->getCastKind() == clang::CK_ConstructorConversion &&
+          context_.hasSameUnqualifiedType(cast->getType(), parameter_type))
+        operand = cast->getSubExpr()->IgnoreParenImpCasts();
+      const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(operand);
       const auto *constructor = construction == nullptr ? nullptr : construction->getConstructor();
       const auto *record = parameter_type->getAsCXXRecordDecl();
+      if (constructor != nullptr && !constructor->isCopyOrMoveConstructor() &&
+          construction->isPRValue() && !constructor->isDeleted() &&
+          record->isTriviallyCopyable() && record->hasTrivialDestructor() &&
+          context_.hasSameUnqualifiedType(construction->getType(), parameter_type)) {
+        const auto *definition = constructor->getDefinition();
+        if (definition == nullptr && is_axiom(constructor)) definition = constructor;
+        if (definition == nullptr || construction->getNumArgs() != definition->getNumParams()) {
+          fail(argument->getExprLoc(), "C++ temporary constructor requires a resolved exact argument list");
+          return std::nullopt;
+        }
+        llvm::json::Array arguments;
+        for (unsigned index = 0; index < construction->getNumArgs(); ++index) {
+          auto value = lower_call_argument(construction->getArg(index), definition->getParamDecl(index), caller);
+          if (!value) return std::nullopt;
+          if (value->getAsObject()->getString("kind") != "value") {
+            fail(argument->getExprLoc(), "C++ temporary constructor arguments require pure values");
+            return std::nullopt;
+          }
+          arguments.push_back(std::move(*value));
+        }
+        if (!remember_function(definition)) return std::nullopt;
+        auto value_type = lower_type(parameter_type, parameter_location);
+        if (!value_type) return std::nullopt;
+        llvm::json::Object callee;
+        callee["declaration_id"] = declaration_id(definition);
+        callee["name"] = constructor_name(constructor);
+        callee["span"] = span(construction->getSourceRange());
+        result["kind"] = "construct";
+        result["callee"] = std::move(callee);
+        result["arguments"] = std::move(arguments);
+        result["value_type"] = std::move(*value_type);
+        result["span"] = span(argument->getSourceRange());
+        return Json(std::move(result));
+      }
       if (constructor == nullptr || !constructor->isCopyConstructor() ||
           !constructor->isTrivial() || constructor->isDeleted() ||
           construction->getNumArgs() != 1 || !construction->getArg(0)->isLValue() ||
@@ -6173,6 +6220,31 @@ private:
             continue;
           }
         }
+        // A selected function-template instance may use a concrete stream
+        // record. Its body and layout retain the ordinary record checks;
+        // this is monomorphization, not a generic record assumption.
+        if (name == nullptr && !allow_tags) {
+          const auto *record = type->getAsCXXRecordDecl();
+          record = record == nullptr ? nullptr : record->getDefinition();
+          if (record != nullptr &&
+              !llvm::isa<clang::ClassTemplateSpecializationDecl>(record) &&
+              !record->getName().empty() && record->getNumBases() == 0 &&
+              record->isStandardLayout() && record->isTriviallyCopyable() &&
+              record->hasTrivialDestructor() &&
+              (is_in_logical_source(record->getLocation()) ||
+               dependency_source(record->getLocation()))) {
+            if (!remember_record(record)) return {};
+            // Preserve nominal identity even for equal layouts and names
+            // that differ only by namespace/underscore boundaries.
+            suffix += "__record_";
+            constexpr char hex[] = "0123456789abcdef";
+            for (unsigned char byte : declaration_id(record)) {
+              suffix += hex[byte >> 4];
+              suffix += hex[byte & 15];
+            }
+            continue;
+          }
+        }
         if (name == nullptr && allow_tags) {
           const auto *tag = type->getAsCXXRecordDecl();
           if (tag != nullptr && tag->getDefinition() != nullptr) {
@@ -6199,7 +6271,7 @@ private:
         }
         if (name == nullptr) {
           fail(location, "C++ template type arguments require "
-                         "bool or 32/64-bit builtin integers");
+                         "bool, 32/64-bit builtin integers, or named trivial records");
           return {};
         }
         suffix += "__" + qualifier + std::string(name);

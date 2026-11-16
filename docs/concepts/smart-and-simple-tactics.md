@@ -28,7 +28,10 @@ work expands into simple tactics:
   the indexed whole goal; an exact available fact expands to `known()`
   without decomposition or a search for an alternative derivation.
   `solve() using { P; ... }` closes it from only the listed premises, trying
-  arithmetic over them last; a miss adds arithmetic's reason.
+  arithmetic over them before a final indexed one-theorem search; a miss
+  adds arithmetic's reason. Theorem discovery infers arguments from a
+  structurally matching conclusion and checks prerequisites against only the
+  listed facts. It expands to ordinary `apply(...) using { ... }`.
   Integer composition expands to ordinary `have`, `apply(...) using`, and
   explicit normalization steps. Arithmetic families still awaiting migration
   use `arithmetic_certificate`.

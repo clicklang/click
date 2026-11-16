@@ -217,6 +217,14 @@ impl ExecutionValue {
 
     pub(in crate::kernel) fn algebraic(&self) -> Option<KernelTerm> {
         match self {
+            Self::Shared(root)
+                if matches!(root.node(), KernelTermNode::ProgramParameter { .. }) =>
+            {
+                let KernelTermNode::ProgramParameter { operand } = root.node() else {
+                    unreachable!()
+                };
+                Some(operand.clone())
+            }
             Self::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => {
                 Some(root.clone())
             }

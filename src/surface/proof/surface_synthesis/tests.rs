@@ -4,6 +4,58 @@ use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 #[test]
+fn separation_names_loaded_pointer_fields_at_their_declared_type() {
+    use crate::kernel::{MemoryRange, PointerValue, Resource};
+    for scalar in ["uint8", "uint16", "int32", "uint64"] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let function = syntax::parse_function(&format!(
+            "struct Cursor {{ const {scalar}* data; }}; void read(struct Cursor* cursor) {{}}"
+        ))
+        .unwrap();
+        let parameters = [function.parameters()[0].clone()];
+        let base = Pointer::symbolic(Variable(997101));
+        let memory = Memory::new();
+        let loaded =
+            Pointer::canonical_loaded_value(&crate::kernel::intern_memory_ref(&memory), &base);
+        let other = Pointer::symbolic(Variable(997102));
+        let arguments = [ProgramExpression::Value(ProgramValue::pointer(
+            base.clone(),
+        ))];
+        let state = ExecutionState::new()
+            .with_memory(memory)
+            .with_local("cursor", ProgramValue::pointer(base))
+            .with_local(
+                "other",
+                ProgramValue::typed_pointer(other.clone(), ProgramType::UInt8Pointer),
+            );
+        let range = |pointer| {
+            Resource::Memory(MemoryRange::from_pointer_value(
+                &PointerValue::new(pointer, ProgramType::UInt8Pointer),
+                MachineTerm::constant(0),
+                MachineTerm::constant(4),
+                1,
+            ))
+        };
+        let expected = Proposition::ResourceSeparate {
+            left: Box::new(range(loaded)),
+            right: Box::new(range(other)),
+        };
+        let raised = synthesize_surface_proposition(
+            &expected,
+            ParameterBinding::new(&parameters, &arguments),
+            &state,
+        )
+        .expect("a loaded pointer field has its declared source spelling");
+        let lowered = relower_written_proposition(&raised, &state).unwrap();
+        assert_eq!(
+            crate::kernel::proof::proposition_identity_key(&lowered),
+            crate::kernel::proof::proposition_identity_key(&expected),
+            "{scalar}: {raised:?}"
+        );
+    }
+}
+
+#[test]
 fn separate_round_trips_without_generating_extent_obligations() {
     use crate::kernel::{MemoryRange, PointerValue, Resource};
     for wide in [false, true] {
@@ -6003,5 +6055,103 @@ fn common_float_calls_round_trip_existing_function_syntax() {
             .unwrap();
         assert_eq!(value, format.value(source), "{text}");
         assert!(obligations.is_empty());
+    }
+}
+
+#[test]
+fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = MachineTerm::Variable(Variable(1008516));
+    let names = BTreeMap::from([(Variable(1008516), "x".to_string())]);
+    let state = ExecutionState::new().with_local("x", ProgramValue::Float32(variable.clone()));
+    let condition =
+        crate::kernel::ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
+            operator: crate::kernel::ComparisonOperator::LessThan,
+            left: Box::new(variable.clone()),
+            right: Box::new(MachineTerm::uint32_constant(0)),
+        });
+    let source = MachineTerm::ClickFunctionApplication {
+        name: "mixed_sink".into(),
+        arguments: vec![
+            crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::bool_cast(
+                crate::kernel::MachineIntegerType::UInt8,
+                condition,
+            ))),
+            crate::kernel::PureFunctionArgument::Value(ProgramValue::Float32(
+                MachineTerm::ClickFunctionApplication {
+                    name: "mixed_seed".into(),
+                    arguments: vec![crate::kernel::PureFunctionArgument::Value(
+                        ProgramValue::Float32(variable),
+                    )],
+                },
+            )),
+        ],
+    };
+    let root = crate::kernel::KernelTermImport::default()
+        .float(crate::kernel::KernelFloatType::Float64, &source);
+    assert!(
+        root.children()
+            .iter()
+            .all(|child| !matches!(child.node(), crate::kernel::KernelTermNode::Legacy(_)))
+    );
+    let surface = raise_kernel_term(&root, ParameterBinding::default(), &state, &names).unwrap();
+    let text = diagnostics::describe_contract_expression(&surface);
+    let parsed = parser::parse(&format!("function mixed_seed(x: float) -> float {{ x }} function mixed_sink(flag: Bool, x: float) -> double {{ x as double }} function probe(x: float) -> double {{ {text} }}")).unwrap();
+    let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+        parsed
+            .click_function_definitions()
+            .last()
+            .unwrap()
+            .body()
+            .unwrap(),
+        BTreeMap::new(),
+        &state,
+        BTreeMap::new(),
+        BTreeMap::new(),
+        None,
+        &RecordedStates::new(),
+        SpecDefinitions::new(
+            &PredicateEnvironment::new(&[]),
+            &ClickFunctionEnvironment::new(parsed.click_function_definitions()),
+        ),
+        BTreeSet::new(),
+        BTreeMap::new(),
+    )
+    .unwrap();
+    let (value, obligations) =
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+            &state,
+            &spec,
+            Some(&state),
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert_eq!(value, ProgramValue::Float64(source), "{text}");
+    assert!(obligations.is_empty());
+}
+
+#[test]
+fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = crate::kernel::PointerValue::new(
+        Pointer::symbolic(Variable(1008590)),
+        ProgramType::Int32Pointer,
+    );
+    let value = ProgramValue::Pointer(pointer);
+    let argument = crate::kernel::PureFunctionArgument::Value(value.clone());
+    let root = crate::kernel::KernelTermImport::default().argument(&argument);
+    let state = ExecutionState::new().with_local("p", value.clone());
+    let bound = BTreeMap::new();
+    for names in [vec![], vec![(value.clone(), "exact_p".into())]] {
+        with_proof_local_value_names(names, || {
+            let native = synthesize_legacy_call_argument(
+                &argument,
+                ParameterBinding::default(),
+                &state,
+                &bound,
+            );
+            let shared = raise_call_argument(&root, ParameterBinding::default(), &state, &bound);
+            assert_eq!(shared, native);
+        });
     }
 }

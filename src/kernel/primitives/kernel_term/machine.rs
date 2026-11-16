@@ -606,18 +606,19 @@ impl KernelTermImport {
             .arguments()
             .iter()
             .enumerate()
-            .map(|(index, argument)| match argument {
-                PureFunctionArgument::Integer(_)
-                | PureFunctionArgument::SharedMachine(_)
-                | PureFunctionArgument::Value(integer_c_value!(_)) => self.argument(argument),
-                _ => KernelTerm::legacy_at(
-                    argument.clone(),
-                    LegacyIdentity::ExactApplicationArgument {
-                        application: application.clone(),
-                        payload: application.payload_id(),
-                        index,
-                    },
-                ),
+            .map(|(index, argument)| {
+                if let Some(root) = application.common_argument(index) {
+                    root
+                } else {
+                    KernelTerm::legacy_at(
+                        argument.clone(),
+                        LegacyIdentity::ExactApplicationArgument {
+                            application: application.clone(),
+                            payload: application.payload_id(),
+                            index,
+                        },
+                    )
+                }
             })
             .collect();
         let root = KernelTerm::checked_call(
@@ -744,9 +745,15 @@ impl KernelTermImport {
                 destination: *to,
                 operand: self.machine(*from, value),
             },
-            // Reads with unmigrated address payloads, binders and pointer
-            // observations retain their complete legacy payload.
-            _ => {
+            // Unrecognized untyped intrinsics, wrong-sort float inputs and
+            // read/address descriptors not admitted above keep exact payloads.
+            Old::PureFunctionApplication { .. }
+            | Old::MemoryLoad(..)
+            | Old::PointerAddress(..)
+            | Old::Float32Negate(_)
+            | Old::Float32Binary { .. }
+            | Old::Float64Negate(_)
+            | Old::Float64Binary { .. } => {
                 return KernelTerm::legacy(PureFunctionArgument::Value(wrap_exact(
                     result,
                     term.clone(),

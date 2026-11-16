@@ -3167,6 +3167,28 @@ fn raise_algebraic_if<'a>(
     })
 }
 
+// Complete pointer call arguments use their exact proof-local source name,
+// just as native arguments do. General pointer-expression synthesis can pick
+// an address spelling with different producer metadata; it is not this
+// argument boundary's policy.
+fn raise_call_argument(
+    term: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::KernelTermNode as Node;
+    match term.node() {
+        Node::PointerValue(value)
+        | Node::PointerRead { value, .. }
+        | Node::PointerArithmetic { value, .. }
+        | Node::PointerCall { value, .. } => Some(SurfaceTerm::ProgramExpression(
+            ProgramExpression::Variable(pointer_names::shared_name(value)?.into()),
+        )),
+        _ => raise_kernel_term(term, parameter_binding, state, bound_variables),
+    }
+}
+
 // Keep the float-only temporaries out of the recursive shared renderer's
 // frame, which is also used for deeply nested integer expressions.
 fn raise_float_expression(
@@ -3202,9 +3224,49 @@ fn raise_float_expression(
             arguments: call
                 .arguments
                 .iter()
-                .map(recurse)
+                .map(|argument| {
+                    raise_call_argument(argument, parameter_binding, state, bound_variables)
+                })
                 .collect::<Option<Vec<_>>>()?,
         },
+        Node::FloatCompare {
+            operator,
+            arguments,
+            ..
+        } => {
+            use crate::kernel::ComparisonOperator as C;
+            proposition_bool_value(ClickProposition::Comparison {
+                left: recurse(&arguments[0])?,
+                operator: match operator {
+                    C::Equal => ComparisonOperator::Equal,
+                    C::NotEqual => ComparisonOperator::NotEqual,
+                    C::LessThan => ComparisonOperator::LessThan,
+                    C::LessEqual => ComparisonOperator::LessEqual,
+                    C::GreaterThan => ComparisonOperator::GreaterThan,
+                    C::GreaterEqual => ComparisonOperator::GreaterEqual,
+                },
+                right: recurse(&arguments[1])?,
+            })
+            .ok()?
+        }
+        Node::FloatClassify {
+            classification,
+            operand,
+            ..
+        } => {
+            use crate::kernel::FloatClassification as C;
+            proposition_bool_value(ClickProposition::FloatClassification {
+                expression: recurse(operand)?,
+                classification: match classification {
+                    C::Finite => syntax::CFloatClassification::Finite,
+                    C::Infinite => syntax::CFloatClassification::Infinite,
+                    C::Zero => syntax::CFloatClassification::Zero,
+                    C::Subnormal => syntax::CFloatClassification::Subnormal,
+                    C::Nan => syntax::CFloatClassification::Nan,
+                },
+            })
+            .ok()?
+        }
         _ => unreachable!("float expression dispatch"),
     })
 }
@@ -3219,6 +3281,12 @@ pub(super) fn raise_kernel_term(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::{KernelTermNode as Node, KernelType};
+    // A program parameter changes the argument carrier, not its spelling.
+    // Peel that envelope without another recursive renderer frame.
+    let term = match term.node() {
+        Node::ProgramParameter { operand } => operand,
+        _ => term,
+    };
     let category = if term.ty() == &KernelType::Integer {
         "integer"
     } else {
@@ -3349,13 +3417,20 @@ fn raise_kernel_term_dispatch(
             arguments: call
                 .arguments
                 .iter()
-                .map(recurse)
+                .map(|argument| {
+                    raise_call_argument(argument, parameter_binding, state, bound_variables)
+                })
                 .collect::<Option<Vec<_>>>()?,
         },
         Node::Call { name, arguments } => {
             let call = SurfaceTerm::Call {
                 name: generic_instance_source_name(name).into(),
-                arguments: arguments.iter().map(recurse).collect::<Option<Vec<_>>>()?,
+                arguments: arguments
+                    .iter()
+                    .map(|argument| {
+                        raise_call_argument(argument, parameter_binding, state, bound_variables)
+                    })
+                    .collect::<Option<Vec<_>>>()?,
             };
             // The root may read a call's word at the other signedness. Its
             // declaration alone cannot recover that selected interpretation.
@@ -3398,44 +3473,6 @@ fn raise_kernel_term_dispatch(
                     C::GreaterEqual => ComparisonOperator::GreaterEqual,
                 },
                 right: recurse(&arguments[1])?,
-            })
-            .ok()?
-        }
-        Node::FloatCompare {
-            operator,
-            arguments,
-            ..
-        } => {
-            use crate::kernel::ComparisonOperator as C;
-            proposition_bool_value(ClickProposition::Comparison {
-                left: recurse(&arguments[0])?,
-                operator: match operator {
-                    C::Equal => ComparisonOperator::Equal,
-                    C::NotEqual => ComparisonOperator::NotEqual,
-                    C::LessThan => ComparisonOperator::LessThan,
-                    C::LessEqual => ComparisonOperator::LessEqual,
-                    C::GreaterThan => ComparisonOperator::GreaterThan,
-                    C::GreaterEqual => ComparisonOperator::GreaterEqual,
-                },
-                right: recurse(&arguments[1])?,
-            })
-            .ok()?
-        }
-        Node::FloatClassify {
-            classification,
-            operand,
-            ..
-        } => {
-            use crate::kernel::FloatClassification as C;
-            proposition_bool_value(ClickProposition::FloatClassification {
-                expression: recurse(operand)?,
-                classification: match classification {
-                    C::Finite => syntax::CFloatClassification::Finite,
-                    C::Infinite => syntax::CFloatClassification::Infinite,
-                    C::Zero => syntax::CFloatClassification::Zero,
-                    C::Subnormal => syntax::CFloatClassification::Subnormal,
-                    C::Nan => syntax::CFloatClassification::Nan,
-                },
             })
             .ok()?
         }
@@ -3504,6 +3541,7 @@ fn raise_kernel_term_dispatch(
                 }],
             }
         }
+        Node::ProgramParameter { .. } => unreachable!("parameter envelope was peeled"),
         Node::PointerCall { call, .. } => recurse(call)?,
         Node::ArrayReference {
             memory, pointer, ..
@@ -3536,7 +3574,9 @@ fn raise_kernel_term_dispatch(
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
         },
-        Node::FloatConvert { .. }
+        Node::FloatCompare { .. }
+        | Node::FloatClassify { .. }
+        | Node::FloatConvert { .. }
         | Node::FloatNegate { .. }
         | Node::FloatBinary { .. }
         | Node::FloatCall(_) => {
@@ -5711,6 +5751,14 @@ fn synthesize_parameter_field_load(
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<ContractExpression> {
+    synthesize_parameter_field_load_matching(pointer, Some(value_type), parameter_binding)
+}
+
+fn synthesize_parameter_field_load_matching(
+    pointer: &Pointer,
+    value_type: Option<ProgramType>,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<ContractExpression> {
     for (parameter, argument) in parameter_binding
         .parameters
         .iter()
@@ -5738,10 +5786,12 @@ fn synthesize_parameter_field_load(
         else {
             continue;
         };
-        if field.interface_type().to_kernel_type() != value_type {
+        let declared_type = field.interface_type().to_kernel_type();
+        if !value_type.map_or_else(|| declared_type.is_pointer(), |ty| ty == declared_type) {
             continue;
         }
-        let base = ProgramExpression::Variable((parameter.name().to_string()).into());
+        let value_type = declared_type;
+        let base = ProgramExpression::Variable(parameter.name().to_string().into());
         let field_pointer = if offset_bytes == 0 {
             base.clone()
         } else {
@@ -5777,6 +5827,15 @@ fn synthesize_local_field_load(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
+    synthesize_local_field_load_matching(pointer, Some(value_type), parameter_binding, state)
+}
+
+fn synthesize_local_field_load_matching(
+    pointer: &Pointer,
+    value_type: Option<ProgramType>,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+) -> Option<ContractExpression> {
     for owner in struct_owners(parameter_binding, state) {
         // Compare each field's address with the load's pointer directly: an
         // object reached through an opaque `void *` keeps a byte-scaled
@@ -5791,9 +5850,11 @@ fn synthesize_local_field_load(
         }) else {
             continue;
         };
-        if field.interface_type().to_kernel_type() != value_type {
+        let declared_type = field.interface_type().to_kernel_type();
+        if !value_type.map_or_else(|| declared_type.is_pointer(), |ty| ty == declared_type) {
             continue;
         }
+        let value_type = declared_type;
         return Some(ContractExpression::Field {
             pointee_struct: None,
             base: Box::new(ContractExpression::ProgramExpression(owner.base.clone())),
@@ -6182,12 +6243,22 @@ fn synthesize_surface_pointer(
         // A field spelling reads this state; historical reads need their
         // recorded selector before entering this C-only source fragment.
         pointer_read_address_in_state(pointer, state)?;
-        let field = synthesize_struct_field_load(
+        // A resource retains an address, not its source pointer type. Recover
+        // that type from the field declaration instead of assuming int32*;
+        // byte pointers must round-trip through their actual field load.
+        let field = synthesize_parameter_field_load_matching(
             &read.defining_address,
-            ProgramType::Int32Pointer,
+            None,
             parameter_binding,
-            state,
         )
+        .or_else(|| {
+            synthesize_local_field_load_matching(
+                &read.defining_address,
+                None,
+                parameter_binding,
+                state,
+            )
+        })
         .or_else(|| {
             Some(ContractExpression::ProgramExpression(
                 ProgramExpression::TypedLoad {

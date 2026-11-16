@@ -5,6 +5,37 @@
 use super::*;
 
 #[test]
+fn unwritten_output_preserves_external_runs_without_expanding_their_slots() {
+    let mut samples = Vec::new();
+    for count in [8u32, 32, 128, 512, 65536] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(924_050));
+        let output = Pointer::symbolic(Variable(924_051));
+        let before = Memory::new()
+            .with_seeded_cells(
+                field.clone(),
+                1,
+                ProgramType::UInt8,
+                0,
+                count,
+                intern_memory(Memory::new()),
+            )
+            .with_uninitialized_object(output.clone(), 4);
+        let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
+            before.without_possible_aliasing_cells(&output, 1, &PureFactContext::new())
+        });
+        assert!(after.has_initialized_bytes_at(&field, count));
+        assert!(!after.has_initialized_bytes_at(&field, count + 1));
+        assert_eq!(after.heap.initialized.len(), 1);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}
+
+#[test]
 fn a_declared_object_makes_dropping_its_runs_one_query() {
     // With the declaration's object recorded, a havoc dropping its runs
     // costs the runs, not their slots, whatever the struct count.
@@ -54,5 +85,42 @@ fn a_covering_query_scales_with_the_cells_it_crosses() {
     assert!(
         works.windows(2).all(|pair| pair[0] == pair[1]),
         "covering queries cost {works:?} work units"
+    );
+}
+
+#[test]
+fn forgotten_external_initialization_does_not_scan_unrelated_cached_cells() {
+    let mut samples = Vec::new();
+    for count in [16u32, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(924_052));
+        let output = Pointer {
+            block: PointerBlock::Heap(924_053),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let background = |index| Pointer {
+            block: PointerBlock::Heap(925_000 + u64::from(index)),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut before = Memory::new().store(field.clone(), ProgramValue::pointer(Pointer::null()));
+        for index in 0..count {
+            before = before.store(
+                background(index),
+                ProgramValue::Int32(MachineTerm::constant(7)),
+            );
+        }
+        let before = before.with_uninitialized_object(output.clone(), 4);
+        let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
+            before.without_possible_aliasing_cells(&output, 1, &PureFactContext::new())
+        });
+        assert!(after.known_value(&field).is_none());
+        assert!(after.has_initialized_bytes_at(&field, 8));
+        assert!(after.known_value(&background(count - 1)).is_some());
+        assert!(!after.has_initialized_bytes_at(&output, 1));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
     );
 }

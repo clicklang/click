@@ -20450,27 +20450,7 @@ fn original_arena_free_expands_and_rechecks_without_implicit_search() {
     let sources = [("arena_free.c", c.as_str())];
     let expanded =
         expand_c_claim_source_by_label(&source, &sources, "arena_free.contract").unwrap();
-    let loop_source = expanded.split("loop as clear_occupied {").nth(1).unwrap();
-    let mut depth = 1usize;
-    let loop_end = loop_source
-        .char_indices()
-        .find_map(|(index, character)| {
-            match character {
-                '{' => depth += 1,
-                '}' => depth -= 1,
-                _ => {}
-            }
-            (depth == 0).then_some(index)
-        })
-        .unwrap();
-    assert!(
-        !loop_source[..loop_end].contains("transport("),
-        "{expanded}"
-    );
-    assert!(
-        !loop_source[loop_end..].contains("transport("),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
@@ -22629,4 +22609,54 @@ fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
         .err()
         .expect("a null store cannot produce the nonempty tree");
     assert!(!error.message().contains("no Surface spelling"), "{error}");
+}
+
+#[test]
+#[ignore = "nightly: original arena allocation loops expansion and replay"]
+fn original_arena_alloc_loops_expand_without_transport_and_recheck() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let sidecar = std::fs::read_to_string(root.join("examples/arena/arena_cells.click")).unwrap();
+    let definitions = sidecar.split("verifying \"arena_init.c\";").next().unwrap();
+    let proof = sidecar
+        .split("verifying \"arena_alloc.c\";")
+        .nth(1)
+        .unwrap()
+        .split("verifying \"arena_free.c\";")
+        .next()
+        .unwrap();
+    let allocation_definitions = sidecar
+        .split("spec enum ArenaAllocOutcome")
+        .nth(1)
+        .unwrap()
+        .split("verifying \"arena_alloc.c\";")
+        .next()
+        .unwrap();
+    let source = format!(
+        "{definitions}\nspec enum ArenaAllocOutcome{allocation_definitions}\nverifying \"arena_alloc.c\";\n{proof}"
+    );
+    let c = std::fs::read_to_string(root.join("examples/arena/arena_alloc.c")).unwrap();
+    let sources = [("arena_alloc.c", c.as_str())];
+    let expanded =
+        expand_c_claim_source_by_label(&source, &sources, "arena_alloc.contract").unwrap();
+    for loop_name in ["find_first_free_run", "mark_free_run"] {
+        let marker = format!("loop as {loop_name} {{");
+        let body = expanded.split(&marker).nth(1).unwrap();
+        let mut depth = 1usize;
+        let end = body
+            .char_indices()
+            .find_map(|(index, ch)| {
+                match ch {
+                    '{' => depth += 1,
+                    '}' => depth -= 1,
+                    _ => {}
+                }
+                (depth == 0).then_some(index)
+            })
+            .unwrap();
+        assert!(
+            !body[..end].contains("transport("),
+            "{loop_name}: {expanded}"
+        );
+    }
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }

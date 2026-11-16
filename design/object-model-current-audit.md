@@ -324,6 +324,69 @@ word-representation rule to other storage or scalar types. The separate
 `as_writable_bytes` currently fails on both the saved pre-change binary and
 this implementation; its returned-pointer state path remains unresolved.
 
+## Bitcoin read32 import and remaining cursor refusal
+
+The pinned Bitcoin v31.1 `ser_readdata32<FixtureReader>` graph now imports
+unchanged, including its nested pointer/count span construction,
+`as_writable_bytes` construction return, the fixture reader call and
+`le32toh_internal`. `tests/fixtures/cpp-byte-output/bitcoin-read32.cpp` defines
+the fixture reader separately from Bitcoin source. It copies four source
+bytes to the output span and advances its pointer/count cursor. It does not
+stand for Bitcoin's `SpanReader` or its exception behavior.
+
+This is **cursor execution coverage, not a completed serialization proof**.
+`pinned_bitcoin_read32_executes_cursor_but_byte_values_are_not_yet_verified_offline`
+pins the exact source digest and executes all four byte stores and both cursor
+updates. The original source and four byte-value/cursor postconditions remain
+unchanged. Checking reaches the reader's exit, then exhausts the bounded smart
+budget on the third byte's value equality; it must not regress to an
+uninitialized source read. No ordinary/expanded/cold/retained serialization
+proof is claimed.
+
+The former uninitialized read was an initialization-bookkeeping defect. Input
+pointer-field observations could precede the marker for unwritten output.
+Forgetting their cached values after a store retained initialization only for
+automatic storage; the subsequent external read therefore lost evidence it
+already had. Dropped observed cells and run slots now retain that evidence
+whenever an unwritten-object marker makes later reads check initialization.
+This grants no new ownership or view, initializes no unobserved bytes, and
+preserves the compact recording of contiguous constant-offset runs. Unit
+controls cover absent/partial observations and unwritten output; deterministic
+scaling grows unrelated cached cells and dropped runs through 65,536 slots.
+
+The next boundary is the byte-value preservation proof. The first two
+output-byte equalities close; the third exhausts bounded smart work. The
+selected intermediate pointer facts also expose source-spelling gaps. Reduce
+those gaps before continuing the proof, then require a positive
+ordinary/expanded/cold/retained witness before counting serialization coverage.
+
+The delivered prerequisites are narrower:
+
+- Function-template arguments can name admitted trivial record declarations;
+  their legacy keys use declaration identity rather than a flattened name.
+  Same-layout `left::Stream` and `left_Stream` instantiate distinct functions.
+- Nonthrowing statement calls can construct a trivial record temporary,
+  forward a construction-return temporary into one stable direct receiver
+  call, and retire the temporaries in reverse construction order at the full
+  expression. Constructors must preserve copied argument values. Storage
+  observation, throwing consumers and unsupported copy returns remain refused.
+- Const native pointer arithmetic and byte reads support the fixture's input.
+  Write-through-const restrictions are unchanged.
+- Stated fixed-span separation survives pointer copies through an exact
+  address-class/byte-extent index. It preserves width orientation on class
+  merges and refuses overlap. A resource prerequisite naming a loaded pointer
+  field uses that field's declared pointer type, including byte pointers.
+
+The generic record-temporary witness checks ordinary, expanded cold and
+retained modes, plus a false-result control. Constructor eligibility scales
+at 8/32/128/512 fields and call sites; exact separation lookup scales with
+unrelated facts, same-pair widths and alias history at the same sizes. The
+spelling regression round-trips byte, halfword, int32 and uint64 pointer fields.
+The existing writable-span composition still passes its complete proof modes
+and rejection controls. The separate by-value returned-pointer state
+identity failure above remains open; neither failure is evidence for restoring the
+archived universal object model.
+
 ## Native-interface evidence matrix
 
 This closes the bounded entry/call audit for the supported native profiles.
