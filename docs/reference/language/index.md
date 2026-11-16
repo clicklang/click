@@ -538,27 +538,23 @@ int32 tree_depth_ok(struct node* root) {
 ```
 
 An anonymous resource measure such as `decreases list(node)` must exactly
-name an owned or viewed entry resource. Its legacy structural analysis supports
-direct and mutual recursion, a directly recursive composite definition, and a
-simple resource guard: in a component of two or more, every member is ranked
-by the same resource family, and a call to another member must pass a direct
-contained child for that member's own measured requirement
-(`mdtests/c_decreases_resource_mutual_recursion.md`). The definition may be `if`-guarded or `match model`-bodied: a
-matched body's named and unnamed children of the same family are its direct
-contained children, and the arm is selected by a fact of its own that every
-other arm's facts deny, as `fact p != 0` is denied by an `Empty` arm's
-`fact p == 0`. Every recursive
-call path must establish that guard, either from a function precondition or
-ordinary C control flow. Guard matching uses C meaning rather than one
-spelling: negation, branch polarity, symmetric equality, and corresponding
-ordered comparisons are normalized. The call must pass one of the definition's
-directly owned child resources. Click follows ordinary C-local aliases but does not
-accept pointer inequality, a same-named unrelated resource, or a newly folded
-resource as ancestry evidence. Because the separately certified partial
-contract checks the actual resource transfer at each call, the traversal may
-consume or mutate resources; postorder recursive deallocation is supported.
-This proves descent of the finite resource witness, not descent of a pointer
-value.
+name an owned or viewed entry resource. Opening the ordinary contract proof
+captures that resource's finite witness. Unfolding or observing its body
+exposes owned children of the same family as strictly smaller witnesses;
+observed children keep that evidence when projected to views. A fold builds
+one parent above its supplied children, so rebuilding the original layer
+does not turn the parent into a descendant. A freshly returned unrelated
+resource receives no descent authority just because it has equal arguments.
+
+Both self-recursive and mutually recursive calls owe these ordinary descent
+obligations. The proof establishes guards and supplies the child through its
+usual resource operations; there is no later walk over C to discover an
+additional requirement. The C may consume or mutate resources, including
+postorder deallocation. Descent concerns the finite resource witness rather
+than a pointer value
+(`mdtests/c_decreases_resource_mutating_nullable.md`,
+`mdtests/c_decreases_resource_mutual_recursion.md`, and
+`mdtests/c_decreases_resource_avoids_recursive_loop.md`).
 
 A named binder measure is ranked at every call, for both self-recursion and
 mutual recursion. Every member declares `decreases` on one of its own binders,
@@ -3503,8 +3499,8 @@ measure is refused. A bare numeric parameter uses the same obligations.
 A named structural binder (`decreases x;`) instead requires the passed
 instance's model to be strictly contained in its entry model, through the
 constructor arms established on the path
-(`mdtests/user_tactic_recursion_uses_a_structural_measure.md`). An anonymous
-resource measure still requires a C body and cannot rank tactic recursion.
+(`mdtests/user_tactic_recursion_uses_a_structural_measure.md`). Anonymous resource measures use the same retained finite-witness evidence
+as ordinary calls.
 
 Tactic parameters use Click's `name: type` spelling and are C scalars and
 pointers in this release. The literal `0` supplies a typed null pointer at a

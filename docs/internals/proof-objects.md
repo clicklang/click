@@ -581,13 +581,17 @@ nonnegativity and strict descent from the immutable entry value; assigning the
 C parameter does not change that entry value. A structural call passes an
 instance whose model is strictly contained in the entry model.
 
-Anonymous resource measures (`decreases list(node)`) still use the legacy
-structural body analysis. Unlike a named modeled instance, an anonymous
-composite resource has no retained finite-witness identity. Moving that last
-path requires ownership of its structural witness through unfold, fold, and
-resource-return operations; ordinary resource containment is not a strict
-well-founded order. Independent termination plans can also explicitly request
-the legacy numeric-parameter or resource-requirement analyses.
+Anonymous resource measures (`decreases list(node)`) also use call producers.
+The opening captures the exact entry occurrence of the measured resource.
+Unfold and observe retain bounds for the owned children they produce, even
+when observation projects those children to views. Folding constructs a
+parent bound from its supplied children; a leaf uses only the branch's
+established lower bound on the entry witness's height. The bounds belong to
+opaque resource occurrences, so an unrelated returned resource cannot inherit
+descent merely because its resource term is equal. Calls consume this native
+evidence through ordinary descent obligations, and completed roots require
+no structural source-body walk. Explicit legacy standalone termination plans
+retain their compatibility analyses.
 
 Concrete loop-exit coverage is fixed in the ordinary body's source namespace
 at opening. Loop/body source mismatch is refused before proof execution.

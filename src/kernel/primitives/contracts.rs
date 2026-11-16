@@ -881,6 +881,7 @@ impl FunctionContractInterface {
             recursion_measure: Vec::new(),
             recursion_peers: Vec::new(),
             recursion_binder: None,
+            recursion_resource: None,
         }
     }
 
@@ -994,10 +995,16 @@ impl FunctionContractInterface {
         self.recursion_binder.as_deref()
     }
 
+    pub fn recursion_resource(&self) -> Option<usize> {
+        self.recursion_resource
+    }
+
     /// Whether this function's recursion is ranked by obligations at its
     /// calls: an expression measure, or a call-ranked structural binder.
     pub fn has_call_ranked_recursion(&self) -> bool {
-        !self.recursion_measure.is_empty() || self.recursion_binder.is_some()
+        !self.recursion_measure.is_empty()
+            || self.recursion_binder.is_some()
+            || self.recursion_resource.is_some()
     }
 
     /// The identity of a resource requirement's named instance binder.
@@ -1437,16 +1444,21 @@ impl ProgramFunction {
         self
     }
 
-    /// Declares the other members of this function's recursive component.
-    /// They are part of the interface, and so of this function's identity:
-    /// the anchor a certification builds from the interface ranks calls to
-    /// exactly these functions.
+    /// Declares an anonymous resource requirement ranked at each recursive call.
+    pub fn with_recursion_resource(mut self, requirement: Option<usize>) -> Self {
+        Arc::make_mut(&mut self.contract_interface).recursion_resource = requirement;
+        self
+    }
+
     /// Declares a structural `decreases t` measure ranked at each call.
     pub fn with_recursion_binder(mut self, binder: Option<String>) -> Self {
         Arc::make_mut(&mut self.contract_interface).recursion_binder = binder;
         self
     }
 
+    /// Declares the other members of this function's recursive component.
+    /// They are part of the interface, and so of this function's identity:
+    /// the anchor constructed at opening ranks calls to exactly these functions.
     pub fn with_recursion_peers(mut self, mut peers: Vec<String>) -> Self {
         peers.sort();
         peers.dedup();
@@ -3968,6 +3980,9 @@ impl ExecutionEnvironment {
             if rule.loop_statement != *statement || !self.loop_rule_answers_for_recursion(rule) {
                 return false;
             }
+            if self.recursion_anchor().is_some_and(|anchor| anchor.structural_resource.is_some())
+                && !rule.symbolic_entry_state.resources().same_structural_witness_context(state.resources())
+            { return false; }
             // A rule stepped under the very context it was certified under
             // finds each prerequisite exactly there: the two hold the same
             // fact sets by identity. Asking each still records reasoning

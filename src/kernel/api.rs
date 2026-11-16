@@ -5012,7 +5012,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
             ));
             SymbolicExecutionPath {
                 call_parameters: path.call_parameters,
-                descent_step: crate::kernel::DescentStep::under(environment),
+                descent_step: crate::kernel::DescentStep::under_state(environment, &state),
                 completion_origin: None,
                 call_result: path.call_result,
                 assumptions: assumptions.clone(),

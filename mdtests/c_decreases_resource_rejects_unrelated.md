@@ -40,5 +40,5 @@ int32 swap_repeat(struct node* node, struct node* other) {
 ```
 
 ```expect
-fail: does not pass a direct contained child
+fail: must receive a retained child witness of the entry resource
 ```

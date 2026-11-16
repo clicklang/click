@@ -6539,6 +6539,7 @@ pub struct FunctionContractInterface {
     /// own measured binder, an instance whose model is strictly contained in
     /// this function's entry model.
     pub(crate) recursion_binder: Option<String>,
+    pub(crate) recursion_resource: Option<usize>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -7516,6 +7517,8 @@ pub struct RecursionAnchor {
     /// For a structural measure, the instance the measured binder held at
     /// the function's own entry; `components` and `measure` are then empty.
     pub(super) structural_entry: Option<ResourceInstance>,
+    pub(super) structural_resource:
+        Option<crate::kernel::termination::resource_descent::ResourceDescent>,
     pub(super) entry_obligations: Vec<ProofObligation>,
 }
 
@@ -7555,6 +7558,15 @@ impl RecursionAnchor {
         self.function == function
             && interface.recursion_measure().unwrap_or_default() == self.components.as_slice()
             && interface.recursion_binder().is_some() == self.structural_entry.is_some()
+            && interface.recursion_resource()
+                == self
+                    .structural_resource
+                    .as_ref()
+                    .map(|resource| resource.requirement)
+            && self
+                .structural_resource
+                .as_ref()
+                .is_none_or(|resource| resource.matches_declaration(interface))
             && interface.recursion_peers() == self.peers.as_slice()
     }
 
@@ -10674,6 +10686,8 @@ pub struct ResourceContext {
     /// different loan origins, and a rewrite must preserve the opaque
     /// occurrence identity rather than rediscovering it from the term.
     pub(super) loan_dependencies: std::sync::Arc<crate::kernel::loans::LoanViewBindingsState>,
+    pub(super) structural_witnesses:
+        Option<std::sync::Arc<crate::kernel::termination::resource_descent::ResourceWitnesses>>,
 }
 
 impl Clone for ResourceContext {
@@ -10683,6 +10697,7 @@ impl Clone for ResourceContext {
             storage: self.storage.clone(),
             observable_projection: self.observable_projection.clone(),
             loan_dependencies: self.loan_dependencies.clone(),
+            structural_witnesses: self.structural_witnesses.clone(),
             memory_equalities: std::sync::Mutex::new(
                 self.memory_equalities
                     .lock()

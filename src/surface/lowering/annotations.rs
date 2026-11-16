@@ -1926,10 +1926,14 @@ fn annotate_function(
         Some(FunctionDecrease::Binder(binder)) => Some(binder.clone()),
         _ => None,
     };
-    if !recursion_measure.is_empty() || recursion_binder.is_some() {
+    let recursion_resource =
+        crate::surface::verification::function_recursion_resource_requirement(function_block)?;
+    if !recursion_measure.is_empty() || recursion_binder.is_some() || recursion_resource.is_some() {
         function = function.with_recursion_peers(function_block.recursion_peers().to_vec());
     }
-    function = function.with_recursion_binder(recursion_binder);
+    function = function
+        .with_recursion_binder(recursion_binder)
+        .with_recursion_resource(recursion_resource);
     function = function.with_recursion_measure(recursion_measure);
     if function_block.signature().exceptional_type().is_some() {
         function = function
