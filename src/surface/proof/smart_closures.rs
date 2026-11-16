@@ -3946,8 +3946,32 @@ fn normalization_refutes(proposition: &Proposition) -> bool {
     ))
 }
 
-fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
-    let mut steps = vec![ProofStep::Known, ProofStep::Normalize];
+fn direct_logical_candidates(
+    goal: Option<&Proposition>,
+    surface_goal: Option<&ClickProposition>,
+) -> Vec<ProofStep> {
+    let mut steps = vec![ProofStep::Known];
+    // Arithmetic identities belong to the explicit arithmetic checker.
+    // Select by the goal's shape only; no coefficient work is paid when
+    // known closes first. Other normalization families keep their route.
+    if matches!(
+        goal,
+        Some(Proposition::ConditionIs(
+            crate::kernel::integer_comparison_condition!(_, _),
+            _
+        ))
+    ) && let Some(surface) = surface_goal
+    {
+        steps.push(ProofStep::ArithmeticCertificate(
+            ArithmeticCertificate::integer(IntegerCertificate {
+                nodes: vec![IntegerCertificateNode::Trivial {
+                    result: surface.clone(),
+                }],
+                conclusion: 0,
+            }),
+        ));
+    }
+    steps.push(ProofStep::Normalize);
     // Without a proposition goal every candidate is refused alike; keep the
     // complete list so the recorded refusals are unchanged.
     if matches!(goal, Some(Proposition::ForAll { .. }) | None) {

@@ -132,8 +132,14 @@ fn application(
 fn have(claim: ClickProposition, steps: Vec<ProofStep>) -> ProofStep {
     super::super::wide_arithmetic::have(claim, steps)
 }
-fn normalization(claim: ClickProposition) -> ProofStep {
-    have(claim, vec![ProofStep::Normalize])
+fn trivial_arithmetic_step(claim: ClickProposition) -> ProofStep {
+    ProofStep::ArithmeticCertificate(ArithmeticCertificate::integer(IntegerCertificate {
+        nodes: vec![IntegerCertificateNode::Trivial { result: claim }],
+        conclusion: 0,
+    }))
+}
+fn arithmetic_identity(claim: ClickProposition) -> ProofStep {
+    have(claim.clone(), vec![trivial_arithmetic_step(claim)])
 }
 
 fn expression(form: &Form, atoms: &BTreeMap<u64, Atom>) -> ContractExpression {
@@ -312,10 +318,7 @@ fn prepare_relation(
     let mut body = Vec::new();
     let mut ordered = canonical.clone();
     if &ordered != source {
-        body.push(have(
-            ordered.clone(),
-            vec![ProofStep::NormalizeUsing(vec![source.clone()])],
-        ));
+        body.push(have(ordered.clone(), vec![ProofStep::Known]));
     }
     if relation.strict {
         form.constant += 1;
@@ -343,7 +346,7 @@ fn prepare_relation(
             true,
             ContractExpression::Subtract(Box::new(left.clone()), Box::new(right.clone())),
         );
-        body.push(normalization(identity.clone()));
+        body.push(arithmetic_identity(identity.clone()));
         body.push(application(
             "le_difference",
             vec![left, right, value],
@@ -381,7 +384,7 @@ fn restore(target: &ClickProposition, node: &Node, atoms: &BTreeMap<u64, Atom>) 
             ContractExpression::Subtract(Box::new(left.clone()), Box::new(right.clone())),
         );
         return vec![
-            normalization(identity.clone()),
+            arithmetic_identity(identity.clone()),
             application(
                 "difference_le",
                 vec![left, right, value],
@@ -486,10 +489,7 @@ fn strict_node(
     };
     let mut body = vec![
         have(ordered.clone(), restore(&ordered, bound, atoms)),
-        have(
-            neq.clone(),
-            vec![ProofStep::NormalizeUsing(vec![disequal.1.clone()])],
-        ),
+        have(neq.clone(), vec![ProofStep::Known]),
         have(
             strict.clone(),
             vec![application(
@@ -701,10 +701,10 @@ fn transfer(target: &ClickProposition, fact: &ClickProposition) -> Vec<ProofStep
     let right = compare(b.clone(), true, d.clone());
     let mut body = Vec::new();
     if a != c {
-        body.push(normalization(left.clone()));
+        body.push(arithmetic_identity(left.clone()));
     }
     if b != d {
-        body.push(normalization(right.clone()));
+        body.push(arithmetic_identity(right.clone()));
     }
     body.push(application(
         if operator == ComparisonOperator::Equal {
@@ -969,7 +969,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     let (form, equal, mut body) =
                         prepare_relation(relation, &canonical, &source, &mut atoms);
-                    body.insert(0, have(source, vec![ProofStep::Normalize]));
+                    let node = match kind {
+                        BoundSource::TypeRange => IntegerCertificateNode::TypeRange {
+                            result: source.clone(),
+                        },
+                        BoundSource::Operation => IntegerCertificateNode::OperationBound {
+                            result: source.clone(),
+                        },
+                        _ => unreachable!("intrinsic bound kind"),
+                    };
+                    body.insert(
+                        0,
+                        have(
+                            source,
+                            vec![ProofStep::ArithmeticCertificate(
+                                ArithmeticCertificate::integer(IntegerCertificate {
+                                    nodes: vec![node],
+                                    conclusion: 0,
+                                }),
+                            )],
+                        ),
+                    );
                     (form, equal, body)
                 }
                 IntegerArithmeticNode::StrictFromDisequal {
@@ -1019,7 +1039,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         &base_surface,
                         &mut atoms,
                     );
-                    base_body.insert(0, have(base_surface, vec![ProofStep::Normalize]));
+                    base_body.insert(
+                        0,
+                        have(
+                            base_surface.clone(),
+                            vec![ProofStep::ArithmeticCertificate(
+                                ArithmeticCertificate::integer(IntegerCertificate {
+                                    nodes: vec![IntegerCertificateNode::TypeRange {
+                                        result: base_surface,
+                                    }],
+                                    conclusion: 0,
+                                }),
+                            )],
+                        ),
+                    );
                     let base_claim = compare(expression(&form, &atoms), false, zero());
                     let base = Node {
                         form,
@@ -1110,9 +1143,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         add(multiply(zero(), factor.clone()), slack.clone()),
                     );
                     let body = vec![
-                        normalization(positive.clone()),
-                        normalization(small.clone()),
-                        normalization(reflexive.clone()),
+                        arithmetic_identity(positive.clone()),
+                        arithmetic_identity(small.clone()),
+                        arithmetic_identity(reflexive.clone()),
                         have(
                             raw.clone(),
                             vec![application(
@@ -1159,7 +1192,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         fact
                     } else {
                         let positive = compare(zero(), false, factor.clone());
-                        body.push(normalization(positive.clone()));
+                        body.push(arithmetic_identity(positive.clone()));
                         let fact = compare(raw, false, multiply(zero(), factor.clone()));
                         body.push(have(
                             fact.clone(),
@@ -1252,7 +1285,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     );
                     let opposite = compare(zero(), false, value.clone());
                     let mut body = vec![
-                        normalization(reflexive.clone()),
+                        arithmetic_identity(reflexive.clone()),
                         have(
                             fact.clone(),
                             vec![application(
@@ -1281,7 +1314,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         ..Form::default()
                     },
                     result.relation == IntegerAffineRelation::Equal,
-                    vec![ProofStep::Normalize],
+                    vec![trivial_arithmetic_step(compare(
+                        literal(&result.constant),
+                        result.relation == IntegerAffineRelation::Equal,
+                        zero(),
+                    ))],
                 ),
             };
             let claim = compare(expression(&form, &atoms), equal, zero());
@@ -1319,10 +1356,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if uses_negated_goal {
                 steps.push(ProofStep::Contradiction(surface_goal.clone()));
             } else {
-                steps = vec![
-                    have(canonical.clone(), steps),
-                    ProofStep::NormalizeUsing(vec![canonical]),
-                ];
+                steps = vec![have(canonical.clone(), steps), ProofStep::Known];
             }
         }
         if uses_negated_goal {
@@ -1330,10 +1364,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 surface_goal.clone(),
             ))));
             steps.insert(0, ProofStep::Intro);
-            steps = vec![
-                have(double_negation.clone(), steps),
-                ProofStep::NormalizeUsing(vec![double_negation]),
-            ];
+            steps = vec![have(double_negation.clone(), steps), ProofStep::Known];
         }
         // The theorem's arguments can contain partial native operations.
         // Cite their already established domains explicitly, so the simple
@@ -1550,7 +1581,7 @@ mod tests {
         assert!(result.is_complete());
         let certificate = result.certificate();
         let printed = format!("{:?}", certificate.steps());
-        assert!(!printed.contains("ArithmeticCertificate"));
+        assert!(!printed.contains("Normalize"), "{printed}");
         (work, printed.len(), certificate.steps().len())
     }
 
@@ -1580,7 +1611,7 @@ mod tests {
                     expand_c_claim_source_by_label(&source, &[], "composition.ensures_0")
                         .unwrap_or_else(|error| panic!("{}", error.message()));
                 assert!(
-                    !expanded.contains("arithmetic_certificate"),
+                    !expanded.contains("normalize("),
                     "{expanded}\nComposition refusal: {:?}",
                     super::LAST_FAILURE.with(|failure| failure.borrow_mut().take())
                 );
@@ -1724,7 +1755,7 @@ mod tests {
         let source = "theorem composition(z: Integer) { requires 0 <= z; requires z <= 4000; ensures z <= 18446744073709551615 by { solve(); } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("normalize("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
     }
 
@@ -1734,7 +1765,7 @@ mod tests {
         let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { both { solve() using { x <= 3; }; } and { solve() using { x <= 3; }; } } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("normalize("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
     }
 
@@ -1744,7 +1775,7 @@ mod tests {
         let source = "theorem composition(x: Integer, y: Integer) { requires x <= 3; requires y <= 4; ensures 2 * x + 3 * y <= 18 by { solve(); } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("normalize("), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
     }
@@ -1758,7 +1789,7 @@ mod tests {
         ] {
             let expanded =
                 expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
-            assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+            assert!(!expanded.contains("normalize("), "{expanded}");
             without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
         }
     }
@@ -1767,6 +1798,31 @@ mod tests {
     fn integer_composition_does_not_use_an_unlisted_bound() {
         let source = "theorem composition(x: Integer, y: Integer) { requires x <= 3; requires y <= 4; ensures 2 * x + 3 * y <= 18 by { solve() using { x <= 3; }; } }";
         assert!(verify_c_sources(source, &[]).is_err());
+    }
+
+    #[test]
+    #[ignore = "nightly: identity expansion, replay and known refusal take 0.5s"]
+    fn integer_identity_solve_expands_to_explicit_arithmetic_without_normalize() {
+        let source = "theorem identity(x: Integer, y: Integer) { ensures 3 * (x - y) == x + x + x - 3 * y by { solve(); } }";
+        let expanded = expand_c_claim_source_by_label(source, &[], "identity.ensures_0").unwrap();
+        assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("normalize("), "{expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+        assert!(verify_c_sources(&source.replace("solve();", "known();"), &[]).is_err());
+    }
+
+    #[test]
+    #[ignore = "nightly: selected expansion, replay and missing-premise control take 0.8s"]
+    fn integer_composition_selected_bounds_expand_without_normalize() {
+        let source = "theorem composition(x: Integer, y: Integer) { requires x <= 3; requires y <= 4; ensures 2 * x + 3 * y <= 18 by { solve() using { x <= 3; y <= 4; }; } }";
+        let expanded =
+            expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
+        assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("normalize("), "{expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+        assert!(verify_c_sources(&source.replace("x <= 3; y <= 4;", "x <= 3;"), &[]).is_err());
     }
 
     #[test]
