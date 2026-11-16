@@ -61,3 +61,53 @@ fn computation_refusal_is_independent_of_memory_history() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn monomial_normalization_work_tracks_written_factors() {
+    let samples = [4, 16, 64].map(|size| {
+        let factors = (0..size)
+            .map(|n| IntegerTerm::var(Variable(880000 + n)))
+            .collect::<Vec<_>>();
+        let product =
+            |values: Vec<IntegerTerm>| values.into_iter().reduce(IntegerTerm::multiply).unwrap();
+        let a = product(factors.clone());
+        let b = product(factors.into_iter().rev().collect());
+        let condition = ConditionTerm::IntegerEqual(a.clone().into(), b.clone().into());
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            integer_linear_comparison(&condition)
+        });
+        assert_eq!(result, Some(true));
+        assert_ne!(
+            integer_linear_comparison(&ConditionTerm::IntegerEqual(
+                a.into(),
+                IntegerTerm::add(b, IntegerTerm::constant_i64(1)).into()
+            )),
+            Some(true)
+        );
+        work
+    });
+    assert!(samples.windows(2).all(|p| p[1] <= 6 * p[0]), "{samples:?}");
+}
+
+#[test]
+fn distribution_check_is_one_local_step_and_never_expands_a_polynomial() {
+    let [a, b, c, d]: [IntegerTerm; 4] =
+        std::array::from_fn(|n| IntegerTerm::var(Variable(881000 + n as u64)));
+    let mul = IntegerTerm::multiply;
+    let add = IntegerTerm::add;
+    let step = ConditionTerm::IntegerEqual(
+        mul(add(a.clone(), b.clone()), c.clone()).into(),
+        add(mul(a.clone(), c.clone()), mul(b.clone(), c)).into(),
+    );
+    assert!(integer_distribution_step(&step));
+    let full = ConditionTerm::IntegerEqual(
+        mul(add(a.clone(), b.clone()), add(a.clone(), d.clone())).into(),
+        add(
+            add(mul(a.clone(), a.clone()), mul(a.clone(), d.clone())),
+            add(mul(b.clone(), a), mul(b, d)),
+        )
+        .into(),
+    );
+    assert!(!integer_distribution_step(&full));
+    assert_eq!(integer_linear_comparison(&full), None);
+}

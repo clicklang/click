@@ -1,4 +1,5 @@
 mod computation;
+mod intervals;
 pub(crate) use computation::computes_leaf;
 
 use crate::kernel::CompareRelation;
@@ -58,6 +59,11 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
         && let Some(holds) = computation::integer_affine_comparison(condition)
     {
         return holds == *value;
+    }
+    if let Proposition::ConditionIs(condition, true) = goal
+        && computation::integer_distribution_step(condition)
+    {
+        return true;
     }
     if let Proposition::ConditionIs(condition, value) = goal
         && let Some(holds) = computation::integer_linear_comparison(condition)
@@ -213,6 +219,38 @@ pub(crate) fn normalize_using_conditions(
             .then_some(())
             .ok_or(ConditionalNormalizationError::DoesNotNormalize);
     }
+    // Validate every explicit citation before a local interval reduction.
+    // Successful endpoint checks need no general rewriting context or its
+    // mirrored condition forms over each increasingly large machine term.
+    for (index, premise) in premises.iter().enumerate() {
+        if !facts.available(premise)
+            && !crate::kernel::listed_premise_holds(premise, |fact| facts.available(fact))
+            && !order_claim_forms(premise)
+                .iter()
+                .any(|form| facts.available(form))
+        {
+            return Err(ConditionalNormalizationError::UnavailablePremise(index));
+        }
+    }
+    if intervals::reduces_one_operation(goal, premises) {
+        return Ok(());
+    }
+    // Ordinary cited rewrites and bounds take their established fast path.
+    // Specialized rules are a fallback, so a simple equality does not pay for
+    // conversion and matching against unrelated arithmetic rule shapes.
+    let ordinary = normalize_condition_selection(goal, premises, facts);
+    if ordinary.is_ok() || !super::arithmetic_special::normalizes_selected(goal, premises) {
+        ordinary
+    } else {
+        Ok(())
+    }
+}
+
+fn normalize_condition_selection(
+    goal: &Proposition,
+    premises: &[Proposition],
+    facts: &super::ProofFacts,
+) -> Result<(), ConditionalNormalizationError> {
     let mut conditions = std::collections::HashMap::new();
     // Keep graph admission in source order. Its bounded pointer fragment may
     // retain different coordinates after a block merge; hash iteration must
@@ -228,14 +266,6 @@ pub(crate) fn normalize_using_conditions(
         Vec<(super::fact_keys::IntegerEqualityAlphaKey, bool)>,
     > = std::collections::HashMap::new();
     for (index, premise) in premises.iter().enumerate() {
-        if !crate::kernel::proposition_holds_without_facts(premise)
-            && !facts.available(premise)
-            && !order_claim_forms(premise)
-                .iter()
-                .any(|form| facts.available(form))
-        {
-            return Err(ConditionalNormalizationError::UnavailablePremise(index));
-        }
         // A complete arithmetic domain supplies its two ordinary bounds.
         // Keep shared operands intact; no private overflow spelling is needed.
         let leaves =

@@ -1532,7 +1532,7 @@ fn signed_int32_pair_affine_conclusion_round_trips_and_preserves_refs() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_09")]
-fn signed_int32_compound_certificate_public_nodes_recheck_and_tamper() {
+fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
     let source = r#"
         theorem signed_compound_certificate(n: int32) {
             requires 0 <= n;
@@ -1549,7 +1549,7 @@ fn signed_int32_compound_certificate_public_nodes_recheck_and_tamper() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("compound arithmetic should expand");
-    assert!(expanded.contains("affine_conclusion_pair"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
 
     let rechecked_source = source.replace(
         "by {\n                solve() using {\n                    0 <= n;\n                    n <= 100;\n                }\n            }",
@@ -1561,9 +1561,10 @@ fn signed_int32_compound_certificate_public_nodes_recheck_and_tamper() {
     result.expect("expanded compound certificate should recheck");
     assert_eq!(planning, 0, "explicit certificate recheck must not plan");
 
-    let tampered_pair = rechecked_source.replacen("affine_conclusion_pair", "affine_conclusion", 1);
-    verify_click_theorems(&tampered_pair)
-        .expect_err("one-sided affine evidence must not replace pair evidence");
+    let false_goal = rechecked_source.replacen("<= to_integer(n + 2)", ">= to_integer(n + 2)", 1);
+    assert_ne!(false_goal, rechecked_source);
+    verify_click_theorems(&false_goal)
+        .expect_err("the unchanged ordinary proof cannot establish a false comparison");
 }
 
 #[test]
@@ -2006,22 +2007,23 @@ fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("float reflexivity should expand");
-    assert!(
-        expanded.contains("arithmetic_certificate rules"),
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert_eq!(
+        expanded.matches("isfinite(value);").count(),
+        1,
         "{expanded}"
     );
-    assert_eq!(expanded.matches("premise ").count(), 1, "{expanded}");
     let rechecked = source.replace("by { solve(); }", &expanded);
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_click_theorems(&rechecked)
     });
     result.expect("expanded float reflexivity should recheck");
-    assert_eq!(planning, 0, "explicit special recheck must not plan");
+    assert_eq!(planning, 0, "ordinary float recheck must not plan");
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_11")]
-fn signed_arithmetic_smart_planner_expands_to_structural_certificate() {
+fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
     let source = r#"
         theorem signed_smart_double(n: int32) {
             requires 0 <= n;
@@ -2033,34 +2035,28 @@ fn signed_arithmetic_smart_planner_expands_to_structural_certificate() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("smart arithmetic should expand");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
-        expanded.contains("arithmetic_certificate signed_int32"),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("scale"),
-        "coefficient-2 expansion expected: {expanded}"
+        expanded.contains("normalize"),
+        "ordinary interval normalization expected: {expanded}"
     );
     let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
     assert!(
         !expanded.contains("solve() using"),
-        "expanded proof must retain a checked certificate rather than ArithmeticUsing: {expanded}"
+        "expanded proof must retain ordinary checked operations: {expanded}"
     );
     let (rechecked_result, planning) =
         crate::surface::proof::count_planning_statement_transitions(|| {
             verify_click_theorems(&rechecked)
         });
-    rechecked_result.unwrap_or_else(|error| {
-        panic!(
-            "expanded structural certificate failed: {}",
-            error.message()
-        )
-    });
+    rechecked_result
+        .unwrap_or_else(|error| panic!("expanded ordinary proof failed: {}", error.message()));
     assert_eq!(planning, 0, "explicit signed recheck must not plan");
-    let tampered = expanded.replace("scale 1 by 2", "scale 1 by 3");
+    let tampered = expanded.replace("100", "99");
+    assert_ne!(tampered, expanded, "the source bound must remain explicit");
     let tampered_source = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &tampered);
     verify_click_theorems(&tampered_source)
-        .expect_err("a tampered scale coefficient must be rejected");
+        .expect_err("an unavailable tightened source bound must be rejected");
 }
 
 #[test]
@@ -2178,10 +2174,7 @@ fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("definedness proof should expand");
-    assert!(
-        expanded.contains("arithmetic_certificate signed_int32"),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("defined"), "{expanded}");
     let rechecked = source.replace(
         "by {\n                solve() using {\n                    0 <= a;\n                    0 <= b;\n                    defined(a + b);\n                }\n            }",
@@ -2218,12 +2211,10 @@ fn signed_arithmetic_smart_planner_handles_deep_supported_terms_iteratively() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("deep arithmetic should expand");
-    assert!(
-        expanded.contains("arithmetic_certificate signed_int32"),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
-    verify_click_theorems(&rechecked).expect("deep expanded certificate should recheck");
+    crate::surface::without_implicit_solve(|| verify_click_theorems(&rechecked))
+        .expect("deep ordinary expansion should replay without search");
 
     let overflowing = "theorem overflowing_intermediate(n: int32) {
         requires n == 1;
@@ -6059,7 +6050,7 @@ test_batches! {
         signed_int32_pair_affine_conclusion_round_trips_and_preserves_refs,
     ],
     surface_syntax_batch_09: [
-        signed_int32_compound_certificate_public_nodes_recheck_and_tamper,
+        signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal,
         signed_int32_direct_compound_interval_is_publicly_checked,
         signed_int32_interval_intersect_round_trips,
         signed_int32_arithmetic_certificate_applies_and_rejects_tampering,
@@ -6074,7 +6065,7 @@ test_batches! {
         special_certificate_accepts_deep_identity_and_rejects_late_mismatch,
         integer_product_bounds_round_trip_reverify_and_reject_unavailable_or_altered_bounds,
         float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks,
-        signed_arithmetic_smart_planner_expands_to_structural_certificate,
+        signed_arithmetic_smart_planner_expands_to_ordinary_proof,
     ],
     surface_syntax_batch_12: [
         signed_arithmetic_using_requires_every_needed_exact_premise,
