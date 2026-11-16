@@ -1351,8 +1351,17 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
     let first = base.clone();
     let second = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(1));
     let third = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(2));
+    let local_i_block = crate::kernel::PointerBlock::AutomaticLocal {
+        binding: crate::kernel::LocalBindingId::new(
+            crate::kernel::LocalFunctionId::new(Some("fill3.c".into()), "fill3".into()),
+            false,
+            0,
+            Some("i".into()),
+        ),
+        instance: crate::kernel::LocalStorageInstance::Implicit,
+    };
     let local_i = Pointer {
-        block: "local:i".into(),
+        block: local_i_block.clone(),
         offset: PointerOffsetTerm::Constant(0),
     };
     let initial_memory = memory_with_symbolic_loadable_cells(
@@ -1376,12 +1385,12 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
         )));
     let final_memory = initial_memory
         .clone()
-        .with_block("local:i", 4)
+        .with_block(local_i_block.clone(), 4)
         .store(first, int32(0))
         .store(second, int32(1))
         .store(third, int32(2))
         .store(local_i, int32(3))
-        .without_local_block(&"local:i".into());
+        .without_local_block(&local_i_block);
 
     // The entry has a creation ledger with a fresh
     // identity; it records nothing here.
@@ -1416,14 +1425,16 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                 ),
             })
     );
+    let parsed_source = syntax::parse_functions_for_source(FILL3_C, "fill3.c")
+        .unwrap()
+        .remove(0);
+    let parameter_binding = parsed_source.parameters()[0].binding_name().clone();
     assert_eq!(
         implication_body(verified.theorem.proposition()),
         &Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function: Box::new(
                 {
-                    let parsed = syntax::parse_function(FILL3_C)
-                        .expect("fill3 should parse")
-                        .to_kernel_function();
+                    let parsed = parsed_source.to_kernel_function();
                     let ProgramStatement::Seq(statements) = parsed.body().clone() else {
                         panic!("fill3 body should have a prefix and suffix");
                     };
@@ -1446,12 +1457,15 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                         ProgramType::Int32,
                         "fill3",
                         vec![
-                            crate::kernel::program_parameter("p", ProgramType::Int32Pointer)
-                                .with_pointee_class(Some(
-                                    crate::kernel::effective_type::CAccessClass::Scalar(
-                                        crate::kernel::effective_type::CScalarClass::Int,
-                                    ),
-                                )),
+                            crate::kernel::program_parameter(
+                                parameter_binding.clone(),
+                                ProgramType::Int32Pointer,
+                            )
+                            .with_pointee_class(Some(
+                                crate::kernel::effective_type::CAccessClass::Scalar(
+                                    crate::kernel::effective_type::CScalarClass::Int,
+                                ),
+                            )),
                         ],
                         program_seq(
                             prefix.as_ref().clone(),
@@ -1489,7 +1503,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                 .with_resource_summary(
                     vec![ResourceSpec::memory(
                         MemorySegment::new(
-                            ProgramExpression::Variable("p".to_string()),
+                            ProgramExpression::Variable(("p".to_string()).into()),
                             ProgramExpression::Value(int32(0)),
                             ProgramExpression::Value(int32(3)),
                         ),
@@ -1503,7 +1517,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                     vec![SpecProposition::MemoryLoadable {
                         memory: SpecMemory::Current,
                         base: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                            "p".to_string(),
+                            parameter_binding.clone(),
                         )),
                         start: SpecExpression::Value(int32(0)),
                         end: SpecExpression::Value(int32(3)),
@@ -1511,7 +1525,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                     }],
                     vec![SpecProposition::Comparison {
                         left: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                            crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                            (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
                         )),
                         operator: KernelComparisonOperator::Equal,
                         right: SpecExpression::Value(int32(2)),

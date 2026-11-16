@@ -42,5 +42,5 @@ int32 walk(int32 *a, int32 n) {
 ```
 
 ```expect
-fail: goal: to_integer(at(statement(2).statement(0).entry, i) + 1) <= 1073741823 and ((to_integer(at(statement(2).statement(0).entry, i) + 1) <= 1073741823 implies viewable(a[0..at(statement(2).statement(0).entry, i) + 1]))
+fail: goal: to_integer(at(statement(2).statement(0).entry, "loop_invariant_viewable_prefix_owes_its_extent_at_the_back_edge.c"::walk.local(0)) + 1) <= 1073741823 and ((to_integer(at(statement(2).statement(0).entry, "loop_invariant_viewable_prefix_owes_its_extent_at_the_back_edge.c"::walk.local(0)) + 1) <= 1073741823 implies viewable("loop_invariant_viewable_prefix_owes_its_extent_at_the_back_edge.c"::walk.parameter(0)[0..at(statement(2).statement(0).entry, "loop_invariant_viewable_prefix_owes_its_extent_at_the_back_edge.c"::walk.local(0)) + 1]))
 ```

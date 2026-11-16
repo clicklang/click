@@ -31,5 +31,5 @@ int32 make(size_t n) {
 ```
 
 ```expect
-fail: missing resource fact `owns ((char *)p)[4..8]`
+fail: missing resource fact `owns ((char *)"a_wrapping_size_t_product_allocates_only_the_wrapped_bytes.c"::make.local(0))[4..8]`
 ```

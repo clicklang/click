@@ -106,7 +106,7 @@ impl Proof<'_> {
                 if let Some(text) = immutable_field_hint(hint, &address, &locals) {
                     return Some(PointerTraceView {
                         text,
-                        retained_state: Some((memory, point)),
+                        retained_state: Some((memory.into_shared_memory(), point)),
                     });
                 }
             }
@@ -121,7 +121,7 @@ impl Proof<'_> {
                     return Some(PointerTraceView {
                         text,
                         retained_state: Some((
-                            memory,
+                            memory.into_shared_memory(),
                             Some(
                                 crate::surface::diagnostics::describe_program_point_selector(
                                     selector,
@@ -154,7 +154,7 @@ impl Proof<'_> {
                 ) {
                     return Some(PointerTraceView {
                         text,
-                        retained_state: Some((memory, point)),
+                        retained_state: Some((memory.into_shared_memory(), point)),
                     });
                 }
             }
@@ -197,7 +197,9 @@ fn immutable_field_hint(
     }
     let (name, base) = match base.as_ref() {
         ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => {
             let ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::Pointer(base),
             )) = locals.get(name)?

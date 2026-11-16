@@ -455,7 +455,7 @@ mod read_trace_tests {
         let mut replay = graph.input_root();
         let memory = crate::kernel::intern_memory(Memory::new());
         let read = V::Legacy(&MachineTerm::MemoryLoad(
-            memory,
+            ProgramPoint::at(&memory),
             Box::new(pointer(305_000)),
             LoadKind::Int32,
         ))
@@ -484,7 +484,11 @@ mod read_trace_tests {
     fn admitted_read_trace_includes_read_values_carried_as_offsets() {
         let mut graph = EqualityGraph::default();
         let memory = crate::kernel::intern_memory(Memory::new());
-        let load = MachineTerm::MemoryLoad(memory, Box::new(pointer(304_000)), LoadKind::Int32);
+        let load = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer(304_000)),
+            LoadKind::Int32,
+        );
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
         let read = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(variable), 4);
         let target = PointerOffsetTerm::Constant(8);

@@ -3223,7 +3223,10 @@ fn observable_projection_ignores_excluded_loan_bindings_when_hashing() {
     for size in [4, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(
-            (0..size).map(|index| format!("hidden_{index}")).collect(),
+            (0..size)
+                .map(|index| format!("hidden_{index}"))
+                .map(Into::into)
+                .collect(),
         );
         let base = context_with_one_loan_dependency(false);
         let expected = base.observable_composition();

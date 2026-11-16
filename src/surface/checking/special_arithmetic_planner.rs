@@ -1164,7 +1164,7 @@ mod tests {
         let pointer = crate::kernel::Pointer::symbolic(Variable(22_104));
         let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
         let value = read(
-            memory.clone(),
+            crate::kernel::ProgramPoint::at(&memory),
             pointer.clone(),
             crate::kernel::LoadKind::Float64,
         );
@@ -1180,7 +1180,7 @@ mod tests {
             (value, true),
             (
                 read(
-                    memory.clone(),
+                    crate::kernel::ProgramPoint::at(&memory),
                     pointer.offset_by_bytes(8),
                     crate::kernel::LoadKind::Float64,
                 ),
@@ -1188,7 +1188,7 @@ mod tests {
             ),
             (
                 read(
-                    memory.clone(),
+                    crate::kernel::ProgramPoint::at(&memory),
                     pointer.clone(),
                     crate::kernel::LoadKind::Bits64,
                 ),
@@ -1196,8 +1196,10 @@ mod tests {
             ),
             (
                 read(
-                    crate::kernel::intern_memory(
-                        crate::kernel::Memory::new().with_block("other", 8),
+                    crate::kernel::ProgramPoint::at(
+                        &(crate::kernel::intern_memory(
+                            crate::kernel::Memory::new().with_block("other", 8),
+                        )),
                     ),
                     pointer,
                     crate::kernel::LoadKind::Float64,

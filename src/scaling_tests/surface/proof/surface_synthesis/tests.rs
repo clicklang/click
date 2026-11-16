@@ -255,7 +255,12 @@ fn allocation_result_names_use_one_index_as_recorded_history_grows() {
                         kind: ProgramPointKind::Exit,
                     },
                     ExecutionState::new().with_local(
-                        "p",
+                        crate::kernel::BindingName::Local(crate::kernel::LocalBindingId::new(
+                            crate::kernel::LocalFunctionId::new(None, "f".into()),
+                            false,
+                            0,
+                            Some("p".into()),
+                        )),
                         ProgramValue::typed_pointer(last.clone(), ProgramType::Int32Pointer),
                     ),
                 )

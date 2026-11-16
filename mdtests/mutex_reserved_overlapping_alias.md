@@ -28,5 +28,5 @@ int32 run(struct holder *holder) {
 ```
 
 ```expect
-fail: Requires separate(alias->mu, holder->mu)
+fail: Requires separate("mutex_reserved_overlapping_alias.c"::run.local(0)->mu, holder->mu)
 ```

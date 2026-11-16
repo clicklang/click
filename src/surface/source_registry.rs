@@ -363,7 +363,7 @@ impl CallerRequirementIndex {
 
 fn direct_parameter_name(expression: &ContractExpression) -> Option<&str> {
     match expression {
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Some(name),
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => name.named(),
         // The elaborated C-string bridge names its parameter's storage.
         expression => crate::surface::lowering::character_byte_view_name(expression),
     }
@@ -649,7 +649,7 @@ mod tests {
         Requirement::Proposition(ClickProposition::PredicateCall {
             name: name.to_string(),
             arguments: vec![ContractExpression::ProgramExpression(
-                ProgramExpression::Variable(parameter.to_string()),
+                ProgramExpression::Variable((parameter.to_string()).into()),
             )],
         })
     }
@@ -694,7 +694,7 @@ mod tests {
             Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: ProgramExpression::Variable("p".to_string()),
+                base: ProgramExpression::Variable(("p".to_string()).into()),
                 start: ProgramExpression::Value(int32(0)),
                 end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Object("p".to_string()),
@@ -771,7 +771,7 @@ mod tests {
                 Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
-                    base: ProgramExpression::Variable("p".to_string()),
+                    base: ProgramExpression::Variable(("p".to_string()).into()),
                     start: ProgramExpression::Value(int32(0)),
                     end: ProgramExpression::Value(int32(1)),
                     surface: ContractSegmentSurface::Object("p".to_string()),
@@ -810,7 +810,7 @@ mod tests {
             recorded_value,
         );
         let source_arguments = vec![ContractExpression::ProgramExpression(
-            ProgramExpression::Variable("p".to_string()),
+            ProgramExpression::Variable(("p".to_string()).into()),
         )];
         let selected = index
             .lookup_unique_caller_requirement(
@@ -866,7 +866,7 @@ mod tests {
             );
             assert_eq!(index.bucket_count(), count);
             let source_arguments = vec![ContractExpression::ProgramExpression(
-                ProgramExpression::Variable("p".to_string()),
+                ProgramExpression::Variable(("p".to_string()).into()),
             )];
             let selected = index
                 .lookup_unique_caller_requirement(
@@ -899,7 +899,7 @@ mod tests {
         let owner = owner();
         let recorded_value = retained_state();
         let source_arguments = vec![ContractExpression::ProgramExpression(
-            ProgramExpression::Variable("p".to_string()),
+            ProgramExpression::Variable(("p".to_string()).into()),
         )];
         let duplicate_requires = vec![direct_predicate("readable", "p"); 2];
         let duplicate_block = function_with_parameters("caller", duplicate_requires, &["p"]);
@@ -1015,7 +1015,7 @@ mod tests {
                     Box::new(ClickProposition::PredicateCall {
                         name: "nested".to_string(),
                         arguments: vec![ContractExpression::ProgramExpression(
-                            ProgramExpression::Variable("p".to_string()),
+                            ProgramExpression::Variable(("p".to_string()).into()),
                         )],
                     }),
                     Box::new(ClickProposition::PredicateCall {
@@ -1026,7 +1026,7 @@ mod tests {
                 Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
-                    base: ProgramExpression::Variable("p".to_string()),
+                    base: ProgramExpression::Variable(("p".to_string()).into()),
                     start: ProgramExpression::Value(int32(0)),
                     end: ProgramExpression::Value(int32(1)),
                     surface: ContractSegmentSurface::Object("p".to_string()),
@@ -1047,7 +1047,7 @@ mod tests {
             recorded_value,
         );
         let source_arguments = vec![ContractExpression::ProgramExpression(
-            ProgramExpression::Variable("p".to_string()),
+            ProgramExpression::Variable(("p".to_string()).into()),
         )];
         assert!(
             index

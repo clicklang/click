@@ -399,7 +399,7 @@ mod tests {
             let source = MachineTerm::Float32Binary {
                 operator: crate::kernel::FloatBinaryOperator::Add,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(pointer.clone()),
                     LoadKind::Float32,
                 )),

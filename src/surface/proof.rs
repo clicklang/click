@@ -216,7 +216,7 @@ mod certificate_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(Memory::new()),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );
@@ -311,7 +311,9 @@ mod certificate_tests {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(target_memory.clone()),
+                        crate::kernel::ProgramPoint::at(
+                            &(crate::kernel::intern_memory(target_memory.clone())),
+                        ),
                         Box::new(pointer),
                         crate::kernel::LoadKind::Int32,
                     )),
@@ -358,7 +360,7 @@ mod certificate_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(target_memory),
+                    crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(target_memory))),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -801,7 +803,7 @@ mod certificate_tests {
     fn path_aligned_certificates_preserve_branch_structure() {
         let condition = ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                "x".to_string(),
+                ("x".to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
@@ -856,14 +858,14 @@ mod certificate_tests {
     fn path_aligned_certificates_reject_incompatible_frontiers() {
         let condition = ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                "x".to_string(),
+                ("x".to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
         let other = ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                "y".to_string(),
+                ("y".to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
@@ -1921,7 +1923,7 @@ fn bool_range_surface(name: &str) -> ClickProposition {
     let cast = ContractExpression::CUnary {
         operand: Box::new(ContractExpression::CBinding(name.to_string())),
         lowered: ProgramExpression::Cast {
-            expression: Box::new(ProgramExpression::Variable(name.to_string())),
+            expression: Box::new(ProgramExpression::Variable(name.into())),
             target_type: crate::kernel::ProgramType::Int32,
             integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
@@ -2822,7 +2824,7 @@ fn evaluate_entry_resource_context(
     evaluation_state = evaluation_state.with_memory(entry_memory.clone());
     for parameter in parsed_function.parameters() {
         if let Some(value) = values.get(parameter.name()) {
-            evaluation_state = evaluation_state.with_local(parameter.name(), value.clone());
+            evaluation_state = evaluation_state.with_local(parameter.binding_name(), value.clone());
         }
     }
     let definitions = crate::surface::verification::composite_resource_definitions(

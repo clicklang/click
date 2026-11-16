@@ -86,7 +86,9 @@ impl DeclaredResourceScope {
             .enumerate()
             .map(|(index, argument)| {
                 let named = match &argument {
-                    ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        crate::kernel::BindingName::Named(name),
+                    ))
                     | ContractExpression::Binding(name)
                     | ContractExpression::CBinding(name) => Some(name.as_str()),
                     _ => None,
@@ -329,6 +331,7 @@ struct LibraryModule {
 pub(in crate::surface) struct LibrarySelection {
     file: ClickFile,
     theorem_index: BTreeMap<String, usize>,
+    theorem_conclusions: planning::theorems::TheoremConclusionIndex,
 }
 
 impl LibrarySelection {
@@ -344,6 +347,12 @@ impl LibrarySelection {
 
     pub(in crate::surface) fn theorem_index(&'static self) -> &'static BTreeMap<String, usize> {
         &self.theorem_index
+    }
+
+    pub(in crate::surface) fn theorem_conclusions(
+        &'static self,
+    ) -> &'static planning::theorems::TheoremConclusionIndex {
+        &self.theorem_conclusions
     }
 }
 
@@ -451,6 +460,13 @@ fn library_selection(mask: u64) -> Result<&'static LibrarySelection, ClickError>
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     Ok(*selections.entry(mask).or_insert_with(|| {
         Box::leak(Box::new(LibrarySelection {
+            theorem_conclusions: {
+                let mut index = planning::theorems::TheoremConclusionIndex::default();
+                for (ordinal, theorem) in file.theorem_definitions().iter().enumerate() {
+                    index.insert(theorem, ordinal);
+                }
+                index
+            },
             file,
             theorem_index,
         }))
@@ -1614,6 +1630,7 @@ fn expand_declared_resource_tactic(
         tactic @ (ProofTactic::UnfoldResource(_)
         | ProofTactic::UnfoldWitnesses { .. }
         | ProofTactic::ObserveResource(_)
+        | ProofTactic::ObserveSavedMemory { .. }
         | ProofTactic::FoldResource(_)
         | ProofTactic::ConstructResource(_)
         | ProofTactic::Iterated(_)) => {
@@ -2402,9 +2419,8 @@ fn expand_declared_resource_tactic_with_resources(
                 expand_declared_resource_clause(resource, resource_definitions)?,
             )))
         }
-        tactic @ ProofTactic::Iterated(IteratedTactic::Take(_) | IteratedTactic::Give(_)) => {
-            Ok(tactic)
-        }
+        tactic @ (ProofTactic::Iterated(IteratedTactic::Take(_) | IteratedTactic::Give(_))
+        | ProofTactic::ObserveSavedMemory { .. }) => Ok(tactic),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }
 }
@@ -2628,11 +2644,9 @@ fn classify_function_decrease(
         }
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
-            if declared_binders.contains(name) =>
-        {
-            Ok(FunctionDecrease::Binder(name.clone()))
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) if declared_binders.contains(name) => Ok(FunctionDecrease::Binder(name.clone())),
         _ => Ok(FunctionDecrease::Numeric(
             expand_declared_resource_expression(expression, resource_definitions)?,
         )),

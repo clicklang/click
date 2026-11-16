@@ -795,11 +795,15 @@ pub(crate) fn cell_run_value(element_type: ProgramType, load: MachineTerm) -> Pr
                 definition
             {
                 crate::kernel::equality_graph::EqualityGraph::default()
-                    .register_pointer_read_definition(&value, &retained_state, &address);
+                    .register_pointer_read_definition(
+                        &value,
+                        retained_state.shared_memory(),
+                        &address,
+                    );
                 return ProgramValue::Pointer(crate::kernel::PointerValue::from_read(
                     value,
                     program_type,
-                    &retained_state,
+                    retained_state.shared_memory(),
                     &address,
                 ));
             }
@@ -1502,8 +1506,20 @@ impl CellStore {
                 Bound::Unbounded,
             ))
             .take_while(|(key, _)| key.block.starts_with("local:"));
+        // Typed automatic storage follows Temporary in PointerBlock order.
+        // Seek its interval directly, just as for the legacy local interval.
+        let automatic_cells = reachable
+            .range::<_, Pointer>((
+                Bound::Excluded(Pointer {
+                    block: PointerBlock::Temporary(u64::MAX),
+                    offset: PointerOffsetTerm::Constant(i64::MAX),
+                }),
+                Bound::Unbounded,
+            ))
+            .take_while(|(key, _)| matches!(key.block, PointerBlock::AutomaticLocal { .. }));
         let mut visited = 0usize;
         let rejected = local_cells
+            .chain(automatic_cells)
             .chain(own_block)
             .filter(|(pointer, value)| {
                 visited += 1;

@@ -615,7 +615,9 @@ mod tests {
             PointerOffsetTerm::add(
                 PointerOffsetTerm::scale_int32(
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(Memory::new()),
+                        crate::kernel::ProgramPoint::at(
+                            &(crate::kernel::intern_memory(Memory::new())),
+                        ),
                         Box::new(at(&PointerOffsetTerm::Constant(0))),
                         crate::kernel::LoadKind::Int32,
                     ),

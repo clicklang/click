@@ -115,7 +115,7 @@ fn solve_retains_recorded_load_address_equality_premises() {
         let memory = intern_memory(Memory::new().with_block("indexed", 8));
         let load = |offset| {
             crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(Pointer {
                     block: "indexed".into(),
                     offset,
@@ -238,7 +238,7 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
                 Box::new(PointerOffsetTerm::Constant(4)),
             );
             crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(at),
                 LoadKind::Int32,
             ))

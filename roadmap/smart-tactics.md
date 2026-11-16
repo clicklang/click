@@ -188,9 +188,9 @@ excluding prose and Rust test strings, leaves:
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
 | `mdtests/` | 27 | 65 |
-| `examples/` | 27 | 347 |
+| `examples/` | 27 | 335 |
 | `library/` | 0 | 0 |
-| Total | 54 | 412 |
+| Total | 54 | 400 |
 
 The 12 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text
@@ -214,9 +214,6 @@ pattern is understood but the complete family has not yet been validated.
 
 | ID | Work | Confidence |
 | --- | --- | --- |
-| 6 | Arena: pre-loop viewability and initial reads | Uncertain: exact held-range spelling |
-| 7 | Arena allocation: search-loop preservation | Medium |
-| 8 | Arena allocation: marking-loop preservation | Medium |
 | 9 | Arena allocation: finishing stores, returns, pipeline | Medium |
 | 10 | Remaining array mdtests, including bubble-sort | Medium; check baselines |
 | 11 | Remaining loop-frame mdtests | Medium |

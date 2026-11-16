@@ -491,7 +491,8 @@ impl<'a> Proof<'a> {
                     &expression,
                     ty,
                     self.facts().assumptions(),
-                    ContractEnvironment::new(&values, &array_refs),
+                    ContractEnvironment::new(&values, &array_refs)
+                        .with_parameters(context.parameter_binding()),
                     pre_state,
                     before,
                     &execution.presentation.recorded_states,
@@ -2461,7 +2462,8 @@ impl<'a> Proof<'a> {
                             evaluate_fixed_state_expression_through_kernel(
                                 &expression,
                                 self.facts().assumptions(),
-                                ContractEnvironment::new(&values, &array_refs),
+                                ContractEnvironment::new(&values, &array_refs)
+                                    .with_parameters(context.parameter_binding()),
                                 FixedStateFrame::new(
                                     context.old_reference_state(&execution.core.frontier, state),
                                     state,
@@ -2570,6 +2572,83 @@ impl<'a> Proof<'a> {
         })
     }
 
+    /// Capture only the three explicit range operands at their named states.
+    /// Like ownership selection, observation names a range without history search.
+    fn capture_saved_memory_segment(
+        &self,
+        base: &ContractExpression,
+        start: &ContractExpression,
+        end: &ContractExpression,
+        view: &FixedStateOperationView<'_>,
+    ) -> Result<ContractSegment, ClickError> {
+        let evaluate = |expression: &ContractExpression| {
+            let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
+            let names = contract_expression_referenced_names(&expression);
+            let (values, array_refs) = contract_environment_for_names(
+                view.parameter_binding,
+                &names,
+                view.fixed_state.state,
+            )?;
+            evaluate_fixed_state_expression_through_kernel(
+                &expression,
+                self.facts().assumptions(),
+                ContractEnvironment::new(&values, &array_refs),
+                view.fixed_state,
+                view.spec_definitions,
+                &BTreeSet::new(),
+            )
+            .map(ProgramExpression::Value)
+            .map_err(|message| self.step_error(format!("`observe` operand: {message}")))
+        };
+        let base = evaluate(base)?;
+        let start = evaluate(start)?;
+        let end = evaluate(end)?;
+        Ok(ContractSegment {
+            state: ContractSegmentState::Current,
+            surface: ContractSegmentSurface::Range {
+                base: ContractExpression::ProgramExpression(base.clone()),
+                start: ContractExpression::ProgramExpression(start.clone()),
+                end: ContractExpression::ProgramExpression(end.clone()),
+            },
+            base,
+            start,
+            end,
+            uninitialized: false,
+        })
+    }
+
+    pub(super) fn apply_saved_memory_observation(
+        &self,
+        base: &ContractExpression,
+        start: &ContractExpression,
+        end: &ContractExpression,
+    ) -> Result<CheckedFocusedTransition, ClickError> {
+        #[cfg(test)]
+        let _operation = crate::kernel::search::FastOperationScope::enter("observe_memory");
+        let view = self.premise_fixed_state_view().ok_or_else(|| {
+            self.step_error("memory observation requires a concrete program state")
+        })?;
+        let captured = self.capture_saved_memory_segment(base, start, end, &view)?;
+        // Captured operands are values, so there is no ambient parameter or
+        // local environment to populate for this descriptor.
+        let required = lower_resource_clause_at_state(
+            &ResourceClause::ViewMemory(captured),
+            ParameterBinding::new(&[], &[]),
+            view.fixed_state.state,
+        )?;
+        let range = required
+            .memory_range()
+            .ok_or_else(|| self.step_error("memory observation requires one memory range"))?;
+        let surface = ClickProposition::ResourceViewable {
+            resource: ResourceSubject::SavedMemory {
+                base: base.clone(),
+                start: start.clone(),
+                end: Some(end.clone()),
+            },
+        };
+        self.record_memory_observation(view.fixed_state.state, range, surface)
+    }
+
     fn apply_memory_observation(
         &self,
         resource: &ResourceClause,
@@ -2591,18 +2670,26 @@ impl<'a> Proof<'a> {
         let range = required
             .memory_range()
             .ok_or_else(|| self.step_error("memory observation requires one memory range"))?;
-        let theorem = crate::kernel::observe_memory_view(view.fixed_state.state, range)
-            .ok_or_else(|| {
-                self.step_error(
-                    "observe requires the exact memory range to be held as a unit owner or view",
-                )
-            })?;
-        let proposition = theorem.proposition().clone();
         let (ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment)) = resource
         else {
             unreachable!()
         };
         let surface = ClickProposition::Loadable { segment };
+        self.record_memory_observation(view.fixed_state.state, range, surface)
+    }
+
+    fn record_memory_observation(
+        &self,
+        state: &ExecutionState,
+        range: &crate::kernel::MemoryRange,
+        surface: ClickProposition,
+    ) -> Result<CheckedFocusedTransition, ClickError> {
+        let theorem = crate::kernel::observe_memory_view(state, range).ok_or_else(|| {
+            self.step_error(
+                "observe requires the exact memory range to be held as a unit owner or view",
+            )
+        })?;
+        let proposition = theorem.proposition().clone();
         let mut locals = self.state().locals().clone();
         locals
             .surface_facts
@@ -3377,9 +3464,9 @@ fn fold_end_parameter_name(end: &ContractExpression) -> Option<&String> {
     match end {
         ContractExpression::Binding(binding)
         | ContractExpression::CBinding(binding)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(binding)) => {
-            Some(binding)
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(binding),
+        )) => Some(binding),
         _ => None,
     }
 }

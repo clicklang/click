@@ -2835,6 +2835,44 @@ pub(in crate::surface) fn collect_contract_expression_referenced_names(
     expression: &ContractExpression,
     names: &mut BTreeSet<String>,
 ) {
+    collect_contract_expression_referenced_bindings(expression, names);
+}
+
+pub(in crate::surface) fn collect_click_proposition_referenced_names(
+    proposition: &ClickProposition,
+    names: &mut BTreeSet<String>,
+) {
+    collect_click_proposition_referenced_bindings(proposition, names);
+}
+
+/// Select lexical dependencies or exact program bindings with the same walk.
+/// Lexical binders remove only named dependencies, never physical declarations.
+pub(in crate::surface) trait ReferencedBinding: Ord + From<String> {
+    fn program(binding: &crate::kernel::BindingName) -> Option<Self>;
+}
+impl ReferencedBinding for String {
+    fn program(binding: &crate::kernel::BindingName) -> Option<Self> {
+        binding.named().map(str::to_owned)
+    }
+}
+impl ReferencedBinding for crate::kernel::BindingName {
+    fn program(binding: &crate::kernel::BindingName) -> Option<Self> {
+        Some(binding.clone())
+    }
+}
+
+pub(in crate::surface) fn contract_expression_referenced_bindings(
+    expression: &ContractExpression,
+) -> BTreeSet<crate::kernel::BindingName> {
+    let mut bindings = BTreeSet::new();
+    collect_contract_expression_referenced_bindings(expression, &mut bindings);
+    bindings
+}
+
+pub(in crate::surface) fn collect_contract_expression_referenced_bindings<N: ReferencedBinding>(
+    expression: &ContractExpression,
+    names: &mut BTreeSet<N>,
+) {
     let mut depth = 0;
     let mut current = expression;
     while let ContractExpression::Add(left, _) = current {
@@ -2856,24 +2894,26 @@ pub(in crate::surface) fn collect_contract_expression_referenced_names(
                 | ContractExpression::At {
                     expression: inner, ..
                 } => pending.push(inner),
-                expression => collect_contract_expression_referenced_names_one(expression, names),
+                expression => {
+                    collect_contract_expression_referenced_bindings_one(expression, names)
+                }
             }
         }
         return;
     }
-    collect_contract_expression_referenced_names_one(expression, names);
+    collect_contract_expression_referenced_bindings_one(expression, names);
 }
 
-fn collect_contract_expression_referenced_names_one(
+fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
     expression: &ContractExpression,
-    names: &mut BTreeSet<String>,
+    names: &mut BTreeSet<N>,
 ) {
     match expression {
         ContractExpression::Proposition(proposition) => {
-            collect_click_proposition_referenced_names(proposition, names)
+            collect_click_proposition_referenced_bindings(proposition, names)
         }
         ContractExpression::Resource(subject) => {
-            collect_resource_subject_referenced_names(subject, names)
+            collect_resource_subject_referenced_bindings(subject, names)
         }
         ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
@@ -2882,9 +2922,9 @@ fn collect_contract_expression_referenced_names_one(
             parameters, body, ..
         } => {
             let mut captures = BTreeSet::new();
-            collect_contract_expression_referenced_names(body, &mut captures);
+            collect_contract_expression_referenced_bindings(body, &mut captures);
             for (name, _) in parameters {
-                captures.remove(name);
+                captures.remove(&N::from(name.clone()));
             }
             names.extend(captures);
         }
@@ -2892,95 +2932,95 @@ fn collect_contract_expression_referenced_names_one(
             function,
             arguments,
         } => {
-            collect_contract_expression_referenced_names(function, names);
+            collect_contract_expression_referenced_bindings(function, names);
             for argument in arguments {
-                collect_contract_expression_referenced_names(argument, names);
+                collect_contract_expression_referenced_bindings(argument, names);
             }
         }
 
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::Negate(inner) => {
-            collect_contract_expression_referenced_names(inner, names);
+            collect_contract_expression_referenced_bindings(inner, names);
         }
         ContractExpression::AlgebraicVariable { name, .. } => {
-            names.insert(name.clone());
+            names.insert(name.clone().into());
         }
         ContractExpression::AlgebraicConstructor { arguments, .. } => {
             for argument in arguments {
-                collect_contract_expression_referenced_names(argument, names);
+                collect_contract_expression_referenced_bindings(argument, names);
             }
         }
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
-            collect_contract_expression_referenced_names(scrutinee, names);
+            collect_contract_expression_referenced_bindings(scrutinee, names);
             for arm in arms {
                 let mut arm_names = BTreeSet::new();
-                collect_contract_expression_referenced_names(&arm.body, &mut arm_names);
+                collect_contract_expression_referenced_bindings(&arm.body, &mut arm_names);
                 for binding in &arm.bindings {
-                    arm_names.remove(binding);
+                    arm_names.remove(&N::from(binding.clone()));
                 }
                 names.extend(arm_names);
             }
         }
         ContractExpression::SequenceLiteral(elements) => {
             for element in elements {
-                collect_contract_expression_referenced_names(element, names);
+                collect_contract_expression_referenced_bindings(element, names);
             }
         }
         ContractExpression::SequenceConcat(left, right) => {
-            collect_contract_expression_referenced_names(left, names);
-            collect_contract_expression_referenced_names(right, names);
+            collect_contract_expression_referenced_bindings(left, names);
+            collect_contract_expression_referenced_bindings(right, names);
         }
         // A qualified C object is referenced under its qualified spelling as
         // well as through whatever its lowering names, so a body that reads
         // one is seen to mention it (`reject_pure_bodies_reading_c_objects`).
         ContractExpression::QualifiedC { name, lowered } => {
-            names.insert(name.clone());
-            collect_program_expression_referenced_names(lowered, names);
+            names.insert(name.clone().into());
+            collect_program_expression_referenced_bindings(lowered, names);
         }
         ContractExpression::CUnary { operand, .. } => {
-            collect_contract_expression_referenced_names(operand, names);
+            collect_contract_expression_referenced_bindings(operand, names);
         }
         ContractExpression::ProgramExpression(expression) => {
-            collect_program_expression_referenced_names(expression, names);
+            collect_program_expression_referenced_bindings(expression, names);
         }
         ContractExpression::Field { base, .. } => {
-            collect_contract_expression_referenced_names(base, names);
+            collect_contract_expression_referenced_bindings(base, names);
         }
         ContractExpression::ArrayIndex { base, indexes, .. } => {
-            collect_contract_expression_referenced_names(base, names);
+            collect_contract_expression_referenced_bindings(base, names);
             for index in indexes {
-                collect_contract_expression_referenced_names(index, names);
+                collect_contract_expression_referenced_bindings(index, names);
             }
         }
         ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
-            names.insert(name.clone());
+            names.insert(name.clone().into());
         }
         ContractExpression::ResourceCount(resource) => {
             if let ResourceClause::Declared { arguments, .. } = resource.as_ref() {
                 for argument in arguments {
-                    collect_contract_expression_referenced_names(argument, names);
+                    collect_contract_expression_referenced_bindings(argument, names);
                 }
             }
         }
         ContractExpression::ResourceWildcard => {}
         ContractExpression::Old(expression) | ContractExpression::BitwiseNot(expression) => {
-            collect_contract_expression_referenced_names(expression, names);
+            collect_contract_expression_referenced_bindings(expression, names);
         }
         ContractExpression::At { expression, .. } => {
-            collect_contract_expression_referenced_names(expression, names);
+            collect_contract_expression_referenced_bindings(expression, names);
         }
         crate::surface::binary_contract_expression!(left, right) => {
-            collect_contract_expression_referenced_names(left, names);
-            collect_contract_expression_referenced_names(right, names);
+            collect_contract_expression_referenced_bindings(left, names);
+            collect_contract_expression_referenced_bindings(right, names);
         }
         ContractExpression::If {
             condition,
             then_branch,
             else_branch,
         } => {
-            collect_click_proposition_referenced_names(condition, names);
-            collect_contract_expression_referenced_names(then_branch, names);
-            collect_contract_expression_referenced_names(else_branch, names);
+            collect_click_proposition_referenced_bindings(condition, names);
+            collect_contract_expression_referenced_bindings(then_branch, names);
+            collect_contract_expression_referenced_bindings(else_branch, names);
         }
         ContractExpression::RangeFold {
             start,
@@ -2990,24 +3030,24 @@ fn collect_contract_expression_referenced_names_one(
             item,
             body,
         } => {
-            collect_contract_expression_referenced_names(start, names);
-            collect_contract_expression_referenced_names(end, names);
-            collect_contract_expression_referenced_names(initial, names);
+            collect_contract_expression_referenced_bindings(start, names);
+            collect_contract_expression_referenced_bindings(end, names);
+            collect_contract_expression_referenced_bindings(initial, names);
             let mut body_names = BTreeSet::new();
-            collect_contract_expression_referenced_names(body, &mut body_names);
-            body_names.remove(accumulator);
-            body_names.remove(item);
+            collect_contract_expression_referenced_bindings(body, &mut body_names);
+            body_names.remove(&N::from(accumulator.clone()));
+            body_names.remove(&N::from(item.clone()));
             names.extend(body_names);
         }
         ContractExpression::Let {
             name, value, body, ..
         } => {
-            collect_contract_expression_referenced_names(value, names);
-            let previous = names.remove(name);
-            collect_contract_expression_referenced_names(body, names);
-            names.remove(name);
+            collect_contract_expression_referenced_bindings(value, names);
+            let previous = names.remove(&N::from(name.clone()));
+            collect_contract_expression_referenced_bindings(body, names);
+            names.remove(&N::from(name.clone()));
             if previous {
-                names.insert(name.clone());
+                names.insert(name.clone().into());
             }
         }
         ContractExpression::MethodCall {
@@ -3015,28 +3055,28 @@ fn collect_contract_expression_referenced_names_one(
             arguments,
             ..
         } => {
-            collect_contract_expression_referenced_names(receiver, names);
+            collect_contract_expression_referenced_bindings(receiver, names);
             for argument in arguments {
-                collect_contract_expression_referenced_names(argument, names);
+                collect_contract_expression_referenced_bindings(argument, names);
             }
         }
         ContractExpression::Call { arguments, .. } => {
             for argument in arguments {
-                collect_contract_expression_referenced_names(argument, names);
+                collect_contract_expression_referenced_bindings(argument, names);
             }
         }
     }
 }
 
-fn collect_resource_subject_referenced_names(
+fn collect_resource_subject_referenced_bindings<N: ReferencedBinding>(
     subject: &ResourceSubject,
-    names: &mut BTreeSet<String>,
+    names: &mut BTreeSet<N>,
 ) {
     match subject {
         ResourceSubject::Emp => (),
         ResourceSubject::Star(left, right) => {
-            collect_resource_subject_referenced_names(left, names);
-            collect_resource_subject_referenced_names(right, names);
+            collect_resource_subject_referenced_bindings(left, names);
+            collect_resource_subject_referenced_bindings(right, names);
         }
         ResourceSubject::Instance { .. }
         | ResourceSubject::Footprint(_)
@@ -3044,31 +3084,31 @@ fn collect_resource_subject_referenced_names(
         | ResourceSubject::Captured { .. } => {}
         ResourceSubject::SavedMemory { base, start, end } => {
             for argument in [base, start].into_iter().chain(end.iter()) {
-                collect_contract_expression_referenced_names(argument, names);
+                collect_contract_expression_referenced_bindings(argument, names);
             }
         }
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
-                collect_contract_expression_referenced_names(argument, names);
+                collect_contract_expression_referenced_bindings(argument, names);
             }
         }
         ResourceSubject::Memory(segment) => {
-            collect_program_expression_referenced_names(&segment.base, names);
-            collect_program_expression_referenced_names(&segment.start, names);
-            collect_program_expression_referenced_names(&segment.end, names);
+            collect_program_expression_referenced_bindings(&segment.base, names);
+            collect_program_expression_referenced_bindings(&segment.start, names);
+            collect_program_expression_referenced_bindings(&segment.end, names);
             match &segment.surface {
                 ContractSegmentSurface::Range { base, start, end }
                 | ContractSegmentSurface::StructRange {
                     base, start, end, ..
                 } => {
                     for expression in [base, start, end] {
-                        collect_contract_expression_referenced_names(expression, names);
+                        collect_contract_expression_referenced_bindings(expression, names);
                     }
                 }
                 ContractSegmentSurface::Field {
                     base: Some(base), ..
                 } => {
-                    collect_contract_expression_referenced_names(base, names);
+                    collect_contract_expression_referenced_bindings(base, names);
                 }
                 _ => {}
             }
@@ -3076,9 +3116,9 @@ fn collect_resource_subject_referenced_names(
     }
 }
 
-pub(in crate::surface) fn collect_click_proposition_referenced_names(
+pub(in crate::surface) fn collect_click_proposition_referenced_bindings<N: ReferencedBinding>(
     proposition: &ClickProposition,
-    names: &mut BTreeSet<String>,
+    names: &mut BTreeSet<N>,
 ) {
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
@@ -3089,66 +3129,68 @@ pub(in crate::surface) fn collect_click_proposition_referenced_names(
                 pending.push(right);
                 pending.push(left);
             }
-            proposition => collect_click_proposition_referenced_names_one(proposition, names),
+            proposition => collect_click_proposition_referenced_bindings_one(proposition, names),
         }
     }
 }
 
-fn collect_click_proposition_referenced_names_one(
+fn collect_click_proposition_referenced_bindings_one<N: ReferencedBinding>(
     proposition: &ClickProposition,
-    names: &mut BTreeSet<String>,
+    names: &mut BTreeSet<N>,
 ) {
     match proposition {
         ClickProposition::Value(expression) => {
-            collect_contract_expression_referenced_names(expression, names)
+            collect_contract_expression_referenced_bindings(expression, names)
         }
         ClickProposition::ChangesOnly { resources, .. } => {
             for r in resources {
-                collect_resource_subject_referenced_names(r, names);
+                collect_resource_subject_referenced_bindings(r, names);
             }
         }
 
         ClickProposition::Comparison { left, right, .. } => {
-            collect_contract_expression_referenced_names(left, names);
-            collect_contract_expression_referenced_names(right, names);
+            collect_contract_expression_referenced_bindings(left, names);
+            collect_contract_expression_referenced_bindings(right, names);
         }
         ClickProposition::FloatClassification { expression, .. } => {
-            collect_contract_expression_referenced_names(expression, names);
+            collect_contract_expression_referenced_bindings(expression, names);
         }
         ClickProposition::Separate { left, right } => {
-            collect_resource_subject_referenced_names(left, names);
-            collect_resource_subject_referenced_names(right, names);
+            collect_resource_subject_referenced_bindings(left, names);
+            collect_resource_subject_referenced_bindings(right, names);
         }
         ClickProposition::Contains { parent, child } => {
-            collect_resource_subject_referenced_names(parent, names);
-            collect_resource_subject_referenced_names(child, names);
+            collect_resource_subject_referenced_bindings(parent, names);
+            collect_resource_subject_referenced_bindings(child, names);
         }
         ClickProposition::ResourceViewable { resource } => {
-            collect_resource_subject_referenced_names(resource, names);
+            collect_resource_subject_referenced_bindings(resource, names);
         }
         ClickProposition::Loadable { segment } => {
-            names.extend(contract_segment_referenced_names(segment));
+            for expression in [&segment.base, &segment.start, &segment.end] {
+                collect_program_expression_referenced_bindings(expression, names);
+            }
         }
         ClickProposition::Defined { expression } => {
-            collect_contract_expression_referenced_names(expression, names);
+            collect_contract_expression_referenced_bindings(expression, names);
         }
         ClickProposition::At { proposition, .. } => {
-            collect_click_proposition_referenced_names(proposition, names);
+            collect_click_proposition_referenced_bindings(proposition, names);
         }
         ClickProposition::And(left, right)
         | ClickProposition::Or(left, right)
         | ClickProposition::Implies(left, right) => {
-            collect_click_proposition_referenced_names(left, names);
-            collect_click_proposition_referenced_names(right, names);
+            collect_click_proposition_referenced_bindings(left, names);
+            collect_click_proposition_referenced_bindings(right, names);
         }
-        ClickProposition::Not(body) => collect_click_proposition_referenced_names(body, names),
+        ClickProposition::Not(body) => collect_click_proposition_referenced_bindings(body, names),
         ClickProposition::ForAll { name, body, .. }
         | ClickProposition::Exists { name, body, .. } => {
-            let previous = names.remove(name);
-            collect_click_proposition_referenced_names(body, names);
-            names.remove(name);
+            let previous = names.remove(&N::from(name.clone()));
+            collect_click_proposition_referenced_bindings(body, names);
+            names.remove(&N::from(name.clone()));
             if previous {
-                names.insert(name.clone());
+                names.insert(name.clone().into());
             }
         }
         ClickProposition::RangeAll {
@@ -3165,20 +3207,20 @@ fn collect_click_proposition_referenced_names_one(
             body,
             ..
         } => {
-            collect_contract_expression_referenced_names(start, names);
-            collect_contract_expression_referenced_names(end, names);
-            let previous = names.remove(item);
-            collect_click_proposition_referenced_names(body, names);
-            names.remove(item);
+            collect_contract_expression_referenced_bindings(start, names);
+            collect_contract_expression_referenced_bindings(end, names);
+            let previous = names.remove(&N::from(item.clone()));
+            collect_click_proposition_referenced_bindings(body, names);
+            names.remove(&N::from(item.clone()));
             if previous {
-                names.insert(item.clone());
+                names.insert(item.clone().into());
             }
         }
         ClickProposition::PredicateCall { name, .. }
             if crate::kernel::TerminationAtomKind::from_spelling(name).is_some() => {}
         ClickProposition::PredicateCall { arguments, .. } => {
             for argument in arguments {
-                collect_contract_expression_referenced_names(argument, names);
+                collect_contract_expression_referenced_bindings(argument, names);
             }
         }
     }
@@ -3644,10 +3686,10 @@ pub(in crate::surface) fn pure_function_parameter_conversion(
 pub(in crate::surface) fn character_byte_view(name: &str) -> ContractExpression {
     ContractExpression::CUnary {
         operand: Box::new(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable(name.to_string()),
+            ProgramExpression::Variable(name.into()),
         )),
         lowered: ProgramExpression::Cast {
-            expression: Box::new(ProgramExpression::Variable(name.to_string())),
+            expression: Box::new(ProgramExpression::Variable(name.into())),
             target_type: crate::kernel::ProgramType::UInt8Pointer,
             integer_mode: crate::kernel::IntegerCastMode::PointerCoercion,
             pointee_struct: None,
@@ -3679,7 +3721,8 @@ pub(in crate::surface) fn character_byte_view_name(
         return None;
     };
     matches!(expression.as_ref(), ProgramExpression::Variable(inner) if inner == name)
-        .then_some(name.as_str())
+        .then(|| name.named())
+        .flatten()
 }
 
 /// Whether a value of C type `actual` passed where kernel type `expected`
@@ -3723,7 +3766,7 @@ pub(in crate::surface) fn elaborate_character_byte_views(
                 .map(|(argument, parameter)| {
                     let named = match argument {
                         ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                            name,
+                            crate::kernel::BindingName::Named(name),
                         ))
                         | ContractExpression::Binding(name)
                         | ContractExpression::CBinding(name) => Some(name),
@@ -4103,12 +4146,11 @@ fn substitute_contract_expression_node(
                 },
             )))
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-            Ok(substitutions
-                .value(name)
-                .cloned()
-                .unwrap_or_else(|| expression.clone()))
-        }
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Ok(name
+            .named()
+            .and_then(|name| substitutions.value(name))
+            .cloned()
+            .unwrap_or_else(|| expression.clone())),
         ContractExpression::ProgramExpression(expression) => {
             substitute_program_expression_as_contract_in(expression, substitutions)
         }
@@ -4358,7 +4400,7 @@ fn substitute_program_expression_as_contract_with_numerals_in(
             Ok(ContractExpression::ProgramExpression(expression.clone()))
         }
         // A step's result is spelled by its step.
-        ProgramExpression::StepResult { step, origin } => {
+        ProgramExpression::StepResult { step, origin, .. } => {
             crate::surface::diagnostics::step_result_expression(*step).ok_or_else(|| match origin {
                 crate::kernel::StepOrigin::Call(function) => {
                     format!("the result of the call to `{function}` has no source spelling")
@@ -4375,8 +4417,9 @@ fn substitute_program_expression_as_contract_with_numerals_in(
                 ),
             })
         }
-        ProgramExpression::Variable(name) => Ok(substitutions
-            .value(name)
+        ProgramExpression::Variable(name) => Ok(name
+            .named()
+            .and_then(|name| substitutions.value(name))
             .cloned()
             .unwrap_or_else(|| ContractExpression::ProgramExpression(expression.clone()))),
         ProgramExpression::Add(left, right) => Ok(ContractExpression::Add(
@@ -4601,7 +4644,7 @@ pub(in crate::surface) fn substitute_program_expression_in(
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => Ok(expression.clone()),
         ProgramExpression::Variable(name) => {
-            let Some(substitution) = substitutions.value(name) else {
+            let Some(substitution) = name.named().and_then(|name| substitutions.value(name)) else {
                 return Ok(expression.clone());
             };
             contract_expression_as_program_expression(substitution).ok_or_else(|| {
@@ -4882,7 +4925,7 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
         )),
         ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
         ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
-            Some(ProgramExpression::Variable(name.clone()))
+            Some(ProgramExpression::Variable((name.clone()).into()))
         }
         ContractExpression::ResourceCount(_) => None,
         ContractExpression::ResourceWildcard => None,
@@ -4969,7 +5012,7 @@ pub(in crate::surface) fn resource_body_program_expression(
                 .click_type
                 .as_ref()
                 .is_some_and(|click_type| click_type.interface_type().is_some()))
-        .then(|| ProgramExpression::Variable(access.field.clone()))
+        .then(|| ProgramExpression::Variable((access.field.clone()).into()))
     })
 }
 
@@ -5017,7 +5060,7 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
         )),
         ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
         ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
-            Some(ProgramExpression::Variable(name.clone()))
+            Some(ProgramExpression::Variable((name.clone()).into()))
         }
         ContractExpression::ResourceCount(_) => None,
         ContractExpression::ResourceWildcard => None,

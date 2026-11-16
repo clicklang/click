@@ -1,7 +1,7 @@
-# Normalization keeps symbolic products opaque
+# Normalization checks one symbolic distribution
 
-Explicit Integer normalization distributes constant coefficients, but not a
-product of two symbolic operands. A symbolic product stays opaque even when distribution is mathematically valid.
+Explicit Integer normalization accepts one written distributivity step with
+opaque operands. Full polynomial expansion still belongs to expandable search.
 
 ```click
 theorem by_normalize(x: Integer, y: Integer, z: Integer) {
@@ -10,5 +10,5 @@ theorem by_normalize(x: Integer, y: Integer, z: Integer) {
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+pass
 ```

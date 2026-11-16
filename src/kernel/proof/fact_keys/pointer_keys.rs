@@ -476,7 +476,7 @@ mod tests {
                 value: SharedMachineIntegerTerm::index(
                     MachineIntegerType::Int32,
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(memory),
+                        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(address.clone()),
                         LoadKind::Int32,
                     ),

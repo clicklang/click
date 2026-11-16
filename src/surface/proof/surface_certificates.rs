@@ -598,7 +598,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
             surface,
             MachineTerm::Variable(*goal_var),
             &ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binder_name.clone(),
+                (binder_name.clone()).into(),
             )),
             goal_conclusion,
             surface_goal_conclusion,
@@ -4063,8 +4063,8 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
 
 /// `defined(value - amount)` over `int32` by its two Integer bounds, which
 /// together are the definedness fact: each bound of the exact value is
-/// proved by Integer arithmetic from `premises` and the type-range bound of
-/// `value` it needs, stated by its explicit certificate.
+/// proved by ordinary Integer laws from `premises` and the normalized
+/// type-range bound of `value` it needs.
 fn int32_definedness_by_integer_bounds(
     value: ContractExpression,
     amount: ContractExpression,
@@ -4105,15 +4105,7 @@ fn int32_definedness_by_integer_bounds(
         })
     };
     vec![
-        have(
-            range.clone(),
-            vec![ProofTactic::ArithmeticCertificate(
-                ArithmeticCertificate::integer(IntegerCertificate {
-                    nodes: vec![IntegerCertificateNode::TypeRange { result: range }],
-                    conclusion: 0,
-                }),
-            )],
-        ),
+        have(range.clone(), vec![ProofTactic::Normalize]),
         have(
             less_equal(minimum, exact.clone()),
             vec![ProofTactic::ArithmeticUsing(listed.clone())],
@@ -4998,7 +4990,7 @@ pub(super) fn lower_surface_candidate_in_state_with_assumptions(
     lower_fixed_state_proposition_through_kernel(
         candidate,
         &assumptions,
-        ContractEnvironment::new(&values, &array_refs),
+        ContractEnvironment::new(&values, &array_refs).with_parameters(parameter_binding),
         FixedStateFrame::new(
             view.old_reference_state(state),
             state,
@@ -5094,9 +5086,9 @@ pub(super) fn contract_expression_mentions_program_local(
             }),
             _ => false,
         },
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-            !parameter_names.contains(name.as_str())
-        }
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => name
+            .named()
+            .is_none_or(|name| !parameter_names.contains(name)),
         ContractExpression::QualifiedC { .. } | ContractExpression::ProgramExpression(_) => false,
         ContractExpression::ArrayIndex {
             base,

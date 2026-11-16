@@ -90,7 +90,7 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
           "name": "clang"
         },
         "sources": {
@@ -98,9 +98,9 @@
             "artifact": {
               "bytes": 14010,
               "path": ".click/counters/client.cpp.click-cpp.json",
-              "sha256": "11c2f56160bc3d64a954710795416daa94f586856025ec1dbd76ac5133bcebdd"
+              "sha256": "8ca812a8e0cf1590989a58be7aa855f09f93e9d6df217c325aac56ce302aae2a"
             },
-            "identity": "13b8e187e89734435d4c3e6e5c8556f7ba1616c8d2fa25f3a85e2339794d6996",
+            "identity": "f98ba6c44824c1e54cfc8be41dff15d80795fe81ba118988f63f6ce1b2980ba1",
             "inputs": {
               "$unit/client.cpp": "a98afac98f7d33fc31594f3f8abb45b9e4c0b82c0b9f31d73ae54c63cec4bea7",
               "$unit/counter.h": "7ae072b831f19b16d5b488847c887671eee0f823236a5aca2b1c8ca070a3eddb"
@@ -110,9 +110,9 @@
             "artifact": {
               "bytes": 11775,
               "path": ".click/counters/counter.cpp.click-cpp.json",
-              "sha256": "50bd29eae1b387d55ffc5831ea103f532868a853ff5721514c0b51b821b1a386"
+              "sha256": "806d22a2e1d58071957c5a31eeb0a2223455ecb824c873bd6faa357fc2b2d101"
             },
-            "identity": "b9eb8291127cbdf206b90a8f660c390ab407b5734bb9b453d6e8b17b5125387b",
+            "identity": "f7a30edb48e7c0035f99a9e7c1cd3f9601429ef1ea6dde2c84554f9aa065f254",
             "inputs": {
               "$unit/counter.cpp": "63e57aa316b5fd310b416f4be6d5e515a9a24f6303f167d768d6fbcb8980e4bd",
               "$unit/counter.h": "7ae072b831f19b16d5b488847c887671eee0f823236a5aca2b1c8ca070a3eddb"

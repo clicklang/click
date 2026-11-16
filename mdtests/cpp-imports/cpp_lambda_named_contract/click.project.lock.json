@@ -50,7 +50,7 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
           "name": "clang"
         },
         "sources": {
@@ -58,9 +58,9 @@
             "artifact": {
               "bytes": 13135,
               "path": ".click/fixture/lambda.cpp.click-cpp.json",
-              "sha256": "1e3504537d3a559d99b168488651d870c139077a9c7df00e19ecb02951cb2adc"
+              "sha256": "3da04b6028a44384bd21f5107ddb79fa0a98fb78b2ebf65a236ce335c4c4973a"
             },
-            "identity": "1506aa338b2e9985a38fb4b68e784ed78178ee85b763ac32934f9ca760fc5155",
+            "identity": "7a14476f8c1ffa63cfaa1f037cce84c99e8842717d4d40f0a2ce240caf214bbd",
             "inputs": {
               "$unit/lambda.cpp": "1129b76ec4f8b0447230f65c5fe798dd1e541862dc8dd0a1600e9ec8f4c61b38"
             }

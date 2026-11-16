@@ -1659,6 +1659,50 @@ designators, and dynamic or non-literal initialization remain unsupported.
 <!-- verified-example: mdtests/aggregate_array_static_effect.md -->
 <!-- verified-example: mdtests/designated_aggregate_static_objects.md -->
 
+## Automatic declaration references
+
+A C parameter or automatic local has a typed declaration identity. Its ordinary
+source name resolves in the current lexical scope; shadowing does not rename
+the C variable or create a generated variable.
+
+Use `f.statement(2).local(x)` to name the `x` declared by that source statement.
+Nested source statements chain as `f.statement(2).statement(0).local(x)`.
+The canonical forms `f.parameter(i)` and `f.local(i)` use separate zero-based
+ordinals: signature position for parameters, declaration introduction order for
+automatic locals throughout the body. These references remain unambiguous when
+the source reuses a spelling. Qualify an ambiguous function with its source,
+for example `"file.c"::f.local(0)`, or a declared source alias.
+
+A declaration is distinct from each execution instance of its storage. Loop
+re-entry and recursive calls allocate distinct instances. Raised pointer
+addresses can name an exact instance with `f.local(i).storage(implicit)`,
+`.storage(parameter)`, `.storage(lifetime, n)`, or `.storage(frame, n)`.
+These are byte pointers to storage identities, including after a lifetime ends;
+forming such a proof term grants no permission to access the storage. Typed
+pointer casts and `byte_offset` retain the ordinary pointer syntax.
+
+<!-- verified-example: mdtests/c_declaration_references.md -->
+<!-- verified-example: mdtests/c_aggregate_declaration_references.md -->
+
+## Static declaration references
+
+A function's `static` objects use `f.static(i)`, counting static declarations
+in source order separately from automatic locals. A file-static object uses
+`"file.c"::static(i)` (or a declared source alias); compatible redeclarations
+keep the same ordinal. The file owner is the root translation unit, including
+for code brought in through a header. Externally linked objects retain their
+ordinary C symbol names.
+
+These references preserve scalar types, struct layouts, and array dimensions.
+They remain usable from another function after a static object's pointer
+escapes. Each static declaration has one storage identity for the whole program,
+spelled `f.static(i).storage()` or `"file.c"::static(i).storage()`. These storage
+forms are byte pointers and supply no permission to read or write. Scalar reads
+use the surrounding selected memory, including `old(...)`; volatile reads are
+subject to the ordinary specification restrictions.
+
+<!-- verified-example: mdtests/c_static_declaration_references.md -->
+
 ## String literals
 
 A proof names a function body's literal object with `f.string_literal(i)`.

@@ -221,7 +221,7 @@ mod tests {
             assert_eq!(*scrutinee, SurfaceTerm::Binding("payload".into()));
             assert_eq!(arms[0].bindings, vec!["item"]);
             assert!(
-                matches!(&arms[0].body, SurfaceTerm::Binding(name) | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) if name == "item")
+                matches!(&arms[0].body, SurfaceTerm::Binding(name) | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(crate::kernel::BindingName::Named(name))) if name == "item")
             );
             assert!(folds::scoped_binder_name(folds::BinderCarrier::Algebraic, variable).is_none());
             assert!(folds::binder_name(true, variable).is_none());

@@ -88,6 +88,10 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
     if let ProgramExpression::Variable(name) = expression
         && !state.locals.is_array_object(name)
         && !state.locals.is_aggregate_object(name)
+        && !name
+            .static_id()
+            .and_then(|id| id.metadata())
+            .is_some_and(|metadata| metadata.aggregate || metadata.array_shape.is_some())
         && !matches!(
             state.locals.object_type(name),
             Some(ProgramType::Int128 | ProgramType::UInt128)
@@ -971,6 +975,72 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn static_array_addresses_do_not_require_the_callee_local_bindings() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let functions = crate::languages::c::syntax::parse_functions_for_source(
+            "int32 scalar(void) { static int32 values[2]; return values[0]; } \
+             struct cell { int32 value; }; \
+             int32 aggregate(void) { static struct cell values[2]; return values[0].value; }",
+            "statics.c",
+        )
+        .unwrap();
+        for function in &functions {
+            let binding = function
+                .static_arrays()
+                .values()
+                .next()
+                .map(|object| object.kernel_name())
+                .or_else(|| {
+                    function
+                        .static_aggregate_arrays()
+                        .values()
+                        .next()
+                        .map(|object| object.kernel_name())
+                })
+                .unwrap();
+            let base = ProgramExpression::Variable(binding.clone());
+            let bytes = ProgramExpression::Cast {
+                expression: Box::new(base.clone()),
+                target_type: ProgramType::UInt8Pointer,
+                integer_mode: IntegerCastMode::Standard,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            };
+            for (expression, offset) in [
+                (base, 0),
+                (bytes.clone(), 0),
+                (
+                    ProgramExpression::Add(
+                        Box::new(bytes),
+                        Box::new(ProgramExpression::Value(crate::kernel::int32(4))),
+                    ),
+                    4,
+                ),
+            ] {
+                let paths = evaluate(&expression);
+                assert_eq!(paths.len(), 1);
+                let ExpressionOutcome::Value(value) = &paths[0].outcome else {
+                    panic!("{expression:?}: {:?}", paths[0].outcome);
+                };
+                let native = value.native();
+                let ProgramValue::Pointer(pointer) = native.as_ref() else {
+                    panic!("a static array must decay to its address: {native:?}");
+                };
+                assert_eq!(
+                    pointer.pointer().block,
+                    Memory::global_pointer(binding).block
+                );
+                assert_eq!(
+                    pointer.pointer().offset,
+                    PointerOffsetTerm::Constant(offset)
+                );
+            }
+        }
+    }
+
     fn evaluate(expression: &ProgramExpression) -> Vec<ExecutionValuePath> {
         evaluate_expression_value_paths(
             &ExecutionState::new(),
@@ -1617,7 +1687,7 @@ mod tests {
         let mut obligations = Vec::new();
         crate::kernel::loops::assign_call_result(
             &mut caller,
-            "received",
+            &("received").into(),
             value.clone(),
             &mut obligations,
             &PureFactContext::new(),
@@ -1674,6 +1744,7 @@ mod tests {
             state
                 .locals
                 .names_holding_kernel_integer(&root)
+                .map(BindingName::source_name)
                 .collect::<Vec<_>>(),
             vec!["source"]
         );
@@ -1740,6 +1811,7 @@ mod tests {
                 state
                     .locals
                     .names_holding_kernel_integer(&root)
+                    .map(BindingName::source_name)
                     .collect::<Vec<_>>(),
                 vec![name]
             );
@@ -1839,6 +1911,7 @@ mod tests {
                     origin: crate::kernel::StepOrigin::Operator(
                         crate::kernel::OperatorKind::Ternary,
                     ),
+                    ends: true,
                 },
                 &PureFactContext::new(),
                 &mut ExecutionBudget::new(),
@@ -1960,6 +2033,7 @@ mod tests {
         let expression = ProgramExpression::StepResult {
             step: 11,
             origin: crate::kernel::StepOrigin::Operator(crate::kernel::OperatorKind::Ternary),
+            ends: true,
         };
         let paths = evaluate_expression_value_paths(
             &after,

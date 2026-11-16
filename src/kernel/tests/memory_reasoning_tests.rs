@@ -921,12 +921,12 @@ fn mutable_frame_proves_unwritten_load_equal_across_stack_locals() {
         &Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(loop_exit_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(loop_exit_memory))),
                     Box::new(first_cell.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(old_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(old_memory))),
                     Box::new(first_cell),
                     crate::kernel::LoadKind::Int32
                 ),
@@ -974,12 +974,12 @@ fn mutable_frame_transports_load_across_certified_effect_chain() {
         &Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(after),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(after))),
                     Box::new(preserved.clone()),
                     crate::kernel::LoadKind::Int32
                 ),
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(before),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(before))),
                     Box::new(preserved),
                     crate::kernel::LoadKind::Int32
                 ),
@@ -1051,7 +1051,7 @@ fn target_directed_transport_preserves_pointer_field_across_disjoint_buffer_writ
     let current_memory = old_memory.clone().store(written_pointer.clone(), int32(7));
     let old_offset = PointerOffsetTerm::scale_int32(
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(old_memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory(old_memory))),
             Box::new(field_pointer.clone()),
             crate::kernel::LoadKind::Int32,
         ),
@@ -1059,7 +1059,7 @@ fn target_directed_transport_preserves_pointer_field_across_disjoint_buffer_writ
     );
     let current_offset = PointerOffsetTerm::scale_int32(
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(current_memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory(current_memory))),
             Box::new(field_pointer.clone()),
             crate::kernel::LoadKind::Int32,
         ),
@@ -1131,7 +1131,7 @@ fn unrelated_external_cell_store_preserves_memory_load_with_stack_temporary() {
     let current_memory = stack_memory.clone().store(
         p0.clone(),
         int32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(stack_memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory(stack_memory))),
             Box::new(p0),
             crate::kernel::LoadKind::Int32,
         )),
@@ -1142,12 +1142,12 @@ fn unrelated_external_cell_store_preserves_memory_load_with_stack_temporary() {
         &Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(current_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(current_memory))),
                     Box::new(p1.clone()),
                     crate::kernel::LoadKind::Int32
                 ),
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(old_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(old_memory))),
                     Box::new(p1),
                     crate::kernel::LoadKind::Int32
                 ),
@@ -1170,12 +1170,12 @@ fn target_directed_transport_preserves_one_old_load_form() {
     };
     let current_memory = old_memory.clone().store(written, int32(7));
     let old_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(old_memory),
+        ProgramPoint::at(&(crate::kernel::intern_memory(old_memory))),
         Box::new(preserved.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let current_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(current_memory),
+        ProgramPoint::at(&(crate::kernel::intern_memory(current_memory))),
         Box::new(preserved),
         crate::kernel::LoadKind::Int32,
     );
@@ -1230,7 +1230,7 @@ fn exact_separation_resolves_contained_symbolic_ranges_without_general_search() 
     let data_field = owner.offset_by_int32_elements(2.into());
     let loaded_data_offset = PointerOffsetTerm::scale_int32(
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(data_field),
             crate::kernel::LoadKind::Int32,
         ),
@@ -1270,7 +1270,7 @@ fn direct_resource_match_uses_exact_field_load_equalities() {
         block: owner.block.clone(),
         offset: PointerOffsetTerm::scale_int32(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
                 Box::new(owner.offset_by_int32_elements(2.into())),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -1278,7 +1278,7 @@ fn direct_resource_match_uses_exact_field_load_equalities() {
         ),
     };
     let loaded_length = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(owner.offset_by_int32_elements(1.into())),
         crate::kernel::LoadKind::Int32,
     );
@@ -1364,7 +1364,7 @@ fn direct_composite_resource_match_checks_pointer_load_across_block_declaration(
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::scale_int32(
                         MachineTerm::MemoryLoad(
-                            crate::kernel::intern_memory(memory.clone()),
+                            ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
                             Box::new(field.clone()),
                             crate::kernel::LoadKind::Int32,
                         ),
@@ -1561,12 +1561,12 @@ fn equivalent_memory_load_order_facts_can_be_inconsistent() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let old_p0 = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(old_memory),
+        ProgramPoint::at(&(crate::kernel::intern_memory(old_memory))),
         Box::new(p0.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let stack_p0 = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(stack_memory),
+        ProgramPoint::at(&(crate::kernel::intern_memory(stack_memory))),
         Box::new(p0),
         crate::kernel::LoadKind::Int32,
     );
@@ -1600,22 +1600,22 @@ fn equivalent_condition_facts_with_different_truth_values_are_inconsistent() {
         .with_block("local:i", 4)
         .store(Memory::local_pointer("i"), int32(1));
     let left_a = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory_a.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory_a.clone()))),
         Box::new(p0.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let right_a = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory_a),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory_a))),
         Box::new(p1.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let left_b = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory_b.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory_b.clone()))),
         Box::new(p0),
         crate::kernel::LoadKind::Int32,
     );
     let right_b = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory_b),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory_b))),
         Box::new(p1),
         crate::kernel::LoadKind::Int32,
     );
@@ -1693,12 +1693,12 @@ fn disjoint_range_proves_mutable_frame_cell_distinct() {
         &Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(after_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(after_memory))),
                     Box::new(read_cell.clone()),
                     crate::kernel::LoadKind::Int32
                 ),
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(before_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(before_memory))),
                     Box::new(read_cell),
                     crate::kernel::LoadKind::Int32
                 ),
@@ -1756,12 +1756,12 @@ fn disjoint_ranges_frame_metadata_across_symbolic_index_store() {
         &Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(after_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(after_memory))),
                     Box::new(metadata_cell.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(before_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(before_memory))),
                     Box::new(metadata_cell),
                     crate::kernel::LoadKind::Int32
                 ),
@@ -1787,7 +1787,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::scale_int32(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(base_memory.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(base_memory.clone()))),
                 Box::new(owner_data_cell.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -1798,7 +1798,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::scale_int32(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(execution_memory.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(execution_memory.clone()))),
                 Box::new(owner_data_cell.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -2008,12 +2008,12 @@ fn direct_transport_composes_framed_loads_inside_an_indexed_address() {
     let owner_data_cell = owner.offset_by_int32_elements(MachineTerm::constant(2));
     let before = Memory::new();
     let data_value = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
         Box::new(owner_data_cell),
         crate::kernel::LoadKind::Int32,
     );
     let length = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
         Box::new(owner_len_cell),
         crate::kernel::LoadKind::Int32,
     );
@@ -2029,7 +2029,7 @@ fn direct_transport_composes_framed_loads_inside_an_indexed_address() {
     let fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(before.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
                 Box::new(terminator_cell),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -2082,7 +2082,7 @@ fn direct_transport_rewrites_loads_inside_pointer_equality() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(before.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
                 Box::new(field_cell.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -2112,7 +2112,7 @@ fn direct_transport_rewrites_loads_inside_pointer_equality() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(after),
+                ProgramPoint::at(&(crate::kernel::intern_memory(after))),
                 Box::new(field_cell),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -2137,7 +2137,7 @@ fn packed_word_pointer_transport_requires_all_eight_bytes() {
     };
     let before = crate::kernel::intern_memory(Memory::new().with_block("packed-word-frame", 32));
     let bits = MachineTerm::MemoryLoad(
-        before.clone(),
+        ProgramPoint::at(&before),
         Box::new(field.clone()),
         crate::kernel::LoadKind::Bits64,
     );
@@ -2187,7 +2187,7 @@ fn direct_transport_rewrites_loads_inside_signed_add_overflow_guard() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let loaded = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
         Box::new(field.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -2416,22 +2416,22 @@ fn bounded_separation_uses_order_fact_across_equivalent_states() {
         int32(0),
     );
     let query_len = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(plain.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(plain.clone()))),
         Box::new(len_cell.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let query_cap = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(plain),
+        ProgramPoint::at(&(crate::kernel::intern_memory(plain))),
         Box::new(cap_cell.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let fact_len = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(cached.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(cached.clone()))),
         Box::new(len_cell),
         crate::kernel::LoadKind::Int32,
     );
     let fact_cap = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(cached),
+        ProgramPoint::at(&(crate::kernel::intern_memory(cached))),
         Box::new(cap_cell),
         crate::kernel::LoadKind::Int32,
     );
@@ -2508,12 +2508,12 @@ fn covering_disjoint_fact_handles_shifted_mutable_range() {
         &Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(after_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(after_memory))),
                     Box::new(src_cell.clone()),
                     crate::kernel::LoadKind::Int32
                 ),
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(before_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(before_memory))),
                     Box::new(src_cell),
                     crate::kernel::LoadKind::Int32
                 ),
@@ -2540,7 +2540,7 @@ fn atomic_condition_fact_transport_does_not_plan_from_an_effect_summary() {
     let fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(before.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
                 Box::new(stable.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -2575,12 +2575,12 @@ fn memory_load_equality_does_not_ignore_loop_havoc_identity() {
     let equality = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(after),
+                ProgramPoint::at(&(crate::kernel::intern_memory(after))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(before),
+                ProgramPoint::at(&(crate::kernel::intern_memory(before))),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -2616,7 +2616,7 @@ fn atomic_condition_fact_transport_ignores_distinct_materialized_cell() {
     let fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(before.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
                 Box::new(preserved.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -2634,7 +2634,7 @@ fn atomic_condition_fact_transport_ignores_distinct_materialized_cell() {
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::equal(
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(after),
+                        ProgramPoint::at(&(crate::kernel::intern_memory(after))),
                         Box::new(preserved),
                         crate::kernel::LoadKind::Int32
                     ),
@@ -2665,7 +2665,7 @@ fn pointer_offset_fact_transport_does_not_plan_from_an_effect_summary() {
         ConditionTerm::pointer_offset_equal(
             PointerOffsetTerm::scale_int32(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(before.clone()),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
                     Box::new(stable.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -2714,7 +2714,7 @@ fn equality_fact_matching_transports_both_pointer_offset_endpoints() {
     let load_offset = |memory: &Memory, pointer: &Pointer| {
         PointerOffsetTerm::scale_int32(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -2758,12 +2758,12 @@ fn memory_load_equality_combines_equal_pointer_base_and_zero_index() {
         offset: owner_offset,
     };
     let data_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
         Box::new(data_field),
         crate::kernel::LoadKind::Int32,
     );
     let pos_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
         Box::new(pos_field),
         crate::kernel::LoadKind::Int32,
     );
@@ -2793,12 +2793,12 @@ fn memory_load_equality_combines_equal_pointer_base_and_zero_index() {
     let target = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
                 Box::new(indexed),
                 crate::kernel::LoadKind::Int32,
             ),
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(direct),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -2939,7 +2939,7 @@ fn atomic_condition_fact_transport_does_not_plan_from_a_separate_range() {
     let fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(before.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
                 Box::new(left.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -3016,7 +3016,7 @@ fn direct_condition_transport_uses_relative_separate_range() {
     let fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(before.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
                 Box::new(data.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -3073,7 +3073,7 @@ fn direct_condition_transport_uses_relative_separate_range() {
         &Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(after),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(after))),
                     Box::new(data),
                     crate::kernel::LoadKind::Int32
                 ),
@@ -3105,7 +3105,7 @@ fn direct_condition_transport_uses_indexed_relative_separate_range() {
     let fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(before.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
                 Box::new(data_one.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -3159,7 +3159,7 @@ fn direct_condition_transport_uses_indexed_relative_separate_range() {
         &Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(after),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(after))),
                     Box::new(data_one),
                     crate::kernel::LoadKind::Int32
                 ),
@@ -3182,7 +3182,7 @@ fn condition_fact_transport_preserves_arithmetic_structure() {
         ConditionTerm::equal(
             MachineTerm::add(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(before),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(before))),
                     Box::new(stable.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -3203,7 +3203,7 @@ fn condition_fact_transport_preserves_arithmetic_structure() {
                 ConditionTerm::equal(
                     MachineTerm::add(
                         MachineTerm::MemoryLoad(
-                            crate::kernel::intern_memory(after),
+                            ProgramPoint::at(&(crate::kernel::intern_memory(after))),
                             Box::new(stable),
                             crate::kernel::LoadKind::Int32
                         ),
@@ -3542,7 +3542,7 @@ fn integer_array_fold(
     item: Variable,
 ) -> IntegerTerm {
     let load = MachineTerm::MemoryLoad(
-        intern_memory_ref(memory),
+        ProgramPoint::at(&(intern_memory_ref(memory))),
         Box::new(Pointer {
             block: "array".into(),
             offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(item), 4),
@@ -4004,7 +4004,7 @@ fn a_store_to_a_local_is_not_framed_away_for_an_unresolved_pointer() {
 
     // And the tracker's walk stops at that same store, which is the step the
     // refusal names.
-    let point = crate::kernel::resource_tracker::VersionPoint::at(
+    let point = crate::kernel::resource_tracker::ProgramPoint::at(
         &crate::kernel::intern_memory_ref(&after_store),
     );
     let stop = crate::kernel::resource_tracker::last_same(
@@ -4057,7 +4057,7 @@ fn a_pointerless_state_equality_drops_only_a_local_no_pointer_can_reach() {
     // `hidden` is the only name this session's sources never take the
     // address of; `addressed` is one a `&addressed` somewhere reaches.
     crate::kernel::primitives::set_never_address_taken_locals(
-        ["hidden".to_string()].into_iter().collect(),
+        ["hidden".to_string()].into_iter().map(Into::into).collect(),
     );
 
     let entry = Memory::new()
@@ -4825,17 +4825,17 @@ fn memory_resolution_alias_check_uses_strict_indices_across_equal_loaded_bases()
     let before = Memory::new();
     let after = before.clone().with_block("local:temporary", 4);
     let data_before = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
         Box::new(data_cell.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let data_after = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(after),
+        ProgramPoint::at(&(crate::kernel::intern_memory(after))),
         Box::new(data_cell),
         crate::kernel::LoadKind::Int32,
     );
     let length = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before))),
         Box::new(owner),
         crate::kernel::LoadKind::Int32,
     );
@@ -4876,17 +4876,17 @@ fn memory_resolution_alias_check_transports_unchanged_field_loads() {
     let before = Memory::new();
     let after = before.clone().store(len_cell, int32(7));
     let data_before = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
         Box::new(data_cell.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let data_after = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(after),
+        ProgramPoint::at(&(crate::kernel::intern_memory(after))),
         Box::new(data_cell),
         crate::kernel::LoadKind::Int32,
     );
     let zero_index = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before))),
         Box::new(owner.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -4929,22 +4929,22 @@ fn memory_resolution_separation_transports_unchanged_range_base_loads() {
     let before = Memory::new();
     let after = before.clone().store(len_cell, int32(7));
     let data_before = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
         Box::new(data_cell.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let data_after = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(after),
+        ProgramPoint::at(&(crate::kernel::intern_memory(after))),
         Box::new(data_cell),
         crate::kernel::LoadKind::Int32,
     );
     let length = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
         Box::new(owner.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let capacity = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
         Box::new(owner.offset_by_int32_elements(MachineTerm::constant(1))),
         crate::kernel::LoadKind::Int32,
     );
@@ -5011,7 +5011,7 @@ fn incremented_materialized_index_transports_its_nonnegative_bound() {
     };
     let before = Memory::new();
     let old_len = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
         Box::new(owner.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -5019,7 +5019,7 @@ fn incremented_materialized_index_transports_its_nonnegative_bound() {
         .with_block("local:index", 4)
         .store(local_index.clone(), int32(old_len.clone()));
     let materialized_index = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(materialized),
+        ProgramPoint::at(&(crate::kernel::intern_memory(materialized))),
         Box::new(local_index),
         crate::kernel::LoadKind::Int32,
     );
@@ -5069,7 +5069,7 @@ fn assumptions_resolve_materialized_symbolic_memory_load_aliases() {
                 memory.store(
                     pointer.clone(),
                     int32(MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(base_memory.clone()),
+                        ProgramPoint::at(&(crate::kernel::intern_memory(base_memory.clone()))),
                         Box::new(pointer),
                         crate::kernel::LoadKind::Int32,
                     )),
@@ -5098,12 +5098,14 @@ fn assumptions_resolve_materialized_symbolic_memory_load_aliases() {
             &Proposition::ConditionIs(
                 ConditionTerm::equal(
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(base_memory.clone()),
+                        ProgramPoint::at(&(crate::kernel::intern_memory(base_memory.clone()))),
                         Box::new(pointer),
                         crate::kernel::LoadKind::Int32
                     ),
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(materialized_memory.clone()),
+                        ProgramPoint::at(
+                            &(crate::kernel::intern_memory(materialized_memory.clone()))
+                        ),
                         Box::new(symbolic_src.clone()),
                         crate::kernel::LoadKind::Int32,
                     ),
@@ -5135,7 +5137,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_materialized_load_index() {
                 memory.store(
                     pointer.clone(),
                     int32(MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(base_memory.clone()),
+                        ProgramPoint::at(&(crate::kernel::intern_memory(base_memory.clone()))),
                         Box::new(pointer),
                         crate::kernel::LoadKind::Int32,
                     )),
@@ -5155,12 +5157,12 @@ fn assumptions_reject_forall_based_on_a_shadowed_materialized_load_index() {
         Box::new(Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(base_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(base_memory))),
                     Box::new(src_pointers[1].clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(materialized_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(materialized_memory))),
                     Box::new(symbolic_src.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -5234,7 +5236,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_prefix_index() {
                 memory.store(
                     pointer.clone(),
                     int32(MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(base_memory.clone()),
+                        ProgramPoint::at(&(crate::kernel::intern_memory(base_memory.clone()))),
                         Box::new(pointer),
                         crate::kernel::LoadKind::Int32,
                     )),
@@ -5262,12 +5264,12 @@ fn assumptions_reject_forall_based_on_a_shadowed_prefix_index() {
         Box::new(Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(base_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(base_memory))),
                     Box::new(src_pointers[1].clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(materialized_memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(materialized_memory))),
                     Box::new(symbolic_src.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -5333,7 +5335,7 @@ fn added_composition_carrier_keeps_state_premise_work_bounded() {
         ConditionTerm::signed_less_equal(
             MachineTerm::constant(0),
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(after),
+                ProgramPoint::at(&(crate::kernel::intern_memory(after))),
                 Box::new(target.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -5344,7 +5346,7 @@ fn added_composition_carrier_keeps_state_premise_work_bounded() {
         ConditionTerm::signed_less_equal(
             MachineTerm::constant(0),
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(before),
+                ProgramPoint::at(&(crate::kernel::intern_memory(before))),
                 Box::new(target),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -5607,7 +5609,7 @@ fn quantified_load_witness_does_not_certify_loadability_in_a_freed_state() {
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::equal(
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(live.clone()),
+                        ProgramPoint::at(&(crate::kernel::intern_memory(live.clone()))),
                         Box::new(base.offset_by_int32_elements(MachineTerm::Variable(k))),
                         crate::kernel::LoadKind::Int32,
                     ),
@@ -6908,7 +6910,7 @@ mod state_object_agreement {
         assert!(agree(&bare, &declared));
         assert!(agree(&declared, &bare.clone().with_block("local:a", 16)));
 
-        set_never_address_taken_locals(BTreeSet::from(["unreachable".to_string()]));
+        set_never_address_taken_locals(BTreeSet::from(["unreachable".into()]));
         let hidden = bare
             .clone()
             .with_block("local:unreachable", 8)
@@ -6958,12 +6960,12 @@ fn wide_effect_does_not_frame_an_overlapping_narrow_load() {
         &Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    before.into(),
+                    crate::kernel::ProgramPoint::of_memory(&before),
                     Box::new(read.clone()),
                     crate::kernel::LoadKind::Int32
                 ),
                 MachineTerm::MemoryLoad(
-                    after.into(),
+                    crate::kernel::ProgramPoint::of_memory(&after),
                     Box::new(read),
                     crate::kernel::LoadKind::Int32
                 ),

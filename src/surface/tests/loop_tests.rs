@@ -145,10 +145,8 @@ fn nested_conjunction_extraction_precedes_explicit_arithmetic_certificate() {
     assert!(expanded.contains("extract(n >= 0);"), "{expanded}");
     // The extracted conjunct is the initialization's own fact; the
     // decrease and the exit equality are explicit arithmetic certificates.
-    assert!(
-        expanded.find("extract(n >= 0);") < expanded.find("arithmetic_certificate"),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("normalize"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
@@ -277,39 +275,10 @@ fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
     });
 }
 
-/// The premise lists of every generated signed certificate printed in
-/// `region`, one entry per cited premise, in printed order.
-fn arithmetic_certificate_premises(region: &str) -> Vec<Vec<String>> {
-    let mut blocks = Vec::new();
-    let mut rest = region;
-    while let Some(start) = rest.find("arithmetic_certificate signed_int32 {") {
-        rest = &rest[start + "arithmetic_certificate signed_int32 {".len()..];
-        let end = rest.find('}').expect("an unterminated premise list");
-        blocks.push(
-            rest[..end]
-                .split(';')
-                .map(|entry| entry.split_whitespace().collect::<Vec<_>>().join(" "))
-                .filter(|line| line.starts_with("premise "))
-                .filter_map(|entry| {
-                    let (_, proposition) = entry.split_once(": ")?;
-                    Some(
-                        proposition
-                            .split_once(" => ")
-                            .map_or(proposition, |(source, _)| source)
-                            .to_string(),
-                    )
-                })
-                .collect::<Vec<_>>(),
-        );
-        rest = &rest[end..];
-    }
-    blocks
-}
-
 /// The back edge closes the ranking members the loop's `decreases` clause
 /// adds to the bundle, and the smart success expands into the explicit
 /// operations that produced it: a `have` per bundle member and one checked
-/// signed certificate per arithmetic member. The printed source
+/// ordinary proof per arithmetic member. The printed source
 /// must reverify through the ordinary entry point without replanning.
 #[test]
 #[ignore = "nightly: Integer ranking expansion exceeds 0.5s in the parallel gate"]
@@ -330,14 +299,8 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
         closer.contains("have i >= 0 implies i <= n by {"),
         "the expanded closer must prove each bundle member in a `have`: {expanded}"
     );
-    // The invariants keep their signed certificates. The ranking members
-    // now observe the C increment through an Integer operation identity.
-    assert_eq!(
-        arithmetic_certificate_premises(closer).len(),
-        2,
-        "both invariants must retain their signed certificates: {expanded}"
-    );
-    assert!(closer.contains("integer_operation_identity"), "{expanded}");
+    assert!(!closer.contains("arithmetic_certificate"), "{expanded}");
+    assert!(closer.contains("normalize"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
@@ -358,10 +321,7 @@ fn unsigned_integer_ranking_expands_without_search() {
     let (click, sources) = loop_fixture("back_edge_closes_an_unsigned_bound_from_the_guard");
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "count").unwrap();
-    assert!(
-        expanded.contains("integer_operation_identity"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("normalize"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
@@ -373,10 +333,7 @@ fn promoted_integer_ranking_expands_without_search() {
     let (click, sources) = loop_fixture("a_uint8_loop_counter_ranks_as_a_promoted_int32");
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "clear").unwrap();
-    assert!(
-        expanded.contains("integer_operation_identity"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("normalize"), "{expanded}");
     assert!(expanded.contains("integer_cast_identity"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
@@ -540,10 +497,7 @@ fn pointer_loop_increment_emits_checked_equality_proof() {
         verify_c_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "last_element")
         .unwrap_or_else(|e| panic!("{}", e.message()));
-    assert!(
-        expanded.contains("arithmetic_certificate rules"),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
 }
 
@@ -562,10 +516,7 @@ fn grouped_arithmetic_using_expands_to_checked_certificate() {
     let click = fixture.click_source.unwrap();
     verify_c_sources(&click, &sources).unwrap();
     let expanded = expand_function_proof_source(&click, &sources, "bump").unwrap();
-    assert!(
-        expanded.contains("arithmetic_certificate signed_int32"),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
@@ -576,7 +527,7 @@ fn grouped_arithmetic_using_expands_to_checked_certificate() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_02")]
-fn symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planning() {
+fn symbolic_alignment_expands_to_ordinary_proof_and_rechecks_without_planning() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/aligned_symbolic_displacement.md");
     let source = std::fs::read_to_string(&path).unwrap();
@@ -595,15 +546,12 @@ fn symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planni
     let expanded =
         expand_checked_grouped_claim(&click, &verified_for_expansion, "element_is_aligned")
             .unwrap();
-    assert!(
-        expanded.contains("arithmetic_certificate rules"),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
     result.unwrap();
-    assert_eq!(planning, 0, "explicit Special recheck must not plan");
+    assert_eq!(planning, 0, "ordinary arithmetic recheck must not plan");
 }
 
 #[test]
@@ -1641,7 +1589,10 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
         expanded.contains("extract(at(loop(0).exit, i) <= at(loop(0).exit, n));"),
         "{expanded}"
     );
-    assert!(expanded.contains("not at(loop(0).exit, i) <"), "{expanded}");
+    assert!(
+        expanded.contains("not at(loop(0).exit, \"count_to_n.c\"::count_to_n.local(0)) <"),
+        "{expanded}"
+    );
     assert!(
         expanded.contains("click::integer::le_antisymmetric"),
         "{expanded}"
@@ -2848,7 +2799,7 @@ test_batches! {
         grouped_arithmetic_using_expands_to_checked_certificate,
     ],
     loop_batch_02: [
-        symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planning,
+        symbolic_alignment_expands_to_ordinary_proof_and_rechecks_without_planning,
         explicit_straight_line_swap_transports_an_entry_bound,
         frontier_local_loop_verifies_and_advances_to_exit,
         individual_loop_proof_has_no_whole_claim_acceptance_check,

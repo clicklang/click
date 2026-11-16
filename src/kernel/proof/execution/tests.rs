@@ -2507,13 +2507,13 @@ fn checked_event_premises_require_exact_facts_or_ground_comparisons() {
 #[test]
 fn checked_condition_evidence_preserves_the_tail_for_empty_if_arms() {
     let state = ExecutionState::new();
-    let condition = ProgramExpression::Variable("x".to_string());
+    let condition = ProgramExpression::Variable(("x".to_string()).into());
     let branch = ProgramStatement::If {
         condition: condition.clone(),
         then_branch: Box::new(ProgramStatement::Skip),
         else_branch: Box::new(ProgramStatement::Skip),
     };
-    let tail = ProgramStatement::Return(ProgramExpression::Variable("x".to_string()));
+    let tail = ProgramStatement::Return(ProgramExpression::Variable(("x".to_string()).into()));
     let source = prepend_checked_evidence_statement(branch, Some(tail.clone()));
 
     for value in [true, false] {
@@ -2532,8 +2532,8 @@ fn checked_condition_evidence_preserves_the_tail_for_empty_if_arms() {
 #[test]
 fn checked_condition_evidence_rejects_a_different_source_condition() {
     let state = ExecutionState::new();
-    let source_condition = ProgramExpression::Variable("x".to_string());
-    let theorem_condition = ProgramExpression::Variable("y".to_string());
+    let source_condition = ProgramExpression::Variable(("x".to_string()).into());
+    let theorem_condition = ProgramExpression::Variable(("y".to_string()).into());
     let source = ProgramStatement::If {
         condition: source_condition,
         then_branch: Box::new(ProgramStatement::Skip),
@@ -2553,7 +2553,7 @@ fn checked_condition_evidence_rejects_a_different_source_condition() {
 fn a_summarized_loop_matches_only_a_less_annotated_source_loop() {
     fn loop_statement(invariant: Vec<Proposition>, body: ProgramStatement) -> ProgramStatement {
         ProgramStatement::While {
-            condition: ProgramExpression::Variable("c".to_string()),
+            condition: ProgramExpression::Variable(("c".to_string()).into()),
             invariant,
             invariant_checks: Vec::new(),
             effect_checks: Vec::new(),
@@ -2594,7 +2594,7 @@ fn a_summarized_loop_matches_only_a_less_annotated_source_loop() {
     ));
     let mut other_condition = bare.clone();
     if let ProgramStatement::While { condition, .. } = &mut other_condition {
-        *condition = ProgramExpression::Variable("d".to_string());
+        *condition = ProgramExpression::Variable(("d".to_string()).into());
     }
     assert!(!checked_source_statement_matches(&other_condition, &bare));
     let mut do_while = bare.clone();
@@ -2618,14 +2618,14 @@ fn checked_branch_join_accepts_empty_arms_only_at_the_artifact_tail() {
         ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
     );
     let state = ExecutionState::new();
-    let condition = ProgramExpression::Variable("x".to_string());
+    let condition = ProgramExpression::Variable(("x".to_string()).into());
     let branch_statement = ProgramStatement::If {
         condition: condition.clone(),
         then_branch: Box::new(ProgramStatement::Skip),
         else_branch: Box::new(ProgramStatement::Skip),
     };
     let continuation = Some(ProgramStatement::Return(ProgramExpression::Variable(
-        "x".to_string(),
+        ("x".to_string()).into(),
     )));
     let then_theorem = match condition_event(&state, &condition, true) {
         CheckedExecutionEvent::Condition(theorem) => theorem,
@@ -2949,13 +2949,21 @@ fn interface_load_definition_rejects_wrong_variable_address_and_state() {
             true,
         )
     };
-    let correct = equation(variable, memory.clone(), pointer.clone());
+    let correct = equation(
+        variable,
+        crate::kernel::ProgramPoint::at(&memory),
+        pointer.clone(),
+    );
     let definition = CheckedInterfaceLoadDefinition::check(&correct).unwrap();
     assert!(definition.matches_goal_exactly(&correct));
-    let wrong_variable = equation(Variable(17), memory.clone(), pointer.clone());
+    let wrong_variable = equation(
+        Variable(17),
+        crate::kernel::ProgramPoint::at(&memory),
+        pointer.clone(),
+    );
     let wrong_address = equation(
         variable,
-        memory,
+        crate::kernel::ProgramPoint::at(&memory),
         Pointer {
             block: "other".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -2963,7 +2971,9 @@ fn interface_load_definition_rejects_wrong_variable_address_and_state() {
     );
     let wrong_state = equation(
         variable,
-        crate::kernel::intern_memory(Memory::new().with_block("different", 4)),
+        crate::kernel::ProgramPoint::at(
+            &(crate::kernel::intern_memory(Memory::new().with_block("different", 4))),
+        ),
         pointer,
     );
     for wrong in [wrong_variable, wrong_address, wrong_state] {
@@ -2983,14 +2993,14 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
     let state = ExecutionState::new()
         .with_local("x", int32(7))
         .with_local("flag", int32(0));
-    let condition = ProgramExpression::Variable("flag".to_string());
+    let condition = ProgramExpression::Variable(("flag".to_string()).into());
     let branch_statement = ProgramStatement::If {
         condition: condition.clone(),
         then_branch: Box::new(ProgramStatement::Skip),
         else_branch: Box::new(ProgramStatement::Skip),
     };
     let continuation = Some(ProgramStatement::Return(ProgramExpression::Variable(
-        "x".to_string(),
+        ("x".to_string()).into(),
     )));
     let then_theorem = match condition_event(&state, &condition, true) {
         CheckedExecutionEvent::Condition(theorem) => theorem,
@@ -3058,9 +3068,13 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
     else_arm.frontier.region = ExecutionRegionKind::BranchArm;
     else_arm.frontier.position = FrontierPosition::RegionBoundary;
     let spec = SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+        left: SpecExpression::ProgramExpression(ProgramExpression::Variable(
+            ("x".to_string()).into(),
+        )),
         operator: ComparisonOperator::Equal,
-        right: SpecExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
+        right: SpecExpression::ProgramExpression(ProgramExpression::Variable(
+            ("x".to_string()).into(),
+        )),
     };
     let checked_fact = interface_spec_paths(&spec, &state, &state, &PureFactContext::new())
         .expect("the simple interface should lower")

@@ -62,11 +62,11 @@ fn int32_literal(expression: &ProgramExpression) -> Option<i64> {
     Some(value.as_const()? as i32 as i64)
 }
 
-fn variable_minus_positive(expression: &ProgramExpression, variable: &str) -> Option<i64> {
+fn variable_minus_positive(expression: &ProgramExpression, variable: &BindingName) -> Option<i64> {
     let ProgramExpression::Subtract(left, right) = expression else {
         return None;
     };
-    if left.as_ref() != &ProgramExpression::Variable(variable.to_string()) {
+    if left.as_ref() != &ProgramExpression::Variable(variable.clone().into()) {
         return None;
     }
     int32_literal(right).filter(|step| *step > 0)
@@ -74,7 +74,7 @@ fn variable_minus_positive(expression: &ProgramExpression, variable: &str) -> Op
 
 fn substitute_program_expression_variables(
     expression: &ProgramExpression,
-    substitutions: &BTreeMap<String, ProgramExpression>,
+    substitutions: &BTreeMap<BindingName, ProgramExpression>,
 ) -> ProgramExpression {
     use ProgramExpression::*;
     let unary = |body: &ProgramExpression| {
@@ -275,7 +275,7 @@ fn substitute_program_expression_variables(
 
 fn resolve_program_expression_aliases(
     expression: &ProgramExpression,
-    aliases: &BTreeMap<String, ProgramExpression>,
+    aliases: &BTreeMap<BindingName, ProgramExpression>,
 ) -> ProgramExpression {
     let mut resolved = expression.clone();
     for _ in 0..=aliases.len() {
@@ -290,7 +290,7 @@ fn resolve_program_expression_aliases(
 
 fn instantiate_structural_guard(
     proposition: &SpecProposition,
-    substitutions: &BTreeMap<String, ProgramExpression>,
+    substitutions: &BTreeMap<BindingName, ProgramExpression>,
 ) -> Option<SpecProposition> {
     let SpecProposition::Comparison {
         left,
@@ -316,7 +316,7 @@ fn instantiate_structural_guard(
 
 #[derive(Clone)]
 struct StructuralRecursionPath {
-    aliases: BTreeMap<String, ProgramExpression>,
+    aliases: BTreeMap<BindingName, ProgramExpression>,
     conditions: Vec<(ProgramExpression, bool)>,
 }
 
@@ -544,7 +544,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
         statement: &ProgramStatement,
         paths: Vec<Self::Path>,
     ) -> Result<Vec<Self::Path>, TerminationError> {
-        let forget = |name: &str, paths: Vec<Self::Path>| {
+        let forget = |name: &BindingName, paths: Vec<Self::Path>| {
             paths
                 .into_iter()
                 .map(|mut path| {
@@ -578,8 +578,11 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
                 name,
                 initializer: Some(expression),
                 ..
-            }
-            | ProgramStatement::Assign {
+            } => self.step(
+                &crate::kernel::program_assign(name.binding(), expression.clone()),
+                paths,
+            ),
+            ProgramStatement::Assign {
                 name, expression, ..
             } => Ok(paths
                 .into_iter()
@@ -652,7 +655,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
         paths
             .into_iter()
             .map(|mut path| {
-                path.aliases.remove(binding);
+                path.aliases.remove(&binding.into());
                 path
             })
             .collect()
@@ -683,7 +686,7 @@ fn program_expression_mentions_variable(expression: &ProgramExpression, variable
     // is replaced. Such normalization cannot establish a free occurrence.
     let mut variables = BTreeSet::new();
     collect_program_expression_variables(expression, &mut variables);
-    variables.contains(variable)
+    variables.contains(&BindingName::from(variable))
 }
 
 /// Assumes one evaluation path's facts. Loadability obligations are the
@@ -778,7 +781,7 @@ fn call_passes_witness_child(
             symbolic_call_result(parameter.program_type(), variable)
         };
         parameter_state.locals.set_typed(
-            parameter.name().to_string(),
+            parameter.binding_name().clone(),
             value,
             parameter.program_type(),
         );
@@ -803,7 +806,7 @@ fn call_passes_witness_child(
                 continue 'children;
             }
             body_state.locals.set_typed(
-                parameter.name().to_string(),
+                parameter.binding_name().clone(),
                 value,
                 parameter.program_type(),
             );
@@ -885,6 +888,26 @@ fn call_passes_witness_child(
 ///
 /// Work is the definition's own clauses: each arm's facts are compared only
 /// with the other arms' facts of this one definition.
+fn measure_parameter_references(
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
+) -> Vec<ProgramExpression> {
+    let substitutions = function
+        .parameters()
+        .iter()
+        .map(|parameter| {
+            (
+                BindingName::from(parameter.name()),
+                ProgramExpression::Variable(parameter.binding_name().clone()),
+            )
+        })
+        .collect();
+    arguments
+        .iter()
+        .map(|argument| substitute_program_expression_variables(argument, &substitutions))
+        .collect()
+}
+
 fn structural_resource_children(
     function: &ProgramFunction,
     requirement_index: usize,
@@ -907,6 +930,7 @@ fn structural_resource_children(
             function.name()
         )));
     };
+    let arguments = measure_parameter_references(function, arguments);
     let definition = function
         .composite_resource_definitions()
         .iter()
@@ -929,8 +953,8 @@ fn structural_resource_children(
     let substitutions = definition
         .parameters()
         .iter()
-        .zip(arguments)
-        .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+        .zip(&arguments)
+        .map(|(parameter, argument)| (parameter.binding_name().clone(), argument.clone()))
         .collect::<BTreeMap<_, _>>();
     let mentions_witness = |expression: &ProgramExpression| {
         definition
@@ -1094,7 +1118,7 @@ fn structural_resource_children(
     }
     Ok(StructuralResourceMeasure {
         family: name.to_string(),
-        arguments: arguments.to_vec(),
+        arguments,
         arms,
     })
 }
@@ -1103,7 +1127,7 @@ fn structural_resource_children(
 /// recursive component it may call: the parameters the member's measure is
 /// written over, and the measured family and arguments.
 struct StructuralCallee {
-    parameters: Vec<String>,
+    parameters: Vec<BindingName>,
     family: String,
     arguments: Vec<ProgramExpression>,
 }
@@ -1135,47 +1159,43 @@ fn structural_callee(
         parameters: function
             .parameters()
             .iter()
-            .map(|parameter| parameter.name().to_string())
+            .map(|parameter| parameter.binding_name().clone())
             .collect(),
         family: family.to_string(),
-        arguments: arguments.to_vec(),
+        arguments: measure_parameter_references(function, arguments),
     })
 }
 
 fn refined_lower_bound(
     condition: &ProgramExpression,
-    variable: &str,
+    variable: &BindingName,
     branch: bool,
     current: i64,
 ) -> i64 {
     use ProgramExpression::*;
     let direct = match condition {
-        GreaterThan(left, right) if left.as_ref() == &Variable(variable.to_string()) && branch => {
+        GreaterThan(left, right) if left.as_ref() == &Variable(variable.clone()) && branch => {
             int32_literal(right).map(|value| value + 1)
         }
-        GreaterEqual(left, right) if left.as_ref() == &Variable(variable.to_string()) && branch => {
+        GreaterEqual(left, right) if left.as_ref() == &Variable(variable.clone()) && branch => {
             int32_literal(right)
         }
-        LessThan(left, right) if left.as_ref() == &Variable(variable.to_string()) && !branch => {
+        LessThan(left, right) if left.as_ref() == &Variable(variable.clone()) && !branch => {
             int32_literal(right)
         }
-        LessEqual(left, right) if left.as_ref() == &Variable(variable.to_string()) && !branch => {
+        LessEqual(left, right) if left.as_ref() == &Variable(variable.clone()) && !branch => {
             int32_literal(right).map(|value| value + 1)
         }
-        LessThan(left, right) if right.as_ref() == &Variable(variable.to_string()) && branch => {
+        LessThan(left, right) if right.as_ref() == &Variable(variable.clone()) && branch => {
             int32_literal(left).map(|value| value + 1)
         }
-        LessEqual(left, right) if right.as_ref() == &Variable(variable.to_string()) && branch => {
+        LessEqual(left, right) if right.as_ref() == &Variable(variable.clone()) && branch => {
             int32_literal(left)
         }
-        GreaterThan(left, right)
-            if right.as_ref() == &Variable(variable.to_string()) && !branch =>
-        {
+        GreaterThan(left, right) if right.as_ref() == &Variable(variable.clone()) && !branch => {
             int32_literal(left)
         }
-        GreaterEqual(left, right)
-            if right.as_ref() == &Variable(variable.to_string()) && !branch =>
-        {
+        GreaterEqual(left, right) if right.as_ref() == &Variable(variable.clone()) && !branch => {
             int32_literal(left).map(|value| value + 1)
         }
         And(left, right) if branch => Some(
@@ -1193,7 +1213,10 @@ fn refined_lower_bound(
 }
 
 /// Whether `expression` takes the address of the local `name`.
-fn expression_address_taken_locals(expression: &ProgramExpression, names: &mut BTreeSet<String>) {
+fn expression_address_taken_locals(
+    expression: &ProgramExpression,
+    names: &mut BTreeSet<BindingName>,
+) {
     use ProgramExpression::*;
     let mut inner = |body: &ProgramExpression| expression_address_taken_locals(body, names);
     match expression {
@@ -1262,7 +1285,7 @@ fn expression_address_taken_locals(expression: &ProgramExpression, names: &mut B
 
 fn collect_program_expression_variables(
     expression: &ProgramExpression,
-    names: &mut BTreeSet<String>,
+    names: &mut BTreeSet<BindingName>,
 ) {
     use ProgramExpression::*;
     match expression {
@@ -1342,13 +1365,13 @@ fn collect_program_expression_variables(
 /// for "a store or a callee might change this local without assigning it by
 /// name". One walk of the function answers every local the checks below ask
 /// about.
-pub(super) fn address_taken_locals(statement: &ProgramStatement) -> BTreeSet<String> {
+pub(super) fn address_taken_locals(statement: &ProgramStatement) -> BTreeSet<BindingName> {
     let mut names = BTreeSet::new();
     collect_address_taken_locals(statement, &mut names);
     names
 }
 
-fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeSet<String>) {
+fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeSet<BindingName>) {
     charge_termination_work(1);
     let mut escapes =
         |expression: &ProgramExpression| expression_address_taken_locals(expression, names);
@@ -1440,8 +1463,8 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
 /// or by a callee, without any ranked update. Such measures are rejected.
 fn reject_address_escaped_measure(
     function_name: &str,
-    measure: &str,
-    addressed: &BTreeSet<String>,
+    measure: &BindingName,
+    addressed: &BTreeSet<BindingName>,
 ) -> Result<(), TerminationError> {
     if addressed.contains(measure) {
         return Err(error(format!(
@@ -1459,7 +1482,7 @@ fn reject_address_escaped_measure(
 pub(super) fn program_reject_address_escaped_loop_measures(
     function_name: &str,
     measures: &[RankingComponent],
-    addressed: &BTreeSet<String>,
+    addressed: &BTreeSet<BindingName>,
 ) -> Result<(), String> {
     for measure in measures {
         reject_address_escaped_ranking_component(function_name, measure, addressed)
@@ -1471,7 +1494,7 @@ pub(super) fn program_reject_address_escaped_loop_measures(
 fn reject_address_escaped_expression_measure(
     function_name: &str,
     measure: &ProgramExpression,
-    addressed: &BTreeSet<String>,
+    addressed: &BTreeSet<BindingName>,
 ) -> Result<(), TerminationError> {
     let mut variables = BTreeSet::new();
     collect_program_expression_variables(measure, &mut variables);
@@ -1486,7 +1509,7 @@ fn reject_address_escaped_expression_measure(
 /// it reads the algebraic model of a resource binder.
 #[derive(Default)]
 struct MeasureReads {
-    variables: BTreeSet<String>,
+    variables: BTreeSet<BindingName>,
     memory: bool,
     model: bool,
 }
@@ -1518,7 +1541,7 @@ impl MeasureReads {
 fn reject_address_escaped_ranking_component(
     function_name: &str,
     component: &RankingComponent,
-    addressed: &BTreeSet<String>,
+    addressed: &BTreeSet<BindingName>,
 ) -> Result<(), TerminationError> {
     let (source, collected) = match component {
         RankingComponent::ProgramExpression(expression) => {
@@ -1793,10 +1816,12 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
     charge_termination_work(1);
     match statement {
         ProgramStatement::Declare { name, .. }
-        | ProgramStatement::DeclareAggregate { name, .. }
-        | ProgramStatement::CallConstruct { target: name, .. }
+        | ProgramStatement::DeclareAggregate { name, .. } => {
+            names.insert(name.source_name().to_owned());
+        }
+        ProgramStatement::CallConstruct { target: name, .. }
         | ProgramStatement::HeapAllocate { target: name, .. } => {
-            names.insert(name.clone());
+            names.insert(name.source_name().to_owned());
         }
         ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
@@ -2061,7 +2086,7 @@ fn walk_termination_paths<W: TerminationWalk>(
 /// The `int32`-parameter measure walk: one lower bound on the measure per way
 /// of reaching a statement, checked against every recursive edge.
 struct Int32MeasureWalk<'a> {
-    measure: &'a str,
+    measure: &'a BindingName,
     component: &'a BTreeSet<String>,
     parameter_indices: &'a BTreeMap<String, usize>,
 }
@@ -2196,7 +2221,7 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
 
 fn recursion_paths(
     statement: &ProgramStatement,
-    measure: &str,
+    measure: &BindingName,
     component: &BTreeSet<String>,
     parameter_indices: &BTreeMap<String, usize>,
     lower_bounds: Vec<i64>,
@@ -2224,7 +2249,7 @@ fn termination_measure_key(measure: &ProgramExpression) -> String {
         )
     };
     match measure {
-        Variable(name) => name.clone(),
+        Variable(name) => name.to_string(),
         Value(ProgramValue::Int32(term)) | Value(ProgramValue::UInt8(term)) => {
             match term.as_const() {
                 Some(value) => format!("{}", value as i32),
@@ -2272,7 +2297,7 @@ fn termination_measure_display(measure: &ProgramExpression) -> String {
         format!("{operator}({})", termination_measure_display(operand))
     };
     match measure {
-        Variable(name) => name.clone(),
+        Variable(name) => name.to_string(),
         Value(ProgramValue::Int32(term)) | Value(ProgramValue::UInt8(term)) => {
             match term.as_const() {
                 Some(value) => format!("{}", value as i32),
@@ -4164,11 +4189,11 @@ fn classify_termination_callees(
 fn diverging_contract_objects(
     function: &ProgramFunction,
     diverging_contracts: &BTreeSet<String>,
-) -> BTreeMap<String, String> {
+) -> BTreeMap<BindingName, String> {
     fn collect(
         requirement: &SpecProposition,
         diverging_contracts: &BTreeSet<String>,
-        found: &mut BTreeMap<String, String>,
+        found: &mut BTreeMap<BindingName, String>,
     ) {
         charge_termination_work(1);
         match requirement {
@@ -4952,7 +4977,7 @@ mod address_escape_tests {
     use std::sync::Arc;
 
     fn variable(name: &str) -> ProgramExpression {
-        ProgramExpression::Variable(name.to_string())
+        ProgramExpression::Variable((name.to_string()).into())
     }
 
     fn address_of(name: &str) -> ProgramExpression {
@@ -4964,7 +4989,7 @@ mod address_escape_tests {
         // p = &i; *p = q;
         let escape = ProgramStatement::Assign {
             source: Default::default(),
-            name: "p".to_string(),
+            name: ("p".to_string()).into(),
             expression: address_of("i"),
             prior_result: None,
         };
@@ -4973,10 +4998,16 @@ mod address_escape_tests {
             value: variable("q"),
         };
         let body = ProgramStatement::seq(Arc::new(escape), Arc::new(store));
-        assert!(address_taken_locals(&body).contains("i"));
-        assert!(!address_taken_locals(&body).contains("q"));
-        assert!(reject_address_escaped_measure("spin", "i", &address_taken_locals(&body)).is_err());
-        assert!(reject_address_escaped_measure("spin", "q", &address_taken_locals(&body)).is_ok());
+        assert!(address_taken_locals(&body).contains(&("i").into()));
+        assert!(!address_taken_locals(&body).contains(&("q").into()));
+        assert!(
+            reject_address_escaped_measure("spin", &("i").into(), &address_taken_locals(&body))
+                .is_err()
+        );
+        assert!(
+            reject_address_escaped_measure("spin", &("q").into(), &address_taken_locals(&body))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -4986,15 +5017,18 @@ mod address_escape_tests {
             arguments: vec![address_of("n")],
             callee: None,
         };
-        assert!(address_taken_locals(&call).contains("n"));
-        assert!(reject_address_escaped_measure("f", "n", &address_taken_locals(&call)).is_err());
+        assert!(address_taken_locals(&call).contains(&("n").into()));
+        assert!(
+            reject_address_escaped_measure("f", &("n").into(), &address_taken_locals(&call))
+                .is_err()
+        );
     }
 
     #[test]
     fn escape_inside_a_loop_or_branch_body_is_detected() {
         let escape = ProgramStatement::Assign {
             source: Default::default(),
-            name: "p".to_string(),
+            name: ("p".to_string()).into(),
             expression: ProgramExpression::Add(Box::new(address_of("n")), Box::new(variable("k"))),
             prior_result: None,
         };
@@ -5016,8 +5050,8 @@ mod address_escape_tests {
             natural_exit_target: None,
             body: Box::new(branch),
         };
-        assert!(address_taken_locals(&body).contains("n"));
-        assert!(!address_taken_locals(&body).contains("c"));
+        assert!(address_taken_locals(&body).contains(&("n").into()));
+        assert!(!address_taken_locals(&body).contains(&("c").into()));
     }
 }
 
@@ -5048,7 +5082,7 @@ mod ranking_member_tests {
     fn a_measure_may_not_read_a_volatile_object() {
         let state = scalar_state(&[("i", MachineTerm::Variable(Variable(1)))]);
         let volatile_read = ProgramExpression::TypedLoad {
-            pointer: Box::new(ProgramExpression::Variable("device".to_string())),
+            pointer: Box::new(ProgramExpression::Variable(("device".to_string()).into())),
             value_type: ProgramType::Int32,
             volatile: true,
             pointee_constant: false,
@@ -5058,7 +5092,7 @@ mod ranking_member_tests {
         let measures = vec![RankingComponent::ProgramExpression(
             ProgramExpression::Subtract(
                 Box::new(volatile_read),
-                Box::new(ProgramExpression::Variable("i".to_string())),
+                Box::new(ProgramExpression::Variable(("i".to_string()).into())),
             ),
         )];
         let error = collect_loop_ranking_obligations(
@@ -5082,8 +5116,12 @@ mod ranking_member_tests {
         let post_inner = MachineTerm::add(inner.clone(), MachineTerm::constant(1));
         let back_edge = scalar_state(&[("i", post_outer.clone()), ("j", post_inner.clone())]);
         let measures = vec![
-            RankingComponent::ProgramExpression(ProgramExpression::Variable("i".to_string())),
-            RankingComponent::ProgramExpression(ProgramExpression::Variable("j".to_string())),
+            RankingComponent::ProgramExpression(ProgramExpression::Variable(
+                ("i".to_string()).into(),
+            )),
+            RankingComponent::ProgramExpression(ProgramExpression::Variable(
+                ("j".to_string()).into(),
+            )),
         ];
         let obligations = collect_loop_ranking_obligations(
             &back_edge,
@@ -5145,7 +5183,7 @@ mod ranking_member_tests {
         let post = MachineTerm::subtract(value.clone(), MachineTerm::constant(1));
         let back_edge = scalar_state(&[("n", post.clone())]);
         let measures = vec![RankingComponent::ProgramExpression(
-            ProgramExpression::Variable("n".to_string()),
+            ProgramExpression::Variable(("n".to_string()).into()),
         )];
         let obligations = collect_loop_ranking_obligations(
             &back_edge,
@@ -5242,7 +5280,7 @@ mod ranking_member_tests {
 
     fn current_integer_local(name: &str) -> SpecIntegerExpression {
         SpecIntegerExpression::FromMachine(Box::new(SpecExpression::ProgramExpression(
-            ProgramExpression::Variable(name.to_string()),
+            ProgramExpression::Variable((name.to_string()).into()),
         )))
     }
 
@@ -5325,7 +5363,9 @@ mod ranking_member_tests {
         let entry = scalar_state(&[("i", outer.clone()), ("n", inner.clone())]);
         let back_edge = scalar_state(&[("i", post_outer.clone()), ("n", post_inner.clone())]);
         let measures = vec![
-            RankingComponent::ProgramExpression(ProgramExpression::Variable("i".to_string())),
+            RankingComponent::ProgramExpression(ProgramExpression::Variable(
+                ("i".to_string()).into(),
+            )),
             RankingComponent::PureInteger {
                 source: "level(n)".to_string(),
                 expression: current_integer_local("n"),
@@ -5454,7 +5494,7 @@ mod ranking_member_tests {
             Box::new(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::constant(4),
             ))),
-            Box::new(ProgramExpression::Variable("x".to_string())),
+            Box::new(ProgramExpression::Variable(("x".to_string()).into())),
         )
     }
 
@@ -5528,7 +5568,7 @@ mod ranking_member_tests {
                 ProgramType::UInt64,
             )
         };
-        let x = || ProgramExpression::Variable("x".to_string());
+        let x = || ProgramExpression::Variable(("x".to_string()).into());
         let down = ranking_members(&state(4), &state(5), x()).expect("uint64 measure");
         assert_eq!(
             down,
@@ -5551,8 +5591,12 @@ mod ranking_member_tests {
     fn a_narrow_unsigned_component_is_promoted_to_int32() {
         let value = MachineTerm::Variable(Variable(22));
         let state = typed_state("x", ProgramValue::UInt8(value.clone()), ProgramType::UInt8);
-        let members = ranking_members(&state, &state, ProgramExpression::Variable("x".to_string()))
-            .expect("a uint8 measure reads at both ends");
+        let members = ranking_members(
+            &state,
+            &state,
+            ProgramExpression::Variable(("x".to_string()).into()),
+        )
+        .expect("a uint8 measure reads at both ends");
         assert_eq!(
             members[0],
             Proposition::ConditionIs(
@@ -5613,7 +5657,7 @@ mod ranking_member_tests {
                 ProgramType::Int64,
             )
         };
-        let x = || ProgramExpression::Variable("x".to_string());
+        let x = || ProgramExpression::Variable(("x".to_string()).into());
         let holds = |value| Proposition::ConditionIs(ConditionTerm::Constant(value), true);
         let down = ranking_members(&state(4), &state(5), x()).expect("int64 measure");
         assert_eq!(down, vec![holds(true), holds(true)]);
@@ -6041,7 +6085,7 @@ mod local_descent_tests {
                 Arc::new(body),
                 Arc::new(ProgramStatement::Assign {
                     source: Default::default(),
-                    name: "slot".to_string(),
+                    name: ("slot".to_string()).into(),
                     expression: crate::kernel::program_expression::function_address(*taken),
                     prior_result: None,
                 }),
@@ -6208,7 +6252,7 @@ mod local_descent_tests {
                 name: FunctionContract::predicate_name_for("Spinner"),
                 arguments: vec![SpecPredicateArgument::Value(
                     SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                        "callback".to_string(),
+                        ("callback".to_string()).into(),
                     )),
                 )],
             });
@@ -6457,7 +6501,7 @@ mod local_descent_tests {
         ranks_second.extend_loop_measures([(
             1,
             LoopTerminationMeasure::Ranking(vec![RankingMeasureKey::ProgramExpression(
-                ProgramExpression::Variable("n".to_string()),
+                ProgramExpression::Variable(("n".to_string()).into()),
             )]),
         )]);
         let error = check(&rules, &[ranks_second], &plan, &[])
@@ -6521,7 +6565,7 @@ mod local_descent_tests {
             function = function.with_recursion_measure(vec![RankingComponent::Pure {
                 source: "level(n)".to_string(),
                 expression: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                    "n".to_string(),
+                    ("n".to_string()).into(),
                 )),
             }]);
         }
@@ -6562,7 +6606,7 @@ mod local_descent_tests {
             function = function.with_recursion_measure(vec![RankingComponent::Pure {
                 source: "level(n)".to_string(),
                 expression: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                    "n".to_string(),
+                    ("n".to_string()).into(),
                 )),
             }]);
         }
@@ -6726,7 +6770,7 @@ mod local_descent_tests {
         RankingComponent::Pure {
             source: "level(n)".to_string(),
             expression: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                "n".to_string(),
+                ("n".to_string()).into(),
             )),
         }
     }

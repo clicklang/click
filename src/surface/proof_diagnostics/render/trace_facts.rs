@@ -146,7 +146,7 @@ mod tests {
         let p = Pointer::symbolic(Variable(986_700));
         let memory = Memory::new();
         let word = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&memory),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(p.clone()),
             LoadKind::Bits64,
         );
@@ -275,7 +275,10 @@ mod tests {
                 kind,
             ))
         };
-        let fact = Proposition::Equal(load(first, LoadKind::UInt8), load(second, LoadKind::Bits64));
+        let fact = Proposition::Equal(
+            load(crate::kernel::ProgramPoint::at(&first), LoadKind::UInt8),
+            load(crate::kernel::ProgramPoint::at(&second), LoadKind::Bits64),
+        );
         let mut labels = MemoryStateLabels::default();
         labels.source_name(Variable(986_702), "mutable_local".into());
         let text = render_trace_fact_labeled(&fact, &mut labels);

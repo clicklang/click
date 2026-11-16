@@ -89,7 +89,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_interface_join_proposition(
     let (fact, _, facts) = lower_fixed_state_proposition_through_kernel_with_facts(
         proposition,
         &assumptions,
-        ContractEnvironment::new(&values, &array_refs),
+        ContractEnvironment::new(&values, &array_refs).with_parameters(parameter_binding),
         fixed_state,
         spec_definitions,
         FixedStateLoweringOptions {
@@ -158,7 +158,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,
-        ContractEnvironment::new(&values, &array_refs),
+        ContractEnvironment::new(&values, &array_refs).with_parameters(parameter_binding),
         fixed_state,
         spec_definitions,
         FixedStateLoweringOptions {
@@ -192,7 +192,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_integer_valu
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,
-        ContractEnvironment::new(&values, &array_refs),
+        ContractEnvironment::new(&values, &array_refs).with_parameters(parameter_binding),
         fixed_state,
         spec_definitions,
         FixedStateLoweringOptions {
@@ -222,7 +222,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_
     lower_fixed_state_proposition_through_kernel_with_introductions(
         proposition,
         assumptions,
-        ContractEnvironment::new(&values, &array_refs),
+        ContractEnvironment::new(&values, &array_refs).with_parameters(parameter_binding),
         fixed_state,
         spec_definitions,
         FixedStateLoweringOptions {
@@ -1063,7 +1063,9 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(ClickArrayRef, crate::kernel::PointerValue), String> {
     if let ContractExpression::Binding(name)
-    | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+    | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        crate::kernel::BindingName::Named(name),
+    ))
     | ContractExpression::CBinding(name) = expression
         && let Some(array_ref) = contract_environment.array_refs.get(name)
         && let Some(ProgramValue::Pointer(value)) = contract_environment.values.get(name)
@@ -1167,7 +1169,7 @@ impl FixedStateLowering {
         result: Option<&ProgramValue>,
     ) -> Self {
         Self::for_names(
-            crate::surface::lowering::contract_expression_referenced_names(expression),
+            crate::surface::lowering::contract_expression_referenced_bindings(expression),
             contract_environment,
             pre_state,
             state,
@@ -1186,7 +1188,7 @@ impl FixedStateLowering {
         result: Option<&ProgramValue>,
     ) -> Self {
         Self::for_names(
-            crate::surface::lowering::contract_expression_referenced_names(expression),
+            crate::surface::lowering::contract_expression_referenced_bindings(expression),
             contract_environment,
             pre_state,
             state,
@@ -1203,7 +1205,7 @@ impl FixedStateLowering {
         result: Option<&ProgramValue>,
     ) -> Self {
         let mut names = BTreeSet::new();
-        crate::surface::lowering::collect_click_proposition_referenced_names(
+        crate::surface::lowering::collect_click_proposition_referenced_bindings(
             proposition,
             &mut names,
         );
@@ -1215,7 +1217,7 @@ impl FixedStateLowering {
     }
 
     fn for_names(
-        names: BTreeSet<String>,
+        names: BTreeSet<crate::kernel::BindingName>,
         contract_environment: ContractEnvironment<'_>,
         pre_state: &ExecutionState,
         state: &ExecutionState,
@@ -1229,6 +1231,21 @@ impl FixedStateLowering {
         let mut current_values = BTreeMap::new();
         for name in names {
             crate::instrumentation::record_deterministic_work(1);
+            if name.named().is_none() {
+                if let Some(value) = contract_environment.parameter_value(&name) {
+                    if !entry_state.locals().contains_name(&name) {
+                        entry_state = entry_state.with_local(name.clone(), value.clone());
+                    }
+                    if !lowering_state.locals().contains_name(&name) {
+                        lowering_state = lowering_state.with_local(name, value.clone());
+                    }
+                }
+                continue;
+            }
+            let name = name
+                .named()
+                .expect("a nonlocal binding has a lexical name")
+                .to_owned();
             if let Some(value) = contract_environment.values.get(&name) {
                 if entry_state.locals().get(&name).is_none()
                     && (result.is_some() || !has_live_aggregate_binding(&entry_state, &name))
@@ -1315,21 +1332,33 @@ impl FixedStateLowering {
             .iter()
             .map(|(name, array_ref)| (name.clone(), array_ref.element_type))
             .collect::<BTreeMap<_, _>>();
-        element_types.extend(
-            lowering_state
-                .locals()
-                .array_object_values()
-                .map(|(name, _, element_type)| (name.to_string(), element_type)),
-        );
+        element_types.extend(lowering_state.locals().array_object_values().filter_map(
+            |(name, _, element_type)| {
+                lowering_state
+                    .locals()
+                    .active_source_name(name)
+                    .map(|name| (name.to_owned(), element_type))
+            },
+        ));
         let entry_values = entry_state
             .locals()
             .object_values()
-            .map(|(name, value)| (name.to_string(), value.clone().into_native()))
+            .filter_map(|(name, value)| {
+                entry_state
+                    .locals()
+                    .active_source_name(name)
+                    .map(|name| (name.to_owned(), value.clone().into_native()))
+            })
             .collect();
         let current_values = lowering_state
             .locals()
             .object_values()
-            .map(|(name, value)| (name.to_string(), value.clone().into_native()))
+            .filter_map(|(name, value)| {
+                lowering_state
+                    .locals()
+                    .active_source_name(name)
+                    .map(|name| (name.to_owned(), value.clone().into_native()))
+            })
             .collect();
         Self {
             entry_state,

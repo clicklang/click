@@ -23,7 +23,7 @@ impl KernelTerm {
         let (memory, address) = read.parts();
         Some(self.0.machine_leaf.get_or_init(|| {
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(address.export().expect("retained read address")),
                 LoadKind::Bits64,
             )

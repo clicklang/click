@@ -64,3 +64,65 @@ fn separation_class_lookup_visits_only_the_selected_payload() {
         }
     }
 }
+
+#[test]
+#[ignore = "nightly: 512 related separation spans and alias history"]
+fn exact_separation_lookup_ignores_related_widths_and_alias_history() {
+    let mut samples = Vec::new();
+    for size in [8u64, 32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = |id| Pointer::symbolic(Variable(id));
+        let model = pointer(9_940_001);
+        let source = pointer(9_940_002);
+        let copied = pointer(9_940_003);
+        let range = |p, n: u32| {
+            Resource::Memory(MemoryRange::new_with_element_width(
+                p,
+                0u32.into(),
+                n.into(),
+                1,
+            ))
+        };
+        let separated = |a, an, b, bn| Proposition::ResourceSeparate {
+            left: Box::new(range(a, an)),
+            right: Box::new(range(b, bn)),
+        };
+        let mut context = PureFactContext::new();
+        for i in 0..size {
+            context = context.assume_proposition(separated(
+                pointer(9_941_000 + i * 2),
+                1,
+                pointer(9_941_001 + i * 2),
+                4,
+            ));
+            context = context.assume_proposition(separated(
+                model.clone(),
+                i as u32 + 2,
+                source.clone(),
+                i as u32 + 5,
+            ));
+            context = context.assume_condition(
+                ConditionTerm::pointer_equal(model.clone(), pointer(9_943_000 + i)),
+                true,
+            );
+        }
+        context = context.assume_proposition(separated(model.clone(), 1, source.clone(), 4));
+        let branch = context
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(copied.clone(), model), true);
+        let before = SOURCE_VISITS.with(Cell::get);
+        let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+            branch.contains_known(&Proposition::ResourceSeparate {
+                left: Box::new(range(copied, 1)),
+                right: Box::new(range(source, 4)),
+            })
+        });
+        assert!(proved);
+        assert_eq!(SOURCE_VISITS.with(Cell::get) - before, 1);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work <= samples[0] * 2 + 64),
+        "{samples:?}"
+    );
+}

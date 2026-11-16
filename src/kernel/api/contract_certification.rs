@@ -3633,7 +3633,7 @@ mod shared_contract_operand_tests {
             SharedMachineIntegerTerm::index(
                 MachineIntegerType::Int32,
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -3676,7 +3676,7 @@ mod shared_contract_operand_tests {
                     ProgramValue::Int32(MachineTerm::Variable(Variable(id))),
                 );
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )

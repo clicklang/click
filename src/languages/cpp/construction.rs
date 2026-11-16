@@ -79,7 +79,60 @@ pub(super) fn validate_returns<'a>(
         let mut construction = false;
         let mut copying = false;
         for statement in statements(&function.body) {
-            crate::instrumentation::record_deterministic_work(1);
+            if let CppStatement::Call { arguments, .. } = statement {
+                let mut pending = vec![arguments.as_slice()];
+                while let Some(arguments) = pending.pop() {
+                    for argument in arguments {
+                        crate::instrumentation::record_deterministic_work(1);
+                        match argument {
+                            CppCallArgument::Construct {
+                                callee, arguments, ..
+                            } => {
+                                let target = functions
+                                    .get(&callee.declaration_id)
+                                    .ok_or("unknown temporary constructor")?;
+                                let selected_span_constructor = target
+                                    .axiom
+                                    .as_ref()
+                                    .and_then(super::standard_library::library_generic)
+                                    .is_some_and(|generic| {
+                                        generic
+                                            == super::names::path_name(&[
+                                                "std",
+                                                "span<T>",
+                                                "span<T *>",
+                                            ])
+                                    });
+                                if !target.declared_noexcept
+                                    || (!selected_span_constructor
+                                        && !eligibility.function(callee)?)
+                                {
+                                    return Err("C++ temporary constructor must preserve argument values without observing its storage".into());
+                                }
+                                pending.push(arguments);
+                            }
+                            CppCallArgument::Call {
+                                callee,
+                                arguments,
+                                value_type: CppType::Record { .. },
+                                ..
+                            } => {
+                                let target = functions
+                                    .get(&callee.declaration_id)
+                                    .ok_or("unknown temporary factory")?;
+                                if !target.declared_noexcept
+                                    || !modes[callee.declaration_id.as_str()]
+                                {
+                                    return Err("C++ temporary factories require admitted nonthrowing construction returns".into());
+                                }
+                                pending.push(arguments);
+                            }
+                            CppCallArgument::Call { arguments, .. } => pending.push(arguments),
+                            _ => {}
+                        }
+                    }
+                }
+            }
             match statement {
                 CppStatement::ReturnConstruct { callee, .. } => {
                     construction = true;
@@ -233,7 +286,9 @@ impl Eligibility<'_, '_> {
                 CppCallArgument::Call {
                     callee, arguments, ..
                 } => self.arguments(arguments, values)? && self.function(callee)?,
-                CppCallArgument::Reference { .. } | CppCallArgument::RecordCopy { .. } => false,
+                CppCallArgument::Construct { .. }
+                | CppCallArgument::Reference { .. }
+                | CppCallArgument::RecordCopy { .. } => false,
             };
             if !valid {
                 return Ok(false);

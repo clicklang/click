@@ -679,7 +679,7 @@ fn verify_click_file_theorems_with_environment(
         &combined_external_function_blocks(file)?,
     )?);
     verify_theorem_definitions(
-        TheoremEnvironment::with_standard_library(&[])?,
+        TheoremEnvironment::with_standard_library(&[])?.with_discovery_library(file)?,
         file.theorem_definitions(),
         SpecDefinitions::new(&predicate_environment, &click_function_environment)
             .with_struct_sizes(&file.struct_sizes),
@@ -864,7 +864,8 @@ fn verify_click_file_theorem_context(
         }
     }
     let theorem_environment =
-        TheoremEnvironment::with_standard_library(file.theorem_definitions())?;
+        TheoremEnvironment::with_standard_library(file.theorem_definitions())?
+            .with_discovery_library(&file)?;
     if theorem.executes.is_some() {
         let registry = std::sync::Arc::new(FunctionSourceRegistry::from_function_blocks(
             &external_and_user_function_blocks,
@@ -873,7 +874,8 @@ fn verify_click_file_theorem_context(
             file.theorem_definitions()
                 .iter()
                 .take_while(|definition| definition.name() != theorem_name),
-        )?;
+        )?
+        .with_discovery_library(&file)?;
         return verify_theorem_definitions(
             dependencies,
             std::slice::from_ref(theorem),
@@ -2375,7 +2377,8 @@ fn verify_program_in_context(
             .map(clone_theorem_definition_iteratively)
             .collect::<Vec<_>>();
         let theorem_dependencies =
-            TheoremEnvironment::with_standard_library(&unselected_theorem_definitions)?;
+            TheoremEnvironment::with_standard_library(&unselected_theorem_definitions)?
+                .with_discovery_library(&file)?;
         let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
             .with_contracts(file.contract_definitions(), &file.program_function_names);
         let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
@@ -2515,7 +2518,8 @@ fn verify_program_in_context(
             &mut theorem_certification_authorities,
         );
         let theorem_environment =
-            TheoremEnvironment::with_standard_library(file.theorem_definitions())?;
+            TheoremEnvironment::with_standard_library(file.theorem_definitions())?
+                .with_discovery_library(&file)?;
         check_verification_deadline()?;
         (
             predicate_environment,
@@ -3835,6 +3839,26 @@ pub(in crate::surface) fn c_statement_calls(
 
 /// [`c_statement_calls`], also recording in `allocator` each allocator
 /// function the body calls, which is not a call dependency.
+fn source_struct_names(
+    bindings: &BTreeMap<crate::kernel::BindingName, String>,
+) -> BTreeMap<String, String> {
+    let mut names: BTreeMap<String, Option<String>> = BTreeMap::new();
+    for (binding, ty) in bindings {
+        names
+            .entry(binding.source_name().to_owned())
+            .and_modify(|previous| {
+                if previous.as_ref() != Some(ty) {
+                    *previous = None;
+                }
+            })
+            .or_insert_with(|| Some(ty.clone()));
+    }
+    names
+        .into_iter()
+        .filter_map(|(name, ty)| Some((name, ty?)))
+        .collect()
+}
+
 fn c_statement_calls_recording(
     function: &crate::languages::interface::ImportedFunction,
     allocator: &mut BTreeSet<&'static str>,
@@ -3849,7 +3873,7 @@ fn c_statement_calls_recording(
                 name,
                 ..
             } => {
-                names.insert(name.clone());
+                names.insert(name.source_name().to_owned());
             }
             syntax::CStatement::Seq(first, second) => {
                 collect_function_pointer_names(first, names);
@@ -4405,7 +4429,9 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
     match component {
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Some(name),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => Some(name),
         _ => None,
     }
 }
@@ -4794,6 +4820,7 @@ impl parser::ProgramLayouts {
             .map(|function| (function.name(), function.source_name()))
             .collect::<BTreeMap<_, _>>();
         for function in &execution.functions {
+            tables.register_local_bindings(function);
             tables.register_string_literals(function);
             let captures = function.closure_captures();
             if !captures.is_empty() {
@@ -4815,7 +4842,7 @@ impl parser::ProgramLayouts {
             }
             tables.aggregate_objects.insert(
                 function.source_name().to_string(),
-                function.local_struct_values().clone(),
+                source_struct_names(function.local_struct_values()),
             );
             if let Some(interface) = function.trait_interface()
                 && let Some(interface) = source_names.get(interface)
@@ -4919,9 +4946,17 @@ impl parser::ProgramLayouts {
                 function.source_name().to_string(),
                 parser::FunctionLocals {
                     execution_name: Some(function.name().to_string()),
-                    struct_pointers: function.local_struct_pointers().clone(),
-                    references: function.local_references().clone(),
-                    pointers: function.local_pointers().clone(),
+                    struct_pointers: source_struct_names(function.local_struct_pointers()),
+                    references: function
+                        .local_references()
+                        .iter()
+                        .map(|name| name.source_name().to_owned())
+                        .collect(),
+                    pointers: function
+                        .local_pointers()
+                        .iter()
+                        .map(|name| name.source_name().to_owned())
+                        .collect(),
                     loop_iterators: function.loop_iterators().to_vec(),
                 },
             );
@@ -5976,7 +6011,7 @@ pub(in crate::surface) fn function_resource_summary(
         let result_binding = BTreeMap::from([(
             "result".to_string(),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
             )),
         )]);
         let result_substitutions = ContractSubstitutions::for_contract_result(&result_binding);
@@ -6073,7 +6108,7 @@ pub(in crate::surface) fn function_resource_constructors(
             let result_binding = BTreeMap::from([(
                 "result".to_string(),
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                    (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
                 )),
             )]);
             let resource = substitute_resource_clause_for_summary_in(
@@ -7774,7 +7809,7 @@ int32 answer() {
             parsed.values().map(|(_, function)| function),
         );
         assert!(
-            !summary.never_taken().contains("x"),
+            !summary.never_taken().contains(&("x").into()),
             "`&x` is written in v4, so `x` must not be reported: {:?}",
             summary.never_taken()
         );

@@ -136,7 +136,7 @@ fn machine_call_argument_order_and_read_states_remain_distinct() {
         SharedPureApplication::intern(
             "read_arg".into(),
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32),
+                MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer.clone()), LoadKind::Int32),
             ))],
         )
     });

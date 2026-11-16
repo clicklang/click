@@ -652,7 +652,12 @@ impl ResourceContextIndex {
         if let Some(range) = fact.memory_range() {
             let block = range.base().block.clone();
             let mode = fact.is_own();
-            if !matches!(block, PointerBlock::Concrete(_)) {
+            if !matches!(
+                block,
+                PointerBlock::Concrete(_)
+                    | PointerBlock::StaticObject { .. }
+                    | PointerBlock::AutomaticLocal { .. }
+            ) {
                 result.nonconcrete_memory_count += 1;
             }
             result.memory_by_block =
@@ -952,7 +957,12 @@ impl ResourceContextIndex {
         if let Some(range) = fact.memory_range() {
             let block = range.base().block.clone();
             let mode = fact.is_own();
-            if !matches!(block, PointerBlock::Concrete(_)) {
+            if !matches!(
+                block,
+                PointerBlock::Concrete(_)
+                    | PointerBlock::StaticObject { .. }
+                    | PointerBlock::AutomaticLocal { .. }
+            ) {
                 result.nonconcrete_memory_count -= 1;
             }
             result.memory_by_block =
@@ -12693,12 +12703,12 @@ mod support_removal_tests {
                 ProgramValue::Float64(MachineTerm::uint64_constant(0)),
             );
         let short_load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(short_pointer.clone()),
             crate::kernel::LoadKind::Int16,
         );
         let wide_load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(wide_pointer.clone()),
             crate::kernel::LoadKind::Float64,
         );
@@ -12736,12 +12746,12 @@ mod support_removal_tests {
             .store(pointer.clone(), int16(0));
         let second = first.clone().store(pointer.clone(), int16(1));
         let first_load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&first),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&first))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
         let second_load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&second),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&second))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );
@@ -12769,7 +12779,7 @@ mod support_removal_tests {
             .with_block("deep-load", 8)
             .store(pointer.clone(), int16(0));
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );

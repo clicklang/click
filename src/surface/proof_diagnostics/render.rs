@@ -2166,7 +2166,7 @@ impl Renderer<'_> {
             } else {
                 self.push("load(");
             }
-            self.memory(retained_state.as_ref());
+            self.memory(retained_state.shared_memory().as_ref());
             self.push(", pointer=");
             self.pointer(pointer);
             self.push(")");
@@ -2394,6 +2394,12 @@ impl Renderer<'_> {
         }
         self.push("pointer(");
         match &p.block {
+            crate::kernel::PointerBlock::StaticObject { binding } => {
+                self.fmt(format_args!("{binding}.storage()"))
+            }
+            crate::kernel::PointerBlock::AutomaticLocal { binding, instance } => {
+                self.fmt(format_args!("{binding} [{instance:?}]"))
+            }
             crate::kernel::PointerBlock::PureFunctionApplication(application) => {
                 self.push(application.name());
                 self.push("(");

@@ -206,8 +206,9 @@ impl StorageProvenance {
     fn of(block: &super::PointerBlock) -> Self {
         use super::PointerBlock;
         match block {
+            PointerBlock::AutomaticLocal { .. } => Self::Local,
             PointerBlock::Concrete(name) if PointerBlock::is_local_name(name) => Self::Local,
-            PointerBlock::Concrete(_) => Self::Global,
+            PointerBlock::StaticObject { .. } | PointerBlock::Concrete(_) => Self::Global,
             PointerBlock::Heap(_) | PointerBlock::Temporary(_) => Self::Fresh,
             PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_) => Self::External,
             PointerBlock::Symbolic(_)
@@ -927,7 +928,9 @@ pub(super) fn storage_retirement_refusal(
 fn may_alias_automatic_storage(block: &super::PointerBlock) -> bool {
     use super::PointerBlock;
     match block {
-        PointerBlock::Concrete(_)
+        PointerBlock::StaticObject { .. }
+        | PointerBlock::AutomaticLocal { .. }
+        | PointerBlock::Concrete(_)
         | PointerBlock::ExternalArgument
         | PointerBlock::ExternalObject(_)
         | PointerBlock::Heap(_)
@@ -948,7 +951,7 @@ fn may_alias_automatic_storage(block: &super::PointerBlock) -> bool {
 /// created by its helper and cannot initialize another mutex there.
 pub(super) fn automatic_storage_refusal(
     state: &ExecutionState,
-    local: &str,
+    local: &(impl std::fmt::Display + ?Sized),
     block: &super::PointerBlock,
 ) -> Option<super::RuntimeError> {
     let ledger = state.mutex_ledger.as_ref()?;
@@ -3244,7 +3247,7 @@ mod tests {
         let initialized = MutexContext::new(state)
             .initialize_empty(address.clone(), 40)
             .unwrap();
-        let names = vec!["holder".to_string()];
+        let names = vec!["holder".into()];
         let expected = super::super::RuntimeError::MutexStorageScopeEnd {
             local: "holder".into(),
             mutex: address.clone(),

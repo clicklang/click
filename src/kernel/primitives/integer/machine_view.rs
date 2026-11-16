@@ -672,7 +672,7 @@ impl<'a> MachineOperandView<'a> {
         match self {
             Self::Shared(term) => Self::Legacy(term.machine_read_leaf()?).read(),
             Self::Legacy(MachineTerm::MemoryLoad(memory, address, kind)) => {
-                Some((memory, address, *kind))
+                Some((memory.shared_memory(), address, *kind))
             }
             Self::Legacy(_) => None,
         }

@@ -7,7 +7,7 @@ use super::*;
 pub(in crate::kernel) struct LoopSourceIndex {
     loops: Vec<std::ops::Range<usize>>,
     shape: Vec<ShapeHead>,
-    addressed: BTreeSet<String>,
+    addressed: BTreeSet<BindingName>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -22,7 +22,7 @@ enum ShapeHead {
     },
     Switch(ProgramExpression, Vec<Option<u32>>),
     Try(String, bool),
-    Step(Vec<String>, bool),
+    Step(Vec<BindingName>, bool),
     Leaf(ProgramStatement),
 }
 

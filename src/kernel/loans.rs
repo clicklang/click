@@ -1821,6 +1821,9 @@ pub(crate) struct StableViewTransferPlan {
     /// retains its supplier's carrier on only the requested slice; it never
     /// returns the supplier's larger footprint.
     pub(crate) canonical_transferred_ownership: Vec<Option<ResourceFact>>,
+    /// Selected single source for each transferred ownership clause, in the
+    /// same order. Joins and mutex-use transitions have no single source.
+    pub(crate) transferred_ownership_sources: Vec<Option<ResourceOccurrenceId>>,
     pub(crate) stable_views: Vec<PlannedStableView>,
     pub(crate) memory_effects: Vec<MemoryRange>,
     /// The owned occurrence each reserved requirement in
@@ -2850,6 +2853,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     let mut reserved_ownership_supports = Vec::new();
     let mut exclusive_supports = Vec::new();
     let mut canonical_transferred_ownership = Vec::new();
+    let mut transferred_ownership_sources = Vec::new();
     let mut planned_ledger = ledger.clone();
     let mut entry_transitions = Vec::new();
     let mut mutex_uses = Vec::new();
@@ -2944,6 +2948,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             checked.fact = fact;
             transferred_ownership.push(checked);
             canonical_transferred_ownership.push(None);
+            transferred_ownership_sources.push(None);
             residual = use_plan.caller_resources.clone();
             planned_ledger = use_plan.ledger.clone();
             entry_transitions.extend(use_plan.entry_transitions.iter().cloned());
@@ -3001,6 +3006,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 );
             }
             canonical_transferred_ownership.push(None);
+            transferred_ownership_sources.push(None);
             transferred_ownership.push(requirement.clone());
             residual = remaining.clone();
             split_origins = origins.clone();
@@ -3113,6 +3119,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         }
         reserved_ownership_supports.push((requirement.fact.clone(), occurrence));
         canonical_transferred_ownership.push(canonical_caller_fact);
+        transferred_ownership_sources.push(Some(occurrence));
         transferred_ownership.push(requirement.clone());
     }
 
@@ -3748,6 +3755,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         callee_resources,
         transferred_ownership,
         canonical_transferred_ownership,
+        transferred_ownership_sources,
         stable_views,
         memory_effects,
         reserved_ownership_supports,

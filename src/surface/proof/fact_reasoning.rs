@@ -271,7 +271,7 @@ fn describe_assertion_prerequisite(
         let locals = state
             .locals()
             .object_values()
-            .filter(|(name, _)| !name.starts_with("__rust_"))
+            .filter(|(name, _)| !name.named().is_some_and(|name| name.starts_with("__rust_")))
             .map(|(name, _)| crate::kernel::program_local_source_name(name).to_string())
             .collect::<Vec<_>>();
         let names = goal
@@ -394,8 +394,10 @@ fn collect_program_expression_variables(expression: &ProgramExpression, names: &
     while let Some(expression) = pending.pop() {
         match expression {
             ProgramExpression::Variable(name) => {
-                if !names.contains(name) {
-                    names.push(name.clone());
+                if let Some(name) = name.named() {
+                    if !names.contains(&name.to_owned()) {
+                        names.push(name.to_owned());
+                    }
                 }
             }
             ProgramExpression::StringLiteral(_)

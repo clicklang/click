@@ -50,7 +50,7 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
           "name": "clang"
         },
         "sources": {
@@ -58,9 +58,9 @@
             "artifact": {
               "bytes": 10016,
               "path": ".click/fixture/signedness.cpp.click-cpp.json",
-              "sha256": "8660bfcf7dc6c807178528012dcd5a42fd89cce04d7b4961a32ce20a83fc5f0c"
+              "sha256": "459e7468ea99381641c01514f30ab21c3147e2bfa822d1eab9b6255e7871afac"
             },
-            "identity": "dd49e802d1da6510d5a036c6f007edb75032b321d7d0ac754a54323f49a66b0e",
+            "identity": "0d14d6565041e6fb46602148e642fb1c68926b4c1b576fdccc07c3d10fff864f",
             "inputs": {
               "$unit/signedness.cpp": "c044f21702be516d05f4c3cd1dec808f6348c72ffa5d125f04644287918d2e88"
             }

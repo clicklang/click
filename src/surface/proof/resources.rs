@@ -887,9 +887,9 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
             ));
         };
         let expression = match names_by_value.get(value).and_then(Option::as_ref) {
-            Some(name) => {
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone()))
-            }
+            Some(name) => ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                (name.clone()).into(),
+            )),
             None => ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
         };
         substitutions.insert(parameter.name().to_string(), expression);
@@ -4100,7 +4100,8 @@ fn fold_composite_resources_on_outcome_with_facts(
                     let value = evaluate_fixed_state_expression_through_kernel(
                         argument,
                         pure_facts.assumptions(),
-                        ContractEnvironment::new(&values, &array_refs),
+                        ContractEnvironment::new(&values, &array_refs)
+                            .with_parameters(parameter_binding),
                         FixedStateFrame::new(
                             pre_state,
                             &guard_state,
@@ -6015,7 +6016,7 @@ void child_release(struct child* obj) {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                retained_state,
+                crate::kernel::ProgramPoint::at(&retained_state),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -6519,7 +6520,7 @@ mod declared_scalar_field_observation_tests {
             "a pointer field must not be cached as an integer prefix"
         );
         let expected = Pointer::loaded(&MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(memory),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(base.clone()),
             crate::kernel::LoadKind::Int32,
         ))

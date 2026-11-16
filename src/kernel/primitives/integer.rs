@@ -117,6 +117,13 @@ struct PureApplicationIdentity {
 struct SharedPureApplicationNode {
     identity: Arc<PureApplicationIdentity>,
     call: MachineTerm,
+    common_arguments: Mutex<Option<PreparedApplicationArguments>>,
+}
+
+struct PreparedApplicationArguments {
+    thread: std::thread::ThreadId,
+    generation: u64,
+    values: Vec<Option<KernelTerm>>,
 }
 
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -230,11 +237,45 @@ impl PureApplicationInterner {
         SharedPureApplication(Arc::new(SharedPureApplicationNode {
             identity,
             call: MachineTerm::ClickFunctionApplication { name, arguments },
+            common_arguments: Mutex::new(None),
         }))
     }
 }
 
 impl SharedPureApplication {
+    /// Prepared children belong to this exact producer payload. Opaque fallback
+    /// identities are created by callers and must not be cached here: they name
+    /// this application and would create a reference cycle.
+    pub(crate) fn common_argument(&self, index: usize) -> Option<KernelTerm> {
+        let generation = crate::kernel::verification_session_generation();
+        let thread = std::thread::current().id();
+        let mut cached = self
+            .0
+            .common_arguments
+            .lock()
+            .expect("prepared call arguments");
+        if cached
+            .as_ref()
+            .is_none_or(|old| old.thread != thread || old.generation != generation)
+        {
+            let mut import = crate::kernel::KernelTermImport::default();
+            let arguments = self
+                .arguments()
+                .iter()
+                .map(|argument| {
+                    let root = import.argument(argument);
+                    (!matches!(root.node(), crate::kernel::KernelTermNode::Legacy(_)))
+                        .then_some(root)
+                })
+                .collect();
+            *cached = Some(PreparedApplicationArguments {
+                thread,
+                generation,
+                values: arguments,
+            });
+        }
+        cached.as_ref().unwrap().values[index].clone()
+    }
     pub(crate) fn intern(name: String, arguments: Vec<PureFunctionArgument>) -> Self {
         static INTERNER: OnceLock<Mutex<PureApplicationInterner>> = OnceLock::new();
         // Compute word identities outside the application-interner lock.
@@ -679,7 +720,7 @@ impl SharedMachineIntegerTerm {
                 root.machine_read_leaf()
             {
                 matches!(&mapped, MachineTerm::MemoryLoad(other, pointer, other_kind)
-                    if memory.arena_id() == other.arena_id() && address == pointer && kind == other_kind)
+                    if memory.shared_memory().arena_id() == other.shared_memory().arena_id() && address == pointer && kind == other_kind)
             } else {
                 !root.has_machine_reads()
                     && !root.has_machine_conversions()

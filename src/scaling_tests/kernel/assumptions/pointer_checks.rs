@@ -20,7 +20,7 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             MachineTerm::MemoryLoad(
-                                crate::kernel::intern_memory(memory),
+                                ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                                 Box::new(cell.clone()),
                                 LoadKind::Int32,
                             ),

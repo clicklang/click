@@ -774,7 +774,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     let before = Memory::new().with_block(input.block.clone(), 1);
     let read = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(memory.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
             Box::new(input.clone()),
             LoadKind::UInt8,
         )
@@ -1387,7 +1387,7 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
         }
         if !names.is_empty() {
             statements.push(program_end_automatic_lifetimes(
-                names.iter().rev().cloned().collect(),
+                names.iter().rev().cloned().map(Into::into).collect(),
             ));
         }
         // Ordinary local storage has implicit authority rather than a range fact.

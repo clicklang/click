@@ -4337,6 +4337,25 @@ impl ProgramType {
         }
     }
 
+    pub(crate) fn array_element_type(self) -> Option<Self> {
+        Some(match self {
+            Self::Int8Array(_) => Self::Int8,
+            Self::UInt8Array(_) => Self::UInt8,
+            Self::Int16Array(_) => Self::Int16,
+            Self::UInt16Array(_) => Self::UInt16,
+            Self::Int32Array(_) => Self::Int32,
+            Self::UInt32Array(_) => Self::UInt32,
+            Self::Int64Array(_) => Self::Int64,
+            Self::UInt64Array(_) => Self::UInt64,
+            Self::Int128Array(_) => Self::Int128,
+            Self::UInt128Array(_) => Self::UInt128,
+            Self::Float32Array(_) => Self::Float32,
+            Self::Float64Array(_) => Self::Float64,
+            Self::PointerArray(element, _) => element.pointer_type(),
+            _ => return None,
+        })
+    }
+
     pub fn pointee_type(self) -> Option<Self> {
         match self {
             Self::VoidPointerPointer => Some(Self::VoidPointer),
@@ -4552,12 +4571,12 @@ impl ProgramValue {
 }
 
 impl LValue {
-    pub(in crate::kernel) fn local(name: impl Into<String>, value_type: ProgramType) -> Self {
+    pub(in crate::kernel) fn local(name: impl Into<BindingName>, value_type: ProgramType) -> Self {
         Self::local_with_qualifiers(name, value_type, false, false)
     }
 
     pub(in crate::kernel) fn local_with_qualifiers(
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         value_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
@@ -4861,8 +4880,11 @@ impl Pointer {
         if let Some(ProgramValue::Pointer(stored)) = memory.memory().known_value(address) {
             return stored.pointer().clone();
         }
-        let read =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(address.clone()),
+            LoadKind::Int32,
+        );
         match canonical_pointer_read(&read) {
             Some(named) => named_pointer_read(named),
             None => Self::loaded_value(memory, address),
@@ -4899,7 +4921,7 @@ impl Pointer {
             return None;
         };
         Some(Self::loaded_value(
-            &memory.unchanged_bytes_source(),
+            &memory.shared_memory().unchanged_bytes_source(),
             address,
         ))
     }
@@ -4962,8 +4984,11 @@ impl Pointer {
         }
         // Pointer values retain the selected read directly. Observation metadata
         // records the live source independently of the term's identity.
-        let bits =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
+        let bits = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(address.clone()),
+            LoadKind::Int32,
+        );
         Err(Self::loaded(&bits).expect("a pointer read has a structural descriptor"))
     }
 
@@ -6216,7 +6241,7 @@ fn named_pointer_read(read: MachineTerm) -> Pointer {
     let MachineTerm::MemoryLoad(memory, address, _) = &read else {
         unreachable!("selected pointer read");
     };
-    let value = Pointer::loaded_value(&memory.unchanged_bytes_source(), address);
+    let value = Pointer::loaded_value(&memory.shared_memory().unchanged_bytes_source(), address);
     if let PointerBlock::LoadedPointer(identity) = value.block {
         crate::kernel::eval::record_pointer_load_source(identity, &read);
     }

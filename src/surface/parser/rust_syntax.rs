@@ -1118,10 +1118,12 @@ impl Parser {
         };
         let vector = if reference {
             ContractExpression::ProgramExpression(ProgramExpression::Load(Box::new(
-                ProgramExpression::Variable(name.to_string()),
+                ProgramExpression::Variable(name.into()),
             )))
         } else {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(name.to_string()))
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                (name.to_string()).into(),
+            ))
         };
         if self.peek() == Some(&Token::Dot)
             && self.peek_next() == Some(&Token::Ident("len".into()))

@@ -4,8 +4,8 @@
 //! This module intentionally has no planner and does not call the legacy
 //! arithmetic decision procedure.  Every node names the exact premise
 //! positions it consumes and carries the proposition it claims to establish.
-//! The surface migration can construct these nodes later without changing the
-//! kernel boundary.
+//! Authored compatibility certificates retain these nodes. Arithmetic automation
+//! uses the same local semantic rules through selected-input normalization.
 
 use super::super::{
     ComparisonOperator, ConditionTerm, FloatClassification, FloatCondition, MachineTerm, Pointer,
@@ -41,6 +41,7 @@ fn charge_payload(payload: usize) -> bool {
 
 fn pointer_block_payload(block: &PointerBlock) -> Option<usize> {
     let payload = match block {
+        PointerBlock::StaticObject { .. } | PointerBlock::AutomaticLocal { .. } => 1,
         PointerBlock::Concrete(name) | PointerBlock::Function(name) => {
             1usize.checked_add(name.len())?
         }
@@ -271,7 +272,11 @@ fn pointer_block_equal(left: &PointerBlock, right: &PointerBlock) -> bool {
         | (PointerBlock::Symbolic(left), PointerBlock::Symbolic(right)) => left == right,
         (PointerBlock::ExternalArgument, PointerBlock::ExternalArgument)
         | (PointerBlock::Heap(_), PointerBlock::Heap(_))
-        | (PointerBlock::Temporary(_), PointerBlock::Temporary(_)) => left == right,
+        | (PointerBlock::Temporary(_), PointerBlock::Temporary(_))
+        | (
+            PointerBlock::StaticObject { .. } | PointerBlock::AutomaticLocal { .. },
+            PointerBlock::StaticObject { .. } | PointerBlock::AutomaticLocal { .. },
+        ) => left == right,
         _ => false,
     }
 }
@@ -2098,6 +2103,105 @@ fn integer_rule_holds(
     Err(first_error.expect("a reading was checked"))
 }
 
+/// Fixed local rules over the goal and the caller's ordered explicit inputs.
+/// Polynomial search and signed-domain planning deliberately do not live here.
+pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) -> bool {
+    if !matches!(goal, Proposition::ConditionIs(..) | Proposition::Not(..)) {
+        return false;
+    }
+    if premises.is_empty() {
+        return pointer_alignment(None, goal);
+    }
+    // Reject impossible arities before reading native operands. Convert each
+    // explicit input once, shared by the fixed rule family, rather than once
+    // per rejected checker (important for long native expression spines).
+    if matches!(premises.len(), 1 | 2 | 4) {
+        let indices = (0..premises.len()).collect::<Vec<_>>();
+        let cited = premises
+            .iter()
+            .map(|premise| {
+                crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+                    premise,
+                )
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| premise.clone())
+            })
+            .collect::<Vec<_>>();
+        type Check = fn(
+            usize,
+            &[usize],
+            &[Proposition],
+            &Proposition,
+        ) -> Result<(), SpecialArithmeticCheckError>;
+        let checks: [(usize, Check); 9] = [
+            (4, super::integer_product_bounds::check),
+            (4, super::integer_division_bounds::check),
+            (2, super::integer_multiply_order::check),
+            (2, super::integer_quotient_bound::check),
+            (1, super::integer_bound_exclusion::check),
+            (2, super::integer_relation_transport::check),
+            (2, super::integer_quotient_shift::check),
+            (2, super::integer_cast_identity::check),
+            (2, super::integer_operation_identity::check),
+        ];
+        if integer_rule_holds(goal, |result| {
+            checks
+                .iter()
+                .any(|(arity, check)| {
+                    *arity == premises.len() && check(0, &indices, &cited, result).is_ok()
+                })
+                .then_some(())
+                .ok_or(SpecialArithmeticCheckError::NodeResultMismatch(0))
+        })
+        .is_ok()
+        {
+            return true;
+        }
+    }
+    let inputs = premises.iter().collect::<Vec<_>>();
+    if pointer_alignment(
+        if premises.len() == 1 {
+            premises.first()
+        } else {
+            None
+        },
+        goal,
+    ) && premises.len() <= 1
+    {
+        return true;
+    }
+    if let Some((first, rest)) = inputs.split_first() {
+        if (premises.len() == 1 && float_reflexive(first, goal))
+            || pointer_translation(first, rest, goal)
+            || pointer_word_equality(first, rest, goal)
+            || pointer_word_from_alignment(&inputs, goal)
+        {
+            return true;
+        }
+    }
+    if let Proposition::ConditionIs(condition, truth) = goal
+        && matches!(
+            condition,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                ..
+            }
+        )
+    {
+        let mut context = crate::kernel::PureFactContext::new();
+        for premise in premises {
+            if !charge_signed_bound(premise) {
+                return false;
+            }
+            context = context.assume_proposition(premise.clone());
+        }
+        return context.decide_widened_sum_bound(condition) == Some(*truth);
+    }
+    false
+}
+
 fn pointer_translation(
     relation: &Proposition,
     bound_propositions: &[&Proposition],
@@ -2706,7 +2810,7 @@ fn bounded_term_hashes(roots: &[&MachineTerm]) -> Option<HashMap<usize, u64>> {
                 uint64_constant!(value) => constant_u64(*value).hash(&mut hasher),
                 MachineTerm::Variable(value) => value.hash(&mut hasher),
                 MachineTerm::MemoryLoad(memory, pointer, kind) => {
-                    memory.arena_id().hash(&mut hasher);
+                    memory.shared_memory().arena_id().hash(&mut hasher);
                     kind.hash(&mut hasher);
                     pointer_identity_hash(pointer)?.hash(&mut hasher);
                 }
@@ -4669,7 +4773,9 @@ mod tests {
         let next = pointer(PointerOffsetTerm::Constant(0));
         let address = MachineTerm::pointer_address(next.clone());
         let raw = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(crate::kernel::Memory::new()),
+            crate::kernel::ProgramPoint::at(
+                &(crate::kernel::intern_memory(crate::kernel::Memory::new())),
+            ),
             Box::new(next.clone()),
             crate::kernel::LoadKind::Bits64,
         );
@@ -5471,4 +5577,9 @@ mod unsigned_widening_tests {
         }
         assert!(!bitvector_equal(&deep, &deep));
     }
+}
+
+#[cfg(test)]
+mod normalization_scaling_tests {
+    include!("../../scaling_tests/kernel/proof/arithmetic_special/normalization.rs");
 }

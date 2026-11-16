@@ -1037,6 +1037,11 @@ enum AlphaPointerOffsetNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaPointerBlockKey {
+    StaticObject(crate::kernel::StaticBindingId),
+    AutomaticLocal(
+        crate::kernel::LocalBindingId,
+        crate::kernel::LocalStorageInstance,
+    ),
     Concrete(String),
     StringLiteral {
         identity: crate::kernel::StringLiteralId,
@@ -2141,6 +2146,12 @@ fn alpha_pointer_block_key<const ALLOW_LOADS: bool>(
                     .collect::<Option<Vec<_>>>()?,
             }
         }
+        PointerBlock::StaticObject { binding } => {
+            AlphaPointerBlockKey::StaticObject(binding.clone())
+        }
+        PointerBlock::AutomaticLocal { binding, instance } => {
+            AlphaPointerBlockKey::AutomaticLocal(binding.clone(), instance.clone())
+        }
         PointerBlock::Concrete(name) => AlphaPointerBlockKey::Concrete(name.clone()),
         PointerBlock::StringLiteral { identity, bytes } => AlphaPointerBlockKey::StringLiteral {
             identity: identity.clone(),
@@ -2591,7 +2602,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
         }
         MachineTerm::MemoryLoad(memory, pointer, kind) if bindings.state_aware => {
             bindings.raw_state_load_seen = true;
-            let retained_state = AlphaStateKey::new(memory);
+            let retained_state = AlphaStateKey::new(memory.shared_memory());
             let pointer =
                 alpha_pointer_key_with_bindings::<ALLOW_LOADS>(pointer, bindings, next_binder)?;
             let interner = match bindings.load_interner.clone() {
@@ -3269,7 +3280,9 @@ mod proposition_identity_tests {
             sort: Sort::Algebraic(ty),
             body: Box::new(equal(
                 MachineTerm::MemoryLoad(
-                    Memory::new().with_block("alpha-array", 8).into(),
+                    crate::kernel::ProgramPoint::of_memory(
+                        &Memory::new().with_block("alpha-array", 8),
+                    ),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -3495,7 +3508,7 @@ mod proposition_identity_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    load_memory,
+                    crate::kernel::ProgramPoint::at(&load_memory),
                     Box::new(load_pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -3529,7 +3542,7 @@ mod proposition_identity_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    changed_memory,
+                    crate::kernel::ProgramPoint::at(&changed_memory),
                     Box::new(changed_pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -4332,7 +4345,7 @@ mod memory_state_alpha_tests {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                crate::kernel::ProgramPoint::at(&memory),
                 Box::new(Pointer {
                     block: "retained_state-alpha".into(),
                     offset: PointerOffsetTerm::Variable(item),
@@ -4447,7 +4460,7 @@ mod memory_state_alpha_tests {
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
                 MachineTerm::MemoryLoad(
-                    memory,
+                    crate::kernel::ProgramPoint::at(&memory),
                     Box::new(Pointer {
                         block: "retained_state-alpha".into(),
                         offset: PointerOffsetTerm::Variable(unknown_load),
@@ -4637,7 +4650,7 @@ mod memory_state_alpha_tests {
             )
         };
         let explicit_first: SharedIntegerTerm = fold_with_body(MachineTerm::MemoryLoad(
-            first_memory,
+            crate::kernel::ProgramPoint::at(&first_memory),
             Box::new(first_registered_pointer),
             crate::kernel::LoadKind::Int32,
         ))
@@ -4645,7 +4658,7 @@ mod memory_state_alpha_tests {
         let registered_first: SharedIntegerTerm =
             fold_with_body(MachineTerm::Variable(first_load)).into();
         let explicit_nested: SharedIntegerTerm = fold_with_body(MachineTerm::MemoryLoad(
-            nested_memory,
+            crate::kernel::ProgramPoint::at(&nested_memory),
             Box::new(nested_registered_pointer),
             crate::kernel::LoadKind::Int32,
         ))
@@ -4922,7 +4935,7 @@ mod memory_state_alpha_tests {
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
                     MachineTerm::MemoryLoad(
-                        memory,
+                        crate::kernel::ProgramPoint::at(&memory),
                         Box::new(Pointer {
                             block: block.into(),
                             offset: PointerOffsetTerm::Constant(0),
@@ -4956,7 +4969,7 @@ mod memory_state_alpha_tests {
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
                     MachineTerm::MemoryLoad(
-                        memory,
+                        crate::kernel::ProgramPoint::at(&memory),
                         Box::new(Pointer {
                             block: block.into(),
                             offset: PointerOffsetTerm::Constant(0),
