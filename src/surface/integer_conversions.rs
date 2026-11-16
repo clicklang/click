@@ -675,7 +675,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
             let expanded =
                 expand_c_claim_source_by_label(&source, &[], "round_trip.ensures_0").unwrap();
             assert!(!expanded.contains("integer_cast_identity"), "{expanded}");
-            assert!(expanded.contains("normalize() using"), "{expanded}");
+            assert!(!expanded.contains("normalize("), "{expanded}");
+            assert!(expanded.contains("known();"), "{expanded}");
             crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
                 .unwrap();
             for missing in [
@@ -1970,6 +1971,153 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
                 assert!(i64::try_from(below / d).unwrap().checked_add(-1).is_none());
             }
         }
+    }
+
+    #[test]
+    #[ignore = "nightly: observation/cast/shift/mask/conditional expansion and replay"]
+    fn machine_observation_bridges_expand_without_normalize() {
+        fn check_replay(source: &str) -> Result<(), String> {
+            verify_c_sources(source, &[]).map_err(|e| format!("{source}\n{}", e.message()))?;
+            let expanded = expand_c_claim_source_by_label(source, &[], "bridge.ensures_0")
+                .map_err(|e| format!("{source}\n{}", e.message()))?;
+            if expanded.contains("normalize(") {
+                return Err(format!("{source}\n{expanded}"));
+            }
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+                .map(|_| ())
+                .map_err(|e| format!("{expanded}\n{}", e.message()))
+        }
+        let mut failures = Vec::new();
+        let mut replay = |source: &str| {
+            if let Err(error) = check_replay(source) {
+                failures.push(error);
+            }
+        };
+        for (ty, min, max) in [
+            ("int32", "-2147483648", "2147483647"),
+            ("uint32", "0", "4294967295"),
+            ("int64", "-9223372036854775808", "9223372036854775807"),
+            ("uint64", "0", "18446744073709551615"),
+        ] {
+            for op in ["+", "-", "*"] {
+                let exact = format!("(to_integer(x) {op} to_integer(y))");
+                let lo = format!("{min} <= {exact}");
+                let hi = format!("{exact} <= {max}");
+                let source = format!(
+                    "theorem bridge(x: {ty}, y: {ty}) {{ requires {lo}; requires {hi}; ensures to_integer(x {op} y) == {exact} by {{ solve() using {{ {lo}; {hi}; }}; }} }}"
+                );
+                replay(&source);
+                for missing in [&lo, &hi] {
+                    if ty.starts_with("uint")
+                        && ((op == "-" && missing == &hi) || (op != "-" && missing == &lo))
+                    {
+                        continue;
+                    }
+                    let remaining = if missing == &lo { &hi } else { &lo };
+                    let omitted = source.replace(
+                        &format!("using {{ {lo}; {hi}; }}"),
+                        &format!("using {{ {remaining}; }}"),
+                    );
+                    assert!(verify_c_sources(&omitted, &[]).is_err(), "{omitted}");
+                }
+            }
+            replay(&format!(
+                "theorem bridge(x: {ty}) {{ ensures to_integer(x) <= {max} by solve(); }}"
+            ));
+        }
+        for (ty, min, max) in [
+            ("int8", "-128", "127"),
+            ("uint8", "0", "255"),
+            ("int16", "-32768", "32767"),
+            ("uint16", "0", "65535"),
+            ("int32", "-2147483648", "2147483647"),
+            ("uint32", "0", "4294967295"),
+            ("int64", "-9223372036854775808", "9223372036854775807"),
+            ("uint64", "0", "18446744073709551615"),
+            (
+                "int128",
+                "-170141183460469231731687303715884105728",
+                "170141183460469231731687303715884105727",
+            ),
+            ("uint128", "0", "340282366920938463463374607431768211455"),
+        ] {
+            replay(&format!(
+                "theorem bridge(z: Integer) {{ requires {min} <= z; requires z <= {max}; ensures to_integer(to_{ty}(z)) == z by {{ solve() using {{ {min} <= z; z <= {max}; }}; }} }}"
+            ));
+        }
+        for source in [
+            "theorem bridge(x: int32) { requires 0 <= x; requires x <= 255; ensures to_integer(x as uint8) == to_integer(x) by { solve() using { 0 <= x; x <= 255; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 4294967295u64; ensures to_integer(x as uint32) == to_integer(x) by { solve() using { x <= 4294967295u64; }; } }",
+            "theorem bridge(x: int32) { requires 0 <= x; requires x <= 100; ensures to_integer(x << 2) <= 400 by { solve() using { 0 <= x; x <= 100; }; } }",
+            "theorem bridge(x: int32) { requires 3 <= x; requires x <= 100; ensures 12 <= to_integer(x << 2) by { solve() using { 3 <= x; x <= 100; }; } }",
+            "theorem bridge(x: int32) { requires -100 <= x; requires x <= 101; ensures to_integer(x >> 2) <= 25 by { solve() using { -100 <= x; x <= 101; }; } }",
+            "theorem bridge(x: int32) { requires -101 <= x; requires x <= 100; ensures -26 <= to_integer(x >> 2) by { solve() using { -101 <= x; x <= 100; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 100u64; ensures to_integer(x << 2u64) <= 400 by { solve() using { x <= 100u64; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 101u64; ensures to_integer(x >> 2u64) <= 25 by { solve() using { x <= 101u64; }; } }",
+            "theorem bridge(x: int32) { ensures (x & 255) <= 255 by solve(); }",
+            "theorem bridge(x: int32) { requires 0 <= x; requires x <= 100; ensures (x & 255) <= 100 by { solve() using { 0 <= x; x <= 100; }; } }",
+            "theorem bridge(x: int32) { requires 0 <= x; ensures (x & 255) <= x by { solve() using { 0 <= x; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 100u64; ensures (x & 255u64) <= 100u64 by { solve() using { x <= 100u64; }; } }",
+            "theorem bridge(x: Integer, y: Integer) { requires x < y; ensures (if x < y { x } else { y }) == x by { solve() using { x < y; }; } }",
+            "theorem bridge(x: Integer, y: Integer) { requires x < y; requires x <= 100; ensures (if x < y { x + 1 } else { y }) <= 101 by { solve() using { x < y; x <= 100; }; } }",
+            "theorem bridge(x: int32, y: int32) { requires x < y; ensures (if x < y { x } else { y }) == x by { solve() using { x < y; }; } }",
+            "theorem bridge(x: Integer, y: Integer) { requires not x < y; ensures (if x < y { x } else { y }) == y by { solve() using { not x < y; }; } }",
+            "theorem bridge(x: int32) { ensures to_integer(255 & x) <= 255 by solve(); }",
+            "theorem bridge(x: uint64) { requires x <= 100u64; ensures to_integer(x << 0) <= 100 by { solve() using { x <= 100u64; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 1u64; ensures to_integer(x << 63) <= 9223372036854775808 by { solve() using { x <= 1u64; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 18446744073709551615u64; ensures to_integer(x >> 63) <= 1 by { solve() using { x <= 18446744073709551615u64; }; } }",
+        ] {
+            replay(source);
+        }
+        for source in [
+            "theorem bridge(x: int32) { requires 0 <= x; requires x <= 100; ensures to_integer(x << 2) <= 399 by { solve() using { 0 <= x; x <= 100; }; } }",
+            "theorem bridge(x: int32) { requires -101 <= x; requires x <= 100; ensures -25 <= to_integer(x >> 2) by { solve() using { -101 <= x; x <= 100; }; } }",
+            "theorem bridge(x: int32) { requires x <= 100; ensures (x & 255) <= 100 by { solve() using { x <= 100; }; } }",
+            "theorem bridge(x: Integer, y: Integer) { requires x < y; ensures (if x < y { x } else { y }) == x by { solve() using { }; } }",
+        ] {
+            assert!(verify_c_sources(source, &[]).is_err(), "{source}");
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+    }
+
+    #[test]
+    #[ignore = "nightly: foundational machine bridge library proofs replay without solving"]
+    fn machine_bridge_library_proofs_have_no_normalization_or_search() {
+        let names = [
+            "le_difference",
+            "difference_le",
+            "equal_difference",
+            "equal_le",
+            "uint32_add_to_integer",
+            "uint32_subtract_to_integer",
+            "uint64_add_to_integer",
+            "uint64_subtract_to_integer",
+            "uint64_multiply_to_integer",
+            "int32_add_to_integer",
+            "int32_subtract_to_integer",
+            "int64_subtract_to_integer",
+            "uint32_multiply_to_integer",
+            "to_int8_round_trip",
+            "to_uint8_round_trip",
+            "to_int16_round_trip",
+            "to_uint16_round_trip",
+            "to_int32_round_trip",
+            "to_uint32_round_trip",
+            "to_int64_round_trip",
+            "to_uint64_round_trip",
+        ];
+        let mut failures = Vec::new();
+        for name in names {
+            let source = library_declarations(include_str!("../../library/integer.click"), &[name]);
+            assert!(!source.contains("normalize("), "{name}");
+            assert!(!source.contains("solve("), "{name}");
+            if let Err(e) = crate::surface::proof::without_implicit_solve(|| {
+                verify_c_sources(&format!("import click::integer;\n{source}"), &[])
+            }) {
+                failures.push(format!("{name}: {}", e.message()));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n\n"));
     }
 
     #[cfg(test)]

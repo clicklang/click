@@ -842,8 +842,8 @@ theorem le_difference(a:Integer,b:Integer,value:Integer) {
   have a + -b <= b + -b by {
    apply(click::integer::add_le(a,b,-b,-b)) using {a<=b;-b<=-b;};
   }
-  have value == a + -b by { rewrite(value,a-b); normalize(); }
-  have 0 == b + -b by normalize();
+  have value == a + -b by { rewrite(value,a-b); known(); }
+  have 0 == b + -b by known();
   apply(click::integer::le_substitute(a + -b,b + -b,value,0)) using {a + -b <= b + -b; value==a + -b;0==b + -b;};
  }
 }
@@ -863,8 +863,8 @@ theorem difference_le(a:Integer,b:Integer,value:Integer) {
   have value + b <= 0 + b by {
    apply(click::integer::add_le(value,0,b,b)) using {value<=0;b<=b;};
   }
-  have a == value + b by { rewrite(value,a-b); normalize(); }
-  have b == 0 + b by normalize();
+  have a == value + b by { rewrite(value,a-b); known(); }
+  have b == 0 + b by known();
   apply(click::integer::le_substitute(value+b,0+b,a,b)) using {value+b<=0+b;a==value+b;b==0+b;};
  }
 }
@@ -879,7 +879,7 @@ theorem difference_le(a:Integer,b:Integer,value:Integer) {
 ```click
 theorem equal_difference(a: Integer, b: Integer) {
     requires a == b;
-    ensures a - b == 0 by { rewrite(a, b); normalize(); }
+    ensures a - b == 0 by { rewrite(a, b); known(); }
 }
 ```
 
@@ -925,7 +925,7 @@ evaluate to `true`.
 ```click
 theorem equal_le(a: Integer, b: Integer) {
     requires a == b;
-    ensures a <= b by { rewrite(a, b); normalize(); }
+    ensures a <= b by { rewrite(a, b); known(); }
 }
 ```
 
@@ -2755,71 +2755,12 @@ Both bounds are required, including when the final program result is in range.
 theorem uint32_add_to_integer(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by {
-        have 0 <= (to_integer(left) + to_integer(right)) by {
-            have 0 <= (to_integer(left) + to_integer(right)) by {
-                have (-1 * to_integer(left)) <= 0 by {
-                    have 0 <= to_integer(left) by {
-                        normalize();
-                    }
-                    have (-1 * to_integer(left)) == (0 - to_integer(left)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(0, to_integer(left), (-1 * to_integer(left)))) using {
-                        0 <= to_integer(left);
-                        (-1 * to_integer(left)) == (0 - to_integer(left));
-                    };
-                }
-                have (-1 * to_integer(right)) <= 0 by {
-                    have 0 <= to_integer(right) by {
-                        normalize();
-                    }
-                    have (-1 * to_integer(right)) == (0 - to_integer(right)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(0, to_integer(right), (-1 * to_integer(right)))) using {
-                        0 <= to_integer(right);
-                        (-1 * to_integer(right)) == (0 - to_integer(right));
-                    };
-                }
-                have ((-1 * to_integer(left)) + (-1 * to_integer(right))) <= 0 by {
-                    have ((-1 * to_integer(left)) + (-1 * to_integer(right))) <= (0 + 0) by {
-                        apply(integer::add_le((-1 * to_integer(left)), 0, (-1 * to_integer(right)), 0)) using {
-                            (-1 * to_integer(left)) <= 0;
-                            (-1 * to_integer(right)) <= 0;
-                        };
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                        normalize();
-                    }
-                    apply(integer::le_substitute(((-1 * to_integer(left)) + (-1 * to_integer(right))), (0 + 0), ((-1 * to_integer(left)) + (-1 * to_integer(right))), 0)) using {
-                        ((-1 * to_integer(left)) + (-1 * to_integer(right))) <= (0 + 0);
-                        ((-1 * to_integer(left)) + (-1 * to_integer(right))) == ((-1 * to_integer(left))
-                            + (-1 * to_integer(right)));
-                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                    };
-                }
-                have ((-1 * to_integer(left)) + (-1 * to_integer(right))) == (0 - (to_integer(left) + to_integer(right))) by {
-                    normalize();
-                }
-                apply(integer::difference_le(0, (to_integer(left) + to_integer(right)), ((-1 * to_integer(left)) + (-1 * to_integer(right))))) using {
-                    ((-1 * to_integer(left)) + (-1 * to_integer(right))) <= 0;
-                    ((-1 * to_integer(left)) + (-1 * to_integer(right))) == (0 - (to_integer(left) +
-                        to_integer(right)));
-                };
-            }
-            normalize() using {
-                0 <= (to_integer(left) + to_integer(right));
-            };
+        have 0 <= to_integer(left) by known();
+        have 0 <= to_integer(right) by known();
+        have 0 + 0 <= (to_integer(left) + to_integer(right)) by {
+            apply(integer::add_le(0, to_integer(left), 0, to_integer(right))) using { 0 <= to_integer(left); 0 <= to_integer(right); };
         }
-        have (to_integer(left) + to_integer(right)) <= 4294967295 by {
-            known();
-        }
-        have to_integer((left + right)) == (to_integer(left) + to_integer(right)) by {
-            normalize() using {
-                0 <= (to_integer(left) + to_integer(right));
-                (to_integer(left) + to_integer(right)) <= 4294967295;
-            };
-        }
+        have 0 <= (to_integer(left) + to_integer(right)) by known();
         known();
     }
 }
@@ -2835,97 +2776,27 @@ Unsigned machine addition agrees with mathematical addition when the mathematica
 theorem uint32_subtract_to_integer(left: uint32, right: uint32) {
     requires right <= left;
     ensures to_integer(left - right) == to_integer(left) - to_integer(right) by {
+        have to_integer(right) <= to_integer(left) by known();
+        have 0 <= to_integer(right) by known();
+        have to_integer(left) <= 4294967295 by known();
+        have to_integer(right) + -to_integer(right) <= (to_integer(left) + -to_integer(right)) by {
+            apply(integer::add_le(to_integer(right), to_integer(left), -to_integer(right), -to_integer(right))) using { to_integer(right) <= to_integer(left); -to_integer(right) <= -to_integer(right); };
+        }
+        have 0 == to_integer(right) + -to_integer(right) by known();
+        have (to_integer(left) - to_integer(right)) == (to_integer(left) + -to_integer(right)) by known();
         have 0 <= (to_integer(left) - to_integer(right)) by {
-            have 0 <= (to_integer(left) - to_integer(right)) by {
-                have ((-1 * to_integer(left)) + to_integer(right)) <= 0 by {
-                    have ((-1 * to_integer(left)) + to_integer(right)) == (to_integer(right) - to_integer(left)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(to_integer(right), to_integer(left), ((-1 * to_integer(left)) + to_integer(right)))) using {
-                        to_integer(right) <= to_integer(left);
-                        ((-1 * to_integer(left)) + to_integer(right)) == (to_integer(right) -
-                            to_integer(left));
-                    };
-                }
-                have ((-1 * to_integer(left)) + to_integer(right)) == (0 - (to_integer(left) - to_integer(right))) by {
-                    normalize();
-                }
-                apply(integer::difference_le(0, (to_integer(left) - to_integer(right)), ((-1 * to_integer(left)) + to_integer(right)))) using {
-                    ((-1 * to_integer(left)) + to_integer(right)) <= 0;
-                    ((-1 * to_integer(left)) + to_integer(right)) == (0 - (to_integer(left) -
-                        to_integer(right)));
-                };
-            }
-            normalize() using {
-                0 <= (to_integer(left) - to_integer(right));
-            };
+            apply(integer::le_substitute(to_integer(right) + -to_integer(right), (to_integer(left) + -to_integer(right)), 0, (to_integer(left) - to_integer(right)))) using { to_integer(right) + -to_integer(right) <= (to_integer(left) + -to_integer(right)); 0 == to_integer(right) + -to_integer(right); (to_integer(left) - to_integer(right)) == (to_integer(left) + -to_integer(right)); };
         }
+        have -to_integer(right) <= 0 by {
+            apply(integer::negate_order(0, to_integer(right))) using { 0 <= to_integer(right); };
+            known();
+        }
+        have (to_integer(left) + -to_integer(right)) <= 4294967295 + 0 by {
+            apply(integer::add_le(to_integer(left), 4294967295, -to_integer(right), 0)) using { to_integer(left) <= 4294967295; -to_integer(right) <= 0; };
+        }
+        have to_integer(4294967295u64) == 4294967295 + 0 by known();
         have (to_integer(left) - to_integer(right)) <= 4294967295 by {
-            have (to_integer(left) - to_integer(right)) <= 4294967295 by {
-                have (to_integer(left) + -to_integer(4294967295u64)) <= 0 by {
-                    have to_integer(left) <= 4294967295 by {
-                        normalize();
-                    }
-                    have (to_integer(left) + -to_integer(4294967295u64)) == (to_integer(left) - 4294967295) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(to_integer(left), 4294967295, (to_integer(left) + -to_integer(4294967295u64)))) using {
-                        to_integer(left) <= 4294967295;
-                        (to_integer(left) + -to_integer(4294967295u64)) == (to_integer(left) -
-                            4294967295);
-                    };
-                }
-                have (-1 * to_integer(right)) <= 0 by {
-                    have 0 <= to_integer(right) by {
-                        normalize();
-                    }
-                    have (-1 * to_integer(right)) == (0 - to_integer(right)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(0, to_integer(right), (-1 * to_integer(right)))) using {
-                        0 <= to_integer(right);
-                        (-1 * to_integer(right)) == (0 - to_integer(right));
-                    };
-                }
-                have (to_integer(left) + (-1 * to_integer(right)) + -to_integer(4294967295u64)) <= 0 by {
-                    have (to_integer(left) + -to_integer(4294967295u64) + (-1 * to_integer(right))) <= (0 + 0) by {
-                        apply(integer::add_le((to_integer(left) + -to_integer(4294967295u64)), 0, (-1 * to_integer(right)), 0)) using {
-                            (to_integer(left) + -to_integer(4294967295u64)) <= 0;
-                            (-1 * to_integer(right)) <= 0;
-                        };
-                    }
-                    have (to_integer(left) + (-1 * to_integer(right)) + -to_integer(4294967295u64)) == (to_integer(left) + -to_integer(4294967295u64) + (-1 * to_integer(right))) by {
-                        normalize();
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                        normalize();
-                    }
-                    apply(integer::le_substitute((to_integer(left) + -to_integer(4294967295u64) + (-1 * to_integer(right))), (0 + 0), (to_integer(left) + (-1 * to_integer(right)) + -to_integer(4294967295u64)), 0)) using {
-                        (to_integer(left) + -to_integer(4294967295u64) + (-1 * to_integer(right))) <= (0
-                            + 0);
-                        (to_integer(left) + (-1 * to_integer(right)) + -to_integer(4294967295u64)) ==
-                            (to_integer(left) + -to_integer(4294967295u64) + (-1 * to_integer(right)));
-                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                    };
-                }
-                have (to_integer(left) + (-1 * to_integer(right)) + -to_integer(4294967295u64)) == ((to_integer(left) - to_integer(right)) - 4294967295) by {
-                    normalize();
-                }
-                apply(integer::difference_le((to_integer(left) - to_integer(right)), 4294967295, (to_integer(left) + (-1 * to_integer(right)) + -to_integer(4294967295u64)))) using {
-                    (to_integer(left) + (-1 * to_integer(right)) + -to_integer(4294967295u64)) <= 0;
-                    (to_integer(left) + (-1 * to_integer(right)) + -to_integer(4294967295u64)) ==
-                        ((to_integer(left) - to_integer(right)) - 4294967295);
-                };
-            }
-            normalize() using {
-                (to_integer(left) - to_integer(right)) <= 4294967295;
-            };
-        }
-        have to_integer((left - right)) == (to_integer(left) - to_integer(right)) by {
-            normalize() using {
-                0 <= (to_integer(left) - to_integer(right));
-                (to_integer(left) - to_integer(right)) <= 4294967295;
-            };
+            apply(integer::le_substitute((to_integer(left) + -to_integer(right)), 4294967295 + 0, (to_integer(left) - to_integer(right)), 4294967295)) using { (to_integer(left) + -to_integer(right)) <= 4294967295 + 0; (to_integer(left) - to_integer(right)) == (to_integer(left) + -to_integer(right)); to_integer(4294967295u64) == 4294967295 + 0; };
         }
         known();
     }
@@ -2970,242 +2841,57 @@ Unsigned remainder agrees with Integer truncating remainder when both evaluation
 theorem uint32_multiply_to_integer(left: uint32, right: uint32) {
     requires right == 0u32 or left <= 4294967295u32 / right;
     ensures to_integer(left * right) == to_integer(left) * to_integer(right) by {
-        have 0 <= to_integer(left) by {
-            normalize();
+        have 0 <= to_integer(left) by known();
+        have 0 <= to_integer(right) by known();
+        have 0 * to_integer(right) <= (to_integer(left) * to_integer(right)) by {
+            apply(integer::multiply_order_nonnegative(0, to_integer(left), to_integer(right))) using { 0 <= to_integer(left); 0 <= to_integer(right); };
         }
-        have to_integer(left) <= 4294967295 by {
-            normalize();
-        }
-        have 0 <= to_integer(right) by {
-            normalize();
-        }
-        have to_integer(right) <= 4294967295 by {
-            normalize();
-        }
-        have 0 <= (to_integer(left) * to_integer(right)) by {
-            normalize() using {
-                0 <= to_integer(left);
-                to_integer(left) <= 4294967295;
-                0 <= to_integer(right);
-                to_integer(right) <= 4294967295;
-            };
-        }
+        have 0 <= (to_integer(left) * to_integer(right)) by known();
         if right == 0u32 {
-            have to_integer(right) <= 0 by {
-                normalize() using {
-                    right == 0u32;
-                };
-            }
-            have (to_integer(left) * to_integer(right)) <= 0 by {
-                normalize() using {
-                    0 <= to_integer(left);
-                    to_integer(left) <= 4294967295;
-                    0 <= to_integer(right);
-                    to_integer(right) <= 0;
-                };
+            have to_integer(right) == 0 by known();
+            have (to_integer(left) * to_integer(right)) == 0 by {
+                rewrite(to_integer(right), 0);
+                known();
             }
             have (to_integer(left) * to_integer(right)) <= 4294967295 by {
-                have (to_integer(left) * to_integer(right)) <= 4294967295 by {
-                    have (to_integer(left) * to_integer(right)) <= 0 by {
-                        have (to_integer(left) * to_integer(right)) == ((to_integer(left) * to_integer(right)) - 0) by {
-                            normalize();
-                        }
-                        apply(integer::le_difference((to_integer(left) * to_integer(right)), 0, (to_integer(left) * to_integer(right)))) using {
-                            (to_integer(left) * to_integer(right)) <= 0;
-                            (to_integer(left) * to_integer(right)) == ((to_integer(left) *
-                                to_integer(right)) - 0);
-                        };
-                    }
-                    have (let integer_constant: Integer = -to_integer(4294967295u64); integer_constant) <= 0 by {
-                        normalize();
-                    }
-                    have ((to_integer(left) * to_integer(right)) + -to_integer(4294967295u64)) <= 0 by {
-                        have ((to_integer(left) * to_integer(right)) + (let integer_constant: Integer = -to_integer(4294967295u64); integer_constant)) <= (0 + 0) by {
-                            apply(integer::add_le((to_integer(left) * to_integer(right)), 0, (let integer_constant: Integer = -to_integer(4294967295u64); integer_constant), 0)) using {
-                                (to_integer(left) * to_integer(right)) <= 0;
-                                (let integer_constant: Integer = -to_integer(4294967295u64);
-                                    integer_constant) <= 0;
-                            };
-                        }
-                        have ((to_integer(left) * to_integer(right)) + -to_integer(4294967295u64)) == ((to_integer(left) * to_integer(right)) + (let integer_constant: Integer = -to_integer(4294967295u64); integer_constant)) by {
-                            normalize();
-                        }
-                        have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                            normalize();
-                        }
-                        apply(integer::le_substitute(((to_integer(left) * to_integer(right)) + (let integer_constant: Integer = -to_integer(4294967295u64); integer_constant)), (0 + 0), ((to_integer(left) * to_integer(right)) + -to_integer(4294967295u64)), 0)) using {
-                            ((to_integer(left) * to_integer(right)) + (let integer_constant: Integer =
-                                -to_integer(4294967295u64); integer_constant)) <= (0 + 0);
-                            ((to_integer(left) * to_integer(right)) + -to_integer(4294967295u64)) ==
-                                ((to_integer(left) * to_integer(right)) + (let integer_constant: Integer
-                                = -to_integer(4294967295u64); integer_constant));
-                            (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                        };
-                    }
-                    have ((to_integer(left) * to_integer(right)) + -to_integer(4294967295u64)) == ((to_integer(left) * to_integer(right)) - 4294967295) by {
-                        normalize();
-                    }
-                    apply(integer::difference_le((to_integer(left) * to_integer(right)), 4294967295, ((to_integer(left) * to_integer(right)) + -to_integer(4294967295u64)))) using {
-                        ((to_integer(left) * to_integer(right)) + -to_integer(4294967295u64)) <= 0;
-                        ((to_integer(left) * to_integer(right)) + -to_integer(4294967295u64)) ==
-                            ((to_integer(left) * to_integer(right)) - 4294967295);
-                    };
-                }
-                normalize() using {
-                    (to_integer(left) * to_integer(right)) <= 4294967295;
-                };
+                apply(integer::le_substitute(0, 4294967295, (to_integer(left) * to_integer(right)), 4294967295)) using { 0 <= 4294967295; (to_integer(left) * to_integer(right)) == 0; 4294967295 == 4294967295; };
             }
-            normalize() using {
-                0 <= (to_integer(left) * to_integer(right));
-                (to_integer(left) * to_integer(right)) <= 4294967295;
-            };
+            known();
         } else {
-            have left <= ((4294967295u32 / right) as uint32) by {
+            have to_integer(right) != 0 by known();
+            have to_integer(left) <= to_integer(4294967295u32 / right) by {
                 cases {
-                    right == 0u32 => {
-                        contradiction(right == 0u32);
-                    }
-                    left <= ((4294967295u32 / right) as uint32) => {
-                        known();
-                    }
+                    right == 0u32 => { contradiction(right == 0u32); }
+                    to_integer(left) <= to_integer(4294967295u32 / right) => { known(); }
                 }
             }
-            have right != 0u32 by {
-                normalize() using {
-                    not right == 0u32;
-                };
+            have to_integer(4294967295u32 / right) == truncating_quotient(4294967295, to_integer(right)) by {
+                apply(integer::uint32_divide_to_integer(4294967295u32, right)) using { to_integer(right) != 0; };
             }
-            have 1 <= to_integer(right) by {
-                have 1 <= to_integer(right) by {
-                    have ((-1 * to_integer(right)) + 1) <= 0 by {
-                        have (-1 * to_integer(right)) <= 0 by {
-                            have 0 <= to_integer(right) by {
-                                normalize();
-                            }
-                            have (-1 * to_integer(right)) == (0 - to_integer(right)) by {
-                                normalize();
-                            }
-                            apply(integer::le_difference(0, to_integer(right), (-1 * to_integer(right)))) using {
-                                0 <= to_integer(right);
-                                (-1 * to_integer(right)) == (0 - to_integer(right));
-                            };
-                        }
-                        have 0 <= to_integer(right) by {
-                            have (-1 * to_integer(right)) == (0 - to_integer(right)) by {
-                                normalize();
-                            }
-                            apply(integer::difference_le(0, to_integer(right), (-1 * to_integer(right)))) using {
-                                (-1 * to_integer(right)) <= 0;
-                                (-1 * to_integer(right)) == (0 - to_integer(right));
-                            };
-                        }
-                        have 0 != to_integer(right) by {
-                            normalize() using {
-                                to_integer(right) != 0;
-                            };
-                        }
-                        have 0 < to_integer(right) by {
-                            apply(integer::le_ne_lt(0, to_integer(right))) using {
-                                0 <= to_integer(right);
-                                0 != to_integer(right);
-                            };
-                        }
-                        have (0 + 1) <= to_integer(right) by {
-                            apply(integer::lt_step_le(0, to_integer(right))) using {
-                                0 < to_integer(right);
-                            };
-                        }
-                        have ((-1 * to_integer(right)) + 1) == ((0 + 1) - to_integer(right)) by {
-                            normalize();
-                        }
-                        apply(integer::le_difference((0 + 1), to_integer(right), ((-1 * to_integer(right)) + 1))) using {
-                            (0 + 1) <= to_integer(right);
-                            ((-1 * to_integer(right)) + 1) == ((0 + 1) - to_integer(right));
-                        };
-                    }
-                    have ((-1 * to_integer(right)) + 1) == (1 - to_integer(right)) by {
-                        normalize();
-                    }
-                    apply(integer::difference_le(1, to_integer(right), ((-1 * to_integer(right)) + 1))) using {
-                        ((-1 * to_integer(right)) + 1) <= 0;
-                        ((-1 * to_integer(right)) + 1) == (1 - to_integer(right));
-                    };
-                }
-                normalize() using {
-                    1 <= to_integer(right);
-                };
+            have to_integer(left) <= truncating_quotient(4294967295, to_integer(right)) by {
+                rewrite(truncating_quotient(4294967295, to_integer(right)), to_integer(4294967295u32 / right));
+                known();
             }
-            apply(integer::uint32_divide_to_integer(4294967295u32, right)) using {
-                right != 0u32;
-                to_integer(right) != 0;
-            };
-            apply(integer::truncation_identity(4294967295, to_integer(right))) using {
-                to_integer(right) != 0;
-            };
-            apply(integer::nonnegative_dividend_remainder(4294967295, to_integer(right))) using {
-                to_integer(right) != 0;
-            };
-            have 0 <= (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) by {
-                have to_integer(left) <= truncating_quotient(4294967295, to_integer(right)) by { rewrite(truncating_quotient(4294967295, to_integer(right)), to_integer(4294967295u32 / right)); known(); }
-                have to_integer(left) + -to_integer(left) <= truncating_quotient(4294967295, to_integer(right)) + -to_integer(left) by {
-                    apply(integer::add_le(to_integer(left), truncating_quotient(4294967295, to_integer(right)), -to_integer(left), -to_integer(left))) using { to_integer(left) <= truncating_quotient(4294967295, to_integer(right)); -to_integer(left) <= -to_integer(left); to_integer(right) != 0; };
-                }
-                have 0 == to_integer(left) + -to_integer(left) by normalize();
-                have truncating_quotient(4294967295, to_integer(right)) - to_integer(left) == truncating_quotient(4294967295, to_integer(right)) + -to_integer(left) by normalize();
-                apply(integer::le_substitute(to_integer(left) + -to_integer(left), truncating_quotient(4294967295, to_integer(right)) + -to_integer(left), 0, truncating_quotient(4294967295, to_integer(right)) - to_integer(left))) using {
-                    to_integer(left) + -to_integer(left) <= truncating_quotient(4294967295, to_integer(right)) + -to_integer(left); 0 == to_integer(left) + -to_integer(left); truncating_quotient(4294967295, to_integer(right)) - to_integer(left) == truncating_quotient(4294967295, to_integer(right)) + -to_integer(left); to_integer(right) != 0;
-                };
+            have 4294967295 == (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)) by {
+                apply(integer::truncation_identity(4294967295, to_integer(right))) using { to_integer(right) != 0; };
             }
-            have (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) <= 4294967295 by {
-                have truncating_quotient(4294967295, to_integer(right)) <= 4294967295 by { rewrite(truncating_quotient(4294967295, to_integer(right)), to_integer(4294967295u32 / right)); normalize(); }
-                have -to_integer(left) <= 0 by {
-                    have -to_integer(left) == 0 - to_integer(left) by normalize();
-                    apply(integer::le_difference(0, to_integer(left), -to_integer(left))) using { 0 <= to_integer(left); -to_integer(left) == 0 - to_integer(left); };
-                }
-                have truncating_quotient(4294967295, to_integer(right)) + -to_integer(left) <= 4294967295 + 0 by {
-                    apply(integer::add_le(truncating_quotient(4294967295, to_integer(right)), 4294967295, -to_integer(left), 0)) using { truncating_quotient(4294967295, to_integer(right)) <= 4294967295; -to_integer(left) <= 0; to_integer(right) != 0; };
-                }
-                have truncating_quotient(4294967295, to_integer(right)) - to_integer(left) == truncating_quotient(4294967295, to_integer(right)) + -to_integer(left) by normalize();
-                have 4294967295 == 4294967295 + 0 by normalize();
-                apply(integer::le_substitute(truncating_quotient(4294967295, to_integer(right)) + -to_integer(left), 4294967295 + 0, truncating_quotient(4294967295, to_integer(right)) - to_integer(left), 4294967295)) using {
-                    truncating_quotient(4294967295, to_integer(right)) + -to_integer(left) <= 4294967295 + 0; truncating_quotient(4294967295, to_integer(right)) - to_integer(left) == truncating_quotient(4294967295, to_integer(right)) + -to_integer(left); 4294967295 == 4294967295 + 0; to_integer(right) != 0;
-                };
+            have 0 <= truncating_remainder(4294967295, to_integer(right)) by {
+                apply(integer::nonnegative_dividend_remainder(4294967295, to_integer(right))) using { to_integer(right) != 0; 0 <= 4294967295; };
             }
-            have 0 <= ((truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right)) by {
-                normalize() using {
-                    0 <= (truncating_quotient(4294967295, to_integer(right)) - to_integer(left));
-                    (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) <=
-                        4294967295;
-                    0 <= to_integer(right);
-                    to_integer(right) <= 4294967295;
-                };
+            have (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + 0 <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)) by {
+                apply(integer::add_le((truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), 0, truncating_remainder(4294967295, to_integer(right)))) using { (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)); 0 <= truncating_remainder(4294967295, to_integer(right)); to_integer(right) != 0; };
             }
-            have ((truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right)) == ((truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) - (to_integer(left) * to_integer(right))) by {
-                normalize();
+            have (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) == (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + 0 by known();
+            have (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) <= 4294967295 by {
+                apply(integer::le_substitute((truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + 0, (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)), (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), 4294967295)) using { (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + 0 <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)); (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) == (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + 0; 4294967295 == (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)); to_integer(right) != 0; };
+            }
+            have (to_integer(left) * to_integer(right)) <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) by {
+                apply(integer::multiply_order_nonnegative(to_integer(left), truncating_quotient(4294967295, to_integer(right)), to_integer(right))) using { to_integer(left) <= truncating_quotient(4294967295, to_integer(right)); 0 <= to_integer(right); to_integer(right) != 0; };
             }
             have (to_integer(left) * to_integer(right)) <= 4294967295 by {
-                have 0 + (to_integer(left) * to_integer(right)) <= ((truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right)) + (to_integer(left) * to_integer(right)) by {
-                    apply(integer::add_le(0, ((truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right)), (to_integer(left) * to_integer(right)), (to_integer(left) * to_integer(right)))) using { 0 <= ((truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right)); (to_integer(left) * to_integer(right)) <= (to_integer(left) * to_integer(right)); to_integer(right) != 0; };
-                }
-                have (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) == ((truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right)) + (to_integer(left) * to_integer(right)) by { rewrite(((truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right)), (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) - (to_integer(left) * to_integer(right))); normalize(); }
-                have (to_integer(left) * to_integer(right)) <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) by {
-                    have (to_integer(left) * to_integer(right)) == 0 + (to_integer(left) * to_integer(right)) by normalize();
-                    apply(integer::le_substitute(0 + (to_integer(left) * to_integer(right)), ((truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right)) + (to_integer(left) * to_integer(right)), (to_integer(left) * to_integer(right)), (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)))) using {
-                        0 + (to_integer(left) * to_integer(right)) <= ((truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right)) + (to_integer(left) * to_integer(right)); (to_integer(left) * to_integer(right)) == 0 + (to_integer(left) * to_integer(right)); (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) == ((truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right)) + (to_integer(left) * to_integer(right)); to_integer(right) != 0;
-                    };
-                }
-                have (to_integer(left) * to_integer(right)) + 0 <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)) by {
-                    apply(integer::add_le((to_integer(left) * to_integer(right)), (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), 0, truncating_remainder(4294967295, to_integer(right)))) using { (to_integer(left) * to_integer(right)) <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)); 0 <= truncating_remainder(4294967295, to_integer(right)); to_integer(right) != 0; };
-                }
-                have (to_integer(left) * to_integer(right)) == (to_integer(left) * to_integer(right)) + 0 by normalize();
-                apply(integer::le_substitute((to_integer(left) * to_integer(right)) + 0, (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)), (to_integer(left) * to_integer(right)), 4294967295)) using {
-                    (to_integer(left) * to_integer(right)) + 0 <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)); (to_integer(left) * to_integer(right)) == (to_integer(left) * to_integer(right)) + 0; 4294967295 == (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) + truncating_remainder(4294967295, to_integer(right)); to_integer(right) != 0;
-                };
+                apply(integer::le_transitive((to_integer(left) * to_integer(right)), (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)), 4294967295)) using { (to_integer(left) * to_integer(right)) <= (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)); (truncating_quotient(4294967295, to_integer(right)) * to_integer(right)) <= 4294967295; to_integer(right) != 0; };
             }
-            normalize() using {
-                0 <= (to_integer(left) * to_integer(right));
-                (to_integer(left) * to_integer(right)) <= 4294967295;
-            };
+            known();
         }
     }
 }
@@ -3322,71 +3008,12 @@ A mathematical product bound establishes the native checked-multiplication guard
 theorem uint64_add_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) + to_integer(right) <= 18446744073709551615;
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by {
-        have 0 <= (to_integer(left) + to_integer(right)) by {
-            have 0 <= (to_integer(left) + to_integer(right)) by {
-                have (-1 * to_integer(left)) <= 0 by {
-                    have 0 <= to_integer(left) by {
-                        normalize();
-                    }
-                    have (-1 * to_integer(left)) == (0 - to_integer(left)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(0, to_integer(left), (-1 * to_integer(left)))) using {
-                        0 <= to_integer(left);
-                        (-1 * to_integer(left)) == (0 - to_integer(left));
-                    };
-                }
-                have (-1 * to_integer(right)) <= 0 by {
-                    have 0 <= to_integer(right) by {
-                        normalize();
-                    }
-                    have (-1 * to_integer(right)) == (0 - to_integer(right)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(0, to_integer(right), (-1 * to_integer(right)))) using {
-                        0 <= to_integer(right);
-                        (-1 * to_integer(right)) == (0 - to_integer(right));
-                    };
-                }
-                have ((-1 * to_integer(left)) + (-1 * to_integer(right))) <= 0 by {
-                    have ((-1 * to_integer(left)) + (-1 * to_integer(right))) <= (0 + 0) by {
-                        apply(integer::add_le((-1 * to_integer(left)), 0, (-1 * to_integer(right)), 0)) using {
-                            (-1 * to_integer(left)) <= 0;
-                            (-1 * to_integer(right)) <= 0;
-                        };
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                        normalize();
-                    }
-                    apply(integer::le_substitute(((-1 * to_integer(left)) + (-1 * to_integer(right))), (0 + 0), ((-1 * to_integer(left)) + (-1 * to_integer(right))), 0)) using {
-                        ((-1 * to_integer(left)) + (-1 * to_integer(right))) <= (0 + 0);
-                        ((-1 * to_integer(left)) + (-1 * to_integer(right))) == ((-1 * to_integer(left))
-                            + (-1 * to_integer(right)));
-                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                    };
-                }
-                have ((-1 * to_integer(left)) + (-1 * to_integer(right))) == (0 - (to_integer(left) + to_integer(right))) by {
-                    normalize();
-                }
-                apply(integer::difference_le(0, (to_integer(left) + to_integer(right)), ((-1 * to_integer(left)) + (-1 * to_integer(right))))) using {
-                    ((-1 * to_integer(left)) + (-1 * to_integer(right))) <= 0;
-                    ((-1 * to_integer(left)) + (-1 * to_integer(right))) == (0 - (to_integer(left) +
-                        to_integer(right)));
-                };
-            }
-            normalize() using {
-                0 <= (to_integer(left) + to_integer(right));
-            };
+        have 0 <= to_integer(left) by known();
+        have 0 <= to_integer(right) by known();
+        have 0 + 0 <= (to_integer(left) + to_integer(right)) by {
+            apply(integer::add_le(0, to_integer(left), 0, to_integer(right))) using { 0 <= to_integer(left); 0 <= to_integer(right); };
         }
-        have (to_integer(left) + to_integer(right)) <= 18446744073709551615 by {
-            known();
-        }
-        have to_integer((left + right)) == (to_integer(left) + to_integer(right)) by {
-            normalize() using {
-                0 <= (to_integer(left) + to_integer(right));
-                (to_integer(left) + to_integer(right)) <= 18446744073709551615;
-            };
-        }
+        have 0 <= (to_integer(left) + to_integer(right)) by known();
         known();
     }
 }
@@ -3402,22 +3029,13 @@ Unsigned addition agrees with Integer addition when the sum fits uint64. Native 
 theorem uint64_multiply_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) * to_integer(right) <= 18446744073709551615;
     ensures to_integer(left * right) == to_integer(left) * to_integer(right) by {
-        have 0 <= to_integer(left) by {
-            normalize();
+        have 0 <= to_integer(left) by known();
+        have 0 <= to_integer(right) by known();
+        have 0 * to_integer(right) <= (to_integer(left) * to_integer(right)) by {
+            apply(integer::multiply_order_nonnegative(0, to_integer(left), to_integer(right))) using { 0 <= to_integer(left); 0 <= to_integer(right); };
         }
-        have to_integer(left) <= 18446744073709551615 by {
-            normalize();
-        }
-        have 0 <= to_integer(right) by {
-            normalize();
-        }
-        have to_integer(right) <= 18446744073709551615 by {
-            normalize();
-        }
-        have 0 <= to_integer(left) * to_integer(right) by {
-            normalize() using { 0 <= to_integer(left); to_integer(left) <= 18446744073709551615; 0 <= to_integer(right); to_integer(right) <= 18446744073709551615; };
-        }
-        normalize() using { 0 <= to_integer(left) * to_integer(right); to_integer(left) * to_integer(right) <= 18446744073709551615; };
+        have 0 <= (to_integer(left) * to_integer(right)) by known();
+        known();
     }
 }
 ```
@@ -3477,99 +3095,27 @@ program exposes a division-based overflow guard.
 theorem uint64_subtract_to_integer(left: uint64, right: uint64) {
     requires to_integer(right) <= to_integer(left);
     ensures to_integer(left - right) == to_integer(left) - to_integer(right) by {
+        have to_integer(right) <= to_integer(left) by known();
+        have 0 <= to_integer(right) by known();
+        have to_integer(left) <= 18446744073709551615 by known();
+        have to_integer(right) + -to_integer(right) <= (to_integer(left) + -to_integer(right)) by {
+            apply(integer::add_le(to_integer(right), to_integer(left), -to_integer(right), -to_integer(right))) using { to_integer(right) <= to_integer(left); -to_integer(right) <= -to_integer(right); };
+        }
+        have 0 == to_integer(right) + -to_integer(right) by known();
+        have (to_integer(left) - to_integer(right)) == (to_integer(left) + -to_integer(right)) by known();
         have 0 <= (to_integer(left) - to_integer(right)) by {
-            have 0 <= (to_integer(left) - to_integer(right)) by {
-                have ((-1 * to_integer(left)) + to_integer(right)) <= 0 by {
-                    have ((-1 * to_integer(left)) + to_integer(right)) == (to_integer(right) - to_integer(left)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(to_integer(right), to_integer(left), ((-1 * to_integer(left)) + to_integer(right)))) using {
-                        to_integer(right) <= to_integer(left);
-                        ((-1 * to_integer(left)) + to_integer(right)) == (to_integer(right) -
-                            to_integer(left));
-                    };
-                }
-                have ((-1 * to_integer(left)) + to_integer(right)) == (0 - (to_integer(left) - to_integer(right))) by {
-                    normalize();
-                }
-                apply(integer::difference_le(0, (to_integer(left) - to_integer(right)), ((-1 * to_integer(left)) + to_integer(right)))) using {
-                    ((-1 * to_integer(left)) + to_integer(right)) <= 0;
-                    ((-1 * to_integer(left)) + to_integer(right)) == (0 - (to_integer(left) -
-                        to_integer(right)));
-                };
-            }
-            normalize() using {
-                0 <= (to_integer(left) - to_integer(right));
-            };
+            apply(integer::le_substitute(to_integer(right) + -to_integer(right), (to_integer(left) + -to_integer(right)), 0, (to_integer(left) - to_integer(right)))) using { to_integer(right) + -to_integer(right) <= (to_integer(left) + -to_integer(right)); 0 == to_integer(right) + -to_integer(right); (to_integer(left) - to_integer(right)) == (to_integer(left) + -to_integer(right)); };
         }
+        have -to_integer(right) <= 0 by {
+            apply(integer::negate_order(0, to_integer(right))) using { 0 <= to_integer(right); };
+            known();
+        }
+        have (to_integer(left) + -to_integer(right)) <= 18446744073709551615 + 0 by {
+            apply(integer::add_le(to_integer(left), 18446744073709551615, -to_integer(right), 0)) using { to_integer(left) <= 18446744073709551615; -to_integer(right) <= 0; };
+        }
+        have to_integer(18446744073709551615u64) == 18446744073709551615 + 0 by known();
         have (to_integer(left) - to_integer(right)) <= 18446744073709551615 by {
-            have (to_integer(left) - to_integer(right)) <= 18446744073709551615 by {
-                have (to_integer(left) + -to_integer(18446744073709551615u64)) <= 0 by {
-                    have to_integer(left) <= 18446744073709551615 by {
-                        normalize();
-                    }
-                    have (to_integer(left) + -to_integer(18446744073709551615u64)) == (to_integer(left) - 18446744073709551615) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(to_integer(left), 18446744073709551615, (to_integer(left) + -to_integer(18446744073709551615u64)))) using {
-                        to_integer(left) <= 18446744073709551615;
-                        (to_integer(left) + -to_integer(18446744073709551615u64)) == (to_integer(left) -
-                            18446744073709551615);
-                    };
-                }
-                have (-1 * to_integer(right)) <= 0 by {
-                    have 0 <= to_integer(right) by {
-                        normalize();
-                    }
-                    have (-1 * to_integer(right)) == (0 - to_integer(right)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(0, to_integer(right), (-1 * to_integer(right)))) using {
-                        0 <= to_integer(right);
-                        (-1 * to_integer(right)) == (0 - to_integer(right));
-                    };
-                }
-                have (to_integer(left) + (-1 * to_integer(right)) + -to_integer(18446744073709551615u64)) <= 0 by {
-                    have (to_integer(left) + -to_integer(18446744073709551615u64) + (-1 * to_integer(right))) <= (0 + 0) by {
-                        apply(integer::add_le((to_integer(left) + -to_integer(18446744073709551615u64)), 0, (-1 * to_integer(right)), 0)) using {
-                            (to_integer(left) + -to_integer(18446744073709551615u64)) <= 0;
-                            (-1 * to_integer(right)) <= 0;
-                        };
-                    }
-                    have (to_integer(left) + (-1 * to_integer(right)) + -to_integer(18446744073709551615u64)) == (to_integer(left) + -to_integer(18446744073709551615u64) + (-1 * to_integer(right))) by {
-                        normalize();
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                        normalize();
-                    }
-                    apply(integer::le_substitute((to_integer(left) + -to_integer(18446744073709551615u64) + (-1 * to_integer(right))), (0 + 0), (to_integer(left) + (-1 * to_integer(right)) + -to_integer(18446744073709551615u64)), 0)) using {
-                        (to_integer(left) + -to_integer(18446744073709551615u64) + (-1 *
-                            to_integer(right))) <= (0 + 0);
-                        (to_integer(left) + (-1 * to_integer(right)) +
-                            -to_integer(18446744073709551615u64)) == (to_integer(left) +
-                            -to_integer(18446744073709551615u64) + (-1 * to_integer(right)));
-                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                    };
-                }
-                have (to_integer(left) + (-1 * to_integer(right)) + -to_integer(18446744073709551615u64)) == ((to_integer(left) - to_integer(right)) - 18446744073709551615) by {
-                    normalize();
-                }
-                apply(integer::difference_le((to_integer(left) - to_integer(right)), 18446744073709551615, (to_integer(left) + (-1 * to_integer(right)) + -to_integer(18446744073709551615u64)))) using {
-                    (to_integer(left) + (-1 * to_integer(right)) + -to_integer(18446744073709551615u64))
-                        <= 0;
-                    (to_integer(left) + (-1 * to_integer(right)) + -to_integer(18446744073709551615u64))
-                        == ((to_integer(left) - to_integer(right)) - 18446744073709551615);
-                };
-            }
-            normalize() using {
-                (to_integer(left) - to_integer(right)) <= 18446744073709551615;
-            };
-        }
-        have to_integer((left - right)) == (to_integer(left) - to_integer(right)) by {
-            normalize() using {
-                0 <= (to_integer(left) - to_integer(right));
-                (to_integer(left) - to_integer(right)) <= 18446744073709551615;
-            };
+            apply(integer::le_substitute((to_integer(left) + -to_integer(right)), 18446744073709551615 + 0, (to_integer(left) - to_integer(right)), 18446744073709551615)) using { (to_integer(left) + -to_integer(right)) <= 18446744073709551615 + 0; (to_integer(left) - to_integer(right)) == (to_integer(left) + -to_integer(right)); to_integer(18446744073709551615u64) == 18446744073709551615 + 0; };
         }
         known();
     }
@@ -4052,7 +3598,7 @@ theorem int32_add_to_integer(left: int32, right: int32) {
             known();
         }
         have to_integer(left + right) == to_integer(left) + to_integer(right) by {
-            normalize() using { -2147483648 <= to_integer(left) + to_integer(right); to_integer(left) + to_integer(right) <= 2147483647; };
+            known();
         }
         known();
     }
@@ -4077,7 +3623,7 @@ theorem int64_subtract_to_integer(left: int64, right: int64) {
             known();
         }
         have to_integer(left - right) == to_integer(left) - to_integer(right) by {
-            normalize() using { -9223372036854775808 <= to_integer(left) - to_integer(right); to_integer(left) - to_integer(right) <= 9223372036854775807; };
+            known();
         }
         known();
     }
@@ -4103,7 +3649,7 @@ theorem int32_subtract_to_integer(left: int32, right: int32) {
             known();
         }
         have to_integer(left - right) == to_integer(left) - to_integer(right) by {
-            normalize() using { -2147483648 <= to_integer(left) - to_integer(right); to_integer(left) - to_integer(right) <= 2147483647; };
+            known();
         }
         known();
     }
@@ -6298,7 +5844,7 @@ theorem to_int8_round_trip(z: Integer) {
         have z <= 127 by {
             known();
         }
-        normalize() using { -128 <= z; z <= 127; };
+        known();
     }
 }
 ```
@@ -6322,7 +5868,7 @@ theorem to_int16_round_trip(z: Integer) {
         have z <= 32767 by {
             known();
         }
-        normalize() using { -32768 <= z; z <= 32767; };
+        known();
     }
 }
 ```
@@ -6345,7 +5891,7 @@ theorem to_int32_round_trip(z: Integer) {
         have z <= 2147483647 by {
             known();
         }
-        normalize() using { -2147483648 <= z; z <= 2147483647; };
+        known();
     }
 }
 ```
@@ -6368,7 +5914,7 @@ theorem to_uint8_round_trip(z: Integer) {
         have z <= 255 by {
             known();
         }
-        normalize() using { 0 <= z; z <= 255; };
+        known();
     }
 }
 ```
@@ -6391,7 +5937,7 @@ theorem to_uint16_round_trip(z: Integer) {
         have z <= 65535 by {
             known();
         }
-        normalize() using { 0 <= z; z <= 65535; };
+        known();
     }
 }
 ```
@@ -6414,7 +5960,7 @@ theorem to_uint32_round_trip(z: Integer) {
         have z <= 4294967295 by {
             known();
         }
-        normalize() using { 0 <= z; z <= 4294967295; };
+        known();
     }
 }
 ```
@@ -6437,7 +5983,7 @@ theorem to_int64_round_trip(z: Integer) {
         have z <= 9223372036854775807 by {
             known();
         }
-        normalize() using { -9223372036854775808 <= z; z <= 9223372036854775807; };
+        known();
     }
 }
 ```
@@ -6460,7 +6006,7 @@ theorem to_uint64_round_trip(z: Integer) {
         have z <= 18446744073709551615 by {
             known();
         }
-        normalize() using { 0 <= z; z <= 18446744073709551615; };
+        known();
     }
 }
 ```

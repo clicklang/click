@@ -242,3 +242,6 @@ try_multiply_order_using
 try_division_bound_using
 apply_division_steps
 apply_division_have
+known_bridge_using
+try_machine_bridge_using
+try_conditional_bridge_using

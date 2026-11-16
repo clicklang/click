@@ -129,7 +129,9 @@ fn application(
 fn have(claim: ClickProposition, steps: Vec<ProofStep>) -> ProofStep {
     super::super::wide_arithmetic::have(claim, steps)
 }
-fn normalization(claim: ClickProposition) -> ProofStep {
+fn computational_fact(claim: ClickProposition) -> ProofStep {
+    // The local emitter below chooses known for its narrow computations.
+    // General coefficient algebra keeps the existing compatibility rule.
     have(claim, vec![ProofStep::Normalize])
 }
 
@@ -145,6 +147,8 @@ fn expression(form: &Form, atoms: &BTreeMap<u64, Atom>) -> ContractExpression {
         let term = atoms[key].surface.clone();
         let term = if coefficient.is_one() {
             term
+        } else if coefficient == &BigInt::from(-1) {
+            ContractExpression::Negate(Box::new(term))
         } else {
             multiply(literal(coefficient), term)
         };
@@ -343,10 +347,7 @@ fn prepare_relation(
         right: right.clone(),
     };
     if &ordered != source {
-        body.push(have(
-            ordered.clone(),
-            vec![ProofStep::NormalizeUsing(vec![source.clone()])],
-        ));
+        body.push(have(ordered.clone(), vec![ProofStep::Known]));
     }
     if relation.strict {
         form.constant += 1;
@@ -374,7 +375,7 @@ fn prepare_relation(
             true,
             ContractExpression::Subtract(Box::new(left.clone()), Box::new(right.clone())),
         );
-        body.push(normalization(identity.clone()));
+        body.push(computational_fact(identity.clone()));
         body.push(application(
             "le_difference",
             vec![left, right, value],
@@ -412,7 +413,7 @@ fn restore(target: &ClickProposition, node: &Node, atoms: &BTreeMap<u64, Atom>) 
             ContractExpression::Subtract(Box::new(left.clone()), Box::new(right.clone())),
         );
         return vec![
-            normalization(identity.clone()),
+            computational_fact(identity.clone()),
             application(
                 "difference_le",
                 vec![left, right, value],
@@ -517,10 +518,7 @@ fn strict_node(
     };
     let mut body = vec![
         have(ordered.clone(), restore(&ordered, bound, atoms)),
-        have(
-            neq.clone(),
-            vec![ProofStep::NormalizeUsing(vec![disequal.1.clone()])],
-        ),
+        have(neq.clone(), vec![ProofStep::Known]),
         have(
             strict.clone(),
             vec![application(
@@ -731,10 +729,10 @@ fn transfer(target: &ClickProposition, fact: &ClickProposition) -> Vec<ProofStep
     let right = compare(b.clone(), true, d.clone());
     let mut body = Vec::new();
     if a != c {
-        body.push(normalization(left.clone()));
+        body.push(computational_fact(left.clone()));
     }
     if b != d {
-        body.push(normalization(right.clone()));
+        body.push(computational_fact(right.clone()));
     }
     body.push(application(
         if operator == ComparisonOperator::Equal {
@@ -822,6 +820,18 @@ fn run_scope<'a>(
                 let closed = run_scope(nested, proof.steps())?;
                 scope = scope.join_nested(closed)?;
             }
+            ProofStep::Normalize => {
+                let step = if scope
+                    .body()
+                    .goal()
+                    .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)
+                {
+                    ProofStep::Known
+                } else {
+                    ProofStep::Normalize
+                };
+                scope = scope.driver().apply_step(step)?;
+            }
             step => scope = scope.driver().apply_step(step.clone())?,
         }
     }
@@ -859,7 +869,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if normalizes_context_free(&Proposition::Not(Box::new(kernel.clone()))) {
                 let negated = ClickProposition::Not(Box::new(surface.clone()));
                 let scope = proof.driver().open_have(negated)?;
-                let closed = scope.driver().apply_step(ProofStep::Normalize)?;
+                let step = if scope
+                    .body()
+                    .goal()
+                    .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)
+                {
+                    ProofStep::Known
+                } else {
+                    ProofStep::Normalize
+                };
+                let closed = scope.driver().apply_step(step)?;
                 return Ok(Some(
                     closed
                         .join()?
@@ -1037,7 +1056,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     let (form, equal, mut body) =
                         prepare_relation(relation, &canonical, &source, &mut atoms);
-                    body.insert(0, have(source, vec![ProofStep::Normalize]));
+                    body.insert(0, have(source, vec![ProofStep::Known]));
                     (form, equal, body)
                 }
                 IntegerArithmeticNode::StrictFromDisequal {
@@ -1087,7 +1106,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         &base_surface,
                         &mut atoms,
                     );
-                    base_body.insert(0, have(base_surface, vec![ProofStep::Normalize]));
+                    base_body.insert(0, have(base_surface, vec![ProofStep::Known]));
                     let base_claim = compare(expression(&form, &atoms), false, zero());
                     let base = Node {
                         form,
@@ -1125,7 +1144,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         fact
                     } else {
                         let positive = compare(zero(), false, factor.clone());
-                        body.push(normalization(positive.clone()));
+                        body.push(computational_fact(positive.clone()));
                         let fact = compare(raw, false, multiply(zero(), factor.clone()));
                         body.push(have(
                             fact.clone(),
@@ -1218,7 +1237,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     );
                     let opposite = compare(zero(), false, value.clone());
                     let mut body = vec![
-                        normalization(reflexive.clone()),
+                        computational_fact(reflexive.clone()),
                         have(
                             fact.clone(),
                             vec![application(
@@ -1247,7 +1266,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         ..Form::default()
                     },
                     result.relation == IntegerAffineRelation::Equal,
-                    vec![ProofStep::Normalize],
+                    vec![ProofStep::Known],
                 ),
             };
             let claim = compare(expression(&form, &atoms), equal, zero());
@@ -1266,7 +1285,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if contradictory {
             steps.push(ProofStep::Contradiction(conclusion.claim.clone()));
         } else if goal_surface.is_none() {
-            steps.push(ProofStep::NormalizeUsing(vec![conclusion.claim.clone()]));
+            steps.push(have(
+                ClickProposition::Not(Box::new(conclusion.claim.clone())),
+                vec![ProofStep::Known],
+            ));
+            steps.push(ProofStep::Contradiction(conclusion.claim.clone()));
         } else {
             let (Some(relation), Some(canonical)) = (goal_reading, goal_surface) else {
                 return Ok(None);
@@ -1287,10 +1310,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if uses_negated_goal {
                 steps.push(ProofStep::Contradiction(surface_goal.clone()));
             } else {
-                steps = vec![
-                    have(canonical.clone(), steps),
-                    ProofStep::NormalizeUsing(vec![canonical]),
-                ];
+                steps = vec![have(canonical.clone(), steps), ProofStep::Known];
             }
         }
         if uses_negated_goal {
@@ -1298,10 +1318,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 surface_goal.clone(),
             ))));
             steps.insert(0, ProofStep::Intro);
-            steps = vec![
-                have(double_negation.clone(), steps),
-                ProofStep::NormalizeUsing(vec![double_negation]),
-            ];
+            steps = vec![have(double_negation.clone(), steps), ProofStep::Known];
         }
         // The theorem's arguments can contain partial native operations.
         // Cite their already established domains explicitly, so the simple
@@ -1348,6 +1365,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 | ContractExpression::Multiply(_, _)
                 | ContractExpression::Divide(_, _)
                 | ContractExpression::Remainder(_, _)
+                | ContractExpression::ShiftLeft(_, _)
+                | ContractExpression::ShiftRight(_, _)
+                | ContractExpression::BitwiseAnd(_, _)
                 | ContractExpression::CUnary { .. }
                 | ContractExpression::ProgramExpression(
                     ProgramExpression::Add(..)
@@ -1355,6 +1375,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     | ProgramExpression::Multiply(..)
                     | ProgramExpression::Divide(..)
                     | ProgramExpression::Remainder(..)
+                    | ProgramExpression::ShiftLeft(..)
+                    | ProgramExpression::ShiftRight(..)
+                    | ProgramExpression::BitwiseAnd(..)
                     | ProgramExpression::Cast { .. },
                 ) => {
                     domain_candidates.push(ClickProposition::Defined {

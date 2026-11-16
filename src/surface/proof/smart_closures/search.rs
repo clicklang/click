@@ -12,13 +12,31 @@ enum SurfaceSpellingPurpose {
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Retain a computational `known` leaf when possible, otherwise the exact
     /// legacy normalizer requested by this search route. Premise-restricted
-    /// routes use only goal-local computation to make this choice.
+    /// routes use only the written premises and goal-local computation.
+    /// A missing list denotes context-free closure, never ambient `known`.
     pub(in crate::surface::proof) fn apply_normalization_closure(
         search_input: &Proof<'a>,
         premises: Option<Vec<ClickProposition>>,
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_normalization_closure");
+        if search_input
+            .goal()
+            .is_some_and(crate::surface::planning::solve::computes_with_known)
+            || Self::known_bridge_using(search_input, premises.as_deref().unwrap_or(&[]))?
+        {
+            return search_input.driver().apply_step(ProofStep::Known);
+        }
+        if let Some(premises) = &premises
+            && let Some(closed) = Self::try_conditional_bridge_using(search_input, premises)?
+        {
+            return Ok(closed);
+        }
+        if let Some(premises) = &premises
+            && let Some(closed) = Self::try_machine_bridge_using(search_input, premises)?
+        {
+            return Ok(closed);
+        }
         if let Some(premises) = &premises
             && let Some(closed) = Self::try_division_bound_using(search_input, premises)?
         {
@@ -34,16 +52,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(closed);
         }
-        let step = if search_input
-            .goal()
-            .is_some_and(crate::surface::planning::solve::computes_with_known)
-        {
-            ProofStep::Known
-        } else {
-            match premises {
-                Some(premises) => ProofStep::NormalizeUsing(premises),
-                None => ProofStep::Normalize,
-            }
+        let step = match premises {
+            Some(premises) => ProofStep::NormalizeUsing(premises),
+            None => ProofStep::Normalize,
         };
         search_input.driver().apply_step(step)
     }
@@ -141,15 +152,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             .as_ref()
                             .is_none_or(|(old, _, _)| if upper { value < old } else { value > old })
                         {
-                            selected[index] = Some((
-                                value.clone(),
-                                surface.clone(),
-                                if upper {
+                            selected[index] = Some((value.clone(), surface.clone(), {
+                                let written = if upper {
                                     written_left.clone()
                                 } else {
                                     written_right.clone()
-                                },
-                            ));
+                                };
+                                // Native bounds supply a machine spelling; theorem
+                                // arguments denote its mathematical observation.
+                                if matches!(operand.value_read(), IntegerTerm::Machine(_)) {
+                                    ContractExpression::Call {
+                                        name: "to_integer".into(),
+                                        arguments: vec![written],
+                                    }
+                                } else {
+                                    written
+                                }
+                            }));
                         }
                     }
                 }
@@ -239,6 +258,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_arithmetic_using");
+        if let Some(closed) = Self::try_conditional_bridge_using(search_input, premises)? {
+            return Ok(closed);
+        }
+        if let Some(closed) = Self::try_machine_bridge_using(search_input, premises)? {
+            return Ok(closed);
+        }
         if let Some(proof) = Self::try_integer_composition_using(search_input, premises)? {
             return Ok(proof);
         }
@@ -288,6 +313,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_signed_interval_using");
+        if Self::known_bridge_using(search_input, premises)? {
+            return search_input.driver().apply_step(ProofStep::Known).map(Some);
+        }
+        if let Some(closed) = Self::try_machine_bridge_using(search_input, premises)? {
+            return Ok(Some(closed));
+        }
         if let Some(closed) = Self::try_division_bound_using(search_input, premises)? {
             return Ok(Some(closed));
         }
@@ -1836,7 +1867,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Prove each of `identities`, `to_integer(a op b) == to_integer(a) op
     /// to_integer(b)` or `to_integer((T)x) == to_integer(x)`, spelled from
     /// `written`: its two type-range bounds by selected-premise arithmetic, then the identity
-    /// by `normalize using` those two bounds. Each
+    /// by `known` after those two bounds. Each
     /// operand was found after its operation, so the reverse order proves
     /// the innermost identity first. Returns the proof with the identities
     /// established and their spellings, or the identity that missed.
@@ -2105,7 +2136,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             let identity_surface = identity.clone();
             let scope = proof.driver().open_have(identity.clone())?;
-            let step = ProofStep::NormalizeUsing(vec![lower, upper]);
+            let step = ProofStep::Known;
             let closed = match scope.driver().apply_step(step) {
                 Ok(closed) => closed,
                 Err(_) => return Ok(Err(failed.clone())),
@@ -4561,13 +4592,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if premises.is_empty() {
             return None;
         }
-        if let Ok(closed) = Self::apply_normalization_closure(search_input, Some(premises.clone()))
-            && (closed.is_complete() || closed.focused_discharged())
-        {
-            return Some(closed);
-        }
         // Selecting an arm and proving arithmetic in it are separate simple
-        // steps. Normalize the arm equation from its stated guard, then
+        // steps. Check the arm equation from its stated guard, then
         // rewrite the goal before ordinary arithmetic composes its proof.
         let ClickProposition::Comparison { left, right, .. } = search_input.surface_goal()? else {
             return None;
@@ -4600,8 +4626,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .driver()
                     .apply_step(super::super::wide_arithmetic::have(
                         equality.clone(),
-                        vec![ProofStep::NormalizeUsing(vec![guard])],
+                        vec![ProofStep::Known],
                     ))
+                    .or_else(|_| {
+                        search_input
+                            .driver()
+                            .apply_step(super::super::wide_arithmetic::have(
+                                equality.clone(),
+                                vec![ProofStep::NormalizeUsing(vec![guard])],
+                            ))
+                    })
                     .ok()?;
                 let rewritten = equation
                     .driver()
@@ -4615,7 +4649,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
             }
         }
-        None
+        Self::apply_normalization_closure(search_input, Some(premises)).ok()
     }
 
     /// Uses one explicitly supplied equality before unfolding applications in
@@ -10115,6 +10149,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_solve_closure_before_arithmetic");
+        if let Ok(Some(closed)) = Self::try_conditional_bridge_using(search_input, surfaces) {
+            return Some(closed);
+        }
+        if let Ok(Some(closed)) = Self::try_machine_bridge_using(search_input, surfaces) {
+            return Some(closed);
+        }
         if let Some(proof) =
             Self::try_ordinary_viewability_restriction_closure(search_input, Some(surfaces))
         {

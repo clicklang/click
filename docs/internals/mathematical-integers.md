@@ -1063,9 +1063,10 @@ observation. The `integer::int64_add_to_integer` and corresponding subtraction
 laws expose this fact through ordinary application. The argument's native
 definedness is a separate premise, not a consequence of merely observing it.
 
-The normalizer can check the observation identity using the exact lower and
-upper bounds for its mathematical result. Planning proves those bounds first
-and then emits the explicit normalization. It does not infer machine safety
+`known()` checks a written operation's observation identity using the exact
+lower and upper bounds for its mathematical result. Planning proves those
+bounds first, then emits `known()`. The check reads the operator and its two
+operands; it does not resolve a read or walk memory history. It does not infer machine safety
 from a later desired equality.
 
 ## Exact unsigned 64-bit observations
@@ -1076,8 +1077,8 @@ result is in the unsigned range. The ordinary `integer::uint64_add_to_integer`,
 `integer::uint64_subtract_to_integer`, and multiplication laws require that
 evidence. A subtraction therefore needs its operands in the appropriate order.
 
-Type-range facts are explicit premise-free normalizations. A selected
-operation identity reads its exact range pair. Guarded native division and
+Type-range facts are explicit premise-free `known()` leaves. A selected
+operation identity uses `known()` and reads its exact range pair. Guarded native division and
 remainder retain their nonzero-divisor obligations; a value-preserving
 narrowing retains its destination bounds. These facts do not make all native
 arithmetic exact.
@@ -1110,8 +1111,9 @@ premise controls.
 ## Range-checked modulo cast identities
 
 A native integral conversion preserves numeric value when its source lies
-in the destination range. `normalize() using { lower_bound; upper_bound; }`
-checks the matching observation identity using those explicit bounds. A
+in the destination range. After the explicit destination-range bounds are
+proved, `known()` checks the matching written observation identity using
+those exact bound keys. The authored `normalize() using` form remains supported. A
 widening may need only its intrinsic source range; a narrowing needs the
 actual destination range. Signedness and conversion encoding remain part of
 the term.
@@ -1398,3 +1400,16 @@ an Integer comparison such as `0 - 0 == 0` or `0 <= 0`.
 Ordinary normalization checks that retained constant comparison directly,
 even when the source presentation has reduced to `true`. Refreshing the
 presentation supplies no premise or memory authority.
+
+## Machine observation expansion leaves
+
+Selected machine-to-Integer bridges expand to ordinary `have`, `apply ... using`,
+`rewrite`, and `known()` steps. Type ranges, exact in-range operation/cast
+identities, literal shift bounds, nonnegative literal masks, and root
+conditional-arm equations do not need normalization leaves in their supported
+fragment. Left shifts prove both their native domain and exact product range;
+right shifts state the quotient sandwich and apply `integer::round_down_le`.
+Numeric threshold evaluation is a separate `known()` equation followed by a
+rewrite. Conditional guards and operation bounds remain explicit, including
+during replay with implicit solving disabled. This does not broaden `known()`
+to interval search, general coefficient normalization, or memory resolution.

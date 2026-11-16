@@ -1590,7 +1590,9 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
         "{expanded}"
     );
     assert!(
-        expanded.contains("not at(loop(0).exit, \"count_to_n.c\"::count_to_n.local(0)) <"),
+        expanded.contains(
+            "at(loop(0).exit, to_integer((\"count_to_n.c\"::count_to_n.parameter(0) as int32))) <="
+        ),
         "{expanded}"
     );
     assert!(
