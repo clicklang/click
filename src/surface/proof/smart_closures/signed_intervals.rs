@@ -141,7 +141,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     pub(in crate::surface::proof) fn apply_signed_interval_composition(
         proof: &Proof<'a>,
-        certificate: &SignedInt32Certificate,
+        certificate: &SignedIntervalPlan,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_signed_interval_composition");
@@ -571,6 +571,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return Ok(Some(proof));
             }
         }
+        if proof.surface_goal().is_some_and(|goal| {
+            !matches!(
+                surface_comparison_with_anchored_operands(goal),
+                ClickProposition::Comparison { .. }
+            )
+        }) && let Ok(closed) = proof.driver().apply_step(ProofStep::Known)
+        {
+            return Ok(Some(closed));
+        }
         let Some(target) = proof.surface_goal().cloned() else {
             return Ok(Some(proof.driver().apply_step(ProofStep::Known)?));
         };
@@ -597,7 +606,7 @@ mod tests {
         let expanded = expand_c_claim_source_by_label(&source, &[], "migrated.ensures_0")
             .unwrap_or_else(|e| panic!("{}", e.message()));
         assert!(
-            !expanded.contains("arithmetic_certificate signed_int32"),
+            !expanded.contains("arithmetic_certificate"),
             "{source}\n{expanded}"
         );
         assert!(!expanded.contains("solve("), "{expanded}");
@@ -720,10 +729,7 @@ by {step(); have defined(pool->capacity - 1) by solve();}
             )
             .unwrap();
         }
-        assert!(
-            !expanded.contains("arithmetic_certificate signed_int32"),
-            "{expanded}"
-        );
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[("read.c", c)]))
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
     }
@@ -764,10 +770,7 @@ by {step(); have defined(pool->capacity - 1) by solve();}
             crate::surface::ContractProofClaim::Grouped,
         )
         .unwrap_or_else(|error| panic!("{}", error.message()));
-        assert!(
-            !expanded.contains("arithmetic_certificate signed_int32"),
-            "{expanded}"
-        );
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[("bump.c", c)]))
             .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
     }

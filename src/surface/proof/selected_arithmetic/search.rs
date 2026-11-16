@@ -648,7 +648,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let Ok(scope) = proof.driver().open_have(bound.clone()) else {
                         return Ok(None);
                     };
-                    let Some(closed) = (scope).driver().try_arithmetic_fact_closure()? else {
+                    // Splitting an equality must not recursively launch general
+                    // solve on both orders. The selected arithmetic route either
+                    // emits a bound from its premises or misses promptly.
+                    let Some(closed) = scope
+                        .driver()
+                        .try_selected_arithmetic_without_identities()?
+                    else {
                         return Ok(None);
                     };
                     closed

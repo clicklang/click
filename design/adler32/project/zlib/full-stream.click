@@ -13,12 +13,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  if len == 1u64 {
   have len <= 2147483647u64 by solve() using { len == 1u64; };
   have to_integer(len as uint32 as int32) == to_integer(len) by {
-   arithmetic_certificate rules {
-    premise 0: 0 <= to_integer(len) => 0 <= to_integer(len);
-    premise 1: to_integer(len) <= 2147483647 => to_integer(len) <= 2147483647;
-    integer_cast_identity bounds [0, 1] => to_integer(len as uint32 as int32) == to_integer(len);
-    conclusion 0;
-   }
+   solve() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
   }
   apply(adler_spec_checksum_bridge(buf, len as uint32 as int32, len, 1, 0)) using { to_integer(len as uint32 as int32) == to_integer(len); };
   have old(len as uint32 as int32) == 1 by solve();
@@ -75,12 +70,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   have 0 <= to_integer(len); have to_integer(len) <= 18446744073709551615;
   have to_integer(len) <= to_integer(2147483647u64);
   have to_integer(len as uint32 as int32) == to_integer(len) by {
-   arithmetic_certificate rules {
-    premise 0: 0 <= to_integer(len) => 0 <= to_integer(len);
-    premise 1: to_integer(len) <= 2147483647 => to_integer(len) <= 2147483647;
-    integer_cast_identity bounds [0, 1] => to_integer(len as uint32 as int32) == to_integer(len);
-    conclusion 0;
-   }
+   solve() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
   }
   apply(adler_spec_checksum_bridge(buf, len as uint32 as int32, len, 1, 0)) using { to_integer(len as uint32 as int32) == to_integer(len); };
 
@@ -292,12 +282,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have buf == old(buf) + (old(len) - len) by {
     rewrite(buf, at(before_decrement, buf) + 1);
     rewrite(old(len) - len, (old(len) - at(before_decrement, len)) + 1u64);
-    arithmetic_certificate rules {
-     premise 0: at(before_decrement, buf) == old(buf) + (old(len) - at(before_decrement, len)) => at(before_decrement, buf) == old(buf) + (old(len) - at(before_decrement, len));
-     premise 1: old(len) - at(before_decrement, len) <= 14u64 => old(len) - at(before_decrement, len) <= 14u64;
-     pointer_translation relation 0 bounds [1] => at(before_decrement, buf) + 1 == old(buf) + ((old(len) - at(before_decrement, len)) + 1u64);
-     conclusion 0;
-    }
+    solve() using { at(before_decrement, buf) == old(buf) + (old(len) - at(before_decrement, len)); old(len) - at(before_decrement, len) <= 14u64; };
    }
    have to_integer(len) == to_integer(at(before_decrement, len) - 1u64) by solve();
    have len == (at(before_decrement, len) - 1u64);
@@ -2073,12 +2058,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have buf == at(loop(3).entry, buf) + (at(loop(3).entry, len) - len) by {
     rewrite(buf, at(before_block, buf) + 16);
     rewrite(at(loop(3).entry, len) - len, (at(loop(3).entry, len) - at(before_block, len)) + 16u64);
-    arithmetic_certificate rules {
-     premise 0: at(before_block, buf) == at(loop(3).entry, buf) + (at(loop(3).entry, len) - at(before_block, len)) => at(before_block, buf) == at(loop(3).entry, buf) + (at(loop(3).entry, len) - at(before_block, len));
-     premise 1: at(loop(3).entry, len) - at(before_block, len) <= 5535u64 => at(loop(3).entry, len) - at(before_block, len) <= 5535u64;
-     pointer_translation relation 0 bounds [1] => at(before_block, buf) + 16 == at(loop(3).entry, buf) + ((at(loop(3).entry, len) - at(before_block, len)) + 16u64);
-     conclusion 0;
-    }
+    solve() using { at(before_block, buf) == at(loop(3).entry, buf) + (at(loop(3).entry, len) - at(before_block, len)); at(loop(3).entry, len) - at(before_block, len) <= 5535u64; };
    }
    have len <= at(before_block, len) - 16u64 by solve();
    have viewable(buf[0u64..len]) by {

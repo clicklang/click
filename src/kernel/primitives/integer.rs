@@ -560,10 +560,8 @@ impl MachineIntegerType {
     }
 }
 
-/// A signed machine width whose `defined(a + b)` and `defined(a - b)` the
-/// `rules` arithmetic certificate's `int32_defined` / `int64_defined` rule
-/// establishes from the operands' constant bounds. One checker serves both
-/// widths; this names which one a node claims.
+/// A signed machine width for definedness of addition and subtraction
+/// from the operands' constant bounds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SignedDefinedWidth {
     Int32,

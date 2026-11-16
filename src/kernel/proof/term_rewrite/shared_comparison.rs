@@ -176,6 +176,30 @@ impl TermRewrite<'_> {
                 } else {
                     KernelTermImport::default().condition(&condition)
                 };
+                // Substitution can replace a variable by shared arithmetic.
+                // Rebuild that changed guard through the same root-only
+                // comparison constructor as evaluation, so a fold's next
+                // cell has the same spelling as the instantiated source.
+                let guard = if guard != arguments[0] && self.integer_exact.is_none() {
+                    if let KernelTermNode::BoolCompare {
+                        format,
+                        relation,
+                        arguments,
+                    } = guard.node()
+                    {
+                        let condition =
+                            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                                *format,
+                                *relation,
+                                arguments.each_ref().map(MachineOperandView::Shared),
+                            );
+                        KernelTermImport::default().condition(&condition)
+                    } else {
+                        guard
+                    }
+                } else {
+                    guard
+                };
                 guards.insert(term.id(), (condition, guard));
             }
             let children: Vec<_> = match term.node() {

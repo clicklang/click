@@ -115,7 +115,6 @@ documentation inventory keep the following accepted words synchronized.
 | `close_invariants` | Retired loop tactic, still reserved. The parser rejects it with `` `close_invariants` is retired ``; a loop's back edge now closes each bundle member with `solve()`, helped by `have` facts proved before it. |
 | `split`, `left`, `right` | Retired tactic spellings. Unless a user-defined tactic has the name, the parser rejects each with a diagnostic that names `known()`. |
 | `preserve` | Preserve a selected read or its definedness across an explicitly separated region footprint; also introduces a loop preservation proof. |
-| `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate rules { ... }`. Its step words are listed under [Arithmetic-certificate words](#arithmetic-certificate-words). |
 | `rewrite`, `transport`, `instantiate`, `solve`, `induct` | Equality, transport, quantifier, closing, and induction tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also writes numeric and pointer casts (including `as float` and `as double`) and introduces the target contract's proof instances on an `executes` conclusion. |
 | `function`, `loop`, `region`, `statement`, `call`, `test`, `assignment`, `read`, `read_event`, `back_edge`, `entry`, `exit` | Program-region and point selectors. Each names a region. `region(N)` is the `N`th atomic region, one `step()` crosses; `statement(i)` is a statement as written, and a chain continues it with `.statement(j)` and ends it with `.region(j)`, `.call(f, j)`, `.test()`, `.assignment(x, j)` or `.read(j)`. Unchained `assignment(local, N)` and `read(N)`, and `back_edge()` or `loop(i).back_edge()`, are execution targets only. The suffix `.read_event(i).result` selects a completed volatile observation within an atomic region; it is not a point or execution target. |
@@ -137,35 +136,6 @@ See [Tactics](../tactics/index.md) for tactic syntax and classification, and
 proof needs; the other tactic words are specialized or expansion output. A word
 listed here isn't necessarily valid in every identifier or expression
 position; the construct entry defines its allowed context.
-
-### Arithmetic-certificate words
-
-These words have their meaning only inside an `arithmetic_certificate { ... }`
-block, where each starts one certificate step. Elsewhere they are ordinary
-identifiers.
-
-| Words | Context and status |
-| --- | --- |
-| `signed_int32` | Selects the public checked signed-machine arithmetic-certificate family. |
-| `rules` | Selects the pointer, tagged-word, finite-float, and `int32` / `int64` definedness arithmetic-certificate family. |
-| `int32_defined`, `int64_defined` | Proves `defined(a + b)` or `defined(a - b)` over `int32` or `int64` in a `rules` certificate from the operands' width ranges and the listed constant bounds on them. When an operand carries definedness of its own, such as a field read through a resource or an inner sum, list `defined(a)` too: each part of the claim beyond the operation's overflow must be part of a listed premise (`mdtests/solve_defined_read_through_a_produced_resource.md`). One checker serves both widths. |
-| `premise` | Names an exact premise node in an arithmetic certificate. |
-| `scale` | Scales an earlier arithmetic certificate node by an exact decimal coefficient. |
-| `add` | Adds two earlier arithmetic certificate nodes. |
-| `less_equal_from_equal` | Converts an equality certificate node to a non-strict bound. |
-| `equal_from_bounds` | Closes an equality from opposite non-strict bounds. |
-| `less_than_from_not_equal` | Sharpens a non-strict bound to a strict one with a disequality on the same sides. |
-| `trivial` | Checks a context-free affine identity. |
-| `negated_goal` | Assumes the integer negation of a bound goal in a mathematical `Integer` certificate: `r < l` for the goal `l <= r`, and `r <= l` for `l < r`. |
-| `divide` | Divides a non-strict `Integer` bound by a positive common factor of its coefficients and rounds its constant to the integer bound. |
-| `operation_bound` | States the bound a quotient, shift, or remainder by a positive constant takes from its operand in a mathematical `Integer` certificate, such as `c * to_integer(x / c) <= to_integer(x)`. |
-| `excluded_bound` | Cites a premise that is a disequality of a machine value with its type's minimum or maximum, as the bound it gives, in a mathematical `Integer` certificate: `excluded_bound N: to_integer(v) != 0 => 1 <= to_integer(v);`. |
-| `int32_range` | States one opaque `int32` term's own range as an affine bound, `t <= 2147483647` or `-2147483648 <= t`. |
-| `interval_from_affine`, `interval_from_affine_direct`, `interval_atom`, `interval_intersect` | Introduce, import, or intersect, checked signed-machine intervals. `interval_from_affine_direct` is required when the cited affine premise already contains a compound machine operation; it does not silently decompose that operation. |
-| `defined`, `interval_add`, `interval_add_bounded`, `interval_subtract`, `interval_multiply`, `interval_remainder`, `interval_shift_left`, `interval_arithmetic_shift_right`, `interval_bitwise_and`, `interval_narrowed_cast`, `interval_compare` | Record exact definedness premises and bounded interval-operation evidence for signed-machine expressions. `interval_narrowed_cast N source destination (lo) (hi);` relates a C conversion into a one- or two-byte type to its operand when interval `N` lies inside the destination range. `interval_compare L, R op => P;` concludes the comparison `P` of intervals `L` and `R`, with `op` one of `lt`, `le`, `eq`, `ne`, or `ult`, `ule` for a `uint32` order, which reads each interval as unsigned once its sign is known. |
-| `affine_conclusion`, `affine_conclusion_pair` | Bridge an affine claim to a machine proposition using one, or separately named left and right, interval/definedness evidence. The pair form is required when both comparison sides contain compound operations. |
-| `conclusion` | Selects the final node of an arithmetic certificate. In the mathematical `Integer` family, a conclusion node that is a contradiction, such as `1 <= 0`, also proves the goal. |
-| `reverse` | Selects the reverse equality direction for `less_equal_from_equal`. |
 
 ## File-level declarations
 

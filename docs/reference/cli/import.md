@@ -1212,7 +1212,7 @@ scalar profile.
 
 The `wide-narrowing` fixture proves when existing C++ modulo casts preserve
 full mathematical values. The explicit `integer_cast_identity` `rules`
-arithmetic certificate consumes two named constant-endpoint bounds on the
+ordinary arithmetic proof consumes two named constant-endpoint bounds on the
 source observation, checking both against the destination range. Both signed
 and unsigned 128-bit values narrow to signed/unsigned 32/64-bit results.
 The rule also checks native quotient/remainder narrowing under their existing
@@ -1220,7 +1220,7 @@ definedness guards and stated result bounds. Out-of-range casts still wrap;
 missing range premises, false results, and undefined operands are refused.
 Modular caller framing, offline loading, expansion, and retained audit have
 coverage. This adds proof support without changing the schema or trusting
-conversion bounds. See [Integer certificates](../../internals/mathematical-integers.md#range-checked-modulo-cast-identities).
+conversion bounds. See [Integer cast identities](../../internals/mathematical-integers.md#range-checked-modulo-cast-identities).
 
 Operand intervals can now supply the quotient/remainder narrowing bounds through
 an explicit `integer_division_bounds` certificate. The separate

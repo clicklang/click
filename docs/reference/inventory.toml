@@ -479,51 +479,7 @@ id = "language.word.import"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.add"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.conclusion"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.equal_from_bounds"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.less_than_from_not_equal"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.int32_range"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.less_equal_from_equal"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.negated_goal"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.divide"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.arithmetic_certificate"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.peel"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.signed_int32"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.rules"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -531,19 +487,7 @@ id = "language.word.rust"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.premise"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.region"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.reverse"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.scale"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -552,10 +496,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.sorry"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.trivial"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1410,10 +1350,6 @@ id = "tactic.normalize"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
-id = "tactic.arithmetic_certificate"
-path = "reference/tactics/index.md#proposition-reasoning"
-
-[[item]]
 id = "tactic.rewrite"
 path = "reference/tactics/index.md#proposition-reasoning"
 
@@ -1650,12 +1586,6 @@ id = "tactic-form.normalize"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.normalize-using"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.arithmetic-certificate"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.arithmetic-certificate-signed-int32"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.intro"

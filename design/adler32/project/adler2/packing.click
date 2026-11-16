@@ -8,12 +8,7 @@ theorem adler_u16_observation(value: uint16) {
   // The promoted word and the narrow field retain the same checked carrier.
   // Prove its range as a word before observing it as a narrow field.
   have to_integer(value) == to_integer(value as uint32) by {
-  arithmetic_certificate rules {
-   premise 0: 0 <= to_integer(value as uint32) => 0 <= to_integer(value as uint32);
-   premise 1: to_integer(value as uint32) <= 65535 => to_integer(value as uint32) <= 65535;
-   integer_cast_identity bounds [0, 1] => to_integer(value) == to_integer(value as uint32);
-   conclusion 0;
-  }
+  solve() using { 0 <= to_integer(value as uint32); to_integer(value as uint32) <= 65535; };
   }
   rewrite(to_integer(value), to_integer(value as uint32));
   normalize();

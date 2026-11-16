@@ -8,7 +8,7 @@
 //! the premises and the goal is shown to stay in range (an unsigned one does
 //! not wrap, a signed one is defined) and then observed term by term by its
 //! in-range identity, the Integer claim is composed with ordinary library
-//! laws, and `known` concludes the goal. Explicit certificates check type ranges
+//! laws, and `known` concludes the goal. Normalization checks type ranges
 //! and the exact operation identities from their two stated bounds. The
 //! checked steps are retained directly for expansion.
 use super::*;
@@ -452,30 +452,18 @@ pub(super) fn have(proposition: ClickProposition, proof: Vec<ProofStep>) -> Proo
     }
 }
 
-/// Retain the observed machine value's exact type range as an explicit rule.
-pub(super) fn type_range(bound: ClickProposition) -> ProofStep {
-    ProofStep::ArithmeticCertificate(ArithmeticCertificate::integer(IntegerCertificate {
-        nodes: vec![IntegerCertificateNode::TypeRange { result: bound }],
-        conclusion: 0,
-    }))
+/// Context-free normalization of the observed machine value's type range.
+pub(super) fn type_range(_bound: ClickProposition) -> ProofStep {
+    ProofStep::Normalize
 }
 
-/// Observe an operation using exactly the two stated exact-result bounds.
+/// Normalize the machine identity using the two stated exact-result bounds.
 pub(super) fn operation_identity(
     lower: ClickProposition,
     upper: ClickProposition,
-    identity: ClickProposition,
+    _identity: ClickProposition,
 ) -> ProofStep {
-    ProofStep::ArithmeticCertificate(ArithmeticCertificate::special(
-        SpecialArithmeticCertificate {
-            premises: vec![lower, upper],
-            nodes: vec![SpecialArithmeticNode::IntegerOperationIdentity {
-                bounds: vec![0, 1],
-                result: identity,
-            }],
-            conclusion: 0,
-        },
-    ))
+    ProofStep::NormalizeUsing(vec![lower, upper])
 }
 
 thread_local! {

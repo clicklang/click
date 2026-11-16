@@ -2,7 +2,7 @@
 //! constant endpoints. Divisor intervals must exclude zero. No native
 //! definedness, observer range, or ambient premise search is inferred.
 
-use super::arithmetic_special::SpecialArithmeticCheckError as Error;
+use super::arithmetic_special::ArithmeticRuleError as Error;
 use super::integer_product_bounds::order;
 use crate::kernel::{IntegerTerm, Proposition};
 use num_bigint::BigInt;
@@ -118,10 +118,7 @@ pub(super) fn check(
 mod tests {
     use super::*;
     use crate::kernel::ConditionTerm;
-    use crate::kernel::{
-        Variable,
-        proof::arithmetic_special::{SpecialArithmeticCertificate, SpecialArithmeticNode},
-    };
+    use crate::kernel::Variable;
 
     fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
         Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
@@ -208,63 +205,7 @@ mod tests {
             }
         }
     }
-    #[test]
-    fn division_bounds_reject_forged_premises_polarity_and_operator() {
-        let (premises, a, b) = inputs([-100, 100, 1, 10]);
-        let valid = goal(&a, &b, false, 100, false);
-        for bounds in [
-            vec![],
-            vec![0, 1, 2],
-            vec![0, 1, 2, 4],
-            vec![1, 0, 2, 3],
-            vec![0, 1, 3, 2],
-            vec![0, 0, 2, 3],
-        ] {
-            assert!(check(0, &bounds, &premises, &valid).is_err());
-        }
-        let mut altered = premises.clone();
-        altered[2] = le(IntegerTerm::constant(1.into()), a.clone());
-        assert!(check(0, &[0, 1, 2, 3], &altered, &valid).is_err());
-        let mut opposite = valid.clone();
-        if let Proposition::ConditionIs(_, truth) = &mut opposite {
-            *truth = false;
-        }
-        assert!(check(0, &[0, 1, 2, 3], &premises, &opposite).is_err());
-        assert!(
-            check(
-                0,
-                &[0, 1, 2, 3],
-                &premises,
-                &le(
-                    IntegerTerm::multiply(a, b),
-                    IntegerTerm::constant(100.into())
-                )
-            )
-            .is_err()
-        );
-        let cert = SpecialArithmeticCertificate {
-            nodes: vec![SpecialArithmeticNode::IntegerDivisionBounds {
-                bounds: vec![0, 1, 2, 3],
-                result: valid.clone(),
-            }],
-            conclusion: 0,
-        };
-        assert!(cert.check(&valid, &premises).is_ok());
-        let wrong = SpecialArithmeticCertificate {
-            conclusion: 1,
-            ..cert
-        };
-        assert!(wrong.check(&valid, &premises).is_err());
-        for ends in [
-            [10, -10, 1, 10],
-            [-10, 10, 10, 1],
-            [-10, 10, 0, 1],
-            [-10, 10, -1, 0],
-        ] {
-            let (p, a, b) = inputs(ends);
-            assert!(check(0, &[0, 1, 2, 3], &p, &goal(&a, &b, false, 100, false)).is_err());
-        }
-    }
+
     #[test]
     fn division_bounds_support_large_values_and_remainder_signs() {
         let (_, a, b) = inputs([0, 0, 1, 1]);

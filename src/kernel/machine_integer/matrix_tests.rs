@@ -12,9 +12,7 @@ use super::*;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
-use crate::kernel::proof::arithmetic_special::{
-    SpecialArithmeticCertificate, SpecialArithmeticNode,
-};
+
 use crate::kernel::{
     ConditionTerm, IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty, MachineTerm,
     OverflowOperation, Proposition, SharedMachineIntegerTerm, Variable,
@@ -292,16 +290,6 @@ fn every_order_is_native_at_its_own_format() {
     }
 }
 
-fn identity_certificate(result: Proposition) -> SpecialArithmeticCertificate {
-    SpecialArithmeticCertificate {
-        nodes: vec![SpecialArithmeticNode::IntegerOperationIdentity {
-            bounds: vec![0, 1],
-            result,
-        }],
-        conclusion: 0,
-    }
-}
-
 #[test]
 fn in_range_identity_holds_at_every_format() {
     for ty in FORMATS {
@@ -355,17 +343,26 @@ fn in_range_identity_holds_at_every_format() {
                 ConditionTerm::integer_equal(observed.clone(), value.clone()),
                 true,
             );
-            let certificate = identity_certificate(goal.clone());
+
             assert!(
-                certificate
-                    .check(&goal, &bounds(min.clone(), max.clone()))
-                    .is_ok(),
+                crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                    &goal,
+                    &bounds(min.clone(), max.clone()),
+                    &crate::kernel::proof::ProofFacts::from_ordered(&bounds(
+                        min.clone(),
+                        max.clone()
+                    ))
+                )
+                .is_ok(),
                 "{ty:?} {operation:?}"
             );
             assert!(
-                certificate
-                    .check(&goal, &bounds(min.clone(), &max + 1))
-                    .is_err(),
+                crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                    &goal,
+                    &bounds(min.clone(), &max + 1),
+                    &crate::kernel::proof::ProofFacts::from_ordered(&bounds(min.clone(), &max + 1))
+                )
+                .is_err(),
                 "{ty:?} {operation:?}"
             );
             // On constants whose exact result fits, the machine result is

@@ -2,7 +2,8 @@
 
 After two calls to `grow`, the cell's middle value is readable only at the
 second call's entry. The implicit closer substitutes both calls' equalities to read the
-final value as an offset from entry.
+final value as an offset from entry. The preconditions keep each native update
+in range, so the contract states its Integer observation directly.
 
 ```c filename=two_call_memory_facts_support_arithmetic.c
 void grow(int32* self, int32 delta);
@@ -15,7 +16,7 @@ extern void grow(int32* self, int32 delta) {
     owns self[0..1];
     requires 0 <= delta and delta <= 100;
     requires 0 <= self[0] and self[0] <= 1000;
-    ensures to_integer(self[0]) == to_integer(old(self[0]) + delta);
+    ensures to_integer(self[0]) == to_integer(old(self[0])) + to_integer(delta);
 }
 void bump(int32* s) {
     owns s[0..1];

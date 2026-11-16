@@ -76,12 +76,7 @@ theorem adler_signed_small_prefix(n: uint64) {
   have to_integer(n - n % 4u64) <= to_integer(n) by normalize() using { n % 4u64 <= n; };
   have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by solve() using { to_integer(n - n % 4u64) <= to_integer(n); n <= 22207u64; };
   have to_integer((n - n % 4u64) as uint32 as int32) == to_integer(n - n % 4u64) by {
-   arithmetic_certificate rules {
-    premise 0: 0 <= to_integer(n - n % 4u64) => 0 <= to_integer(n - n % 4u64);
-    premise 1: to_integer(n - n % 4u64) <= 22204 => to_integer(n - n % 4u64) <= 22204;
-    integer_cast_identity bounds [0, 1] => to_integer((n - n % 4u64) as uint32 as int32) == to_integer(n - n % 4u64);
-    conclusion 0;
-   }
+   solve() using { 0 <= to_integer(n - n % 4u64); to_integer(n - n % 4u64) <= 22204; };
   }
   have 0 <= to_integer((n - n % 4u64) as uint32 as int32) by { rewrite(to_integer((n - n % 4u64) as uint32 as int32), to_integer(n - n % 4u64)); known(); }
   have to_integer((n - n % 4u64) as uint32 as int32) <= 22204 by { rewrite(to_integer((n - n % 4u64) as uint32 as int32), to_integer(n - n % 4u64)); known(); }
@@ -142,12 +137,7 @@ theorem adler_small_prefix_divisible(n: uint64) {
   have to_integer(n - n % 4u64) <= to_integer(n) by normalize() using { n % 4u64 <= n; };
   have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by solve() using { to_integer(n - n % 4u64) <= to_integer(n); n <= 22207u64; };
   have to_integer((n - n % 4u64) as uint32 as int32) == to_integer(n - n % 4u64) by {
-   arithmetic_certificate rules {
-    premise 0: 0 <= to_integer(n - n % 4u64) => 0 <= to_integer(n - n % 4u64);
-    premise 1: to_integer(n - n % 4u64) <= 22204 => to_integer(n - n % 4u64) <= 22204;
-    integer_cast_identity bounds [0, 1] => to_integer((n - n % 4u64) as uint32 as int32) == to_integer(n - n % 4u64);
-    conclusion 0;
-   }
+   solve() using { 0 <= to_integer(n - n % 4u64); to_integer(n - n % 4u64) <= 22204; };
   }
   have to_integer((n - n % 4u64) as uint32 as int32) == truncating_quotient(to_integer(n), 4) * 4 by {
    rewrite(to_integer((n - n % 4u64) as uint32 as int32), to_integer(n - n % 4u64));
@@ -167,20 +157,10 @@ theorem adler_uint64_bounded_equality(left: uint64, right: uint64) {
   have to_integer(left) <= to_integer(9223372036854775807u64) by solve() using { to_integer(left) <= 2147483647; };
   have to_integer(right) <= to_integer(9223372036854775807u64) by solve() using { to_integer(right) <= 2147483647; };
   have to_integer(left as int64) == to_integer(left) by {
-   arithmetic_certificate rules {
-    premise 0: 0 <= to_integer(left) => 0 <= to_integer(left);
-    premise 1: to_integer(left) <= 2147483647 => to_integer(left) <= 2147483647;
-    integer_cast_identity bounds [0, 1] => to_integer(left as int64) == to_integer(left);
-    conclusion 0;
-   }
+   solve() using { 0 <= to_integer(left); to_integer(left) <= 2147483647; };
   }
   have to_integer(right as int64) == to_integer(right) by {
-   arithmetic_certificate rules {
-    premise 0: 0 <= to_integer(right) => 0 <= to_integer(right);
-    premise 1: to_integer(right) <= 2147483647 => to_integer(right) <= 2147483647;
-    integer_cast_identity bounds [0, 1] => to_integer(right as int64) == to_integer(right);
-    conclusion 0;
-   }
+   solve() using { 0 <= to_integer(right); to_integer(right) <= 2147483647; };
   }
   have to_integer(left as int64) == to_integer(right as int64) by {
    rewrite(to_integer(left as int64), to_integer(left));
@@ -230,12 +210,7 @@ theorem adler_index_observation(n: uint64) {
  requires n <= 2147483647u64;
  ensures to_integer(n as uint32 as int32) == to_integer(n) by {
   have 0u64 <= n by normalize();
-  arithmetic_certificate rules {
-   premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
-   premise 1: to_integer(n) <= 2147483647 => to_integer(n) <= 2147483647;
-   integer_cast_identity bounds [0, 1] => to_integer(n as uint32 as int32) == to_integer(n);
-   conclusion 0;
-  }
+  solve() using { 0 <= to_integer(n); to_integer(n) <= 2147483647; };
  }
 }
 theorem adler_small_signed_tail(n: uint64) {
