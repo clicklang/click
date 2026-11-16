@@ -150,24 +150,19 @@ implementation:
 - **Bounded bytes and serialization.** The selected first cursor is
   Bitcoin's `SpanReader`, which reports malformed input by throwing
   `std::ios_base::failure`; that exception model is
-  [cpp-exceptions.md](cpp-exceptions.md). `ser_readdata32` is a later
-  candidate. It needs the selected writable byte-span path and a modular
-  byte-output composition witness. That small composition is now checked in
-  the [object-model audit](../design/object-model-current-audit.md#modular-byte-output-composition):
-  `consumes uninitialized(...)` and initialized `produces` establish the exact
-  uint32 across proof modes. The [writable-byte span composition](../design/object-model-current-audit.md#writable-byte-span-composition)
-  now constructs a span over caller storage, copies it into a modular fill,
-  and proves that exact word, with bounds, permission and expired-backing
-  controls. The unchanged `ser_readdata32<FixtureReader>` graph now imports,
-  including its nested span temporaries and record template argument. Its
-  [cursor witness](../design/object-model-current-audit.md#bitcoin-read32-import-and-remaining-cursor-refusal)
-  now executes all four byte copies and both cursor updates: forgetting
-  cached input observations preserves their initialization evidence beside
-  unwritten output. Its byte-value postconditions remain unproved; bounded
-  search stops on the third byte, with intermediate pointer spelling gaps.
-  Repair that spelling/value-preservation boundary and establish ordinary,
-  expanded cold and retained checking before counting serialization coverage
-  or moving on to the real cursor's exception behavior.
+  [cpp-exceptions.md](cpp-exceptions.md). The selected
+  `ser_readdata32<FixtureReader>` composition is now proved on unchanged
+  Bitcoin source, including its nested writable-span temporaries and record
+  template argument. Its [serialization witness](../design/object-model-current-audit.md#bitcoin-read32-serialization-composition)
+  proves all four copied bytes, the exact `uint32_t` result and both cursor
+  updates through the reader, serializer, endian helper and wrapper.
+  The complete source has ordinary, fully expanded cold and retained-session
+  checking, plus bounds, permission, byte-value, result and cursor controls.
+  The [modular byte-output](../design/object-model-current-audit.md#modular-byte-output-composition)
+  and [writable-byte span](../design/object-model-current-audit.md#writable-byte-span-composition)
+  witnesses remain the smaller initializer/authority checks. The next
+  application step is the real cursor's exception behavior; the fixture reader
+  does not model Bitcoin's `SpanReader` or malformed input.
   Plain `owns` still requires initialized input and does not express an
   initializer.
 

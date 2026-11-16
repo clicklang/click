@@ -106,6 +106,7 @@ fn allocator_provenance_is_attached_to_each_emitted_ownership_occurrence() {
         2,
         &[],
         ReturnResourceComposition::BodyAllocations {
+            consumed: None,
             creator: &creator,
             events,
         },
@@ -126,6 +127,7 @@ fn allocator_provenance_is_attached_to_each_emitted_ownership_occurrence() {
             .restore_entry_borrows(
                 caller.resources().clone(),
                 ReturnResourceComposition::BodyAllocations {
+                    consumed: None,
                     creator: &creator,
                     events,
                 },
@@ -294,4 +296,147 @@ fn executed_allocator_returns_preserve_the_frame_and_check_actual_body_custody()
             );
         }
     }
+}
+
+#[test]
+fn composite_children_use_only_actual_allocation_provenance() {
+    let facts = PureFactContext::new();
+    let (_, entry, post, pointer) = allocated_call(16);
+    let (_, wrong_entry, _, _) = allocated_call(16);
+    let definition = super::tests::flat_body_definition("created_body", &pointer, 2);
+    let evaluated = EvaluatedReturnResources::new(&facts)
+        .admit(
+            ResourceFact::own_composite("created_body".into(), vec![]),
+            ReturnOwnershipOrigin::Description,
+            &facts,
+        )
+        .unwrap();
+    for (creator, fresh) in [
+        (entry.population_effects.creation.as_ref().unwrap(), true),
+        (
+            wrong_entry.population_effects.creation.as_ref().unwrap(),
+            false,
+        ),
+    ] {
+        let bodies = ConstructedReturnBodies::try_construct(
+            &evaluated,
+            std::slice::from_ref(&definition),
+            &post,
+            ReturnResourceComposition::BodyAllocations {
+                consumed: None,
+                creator,
+                events: post.population_effects.creation.as_ref().unwrap(),
+            },
+            &facts,
+        )
+        .unwrap();
+        let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+        assert_eq!(
+            body.transfers
+                .iter()
+                .filter(|child| matches!(child.origin, ReturnOwnershipOrigin::FreshAllocation(_)))
+                .count(),
+            if fresh { 2 } else { 0 }
+        );
+        assert_eq!(
+            body.owned_memory_frontier().count(),
+            if fresh { 0 } else { 2 }
+        );
+    }
+}
+
+#[test]
+fn executed_composite_allocation_returns_still_check_body_custody() {
+    for cells in [4, 8] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (caller, _, _, _) = allocated_call(16);
+        let function = allocating_function(cells)
+            .with_resource_summary(
+                vec![],
+                vec![super::tests::composite_spec(
+                    "allocated_body",
+                    variable(CONTRACT_RESULT),
+                    ResourceTransferRole::Produce,
+                )],
+            )
+            .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
+                "allocated_body",
+                vec![program_parameter("p", ProgramType::Int32Pointer)],
+                None,
+                false,
+                returned_specs("p", cells),
+                vec![],
+            )]);
+        let paths = execute_program_function_call_paths(
+            &caller,
+            &function,
+            &[],
+            &PureFactContext::new(),
+            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            matches!(
+                paths.as_slice(),
+                [FunctionPath {
+                    outcome: FunctionOutcome::Return { .. },
+                    ..
+                }]
+            ),
+            cells == 4,
+            "{paths:?}"
+        );
+    }
+}
+
+#[test]
+fn one_composite_can_mix_selected_consumed_and_fresh_children() {
+    let facts = PureFactContext::new();
+    let (_, entry, post, fresh) = allocated_call(16);
+    let old = Pointer::symbolic(Variable(8_819_300));
+    let mut definition = super::tests::nested_transfer_function(1)
+        .contract_interface()
+        .composite_resource_definitions()[0]
+        .clone();
+    definition
+        .contains
+        .push(ResourceSpec::owned_memory(MemorySegment::new(
+            ProgramExpression::Value(ProgramValue::pointer(fresh)),
+            int32_literal(0),
+            int32_literal(1),
+        )));
+    let function = super::tests::nested_transfer_function(1)
+        .with_composite_resource_definitions(vec![definition]);
+    let caller = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
+        ResourceFact::own_memory(MemoryRange::new(old.clone(), 0u32.into(), 1u32.into())),
+    );
+    let transfer = super::tests::prepare_scalar_transfer(&function, old.clone(), caller, &facts);
+    let post = post.with_local("p", ProgramValue::pointer(old));
+    let evaluated =
+        super::tests::evaluate_mixed_scalar(&function, &post, &transfer, &facts).unwrap();
+    let bodies = ConstructedReturnBodies::try_construct(
+        &evaluated,
+        function
+            .contract_interface()
+            .composite_resource_definitions(),
+        &post,
+        ReturnResourceComposition::BodyAllocations {
+            consumed: Some(&transfer.consumed_cell_returns),
+            creator: entry.population_effects.creation.as_ref().unwrap(),
+            events: post.population_effects.creation.as_ref().unwrap(),
+        },
+        &facts,
+    )
+    .unwrap();
+    let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+    assert!(matches!(
+        body.transfers[0].origin,
+        ReturnOwnershipOrigin::ConsumedCell(_)
+    ));
+    assert!(matches!(
+        body.transfers[1].origin,
+        ReturnOwnershipOrigin::FreshAllocation(_)
+    ));
+    assert!(body.boundary.is_empty());
 }

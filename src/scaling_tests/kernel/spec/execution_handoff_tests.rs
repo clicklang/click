@@ -66,3 +66,41 @@ fn symbolic_integer_conversion_results_scale_with_the_selected_operand() {
         "{work:?}"
     );
 }
+
+#[test]
+fn specification_machine_expression_handoff_does_not_export_growing_results() {
+    let mut work = Vec::new();
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut source = ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::Variable(
+            Variable(999998),
+        )));
+        for _ in 0..size {
+            source = ProgramExpression::Add(
+                Box::new(source),
+                Box::new(ProgramExpression::Value(ProgramValue::UInt32(
+                    MachineTerm::uint32_constant(1),
+                ))),
+            );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (paths, measured) = crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_spec_expression_paths_with_loop_entry(
+                &ExecutionState::new(),
+                &SpecExpression::ProgramExpression(source),
+                None,
+                &PureFactContext::new(),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+        });
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].value.shared().is_some());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        work.push(measured);
+    }
+    assert!(
+        work[0] > 0 && work[1] <= 5 * work[0] && work[2] <= 5 * work[1],
+        "{work:?}"
+    );
+}

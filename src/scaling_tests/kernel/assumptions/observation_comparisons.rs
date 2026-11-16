@@ -194,3 +194,93 @@ fn common_call_fact_queries_do_not_scan_growing_source_buckets() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn cancelled_compound_lookup_ignores_unrelated_facts_without_exports() {
+    use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
+    use crate::kernel::{KernelTermExport, MachineBinaryOp};
+    let fact = |id: u64, shared: bool| {
+        let sum = MachineTerm::Binary {
+            format: MachineIntegerType::Int32,
+            op: MachineBinaryOp::Add,
+            left: MachineTerm::Variable(Variable(992_000 + id)).into(),
+            right: MachineTerm::constant(1).into(),
+        };
+        let leaf = |bound| {
+            let native = ConditionTerm::equal(sum.clone(), MachineTerm::constant(bound));
+            Proposition::ConditionIs(
+                if shared {
+                    retained_arithmetic_comparison(&native).unwrap()
+                } else {
+                    native
+                },
+                true,
+            )
+        };
+        Proposition::Or(Box::new(leaf(0)), Box::new(leaf(1)))
+    };
+    for shared_source in [false, true] {
+        let mut costs = Vec::new();
+        for size in [8, 16, 32, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut context = PureFactContext::new();
+            for id in 0..size {
+                context = context.assume_proposition(fact(id, shared_source));
+            }
+            let query = fact(0, !shared_source);
+            let missing = fact(1000, !shared_source);
+            let exports = KernelTermExport::machine_export_count();
+            let (found, work) =
+                crate::instrumentation::measure_deterministic_work(|| context.proves_exact(&query));
+            let (miss, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.proves_exact(&missing)
+            });
+            assert!(found);
+            assert!(!miss);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            costs.push((work, miss_work));
+        }
+        assert!(
+            costs[0].0 > 0 && costs[0].1 > 0 && costs.iter().all(|cost| *cost == costs[0]),
+            "{costs:?}"
+        );
+    }
+}
+
+#[test]
+fn compound_native_sum_cancellation_reads_selected_operands_once() {
+    use crate::kernel::{KernelTermExport, MachineBinaryOp};
+    let mut costs = Vec::new();
+    for size in [8, 16, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let sum = |id| {
+            (0..size).fold(MachineTerm::Variable(Variable(id)), |left, _| {
+                MachineTerm::Binary {
+                    format: MachineIntegerType::Int32,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(left),
+                    right: Box::new(MachineTerm::constant(1)),
+                }
+            })
+        };
+        let source =
+            Proposition::ConditionIs(ConditionTerm::equal(sum(996_000), sum(996_001)), true);
+        let reduced = Proposition::ConditionIs(
+            ConditionTerm::equal(
+                MachineTerm::Variable(Variable(996_000)),
+                MachineTerm::Variable(Variable(996_001)),
+            ),
+            true,
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let (actual, work) =
+            crate::instrumentation::measure_deterministic_work(|| PropositionKey::new(&source));
+        assert_eq!(actual, PropositionKey::new(&reduced));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{costs:?}"
+    );
+}

@@ -19,9 +19,8 @@ only by the tests that read them.
   after `.` and a resource tactic in statement position; `function` starts
   a pure function at top level and is the `function` region selector in a
   proof; `as` names what a structural form binds, and in a Rust sidecar it
-  is Rust's cast. Arithmetic-certificate step names are words only inside
-  `arithmetic_certificate { ... }` and are listed apart from the general
-  word index.
+  is Rust's cast. Arithmetic search now expands to ordinary tactics and
+  library laws; its former public certificate syntax has been removed.
 - No certificate cache (closed 2026-10-15, launch review W4 and W5). The
   review proposed keeping `by auto` in sidecars and caching each claim's
   reconstructed certificate beside them, so verification would not search.
@@ -29,13 +28,10 @@ only by the tests that read them.
   the simple steps it found, which check without search, and the expansion
   is committed. A cache would be a second, hidden copy of the same proof.
 - Expansion output stays as it is (closed 2026-10-17, launch review W4).
-  `click expand` already writes each repeated certificate derivation once,
-  drops derivations a conclusion does not use, and shortens grouped closers
-  `normalize();` proves. Certificate steps stay numbered: a certificate is a
-  short list of local steps read mostly by the checker, and names would add
-  syntax for text people rarely read. Marks name program points, not derived
-  facts, so they are not reused for this. Sibling certificates under one
-  `both` may repeat the same premise and interval steps.
+  `click expand` writes the ordinary steps selected by smart search,
+  drops unused derivations, and shortens groups that `normalize();` proves.
+  Marks name program points. Arithmetic derivations use `have` and library
+  applications, with no separate numbered arithmetic-certificate language.
 - Diagnostics keep `<unnamed A>` for a callee's result that no local ever
   held, as in `return value() + 1;` (closed 2026-10-17, launch review W6).
   The C call `value()` is not a Click expression, and re-evaluating it would

@@ -116,7 +116,7 @@ Already-shared numeric/float operations and fold/match producers are reused.
 | 9i | Match raising | Consolidate existing spelling with arm bindings. |
 | 9j | Common lowering results | Expose typed shared roots with separately scoped obligations. |
 | 9k | Integer lowering | Remove remaining native Integer result detours. |
-| 9l | Machine-integer lowering | Symbolic Integer-to-machine results now retain common roots with unchanged bounds (2,014 focused/scaling tests and quality checks passed; conversion fixture fact audit clean). Explicit obligation discharge and branch-interface checks now select existing native/shared comparison sources without changing general search. C-expression retention remains a separate follow-up. |
+| 9l | Machine-integer lowering | Integer-to-machine results and C-expression handoffs retain common roots with unchanged bounds and obligations. Comparison, quantified-fact and compound-fact consumers recognize the retained carriers; binder matching preserves free names. The handoff is covered by exact-root, disabled-retention parity, zero-export and scaling regressions. |
 | 9m | Boolean lowering | Keep logical terms distinct from C Boolean carriers. |
 | 9n | Algebraic lowering | Retain constructors, abstract types and program-parameter argument forms. |
 | 9o | Pointer lowering | Preserve complete metadata, state and address identities. |
@@ -239,6 +239,17 @@ spelling parity; growing unused extent payloads incur constant rendering work
 and zero machine exports. All 1,850 Surface/scaling tests and quality checks
 passed. The pointer-address-equality fixture passed with zero fact-stability
 differences.
+
+### 9g common call raising
+
+Machine, Integer, algebraic and float call roots now share call assembly and
+argument rendering. Numeric result casts remain at the result boundary. The
+native call entry point uses the same argument policy, including exact proof-local
+names for complete pointer arguments, while retaining its existing work accounting.
+
+Validation: all 1,860 Surface/scaling tests and quality checks passed, including
+nested mixed-family calls and exact pointer-name admission/refusal. Pure-pointer
+call fixtures passed with zero fact-stability differences.
 
 ## Chunk 3: machine-valued pure-function results
 

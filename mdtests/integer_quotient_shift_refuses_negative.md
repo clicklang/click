@@ -8,16 +8,11 @@ theorem false_shift(x: Integer, k: Integer) {
     requires -1 <= x;
     requires 0 <= k;
     ensures truncating_quotient(x + 2 * k, 2) == truncating_quotient(x, 2) + k by {
-        arithmetic_certificate rules {
-            premise 0: -1 <= x => -1 <= x;
-            premise 1: 0 <= k => 0 <= k;
-            integer_quotient_shift bounds [0, 1] => truncating_quotient(x + 2 * k, 2) == truncating_quotient(x, 2) + k;
-            conclusion 0;
-        }
+        solve() using { -1 <= x; 0 <= k; };
     }
 }
 ```
 
 ```expect
-fail: node 0 requires quotient(x + d * k, d) == quotient(x, d) + k
+fail: solve
 ```

@@ -21,21 +21,7 @@ theorem successor_nonnegative(i: int32, n: int32) {
     requires i <= n;
     requires defined(i + 1);
     ensures 0 <= to_integer(i + 1) by {
-        arithmetic_certificate signed_int32 {
-            premise 0: 0 <= i => 0 <= i;
-            premise 1: i <= n => i <= n;
-            int32_range => n <= 2147483646;
-            add 1, 2 => (i + n) <= (n + 2147483646);
-            interval_from_affine 0 (i) (0) (2147483647);
-            interval_from_affine 3 (i) (-2147483648) (2147483646);
-            interval_intersect 4, 5 (0) (2147483646);
-            interval_atom (1) (1) (1);
-            interval_add_bounded 6, 7 (1) (2147483647);
-            trivial => -1 <= 0;
-            add 0, 9 => (0 + -1) <= (i + 0);
-            affine_conclusion 10 8 => (0 as int32) <= ((i + 1) as int32);
-            conclusion 11;
-        }
+        solve() using { 0 <= i; i <= n; };
     }
 }
 
@@ -45,5 +31,5 @@ int32 next_index(int32 i, int32 n) {
 ```
 
 ```expect
-fail: node 2 does not state what its rule derives from its inputs
+fail: solve
 ```

@@ -5893,8 +5893,8 @@ mod shift_overflow_refusal_tests {
 }
 
 /// Whether a proposition holds with no facts at all, by a constant structural
-/// check: a condition that is the ground constant it asserts (`0 <= 0` lowers
-/// to `true is true`), or a comparison of a term with itself whose value
+/// check: a condition that is the ground constant it asserts, a closed native
+/// comparison, or a comparison of a term with itself whose value
 /// ([`ConditionTerm::reflexive_value`]) is the one asserted.
 ///
 /// Every `using` list consults this one rule, so a premise that states such a
@@ -5903,6 +5903,19 @@ mod shift_overflow_refusal_tests {
 pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool {
     match proposition {
         Proposition::ConditionIs(ConditionTerm::Constant(constant), value) => constant == value,
+        Proposition::ConditionIs(
+            condition @ ConditionTerm::Compare {
+                format,
+                left,
+                right,
+                ..
+            },
+            value,
+        ) if format.constant_from_term(left).is_some()
+            && format.constant_from_term(right).is_some() =>
+        {
+            PureFactContext::decide_intrinsically(condition) == Some(*value)
+        }
         Proposition::ConditionIs(condition, value) => condition.reflexive_value() == Some(*value),
         _ => false,
     }
@@ -6119,6 +6132,37 @@ fn listed_premise_holds_with(
 #[cfg(test)]
 mod integer_equality_citation_tests {
     use super::*;
+
+    #[test]
+    fn listed_closed_native_order_is_checked_without_facts() {
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let condition = ConditionTerm::Compare {
+                format,
+                relation: CompareRelation::LessThan,
+                left: Box::new(
+                    crate::kernel::machine_integer::range::constant_word(format, &0.into())
+                        .unwrap(),
+                ),
+                right: Box::new(
+                    crate::kernel::machine_integer::range::constant_word(format, &2.into())
+                        .unwrap(),
+                ),
+            };
+            assert!(listed_premise_holds(
+                &Proposition::ConditionIs(condition.clone(), true),
+                |_| false
+            ));
+            assert!(!listed_premise_holds(
+                &Proposition::ConditionIs(condition, false),
+                |_| false
+            ));
+        }
+    }
 
     #[test]
     fn listed_integer_constant_arithmetic_is_available_without_facts() {

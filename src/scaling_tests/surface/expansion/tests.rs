@@ -25,30 +25,6 @@ fn batch_source_positions_walk_a_long_line_once() {
 }
 
 #[test]
-fn arithmetic_certificate_mixed_atom_lowering_scales_with_selected_inputs() {
-    let mut work = Vec::new();
-    for width in [8, 16, 32, 64] {
-        let mut parameters = vec!["x: int32".to_string()];
-        parameters.extend((0..width).map(|i| format!("unused{i}: int32")));
-        let nodes = "trivial => to_integer(x) == to_integer(x);\n".repeat(width);
-        let source = format!(
-            "theorem selected({}) {{ ensures to_integer(x) == to_integer(x) by {{ arithmetic_certificate {{ {nodes} conclusion 0; }} }} }}",
-            parameters.join(", ")
-        );
-        let (result, measured) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
-        result.unwrap();
-        work.push(measured);
-    }
-    for pair in work.windows(2) {
-        assert!(
-            pair[1] <= 3 * pair[0],
-            "mixed certificate lowering grew superlinearly: {work:?}"
-        );
-    }
-}
-
-#[test]
 fn trace_source_index_scales_with_sites_and_unrelated_source() {
     let mut total = Vec::new();
     let mut query_work = Vec::new();

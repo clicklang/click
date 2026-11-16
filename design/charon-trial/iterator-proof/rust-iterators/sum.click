@@ -29,7 +29,7 @@ fn sum(bytes: &[u8]) -> i32 {
         peel(prefix(bytes, 0u64)) using { 0u64 <= 0u64; };
         solve();
     }
-    have 0 <= total and total <= 255 * (bytes.len() - loop(0).iter.len());
+    have 0 <= total and to_integer(total) <= 255 * (to_integer(bytes.len()) - to_integer(loop(0).iter.len()));
     have total == prefix(bytes, bytes.len() - loop(0).iter.len());
     loop {
         decreases iter.len();
@@ -37,11 +37,18 @@ fn sum(bytes: &[u8]) -> i32 {
         invariant bytes.len() <= 1000u64;
         invariant iter.len() <= bytes.len();
         invariant iter.as_slice() == bytes + (bytes.len() - iter.len());
-        invariant 0 <= total and total <= 255 * (bytes.len() - iter.len());
+        invariant 0 <= total and to_integer(total) <= 255 * (to_integer(bytes.len()) - to_integer(iter.len()));
         invariant total == prefix(bytes, bytes.len() - iter.len());
         preserve by {
             if 0u64 < iter.len() {
                 mark iteration;
+                have to_integer(total) <= 255000 by {
+                    solve() using {
+                        to_integer(total) <= 255 * (to_integer(bytes.len()) - to_integer(iter.len()));
+                        iter.len() <= bytes.len();
+                        bytes.len() <= 1000u64;
+                    };
+                }
                 have 0 <= to_integer(bytes.len() - iter.len());
                 have to_integer(bytes.len() - iter.len()) < 18446744073709551615;
                 have prefix(bytes, (bytes.len() - iter.len()) + 1u64) == prefix(bytes, (bytes.len() - iter.len())) + to_integer(bytes[(bytes.len() - iter.len())] as i32) by {
@@ -58,14 +65,22 @@ fn sum(bytes: &[u8]) -> i32 {
                 apply(pointer_association(bytes, bytes.len() - at(iteration, iter.len()), 1u64));
                 step();
                 have at(iteration, bytes[(bytes.len() - iter.len())]) == byte;
-                have defined(total + byte as i32);
+                have defined(total + byte as i32) by {
+                    solve() using { 0 <= total; to_integer(total) <= 255000; };
+                }
+                mark before_total_write;
                 have to_integer(total + byte as i32) == to_integer(total) + to_integer(byte as i32);
+                have 0 <= to_integer(at(before_total_write, total)) + to_integer(byte as i32) by {
+                    solve() using { 0 <= total; };
+                }
                 step_until(assignment(total, 1)); step();
                 step_until(back_edge());
                 have to_integer(iter.len()) == to_integer(at(iteration, iter.len())) - 1;
-                have to_integer(bytes.len() - iter.len()) == to_integer(bytes.len()) - to_integer(iter.len());
-                have to_integer(bytes.len() - at(iteration, iter.len())) == to_integer(bytes.len()) - to_integer(at(iteration, iter.len()));
-                have to_integer((bytes.len() - at(iteration, iter.len())) + 1u64) == to_integer(bytes.len() - at(iteration, iter.len())) + 1;
+                have to_integer(iter.len()) <= to_integer(bytes.len());
+                apply(integer::uint64_subtract_to_integer(bytes.len(), iter.len()));
+                have to_integer(at(iteration, iter.len())) <= to_integer(bytes.len());
+                apply(integer::uint64_subtract_to_integer(bytes.len(), at(iteration, iter.len())));
+                apply(integer::uint64_add_to_integer(bytes.len() - at(iteration, iter.len()), 1u64));
                 have to_integer(bytes.len() - iter.len()) == to_integer((bytes.len() - at(iteration, iter.len())) + 1u64);
                 have iter.len() <= bytes.len();
                 have iter.as_slice() == bytes + (bytes.len() - iter.len()) by {
@@ -73,8 +88,14 @@ fn sum(bytes: &[u8]) -> i32 {
                     known();
                 }
                 have iter.len() < at(iteration, iter.len());
-                have 0 <= total;
-                have to_integer(total) <= 255 * (bytes.len() - iter.len());
+                have to_integer(total) == to_integer(at(before_total_write, total)) + to_integer(byte as i32) by { known(); }
+                have 0 <= total by {
+                    solve() using {
+                        0 <= to_integer(at(before_total_write, total)) + to_integer(byte as i32);
+                        to_integer(total) == to_integer(at(before_total_write, total)) + to_integer(byte as i32);
+                    };
+                }
+                have to_integer(total) <= 255 * (to_integer(bytes.len()) - to_integer(iter.len()));
             } else {
                 have iter.len() == 0u64;
                 step(); step(); step(); step(); step();

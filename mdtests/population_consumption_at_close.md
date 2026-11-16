@@ -59,190 +59,49 @@ uint32 contribute_early(struct counter* p) {
     }
     open(control(p)) {
         have (to_integer(count(remaining(p))) - 1) >= 1 by {
-            arithmetic_certificate {
-                premise 0: to_integer(count(remaining(p))) > 1 => to_integer(count(remaining(p))) >
-                    1;
-                conclusion 0;
-            }
+            solve() using { to_integer(count(remaining(p))) > 1; };
         }
         have (to_integer(count(remaining(p))) - 1) <= 3 by {
-            arithmetic_certificate {
-                premise 0: to_integer(count(remaining(p))) <= 3 => to_integer(count(remaining(p)))
-                    <= 3;
-                trivial => -1 <= 0;
-                add 0, 1 => (to_integer(count(remaining(p))) + -1) <= (3 + 0);
-                conclusion 2;
-            }
+            solve() using { to_integer(count(remaining(p))) <= 3; };
         }
         unfold(remaining(p));
         step();
         have to_integer(p->value) == (3 - to_integer(count(remaining(p)))) by {
             have 0 <= (to_integer(old(p->value)) + 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(p->value)) + 1) < 0;
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) <= at(function.entry, 3);
-                    premise 1: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 2 reverse => at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) <= at(function.entry,
-                        to_integer(p->value));
-                    add 0, 1 => (to_integer(old(p->value)) + 1 + at(function.entry,
-                        (to_integer(count(remaining(p))) - 1))) < (0 + at(function.entry, 3));
-                    add 4, 3 => (to_integer(old(p->value)) + 1 + at(function.entry,
-                        (to_integer(count(remaining(p))) - 1)) + at(function.entry, (3 -
-                        to_integer(count(remaining(p)))))) < (0 + at(function.entry, 3) +
-                        at(function.entry, to_integer(p->value)));
-                    conclusion 5;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                        at(function.entry, 3); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); };
             }
             have (to_integer(old(p->value)) + 1) <= 4294967295 by {
-                arithmetic_certificate {
-                    negated_goal => 4294967295 < (to_integer(old(p->value)) + 1);
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                        at(function.entry, 1) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) >= at(function.entry, 1);
-                    premise 1: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 2 => at(function.entry, to_integer(p->value)) <=
-                        at(function.entry, (3 - to_integer(count(remaining(p)))));
-                    add 0, 1 => (4294967295 + at(function.entry, 1)) < (to_integer(old(p->value)) +
-                        1 + at(function.entry, (to_integer(count(remaining(p))) - 1)));
-                    add 4, 3 => (4294967295 + at(function.entry, 1) + at(function.entry,
-                        to_integer(p->value))) < (to_integer(old(p->value)) + 1 + at(function.entry,
-                        (to_integer(count(remaining(p))) - 1)) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))));
-                    conclusion 5;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                        at(function.entry, 1); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); };
             }
             have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-                arithmetic_certificate rules {
-                    premise 0: 0 <= (to_integer(old(p->value)) + 1) => 0 <=
-                        (to_integer(old(p->value)) + 1);
-                    premise 1: (to_integer(old(p->value)) + 1) <= 4294967295 =>
-                        (to_integer(old(p->value)) + 1) <= 4294967295;
-                    integer_operation_identity bounds [0, 1] => to_integer(p->value) ==
-                        (to_integer(old(p->value)) + 1);
-                    conclusion 0;
-                }
+                solve() using { 0 <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= 4294967295; };
             }
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(count(remaining(p)))) - 1) < -2147483648;
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                        at(function.entry, 1) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) >= at(function.entry, 1);
-                    add 0, 1 => ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 1))
-                        < (-2147483648 + at(function.entry, (to_integer(count(remaining(p))) - 1)));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                        at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(old(count(remaining(p)))) - 1);
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) <= at(function.entry, 3);
-                    add 0, 1 => (2147483647 + at(function.entry, (to_integer(count(remaining(p))) -
-                        1))) < ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 3));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                        at(function.entry, 3); };
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                arithmetic_certificate rules {
-                    premise 0: -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) =>
-                        -2147483648 <= (to_integer(old(count(remaining(p)))) - 1);
-                    premise 1: (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 =>
-                        (to_integer(old(count(remaining(p)))) - 1) <= 2147483647;
-                    integer_operation_identity bounds [0, 1] => to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1);
-                    conclusion 0;
-                }
+                solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
             }
             have to_integer(p->value) <= (3 - to_integer(count(remaining(p)))) by {
-                arithmetic_certificate {
-                    negated_goal => (3 - to_integer(count(remaining(p)))) < to_integer(p->value);
-                    premise 0: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 1 => at(function.entry, to_integer(p->value)) <=
-                        at(function.entry, (3 - to_integer(count(remaining(p)))));
-                    premise 1: to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1) =>
-                        to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) -
-                        1);
-                    less_equal_from_equal 3 => to_integer(count(remaining(p))) <=
-                        (to_integer(old(count(remaining(p)))) - 1);
-                    premise 2: to_integer(p->value) == (to_integer(old(p->value)) + 1) =>
-                        to_integer(p->value) == (to_integer(old(p->value)) + 1);
-                    less_equal_from_equal 5 => to_integer(p->value) <= (to_integer(old(p->value)) +
-                        1);
-                    add 0, 2 => ((3 - to_integer(count(remaining(p)))) + at(function.entry,
-                        to_integer(p->value))) < (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))));
-                    add 7, 4 => ((3 - to_integer(count(remaining(p)))) + at(function.entry,
-                        to_integer(p->value)) + to_integer(count(remaining(p)))) <
-                        (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1));
-                    add 8, 6 => ((3 - to_integer(count(remaining(p)))) + at(function.entry,
-                        to_integer(p->value)) + to_integer(count(remaining(p))) +
-                        to_integer(p->value)) < (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1) + (to_integer(old(p->value)) + 1));
-                    conclusion 9;
-                }
+                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
+                        (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
             }
             have (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) by {
-                arithmetic_certificate {
-                    negated_goal => to_integer(p->value) < (3 - to_integer(count(remaining(p))));
-                    premise 0: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 1 reverse => at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) <= at(function.entry,
-                        to_integer(p->value));
-                    premise 1: to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1) =>
-                        to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) -
-                        1);
-                    less_equal_from_equal 3 reverse => (to_integer(old(count(remaining(p)))) - 1) <=
-                        to_integer(count(remaining(p)));
-                    premise 2: to_integer(p->value) == (to_integer(old(p->value)) + 1) =>
-                        to_integer(p->value) == (to_integer(old(p->value)) + 1);
-                    less_equal_from_equal 5 reverse => (to_integer(old(p->value)) + 1) <=
-                        to_integer(p->value);
-                    add 0, 2 => (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p)))))) < ((3 - to_integer(count(remaining(p))))
-                        + at(function.entry, to_integer(p->value)));
-                    add 7, 4 => (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1)) < ((3 - to_integer(count(remaining(p)))) + at(function.entry,
-                        to_integer(p->value)) + to_integer(count(remaining(p))));
-                    add 8, 6 => (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1) + (to_integer(old(p->value)) + 1)) < ((3 -
-                        to_integer(count(remaining(p)))) + at(function.entry, to_integer(p->value))
-                        + to_integer(count(remaining(p))) + to_integer(p->value));
-                    conclusion 9;
-                }
+                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
+                        (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
             }
-            arithmetic_certificate {
-                premise 0: to_integer(p->value) <= (3 - to_integer(count(remaining(p)))) =>
-                    to_integer(p->value) <= (3 - to_integer(count(remaining(p))));
-                premise 1: (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) => (3 -
-                    to_integer(count(remaining(p)))) <= to_integer(p->value);
-                equal_from_bounds 0, 1 => to_integer(p->value) == (3 -
-                    to_integer(count(remaining(p))));
-                conclusion 2;
-            }
+            solve() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
         }
     }
     open(control(p)) {
@@ -251,37 +110,15 @@ uint32 contribute_early(struct counter* p) {
     known();
     have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
         have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-            arithmetic_certificate {
-                negated_goal => (to_integer(old(count(remaining(p)))) - 1) < -2147483648;
-                premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                    at(function.entry, 1) => at(function.entry, (to_integer(count(remaining(p))) -
-                    1)) >= at(function.entry, 1);
-                add 0, 1 => ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 1)) <
-                    (-2147483648 + at(function.entry, (to_integer(count(remaining(p))) - 1)));
-                conclusion 2;
-            }
+            solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                    at(function.entry, 1); };
         }
         have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-            arithmetic_certificate {
-                negated_goal => 2147483647 < (to_integer(old(count(remaining(p)))) - 1);
-                premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                    at(function.entry, 3) => at(function.entry, (to_integer(count(remaining(p))) -
-                    1)) <= at(function.entry, 3);
-                add 0, 1 => (2147483647 + at(function.entry, (to_integer(count(remaining(p))) - 1)))
-                    < ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 3));
-                conclusion 2;
-            }
+            solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                    at(function.entry, 3); };
         }
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-            arithmetic_certificate rules {
-                premise 0: -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) => -2147483648
-                    <= (to_integer(old(count(remaining(p)))) - 1);
-                premise 1: (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 =>
-                    (to_integer(old(count(remaining(p)))) - 1) <= 2147483647;
-                integer_operation_identity bounds [0, 1] => to_integer(count(remaining(p))) ==
-                    (to_integer(old(count(remaining(p)))) - 1);
-                conclusion 0;
-            }
+            solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
         }
         known();
     }
@@ -311,190 +148,49 @@ uint32 contribute_nested(struct counter* p) {
 } by {
     open(control(p)) {
         have (to_integer(count(remaining(p))) - 1) >= 1 by {
-            arithmetic_certificate {
-                premise 0: to_integer(count(remaining(p))) > 1 => to_integer(count(remaining(p))) >
-                    1;
-                conclusion 0;
-            }
+            solve() using { to_integer(count(remaining(p))) > 1; };
         }
         have (to_integer(count(remaining(p))) - 1) <= 3 by {
-            arithmetic_certificate {
-                premise 0: to_integer(count(remaining(p))) <= 3 => to_integer(count(remaining(p)))
-                    <= 3;
-                trivial => -1 <= 0;
-                add 0, 1 => (to_integer(count(remaining(p))) + -1) <= (3 + 0);
-                conclusion 2;
-            }
+            solve() using { to_integer(count(remaining(p))) <= 3; };
         }
         unfold(remaining(p));
         step();
         have to_integer(p->value) == (3 - to_integer(count(remaining(p)))) by {
             have 0 <= (to_integer(old(p->value)) + 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(p->value)) + 1) < 0;
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) <= at(function.entry, 3);
-                    premise 1: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 2 reverse => at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) <= at(function.entry,
-                        to_integer(p->value));
-                    add 0, 1 => (to_integer(old(p->value)) + 1 + at(function.entry,
-                        (to_integer(count(remaining(p))) - 1))) < (0 + at(function.entry, 3));
-                    add 4, 3 => (to_integer(old(p->value)) + 1 + at(function.entry,
-                        (to_integer(count(remaining(p))) - 1)) + at(function.entry, (3 -
-                        to_integer(count(remaining(p)))))) < (0 + at(function.entry, 3) +
-                        at(function.entry, to_integer(p->value)));
-                    conclusion 5;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                        at(function.entry, 3); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); };
             }
             have (to_integer(old(p->value)) + 1) <= 4294967295 by {
-                arithmetic_certificate {
-                    negated_goal => 4294967295 < (to_integer(old(p->value)) + 1);
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                        at(function.entry, 1) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) >= at(function.entry, 1);
-                    premise 1: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 2 => at(function.entry, to_integer(p->value)) <=
-                        at(function.entry, (3 - to_integer(count(remaining(p)))));
-                    add 0, 1 => (4294967295 + at(function.entry, 1)) < (to_integer(old(p->value)) +
-                        1 + at(function.entry, (to_integer(count(remaining(p))) - 1)));
-                    add 4, 3 => (4294967295 + at(function.entry, 1) + at(function.entry,
-                        to_integer(p->value))) < (to_integer(old(p->value)) + 1 + at(function.entry,
-                        (to_integer(count(remaining(p))) - 1)) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))));
-                    conclusion 5;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                        at(function.entry, 1); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); };
             }
             have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-                arithmetic_certificate rules {
-                    premise 0: 0 <= (to_integer(old(p->value)) + 1) => 0 <=
-                        (to_integer(old(p->value)) + 1);
-                    premise 1: (to_integer(old(p->value)) + 1) <= 4294967295 =>
-                        (to_integer(old(p->value)) + 1) <= 4294967295;
-                    integer_operation_identity bounds [0, 1] => to_integer(p->value) ==
-                        (to_integer(old(p->value)) + 1);
-                    conclusion 0;
-                }
+                solve() using { 0 <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= 4294967295; };
             }
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(count(remaining(p)))) - 1) < -2147483648;
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                        at(function.entry, 1) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) >= at(function.entry, 1);
-                    add 0, 1 => ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 1))
-                        < (-2147483648 + at(function.entry, (to_integer(count(remaining(p))) - 1)));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                        at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(old(count(remaining(p)))) - 1);
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) <= at(function.entry, 3);
-                    add 0, 1 => (2147483647 + at(function.entry, (to_integer(count(remaining(p))) -
-                        1))) < ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 3));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                        at(function.entry, 3); };
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                arithmetic_certificate rules {
-                    premise 0: -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) =>
-                        -2147483648 <= (to_integer(old(count(remaining(p)))) - 1);
-                    premise 1: (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 =>
-                        (to_integer(old(count(remaining(p)))) - 1) <= 2147483647;
-                    integer_operation_identity bounds [0, 1] => to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1);
-                    conclusion 0;
-                }
+                solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
             }
             have to_integer(p->value) <= (3 - to_integer(count(remaining(p)))) by {
-                arithmetic_certificate {
-                    negated_goal => (3 - to_integer(count(remaining(p)))) < to_integer(p->value);
-                    premise 0: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 1 => at(function.entry, to_integer(p->value)) <=
-                        at(function.entry, (3 - to_integer(count(remaining(p)))));
-                    premise 1: to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1) =>
-                        to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) -
-                        1);
-                    less_equal_from_equal 3 => to_integer(count(remaining(p))) <=
-                        (to_integer(old(count(remaining(p)))) - 1);
-                    premise 2: to_integer(p->value) == (to_integer(old(p->value)) + 1) =>
-                        to_integer(p->value) == (to_integer(old(p->value)) + 1);
-                    less_equal_from_equal 5 => to_integer(p->value) <= (to_integer(old(p->value)) +
-                        1);
-                    add 0, 2 => ((3 - to_integer(count(remaining(p)))) + at(function.entry,
-                        to_integer(p->value))) < (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))));
-                    add 7, 4 => ((3 - to_integer(count(remaining(p)))) + at(function.entry,
-                        to_integer(p->value)) + to_integer(count(remaining(p)))) <
-                        (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1));
-                    add 8, 6 => ((3 - to_integer(count(remaining(p)))) + at(function.entry,
-                        to_integer(p->value)) + to_integer(count(remaining(p))) +
-                        to_integer(p->value)) < (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1) + (to_integer(old(p->value)) + 1));
-                    conclusion 9;
-                }
+                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
+                        (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
             }
             have (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) by {
-                arithmetic_certificate {
-                    negated_goal => to_integer(p->value) < (3 - to_integer(count(remaining(p))));
-                    premise 0: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 1 reverse => at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) <= at(function.entry,
-                        to_integer(p->value));
-                    premise 1: to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1) =>
-                        to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) -
-                        1);
-                    less_equal_from_equal 3 reverse => (to_integer(old(count(remaining(p)))) - 1) <=
-                        to_integer(count(remaining(p)));
-                    premise 2: to_integer(p->value) == (to_integer(old(p->value)) + 1) =>
-                        to_integer(p->value) == (to_integer(old(p->value)) + 1);
-                    less_equal_from_equal 5 reverse => (to_integer(old(p->value)) + 1) <=
-                        to_integer(p->value);
-                    add 0, 2 => (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p)))))) < ((3 - to_integer(count(remaining(p))))
-                        + at(function.entry, to_integer(p->value)));
-                    add 7, 4 => (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1)) < ((3 - to_integer(count(remaining(p)))) + at(function.entry,
-                        to_integer(p->value)) + to_integer(count(remaining(p))));
-                    add 8, 6 => (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1) + (to_integer(old(p->value)) + 1)) < ((3 -
-                        to_integer(count(remaining(p)))) + at(function.entry, to_integer(p->value))
-                        + to_integer(count(remaining(p))) + to_integer(p->value));
-                    conclusion 9;
-                }
+                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
+                        (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
             }
-            arithmetic_certificate {
-                premise 0: to_integer(p->value) <= (3 - to_integer(count(remaining(p)))) =>
-                    to_integer(p->value) <= (3 - to_integer(count(remaining(p))));
-                premise 1: (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) => (3 -
-                    to_integer(count(remaining(p)))) <= to_integer(p->value);
-                equal_from_bounds 0, 1 => to_integer(p->value) == (3 -
-                    to_integer(count(remaining(p))));
-                conclusion 2;
-            }
+            solve() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
         }
     }
     step();
@@ -502,228 +198,51 @@ uint32 contribute_nested(struct counter* p) {
         have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
             have to_integer(p->value) <= (to_integer(old(p->value)) + 1) by {
                 have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                    arithmetic_certificate {
-                        negated_goal => (to_integer(old(count(remaining(p)))) - 1) < -2147483648;
-                        premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                            at(function.entry, 1) => at(function.entry,
-                            (to_integer(count(remaining(p))) - 1)) >= at(function.entry, 1);
-                        add 0, 1 => ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry,
-                            1)) < (-2147483648 + at(function.entry, (to_integer(count(remaining(p)))
-                            - 1)));
-                        conclusion 2;
-                    }
+                    solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                            at(function.entry, 1); };
                 }
                 have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                    arithmetic_certificate {
-                        negated_goal => 2147483647 < (to_integer(old(count(remaining(p)))) - 1);
-                        premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                            at(function.entry, 3) => at(function.entry,
-                            (to_integer(count(remaining(p))) - 1)) <= at(function.entry, 3);
-                        add 0, 1 => (2147483647 + at(function.entry,
-                            (to_integer(count(remaining(p))) - 1))) <
-                            ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 3));
-                        conclusion 2;
-                    }
+                    solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                            at(function.entry, 3); };
                 }
                 have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                    arithmetic_certificate rules {
-                        premise 0: -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) =>
-                            -2147483648 <= (to_integer(old(count(remaining(p)))) - 1);
-                        premise 1: (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 =>
-                            (to_integer(old(count(remaining(p)))) - 1) <= 2147483647;
-                        integer_operation_identity bounds [0, 1] => to_integer(count(remaining(p)))
-                            == (to_integer(old(count(remaining(p)))) - 1);
-                        conclusion 0;
-                    }
+                    solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
                 }
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(p->value)) + 1) < to_integer(p->value);
-                    premise 0: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 1 reverse => at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) <= at(function.entry,
-                        to_integer(p->value));
-                    premise 1: to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1) =>
-                        to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) -
-                        1);
-                    less_equal_from_equal 3 reverse => (to_integer(old(count(remaining(p)))) - 1) <=
-                        to_integer(count(remaining(p)));
-                    premise 2: to_integer(p->value) == (3 - to_integer(count(remaining(p)))) =>
-                        to_integer(p->value) == (3 - to_integer(count(remaining(p))));
-                    less_equal_from_equal 5 => to_integer(p->value) <= (3 -
-                        to_integer(count(remaining(p))));
-                    add 0, 2 => (to_integer(old(p->value)) + 1 + at(function.entry, (3 -
-                        to_integer(count(remaining(p)))))) < (to_integer(p->value) +
-                        at(function.entry, to_integer(p->value)));
-                    add 7, 4 => (to_integer(old(p->value)) + 1 + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1)) < (to_integer(p->value) + at(function.entry, to_integer(p->value)) +
-                        to_integer(count(remaining(p))));
-                    add 8, 6 => (to_integer(old(p->value)) + 1 + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1) + to_integer(p->value)) < (to_integer(p->value) + at(function.entry,
-                        to_integer(p->value)) + to_integer(count(remaining(p))) + (3 -
-                        to_integer(count(remaining(p)))));
-                    conclusion 9;
-                }
+                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
+                        (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (3 - to_integer(count(remaining(p)))); };
             }
             have (to_integer(old(p->value)) + 1) <= to_integer(p->value) by {
                 have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                    arithmetic_certificate {
-                        negated_goal => (to_integer(old(count(remaining(p)))) - 1) < -2147483648;
-                        premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                            at(function.entry, 1) => at(function.entry,
-                            (to_integer(count(remaining(p))) - 1)) >= at(function.entry, 1);
-                        add 0, 1 => ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry,
-                            1)) < (-2147483648 + at(function.entry, (to_integer(count(remaining(p)))
-                            - 1)));
-                        conclusion 2;
-                    }
+                    solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                            at(function.entry, 1); };
                 }
                 have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                    arithmetic_certificate {
-                        negated_goal => 2147483647 < (to_integer(old(count(remaining(p)))) - 1);
-                        premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                            at(function.entry, 3) => at(function.entry,
-                            (to_integer(count(remaining(p))) - 1)) <= at(function.entry, 3);
-                        add 0, 1 => (2147483647 + at(function.entry,
-                            (to_integer(count(remaining(p))) - 1))) <
-                            ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 3));
-                        conclusion 2;
-                    }
+                    solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                            at(function.entry, 3); };
                 }
                 have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                    arithmetic_certificate rules {
-                        premise 0: -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) =>
-                            -2147483648 <= (to_integer(old(count(remaining(p)))) - 1);
-                        premise 1: (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 =>
-                            (to_integer(old(count(remaining(p)))) - 1) <= 2147483647;
-                        integer_operation_identity bounds [0, 1] => to_integer(count(remaining(p)))
-                            == (to_integer(old(count(remaining(p)))) - 1);
-                        conclusion 0;
-                    }
+                    solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
                 }
-                arithmetic_certificate {
-                    negated_goal => to_integer(p->value) < (to_integer(old(p->value)) + 1);
-                    premise 0: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 1 => at(function.entry, to_integer(p->value)) <=
-                        at(function.entry, (3 - to_integer(count(remaining(p)))));
-                    premise 1: to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1) =>
-                        to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) -
-                        1);
-                    less_equal_from_equal 3 => to_integer(count(remaining(p))) <=
-                        (to_integer(old(count(remaining(p)))) - 1);
-                    premise 2: to_integer(p->value) == (3 - to_integer(count(remaining(p)))) =>
-                        to_integer(p->value) == (3 - to_integer(count(remaining(p))));
-                    less_equal_from_equal 5 reverse => (3 - to_integer(count(remaining(p)))) <=
-                        to_integer(p->value);
-                    add 0, 2 => (to_integer(p->value) + at(function.entry, to_integer(p->value))) <
-                        (to_integer(old(p->value)) + 1 + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))));
-                    add 7, 4 => (to_integer(p->value) + at(function.entry, to_integer(p->value)) +
-                        to_integer(count(remaining(p)))) < (to_integer(old(p->value)) + 1 +
-                        at(function.entry, (3 - to_integer(count(remaining(p))))) +
-                        (to_integer(old(count(remaining(p)))) - 1));
-                    add 8, 6 => (to_integer(p->value) + at(function.entry, to_integer(p->value)) +
-                        to_integer(count(remaining(p))) + (3 - to_integer(count(remaining(p))))) <
-                        (to_integer(old(p->value)) + 1 + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1) + to_integer(p->value));
-                    conclusion 9;
-                }
+                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
+                        (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (3 - to_integer(count(remaining(p)))); };
             }
-            arithmetic_certificate {
-                premise 0: to_integer(p->value) <= (to_integer(old(p->value)) + 1) =>
-                    to_integer(p->value) <= (to_integer(old(p->value)) + 1);
-                premise 1: (to_integer(old(p->value)) + 1) <= to_integer(p->value) =>
-                    (to_integer(old(p->value)) + 1) <= to_integer(p->value);
-                equal_from_bounds 0, 1 => to_integer(p->value) == (to_integer(old(p->value)) + 1);
-                conclusion 2;
-            }
+            solve() using { to_integer(p->value) <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= to_integer(p->value); };
         }
     }
     step();
     known();
     have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
         have to_integer(count(remaining(p))) <= (to_integer(old(count(remaining(p)))) - 1) by {
-            arithmetic_certificate {
-                negated_goal => (to_integer(old(count(remaining(p)))) - 1) <
-                    to_integer(count(remaining(p)));
-                premise 0: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                    to_integer(count(remaining(p))))) => at(function.entry, to_integer(p->value)) ==
-                    at(function.entry, (3 - to_integer(count(remaining(p)))));
-                less_equal_from_equal 1 reverse => at(function.entry, (3 -
-                    to_integer(count(remaining(p))))) <= at(function.entry, to_integer(p->value));
-                premise 1: to_integer(p->value) == (3 - to_integer(count(remaining(p)))) =>
-                    to_integer(p->value) == (3 - to_integer(count(remaining(p))));
-                less_equal_from_equal 3 => to_integer(p->value) <= (3 -
-                    to_integer(count(remaining(p))));
-                premise 2: to_integer(p->value) == (to_integer(old(p->value)) + 1) =>
-                    to_integer(p->value) == (to_integer(old(p->value)) + 1);
-                less_equal_from_equal 5 reverse => (to_integer(old(p->value)) + 1) <=
-                    to_integer(p->value);
-                add 0, 2 => ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, (3 -
-                    to_integer(count(remaining(p)))))) < (to_integer(count(remaining(p))) +
-                    at(function.entry, to_integer(p->value)));
-                add 7, 4 => ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, (3 -
-                    to_integer(count(remaining(p))))) + to_integer(p->value)) <
-                    (to_integer(count(remaining(p))) + at(function.entry, to_integer(p->value)) + (3
-                    - to_integer(count(remaining(p)))));
-                add 8, 6 => ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, (3 -
-                    to_integer(count(remaining(p))))) + to_integer(p->value) +
-                    (to_integer(old(p->value)) + 1)) < (to_integer(count(remaining(p))) +
-                    at(function.entry, to_integer(p->value)) + (3 - to_integer(count(remaining(p))))
-                    + to_integer(p->value));
-                conclusion 9;
-            }
+            solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                    to_integer(count(remaining(p))))); to_integer(p->value) == (3 - to_integer(count(remaining(p)))); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
         }
         have (to_integer(old(count(remaining(p)))) - 1) <= to_integer(count(remaining(p))) by {
-            arithmetic_certificate {
-                negated_goal => to_integer(count(remaining(p))) <
-                    (to_integer(old(count(remaining(p)))) - 1);
-                premise 0: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                    to_integer(count(remaining(p))))) => at(function.entry, to_integer(p->value)) ==
-                    at(function.entry, (3 - to_integer(count(remaining(p)))));
-                less_equal_from_equal 1 => at(function.entry, to_integer(p->value)) <=
-                    at(function.entry, (3 - to_integer(count(remaining(p)))));
-                premise 1: to_integer(p->value) == (3 - to_integer(count(remaining(p)))) =>
-                    to_integer(p->value) == (3 - to_integer(count(remaining(p))));
-                less_equal_from_equal 3 reverse => (3 - to_integer(count(remaining(p)))) <=
-                    to_integer(p->value);
-                premise 2: to_integer(p->value) == (to_integer(old(p->value)) + 1) =>
-                    to_integer(p->value) == (to_integer(old(p->value)) + 1);
-                less_equal_from_equal 5 => to_integer(p->value) <= (to_integer(old(p->value)) + 1);
-                add 0, 2 => (to_integer(count(remaining(p))) + at(function.entry,
-                    to_integer(p->value))) < ((to_integer(old(count(remaining(p)))) - 1) +
-                    at(function.entry, (3 - to_integer(count(remaining(p))))));
-                add 7, 4 => (to_integer(count(remaining(p))) + at(function.entry,
-                    to_integer(p->value)) + (3 - to_integer(count(remaining(p))))) <
-                    ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, (3 -
-                    to_integer(count(remaining(p))))) + to_integer(p->value));
-                add 8, 6 => (to_integer(count(remaining(p))) + at(function.entry,
-                    to_integer(p->value)) + (3 - to_integer(count(remaining(p)))) +
-                    to_integer(p->value)) < ((to_integer(old(count(remaining(p)))) - 1) +
-                    at(function.entry, (3 - to_integer(count(remaining(p))))) + to_integer(p->value)
-                    + (to_integer(old(p->value)) + 1));
-                conclusion 9;
-            }
+            solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                    to_integer(count(remaining(p))))); to_integer(p->value) == (3 - to_integer(count(remaining(p)))); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
         }
-        arithmetic_certificate {
-            premise 0: to_integer(count(remaining(p))) <= (to_integer(old(count(remaining(p)))) - 1)
-                => to_integer(count(remaining(p))) <= (to_integer(old(count(remaining(p)))) - 1);
-            premise 1: (to_integer(old(count(remaining(p)))) - 1) <= to_integer(count(remaining(p)))
-                => (to_integer(old(count(remaining(p)))) - 1) <= to_integer(count(remaining(p)));
-            equal_from_bounds 0, 1 => to_integer(count(remaining(p))) ==
-                (to_integer(old(count(remaining(p)))) - 1);
-            conclusion 2;
-        }
+        solve() using { to_integer(count(remaining(p))) <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= to_integer(count(remaining(p))); };
     }
     have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
         known();
@@ -740,190 +259,49 @@ uint32 contribute_branch(struct counter* p, int32 report) {
 } by {
     open(control(p)) {
         have (to_integer(count(remaining(p))) - 1) >= 1 by {
-            arithmetic_certificate {
-                premise 0: to_integer(count(remaining(p))) > 1 => to_integer(count(remaining(p))) >
-                    1;
-                conclusion 0;
-            }
+            solve() using { to_integer(count(remaining(p))) > 1; };
         }
         have (to_integer(count(remaining(p))) - 1) <= 3 by {
-            arithmetic_certificate {
-                premise 0: to_integer(count(remaining(p))) <= 3 => to_integer(count(remaining(p)))
-                    <= 3;
-                trivial => -1 <= 0;
-                add 0, 1 => (to_integer(count(remaining(p))) + -1) <= (3 + 0);
-                conclusion 2;
-            }
+            solve() using { to_integer(count(remaining(p))) <= 3; };
         }
         unfold(remaining(p));
         step();
         have to_integer(p->value) == (3 - to_integer(count(remaining(p)))) by {
             have 0 <= (to_integer(old(p->value)) + 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(p->value)) + 1) < 0;
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) <= at(function.entry, 3);
-                    premise 1: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 2 reverse => at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) <= at(function.entry,
-                        to_integer(p->value));
-                    add 0, 1 => (to_integer(old(p->value)) + 1 + at(function.entry,
-                        (to_integer(count(remaining(p))) - 1))) < (0 + at(function.entry, 3));
-                    add 4, 3 => (to_integer(old(p->value)) + 1 + at(function.entry,
-                        (to_integer(count(remaining(p))) - 1)) + at(function.entry, (3 -
-                        to_integer(count(remaining(p)))))) < (0 + at(function.entry, 3) +
-                        at(function.entry, to_integer(p->value)));
-                    conclusion 5;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                        at(function.entry, 3); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); };
             }
             have (to_integer(old(p->value)) + 1) <= 4294967295 by {
-                arithmetic_certificate {
-                    negated_goal => 4294967295 < (to_integer(old(p->value)) + 1);
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                        at(function.entry, 1) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) >= at(function.entry, 1);
-                    premise 1: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 2 => at(function.entry, to_integer(p->value)) <=
-                        at(function.entry, (3 - to_integer(count(remaining(p)))));
-                    add 0, 1 => (4294967295 + at(function.entry, 1)) < (to_integer(old(p->value)) +
-                        1 + at(function.entry, (to_integer(count(remaining(p))) - 1)));
-                    add 4, 3 => (4294967295 + at(function.entry, 1) + at(function.entry,
-                        to_integer(p->value))) < (to_integer(old(p->value)) + 1 + at(function.entry,
-                        (to_integer(count(remaining(p))) - 1)) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))));
-                    conclusion 5;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                        at(function.entry, 1); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); };
             }
             have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-                arithmetic_certificate rules {
-                    premise 0: 0 <= (to_integer(old(p->value)) + 1) => 0 <=
-                        (to_integer(old(p->value)) + 1);
-                    premise 1: (to_integer(old(p->value)) + 1) <= 4294967295 =>
-                        (to_integer(old(p->value)) + 1) <= 4294967295;
-                    integer_operation_identity bounds [0, 1] => to_integer(p->value) ==
-                        (to_integer(old(p->value)) + 1);
-                    conclusion 0;
-                }
+                solve() using { 0 <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= 4294967295; };
             }
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(count(remaining(p)))) - 1) < -2147483648;
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                        at(function.entry, 1) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) >= at(function.entry, 1);
-                    add 0, 1 => ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 1))
-                        < (-2147483648 + at(function.entry, (to_integer(count(remaining(p))) - 1)));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                        at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(old(count(remaining(p)))) - 1);
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) <= at(function.entry, 3);
-                    add 0, 1 => (2147483647 + at(function.entry, (to_integer(count(remaining(p))) -
-                        1))) < ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 3));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                        at(function.entry, 3); };
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                arithmetic_certificate rules {
-                    premise 0: -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) =>
-                        -2147483648 <= (to_integer(old(count(remaining(p)))) - 1);
-                    premise 1: (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 =>
-                        (to_integer(old(count(remaining(p)))) - 1) <= 2147483647;
-                    integer_operation_identity bounds [0, 1] => to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1);
-                    conclusion 0;
-                }
+                solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
             }
             have to_integer(p->value) <= (3 - to_integer(count(remaining(p)))) by {
-                arithmetic_certificate {
-                    negated_goal => (3 - to_integer(count(remaining(p)))) < to_integer(p->value);
-                    premise 0: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 1 => at(function.entry, to_integer(p->value)) <=
-                        at(function.entry, (3 - to_integer(count(remaining(p)))));
-                    premise 1: to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1) =>
-                        to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) -
-                        1);
-                    less_equal_from_equal 3 => to_integer(count(remaining(p))) <=
-                        (to_integer(old(count(remaining(p)))) - 1);
-                    premise 2: to_integer(p->value) == (to_integer(old(p->value)) + 1) =>
-                        to_integer(p->value) == (to_integer(old(p->value)) + 1);
-                    less_equal_from_equal 5 => to_integer(p->value) <= (to_integer(old(p->value)) +
-                        1);
-                    add 0, 2 => ((3 - to_integer(count(remaining(p)))) + at(function.entry,
-                        to_integer(p->value))) < (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))));
-                    add 7, 4 => ((3 - to_integer(count(remaining(p)))) + at(function.entry,
-                        to_integer(p->value)) + to_integer(count(remaining(p)))) <
-                        (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1));
-                    add 8, 6 => ((3 - to_integer(count(remaining(p)))) + at(function.entry,
-                        to_integer(p->value)) + to_integer(count(remaining(p))) +
-                        to_integer(p->value)) < (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1) + (to_integer(old(p->value)) + 1));
-                    conclusion 9;
-                }
+                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
+                        (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
             }
             have (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) by {
-                arithmetic_certificate {
-                    negated_goal => to_integer(p->value) < (3 - to_integer(count(remaining(p))));
-                    premise 0: at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) => at(function.entry,
-                        to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p)))));
-                    less_equal_from_equal 1 reverse => at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) <= at(function.entry,
-                        to_integer(p->value));
-                    premise 1: to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1) =>
-                        to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) -
-                        1);
-                    less_equal_from_equal 3 reverse => (to_integer(old(count(remaining(p)))) - 1) <=
-                        to_integer(count(remaining(p)));
-                    premise 2: to_integer(p->value) == (to_integer(old(p->value)) + 1) =>
-                        to_integer(p->value) == (to_integer(old(p->value)) + 1);
-                    less_equal_from_equal 5 reverse => (to_integer(old(p->value)) + 1) <=
-                        to_integer(p->value);
-                    add 0, 2 => (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p)))))) < ((3 - to_integer(count(remaining(p))))
-                        + at(function.entry, to_integer(p->value)));
-                    add 7, 4 => (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1)) < ((3 - to_integer(count(remaining(p)))) + at(function.entry,
-                        to_integer(p->value)) + to_integer(count(remaining(p))));
-                    add 8, 6 => (to_integer(p->value) + at(function.entry, (3 -
-                        to_integer(count(remaining(p))))) + (to_integer(old(count(remaining(p)))) -
-                        1) + (to_integer(old(p->value)) + 1)) < ((3 -
-                        to_integer(count(remaining(p)))) + at(function.entry, to_integer(p->value))
-                        + to_integer(count(remaining(p))) + to_integer(p->value));
-                    conclusion 9;
-                }
+                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                        to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
+                        (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
             }
-            arithmetic_certificate {
-                premise 0: to_integer(p->value) <= (3 - to_integer(count(remaining(p)))) =>
-                    to_integer(p->value) <= (3 - to_integer(count(remaining(p))));
-                premise 1: (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) => (3 -
-                    to_integer(count(remaining(p)))) <= to_integer(p->value);
-                equal_from_bounds 0, 1 => to_integer(p->value) == (3 -
-                    to_integer(count(remaining(p))));
-                conclusion 2;
-            }
+            solve() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
         }
     }
     if report != 0 {
@@ -934,37 +312,15 @@ uint32 contribute_branch(struct counter* p, int32 report) {
         known();
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(count(remaining(p)))) - 1) < -2147483648;
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                        at(function.entry, 1) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) >= at(function.entry, 1);
-                    add 0, 1 => ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 1))
-                        < (-2147483648 + at(function.entry, (to_integer(count(remaining(p))) - 1)));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                        at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(old(count(remaining(p)))) - 1);
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) <= at(function.entry, 3);
-                    add 0, 1 => (2147483647 + at(function.entry, (to_integer(count(remaining(p))) -
-                        1))) < ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 3));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                        at(function.entry, 3); };
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                arithmetic_certificate rules {
-                    premise 0: -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) =>
-                        -2147483648 <= (to_integer(old(count(remaining(p)))) - 1);
-                    premise 1: (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 =>
-                        (to_integer(old(count(remaining(p)))) - 1) <= 2147483647;
-                    integer_operation_identity bounds [0, 1] => to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1);
-                    conclusion 0;
-                }
+                solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
             }
             known();
         }
@@ -983,37 +339,15 @@ uint32 contribute_branch(struct counter* p, int32 report) {
         known();
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(old(count(remaining(p)))) - 1) < -2147483648;
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                        at(function.entry, 1) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) >= at(function.entry, 1);
-                    add 0, 1 => ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 1))
-                        < (-2147483648 + at(function.entry, (to_integer(count(remaining(p))) - 1)));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                        at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(old(count(remaining(p)))) - 1);
-                    premise 0: at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3) => at(function.entry, (to_integer(count(remaining(p)))
-                        - 1)) <= at(function.entry, 3);
-                    add 0, 1 => (2147483647 + at(function.entry, (to_integer(count(remaining(p))) -
-                        1))) < ((to_integer(old(count(remaining(p)))) - 1) + at(function.entry, 3));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                        at(function.entry, 3); };
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                arithmetic_certificate rules {
-                    premise 0: -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) =>
-                        -2147483648 <= (to_integer(old(count(remaining(p)))) - 1);
-                    premise 1: (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 =>
-                        (to_integer(old(count(remaining(p)))) - 1) <= 2147483647;
-                    integer_operation_identity bounds [0, 1] => to_integer(count(remaining(p))) ==
-                        (to_integer(old(count(remaining(p)))) - 1);
-                    conclusion 0;
-                }
+                solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
             }
             known();
         }
@@ -1037,131 +371,30 @@ uint32 sequential_early(struct counter* p) {
     fold(3 of remaining(p));
     have to_integer(p->value) == (3 - to_integer(count(remaining(p)))) by {
         have -2147483648 <= (to_integer(old(count(remaining(p)))) + 3) by {
-            arithmetic_certificate {
-                negated_goal => (to_integer(old(count(remaining(p)))) + 3) < -2147483648;
-                premise 0: 0 <= to_integer(old(count(remaining(p)))) => 0 <=
-                    to_integer(old(count(remaining(p))));
-                add 0, 1 => (to_integer(old(count(remaining(p)))) + 3 + 0) < (-2147483648 +
-                    to_integer(old(count(remaining(p)))));
-                conclusion 2;
-            }
+            solve() using { 0 <= to_integer(old(count(remaining(p)))); };
         }
         have (to_integer(old(count(remaining(p)))) + 3) <= 2147483647 by {
-            arithmetic_certificate {
-                negated_goal => 2147483647 < (to_integer(old(count(remaining(p)))) + 3);
-                premise 0: to_integer(old(count(remaining(p)))) == 0 =>
-                    to_integer(old(count(remaining(p)))) == 0;
-                less_equal_from_equal 1 => to_integer(old(count(remaining(p)))) <= 0;
-                add 0, 2 => (2147483647 + to_integer(old(count(remaining(p))))) <
-                    (to_integer(old(count(remaining(p)))) + 3 + 0);
-                conclusion 3;
-            }
+            solve() using { to_integer(old(count(remaining(p)))) == 0; };
         }
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) + 3) by {
-            arithmetic_certificate rules {
-                premise 0: -2147483648 <= (to_integer(old(count(remaining(p)))) + 3) => -2147483648
-                    <= (to_integer(old(count(remaining(p)))) + 3);
-                premise 1: (to_integer(old(count(remaining(p)))) + 3) <= 2147483647 =>
-                    (to_integer(old(count(remaining(p)))) + 3) <= 2147483647;
-                integer_operation_identity bounds [0, 1] => to_integer(count(remaining(p))) ==
-                    (to_integer(old(count(remaining(p)))) + 3);
-                conclusion 0;
-            }
+            solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) + 3); (to_integer(old(count(remaining(p)))) + 3) <= 2147483647; };
         }
         have to_integer(p->value) <= (3 - to_integer(count(remaining(p)))) by {
-            arithmetic_certificate {
-                negated_goal => (3 - to_integer(count(remaining(p)))) < to_integer(p->value);
-                premise 0: to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p))))
-                    + 3) => to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p))))
-                    + 3);
-                less_equal_from_equal 1 => to_integer(count(remaining(p))) <=
-                    (to_integer(old(count(remaining(p)))) + 3);
-                premise 1: to_integer(old(count(remaining(p)))) == 0 =>
-                    to_integer(old(count(remaining(p)))) == 0;
-                less_equal_from_equal 3 => to_integer(old(count(remaining(p)))) <= 0;
-                add 0, 2 => ((3 - to_integer(count(remaining(p)))) +
-                    to_integer(count(remaining(p)))) < (to_integer(p->value) +
-                    (to_integer(old(count(remaining(p)))) + 3));
-                add 5, 4 => ((3 - to_integer(count(remaining(p)))) + to_integer(count(remaining(p)))
-                    + to_integer(old(count(remaining(p))))) < (to_integer(p->value) +
-                    (to_integer(old(count(remaining(p)))) + 3) + 0);
-                premise 2: to_integer(p->value) == 0 => to_integer(p->value) == 0;
-                less_equal_from_equal 7 => to_integer(p->value) <= 0;
-                add 6, 8 => to_integer(p->value) < to_integer(p->value);
-                conclusion 9;
-            }
+            solve() using { to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p))))
+                    + 3); to_integer(old(count(remaining(p)))) == 0; to_integer(p->value) == 0; };
         }
         have (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) by {
-            arithmetic_certificate {
-                negated_goal => to_integer(p->value) < (3 - to_integer(count(remaining(p))));
-                premise 0: to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p))))
-                    + 3) => to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p))))
-                    + 3);
-                less_equal_from_equal 1 reverse => (to_integer(old(count(remaining(p)))) + 3) <=
-                    to_integer(count(remaining(p)));
-                premise 1: 0 <= to_integer(old(count(remaining(p)))) => 0 <=
-                    to_integer(old(count(remaining(p))));
-                add 0, 2 => (to_integer(p->value) + (to_integer(old(count(remaining(p)))) + 3)) <
-                    ((3 - to_integer(count(remaining(p)))) + to_integer(count(remaining(p))));
-                add 4, 3 => (to_integer(p->value) + (to_integer(old(count(remaining(p)))) + 3) + 0)
-                    < ((3 - to_integer(count(remaining(p)))) + to_integer(count(remaining(p))) +
-                    to_integer(old(count(remaining(p)))));
-                premise 2: to_integer(p->value) == 0 => to_integer(p->value) == 0;
-                less_equal_from_equal 6 reverse => 0 <= to_integer(p->value);
-                add 5, 7 => to_integer(p->value) < to_integer(p->value);
-                conclusion 8;
-            }
+            solve() using { to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p))))
+                    + 3); 0 <= to_integer(old(count(remaining(p)))); to_integer(p->value) == 0; };
         }
-        arithmetic_certificate {
-            premise 0: to_integer(p->value) <= (3 - to_integer(count(remaining(p)))) =>
-                to_integer(p->value) <= (3 - to_integer(count(remaining(p))));
-            premise 1: (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) => (3 -
-                to_integer(count(remaining(p)))) <= to_integer(p->value);
-            equal_from_bounds 0, 1 => to_integer(p->value) == (3 - to_integer(count(remaining(p))));
-            conclusion 2;
-        }
+        solve() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
     }
     fold(control(p));
     step() by {
-        arithmetic_certificate signed_int32 {
-            premise 0: old((count(remaining(p)) as int32)) >= at(function.entry, 0) =>
-                old((count(remaining(p)) as int32)) >= at(function.entry, 0);
-            premise 1: at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0)
-                => at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0);
-            less_equal_from_equal 1 => at(function.entry, to_integer(count(remaining(p)))) <=
-                at(function.entry, 0);
-            interval_from_affine 0 (at(function.entry, to_integer(count(remaining(p))))) (0)
-                (2147483647);
-            interval_from_affine 2 (at(function.entry, to_integer(count(remaining(p)))))
-                (-2147483648) (0);
-            interval_intersect 3, 4 (0) (0);
-            interval_atom (3) (3) (3);
-            interval_add_bounded 5, 6 (3) (3);
-            trivial => -1 <= 0;
-            add 0, 8 => (at(function.entry, 0) + -1) <= (old(count(remaining(p))) +
-                0);
-            affine_conclusion 9 7 => (count(remaining(p)) as int32) > (1 as int32);
-            conclusion 10;
-        }
+        solve() using { old((count(remaining(p)) as int32)) >= at(function.entry, 0); at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0); };
     }
     step() by {
-        arithmetic_certificate signed_int32 {
-            premise 0: old((count(remaining(p)) as int32)) >= at(function.entry, 0) =>
-                old((count(remaining(p)) as int32)) >= at(function.entry, 0);
-            premise 1: at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0)
-                => at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0);
-            less_equal_from_equal 1 => at(function.entry, to_integer(count(remaining(p)))) <=
-                at(function.entry, 0);
-            interval_from_affine 0 (at(function.entry, to_integer(count(remaining(p))))) (0)
-                (2147483647);
-            interval_from_affine 2 (at(function.entry, to_integer(count(remaining(p)))))
-                (-2147483648) (0);
-            interval_intersect 3, 4 (0) (0);
-            interval_atom (2) (2) (2);
-            interval_add_bounded 5, 6 (2) (2);
-            affine_conclusion 0 7 => (count(remaining(p)) as int32) > (1 as int32);
-            conclusion 8;
-        }
+        solve() using { old((count(remaining(p)) as int32)) >= at(function.entry, 0); at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0); };
     }
     unfold(control(p));
     unfold(remaining(p));

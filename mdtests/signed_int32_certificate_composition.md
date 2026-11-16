@@ -1,11 +1,7 @@
 # Public signed-int32 certificate composition
 
-The signed-machine family keeps compound-operation evidence explicit. A direct
-interval import is distinct from an affine atom interval, and a two-sided
-affine conclusion names both operation roots.
-
-Cross-domain composition uses a checked machine-to-`Integer` bridge theorem,
-then applies only the homogeneous mathematical `Integer` certificate family.
+Arithmetic search expands to ordinary proof steps, with the selected premises
+stated explicitly in `solve() using { ... }`.
 
 ```click
 import click::integer;
@@ -14,12 +10,7 @@ theorem signed_direct_compound(n: int32) {
     requires defined(n + 1);
     requires 0 <= to_integer(n + 1);
     ensures 0 <= to_integer(n + 1) by {
-        arithmetic_certificate signed_int32 {
-            premise 0: 0 <= to_integer(n + 1) => 0 <= to_integer(n + 1);
-            interval_from_affine_direct 0 (n + 1) 0 2147483647;
-            affine_conclusion 0 1 => 0 <= to_integer(n + 1);
-            conclusion 2;
-        }
+        solve() using { 0 <= to_integer(n + 1); };
     }
 }
 
@@ -38,12 +29,7 @@ theorem machine_to_integer_then_integer_arithmetic(x: int32) {
     requires 0 <= x;
     ensures 0 <= to_integer(x) + 1 by {
         have to_integer(0) <= to_integer(x);
-        arithmetic_certificate {
-            premise 0: to_integer(0) <= to_integer(x) => to_integer(0) <= to_integer(x);
-            trivial => to_integer(x) + 1 >= to_integer(x);
-            add 0, 1 => 0 <= to_integer(x) + 1;
-            conclusion 2;
-        }
+        solve() using { to_integer(0) <= to_integer(x); };
     }
 }
 ```

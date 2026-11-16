@@ -29,14 +29,7 @@ theorem adler_scalar_batch_product_bound(length: uint32, seed: uint32) {
   have to_integer(length) <= 4294967295;
   have 0 <= to_integer(seed);
   have to_integer(seed) <= 4294967295;
-  arithmetic_certificate rules {
-   premise 0: 0 <= to_integer(length) => 0 <= to_integer(length);
-   premise 1: to_integer(length) <= 22204 => to_integer(length) <= 22204;
-   premise 2: 0 <= to_integer(seed) => 0 <= to_integer(seed);
-   premise 3: to_integer(seed) <= 65520 => to_integer(seed) <= 65520;
-   integer_product_bounds bounds [0, 1, 2, 3] => to_integer(length) * to_integer(seed) <= 1454806080;
-   conclusion 0;
-  }
+  solve() using { 0 <= to_integer(length); to_integer(length) <= 22204; 0 <= to_integer(seed); to_integer(seed) <= 65520; };
  }
 }
 theorem adler_small_length_cast(length: uint64) {
@@ -46,12 +39,7 @@ theorem adler_small_length_cast(length: uint64) {
   have 0 <= to_integer(length) by known();
   have to_integer(length) <= 4294967295 by solve() using { to_integer(length) <= 22204; };
   have to_integer((length as u32)) == to_integer(length) by {
-   arithmetic_certificate rules {
-    premise 0: 0 <= to_integer(length) => 0 <= to_integer(length);
-    premise 1: to_integer(length) <= 4294967295 => to_integer(length) <= 4294967295;
-    integer_cast_identity bounds [0, 1] => to_integer((length as u32)) == to_integer(length);
-    conclusion 0;
-   }
+   solve() using { 0 <= to_integer(length); to_integer(length) <= 4294967295; };
   }
   have to_integer((length as u32)) <= to_integer(22204u32) by { rewrite(to_integer((length as u32)), to_integer(length)); known(); }
   known();
@@ -3266,40 +3254,24 @@ impl adler2::Adler32 {
      have to_integer(__rust_mir_151) <= 65535 by solve() using { to_integer(__rust_mir_151) < 65521; };
      mark general_reduced_b;
      step_until(function.exit);
-     have to_integer(self.a) == to_integer(at(general_reduced_a, __rust_mir_149)) by { arithmetic_certificate rules {
-     premise 0: 0 <= to_integer(at(general_reduced_a, __rust_mir_149)) => 0 <= to_integer(at(general_reduced_a, __rust_mir_149));
-     premise 1: to_integer(at(general_reduced_a, __rust_mir_149)) <= 65535 => to_integer(at(general_reduced_a, __rust_mir_149)) <= 65535;
-     integer_cast_identity bounds [0, 1] => to_integer(self.a) == to_integer(at(general_reduced_a, __rust_mir_149)); conclusion 0;
-     } }
+     have to_integer(self.a) == to_integer(at(general_reduced_a, __rust_mir_149)) by { solve() using { 0 <= to_integer(at(general_reduced_a, __rust_mir_149)); to_integer(at(general_reduced_a, __rust_mir_149)) <= 65535; }; }
      have to_integer(self.a) == old(adler_spec_a_u64(bytes, bytes.len(), old(to_integer((self.a as u32))))) by { rewrite(to_integer(self.a), to_integer(at(general_reduced_a, __rust_mir_149))); solve(); }
      have to_integer(at(general_reduced_a, __rust_mir_149)) < 65521;
      have to_integer(self.a) < 65521 by { rewrite(to_integer(self.a), to_integer(at(general_reduced_a, __rust_mir_149))); known(); }
-     have to_integer(self.b) == to_integer(at(general_reduced_b, __rust_mir_151)) by { arithmetic_certificate rules {
-     premise 0: 0 <= to_integer(at(general_reduced_b, __rust_mir_151)) => 0 <= to_integer(at(general_reduced_b, __rust_mir_151));
-     premise 1: to_integer(at(general_reduced_b, __rust_mir_151)) <= 65535 => to_integer(at(general_reduced_b, __rust_mir_151)) <= 65535;
-     integer_cast_identity bounds [0, 1] => to_integer(self.b) == to_integer(at(general_reduced_b, __rust_mir_151)); conclusion 0;
-     } }
+     have to_integer(self.b) == to_integer(at(general_reduced_b, __rust_mir_151)) by { solve() using { 0 <= to_integer(at(general_reduced_b, __rust_mir_151)); to_integer(at(general_reduced_b, __rust_mir_151)) <= 65535; }; }
      have to_integer(self.b) == old(adler_spec_b_u64(bytes, bytes.len(), old(to_integer((self.a as u32))), old(to_integer((self.b as u32))))) by { rewrite(to_integer(self.b), to_integer(at(general_reduced_b, __rust_mir_151))); solve(); }
      have to_integer(at(general_reduced_b, __rust_mir_151)) < 65521;
      have to_integer(self.b) < 65521 by { rewrite(to_integer(self.b), to_integer(at(general_reduced_b, __rust_mir_151))); known(); }
      have 0 <= to_integer(self.a) by { rewrite(to_integer(self.a), to_integer(at(general_reduced_a, __rust_mir_149))); solve() using { 0 <= to_integer(at(general_reduced_a, __rust_mir_149)); }; }
      have to_integer(self.a) <= 65535 by solve() using { to_integer(self.a) < 65521; };
-     have to_integer((self.a as i32)) == to_integer(self.a) by { arithmetic_certificate rules {
-     premise 0: 0 <= to_integer(self.a) => 0 <= to_integer(self.a);
-     premise 1: to_integer(self.a) <= 65535 => to_integer(self.a) <= 65535;
-     integer_cast_identity bounds [0, 1] => to_integer((self.a as i32)) == to_integer(self.a); conclusion 0;
-     } }
+     have to_integer((self.a as i32)) == to_integer(self.a) by { solve() using { 0 <= to_integer(self.a); to_integer(self.a) <= 65535; }; }
      have to_integer((self.a as i32)) <= to_integer(65520) by { rewrite(to_integer((self.a as i32)), to_integer(self.a)); solve() using { to_integer(self.a) < 65521; }; }
      have ((self.a as i32)) <= 65520;
      apply(adler_i32_below_mod((self.a as i32))) using { (self.a as i32) <= 65520; };
      have self.a < 65521 by known();
      have 0 <= to_integer(self.b) by { rewrite(to_integer(self.b), to_integer(at(general_reduced_b, __rust_mir_151))); solve() using { 0 <= to_integer(at(general_reduced_b, __rust_mir_151)); }; }
      have to_integer(self.b) <= 65535 by solve() using { to_integer(self.b) < 65521; };
-     have to_integer((self.b as i32)) == to_integer(self.b) by { arithmetic_certificate rules {
-     premise 0: 0 <= to_integer(self.b) => 0 <= to_integer(self.b);
-     premise 1: to_integer(self.b) <= 65535 => to_integer(self.b) <= 65535;
-     integer_cast_identity bounds [0, 1] => to_integer((self.b as i32)) == to_integer(self.b); conclusion 0;
-     } }
+     have to_integer((self.b as i32)) == to_integer(self.b) by { solve() using { 0 <= to_integer(self.b); to_integer(self.b) <= 65535; }; }
      have to_integer((self.b as i32)) <= to_integer(65520) by { rewrite(to_integer((self.b as i32)), to_integer(self.b)); solve() using { to_integer(self.b) < 65521; }; }
      have ((self.b as i32)) <= 65520;
      apply(adler_i32_below_mod((self.b as i32))) using { (self.b as i32) <= 65520; };

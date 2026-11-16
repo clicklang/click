@@ -773,13 +773,10 @@ fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
         ),
         ("requires b <= adler_lane_b_ceiling(n);", ""),
         ("requires 0 <= n;", ""),
+        ("n * (n + 1) <= 30830256;", "n * (n + 1) <= 30830255;"),
         (
-            "integer_product_bounds bounds [0, 1, 2, 3] => n * (n + 1) <= 30830256;",
-            "integer_product_bounds bounds [0, 1, 2, 3] => n * (n + 1) <= 30830255;",
-        ),
-        (
-            "integer_division_bounds bounds [0, 1, 2, 3] => truncating_quotient(n * (n + 1), divisor) <= 15415128;",
-            "integer_division_bounds bounds [0, 1, 2, 3] => truncating_quotient(n * (n + 1), divisor) <= 15415127;",
+            "truncating_quotient(n * (n + 1), divisor) <= 15415128;",
+            "truncating_quotient(n * (n + 1), divisor) <= 15415127;",
         ),
         (
             "ensures adler_lane_b_ceiling(5553) > 4294967295",
@@ -794,12 +791,8 @@ fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
             "ensures b + (a + byte) <= adler_lane_b_ceiling(n)",
         ),
         (
-            "integer_polynomial_identity bounds [] => (n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1)",
-            "integer_polynomial_identity bounds [] => (n + 1) * ((n + 1) + 1) == n * (n + 1) + 3 * (n + 1)",
-        ),
-        (
-            "integer_quotient_shift bounds [0, 1]",
-            "integer_quotient_shift bounds [1, 0]",
+            "(n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1)",
+            "(n + 1) * ((n + 1) + 1) == n * (n + 1) + 3 * (n + 1)",
         ),
     ] {
         let invalid = BOUNDS.replace(before, after);

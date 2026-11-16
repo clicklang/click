@@ -4,7 +4,10 @@ use super::checked_scalar_facts::ScalarOperandKey;
 use super::*;
 use crate::kernel::machine_integer::{
     Relation,
-    comparison::{NativeComparisonView, comparison_view, native_comparison_view},
+    comparison::{
+        NativeComparisonView, comparison_view, native_comparison_view,
+        retained_arithmetic_comparison,
+    },
 };
 use crate::persistent::{PersistentMap, PersistentSet};
 
@@ -143,7 +146,18 @@ impl PropositionKey {
             }
             let result = match proposition {
                 Proposition::ConditionIs(condition, truth) => {
-                    if let Some(view) = comparison_view(condition, *truth) {
+                    // Give native arithmetic the same existing observation
+                    // reading as retained comparisons. This imports each selected
+                    // operand once; additive cancellation uses shared children.
+                    let retained = matches!(condition,
+                        ConditionTerm::Compare { format, relation: CompareRelation::Equal, .. }
+                        if format.format().bits() == 32
+                    )
+                    .then(|| retained_arithmetic_comparison(condition))
+                    .flatten();
+                    if let Some(view) =
+                        comparison_view(retained.as_ref().unwrap_or(condition), *truth)
+                    {
                         let view = view.widened().unwrap_or(view);
                         (Self::Comparison(key(&view)), true)
                     } else {
@@ -595,6 +609,52 @@ impl ObservationComparisons {
 mod compound_observation_lookup_tests {
     use super::*;
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+
+    #[test]
+    fn compound_sum_equalities_match_native_and_retained_carriers() {
+        use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let sum = MachineTerm::Binary {
+                format,
+                op: MachineBinaryOp::Add,
+                left: MachineTerm::Variable(Variable(991450)).into(),
+                right: MachineTerm::constant_at32(format, 1).into(),
+            };
+            let fact = |shared, second, truth| {
+                let leaf = |bound, truth| {
+                    let native = ConditionTerm::machine_compare(
+                        format,
+                        CompareRelation::Equal,
+                        sum.clone(),
+                        MachineTerm::constant_at32(format, bound),
+                    );
+                    Proposition::ConditionIs(
+                        if shared {
+                            retained_arithmetic_comparison(&native).unwrap()
+                        } else {
+                            native
+                        },
+                        truth,
+                    )
+                };
+                Proposition::Or(Box::new(leaf(0, true)), Box::new(leaf(second, truth)))
+            };
+            let native = fact(false, 1, true);
+            let shared = fact(true, 1, true);
+            assert_eq!(PropositionKey::new(&native), PropositionKey::new(&shared));
+            for (source, requested) in [(&native, &shared), (&shared, &native)] {
+                let parent = PureFactContext::new();
+                let context = parent.clone().assume_proposition(source.clone());
+                let exports = KernelTermExport::machine_export_count();
+                assert!(context.proves_exact(requested));
+                assert!(!parent.proves_exact(requested));
+                assert!(!context.proves_exact(&fact(true, 2, true)));
+                assert!(!context.proves_exact(&fact(true, 1, false)));
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
+        }
+    }
 
     #[test]
     fn scaled_word_sources_retain_shared_indices_and_exact_authority() {

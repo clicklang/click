@@ -131,7 +131,7 @@ identity is independent of equality-graph classes: constructing `1 + 1`
 does not construct `2`. Nodes retain their result type, and checked arithmetic
 constructors reject the wrong operand type or arity.
 
-Specification-side Integer certificate arithmetic (`lower_surface_integer_term`)
+Specification-side Integer arithmetic (`lower_integer_arithmetic_proposition`)
 and ordinary Integer arithmetic on existing values construct the shared tree.
 Ordinary negation, addition, subtraction, multiplication, and constant-nonzero-
 divisor quotient/remainder use the same constructor. Expressions still requiring
@@ -331,6 +331,20 @@ the one the text names.
   choosing a term by known provenance. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
+Closed native order comparisons at 32 and 64 bits retain their comparison
+node, format, and literal operands during logical lowering. Their truth is
+established by checking, including when exact rewriting removed the last
+variable before the comparison was printed. This does not change literal
+arithmetic evaluation or the existing equality normal forms.
+
+Checked machine equality rewriting evaluates a 32-bit division, remainder, or right
+shift when its operands are literals, using logical
+arithmetic's existing literal constructor. Native and shared operands follow
+the same rule. Symbolic instances of these operations and exact
+Integer-congruence payloads retain their syntax; division by zero, signed
+division overflow, and invalid shifts
+remain opaque instead of acquiring an invented value.
+
 Logical object-pointer reads now retain their version names, including when
 memory stores a complete pointer at the cell. The read's complete stored value
 is related through `EqualityGraph::register_logical_read_values` and the
@@ -414,7 +428,7 @@ Masked uint64 tag expressions retain their full numeric term. Exact tag-bound
 lookups may produce a separate equality removing the masked tag; addition also
 requires the word's low bits proved clear, so no carry reaches address bits.
 Those facts accompany evaluation instead of replacing its result. Explicit
-arithmetic certificates must conclude the full written goal (after explicit
+ordinary arithmetic proofs must conclude the full written goal (after explicit
 rewrites), rather than depend on tag removal during lowering.
 
 `CLICK_FACT_STABILITY=<path>` lowers each checked proof proposition again

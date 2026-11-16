@@ -107,6 +107,22 @@ fn distribution_check_is_one_local_step_and_never_expands_a_polynomial() {
         add(mul(a.clone(), c.clone()), mul(b.clone(), c)).into(),
     );
     assert!(integer_distribution_step(&step));
+    // Surface evaluation retains raw arithmetic nodes, including products
+    // by one. The local rule must retain that same representation.
+    let factor = IntegerTerm::Add(a.clone().into(), IntegerTerm::constant_i64(2).into());
+    let raw_step = ConditionTerm::IntegerEqual(
+        IntegerTerm::Multiply(
+            IntegerTerm::Add(a.clone().into(), IntegerTerm::constant_i64(1).into()).into(),
+            factor.clone().into(),
+        )
+        .into(),
+        IntegerTerm::Add(
+            IntegerTerm::Multiply(a.clone().into(), factor.clone().into()).into(),
+            IntegerTerm::Multiply(IntegerTerm::constant_i64(1).into(), factor.into()).into(),
+        )
+        .into(),
+    );
+    assert!(integer_distribution_step(&raw_step));
     let full = ConditionTerm::IntegerEqual(
         mul(add(a.clone(), b.clone()), add(a.clone(), d.clone())).into(),
         add(
@@ -117,4 +133,55 @@ fn distribution_check_is_one_local_step_and_never_expands_a_polynomial() {
     );
     assert!(!integer_distribution_step(&full));
     assert_eq!(integer_linear_comparison(&full), None);
+}
+
+#[test]
+fn integer_normalization_uses_intrinsic_widenings_with_linear_work() {
+    use crate::kernel::{MachineCastSpelling, MachineIntegerType as Ty};
+    fn observation(variable: u64, destination: Ty) -> IntegerTerm {
+        let value = MachineTerm::Variable(Variable(variable));
+        let value = if destination == Ty::UInt8 {
+            value
+        } else {
+            MachineTerm::Cast {
+                spelling: MachineCastSpelling::Generic,
+                value: Box::new(value),
+                from: Ty::UInt8,
+                to: destination,
+            }
+        };
+        IntegerTerm::from_machine(destination, value).unwrap()
+    }
+    let samples = [4, 16, 64].map(|size| {
+        let mut left = IntegerTerm::constant_i64(0);
+        let mut right = IntegerTerm::constant_i64(0);
+        for index in 0..size {
+            let variable = 882000 + index;
+            left = IntegerTerm::add(
+                left,
+                IntegerTerm::multiply(
+                    IntegerTerm::constant_i64(2),
+                    observation(variable, Ty::Int32),
+                ),
+            );
+            let narrow = observation(variable, Ty::UInt8);
+            right = IntegerTerm::add(right, IntegerTerm::add(narrow.clone(), narrow));
+        }
+        let condition = ConditionTerm::IntegerEqual(left.into(), right.into());
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            integer_linear_comparison(&condition)
+        });
+        assert_eq!(result, Some(true));
+        work
+    });
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 6 * pair[0] + 8),
+        "{samples:?}"
+    );
+    // Converting the same byte to a signed byte may change its value.
+    let narrowing = ConditionTerm::IntegerEqual(
+        observation(883000, Ty::Int8).into(),
+        observation(883000, Ty::UInt8).into(),
+    );
+    assert_ne!(integer_linear_comparison(&narrowing), Some(true));
 }

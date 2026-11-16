@@ -2834,12 +2834,17 @@ impl<'a> Proof<'a> {
         &self,
     ) -> PersistentMap<String, crate::kernel::SpecIntegerExpression> {
         let mut values = self.state().locals().integer_values.clone();
-        if let Some(execution) = self.execution() {
-            for (name, iterations) in execution
-                .presentation
-                .recorded_states
-                .loop_iteration_bindings()
-            {
+        let recorded_states = if let Some(outcome) = self.focused_outcome_data() {
+            Some(&outcome.recorded_states)
+        } else if let Some(execution) = self.execution() {
+            Some(&execution.presentation.recorded_states)
+        } else if let ProofContext::FixedState(context) = self.context.as_ref() {
+            Some(context.fixed_state.recorded_states)
+        } else {
+            None
+        };
+        if let Some(recorded_states) = recorded_states {
+            for (name, iterations) in recorded_states.loop_iteration_bindings() {
                 values.insert(
                     name,
                     crate::kernel::SpecIntegerExpression::Term(iterations.clone()),
@@ -3793,7 +3798,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
         ProofStep::ArithmeticUsing(_) => "solve() using",
         ProofStep::Preserve(_) => "preserve",
-        ProofStep::ArithmeticCertificate(_) => "arithmetic_certificate",
+
         ProofStep::Intro | ProofStep::IntroAs(_) => "intro()",
         ProofStep::Enumerate => "enumerate()",
         ProofStep::Step

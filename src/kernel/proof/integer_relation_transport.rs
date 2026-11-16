@@ -1,6 +1,6 @@
 //! One explicit equality transports one whole operand of an Integer relation.
 //! No nonlinear search, recursive substitution, or ambient fact lookup.
-use super::arithmetic_special::SpecialArithmeticCheckError as Error;
+use super::arithmetic_special::ArithmeticRuleError as Error;
 use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
 fn relation(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm, bool)> {
     match proposition {
@@ -49,22 +49,5 @@ pub(super) fn check(
         Ok(())
     } else {
         Err(invalid())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::kernel::{
-        IntegerTerm, Variable,
-        proof::arithmetic_special::{SpecialArithmeticCertificate, SpecialArithmeticNode},
-    };
-    fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../../scaling_tests/kernel/proof/integer_relation_transport/tests.rs");
     }
 }

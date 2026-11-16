@@ -20,18 +20,7 @@ theorem adler_four_lane_a_prefix_step(bytes: uint8[], n: int32, a_seed: Integer,
   have n <= 2147483644 by solve() using { n <= 2147483643; };
   have 0 <= adler_lane_a(a, a0, a1, a2, a3) by {
    unfold(adler_lane_a(a, a0, a1, a2, a3));
-   arithmetic_certificate {
-    premise 0: 0 <= a => 0 <= a;
-    premise 1: 0 <= a0 => 0 <= a0;
-    premise 2: 0 <= a1 => 0 <= a1;
-    premise 3: 0 <= a2 => 0 <= a2;
-    premise 4: 0 <= a3 => 0 <= a3;
-    add 0, 1 => 0 <= a + a0;
-    add 5, 2 => 0 <= a + a0 + a1;
-    add 6, 3 => 0 <= a + a0 + a1 + a2;
-    add 7, 4 => 0 <= a + a0 + a1 + a2 + a3;
-    conclusion 8;
-   }
+   solve() using { 0 <= a; 0 <= a0; 0 <= a1; 0 <= a2; 0 <= a3; };
   }
   apply(adler_four_lane_state_step(a, 0, a0, a1, a2, a3, 0, 0, 0, 0, to_integer(bytes[n] as int32), to_integer(bytes[n + 1] as int32), to_integer(bytes[n + 2] as int32), to_integer(bytes[n + 3] as int32))) using { 0 <= n; n <= 2147483646; n <= 2147483645; n <= 2147483644; };
   apply(adler_prefix_a_step_four(bytes, n, a_seed, adler_lane_a(a, a0, a1, a2, a3)));
@@ -103,18 +92,7 @@ theorem adler_four_lane_prefix_step(bytes: uint8[], n: int32, a_seed: Integer, b
   have n <= 2147483644 by solve() using { n <= 2147483643; };
   have 0 <= adler_lane_a(a, a0, a1, a2, a3) by {
    unfold(adler_lane_a(a, a0, a1, a2, a3));
-   arithmetic_certificate {
-    premise 0: 0 <= a => 0 <= a;
-    premise 1: 0 <= a0 => 0 <= a0;
-    premise 2: 0 <= a1 => 0 <= a1;
-    premise 3: 0 <= a2 => 0 <= a2;
-    premise 4: 0 <= a3 => 0 <= a3;
-    add 0, 1 => 0 <= a + a0;
-    add 5, 2 => 0 <= a + a0 + a1;
-    add 6, 3 => 0 <= a + a0 + a1 + a2;
-    add 7, 4 => 0 <= a + a0 + a1 + a2 + a3;
-    conclusion 8;
-   }
+   solve() using { 0 <= a; 0 <= a0; 0 <= a1; 0 <= a2; 0 <= a3; };
   }
   apply(adler_four_lane_state_step(a, b, a0, a1, a2, a3, b0, b1, b2, b3, to_integer(bytes[n] as int32), to_integer(bytes[n + 1] as int32), to_integer(bytes[n + 2] as int32), to_integer(bytes[n + 3] as int32))) using { 0 <= n; n <= 2147483646; n <= 2147483645; n <= 2147483644; };
   apply(adler_prefix_b_step_four(bytes, n, a_seed, b_seed, adler_lane_a(a, a0, a1, a2, a3), adler_lane_b(b, a1, a2, a3, b0, b1, b2, b3)));

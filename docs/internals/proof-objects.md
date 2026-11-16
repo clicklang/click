@@ -355,7 +355,7 @@ allocation on the retaining arm and not on the freeing arm. A conditional
 but is not published as an unconditional free effect for the joined state.
 An unrelated resource cannot hide the lifetime difference.
 
-Opaque-contract certification then reuses that checked execution at the
+The independent execution-artifact API reuses a checked execution at the
 contract entry. It authorizes each artifact premise from the reconstructed
 contract context, from the registered predicate unfoldings (an identity whose
 instantiated body the context proves), and from containment and separation
@@ -383,8 +383,9 @@ facts and resource observations once, then checks persistent fact deltas for
 successive proofs. Resource folds recompute their semantic facts; they never
 replace the path context with a proof's ambient assumptions. Explicit
 resource `known` closers and `solve` retain the same checked claim
-receipts, and certification checks their joint availability independently of
-how the certificate was printed.
+receipts. The ordinary resource-closing operation proves their joint
+availability before the outcome completes, independently of how its
+certificate is printed.
 
 Function body proofs open their contract entry before running tactics.
 `OpenedContractEntry` selects the admitted source premises, preserves their
@@ -676,8 +677,12 @@ completion, without replaying C execution history.
 identities. Ordinary completion directly installs the outcome's current producer
 publication, path and completed exit, and retires its whole-contract cells.
 Refutation discharges the selected outcome without fabricating exit evidence.
-The completed ordinary proof hands back this execution directly; there is no
-later return/exit receipt installation or progress filter.
+The completed ordinary proof hands back this execution directly. Native outcome
+completion also projects its held resource evidence into the checked-execution
+fields required by independent execution-only consumers. Checked resource keys,
+returned owners, and boundary status are produced there, without rechecking the
+receipts. Source has no parallel per-path receipt arrays or metadata setters to
+reinstall after completion.
 Independent conditional execution artifacts have no opened-entry authority and
 retain their separate entry preparation and rule-packaging APIs.
 
