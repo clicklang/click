@@ -6,6 +6,7 @@ use super::loans::{
     plan_stable_view_transfer_with_protocol_effect,
 };
 use super::model_fields::{ModelFieldOrigin, ModelMint, algebraic_value_variable};
+use super::population_authority::storage_creation::CreationEvents;
 use super::prelude::*;
 use super::spec::walk::{SpecNode, Visit, spec_tree_all};
 use super::thread_confinement::confined_resource_name;
@@ -23,10 +24,12 @@ mod literal_objects;
 mod mixed_return_resources;
 mod produced_argument_supply;
 use mixed_return_resources::{
-    ConsumedCellReturns, EvaluatedReturnResources, ProjectedReturnResource, ReturnOwnershipOrigin,
-    project_return_resource_cores,
+    ConsumedCellReturns, EvaluatedReturnResources, FlatReturnBodies, FreshAllocationReturn,
+    ProjectedReturnResource, ReturnOwnershipOrigin, project_return_resource_cores,
 };
-pub(in crate::kernel) use mixed_return_resources::{ReturnResourceTransfer, ReturnedConsumedCell};
+pub(in crate::kernel) use mixed_return_resources::{
+    ReturnResourceTransfer, ReturnedConsumedCell, ReturnedFreshAllocation,
+};
 #[cfg(test)]
 mod produced_argument_supply_tests;
 use produced_argument_supply::prepare_produced_argument_supply;
@@ -203,11 +206,25 @@ enum ReturnResourceComposition<'a> {
     #[cfg(test)]
     RestoreEntryBorrows,
     ApplyTransfers(&'a ConsumedCellReturns),
+    BodyAllocations {
+        creator: &'a CreationEvents,
+        events: &'a CreationEvents,
+    },
     ValidateDescriptions,
 }
 
 impl ReturnResourceComposition<'_> {
-    fn origin_for_return(self, clause: usize, entry_borrow: bool) -> ReturnOwnershipOrigin {
+    fn origin_for_return(
+        self,
+        clause: usize,
+        entry_borrow: bool,
+        fact: &ResourceFact,
+    ) -> ReturnOwnershipOrigin {
+        if let Self::BodyAllocations { creator, events } = self {
+            return FreshAllocationReturn::from_created_owner(fact, creator, events)
+                .map(ReturnOwnershipOrigin::FreshAllocation)
+                .unwrap_or(ReturnOwnershipOrigin::Description);
+        }
         if entry_borrow {
             return ReturnOwnershipOrigin::EntryBorrow;
         }
@@ -248,6 +265,7 @@ struct FunctionResourceTransfer {
     /// the caller frame.
     canonical_borrowed_owners: Vec<(ResourceFact, ResourceFact)>,
     consumed_cell_returns: ConsumedCellReturns,
+    allocation_creator: Option<CreationEvents>,
     callee_resources: ResourceContext,
     /// Resources left in the caller after the entry requirements have been
     /// consumed; this is the caller frame for the remainder of the call.
@@ -11016,6 +11034,17 @@ pub(in crate::kernel) fn heap_extent_kind_spelling(kind: HeapExtentKind) -> &'st
     }
 }
 
+/// Retain the callee scope already established by argument binding. A
+/// same-scope/independent transition carries no allocation-return authority.
+fn checked_allocation_creator(
+    caller: &ExecutionState,
+    callee: &ExecutionState,
+) -> Option<CreationEvents> {
+    let caller = caller.population_effects.creation.as_ref()?;
+    let callee = callee.population_effects.creation.as_ref()?;
+    (!callee.same_invocation(caller)).then(|| callee.clone())
+}
+
 fn prepare_contract_resource_transfer_unexplained(
     caller_state: &ExecutionState,
     callee_state: &ExecutionState,
@@ -11063,6 +11092,7 @@ fn prepare_contract_resource_transfer_unexplained(
             consumed_inputs: Vec::new(),
             canonical_borrowed_owners: Vec::new(),
             consumed_cell_returns: ConsumedCellReturns::default(),
+            allocation_creator: checked_allocation_creator(caller_state, callee_state),
             callee_resources: with_private_aggregate_parameter_owners(
                 ResourceContext::new_with_equalities(assumptions),
                 callee_state,
@@ -12279,6 +12309,7 @@ fn prepare_contract_resource_transfer_unexplained(
         consumed_inputs,
         canonical_borrowed_owners,
         consumed_cell_returns,
+        allocation_creator: checked_allocation_creator(caller_state, callee_state),
         callee_resources: with_private_aggregate_parameter_owners(
             callee_resources,
             callee_state,
@@ -12894,7 +12925,7 @@ fn evaluate_contract_return_resource_context(
         // by walking the ambient pointer/endpoint equality classes.
         evaluated = match evaluated.admit(
             resource.clone(),
-            composition.origin_for_return(clause_index, return_entry_borrow),
+            composition.origin_for_return(clause_index, return_entry_borrow, &resource),
             assumptions,
         ) {
             Ok(evaluated) => evaluated,
@@ -12918,7 +12949,7 @@ fn evaluate_contract_return_resource_context(
                 Ok(fact) => {
                     evaluated = match evaluated.admit(
                         fact.clone(),
-                        composition.origin_for_return(clause_index, false),
+                        composition.origin_for_return(clause_index, false, &fact),
                         assumptions,
                     ) {
                         Ok(evaluated) => evaluated,
@@ -13011,6 +13042,7 @@ fn evaluate_function_return_resources(
     entry_state: &ExecutionState,
     post_state: &ExecutionState,
     function: &ProgramFunction,
+    allocation_creator: Option<&CreationEvents>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ContractReturnResources, RuntimeError>> {
@@ -13025,7 +13057,15 @@ fn evaluate_function_return_resources(
         function.name(),
         function.contract_interface(),
         &[],
-        ReturnResourceComposition::ValidateDescriptions,
+        match (
+            allocation_creator,
+            post_state.population_effects.creation.as_ref(),
+        ) {
+            (Some(creator), Some(events)) => {
+                ReturnResourceComposition::BodyAllocations { creator, events }
+            }
+            _ => ReturnResourceComposition::ValidateDescriptions,
+        },
         assumptions,
         budget,
     )
@@ -13071,6 +13111,12 @@ fn evaluate_contract_return_resources(
         Err(error) => return Ok(Err(error)),
     };
     let ensured_resources = &evaluated.resources;
+    let flat_bodies = FlatReturnBodies::construct(
+        &evaluated,
+        interface.composite_resource_definitions(),
+        post_state,
+        assumptions,
+    );
     // Entry borrows rejoin their selected frame before newly described
     // ownership is checked, including the bodies of produced composites.
     let prepared = match crate::instrumentation::measure_operation(
@@ -13104,10 +13150,14 @@ fn evaluate_contract_return_resources(
                 let retained = caller_resources_after_requirements
                     .clone()
                     .unchecked_with_facts(escrowed_owners.iter().cloned())
-                    .unchecked_with_facts(prepared.consumed_cell_outputs.facts().iter().cloned());
+                    .unchecked_with_facts(
+                        prepared.transferred_memory_outputs.facts().iter().cloned(),
+                    );
                 if let Some(error) = produced_composite_frontier_conflict(
                     &retained,
-                    &prepared.entry_borrow_outputs,
+                    prepared
+                        .frontier_sources(ensured_resources, true)
+                        .map(|(source, fact)| (fact, flat_bodies.get(source))),
                     interface.composite_resource_definitions(),
                     post_state.memory(),
                     assumptions,
@@ -13126,7 +13176,9 @@ fn evaluate_contract_return_resources(
                 .unchecked_with_facts(escrowed_owners.iter().cloned());
             produced_composite_frontier_conflict(
                 &destination,
-                &prepared.pending,
+                prepared
+                    .frontier_sources(ensured_resources, false)
+                    .map(|(source, fact)| (fact, flat_bodies.get(source))),
                 interface.composite_resource_definitions(),
                 post_state.memory(),
                 assumptions,
@@ -13168,6 +13220,7 @@ fn evaluate_contract_return_resources(
             project_return_resource_cores(
                 ensured_resources,
                 &inserted_ensured_occurrences,
+                &flat_bodies,
                 interface.composite_resource_definitions(),
                 post_state,
                 assumptions,
@@ -13192,6 +13245,7 @@ fn evaluate_contract_return_resources(
         destination: support_occurrence,
         expansion,
         projected,
+        frontier,
     } in projected_cores_by_support
     {
         // Only the one-level frontier names the borrows this composite
@@ -13207,8 +13261,8 @@ fn evaluate_contract_return_resources(
             }
             _ => false,
         };
-        if let Some((_, children, _)) = (!is_population)
-            .then(|| {
+        if !is_population {
+            let children = frontier.or_else(|| {
                 expand_composite_resource_fact_with_children(
                     &ResourceContext::new_with_equalities(assumptions)
                         .unchecked_with_fact(support.clone()),
@@ -13217,15 +13271,16 @@ fn evaluate_contract_return_resources(
                     post_state.memory(),
                     assumptions,
                 )
-            })
-            .flatten()
-        {
-            produced_borrowing_pieces.extend(
-                children
-                    .into_iter()
-                    .filter(|piece| piece.is_view())
-                    .map(|piece| (support.clone(), piece)),
-            );
+                .map(|(_, children, _)| children)
+            });
+            if let Some(children) = children {
+                produced_borrowing_pieces.extend(
+                    children
+                        .into_iter()
+                        .filter(|piece| piece.is_view())
+                        .map(|piece| (support.clone(), piece)),
+                );
+            }
         }
         return_resources = return_resources
             .unchecked_with_supported_facts_from_occurrence_with_memory(
@@ -13271,33 +13326,43 @@ pub(crate) struct ContractReturnResources {
 /// Only the one-level checked frontier is compared. A nested composite child
 /// is itself a fact here, not a body to reason inside; that is the same
 /// "no reasoning inside composites" rule the composite lend follows.
-fn produced_composite_frontier_conflict(
+fn produced_composite_frontier_conflict<'a>(
     destination: &ResourceContext,
-    ensured: &ResourceContext,
+    ensured: impl Iterator<
+        Item = (
+            &'a ResourceFact,
+            Option<&'a mixed_return_resources::FlatReturnBody>,
+        ),
+    >,
     definitions: &[CompositeResourceDefinition],
     memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
-    for produced in ensured.facts() {
+    for (produced, body) in ensured {
         let Resource::Composite { name, .. } = produced.resource() else {
             continue;
         };
         if !produced.is_own() {
             continue;
         }
-        let singleton =
-            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(produced.clone());
-        // An opaque head — no definition, an instance schema, a matched arm,
-        // or a guard this path has not decided — exposes no frontier to
-        // compare, and expansion is the only thing that could name one.
-        let Some((_, frontier, _)) = expand_composite_resource_fact_with_children(
-            &singleton,
-            produced,
-            definitions,
-            memory,
-            assumptions,
-        ) else {
-            continue;
+        let legacy_frontier;
+        let frontier = if let Some(body) = body {
+            &body.frontier
+        } else {
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(produced.clone());
+            // Opaque and unmigrated heads retain their legacy expansion.
+            let Some((_, children, _)) = expand_composite_resource_fact_with_children(
+                &singleton,
+                produced,
+                definitions,
+                memory,
+                assumptions,
+            ) else {
+                continue;
+            };
+            legacy_frontier = children;
+            &legacy_frontier
         };
         // A token-only body holds no memory, instance, or nested composite a
         // destination fact could overlap: token units are a count, and counts
@@ -20575,6 +20640,7 @@ fn function_outcome_from_body_with_resource_transfer(
                 &entry_resource_state,
                 &output_resource_state,
                 function,
+                transfer.allocation_creator.as_ref(),
                 assumptions,
                 budget,
             )

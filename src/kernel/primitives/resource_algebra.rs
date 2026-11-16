@@ -6028,6 +6028,32 @@ impl ResourceContext {
             source,
             destination: frame.occurrence(entry),
             consumed_input: Some(input),
+            fresh_allocation: None,
+        };
+        frame.advance_prepared_memory_equalities(assumptions);
+        (frame, transfer)
+    }
+
+    /// Apply allocator-established separation to one returned owned piece.
+    /// Actual output custody remains checked at body exit; freshness removes
+    /// only discovery of overlap with the caller's pre-allocation frame.
+    pub(in crate::kernel) fn return_fresh_allocation(
+        transfer: crate::kernel::functions::ReturnedFreshAllocation,
+        assumptions: &PureFactContext,
+    ) -> (Self, crate::kernel::functions::ReturnResourceTransfer) {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("fresh allocation return");
+        let (mut frame, output, source, allocation) = transfer.into_parts();
+        if frame.storage.facts.is_empty() {
+            frame.synchronize_memory_equalities(assumptions);
+        }
+        let entry = frame.storage.next_entry_id;
+        frame.insert_fact(output);
+        let transfer = crate::kernel::functions::ReturnResourceTransfer {
+            source,
+            destination: frame.occurrence(entry),
+            consumed_input: None,
+            fresh_allocation: Some(allocation),
         };
         frame.advance_prepared_memory_equalities(assumptions);
         (frame, transfer)

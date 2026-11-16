@@ -104,6 +104,7 @@ fn projecting_equal_return_descriptions_uses_selected_occurrences() {
                 project_return_resource_cores(
                     &evaluated.resources,
                     &transfers,
+                    &FlatReturnBodies::default(),
                     &[],
                     &state,
                     &facts,
@@ -581,5 +582,270 @@ fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
             samples.iter().all(|work| *work <= samples[0] + 96),
             "{axis}: {samples:?}"
         );
+    }
+}
+
+#[test]
+fn fresh_allocation_returns_ignore_creation_history_aliases_and_retained_owners() {
+    for axis in ["history", "aliases", "owners"] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (caller, entry, post, pointer) = super::fresh_allocation_tests::allocated_call(16);
+            let creator = checked_allocation_creator(&caller, &entry).unwrap();
+            let mut events = post.population_effects.creation.as_ref().unwrap().clone();
+            let mut frame = caller.resources().clone();
+            let mut facts = PureFactContext::new();
+            for index in 0..count {
+                match axis {
+                    "history" => {
+                        events = events.created(PointerBlock::Heap(8_940_000 + u64::from(index)))
+                    }
+                    "aliases" => {
+                        facts = facts.assume_condition(
+                            ConditionTerm::pointer_equal(
+                                pointer.clone(),
+                                Pointer::symbolic(Variable(8_940_000 + u64::from(index))),
+                            ),
+                            true,
+                        )
+                    }
+                    _ => {
+                        frame =
+                            frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                                Pointer::symbolic(Variable(8_940_000 + u64::from(index))),
+                                0u32.into(),
+                                1u32.into(),
+                            )))
+                    }
+                }
+            }
+            frame.synchronize_memory_equalities(&facts);
+            let outputs = super::fresh_allocation_tests::fresh_return_facts(&pointer, 4);
+            let mut evaluated = EvaluatedReturnResources::new(&facts);
+            for fact in &outputs {
+                let fresh =
+                    FreshAllocationReturn::from_created_owner(fact, &creator, &events).unwrap();
+                evaluated = evaluated
+                    .admit(
+                        fact.clone(),
+                        ReturnOwnershipOrigin::FreshAllocation(fresh),
+                        &facts,
+                    )
+                    .unwrap();
+            }
+            let ((result, mappings), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let _fast = crate::kernel::search::FastOperationScope::enter(
+                        "fresh allocation return composition",
+                    );
+                    for fact in &outputs {
+                        assert!(
+                            FreshAllocationReturn::from_created_owner(fact, &creator, &events)
+                                .is_some()
+                        );
+                        assert!(
+                            FreshAllocationReturn::from_created_owner(
+                                fact,
+                                caller.population_effects.creation.as_ref().unwrap(),
+                                &events
+                            )
+                            .is_none()
+                        );
+                    }
+                    evaluated
+                        .restore_entry_borrows(
+                            frame.clone(),
+                            ReturnResourceComposition::BodyAllocations {
+                                creator: &creator,
+                                events: &events,
+                            },
+                            &facts,
+                        )
+                        .unwrap()
+                        .finish(&facts)
+                        .unwrap()
+                });
+            assert_eq!(result.facts().len(), frame.facts().len() + 2);
+            for (index, mapping) in mappings.iter().enumerate() {
+                assert!(mapping.fresh_allocation.is_some());
+                assert_eq!(
+                    result.owned_fact_for_occurrence(mapping.destination),
+                    Some(&outputs[index])
+                );
+            }
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 64),
+            "{axis}: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn fresh_allocation_return_work_scales_with_selected_return_pieces() {
+    let mut samples = Vec::new();
+    for count in [4_usize, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let (caller, entry, post, pointer) =
+            super::fresh_allocation_tests::allocated_call(count as u32 * 4);
+        let creator = checked_allocation_creator(&caller, &entry).unwrap();
+        let events = post.population_effects.creation.as_ref().unwrap();
+        let mut pieces = (0..count as u32)
+            .map(|index| {
+                ResourceFact::own_memory(MemoryRange::new(
+                    pointer.clone(),
+                    index.into(),
+                    (index + 1).into(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        pieces.push(ResourceFact::own_allocation(pointer, count as u32 * 4));
+        let (resources, inserted) = ResourceContext::new_with_equalities(&facts)
+            .unchecked_with_facts_and_occurrences(pieces);
+        let mut evaluated = EvaluatedReturnResources {
+            resources,
+            occurrences: inserted
+                .iter()
+                .map(|(_, source)| EvaluatedReturnOccurrence {
+                    source: *source,
+                    origin: ReturnOwnershipOrigin::Description,
+                })
+                .collect(),
+        };
+        let (((result, mappings), work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "fresh allocation selected return delta",
+                );
+                for ((fact, _), occurrence) in inserted.iter().zip(&mut evaluated.occurrences) {
+                    occurrence.origin = ReturnOwnershipOrigin::FreshAllocation(
+                        FreshAllocationReturn::from_created_owner(fact, &creator, events).unwrap(),
+                    );
+                }
+                evaluated
+                    .restore_entry_borrows(
+                        caller.resources().clone(),
+                        ReturnResourceComposition::BodyAllocations {
+                            creator: &creator,
+                            events,
+                        },
+                        &facts,
+                    )
+                    .unwrap()
+                    .finish(&facts)
+                    .unwrap()
+            })
+        });
+        assert_eq!(mappings.len(), count + 1);
+        for ((fact, source), mapping) in inserted.iter().zip(&mappings) {
+            assert_eq!(mapping.source, *source);
+            assert_eq!(
+                result.owned_fact_for_occurrence(mapping.destination),
+                Some(fact)
+            );
+        }
+        samples.push((count, work, maps));
+    }
+    for (count, work, maps) in &samples {
+        let growth = count / samples[0].0;
+        assert!(
+            *work <= samples[0].1 * growth * 4 + count * 32,
+            "{samples:?}"
+        );
+        assert!(*maps <= samples[0].2 * growth * 4, "{samples:?}");
+    }
+}
+
+#[test]
+fn flat_return_body_consumers_scale_with_output_and_ignore_ambient_state() {
+    for axis in ["outputs", "owners", "aliases", "definitions"] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let pointer = Pointer::symbolic(Variable(8_839_001));
+            let mut facts = PureFactContext::new();
+            let mut frame = ResourceContext::new();
+            let mut definitions = vec![tests::flat_body_definition(
+                "selected",
+                &pointer,
+                if axis == "outputs" { count } else { 1 },
+            )];
+            for index in 0..count {
+                let other = Pointer::symbolic(Variable(8_839_100 + u64::from(index)));
+                match axis {
+                    "owners" => {
+                        frame = frame.unchecked_with_fact(ResourceFact::own_memory(
+                            MemoryRange::new(other, 0u32.into(), 1u32.into()),
+                        ))
+                    }
+                    "aliases" => {
+                        facts = facts.assume_condition(
+                            ConditionTerm::pointer_equal(pointer.clone(), other),
+                            true,
+                        )
+                    }
+                    "definitions" => definitions.push(tests::flat_body_definition(
+                        &format!("unused_{index:04}"),
+                        &other,
+                        1,
+                    )),
+                    _ => {}
+                }
+            }
+            definitions.sort_by(|a, b| a.name().cmp(b.name()));
+            frame.synchronize_memory_equalities(&facts);
+            let evaluated = EvaluatedReturnResources::new(&facts)
+                .admit(
+                    ResourceFact::own_composite("selected".into(), vec![]),
+                    ReturnOwnershipOrigin::Description,
+                    &facts,
+                )
+                .unwrap();
+            let state = ExecutionState::new();
+            let bodies = FlatReturnBodies::construct(&evaluated, &definitions, &state, &facts);
+            assert_eq!(bodies.0.len(), 1);
+            let prepared = evaluated
+                .restore_entry_borrows(
+                    frame,
+                    ReturnResourceComposition::RestoreEntryBorrows,
+                    &facts,
+                )
+                .unwrap();
+            let (destination, transfers) = prepared.finish(&facts).unwrap();
+            let (projected, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _operation =
+                    crate::kernel::search::FastOperationScope::enter("carried flat return body");
+                project_return_resource_cores(
+                    &evaluated.resources,
+                    &transfers,
+                    &bodies,
+                    &[],
+                    &state,
+                    &facts,
+                    &destination,
+                )
+                .unwrap()
+            });
+            assert_eq!(
+                projected[0].expansion.len(),
+                if axis == "outputs" {
+                    count as usize + 1
+                } else {
+                    2
+                }
+            );
+            samples.push(work);
+        }
+        if axis == "outputs" {
+            assert!(samples[2] <= samples[0] * 24 + 64, "{axis}: {samples:?}");
+        } else {
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 48),
+                "{axis}: {samples:?}"
+            );
+        }
     }
 }

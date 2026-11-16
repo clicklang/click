@@ -146,6 +146,7 @@ fn equal_return_descriptions_keep_distinct_transfers_and_projection_lifetimes() 
             let projected = project_return_resource_cores(
                 &evaluated.resources,
                 &transfers,
+                &FlatReturnBodies::default(),
                 &[],
                 &state,
                 &facts,
@@ -1156,4 +1157,181 @@ fn fixed_wide_range_returns_keep_their_original_index_kind() {
             .is_some()
     );
     assert!(result.satisfies_fact(&range(0, 8), &facts));
+}
+
+pub(super) fn flat_body_definition(
+    name: &str,
+    pointer: &Pointer,
+    count: u32,
+) -> CompositeResourceDefinition {
+    use crate::kernel::program_expression::int32_literal;
+    let base = ProgramExpression::Value(ProgramValue::pointer(pointer.clone()));
+    let mut children = (0..count)
+        .map(|index| {
+            ResourceSpec::owned_memory(MemorySegment::new(
+                base.clone(),
+                int32_literal(index * 2),
+                int32_literal(index * 2 + 1),
+            ))
+        })
+        .collect::<Vec<_>>();
+    children.push(ResourceSpec::viewed_memory(MemorySegment::new(
+        base,
+        int32_literal(count * 2 + 2),
+        int32_literal(count * 2 + 3),
+    )));
+    CompositeResourceDefinition::new(name, vec![], None, false, children, vec![])
+}
+
+#[test]
+fn flat_composite_return_carries_its_body_through_frontier_and_projection() {
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_819_001));
+    let definition = flat_body_definition("flat_return", &pointer, 2);
+    let state = ExecutionState::new();
+    let head = ResourceFact::own_composite("flat_return".into(), vec![]);
+    // Equal heads must retain separate constructions and support lifetimes.
+    let evaluated = EvaluatedReturnResources::new(&facts)
+        .admit(head.clone(), ReturnOwnershipOrigin::EntryBorrow, &facts)
+        .unwrap()
+        .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
+        .unwrap();
+    let bodies = FlatReturnBodies::construct(&evaluated, &[definition], &state, &facts);
+    assert_eq!(bodies.0.len(), 2);
+    for entry in &evaluated.occurrences {
+        let body = bodies.get(entry.source).unwrap();
+        assert_eq!(body.frontier.len(), 3);
+        assert_eq!(body.expansion, body.frontier);
+    }
+    let prepared = evaluated
+        .restore_entry_borrows(
+            ResourceContext::new(),
+            ReturnResourceComposition::RestoreEntryBorrows,
+            &facts,
+        )
+        .unwrap();
+    let held = ResourceContext::new().unchecked_with_fact(owner(pointer, 0, 1));
+    // Definitions are deliberately absent: both consumers must use the
+    // selected occurrence's construction, including on an overlap refusal.
+    for borrowed in [true, false] {
+        assert!(matches!(
+            produced_composite_frontier_conflict(
+                &held,
+                prepared
+                    .frontier_sources(&evaluated.resources, borrowed)
+                    .map(|(source, fact)| (fact, bodies.get(source))),
+                &[],
+                state.memory(),
+                &facts,
+            ),
+            Some(RuntimeError::ProducedCompositeOverlapsHeldResource { .. })
+        ));
+    }
+    let (mut destination, transfers) = prepared.finish(&facts).unwrap();
+    let projected = project_return_resource_cores(
+        &evaluated.resources,
+        &transfers,
+        &bodies,
+        &[],
+        &state,
+        &facts,
+        &destination,
+    )
+    .unwrap();
+    let mut views = Vec::new();
+    for projection in projected {
+        assert_eq!(projection.frontier.as_ref().unwrap().len(), 3);
+        let (next, inserted) = destination
+            .unchecked_with_supported_facts_from_occurrence_with_memory_and_occurrences(
+                projection.destination,
+                &projection.support,
+                projection.projected,
+                state.memory(),
+            );
+        destination = next.with_cached_supported_expansion_for_occurrence(
+            projection.destination,
+            &projection.support,
+            projection.expansion,
+        );
+        views.push(inserted.into_iter().map(|(_, id)| id).collect::<Vec<_>>());
+    }
+    for removed in 0..2 {
+        let branch = destination
+            .clone()
+            .without_exact_representation_for_occurrence(transfers[removed].destination)
+            .unwrap();
+        assert!(
+            views[removed]
+                .iter()
+                .all(|id| branch.view_fact_for_occurrence(*id).is_none())
+        );
+        assert!(
+            views[1 - removed]
+                .iter()
+                .all(|id| branch.view_fact_for_occurrence(*id).is_some())
+        );
+        assert!(
+            destination
+                .owned_fact_for_occurrence(transfers[removed].destination)
+                .is_some()
+        );
+    }
+}
+
+#[test]
+fn nested_and_nonunit_return_bodies_keep_legacy_expansion() {
+    use crate::kernel::program_expression::int32_literal;
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_819_002));
+    let mut nested = flat_body_definition("nested", &pointer, 1);
+    nested.contains.push(
+        ResourceSpec::declared(
+            ResourceFamily::Composite,
+            ResourceAccessMode::Own,
+            "child".into(),
+            vec![],
+            vec![],
+            ResourceTransferRole::Produce,
+            ResourceStateSource::Current,
+        )
+        .unwrap(),
+    );
+    let mut conditional = flat_body_definition("conditional", &pointer, 1);
+    conditional.condition = Some(SpecProposition::Comparison {
+        left: SpecExpression::ProgramExpression(int32_literal(0)),
+        operator: ComparisonOperator::Equal,
+        right: SpecExpression::ProgramExpression(int32_literal(0)),
+    });
+    let mut evaluated = EvaluatedReturnResources::new(&facts);
+    for name in ["nested", "conditional", "missing"] {
+        evaluated = evaluated
+            .admit(
+                ResourceFact::own_composite(name.into(), vec![]),
+                ReturnOwnershipOrigin::Description,
+                &facts,
+            )
+            .unwrap();
+    }
+    evaluated = evaluated
+        .admit(
+            ResourceFact::Own(
+                Resource::Composite {
+                    name: "many".into(),
+                    arguments: vec![].into(),
+                },
+                Box::new(MachineTerm::constant(2)),
+            ),
+            ReturnOwnershipOrigin::Description,
+            &facts,
+        )
+        .unwrap();
+    let mut definitions = vec![
+        nested,
+        conditional,
+        flat_body_definition("many", &pointer, 1),
+    ];
+    definitions.sort_by(|a, b| a.name().cmp(b.name()));
+    let bodies =
+        FlatReturnBodies::construct(&evaluated, &definitions, &ExecutionState::new(), &facts);
+    assert!(bodies.0.is_empty());
 }
