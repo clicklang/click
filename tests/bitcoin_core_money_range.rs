@@ -801,8 +801,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 ],
                 RoundingPhase::NumeratorRejections => vec![
                     source.replace("apply(integer::uint64_multiply_to_integer(this->fee as uint64, at_size as uint64));", ""),
-                    source.replace("to_integer(product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(product) == to_integer(this->fee) * to_integer(at_size) + 1"),
-                    source.replace("to_integer(negative_product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(negative_product) == to_integer(this->fee) * to_integer(at_size) + 1"),
+                    source.replace("to_integer(this->fee) * to_integer(at_size) == to_integer(product)", "to_integer(this->fee) * to_integer(at_size) == to_integer(product) + 1"),
+                    source.replace("to_integer(this->fee) * to_integer(at_size) == to_integer(negative_product)", "to_integer(this->fee) * to_integer(at_size) == to_integer(negative_product) + 1"),
                     source.replace(if down { "apply(integer::uint64_divide_to_integer((this->fee as uint64 * at_size as uint64), this->size as uint32 as uint64));" } else { "apply(integer::uint64_divide_to_integer((((this->fee as uint64 * at_size as uint64) + this->size as uint64) - 1u64), this->size as uint32 as uint64));" }, ""),
                 ],
                 RoundingPhase::AdjustedNumeratorRejections => {
@@ -841,7 +841,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             } else {
                 vec![
                     source.replace(if name.ends_with("Negative") { "requires not (this->fee >= 0i64);" } else { "requires this->fee >= 0i64 and not (this->fee < 8589934592i64);" }, ""),
-                    source.replace("to_integer(product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(product) == to_integer(this->fee) * to_integer(at_size) + 1"),
+                    source.replace("to_integer(this->fee) * to_integer(at_size) == to_integer(product)", "to_integer(this->fee) * to_integer(at_size) == to_integer(product) + 1"),
                     source.replace(if down { "(to_integer(result) + 1) * to_integer(this->size)" } else { "(to_integer(result) + -1) * to_integer(this->size)" }, "to_integer(result) * to_integer(this->size)"),
                     source.replace(if down { "to_integer(result) * to_integer(this->size) <= to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) <= to_integer(result) * to_integer(this->size)" }, if down { "to_integer(result) * to_integer(this->size) < to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) < to_integer(result) * to_integer(this->size)" }),
                 ]
@@ -941,8 +941,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                             "< to_integer(result) * to_integer(this->size)",
                         ),
                     source.replace(
-                        "to_integer(product) == to_integer(this->fee) * to_integer(at_size)",
-                        "to_integer(product) == to_integer(this->fee) * to_integer(at_size) + 1",
+                        "to_integer(this->fee) * to_integer(at_size) == to_integer(product)",
+                        "to_integer(this->fee) * to_integer(at_size) == to_integer(product) + 1",
                     ),
                     source.replace(
                         if selected.ends_with("Down") {
