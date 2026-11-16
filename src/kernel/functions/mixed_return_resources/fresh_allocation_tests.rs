@@ -56,11 +56,16 @@ pub(super) fn allocated_call(
     (caller, entry, post.as_ref().clone(), pointer)
 }
 
-fn returned_specs(base: &str, cells: u32) -> Vec<ResourceSpec> {
+fn returned_specs(base: impl Into<BindingName>, cells: u32) -> Vec<ResourceSpec> {
+    let base = base.into();
     vec![
         ResourceSpec::owned_memory(
-            MemorySegment::new(variable(base), int32_literal(0), int32_literal(cells))
-                .with_uninitialized(true),
+            MemorySegment::new(
+                variable(base.clone()),
+                int32_literal(0),
+                int32_literal(cells),
+            )
+            .with_uninitialized(true),
         )
         .with_role(ResourceTransferRole::Produce)
         .with_state_source(ResourceStateSource::Post),
@@ -239,7 +244,7 @@ fn allocating_function(cells: u32) -> ProgramFunction {
         ),
     );
     program_function(ProgramType::Int32Pointer, "allocate_return", vec![], body)
-        .with_resource_summary(vec![], returned_specs(C_CONTRACT_RESULT_NAME, cells))
+        .with_resource_summary(vec![], returned_specs(CONTRACT_RESULT, cells))
 }
 
 #[test]

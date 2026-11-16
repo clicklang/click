@@ -530,6 +530,7 @@ pub(super) struct ProjectedReturnResource {
 
 /// Read each owned output by its selected source identity. Equal descriptions
 /// have independent transfers and never require an occurrence census or rank.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn project_return_resource_cores(
     source: &ResourceContext,
     transfers: &[ReturnResourceTransfer],
