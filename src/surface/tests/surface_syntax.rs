@@ -6241,7 +6241,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
             crate::kernel::Resource::Emp,
         )),
     };
-    let surface = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+    let surface = synthesize_surface_proposition(&original, ParameterBinding::default(), state)
         .expect("local storage and separating conjunction must be spellable");
     let printed = printing::source_click_proposition(&surface);
     let file = parser::parse_file_items(&format!(
@@ -6261,7 +6261,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
         &reparsed,
         &crate::kernel::PureFactContext::new(),
         ContractEnvironment::new(&values, &BTreeMap::new()),
-        FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+        FixedStateFrame::new(state, state, None, &RecordedStates::new()),
         SpecDefinitions::new(&predicates, &functions),
     )
     .unwrap();

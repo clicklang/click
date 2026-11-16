@@ -140,7 +140,7 @@ impl VariableChains {
         else {
             return;
         };
-        if crate::kernel::is_load_variable(&left) || crate::kernel::is_load_variable(&right) {
+        if crate::kernel::is_load_variable(left) || crate::kernel::is_load_variable(right) {
             return;
         }
         let (left, right) = (*left, *right);

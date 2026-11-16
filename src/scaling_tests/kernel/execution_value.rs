@@ -205,7 +205,7 @@ fn retained_pointer_cells_do_not_export_prepared_dags_or_scan_sibling_cells() {
         let mut memory = Memory::new();
         for n in 0..unrelated {
             memory = memory.store(
-                Memory::local_pointer(&format!("unrelated_pointer_cell_{n}")),
+                Memory::local_pointer(format!("unrelated_pointer_cell_{n}")),
                 ProgramValue::Int32(MachineTerm::constant(n)),
             );
         }
@@ -231,7 +231,7 @@ fn retained_pointer_cells_do_not_export_prepared_dags_or_scan_sibling_cells() {
                 ),
                 SharedPointerValue::import(&pointer),
             );
-            let address = Memory::local_pointer(&format!("selected_{size}"));
+            let address = Memory::local_pointer(format!("selected_{size}"));
             let exports = KernelTermExport::machine_export_count();
             let (stored, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let stored = memory

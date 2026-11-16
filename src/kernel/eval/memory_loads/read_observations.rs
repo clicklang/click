@@ -216,7 +216,7 @@ pub(super) fn latest(read: &MachineTerm) -> Option<MachineTerm> {
             .latest
             .get(&(epoch, id))
             .map(|(memory, pointer)| {
-                MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer.clone()), *kind)
+                MachineTerm::MemoryLoad(ProgramPoint::at(memory), Box::new(pointer.clone()), *kind)
             })
     })
 }

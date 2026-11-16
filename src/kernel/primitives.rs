@@ -4214,6 +4214,77 @@ pub enum SpecExpression {
         requirement: Box<SpecProposition>,
         value: Box<SpecExpression>,
     },
+    /// Address a C place whose base is evaluated by the specification's state.
+    /// No lexical binding or execution local is introduced.
+    ObjectAddress(Box<SpecObjectAddress>),
+}
+
+/// The C place operations around a specification-evaluated address base.
+/// Steps are stored outside-in, preserving C subobject designation formation.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum SpecAddressStep {
+    Subobject { width: u32 },
+    OffsetBytes { bytes: u32 },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct SpecObjectAddress {
+    pub base: Box<SpecExpression>,
+    pub steps: Vec<SpecAddressStep>,
+    pub value_type: ProgramType,
+    pub volatile: bool,
+    pub pointee_constant: bool,
+    pub access_class: Option<crate::kernel::effective_type::CAccessClass>,
+    pub source: ExpressionLoadSource,
+    pub checked: bool,
+}
+
+impl SpecObjectAddress {
+    /// Rebuild only this node's metadata while a spec traversal maps its base.
+    pub(crate) fn with_base(&self, base: SpecExpression) -> Self {
+        Self {
+            base: Box::new(base),
+            steps: self.steps.clone(),
+            value_type: self.value_type,
+            volatile: self.volatile,
+            pointee_constant: self.pointee_constant,
+            access_class: self.access_class.clone(),
+            source: self.source.clone(),
+            checked: self.checked,
+        }
+    }
+
+    /// Feed the selected base value to the ordinary C address operation.
+    /// All place steps remain syntax, so member designation is formed by the
+    /// same checked transition as a program address, without a fake variable.
+    pub(crate) fn program_expression(&self, base: ProgramValue) -> ProgramExpression {
+        let mut pointer = ProgramExpression::Value(base);
+        for step in self.steps.iter().rev() {
+            pointer = match step {
+                SpecAddressStep::Subobject { width } => ProgramExpression::Subobject {
+                    pointer: Box::new(pointer),
+                    width: *width,
+                },
+                SpecAddressStep::OffsetBytes { bytes } => ProgramExpression::PointerOffsetBytes {
+                    pointer: Box::new(pointer),
+                    bytes: *bytes,
+                },
+            };
+        }
+        let target = Box::new(ProgramExpression::TypedLoad {
+            pointer: Box::new(pointer),
+            value_type: self.value_type,
+            volatile: self.volatile,
+            pointee_constant: self.pointee_constant,
+            access_class: self.access_class.clone(),
+            source: self.source.clone(),
+        });
+        if self.checked {
+            ProgramExpression::CheckedObjectAddress(target)
+        } else {
+            ProgramExpression::AddressOf(target)
+        }
+    }
 }
 
 impl SpecExpression {
@@ -4726,7 +4797,7 @@ impl AlgebraicTermNode {
     /// address as it reaches a scalar load's.
     pub(crate) fn memory_load_carrier(memory: &SharedMemory, pointer: &Pointer) -> MachineTerm {
         MachineTerm::MemoryLoad(
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(memory),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         )
@@ -13177,11 +13248,18 @@ pub enum Proposition {
         parent: Box<Resource>,
         child: Box<Resource>,
     },
+    /// Internal write bound for a recorded transition, using constant byte
+    /// counts. Listed ranges may conservatively include bytes that were not
+    /// written. Preservation proofs use recorded region footprints; allocation
+    /// lifetime effects are recorded separately.
     MemoryMutatesOnly {
         before: Memory,
         after: Memory,
         writes: Vec<(Pointer, u32)>,
     },
+    /// Internal write bound expressed as [`MemoryRange`] descriptors, including
+    /// symbolic extents. Like [`Self::MemoryMutatesOnly`], this bounds possible
+    /// writes rather than claiming that every listed cell changed.
     MemoryEffectSummary {
         before: Memory,
         after: Memory,
@@ -14645,16 +14723,16 @@ pub struct PureFactContext {
         PointerBlock,
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<Proposition>>,
     >,
-    /// The `ResourceContains` facts, filed by their parent: a memory
-    /// range under its base block, any other resource under itself. A
-    /// containment walk reads the facts under the resource it has reached,
-    /// not every proposition fact.
     /// The memory effect facts (`MemoryEffectSummary`, `MemoryMutatesOnly`,
     /// `HeapAllocationFreed`), filed under both of their memories, so a load
     /// comparison between two states reads the effects naming one of
     /// them, not every proposition fact.
     pub(super) memory_effect_facts:
         crate::persistent::PersistentMap<Memory, crate::persistent::PersistentSet<Proposition>>,
+    /// The `ResourceContains` facts, filed by their parent: a memory
+    /// range under its base block, any other resource under itself. A
+    /// containment walk reads the facts under the resource it has reached,
+    /// not every proposition fact.
     pub(super) resource_contains_facts: crate::persistent::PersistentMap<
         super::assumptions::ResourceContainsKey,
         crate::persistent::PersistentSet<Proposition>,
@@ -14828,6 +14906,7 @@ pub struct ExecutionPureFact {
 /// and hashing remain proposition-oriented. Allocate the event list only for
 /// facts carrying source events; ordinary pure facts keep one optional pointer.
 #[derive(Clone, Debug, Default)]
+#[allow(clippy::box_collection)] // Pure facts retain only one optional provenance pointer.
 pub(crate) struct GeneratedLoadSourceEvents(Option<Box<Vec<GeneratedLoadSourceEvent>>>);
 
 impl GeneratedLoadSourceEvents {
@@ -15240,16 +15319,6 @@ impl CheckedFunctionExecution {
 
     pub(crate) fn function_arguments(&self) -> &[ProgramExpression] {
         &self.arguments
-    }
-
-    /// A complete proof checked its returned resource units jointly on every path.
-    pub(crate) fn has_checked_resource_transitions(&self) -> bool {
-        !self.execution.paths.is_empty()
-            && self.checked_resource_transitions.len() == self.execution.paths.len()
-            && self
-                .checked_resource_transitions
-                .iter()
-                .all(|checked| *checked)
     }
 
     /// Allocation return accounting reads borrowed inputs in the immutable

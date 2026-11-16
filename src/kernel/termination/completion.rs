@@ -496,10 +496,7 @@ mod tests {
         rules: &[VerifiedFunctionRule],
     ) -> Result<ProgramTerminationProof, ProgramContractFailure> {
         owner.generate_termination(ProgramTerminationInputs {
-            independent: crate::kernel::IndependentTerminationInputs {
-                rules: rules,
-                bodies: &[],
-            },
+            independent: crate::kernel::IndependentTerminationInputs { rules, bodies: &[] },
             plans: &[],
             assumed_terminating: &BTreeSet::new(),
             diverging_contracts: &BTreeSet::new(),

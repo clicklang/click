@@ -32,7 +32,7 @@ impl KernelTerm {
         let (memory, address) = read.parts();
         Some(self.0.machine_leaf.get_or_init(|| {
             MachineTerm::MemoryLoad(
-                ProgramPoint::at(&memory),
+                ProgramPoint::at(memory),
                 Box::new(address.export().expect("float read address")),
                 format.load_kind(),
             )
@@ -63,7 +63,7 @@ mod tests {
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             for memory in [&first, &second] {
                 let source = MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&memory),
+                    ProgramPoint::at(memory),
                     Box::new(pointer.clone()),
                     format.load_kind(),
                 );

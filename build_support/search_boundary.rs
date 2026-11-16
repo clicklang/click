@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use syn::visit::Visit;
 #[path = "proof_search_boundary.rs"]
-mod proof_search_boundary;
+pub(super) mod proof_search_boundary;
 
 fn test_only(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|a| {

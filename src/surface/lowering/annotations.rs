@@ -2948,10 +2948,10 @@ fn collect_local_pointer_element_types(
                     ProgramType::Float64Array(_) => Some(ProgramType::Float64),
                     _ => None,
                 });
-                if let Some(element) = element {
-                    if let Some(name) = name.named() {
-                        types.insert(name.to_owned(), element);
-                    }
+                if let Some(element) = element
+                    && let Some(name) = name.named()
+                {
+                    types.insert(name.to_owned(), element);
                 }
             }
             ProgramStatement::Seq(statements) => {
@@ -7158,15 +7158,15 @@ impl AnnotationLowerer<'_> {
                                 .is_some())
                 });
                 let mut projection_environment = environment.clone();
-                if let Some(parameter) = projection {
-                    if let Some(name) = parameter.named() {
-                        projection_environment.values.insert(
-                            name.to_owned(),
-                            SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                                parameter.clone(),
-                            )),
-                        );
-                    }
+                if let Some(parameter) = projection
+                    && let Some(name) = parameter.named()
+                {
+                    projection_environment.values.insert(
+                        name.to_owned(),
+                        SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                            parameter.clone(),
+                        )),
+                    );
                 }
                 let array_ref = self.lower_array_ref_to_spec(base, &projection_environment)?;
                 let index = self.lower_contract_expression_to_spec(index, environment)?;
@@ -9140,7 +9140,7 @@ impl AnnotationLowerer<'_> {
                 }
             }
             None => Ok(SpecExpression::ProgramExpression(
-                ProgramExpression::Variable(name.clone().into()),
+                ProgramExpression::Variable(name.clone()),
             )),
         }
     }
@@ -9233,62 +9233,35 @@ impl AnnotationLowerer<'_> {
                 source,
             } = target.as_ref()
         {
-            // The address operand belongs to this elaboration environment,
-            // which may select a saved memory. A raw ProgramExpression here would
-            // silently evaluate nested pointer reads in the current state.
-            // Bind only that operand, then use the existing address operation
-            // to retain its designation, extent, and qualifiers.
-            let name = "<spec-address-operand>".to_string();
-            fn bind_address_base<'a>(
-                pointer: &'a ProgramExpression,
-                name: &str,
-            ) -> (&'a ProgramExpression, ProgramExpression) {
-                match pointer {
+            // Evaluate only the base through the selected specification state.
+            // Retain the C place steps for designation, extent and qualification.
+            let mut base = pointer.as_ref();
+            let mut steps = Vec::new();
+            loop {
+                match base {
                     ProgramExpression::Subobject { pointer, width } => {
-                        let (base, pointer) = bind_address_base(pointer, name);
-                        (
-                            base,
-                            ProgramExpression::Subobject {
-                                pointer: Box::new(pointer),
-                                width: *width,
-                            },
-                        )
+                        steps.push(crate::kernel::SpecAddressStep::Subobject { width: *width });
+                        base = pointer;
                     }
                     ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
-                        let (base, pointer) = bind_address_base(pointer, name);
-                        (
-                            base,
-                            ProgramExpression::PointerOffsetBytes {
-                                pointer: Box::new(pointer),
-                                bytes: *bytes,
-                            },
-                        )
+                        steps.push(crate::kernel::SpecAddressStep::OffsetBytes { bytes: *bytes });
+                        base = pointer;
                     }
-                    base => (base, ProgramExpression::Variable(name.into())),
+                    _ => break,
                 }
             }
-            // C member selection records a designation, not merely an extent.
-            // Retain that selected syntax around the state-bound base.
-            let (base, pointer) = bind_address_base(pointer, &name);
-            let target = Box::new(ProgramExpression::TypedLoad {
-                pointer: Box::new(pointer),
-                value_type: *value_type,
-                volatile: *volatile,
-                pointee_constant: *pointee_constant,
-                access_class: access_class.clone(),
-                source: source.clone(),
-            });
-            let address = match expression {
-                ProgramExpression::CheckedObjectAddress(_) => {
-                    ProgramExpression::CheckedObjectAddress(target)
-                }
-                _ => ProgramExpression::AddressOf(target),
-            };
-            return Ok(SpecExpression::Let {
-                name,
-                value: Box::new(self.lower_program_expression_to_spec(base, environment)?),
-                body: Box::new(SpecExpression::ProgramExpression(address)),
-            });
+            return Ok(SpecExpression::ObjectAddress(Box::new(
+                crate::kernel::SpecObjectAddress {
+                    base: Box::new(self.lower_program_expression_to_spec(base, environment)?),
+                    steps,
+                    value_type: *value_type,
+                    volatile: *volatile,
+                    pointee_constant: *pointee_constant,
+                    access_class: access_class.clone(),
+                    source: source.clone(),
+                    checked: matches!(expression, ProgramExpression::CheckedObjectAddress(_)),
+                },
+            )));
         }
         match expression {
             ProgramExpression::Value(value) => Ok(SpecExpression::Value(value.clone())),

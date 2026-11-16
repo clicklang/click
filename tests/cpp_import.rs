@@ -18414,8 +18414,8 @@ int twice(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
 }
-theorem twice_doubles() executes twice(int x) {
-    ensures Doubling(&twice) by { step_until(function.exit); solve(); }
+theorem twice_doubles() {
+    ensures Doubling(&twice) by { unfold(Doubling); solve(); }
 }
 int apply(int (*f)(int), int x) {
     requires Doubling(f);
@@ -18463,8 +18463,8 @@ fn calls_through_a_cpp_function_pointer_meet_its_named_contract() {
 
 // The call through `f` needs the contract `apply` requires of it, and the
 // call passing `&twice` needs `twice` to meet that contract: from its own
-// contract, which Click checks at the call, or by the `executes` theorem.
-// A contract `twice` does not meet is refused either way.
+// contract, through an explicit refinement theorem. Both the theorem and
+// the matching callback contract are required.
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
@@ -18472,7 +18472,7 @@ fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let sidecar = project.directory.join("callback.click");
-    let theorem = "theorem twice_doubles() executes twice(int x) {\n    ensures Doubling(&twice) by { step_until(function.exit); solve(); }\n}\n";
+    let theorem = "theorem twice_doubles() {\n    ensures Doubling(&twice) by { unfold(Doubling); solve(); }\n}\n";
     let without_theorem = FUNCTION_POINTER_SIDECAR
         .replace(theorem, "")
         .replace("apply(twice_doubles()); ", "");
@@ -18481,7 +18481,15 @@ fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
         let parsed = read_click_project(&sidecar, source).unwrap();
         verify_program_prepared_project(&parsed, &import)
     };
-    verify(&without_theorem).unwrap_or_else(|error| panic!("{}", error.message()));
+    verify(FUNCTION_POINTER_SIDECAR).unwrap_or_else(|error| panic!("{}", error.message()));
+    let error = verify(&without_theorem).expect_err("callback refinement must be explicit");
+    assert!(
+        error
+            .message()
+            .contains("does not satisfy named contract `Doubling`"),
+        "{}",
+        error.message()
+    );
     let weak_twice = "    ensures result >= 0;\n}";
     for hostile in [
         FUNCTION_POINTER_SIDECAR.replace("    requires Doubling(f);\n", ""),
@@ -18490,7 +18498,7 @@ fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
             "    ensures result == x + x + 1;\n}\nint twice",
             1,
         ),
-        without_theorem.replace(
+        FUNCTION_POINTER_SIDECAR.replace(
             "int twice(int x) {\n    requires 0 <= x and x <= 1000;\n    ensures result == x + x;\n}",
             &format!("int twice(int x) {{\n    requires 0 <= x and x <= 1000;\n{weak_twice}"),
         ),
@@ -18503,7 +18511,7 @@ fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
             assert!(
                 error
                     .message()
-                    .contains("does not satisfy named contract `Doubling`"),
+                    .contains("contract-refinement proof does not establish `Doubling(&twice)`"),
                 "{}",
                 error.message()
             );
@@ -18729,10 +18737,13 @@ int caller::(lambda#0)(int y) {
     ensures 0 <= result and result <= 2000;
     ensures result == y + y;
 }
+theorem lambda_doubles() {
+    ensures Doubling(&caller::(lambda#0)) by { unfold(Doubling); solve(); }
+}
 int caller(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-}
+} by { apply(lambda_doubles()); }
 "#;
 
 // A lambda that captures nothing, passed for a function pointer, is its call
@@ -18764,20 +18775,23 @@ fn cpp_lambdas_passed_for_a_function_pointer_meet_its_named_contract() {
         (
             "    ensures result == y + y;\n",
             "    ensures result >= y;\n",
-            "function `caller::(lambda#0)` does not satisfy named contract `Doubling`",
+            "contract-refinement proof does not establish `Doubling(&caller::(lambda#0))`",
         ),
         (
             "    ensures result == y + y;\n",
             "    ensures result == y + y + 1;\n",
-            "caller::(lambda#0).ensures_1",
+            "contract-refinement proof does not establish `Doubling(&caller::(lambda#0))`",
         ),
         (
             "int caller::(lambda#0)(int y)",
             "int caller::(lambda#1)(int y)",
-            "`caller::(lambda#1)` is not defined by any `verifying` source",
+            "`caller::(lambda#1)` is not a verified or external function compatible with contract `Doubling`",
         ),
     ] {
-        let hostile = LAMBDA_SIDECAR.replacen(before, after, 1);
+        let mut hostile = LAMBDA_SIDECAR.replacen(before, after, 1);
+        if before == "int caller::(lambda#0)(int y)" {
+            hostile = hostile.replace("&caller::(lambda#0)", "&caller::(lambda#1)");
+        }
         assert_ne!(hostile, LAMBDA_SIDECAR);
         let Err(error) = verify(&hostile) else {
             panic!("accepted:\n{hostile}");
@@ -18814,10 +18828,16 @@ int pair::(lambda#1)(int y) {
     ensures 0 <= result and result <= 2000;
     ensures result == y + y;
 }
+theorem first_is_bounded() {
+    ensures Bounded(&pair::(lambda#0)) by { unfold(Bounded); solve(); }
+}
+theorem second_is_bounded() {
+    ensures Bounded(&pair::(lambda#1)) by { unfold(Bounded); solve(); }
+}
 int pair(int x) {
     requires 0 <= x and x <= 1000;
     ensures 0 <= result and result <= 4000;
-}
+} by { apply(first_is_bounded()); apply(second_is_bounded()); }
 "#;
     let sidecar = project.directory.join("callback.click");
     fs::write(&sidecar, source).unwrap();

@@ -22654,8 +22654,7 @@ fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
     let error = verify_c_sources(&source, &wrong_refs)
-        .err()
-        .expect("a null store cannot produce the nonempty tree");
+        .expect_err("a null store cannot produce the nonempty tree");
     assert!(!error.message().contains("no Surface spelling"), "{error}");
 }
 
@@ -22710,6 +22709,38 @@ fn typed_contract_results_expand_and_recheck() {
         let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
             .unwrap_or_else(|error| panic!("{fixture}: {error:?}"));
         assert!(!expanded.contains("@click:result"), "{fixture}: {expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error:?}\n{expanded}"));
+    }
+}
+
+#[test]
+#[ignore = "nightly: saved-memory and member-address expansion with cold replay"]
+fn specification_member_addresses_expand_and_recheck() {
+    for (fixture, claim) in [
+        (
+            "saved_memory_field_address_keeps_state",
+            "redirect.contract",
+        ),
+        ("struct_field_address", "update_nested.contract"),
+        (
+            "struct_scalar_array_element_address",
+            "update_value.contract",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{fixture}: {error:?}"));
+        assert!(
+            !expanded.contains("<spec-address-operand>"),
+            "{fixture}: {expanded}"
+        );
         without_implicit_solve_for_claim(claim, || {
             verify_c_sources(&expanded, &sources).map_err(|error| error.report())
         })

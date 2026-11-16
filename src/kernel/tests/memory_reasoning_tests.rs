@@ -784,7 +784,7 @@ fn byte_store_does_not_change_a_proven_distinct_byte_load() {
         &after,
         &read,
         ProgramType::UInt8,
-        &[effect.clone()],
+        std::slice::from_ref(&effect),
         &assumptions,
     )
     .expect("distinct byte cells have an explicit frame");
@@ -800,7 +800,7 @@ fn byte_store_does_not_change_a_proven_distinct_byte_load() {
             &after,
             &read,
             ProgramType::Int32,
-            &[effect.clone()],
+            std::slice::from_ref(&effect),
             &assumptions
         )
         .is_none(),

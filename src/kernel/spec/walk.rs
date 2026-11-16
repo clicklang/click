@@ -98,6 +98,7 @@ impl<'a> SpecNode<'a> {
                 }
             },
             N::Expression(expression) => match expression {
+                SpecExpression::ObjectAddress(address) => visit(N::Expression(&address.base)),
                 SpecExpression::Value(_)
                 | SpecExpression::ProgramExpression(_)
                 | SpecExpression::ResourceField { .. } => {}

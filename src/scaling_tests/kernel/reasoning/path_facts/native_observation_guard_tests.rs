@@ -94,3 +94,39 @@ fn growing_refuted_execution_guards_reuse_prefixes() {
 fn growing_unresolved_execution_guards_reuse_prefixes() {
     growing_arithmetic_guards(None);
 }
+
+#[test]
+fn selected_obligation_lookup_ignores_unrelated_facts() {
+    use crate::kernel::KernelTermExport;
+    let samples = [16, 64, 256, 1024].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (native, observed) = equalities(MachineIntegerType::Int32);
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context =
+                context.assume_condition(ConditionTerm::Variable(Variable(914_000 + index)), true);
+        }
+        let context = context.assume_condition(native, false);
+        let query = Proposition::ConditionIs(observed, false);
+        let exports = KernelTermExport::machine_export_count();
+        let (obligations, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut obligations = Vec::new();
+            add_required_proof_obligation_without_search(
+                &mut obligations,
+                &context,
+                query,
+                None,
+                None,
+            );
+            obligations
+        });
+        assert!(obligations.is_empty());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        work
+    });
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().max().unwrap() - samples.iter().min().unwrap() <= 64,
+        "{samples:?}"
+    );
+}

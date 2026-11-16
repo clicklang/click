@@ -1832,7 +1832,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// is the two operands' formats and four constant products.
     pub(in crate::surface::proof) fn prove_product_bound_from_ranges(
         search_input: &Proof<'a>,
-        operands: [(&crate::kernel::SharedIntegerTerm, &Box<ContractExpression>); 2],
+        operands: [(&crate::kernel::SharedIntegerTerm, &ContractExpression); 2],
         bound: &ClickProposition,
         target: &num_bigint::BigInt,
         lower: bool,
@@ -1867,10 +1867,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ClickProposition::Comparison {
                     left: surface_signed_integer_literal(min),
                     operator: ComparisonOperator::LessEqual,
-                    right: spelled.as_ref().clone(),
+                    right: (**spelled).clone(),
                 },
                 ClickProposition::Comparison {
-                    left: spelled.as_ref().clone(),
+                    left: (**spelled).clone(),
                     operator: ComparisonOperator::LessEqual,
                     right: surface_signed_integer_literal(max),
                 },

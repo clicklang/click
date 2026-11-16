@@ -84,6 +84,7 @@ pub(crate) enum Operation {
 }
 
 impl Operation {
+    #[cfg(test)]
     pub(crate) const ALL: [Self; 3] = [Self::Add, Self::Subtract, Self::Multiply];
 
     /// The exact `Integer` result of the operation on `left` and `right`.

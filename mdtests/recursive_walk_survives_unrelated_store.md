@@ -113,17 +113,13 @@ void mark(int32 *next, int32 *visited) {
     mark entry;
     have at(entry, next[0]) == 0;
     step();
-    have at(entry, next[0]) == next[0] by {
-        have at(entry, next[0]) == at(entry, next[0]) by normalize();
-        transport(
-            at(entry, next[0]) == at(entry, next[0]),
-            at(entry, next[0]) == next[0]
-        ) using {
-            at(entry, next[0]) == at(entry, next[0]);
-            separate(memory(next[0..1]), memory(visited[0..1]));
-        };
-        known();
+    have separate(statement(0).footprint, memory(next[0])) by {
+        normalize() using { separate(memory(next[0..1]), memory(visited[0..1])); };
     }
+    have next[0] == at(entry, next[0]) by {
+        preserve(separate(statement(0).footprint, memory(next[0])));
+    }
+    have at(entry, next[0]) == next[0] by { known(); }
     have forall (k: int32) {
         0 <= k and k < 1 implies at(entry, next[k]) == next[k]
     } by {
@@ -152,7 +148,7 @@ void mark(int32 *next, int32 *visited) {
         known();
     }
     have at(entry, viewable(next[0..1]));
-    have viewable(next[0..1]);
+    have viewable(next[0..1]) by { observe(next[0..1]); }
     have 0 <= 0;
     have 0 < 1;
     have 1 <= 1073741823;

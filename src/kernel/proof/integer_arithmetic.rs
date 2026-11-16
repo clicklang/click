@@ -1664,7 +1664,7 @@ mod tests {
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
                         MachineTerm::MemoryLoad(
-                            crate::kernel::ProgramPoint::at(&memory),
+                            crate::kernel::ProgramPoint::at(memory),
                             Box::new(pointer.clone()),
                             crate::kernel::LoadKind::Int32,
                         ),

@@ -240,6 +240,7 @@ impl<K: Ord + Clone + Hash, V: Clone + Hash> HashedOrdMap<K, V> {
     /// paths the two maps do not share, charging one unit per difference, so
     /// a map that already agrees with `other` keeps its root and compares
     /// equal to its earlier self in constant time.
+    #[cfg(test)]
     pub(crate) fn overwrite_with(&mut self, other: &Self)
     where
         V: PartialEq,

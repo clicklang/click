@@ -33,6 +33,16 @@ impl KernelTerm {
     }
 }
 
+impl FloatOperandView<'_> {
+    pub(crate) fn is_call(self) -> bool {
+        match self {
+            Self::Native(_, MachineTerm::ClickFunctionApplication { .. }) => true,
+            Self::Shared(root) => matches!(root.node(), KernelTermNode::FloatCall(_)),
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,16 +106,6 @@ mod tests {
                 !FloatOperandView::Shared(&roots[0])
                     .syntax_equal(FloatOperandView::Shared(&roots[1]))
             );
-        }
-    }
-}
-
-impl FloatOperandView<'_> {
-    pub(crate) fn is_call(self) -> bool {
-        match self {
-            Self::Native(_, MachineTerm::ClickFunctionApplication { .. }) => true,
-            Self::Shared(root) => matches!(root.node(), KernelTermNode::FloatCall(_)),
-            _ => false,
         }
     }
 }

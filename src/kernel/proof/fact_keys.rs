@@ -4349,7 +4349,7 @@ mod memory_state_alpha_tests {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::MemoryLoad(
-                crate::kernel::ProgramPoint::at(&memory),
+                crate::kernel::ProgramPoint::at(memory),
                 Box::new(Pointer {
                     block: "retained_state-alpha".into(),
                     offset: PointerOffsetTerm::Variable(item),

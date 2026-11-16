@@ -8,7 +8,7 @@ fn aggregate_step_results_cost_their_fields_instead_of_unrelated_state() {
             let (mut state, source, layout) = fixture(fields);
             if unrelated {
                 for i in 0..size {
-                    let pointer = Memory::local_pointer(&format!("other{i}"));
+                    let pointer = Memory::local_pointer(format!("other{i}"));
                     state.set_memory(
                         state
                             .memory

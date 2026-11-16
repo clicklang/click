@@ -3684,7 +3684,7 @@ fn a_stored_value_resolves_only_a_read_of_its_own_address_and_width() {
     let resolves_to_seven = |memory: &SharedMemory, read: &Pointer| {
         let seven = MachineTerm::constant(7);
         let load = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(memory),
             Box::new(read.clone()),
             crate::kernel::LoadKind::Int32,
         );
@@ -4526,7 +4526,7 @@ fn equal_object_origins_frame_neighbor_fields_without_equating_index_atoms() {
     let read = left.offset_by_bytes(8);
     let load = |memory: &SharedMemory, pointer: &Pointer| {
         MachineTerm::MemoryLoad(
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(memory),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         )
@@ -4593,7 +4593,7 @@ fn stated_separation_frames_equal_model_and_program_origins() {
     let read = entry.offset_by_bytes(8);
     let load = |memory: &SharedMemory| {
         MachineTerm::MemoryLoad(
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(memory),
             Box::new(read.clone()),
             LoadKind::Bits64,
         )

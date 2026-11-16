@@ -3740,7 +3740,6 @@ pub(super) fn decode_crate(
         traits::wrap_object_coercions(&mut blocks, coercions)?;
         protocol::split_next_branches(&mut blocks)?;
         panics::assert_branches(&mut blocks);
-        let mut locals = locals;
         temporaries::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);

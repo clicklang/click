@@ -358,7 +358,7 @@ fn own_memory_context(
 
 fn assert_checkable_derivation(assumptions: &PureFactContext, proposition: &Proposition) {
     let derivation =
-        crate::kernel::search::ProofSearch::derive_proposition(&(assumptions), proposition)
+        crate::kernel::search::ProofSearch::derive_proposition(assumptions, proposition)
             .expect("expected an explicit proposition derivation");
     assert_eq!(derivation.conclusion(), proposition);
     assert!(

@@ -390,7 +390,7 @@ pub(super) fn verify_execution_theorem(
     )?;
     let completed = finish_contract_body_root(&block, &verified)?;
     let rule = completed
-        .into_rule()
+        .to_reusable_rule()
         .expect("a synthetic one-call function is never a program entry");
     let authority = match concrete_callee {
         Some(callee) => crate::kernel::prove_executed_concrete_contract_refinement(

@@ -68,7 +68,7 @@ fn variable_minus_positive(expression: &ProgramExpression, variable: &BindingNam
     let ProgramExpression::Subtract(left, right) = expression else {
         return None;
     };
-    if left.as_ref() != &ProgramExpression::Variable(variable.clone().into()) {
+    if left.as_ref() != &ProgramExpression::Variable(variable.clone()) {
         return None;
     }
     int32_literal(right).filter(|step| *step > 0)
@@ -1641,6 +1641,7 @@ fn collect_spec_program_variables(
                         return Visit::Stop("a subslice's bounds requirement");
                     }
                     SpecExpression::RangeFold { .. } => return Visit::Stop("a range fold"),
+                    SpecExpression::ObjectAddress(_) => return Visit::Stop("an object address"),
                     SpecExpression::Let { .. } => return Visit::Stop("a `let` expression"),
                     SpecExpression::LoopEntryState(_) => {
                         return Visit::Stop("a loop-entry state");
