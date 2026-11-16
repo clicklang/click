@@ -16264,6 +16264,52 @@ impl Parser {
         }
     }
 
+    /// The modeled memory functions describe their native `void *` arguments
+    /// as byte ranges. Retag an object pointer for that contract after the
+    /// native call's qualifier checks. This is an implicit conversion: it
+    /// retains the argument's designation, subobject extent and qualifiers.
+    /// Ordinary functions, indirect calls and internal-linkage names keep
+    /// their own declared interfaces.
+    fn adapt_library_memory_argument(
+        &self,
+        function_name: Option<&str>,
+        index: usize,
+        expression: &mut CExpression,
+    ) {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(name) = function_name else { return };
+        if self.variable_types.contains_key(&self.resolve_name(name)) {
+            return;
+        }
+        let Some(header) = self.function_declarations.get(name) else {
+            return;
+        };
+        let Some((library, _, true)) = library_function_prototype(header) else {
+            return;
+        };
+        if !matches!(library, "memcpy" | "memcmp" | "memset") {
+            return;
+        }
+        let Some(parameter) = header.parameters.get(index) else {
+            return;
+        };
+        if parameter.interface_type != InterfaceType::VoidPointer
+            || !self
+                .source_expression_type(expression)
+                .is_some_and(|ty| decay_to_pointer(ty).is_object_pointer())
+        {
+            return;
+        }
+        *expression = CExpression::Cast {
+            expression: Box::new(std::mem::replace(expression, CExpression::Void)),
+            interface_type: InterfaceType::UInt8Pointer,
+            struct_name: None,
+            pointee_volatile: false,
+            pointee_constant: parameter.pointee_is_constant(),
+            explicit_qualification: false,
+        };
+    }
+
     fn parse_call_arguments(
         &mut self,
         function_name: Option<&str>,
@@ -16383,6 +16429,7 @@ impl Parser {
             if function_name == Some("free") && self.expression_contains_aggregate(&expression) {
                 return Err(self.error_here("`free` requires a pointer, not an aggregate value"));
             }
+            self.adapt_library_memory_argument(function_name, argument_index, &mut expression);
             arguments.push(expression);
             match self.peek() {
                 Some(Token::Comma) => {
