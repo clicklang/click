@@ -13340,6 +13340,9 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
         "expanded proof from `{}` omitted the checked upper-bound split",
         path.display()
     );
+    if filename == "bubble_sort3_two_pass_sorted.md" {
+        assert!(!expanded.contains("transport("), "{expanded}");
+    }
     // The bound may be discharged by an arithmetic certificate rather than
     // a named theorem. Cold rechecking must retain the explicit proof and
     // must not recover it through implicit outcome planning.
