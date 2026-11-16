@@ -16,22 +16,26 @@ fn store_equation_work(unrelated: usize, stores: usize) -> usize {
             ProgramValue::Int32(MachineTerm::Variable(Variable(989_800_000 + index))),
         );
     }
-    let mut facts = Vec::new();
+    let mut operands = Vec::new();
     for index in 0..stores as u64 {
         let before = memory.clone();
+        let pointer = cell(989_600_000 + index);
         let value = ProgramValue::Int32(MachineTerm::Variable(Variable(989_700_000 + index)));
-        memory = memory.store(cell(989_600_000 + index), value.clone());
-        facts.push(ExecutionPureFact::certified_store(
-            before,
-            memory.clone(),
-            cell(989_600_000 + index),
-            value,
-            None,
-        ));
+        memory = memory.store(pointer.clone(), value.clone());
+        operands.push((before, memory.clone(), pointer, value));
     }
-    let facts: ExecutionFacts = facts.into();
-    let (equations, work) =
-        crate::instrumentation::measure_deterministic_work(|| certified_store_equations(&facts));
+    // Include equation construction at store admission, not just extraction
+    // of retained equations. Memory-state fixture setup stays outside it.
+    let (equations, work) = crate::instrumentation::measure_deterministic_work(|| {
+        let facts: ExecutionFacts = operands
+            .into_iter()
+            .map(|(before, after, pointer, value)| {
+                ExecutionPureFact::certified_store(before, after, pointer, value, None)
+            })
+            .collect::<Vec<_>>()
+            .into();
+        certified_store_equations(&facts)
+    });
     assert_eq!(equations.len(), stores);
     work
 }
