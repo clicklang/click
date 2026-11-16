@@ -95,12 +95,6 @@ fn validate_proposition_expression_types_one(
         ClickProposition::Value(expression) => require_proposition_value_type(
             infer_spec_value_type(expression, variables, click_functions, context)?,
         ),
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                validate_resource_subject_expression_types(r, variables, click_functions, context)?;
-            }
-            Ok(())
-        }
 
         ClickProposition::Comparison {
             left,
@@ -4374,7 +4368,8 @@ pub(in crate::surface) fn infer_program_expression_type(
         ProgramExpression::Value(ProgramValue::Pointer(_)) => None,
         ProgramExpression::Variable(name) => match name {
             crate::kernel::BindingName::Named(name) => variables.get(name).copied(),
-            crate::kernel::BindingName::Local(id) => id
+            crate::kernel::BindingName::ContractResult => variables.get("result").copied(),
+            crate::kernel::BindingName::Local(_) | crate::kernel::BindingName::Static(_) => name
                 .program_type()
                 .and_then(|ty| interface_type_from_program_type(&ty)),
         },
@@ -5011,12 +5006,6 @@ fn validate_predicate_calls_in_proposition_one(
         ClickProposition::Value(expression) => {
             validate_contract_expression_calls(expression, click_functions, context)
         }
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                validate_resource_subject_calls(r, click_functions, context)?;
-            }
-            Ok(())
-        }
 
         ClickProposition::Comparison { left, right, .. } => {
             validate_contract_expression_calls(left, click_functions, context)?;
@@ -5408,12 +5397,6 @@ fn validate_value_proposition_calls(
     match proposition {
         ClickProposition::Value(expression) => {
             validate_contract_expression_calls(expression, click_functions, context)
-        }
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                validate_resource_subject_calls(r, click_functions, context)?;
-            }
-            Ok(())
         }
 
         ClickProposition::Comparison { left, right, .. } => {

@@ -46,7 +46,7 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
     }
     let retained_state = crate::kernel::intern_memory_ref(memory);
     let value = super::memory_loads::canonical_scalar_read(&MachineTerm::MemoryLoad(
-        retained_state.clone(),
+        ProgramPoint::at(&retained_state),
         Box::new(pointer.clone()),
         LoadKind::UInt32,
     ));
@@ -54,7 +54,7 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
     for byte in 0..4 {
         crate::instrumentation::record_deterministic_work(1);
         let read = super::memory_loads::canonical_scalar_read(&MachineTerm::MemoryLoad(
-            retained_state.clone(),
+            ProgramPoint::at(&retained_state),
             Box::new(pointer.offset_by_bytes(byte)),
             LoadKind::UInt8,
         ));

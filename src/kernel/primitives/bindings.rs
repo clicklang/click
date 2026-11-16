@@ -176,12 +176,141 @@ impl std::fmt::Display for LocalBindingId {
     }
 }
 
+/// The C declaration owning static storage. File ownership uses the root
+/// translation unit, including for declarations brought in through a header.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum StaticBindingOwner {
+    File(Option<String>),
+    Function(LocalFunctionId),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct StaticBindingMetadata {
+    pub program_type: ProgramType,
+    pub array_shape: Option<Arc<[u32]>>,
+    pub struct_name: Option<Arc<str>>,
+    pub aggregate: bool,
+    pub volatile: bool,
+    pub pointee_volatile: bool,
+    pub constant: bool,
+    pub pointee_constant: bool,
+}
+
+/// Stable identity of one static object; metadata is prepared from the final
+/// compatible declaration and is excluded from storage identity.
+#[derive(Clone, Debug)]
+pub struct StaticBindingId(Arc<StaticDeclaration>);
+#[derive(Debug)]
+struct StaticDeclaration {
+    owner: StaticBindingOwner,
+    ordinal: u32,
+    spelling: String,
+    fingerprint: u64,
+    metadata: OnceLock<StaticBindingMetadata>,
+    struct_name: OnceLock<Arc<str>>,
+}
+impl StaticBindingId {
+    pub fn new(owner: StaticBindingOwner, ordinal: u32, spelling: String) -> Self {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        (&owner, ordinal).hash(&mut hasher);
+        Self(Arc::new(StaticDeclaration {
+            owner,
+            ordinal,
+            spelling,
+            fingerprint: hasher.finish(),
+            metadata: OnceLock::new(),
+            struct_name: OnceLock::new(),
+        }))
+    }
+    pub fn owner(&self) -> &StaticBindingOwner {
+        &self.0.owner
+    }
+    pub fn ordinal(&self) -> u32 {
+        self.0.ordinal
+    }
+    pub fn spelling(&self) -> &str {
+        &self.0.spelling
+    }
+    pub fn source(&self) -> Option<&str> {
+        match &self.0.owner {
+            StaticBindingOwner::File(source) => source.as_deref(),
+            StaticBindingOwner::Function(owner) => owner.0.source.as_deref(),
+        }
+    }
+    pub fn function(&self) -> Option<&str> {
+        match &self.0.owner {
+            StaticBindingOwner::File(_) => None,
+            StaticBindingOwner::Function(owner) => Some(&owner.0.function),
+        }
+    }
+    pub(crate) fn initialize_metadata(&self, metadata: StaticBindingMetadata) {
+        let _ = self.0.metadata.set(metadata);
+    }
+    pub fn metadata(&self) -> Option<&StaticBindingMetadata> {
+        self.0.metadata.get()
+    }
+    pub fn program_type(&self) -> Option<ProgramType> {
+        self.metadata().map(|m| m.program_type)
+    }
+    pub fn array_shape(&self) -> Option<&[u32]> {
+        self.metadata()?.array_shape.as_deref()
+    }
+    pub(crate) fn initialize_struct_name(&self, name: &str) {
+        let _ = self.0.struct_name.set(Arc::from(name));
+    }
+    pub fn struct_name(&self) -> Option<&str> {
+        self.0
+            .struct_name
+            .get()
+            .map(AsRef::as_ref)
+            .or_else(|| self.metadata()?.struct_name.as_deref())
+    }
+    fn identity(&self) -> (&StaticBindingOwner, u32) {
+        (&self.0.owner, self.0.ordinal)
+    }
+}
+impl PartialEq for StaticBindingId {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) || self.identity() == other.identity()
+    }
+}
+impl Eq for StaticBindingId {}
+impl PartialOrd for StaticBindingId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for StaticBindingId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.identity().cmp(&other.identity())
+    }
+}
+impl Hash for StaticBindingId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.fingerprint.hash(state);
+    }
+}
+impl std::fmt::Display for StaticBindingId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(source) = self.source() {
+            write!(f, "{source:?}::")?;
+        }
+        if let Some(function) = self.function() {
+            write!(f, "{function}.")?;
+        }
+        write!(f, "static({})", self.ordinal())
+    }
+}
+
 /// Named bindings remain available to the other frontends and proof/model
 /// binders. C automatic objects always use the declaration alternative.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum BindingName {
     Named(String),
     Local(LocalBindingId),
+    Static(StaticBindingId),
+    /// The current contract's return value; never a source declaration.
+    ContractResult,
 }
 
 impl BindingName {
@@ -189,6 +318,35 @@ impl BindingName {
         match self {
             Self::Named(name) => name,
             Self::Local(id) => id.spelling().unwrap_or(""),
+            Self::Static(id) => id.spelling(),
+            Self::ContractResult => "result",
+        }
+    }
+    pub fn static_id(&self) -> Option<&StaticBindingId> {
+        match self {
+            Self::Static(id) => Some(id),
+            _ => None,
+        }
+    }
+    pub fn program_type(&self) -> Option<ProgramType> {
+        match self {
+            Self::Local(id) => id.program_type(),
+            Self::Static(id) => id.program_type(),
+            _ => None,
+        }
+    }
+    pub fn array_shape(&self) -> Option<&[u32]> {
+        match self {
+            Self::Local(id) => id.array_shape(),
+            Self::Static(id) => id.array_shape(),
+            _ => None,
+        }
+    }
+    pub fn struct_name(&self) -> Option<&str> {
+        match self {
+            Self::Local(id) => id.struct_name(),
+            Self::Static(id) => id.struct_name(),
+            _ => None,
         }
     }
     pub fn local_id(&self) -> Option<&LocalBindingId> {
@@ -214,6 +372,7 @@ pub struct BindingDeclaration {
     array_shape: Option<Arc<[u32]>>,
     struct_name: Option<Arc<str>>,
     scope_depth: u32,
+    static_metadata: Option<Arc<StaticBindingMetadata>>,
 }
 impl BindingDeclaration {
     pub fn binding(&self) -> &BindingName {
@@ -231,17 +390,18 @@ impl From<BindingName> for BindingDeclaration {
         let spelling = match &reference {
             BindingName::Named(name) => Some(Arc::from(name.as_str())),
             BindingName::Local(id) => id.spelling().map(Arc::from),
+            BindingName::Static(id) => Some(Arc::from(id.spelling())),
+            BindingName::ContractResult => Some(Arc::from("result")),
         };
         let scope_depth = reference.local_id().map_or(0, LocalBindingId::scope_depth);
-        let array_shape = reference
-            .local_id()
-            .and_then(LocalBindingId::array_shape)
-            .map(Arc::from);
-        let struct_name = reference
-            .local_id()
-            .and_then(LocalBindingId::struct_name)
-            .map(Arc::from);
+        let array_shape = reference.array_shape().map(Arc::from);
+        let struct_name = reference.struct_name().map(Arc::from);
+        let static_metadata = reference
+            .static_id()
+            .and_then(StaticBindingId::metadata)
+            .map(|metadata| Arc::new(metadata.clone()));
         Self {
+            static_metadata,
             reference,
             spelling,
             array_shape,
@@ -301,6 +461,8 @@ impl std::fmt::Display for BindingName {
         match self {
             Self::Named(name) => f.write_str(name),
             Self::Local(id) => id.fmt(f),
+            Self::Static(id) => id.fmt(f),
+            Self::ContractResult => f.write_str("result"),
         }
     }
 }
@@ -375,6 +537,45 @@ mod tests {
     }
 
     #[test]
+    fn contract_result_is_neither_a_source_name_nor_a_string_alias() {
+        let owner = LocalFunctionId::new(None, "f".into());
+        let source = local(&owner, 0, "result", 1);
+        let mut locals = LocalEnvironment::new();
+        locals.set(&source, int32(3));
+        locals.bind_logical_typed("result", int32(7), ProgramType::Int32);
+        locals.set(CONTRACT_RESULT, int32(11));
+        locals.set("@click:result", int32(13));
+        for (name, expected) in [
+            (source.clone(), 3),
+            (BindingName::from("result"), 7),
+            (CONTRACT_RESULT, 11),
+            (BindingName::from("@click:result"), 13),
+        ] {
+            assert_eq!(
+                locals.get(&name).unwrap().native().as_ref(),
+                &int32(expected)
+            );
+            assert_eq!(locals.resolve_binding(&name), name);
+        }
+        assert_eq!(locals.active_source_name(&CONTRACT_RESULT), None);
+        assert_eq!(CONTRACT_RESULT.named(), None);
+        assert_eq!(CONTRACT_RESULT.to_string(), "result");
+        let result_slot = Memory::local_pointer(CONTRACT_RESULT);
+        assert_eq!(result_slot.block, PointerBlock::ContractResult);
+        for binding in [
+            source,
+            BindingName::from("result"),
+            BindingName::from("@click:result"),
+        ] {
+            assert!(
+                result_slot
+                    .block
+                    .proven_distinct(&Memory::local_pointer(binding).block)
+            );
+        }
+    }
+
+    #[test]
     fn declaration_identity_is_separate_from_spelling_and_program_metadata() {
         let owner = LocalFunctionId::new(Some("unit.c".into()), "f".into());
         let first = local(&owner, 0, "x", 1);
@@ -442,5 +643,11 @@ impl From<String> for BindingDeclaration {
 impl From<&str> for BindingDeclaration {
     fn from(name: &str) -> Self {
         BindingName::from(name).into()
+    }
+}
+
+impl From<StaticBindingId> for BindingName {
+    fn from(id: StaticBindingId) -> Self {
+        Self::Static(id)
     }
 }

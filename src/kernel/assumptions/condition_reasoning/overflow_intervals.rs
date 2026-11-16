@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::MachineCastSpelling;
+#[cfg(test)]
 use crate::kernel::binary_node;
 #[cfg(test)]
 use crate::kernel::binary_term;

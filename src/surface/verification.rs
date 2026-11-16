@@ -2476,17 +2476,16 @@ fn verify_program_in_context(
                 function_environment = function_environment.with_external_function_rule(assumption);
             }
         }
-        let program_contracts =
-            crate::kernel::ProgramContractProof::open_with_recursion_declarations(
-                requested_contracts,
-                declared_diverging.clone(),
-                &bodyless_declarations,
-                &function_environment.linked_functions(),
-                &termination_plans,
-            )
-            .map_err(|error| {
-                ClickError::new(format!("could not open C recursion declarations: {error}"))
-            })?;
+        let program_contracts = crate::kernel::ProgramContractProof::open_ordinary(
+            requested_contracts,
+            declared_diverging.clone(),
+            &bodyless_declarations,
+            &function_environment.linked_functions(),
+            &termination_plans,
+        )
+        .map_err(|error| {
+            ClickError::new(format!("could not open C recursion declarations: {error}"))
+        })?;
         drop(_timing);
         let verified_theorems = verify_theorem_definitions(
             theorem_dependencies,
@@ -3043,9 +3042,11 @@ fn verify_program_in_context(
     }
     let generated_program = program_contracts
         .generate_termination(crate::kernel::ProgramTerminationInputs {
-            partial_rules: &partial_rules,
+            independent: crate::kernel::IndependentTerminationInputs {
+                rules: &partial_rules,
+                bodies: &inline_bodies,
+            },
             plans: &termination_plans,
-            inline_bodies: &inline_bodies,
             assumed_terminating: &assumed_terminating,
             diverging_contracts: &diverging_contracts,
             has_unselected_functions: !unselected_executing_names.is_empty(),
@@ -4511,6 +4512,53 @@ fn executing_function_name(names: &BTreeMap<String, String>, source_name: &str) 
         .unwrap_or_else(|| source_name.to_string())
 }
 
+pub(in crate::surface) fn function_recursion_resource_requirement(
+    function: &FunctionBlock,
+) -> Result<Option<usize>, ClickError> {
+    let Some(FunctionDecrease::Resource(measure)) = function.decreases() else {
+        return Ok(None);
+    };
+    let ResourceClause::Declared {
+        kind: ResourceKind::Composite,
+        name: measure_name,
+        arguments: measure_arguments,
+        ..
+    } = measure
+    else {
+        return Err(ClickError::new(format!(
+            "function-level `decreases` in `{}` must name one composite resource",
+            function.signature().name()
+        )));
+    };
+    let mut resource_index = 0;
+    let mut matched = None;
+    for requirement in function.requires() {
+        let Requirement::Resource(required) = requirement else {
+            continue;
+        };
+        if matches!(
+            required,
+            ResourceClause::Declared {
+                kind: ResourceKind::Composite,
+                name,
+                arguments,
+                ..
+            } if name == measure_name && arguments == measure_arguments
+        ) {
+            matched = Some(resource_index);
+            break;
+        }
+        resource_index += 1;
+    }
+    let index = matched.ok_or_else(|| {
+        ClickError::new(format!(
+            "function-level `decreases {measure_name}(...)` in `{}` must exactly match an owned or viewed entry resource",
+            function.signature().name()
+        ))
+    })?;
+    Ok(Some(index))
+}
+
 pub(in crate::surface) fn program_function_termination_plans(
     file: &ClickFile,
     selected_functions: Option<&BTreeSet<String>>,
@@ -4561,45 +4609,10 @@ pub(in crate::surface) fn program_function_termination_plans(
                     )))
                 }
                 FunctionDecrease::Resource(measure) => {
-                    let ResourceClause::Declared {
-                        kind: ResourceKind::Composite,
-                        name: measure_name,
-                        arguments: measure_arguments,
-                        ..
-                    } = measure
-                    else {
-                        return Err(ClickError::new(format!(
-                            "function-level `decreases` in `{}` must name one composite resource",
-                            function.signature().name()
-                        )));
-                    };
-                    let mut resource_index = 0;
-                    let mut matched = None;
-                    for requirement in function.requires() {
-                        let Requirement::Resource(required) = requirement else {
-                            continue;
-                        };
-                        if matches!(
-                            required,
-                            ResourceClause::Declared {
-                                kind: ResourceKind::Composite,
-                                name,
-                                arguments,
-                                ..
-                            } if name == measure_name && arguments == measure_arguments
-                        ) {
-                            matched = Some(resource_index);
-                            break;
-                        }
-                        resource_index += 1;
-                    }
-                    let index = matched.ok_or_else(|| {
-                        ClickError::new(format!(
-                            "function-level `decreases {measure_name}(...)` in `{}` must exactly match an owned or viewed entry resource",
-                            function.signature().name()
-                        ))
-                    })?;
-                    Ok(crate::kernel::FunctionTerminationMeasure::ResourceRequirement(index))
+                    function_recursion_resource_requirement(function)?;
+                    Ok(crate::kernel::FunctionTerminationMeasure::Expression(
+                        describe_resource_clause(measure),
+                    ))
                 }
             })
             .transpose()?;
@@ -5516,11 +5529,17 @@ pub(in crate::surface) fn build_function_environment(
                     Some(FunctionDecrease::Binder(binder)) => Some(binder.clone()),
                     _ => None,
                 };
-                if !recursion_measure.is_empty() || recursion_binder.is_some() {
+                let recursion_resource = function_recursion_resource_requirement(function_block)?;
+                if !recursion_measure.is_empty()
+                    || recursion_binder.is_some()
+                    || recursion_resource.is_some()
+                {
                     function =
                         function.with_recursion_peers(function_block.recursion_peers().to_vec());
                 }
-                function = function.with_recursion_binder(recursion_binder);
+                function = function
+                    .with_recursion_binder(recursion_binder)
+                    .with_recursion_resource(recursion_resource);
                 function = function.with_recursion_measure(recursion_measure);
                 function = function
                     .with_trailing_value_parameters(function_block.witness_count())
@@ -5844,7 +5863,7 @@ fn with_closure_instance(
     let parameters = contract.interface().value_parameters().to_vec();
     let mut arguments = vec![SpecPredicateArgument::Value(
         SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            crate::kernel::C_CONTRACT_RESULT_NAME,
+            crate::kernel::CONTRACT_RESULT,
         )),
     )];
     arguments.extend(parameters.iter().map(|parameter| {
@@ -5993,7 +6012,7 @@ pub(in crate::surface) fn function_resource_summary(
         let result_binding = BTreeMap::from([(
             "result".to_string(),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
+                crate::kernel::CONTRACT_RESULT,
             )),
         )]);
         let result_substitutions = ContractSubstitutions::for_contract_result(&result_binding);
@@ -6090,7 +6109,7 @@ pub(in crate::surface) fn function_resource_constructors(
             let result_binding = BTreeMap::from([(
                 "result".to_string(),
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
+                    crate::kernel::CONTRACT_RESULT,
                 )),
             )]);
             let resource = substitute_resource_clause_for_summary_in(

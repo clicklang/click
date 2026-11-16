@@ -312,7 +312,7 @@ impl PureFactContext {
             return None;
         };
         let value = match self
-            .resolve_memory_load_value(memory, pointer, *kind)?
+            .resolve_memory_load_value(memory.memory(), pointer, *kind)?
             .numeric_value()
             .clone()
         {
@@ -558,7 +558,11 @@ mod tests {
             );
             (
                 MachineTerm::Variable(variable),
-                MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer), LoadKind::Int32),
+                MachineTerm::MemoryLoad(
+                    ProgramPoint::at(&memory),
+                    Box::new(pointer),
+                    LoadKind::Int32,
+                ),
             )
         };
         let (left_name, left_raw) = read("held-read-left");

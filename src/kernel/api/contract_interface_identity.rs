@@ -254,7 +254,7 @@ impl Names {
         match expression {
             Variable(name) => match name {
                 BindingName::Named(source) => self.reference(source),
-                BindingName::Local(_) => {
+                BindingName::Local(_) | BindingName::Static(_) | BindingName::ContractResult => {
                     if let Some(bound) = self.program_bindings.get(name) {
                         *name = bound.clone();
                     }
@@ -384,6 +384,7 @@ impl Names {
         self.visit();
         use SpecExpression::*;
         match expression {
+            ObjectAddress(address) => self.expression(&mut address.base),
             // Instance identities are not lexical C parameter names.
             Value(_) | ResourceField { .. } => {}
             IntegerToMachine { value, .. } => self.integer(value),
@@ -393,7 +394,9 @@ impl Names {
             } => {
                 match parameter {
                     BindingName::Named(name) => self.reference(name),
-                    BindingName::Local(_) => {
+                    BindingName::Local(_)
+                    | BindingName::Static(_)
+                    | BindingName::ContractResult => {
                         if let Some(bound) = self.program_bindings.get(parameter) {
                             *parameter = bound.clone();
                         }
@@ -577,11 +580,6 @@ impl Names {
         use SpecProposition::*;
         match proposition {
             ResourceViewable { resource, .. } => self.resource(resource),
-            ChangesOnly { resources, .. } => {
-                for r in resources {
-                    self.resource(r);
-                }
-            }
 
             IntegerComparison { left, right, .. } => {
                 self.integer(left);

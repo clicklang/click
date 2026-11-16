@@ -1298,7 +1298,6 @@ fn annotate_surface_at_program_point(
     if matches!(
         surface,
         ClickProposition::Loadable { .. }
-            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
@@ -1429,8 +1428,7 @@ fn annotate_surface_at_program_point(
                     arguments: arguments.iter().map(expression_at_program_point).collect(),
                 }
             }
-            ClickProposition::ChangesOnly { .. }
-            | ClickProposition::Separate { .. }
+            ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => proposition.clone(),
@@ -1517,8 +1515,7 @@ pub(in crate::surface) fn surface_program_point_selector(
         ClickProposition::PredicateCall { arguments, .. } => {
             arguments.iter().find_map(expression_site)
         }
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }

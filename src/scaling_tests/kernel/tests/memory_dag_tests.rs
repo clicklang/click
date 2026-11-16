@@ -106,7 +106,7 @@ fn rewritten_store_witness_work_scales_with_explicit_adjacent_equalities() {
             .store(arc_pointer(4), ProgramValue::Int32(value.clone()));
         let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(arc_pointer(4)),
                 crate::kernel::LoadKind::Int32,
             )
@@ -192,7 +192,7 @@ fn checked_order_store_crossing_ignores_unrelated_order_facts() {
             let separated = base.clone().store_with_context(written, int32(7), &context);
             let load = |memory: &Memory| {
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory_ref(memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                     Box::new(kept.clone()),
                     crate::kernel::LoadKind::Int32,
                 )
@@ -480,13 +480,21 @@ fn named_state_alias_equality_does_not_depend_on_sibling_observation_origins() {
             Memory::new().with_block("local:different-retained_state", 4),
         );
         for retargeted in [
-            MachineTerm::MemoryLoad(changed, Box::new(right.clone()), LoadKind::Int32),
             MachineTerm::MemoryLoad(
-                named.clone(),
+                ProgramPoint::at(&changed),
+                Box::new(right.clone()),
+                LoadKind::Int32,
+            ),
+            MachineTerm::MemoryLoad(
+                ProgramPoint::at(&named),
                 Box::new(right.offset_by_bytes(4)),
                 LoadKind::Int32,
             ),
-            MachineTerm::MemoryLoad(named.clone(), Box::new(right.clone()), LoadKind::UInt8),
+            MachineTerm::MemoryLoad(
+                ProgramPoint::at(&named),
+                Box::new(right.clone()),
+                LoadKind::UInt8,
+            ),
         ] {
             assert!(!witness.checks_retargeted_for_test(
                 left_load.clone(),
@@ -1057,8 +1065,11 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
             crate::kernel::resource_tracker::step_effect::StepEffect::Separate(_)
         ));
         let capture = CheckedLoadEqualityCapture::start();
-        let equal =
-            checked_atomic_load_equality(&load(after.clone()), &load(before.clone()), &assumptions);
+        let equal = checked_atomic_load_equality(
+            &load(ProgramPoint::at(&after)),
+            &load(ProgramPoint::at(&before)),
+            &assumptions,
+        );
         assert!(
             equal,
             "a separated caller pointer survives private-object cleanup"
@@ -1114,14 +1125,14 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
             let partial = PureFactContext::new()
                 .assume_proposition(Proposition::ResourceComposition(partial));
             assert!(!checked_atomic_load_equality(
-                &load(after.clone()),
-                &load(before.clone()),
+                &load(ProgramPoint::at(&after)),
+                &load(ProgramPoint::at(&before)),
                 &partial
             ));
         }
         assert!(!checked_atomic_load_equality(
-            &load(after.clone()),
-            &load(before.clone()),
+            &load(ProgramPoint::at(&after)),
+            &load(ProgramPoint::at(&before)),
             &PureFactContext::new()
         ));
     }
@@ -1138,7 +1149,7 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
     let memory = crate::kernel::intern_memory_ref(&Memory::new());
     let index = |slot: i64| {
         MachineTerm::MemoryLoad(
-            memory.clone(),
+            ProgramPoint::at(&memory),
             Box::new(Pointer {
                 block: "byte-gap-index".into(),
                 offset: PointerOffsetTerm::Constant(slot * 4),

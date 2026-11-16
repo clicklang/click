@@ -192,7 +192,11 @@ mod tests {
             &pointer,
             LoadKind::Int32,
         ));
-        let structural = MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Int32);
+        let structural = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer),
+            LoadKind::Int32,
+        );
         for load in [named, structural] {
             let one = MachineTerm::constant(1);
             let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
@@ -300,7 +304,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let binder = Variable(1005699);
         let read = MachineTerm::MemoryLoad(
-            intern_memory(Memory::new()),
+            ProgramPoint::at(&(intern_memory(Memory::new()))),
             Box::new(Pointer::symbolic(binder)),
             LoadKind::Int32,
         );
@@ -368,7 +372,7 @@ mod tests {
         let ty = MachineIntegerType::Int32;
         let pointer = Pointer::symbolic(Variable(1007340));
         let load = MachineTerm::MemoryLoad(
-            intern_memory(Memory::new()),
+            ProgramPoint::at(&(intern_memory(Memory::new()))),
             pointer.into(),
             LoadKind::Int32,
         );
@@ -406,7 +410,7 @@ mod tests {
             .store(pointer.clone(), ProgramValue::Int32(sum.clone()));
         let load = |memory| {
             MachineTerm::MemoryLoad(
-                intern_memory(memory),
+                ProgramPoint::at(&(intern_memory(memory))),
                 pointer.clone().into(),
                 LoadKind::Int32,
             )

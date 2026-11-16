@@ -216,7 +216,7 @@ mod certificate_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(Memory::new()),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );
@@ -311,7 +311,9 @@ mod certificate_tests {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(target_memory.clone()),
+                        crate::kernel::ProgramPoint::at(
+                            &(crate::kernel::intern_memory(target_memory.clone())),
+                        ),
                         Box::new(pointer),
                         crate::kernel::LoadKind::Int32,
                     )),
@@ -358,7 +360,7 @@ mod certificate_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(target_memory),
+                    crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(target_memory))),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -2633,7 +2635,6 @@ fn collect_conjunctive_loadability_segments(
         // or range binder is not unconditional entry authority.
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
-        | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
@@ -2947,7 +2948,6 @@ fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
         | ClickProposition::RangeAny { body, .. } => click_proposition_mentions_defined(body),
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
-        | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }

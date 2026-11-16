@@ -49,6 +49,9 @@ pub(super) enum SearchFailureKind {
     Unsupported,
     Exhausted,
     UnclosedGoal,
+    NoMatch,
+    UndeterminedArgument,
+    MissingPrerequisite,
 }
 
 struct SearchFailureFrame {
@@ -155,7 +158,10 @@ fn record_search_failure(error: &ClickError) {
         let Some(scope) = scopes.last_mut() else {
             return;
         };
-        let mut reason = error.raw_summary().to_owned();
+        let missing = (scope.strategy == "theorem discovery")
+            .then(|| error.missing_theorem_requirement())
+            .flatten();
+        let mut reason = missing.unwrap_or_else(|| error.raw_summary()).to_owned();
         truncate_reason(&mut reason);
         push_failure(
             scope,
@@ -164,9 +170,32 @@ fn record_search_failure(error: &ClickError) {
                 reason,
                 diagnostic: error.diagnostic().cloned(),
                 premise_excerpt: None,
-                kind: SearchFailureKind::Rejected,
+                kind: if missing.is_some() {
+                    SearchFailureKind::MissingPrerequisite
+                } else {
+                    SearchFailureKind::Rejected
+                },
             },
         );
+    });
+}
+
+/// Records only an outcome already observed by the theorem discovery walk.
+pub(super) fn record_theorem_discovery_note(kind: SearchFailureKind, mut reason: String) {
+    truncate_reason(&mut reason);
+    SEARCH_SCOPES.with(|scopes| {
+        if let Some(scope) = scopes.borrow_mut().last_mut() {
+            push_failure(
+                scope,
+                SearchFailure {
+                    strategy: "theorem discovery".into(),
+                    reason,
+                    diagnostic: None,
+                    premise_excerpt: None,
+                    kind,
+                },
+            );
+        }
     });
 }
 
@@ -257,18 +286,23 @@ fn push_failure(scope: &mut SearchFailureFrame, failure: SearchFailure) {
     }
     if scope.failures.len() < MAX_SEARCH_FAILURES {
         scope.failures.push(failure);
-    } else if matches!(
-        failure.kind,
-        SearchFailureKind::Unsupported
-            | SearchFailureKind::Exhausted
-            | SearchFailureKind::UnclosedGoal
-    ) && let Some(index) = scope.failures.iter().position(|existing| {
-        matches!(
-            existing.kind,
-            SearchFailureKind::Rejected | SearchFailureKind::NotApplicable
-        )
-    }) {
+    } else if let Some(index) = scope
+        .failures
+        .iter()
+        .position(|existing| failure_priority(existing.kind) < failure_priority(failure.kind))
+    {
         scope.failures[index] = failure;
+    }
+}
+
+fn failure_priority(kind: SearchFailureKind) -> u8 {
+    match kind {
+        SearchFailureKind::Rejected | SearchFailureKind::NotApplicable => 0,
+        SearchFailureKind::Unsupported
+        | SearchFailureKind::NoMatch
+        | SearchFailureKind::UndeterminedArgument
+        | SearchFailureKind::MissingPrerequisite => 1,
+        SearchFailureKind::Exhausted | SearchFailureKind::UnclosedGoal => 2,
     }
 }
 
@@ -443,6 +477,45 @@ mod tests {
         let failures = outer.finish();
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].reason, "outer rejection");
+    }
+
+    #[test]
+    fn discovery_failure_sample_preserves_prerequisites_and_exhaustion() {
+        let outer = search_scope("outer");
+        for index in 0..MAX_SEARCH_FAILURES {
+            let _ =
+                candidate_outcome::<()>(Err(ClickError::new(format!("routine {index}")))).unwrap();
+        }
+        {
+            let _inner = search_scope("theorem discovery");
+            for index in 0..32 {
+                let _ = candidate_outcome::<()>(Err(ClickError::new(
+                    "long generic rejection".repeat(100),
+                )
+                .with_missing_theorem_requirement(format!(
+                    "theorem `law{index}` needs listed prerequisite `0 <= value`"
+                ))))
+                .unwrap();
+            }
+            record_theorem_discovery_note(
+                SearchFailureKind::Exhausted,
+                "theorem discovery budget exhausted".into(),
+            );
+        }
+        let failures = outer.finish();
+        assert_eq!(failures.len(), MAX_SEARCH_FAILURES);
+        assert!(
+            failures
+                .iter()
+                .all(|failure| failure.reason.len() <= MAX_SEARCH_REASON_BYTES)
+        );
+        assert!(
+            failures
+                .iter()
+                .any(|failure| failure.kind == "MissingPrerequisite"
+                    && failure.reason.contains("0 <= value"))
+        );
+        assert!(failures.iter().any(|failure| failure.kind == "Exhausted"));
     }
 
     #[test]

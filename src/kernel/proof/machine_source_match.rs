@@ -226,8 +226,12 @@ mod tests {
         let pointer = Memory::global_pointer("opaque-source");
         let opaque = |memory: SharedMemory, name| MachineTerm::If {
             condition: ConditionTerm::Variable(Variable(name)).into(),
-            then_term: MachineTerm::MemoryLoad(memory, pointer.clone().into(), LoadKind::Int32)
-                .into(),
+            then_term: MachineTerm::MemoryLoad(
+                ProgramPoint::at(&memory),
+                pointer.clone().into(),
+                LoadKind::Int32,
+            )
+            .into(),
             else_term: MachineTerm::Variable(Variable(1006600)).into(),
         };
         let from = opaque(memory.clone(), 1006601);

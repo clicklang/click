@@ -1,5 +1,7 @@
 //! Smart closure search and linear script interpretation.
 mod integer_composition;
+mod signed_intervals;
+mod specialized;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_term;
 use crate::kernel::{bits32_constant, constant_u32, int64_constant, uint64_constant};
@@ -345,8 +347,7 @@ fn collect_signed_surface_proposition_terms<'a>(
                 collect_signed_surface_terms(end, terms);
                 pending.push(body);
             }
-            ClickProposition::ChangesOnly { .. }
-            | ClickProposition::Separate { .. }
+            ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. }
@@ -1199,6 +1200,13 @@ fn with_operation_operands(written: &[ContractExpression]) -> Vec<ContractExpres
 fn written_integer_observations<'s>(
     surfaces: impl Iterator<Item = &'s ClickProposition>,
 ) -> Vec<ContractExpression> {
+    written_integer_observations_with_entry(surfaces, true)
+}
+
+fn written_integer_observations_with_entry<'s>(
+    surfaces: impl Iterator<Item = &'s ClickProposition>,
+    include_entry: bool,
+) -> Vec<ContractExpression> {
     let mut written: Vec<ContractExpression> = Vec::new();
     for surface in surfaces {
         // A native comparison such as `amount <= count(...)` spells the
@@ -1235,9 +1243,18 @@ fn written_integer_observations<'s>(
                     },
                     None => side.clone(),
                 };
-                let observed = ContractExpression::Call {
-                    name: "to_integer".into(),
-                    arguments: vec![side],
+                // Preserve an observation's state selector. Observing an
+                // already observed Integer again hides the native operand
+                // from explicit definedness proofs.
+                let observed = if integer_composition::observed_argument(&side).is_some() {
+                    side
+                } else if observes_exact_value(&side) {
+                    continue;
+                } else {
+                    ContractExpression::Call {
+                        name: "to_integer".into(),
+                        arguments: vec![side],
+                    }
                 };
                 if !written.contains(&observed) {
                     written.push(observed);
@@ -1261,39 +1278,71 @@ fn written_integer_observations<'s>(
     // The observation of a written machine sum or difference spells its
     // operands too: `to_integer(n - k)` names `to_integer(n)` and
     // `to_integer(k)`, which an operation identity over it cites.
+    fn operand_observations(
+        expression: &ContractExpression,
+        native: bool,
+    ) -> Vec<ContractExpression> {
+        match expression {
+            ContractExpression::At {
+                selector,
+                expression,
+            } => operand_observations(expression, native)
+                .into_iter()
+                .map(|expression| ContractExpression::At {
+                    selector: selector.clone(),
+                    expression: Box::new(expression),
+                })
+                .collect(),
+            ContractExpression::Old(expression) => operand_observations(expression, native)
+                .into_iter()
+                .map(|expression| ContractExpression::Old(Box::new(expression)))
+                .collect(),
+            ContractExpression::Call { name, arguments }
+                if !native && name == "to_integer" && arguments.len() == 1 =>
+            {
+                operand_observations(&arguments[0], true)
+            }
+            expression if native => {
+                let operands = match expression {
+                    ContractExpression::Add(left, right)
+                    | ContractExpression::Subtract(left, right) => {
+                        vec![left.as_ref().clone(), right.as_ref().clone()]
+                    }
+                    ContractExpression::CUnary {
+                        operand,
+                        lowered: ProgramExpression::Cast { .. },
+                    } => vec![operand.as_ref().clone()],
+                    ContractExpression::ProgramExpression(ProgramExpression::Cast {
+                        expression,
+                        ..
+                    }) => vec![ContractExpression::ProgramExpression(
+                        expression.as_ref().clone(),
+                    )],
+                    _ => Vec::new(),
+                };
+                operands
+                    .into_iter()
+                    .map(|operand| ContractExpression::Call {
+                        name: "to_integer".into(),
+                        arguments: vec![operand],
+                    })
+                    .collect()
+            }
+            _ => Vec::new(),
+        }
+    }
     let mut index = 0;
     while index < written.len() {
-        if let ContractExpression::Call { arguments, .. } = &written[index] {
-            let operands = match &arguments[0] {
-                ContractExpression::Add(left, right)
-                | ContractExpression::Subtract(left, right) => {
-                    vec![left.as_ref().clone(), right.as_ref().clone()]
-                }
-                ContractExpression::CUnary {
-                    operand,
-                    lowered: ProgramExpression::Cast { .. },
-                } => vec![operand.as_ref().clone()],
-                ContractExpression::ProgramExpression(ProgramExpression::Cast {
-                    expression,
-                    ..
-                }) => {
-                    vec![ContractExpression::ProgramExpression(
-                        expression.as_ref().clone(),
-                    )]
-                }
-                _ => Vec::new(),
-            };
-            for operand in operands {
-                let observed = ContractExpression::Call {
-                    name: "to_integer".into(),
-                    arguments: vec![operand],
-                };
-                if !written.contains(&observed) {
-                    written.push(observed);
-                }
+        // A scoped operation's operands are read at the same program point.
+        for observed in operand_observations(&written[index], false) {
+            if !written.contains(&observed) {
+                written.push(observed);
             }
         }
         index += 1;
+    }
+    if !include_entry {
+        return written;
     }
     // A value the proof has since replaced, such as a population count
     // before a consumption, is often spelled only at function entry.
@@ -3622,7 +3671,7 @@ impl<'a> Proof<'a> {
                         view.fixed_state
                             .state
                             .clone()
-                            .with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone())
+                            .with_local(crate::kernel::CONTRACT_RESULT, result.clone())
                     },
                 );
                 super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
@@ -5133,7 +5182,11 @@ mod synthesized_literal_tests {
             ProgramValue::Int32(MachineTerm::constant(1)),
         ));
         let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
-        let value = read(before.clone(), pointer.clone(), LoadKind::Int32);
+        let value = read(
+            crate::kernel::ProgramPoint::at(&before),
+            pointer.clone(),
+            LoadKind::Int32,
+        );
         let atom = |term: &MachineTerm| {
             crate::kernel::proof::signed_arithmetic::SignedArithmeticAtom::from_canonical_operand(
                 crate::kernel::MachineOperandView::Legacy(term),
@@ -5141,9 +5194,21 @@ mod synthesized_literal_tests {
         };
         assert_eq!(atom(&value), atom(&value));
         for other in [
-            read(after, pointer.clone(), LoadKind::Int32),
-            read(before.clone(), pointer.offset_by_bytes(4), LoadKind::Int32),
-            read(before, pointer, LoadKind::UInt32),
+            read(
+                crate::kernel::ProgramPoint::at(&after),
+                pointer.clone(),
+                LoadKind::Int32,
+            ),
+            read(
+                crate::kernel::ProgramPoint::at(&before),
+                pointer.offset_by_bytes(4),
+                LoadKind::Int32,
+            ),
+            read(
+                crate::kernel::ProgramPoint::at(&before),
+                pointer,
+                LoadKind::UInt32,
+            ),
         ] {
             assert_ne!(atom(&value), atom(&other));
         }
@@ -5201,11 +5266,19 @@ mod synthesized_literal_tests {
         );
         assert!(propositions_match_after_canonical_loads(
             &native,
-            &retained(R::Equal, &read(after), &sum)
+            &retained(
+                R::Equal,
+                &read(crate::kernel::ProgramPoint::at(&after)),
+                &sum
+            )
         ));
         assert!(!propositions_match_after_canonical_loads(
             &native,
-            &retained(R::Equal, &read(before), &sum)
+            &retained(
+                R::Equal,
+                &read(crate::kernel::ProgramPoint::at(&before)),
+                &sum
+            )
         ));
         assert_eq!(
             crate::kernel::KernelTermExport::machine_export_count(),

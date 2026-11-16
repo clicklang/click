@@ -3,6 +3,23 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    /// Run only the ordinary Integer emitter in a selected have body.
+    pub(in crate::surface::proof) fn try_integer_composition_using(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_integer_composition_using(
+            &self.proof.body,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Runs the loop-bundle member planner inside the owned nested body, so a
     /// pivot arm proved under `have` retains the same checked descendant the
     /// bundle root would have retained for it.

@@ -4,6 +4,58 @@ use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 #[test]
+fn separation_names_loaded_pointer_fields_at_their_declared_type() {
+    use crate::kernel::{MemoryRange, PointerValue, Resource};
+    for scalar in ["uint8", "uint16", "int32", "uint64"] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let function = syntax::parse_function(&format!(
+            "struct Cursor {{ const {scalar}* data; }}; void read(struct Cursor* cursor) {{}}"
+        ))
+        .unwrap();
+        let parameters = [function.parameters()[0].clone()];
+        let base = Pointer::symbolic(Variable(997101));
+        let memory = Memory::new();
+        let loaded =
+            Pointer::canonical_loaded_value(&crate::kernel::intern_memory_ref(&memory), &base);
+        let other = Pointer::symbolic(Variable(997102));
+        let arguments = [ProgramExpression::Value(ProgramValue::pointer(
+            base.clone(),
+        ))];
+        let state = ExecutionState::new()
+            .with_memory(memory)
+            .with_local("cursor", ProgramValue::pointer(base))
+            .with_local(
+                "other",
+                ProgramValue::typed_pointer(other.clone(), ProgramType::UInt8Pointer),
+            );
+        let range = |pointer| {
+            Resource::Memory(MemoryRange::from_pointer_value(
+                &PointerValue::new(pointer, ProgramType::UInt8Pointer),
+                MachineTerm::constant(0),
+                MachineTerm::constant(4),
+                1,
+            ))
+        };
+        let expected = Proposition::ResourceSeparate {
+            left: Box::new(range(loaded)),
+            right: Box::new(range(other)),
+        };
+        let raised = synthesize_surface_proposition(
+            &expected,
+            ParameterBinding::new(&parameters, &arguments),
+            &state,
+        )
+        .expect("a loaded pointer field has its declared source spelling");
+        let lowered = relower_written_proposition(&raised, &state).unwrap();
+        assert_eq!(
+            crate::kernel::proof::proposition_identity_key(&lowered),
+            crate::kernel::proof::proposition_identity_key(&expected),
+            "{scalar}: {raised:?}"
+        );
+    }
+}
+
+#[test]
 fn separate_round_trips_without_generating_extent_obligations() {
     use crate::kernel::{MemoryRange, PointerValue, Resource};
     for wide in [false, true] {
@@ -1974,14 +2026,15 @@ fn load_defining_equation_round_trips() {
         ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
     );
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(state.memory()),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
     let MachineTerm::MemoryLoad(memory, address, kind) = load else {
         unreachable!()
     };
-    let defining_load = crate::kernel::canonical_form_of_load(memory, *address, kind);
+    let defining_load =
+        crate::kernel::canonical_form_of_load(memory.into_shared_memory(), *address, kind);
     let requirement = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -2018,7 +2071,7 @@ fn load_defining_equation_uses_entry_state() {
             .store(pointer.clone(), int32(7)),
     );
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(entry.memory()),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(entry.memory()))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -2076,7 +2129,7 @@ fn load_defining_equation_uses_saved_state() {
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         );
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(base.memory()),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(base.memory()))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -2161,7 +2214,7 @@ fn example_load_defining_requirement(
             ),
         );
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(state.memory()),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -2252,7 +2305,9 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
             relation: CompareRelation::Equal,
             left: left.clone(),
             right: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(state.memory()),
+                crate::kernel::ProgramPoint::at(
+                    &(crate::kernel::intern_memory_ref(state.memory())),
+                ),
                 Box::new(wrong_pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -2274,7 +2329,7 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
             relation: CompareRelation::Equal,
             left: left.clone(),
             right: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(&wrong_memory),
+                crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&wrong_memory))),
                 Box::new(Pointer {
                     block: PointerBlock::Concrete("owned-string:wrong-retained_state".into()),
                     offset: PointerOffsetTerm::Constant(0),
@@ -2322,7 +2377,7 @@ fn actual_struct_field_load_equation(
     let pointer = base.offset_by_bytes(field_offset as u32);
     let memory = Memory::new().with_block(block, 16);
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(&memory),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -3127,7 +3182,7 @@ fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
     // The call leaves the cell's contents unknown; its contract says 5.
     let middle = blocks();
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(&middle),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&middle))),
         Box::new(cell.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -3657,7 +3712,9 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     _ => PointerOffsetTerm::scaled_int64_node(index, width, true),
                 };
                 let load = MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory_ref(state.memory()),
+                    crate::kernel::ProgramPoint::at(
+                        &(crate::kernel::intern_memory_ref(state.memory())),
+                    ),
                     Box::new(Pointer {
                         block: base.block.clone(),
                         offset,
@@ -4113,7 +4170,7 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         );
     let raw = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(state.memory()),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -5092,7 +5149,9 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
                 )
                 .unwrap();
             let read = MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(state.memory()),
+                crate::kernel::ProgramPoint::at(
+                    &(crate::kernel::intern_memory_ref(state.memory())),
+                ),
                 Box::new(pointer.clone()),
                 kind,
             );
@@ -5129,7 +5188,7 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
                 ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
             );
         let read = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(state.memory()),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
             Box::new(pointer),
             format.load_kind(),
         );
@@ -5196,7 +5255,7 @@ fn common_float_reads_retain_old_and_recorded_states() {
             .clone()
             .with_memory(selected.memory().clone().with_block("later-block", 8));
         let read = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(selected.memory()),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(selected.memory()))),
             Box::new(pointer),
             format.load_kind(),
         );
@@ -6094,5 +6153,189 @@ fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
             let shared = raise_call_argument(&root, ParameterBinding::default(), &state, &bound);
             assert_eq!(shared, native);
         });
+    }
+}
+
+#[test]
+fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
+    use crate::kernel::{
+        AlgebraicTermNode, AlgebraicValue, KernelMatch, KernelTermExport, KernelTermImport,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(999981);
+    let names = BTreeMap::from([(variable, "item".into())]);
+    let state = ExecutionState::new();
+    let word = MachineTerm::Variable(variable);
+    for value in [
+        ProgramValue::Int32(word.clone()),
+        ProgramValue::UInt32(word.clone()),
+        ProgramValue::Int64(word.clone()),
+        ProgramValue::UInt64(word.clone()),
+        ProgramValue::Int8(word.clone()),
+        ProgramValue::UInt8(word.clone()),
+        ProgramValue::Int16(word.clone()),
+        ProgramValue::UInt16(word.clone()),
+        ProgramValue::Bool(word),
+        int32(7),
+        ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
+    ] {
+        let mut native =
+            KernelMatch::test_scrutinee(vec![crate::kernel::AlgebraicValueType::Program(
+                value.program_type(),
+            )]);
+        native.node = AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields: vec![AlgebraicValue::Program(value)],
+        };
+        let expected =
+            synthesize_surface_algebraic(&native, ParameterBinding::default(), &state, &names);
+        let root = KernelTermImport::default().algebraic(&native);
+        let exports = KernelTermExport::algebraic_export_count();
+        assert_eq!(
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &names),
+            expected
+        );
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+    }
+}
+
+#[test]
+fn shared_algebraic_reads_and_variables_raise_without_tree_exports() {
+    use crate::kernel::{
+        AlgebraicTerm, AlgebraicTermNode, KernelTermExport, KernelTermImport, TypeParameterName,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = TypeParameterName::intern("ReadBoundary");
+    let state = ExecutionState::new();
+    let pointer = Pointer::symbolic(Variable(999983));
+    let parameters = vec![crate::languages::interface::ImportedParameter::new(
+        InterfaceType::ParameterPointer(ty),
+        "p".into(),
+        None,
+    )];
+    let arguments = vec![ProgramExpression::Value(ProgramValue::typed_pointer(
+        pointer.clone(),
+        ProgramType::ParameterPointer(ty),
+    ))];
+    let binding = ParameterBinding::new(&parameters, &arguments);
+    let variable = Variable(999984);
+    let names = BTreeMap::from([(variable, "value".into())]);
+    for node in [
+        AlgebraicTermNode::Variable(variable),
+        AlgebraicTermNode::MemoryLoad {
+            memory: crate::kernel::intern_memory_ref(state.memory()),
+            pointer: Box::new(pointer.clone()),
+        },
+    ] {
+        let native = AlgebraicTerm {
+            algebraic_type: ty.algebraic_type(),
+            node,
+        };
+        let expected = synthesize_surface_algebraic(&native, binding, &state, &names).unwrap();
+        let root = KernelTermImport::default().algebraic(&native);
+        let exports = KernelTermExport::algebraic_export_count();
+        assert_eq!(
+            raise_kernel_term(&root, binding, &state, &names),
+            Some(expected)
+        );
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+    }
+}
+
+#[test]
+fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
+    use crate::kernel::{
+        AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, KernelMatch, KernelTermExport,
+        KernelTermImport,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(999986);
+    let names = BTreeMap::from([(variable, "x".into())]);
+    let mut conditions = vec![];
+    for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+        for op in [
+            OverflowOperation::Add,
+            OverflowOperation::Subtract,
+            OverflowOperation::Multiply,
+        ] {
+            conditions.push(ConditionTerm::Overflows {
+                format,
+                op,
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(MachineTerm::Variable(variable)),
+            });
+        }
+    }
+    let mut constructor =
+        KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Int32)]);
+    constructor.node = AlgebraicTermNode::Constructor {
+        variant: "Arm".into(),
+        fields: vec![AlgebraicValue::Program(int32(7))],
+    };
+    conditions.push(ConditionTerm::AlgebraicEqual(
+        Box::new(constructor.clone()),
+        Box::new(constructor),
+    ));
+    for native in conditions {
+        let state = ExecutionState::new();
+        let expected =
+            synthesize_surface_bool(&native, ParameterBinding::default(), &state, &names).unwrap();
+        let root = KernelTermImport::default().condition(&native);
+        let exports = (
+            KernelTermExport::machine_export_count(),
+            KernelTermExport::algebraic_export_count(),
+        );
+        assert_eq!(
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &names),
+            Some(expected)
+        );
+        assert_eq!(
+            (
+                KernelTermExport::machine_export_count(),
+                KernelTermExport::algebraic_export_count()
+            ),
+            exports
+        );
+    }
+}
+
+#[test]
+fn shared_pointer_comparisons_preserve_native_spelling() {
+    use crate::kernel::{KernelTermImport, PointerValue};
+    let _session = crate::kernel::VerificationSession::enter();
+    let left = PointerValue::new(
+        Pointer::symbolic(Variable(999988)),
+        ProgramType::Int32Pointer,
+    );
+    let right = PointerValue::new(
+        Pointer::symbolic(Variable(999989)),
+        ProgramType::Int32Pointer,
+    );
+    let parameters = ["p", "q"].map(|name| {
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            name.into(),
+            None,
+        )
+    });
+    let arguments = [left.clone(), right.clone()]
+        .map(|value| ProgramExpression::Value(ProgramValue::Pointer(value)));
+    let binding = ParameterBinding::new(&parameters, &arguments);
+    let state = ExecutionState::new();
+    let names = BTreeMap::new();
+    for native in [
+        ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())),
+        ConditionTerm::PointerEqual(
+            Box::new(left.pointer().clone()),
+            Box::new(right.pointer().clone()),
+        ),
+        ConditionTerm::PointerEqual(Box::new(left.pointer().clone()), Box::new(Pointer::null())),
+    ] {
+        let expected = synthesize_surface_bool(&native, binding, &state, &names).unwrap();
+        let root = KernelTermImport::default().condition(&native);
+        assert_eq!(
+            raise_kernel_term(&root, binding, &state, &names),
+            Some(expected)
+        );
     }
 }

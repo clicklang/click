@@ -1074,7 +1074,11 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
         MachineTerm::MemoryLoad(memory, pointer, kind) => {
             if let Some(terms) = &mut variables.read_terms {
                 terms
-                    .entry((memory.arena_id(), pointer.as_ref().clone(), *kind))
+                    .entry((
+                        memory.shared_memory().arena_id(),
+                        pointer.as_ref().clone(),
+                        *kind,
+                    ))
                     .or_insert_with(|| term.clone());
             }
             collect_pointer_carriers(pointer, variables);
@@ -2062,7 +2066,10 @@ impl<'a> TermRewrite<'a> {
                 let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
                     unreachable!()
                 };
-                reads.insert((memory.arena_id(), *pointer, kind), (value, dependencies));
+                reads.insert(
+                    (memory.shared_memory().arena_id(), *pointer, kind),
+                    (value, dependencies),
+                );
             } else if let MachineTerm::Variable(variable) = source {
                 // Registered names use the exact read table, including its
                 // lexical address dependencies, just like structural reads.
@@ -5785,6 +5792,19 @@ impl<'a> TermRewrite<'a> {
                 return ConditionTerm::Constant(true);
             }
         }
+        if let Some(guard) = result.pointer_offset_uint64_association_guard() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.push(guard.clone());
+            }
+            // One exact lookup, keyed by the guard the regrouped sum spells.
+            if guard == ConditionTerm::Constant(true)
+                || self
+                    .conditions
+                    .is_some_and(|conditions| conditions.get(&guard) == Some(&true))
+            {
+                return ConditionTerm::Constant(true);
+            }
+        }
         if let ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
@@ -6069,10 +6089,9 @@ impl<'a> TermRewrite<'a> {
                     else {
                         unreachable!("read descriptor")
                     };
-                    if view
-                        .read()
-                        .is_some_and(|(m, p, k)| m == memory && p == address.as_ref() && k == *kind)
-                    {
+                    if view.read().is_some_and(|(m, p, k)| {
+                        m == memory.shared_memory() && p == address.as_ref() && k == *kind
+                    }) {
                         continue;
                     }
                     let variable = view.variable().copied();
@@ -6214,7 +6233,8 @@ impl<'a> TermRewrite<'a> {
         if let Some(reads) = self.comparison_reads
             && let Some(MachineTerm::MemoryLoad(memory, pointer, kind)) =
                 crate::kernel::eval::viewed_as_memory_load(v)
-            && let Some((replacement, variables)) = reads.get(&(memory.arena_id(), *pointer, kind))
+            && let Some((replacement, variables)) =
+                reads.get(&(memory.shared_memory().arena_id(), *pointer, kind))
             && !variables.is_bound_in(&self.scope)
         {
             self.changed = true;
@@ -6483,15 +6503,21 @@ impl<'a> TermRewrite<'a> {
                     .as_ref()
                     .map(|read| read.bytes)
                     .unwrap_or_else(|| {
-                        crate::kernel::load_term_access_width(memory, pointer, *kind)
+                        crate::kernel::load_term_access_width(
+                            memory.shared_memory(),
+                            pointer,
+                            *kind,
+                        )
                     });
                 // A projection belongs to the selected address. Instantiating
                 // an index must select the new address from that projection's
                 // recorded source, as direct lowering does. This is one indexed
                 // lookup, independent of facts and memory-history length.
                 if !use_origin
-                    && let Some(source) =
-                        crate::kernel::prelude::canonical_load_projection_source(memory, pointer)
+                    && let Some(source) = crate::kernel::prelude::canonical_load_projection_source(
+                        memory.shared_memory(),
+                        pointer,
+                    )
                 {
                     crate::kernel::eval::record_load_access_width(
                         source.memory(),
@@ -6499,7 +6525,7 @@ impl<'a> TermRewrite<'a> {
                         bytes,
                     );
                     return crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-                        source,
+                        ProgramPoint::at(&source),
                         Box::new(rewritten),
                         *kind,
                     ));
@@ -6507,7 +6533,7 @@ impl<'a> TermRewrite<'a> {
                 let memory = observation
                     .filter(|_| use_origin)
                     .and_then(|read| read.origin)
-                    .unwrap_or_else(|| memory.clone());
+                    .unwrap_or_else(|| memory.shared_memory().clone());
                 if self.resolve_registered_loads
                     && let Some(value) = memory
                         .memory()
@@ -7277,7 +7303,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    memory.into(),
+                    crate::kernel::ProgramPoint::of_memory(&memory),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -8881,7 +8907,7 @@ mod comparison_read_batch_tests {
             (MachineIntegerType::UInt64, LoadKind::Bits64),
         ] {
             let read = MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(Pointer::symbolic(Variable(401_020))),
                 kind,
             );
@@ -8932,7 +8958,7 @@ mod comparison_read_batch_tests {
         let memory = crate::kernel::intern_memory(Memory::new());
         let read = |index| {
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(Pointer::symbolic(Variable(index))),
                 LoadKind::Int32,
             )
@@ -9083,8 +9109,11 @@ mod comparison_read_batch_tests {
         let accumulator = Variable(403_002);
         let pointer = Pointer::symbolic(binder);
         let memory = crate::kernel::intern_memory(Memory::new());
-        let raw =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
+        let raw = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer.clone()),
+            LoadKind::Int32,
+        );
         let named = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &pointer,
@@ -9175,7 +9204,11 @@ mod comparison_read_batch_tests {
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::Variable(source)),
         ));
-        let untouched = MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Int32);
+        let untouched = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer),
+            LoadKind::Int32,
+        );
         let sealed = Resource::MutexGuard(MutexIdentity {
             epoch: Some(123),
             mutex: Pointer {

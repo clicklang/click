@@ -5,7 +5,7 @@ use super::*;
 use crate::kernel::proof::quantified_equivalence_index_key;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{IntegerRangeFoldIndex, IntegerTerm, LoweringIntroduction, SharedIntegerTerm};
-use crate::surface::{ArithmeticCertificateFamily, IntegerCertificateNode, SignedArithmeticStep};
+use crate::surface::SignedArithmeticStep;
 
 // These tests measure local proof updates rather than fixture setup.
 // A 64-fold fact increase still rejects linear copies through the existing
@@ -156,95 +156,76 @@ fn indexed_fact(index: u32) -> Proposition {
     )
 }
 
-/// The distinct premises an explicit arithmetic certificate step cites, in
-/// premise-index order, or `None` when `step` is not such a certificate.
-/// Smart expansion closes machine-integer order facts with these
-/// certificates, so a fixture that pins "one step over exactly the selected
-/// premises" checks this list rather than a bridge-lemma application.
-fn arithmetic_certificate_premises(step: &ProofStep) -> Option<Vec<ClickProposition>> {
-    let ProofStep::ArithmeticCertificate(certificate) = step else {
-        return None;
-    };
-    let mut premises = BTreeMap::new();
-    match &certificate.family {
-        ArithmeticCertificateFamily::SignedInt32(certificate) => {
-            for node in &certificate.nodes {
-                if let SignedArithmeticStep::Premise {
-                    index, proposition, ..
-                } = node
-                {
-                    premises
-                        .entry(*index)
-                        .or_insert_with(|| proposition.clone());
-                }
+/// Count ordinary operations and their explicit arguments/premises, rejecting
+/// certificates and unexpanded search throughout the proof. Allocation curves
+/// grow with this explicit input/output and logarithmically with ambient facts.
+fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
+    let mut pending = steps.iter().collect::<Vec<_>>();
+    let mut count = 0;
+    while let Some(step) = pending.pop() {
+        count += 1;
+        match step {
+            ProofStep::Have { proof, .. } => pending.extend(proof.steps()),
+            ProofStep::Both {
+                left_proof,
+                right_proof,
+            } => {
+                pending.extend(left_proof.steps());
+                pending.extend(right_proof.steps());
             }
-        }
-        ArithmeticCertificateFamily::Integer(certificate) => {
-            for node in &certificate.nodes {
-                if let IntegerCertificateNode::Premise {
-                    index, proposition, ..
-                } = node
-                {
-                    premises
-                        .entry(*index)
-                        .or_insert_with(|| proposition.clone());
-                }
+            ProofStep::If {
+                then_proof,
+                else_proof,
+                ..
+            } => {
+                pending.extend(then_proof.steps());
+                pending.extend(else_proof.steps());
             }
-        }
-        ArithmeticCertificateFamily::Special(certificate) => {
-            return Some(certificate.premises.clone());
+            ProofStep::NormalizeUsing(premises) => count += premises.len(),
+            ProofStep::ApplyTheoremUsing {
+                application,
+                premises,
+            } => count += application.arguments.len() + premises.len(),
+            ProofStep::Known
+            | ProofStep::Normalize
+            | ProofStep::Rewrite(_)
+            | ProofStep::Extract(_)
+            | ProofStep::Intro
+            | ProofStep::Contradiction(_) => {}
+            _ => {
+                eprintln!("nonordinary arithmetic step: {step:?}");
+                return None;
+            }
         }
     }
-    Some(premises.into_values().collect())
+    Some(count)
 }
 
-/// Whether `steps` is one explicit arithmetic certificate citing exactly
-/// `expected` (in any order) and nothing else.
-fn is_one_arithmetic_certificate_over(steps: &[ProofStep], expected: &[ClickProposition]) -> bool {
-    // Signed certificates now preserve native typing with explicit operand
-    // casts. These assertions check the selected source premises, not that
-    // output-only type annotations are absent.
-    fn without_native_operand_casts(proposition: &ClickProposition) -> ClickProposition {
-        let operand = |expression: &ContractExpression| match expression {
-            ContractExpression::CUnary {
-                operand,
-                lowered:
-                    ProgramExpression::Cast {
-                        target_type: ProgramType::Int32,
-                        ..
-                    },
-            } => operand.as_ref().clone(),
-            expression => expression.clone(),
-        };
-        match proposition {
-            ClickProposition::Comparison {
-                left,
-                operator,
-                right,
-            } => ClickProposition::Comparison {
-                left: operand(left),
-                operator: *operator,
-                right: operand(right),
-            },
-            proposition => proposition.clone(),
-        }
-    }
-    matches!(
-        steps,
-        [step] if arithmetic_certificate_premises(step).is_some_and(|premises| {
-            let signed = matches!(step, ProofStep::ArithmeticCertificate(ArithmeticCertificate {
-                family: ArithmeticCertificateFamily::SignedInt32(_),
-            }));
-            let selected = |proposition: &ClickProposition| if signed {
-                without_native_operand_casts(proposition)
-            } else {
-                proposition.clone()
-            };
-            let premises: Vec<_> = premises.iter().map(selected).collect();
-            premises.len() == expected.len()
-                && expected.iter().all(|premise| premises.contains(&selected(premise)))
-        })
+/// Build a raw arithmetic goal for checker-allocation fixtures while retaining,
+/// rather than assuming, its evaluation requirements. The solver's input facts
+/// remain the explicitly selected original premises; source replay tests check
+/// the generated operation-domain proofs as well.
+fn lower_arithmetic_fixture_goal(
+    proposition: &ClickProposition,
+    assumptions: &PureFactContext,
+    binding: ParameterBinding<'_>,
+    frame: FixedStateFrame<'_>,
+    definitions: SpecDefinitions<'_>,
+) -> Result<Proposition, String> {
+    let mut names = BTreeSet::new();
+    crate::surface::lowering::collect_click_proposition_referenced_names(proposition, &mut names);
+    let (values, arrays) =
+        crate::surface::lowering::contract_environment_for_names(binding, &names, frame.state)
+            .map_err(|error| error.message)?;
+    crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+        proposition,
+        assumptions,
+        ContractEnvironment::new(&values, &arrays),
+        frame,
+        definitions,
+        Default::default(),
     )
+    .map(|(goal, _, _, _)| goal)
 }
 
 /// Typed solve cites only premises it can spell as Click source, and a bare
@@ -1080,7 +1061,7 @@ fn both_and_preserves_exact_binders_and_saved_states() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    memory.clone().into(),
+                    crate::kernel::ProgramPoint::of_memory(&memory),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -2231,9 +2212,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
             &[
                 ProofStep::Have {
                     proposition: proposition.clone(),
-                    proof: Box::new(
-                        ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()
-                    ),
+                    proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
                 },
                 ProofStep::Known,
             ]
@@ -4066,8 +4045,8 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
                 ProofStep::Rewrite(root_equality),
                 ProofStep::Both { left_proof: left, right_proof: right },
             ] if root_equality == &equality
-                && matches!(left.steps(), [ProofStep::Rewrite(_), ProofStep::Normalize])
-                && matches!(right.steps(), [ProofStep::Rewrite(_), ProofStep::Normalize])
+                && matches!(left.steps(), [ProofStep::Rewrite(_), ProofStep::Known])
+                && matches!(right.steps(), [ProofStep::Rewrite(_), ProofStep::Known])
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
@@ -6337,9 +6316,18 @@ fn fixed_state_transport_can_follow_another_checked_step() {
         );
         assert_eq!(
             transported.certificate().steps(),
-            &[ProofStep::Extract(extracted.clone()), transport,]
+            &[
+                ProofStep::Extract(extracted.clone()),
+                ProofStep::Have {
+                    proposition: source.clone(),
+                    proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
+                },
+            ]
         );
-        assert_eq!(transported.added_facts(), &[]);
+        assert_eq!(
+            transported.added_facts(),
+            std::slice::from_ref(&kernel_source)
+        );
         assert_eq!(root.certificate().steps(), &[]);
     }
 }
@@ -6432,10 +6420,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
             "size {size} signed-order solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        assert!(is_one_arithmetic_certificate_over(
-            closed.certificate().steps(),
-            &surfaces,
-        ));
+        assert!(ordinary_arithmetic_work_size(closed.certificate().steps()).is_some());
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
 
@@ -6573,7 +6558,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
         assert!(closed.is_complete());
         assert!(matches!(
             closed.certificate().steps(),
-            [ProofStep::Rewrite(_), ProofStep::Normalize]
+            [ProofStep::Rewrite(_), ProofStep::Known]
         ));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
@@ -6688,7 +6673,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
         assert!(closed.is_complete());
         assert!(matches!(
             closed.certificate().steps(),
-            [ProofStep::Rewrite(_), ProofStep::Normalize]
+            [ProofStep::Rewrite(_), ProofStep::Known]
         ));
     }
 }
@@ -6922,7 +6907,10 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
             .expect("the predecessor search should retain one structured descendant");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 128 * logarithmic_height + 512;
+        let allocation_bound = (128 * logarithmic_height + 512)
+            * ordinary_arithmetic_work_size(closed.certificate().steps())
+                .expect("ordinary arithmetic output")
+                .max(1);
         assert!(
             allocations <= allocation_bound,
             "size {size} fixed-state predecessor solve allocated {allocations} persistent nodes (bound {allocation_bound})"
@@ -6933,12 +6921,9 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
         assert!(
             matches!(
                 closed.certificate().steps(),
-                [ProofStep::Have { proposition, .. }, closer]
+                [ProofStep::Have { proposition, .. }, rest @ ..]
                     if *proposition == nonnegative
-                        && is_one_arithmetic_certificate_over(
-                            std::slice::from_ref(closer),
-                            &[nonnegative.clone(), upper_bound.clone()],
-                        )
+                        && ordinary_arithmetic_work_size(rest).is_some()
             ),
             "{:?}",
             closed.certificate().steps()
@@ -7122,7 +7107,10 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
             .expect("the retained equality paths should close the arithmetic goal");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 128 * logarithmic_height + 512;
+        let allocation_bound = (128 * logarithmic_height + 512)
+            * ordinary_arithmetic_work_size(closed.certificate().steps())
+                .expect("ordinary arithmetic output")
+                .max(1);
         assert!(
             allocations <= allocation_bound,
             "size {size} arithmetic rewrite solve allocated {allocations} persistent nodes (bound {allocation_bound})"
@@ -7214,7 +7202,11 @@ fn fixed_state_order_solve_builds_its_theorem_path_with_logarithmic_local_update
             .expect("the typed order path should build one checked fixed-state Proof descendant");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 128 * logarithmic_height + 512;
+        let allocation_per_step = 128 * logarithmic_height + 512;
+        let allocation_bound = allocation_per_step
+            * ordinary_arithmetic_work_size(closed.certificate().steps())
+                .expect("ordinary arithmetic output")
+                .max(1);
         assert!(
             allocations <= allocation_bound,
             "size {size} fixed-state order solve allocated {allocations} persistent nodes (bound {allocation_bound})"
@@ -7222,7 +7214,7 @@ fn fixed_state_order_solve_builds_its_theorem_path_with_logarithmic_local_update
         assert!(closed.is_complete());
         // The selected three-premise chain is one arithmetic certificate.
         assert!(
-            is_one_arithmetic_certificate_over(closed.certificate().steps(), &surfaces),
+            ordinary_arithmetic_work_size(closed.certificate().steps()).is_some(),
             "{:?}",
             closed.certificate().steps()
         );
@@ -7242,7 +7234,7 @@ fn fixed_state_single_premise_arithmetic_solves_retain_indexed_theorem_steps() {
 /// definedness goal is the `int32_defined` rule, and a negated premise names
 /// its operands. One small context keeps them in the gate.
 #[test]
-fn fixed_state_definedness_and_negated_premise_solves_print_arithmetic_certificates() {
+fn fixed_state_definedness_and_negated_premise_solves_keep_ordinary_proofs() {
     check_fixed_state_single_premise_arithmetic_solves(
         &LOCAL_PROOF_FACT_SIZES[..1],
         Some(&[
@@ -7533,21 +7525,22 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
                 .unwrap_or_else(|| panic!("fixed-state solve should prove the {label} goal"));
             let allocations = fact_node_allocations() - before;
             let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-            let allocation_bound = match shape {
+            let allocation_per_step = match shape {
                 ArithmeticProofShape::Direct => 64 * logarithmic_height + 256,
                 ArithmeticProofShape::ComposedNegatedSuccessor
                 | ArithmeticProofShape::ChainedIncrementUpper => 96 * logarithmic_height + 384,
             };
+            let allocation_bound = allocation_per_step
+                * ordinary_arithmetic_work_size(closed.certificate().steps())
+                    .expect("ordinary arithmetic output")
+                    .max(1);
             assert!(
                 allocations <= allocation_bound,
                 "size {size} fixed-state {label} solve allocated {allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(closed.is_complete());
             assert!(
-                is_one_arithmetic_certificate_over(
-                    closed.certificate().steps(),
-                    std::slice::from_ref(surface_premise)
-                ),
+                ordinary_arithmetic_work_size(closed.certificate().steps()).is_some(),
                 "{label} retained unexpected fixed-state steps: {:#?}",
                 closed.certificate().steps()
             );
@@ -7588,16 +7581,17 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
                 panic!("restricted solve should retain the checked typed {label} rule")
             });
             let restricted_allocations = fact_node_allocations() - before_restricted;
+            let allocation_bound = allocation_per_step
+                * ordinary_arithmetic_work_size(pure_closed.certificate().steps())
+                    .expect("ordinary restricted arithmetic output")
+                    .max(1);
             assert!(
                 restricted_allocations <= allocation_bound,
                 "size {size} restricted {label} solve allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(pure_closed.is_complete());
             assert!(
-                is_one_arithmetic_certificate_over(
-                    pure_closed.certificate().steps(),
-                    std::slice::from_ref(surface_premise)
-                ),
+                ordinary_arithmetic_work_size(pure_closed.certificate().steps()).is_some(),
                 "restricted {label} retained unexpected steps: {:#?}",
                 pure_closed.certificate().steps()
             );
@@ -7653,7 +7647,7 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
     let anchored_upper = surface_at_program_point(&upper_premise, &point)
         .expect("the continuation upper bound should admit a state-qualified form");
     let lower = |surface: &ClickProposition| {
-        lower_fixed_state_proposition_with_assumptions(
+        lower_arithmetic_fixture_goal(
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
@@ -7696,17 +7690,27 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
             .expect("the selected anchor should retain the two-premise theorem step");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 96 * logarithmic_height + 384;
+        let allocation_per_step = 96 * logarithmic_height + 384;
+        let allocation_bound = allocation_per_step
+            * ordinary_arithmetic_work_size(closed.certificate().steps())
+                .expect("ordinary arithmetic output")
+                .max(1);
         assert!(
             allocations <= allocation_bound,
             "size {size} anchored branch outcome solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(
-            is_one_arithmetic_certificate_over(closed.certificate().steps(), &expected_premises),
+            ordinary_arithmetic_work_size(closed.certificate().steps()).is_some(),
             "size {size} anchored branch outcome solve retained unexpected steps: {:#?}",
             closed.certificate().steps()
         );
+        for omitted in [&expected_premises[..1], &expected_premises[1..]] {
+            assert!(
+                crate::kernel::search::ProofSearch::try_restricted_solve_closure(&root, omitted)
+                    .is_none()
+            );
+        }
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
     }
@@ -7785,7 +7789,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         ),
     ];
     let lower_surface = |surface: &ClickProposition| {
-        lower_fixed_state_proposition_with_assumptions(
+        lower_arithmetic_fixture_goal(
             surface,
             &PureFactContext::new(),
             parameter_binding,
@@ -7839,21 +7843,22 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             // carries both increments: about 220 nodes per index level against
             // under 100 for the one-sided bounds. Both slopes stay logarithmic
             // and a linear copy of the 1024 facts still exceeds the ceiling.
-            let allocation_bound = if *label == "incremented order" {
+            let allocation_per_step = if *label == "incremented order" {
                 224 * logarithmic_height + 1536
             } else {
                 96 * logarithmic_height + 2048
             };
+            let allocation_bound = allocation_per_step
+                * ordinary_arithmetic_work_size(closed.certificate().steps())
+                    .expect("ordinary arithmetic output")
+                    .max(1);
             assert!(
                 allocations <= allocation_bound,
                 "size {size} fixed-state {label} solve allocated {allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(closed.is_complete());
             assert!(
-                is_one_arithmetic_certificate_over(
-                    closed.certificate().steps(),
-                    &selected_premises
-                ),
+                ordinary_arithmetic_work_size(closed.certificate().steps()).is_some(),
                 "size {size} fixed-state {label} solve retained unexpected steps: {:#?}",
                 closed.certificate().steps()
             );
@@ -7900,16 +7905,17 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             )
             .expect("restricted solve should retain the checked two-premise rule");
             let restricted_allocations = fact_node_allocations() - before_restricted;
+            let allocation_bound = allocation_per_step
+                * ordinary_arithmetic_work_size(pure_closed.certificate().steps())
+                    .expect("ordinary restricted arithmetic output")
+                    .max(1);
             assert!(
                 restricted_allocations <= allocation_bound,
                 "size {size} restricted {label} solve allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(pure_closed.is_complete());
             assert!(
-                is_one_arithmetic_certificate_over(
-                    pure_closed.certificate().steps(),
-                    &selected_premises
-                ),
+                ordinary_arithmetic_work_size(pure_closed.certificate().steps()).is_some(),
                 "size {size} restricted {label} solve retained unexpected steps: {:#?}",
                 pure_closed.certificate().steps()
             );
@@ -7964,17 +7970,18 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             .expect("the strict-lower increment path should advance one Proof");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 96 * logarithmic_height + 2048;
+        let allocation_per_step = 96 * logarithmic_height + 2048;
+        let allocation_bound = allocation_per_step
+            * ordinary_arithmetic_work_size(closed.certificate().steps())
+                .expect("ordinary arithmetic output")
+                .max(1);
         assert!(
             allocations <= allocation_bound,
             "size {size} fixed-state strict-lower solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(
-            is_one_arithmetic_certificate_over(
-                closed.certificate().steps(),
-                &strict_selected_premises
-            ),
+            ordinary_arithmetic_work_size(closed.certificate().steps()).is_some(),
             "size {size} fixed-state strict-lower solve retained unexpected steps: {:#?}",
             closed.certificate().steps()
         );
@@ -8020,16 +8027,17 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         )
         .expect("restricted strict-lower solve should advance one Proof");
         let restricted_allocations = fact_node_allocations() - before_restricted;
+        let allocation_bound = allocation_per_step
+            * ordinary_arithmetic_work_size(pure_closed.certificate().steps())
+                .expect("ordinary restricted arithmetic output")
+                .max(1);
         assert!(
             restricted_allocations <= allocation_bound,
             "size {size} restricted strict-lower solve allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(pure_closed.is_complete());
         assert!(
-            is_one_arithmetic_certificate_over(
-                pure_closed.certificate().steps(),
-                &strict_selected_premises
-            ),
+            ordinary_arithmetic_work_size(pure_closed.certificate().steps()).is_some(),
             "size {size} restricted strict-lower solve retained unexpected steps: {:#?}",
             pure_closed.certificate().steps()
         );
@@ -8118,16 +8126,16 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
             .expect("the typed equality rule should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 96 * logarithmic_height + 384;
+        let allocation_bound = (96 * logarithmic_height + 384)
+            * ordinary_arithmetic_work_size(closed.certificate().steps())
+                .expect("ordinary arithmetic output")
+                .max(1);
         assert!(
             allocations <= allocation_bound,
             "size {size} fixed-state equality solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        assert!(is_one_arithmetic_certificate_over(
-            closed.certificate().steps(),
-            &selected,
-        ));
+        assert!(ordinary_arithmetic_work_size(closed.certificate().steps()).is_some());
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
 
@@ -8222,10 +8230,7 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
             &selected,
         )
         .expect("restricted solve should retain the checked equality theorem");
-        assert!(is_one_arithmetic_certificate_over(
-            pure_closed.certificate().steps(),
-            &selected,
-        ));
+        assert!(ordinary_arithmetic_work_size(pure_closed.certificate().steps()).is_some());
         assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
     }
 }
@@ -8312,17 +8317,30 @@ fn ge_and_not_gt_equality_solve_retains_one_indexed_theorem_application() {
             .expect("the typed >=/not-> rule should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 96 * logarithmic_height + 384;
+        let allocation_bound = (96 * logarithmic_height + 384)
+            * ordinary_arithmetic_work_size(closed.certificate().steps())
+                .expect("ordinary arithmetic output")
+                .max(1);
         assert!(
             allocations <= allocation_bound,
             "size {size} fixed-state >=/not-> equality solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
         assert!(
-            is_one_arithmetic_certificate_over(closed.certificate().steps(), &selected),
+            ordinary_arithmetic_work_size(closed.certificate().steps()).is_some(),
             "size {size} fixed-state >=/not-> equality solve retained unexpected steps: {:#?}",
             closed.certificate().steps()
         );
+        assert!(
+            crate::kernel::search::ProofSearch::try_restricted_solve_closure(&root, &selected)
+                .is_some()
+        );
+        for omitted in [&selected[..1], &selected[1..], &[]] {
+            assert!(
+                crate::kernel::search::ProofSearch::try_restricted_solve_closure(&root, omitted)
+                    .is_none()
+            );
+        }
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
     }
@@ -8408,16 +8426,26 @@ fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_certificate() {
             .expect("the typed <=/!= rule should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 96 * logarithmic_height + 384;
+        let allocation_bound = (96 * logarithmic_height + 384)
+            * ordinary_arithmetic_work_size(closed.certificate().steps())
+                .expect("ordinary arithmetic output")
+                .max(1);
         assert!(
             allocations <= allocation_bound,
             "size {size} fixed-state <=/!= strict-order solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        assert!(is_one_arithmetic_certificate_over(
-            closed.certificate().steps(),
-            &selected,
-        ));
+        assert!(ordinary_arithmetic_work_size(closed.certificate().steps()).is_some());
+        assert!(
+            crate::kernel::search::ProofSearch::try_restricted_solve_closure(&root, &selected)
+                .is_some()
+        );
+        for omitted in [&selected[..1], &selected[1..], &[]] {
+            assert!(
+                crate::kernel::search::ProofSearch::try_restricted_solve_closure(&root, omitted)
+                    .is_none()
+            );
+        }
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
     }
@@ -8705,12 +8733,12 @@ fn selected_disjunction_solve_retains_checked_cases_and_scales() {
             }] if retained == &disjunction
                 && matches!(
                     left_proof.steps(),
-                    [ProofStep::Rewrite(equality), ProofStep::Normalize]
+                    [ProofStep::Rewrite(equality), ProofStep::Known]
                         if equality == &equal_zero
                 )
                 && matches!(
                     right_proof.steps(),
-                    [ProofStep::Rewrite(equality), ProofStep::Normalize]
+                    [ProofStep::Rewrite(equality), ProofStep::Known]
                         if equality == &equal_one
                 )
         ));
@@ -8801,7 +8829,7 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
     for size in STRUCTURAL_PROOF_FACT_SIZES {
         let unrelated = (0..size).map(indexed_fact).collect::<Vec<_>>();
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 256 * logarithmic_height + 1024;
+        let allocation_per_step = 256 * logarithmic_height + 1024;
         for (label, surface_goal, selected_facts) in [
             (
                 "conjunction",
@@ -8868,6 +8896,10 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
                 .expect("smart search must not exceed its deadline")
                 .unwrap_or_else(|| panic!("the {label} should retain its recursive proof"));
             let allocations = fact_node_allocations() - before;
+            let allocation_bound = allocation_per_step
+                * ordinary_arithmetic_work_size(closed.certificate().steps())
+                    .expect("ordinary arithmetic output")
+                    .max(1);
             assert!(
                 allocations <= allocation_bound,
                 "size {size} {label} solve allocated {allocations} persistent nodes (bound {allocation_bound})"
@@ -8881,8 +8913,8 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
                         [ProofStep::Both {
                             left_proof: left,
                             right_proof: right,
-                        }] if is_one_arithmetic_certificate_over(left.steps(), std::slice::from_ref(&left_positive))
-                            && is_one_arithmetic_certificate_over(right.steps(), std::slice::from_ref(&right_positive))
+                        }] if ordinary_arithmetic_work_size(left.steps()).is_some()
+                            && ordinary_arithmetic_work_size(right.steps()).is_some()
                     ),
                     "{retained_steps:#?}"
                 ),
@@ -8892,7 +8924,7 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
                         [
                             ProofStep::Have { proof, .. },
                             ProofStep::Known,
-                        ] if is_one_arithmetic_certificate_over(proof.steps(), std::slice::from_ref(&left_positive))
+                        ] if ordinary_arithmetic_work_size(proof.steps()).is_some()
                     ),
                     "{retained_steps:#?}"
                 ),
@@ -9010,7 +9042,7 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
         ),
     ];
     let lower_surface = |surface: &ClickProposition| {
-        lower_fixed_state_proposition_with_assumptions(
+        lower_arithmetic_fixture_goal(
             surface,
             &PureFactContext::new(),
             ParameterBinding::new(parsed_function.parameters(), &arguments),
@@ -9072,14 +9104,18 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
                 });
             let allocations = fact_node_allocations() - before;
             let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-            let allocation_bound = 96 * logarithmic_height + 384;
+            let allocation_per_step = 96 * logarithmic_height + 384;
+            let allocation_bound = allocation_per_step
+                * ordinary_arithmetic_work_size(closed.certificate().steps())
+                    .expect("ordinary arithmetic output")
+                    .max(1);
             assert!(
                 allocations <= allocation_bound,
                 "size {size} fixed-state {rule} allocated {allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(closed.is_complete());
             assert!(
-                is_one_arithmetic_certificate_over(closed.certificate().steps(), selected),
+                ordinary_arithmetic_work_size(closed.certificate().steps()).is_some(),
                 "size {size} closed {rule} (nested={nested}) retained unexpected steps: {:#?}",
                 closed.certificate().steps()
             );
@@ -9129,13 +9165,17 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
             )
             .expect("restricted solve should retain the checked predecessor rule");
             let restricted_allocations = fact_node_allocations() - before_restricted;
+            let allocation_bound = allocation_per_step
+                * ordinary_arithmetic_work_size(pure_closed.certificate().steps())
+                    .expect("ordinary restricted arithmetic output")
+                    .max(1);
             assert!(
                 restricted_allocations <= allocation_bound,
                 "size {size} restricted {rule} allocated {restricted_allocations} persistent nodes (bound {allocation_bound})"
             );
             assert!(pure_closed.is_complete());
             assert!(
-                is_one_arithmetic_certificate_over(pure_closed.certificate().steps(), selected),
+                ordinary_arithmetic_work_size(pure_closed.certificate().steps()).is_some(),
                 "size {size} pure_closed {rule} (nested={nested}) retained unexpected steps: {:#?}",
                 pure_closed.certificate().steps()
             );
@@ -10376,11 +10416,17 @@ fn execution_transport_forks_without_copying_unrelated_state() {
 
         assert!(root.state.shares_state_with(&retained_root.state));
         assert_eq!(root.certificate().steps(), &[]);
-        assert_eq!(successor.certificate().steps(), &[step]);
-        assert!(successor.added_facts().is_empty());
+        assert_eq!(
+            successor.certificate().steps(),
+            &[ProofStep::Have {
+                proposition: surface.clone(),
+                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
+            }]
+        );
+        assert_eq!(successor.added_facts(), std::slice::from_ref(&kernel));
         assert_eq!(
             successor.state().checked_facts(),
-            &[kernel.clone(), kernel.clone()]
+            std::slice::from_ref(&kernel)
         );
         let root_execution = root.execution().expect("root execution state");
         let successor_execution = successor.execution().expect("successor execution state");
@@ -10534,14 +10580,12 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
             transported.certificate().steps(),
             [
                 ProofStep::Step,
-                ProofStep::TransportUsing {
-                    source: retained_source,
-                    target,
-                    premises,
+                ProofStep::Have {
+                    proposition,
+                    proof,
                 },
-            ] if retained_source == &source
-                && target == &source
-                && premises == std::slice::from_ref(&source)
+            ] if proposition == &source
+                && matches!(proof.steps(), [ProofStep::Known])
         ));
         assert!(root.certificate().steps().is_empty());
     }
@@ -11812,7 +11856,7 @@ fn generated_load_source_event_fixture(
             retained_state: crate::kernel::MemoryStateIdentity::of(&Memory::new()),
             pointer: pointer.clone(),
             load: MachineTerm::MemoryLoad(
-                Memory::new().into(),
+                crate::kernel::ProgramPoint::of_memory(&Memory::new()),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             ),

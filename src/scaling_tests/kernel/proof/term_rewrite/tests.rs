@@ -234,7 +234,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
         );
         assert_eq!(retained_state, &memory);
         assert!(pointer.offset.native_scaled_values_for_output().iter().all(
-            |value| matches!(value, MachineTerm::MemoryLoad(retained_state, _, _) if retained_state == &memory)
+            |value| matches!(value, MachineTerm::MemoryLoad(retained_state, _, _) if retained_state.shared_memory() == &memory)
         ));
         last_load = Some(load);
         work.push(measured);
@@ -650,8 +650,11 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
             block: PointerBlock::Concrete("checked-fold-opaque".into()),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let replacement_payload =
-            MachineTerm::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
+        let replacement_payload = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer),
+            crate::kernel::LoadKind::Int32,
+        );
         let replacement = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
             replacement_payload,
@@ -705,7 +708,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         let integer_capture = *integer_accumulators.last().unwrap();
         let c_capture = *c_items.last().unwrap();
         let mut mixed_c_payload = MachineTerm::MemoryLoad(
-            memory.clone(),
+            ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
@@ -808,8 +811,11 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         }
         let math_capture = *math_accumulators.last().unwrap();
         let c_item_capture = *mixed_c_items.last().unwrap();
-        let mut c_replacement =
-            MachineTerm::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
+        let mut c_replacement = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer),
+            crate::kernel::LoadKind::Int32,
+        );
         for _ in 0..depth {
             c_replacement = binary_node!(
                 Int32,
@@ -1575,7 +1581,7 @@ fn resource_read_collection_scales_with_selected_arguments() {
         let arguments = (0..size)
             .map(|index| {
                 AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::MemoryLoad(
-                    memory.clone(),
+                    ProgramPoint::at(&memory),
                     Box::new(Pointer::symbolic(Variable(3_219_100 + index as u64))),
                     LoadKind::Int32,
                 )))
@@ -1617,7 +1623,7 @@ fn one_proposition_read_comparison_batch_scales_with_selected_reads() {
         let reads: Vec<_> = (0..size)
             .map(|index| {
                 MachineTerm::MemoryLoad(
-                    memory.clone(),
+                    ProgramPoint::at(&memory),
                     Box::new(Pointer::symbolic(Variable(4_021_000 + index as u64))),
                     LoadKind::Int32,
                 )

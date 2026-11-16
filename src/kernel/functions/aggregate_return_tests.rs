@@ -104,7 +104,7 @@ fn destination_procedure(name: &str, body: ProgramStatement) -> ProgramFunction 
 
 fn construction_function(name: &str, body: ProgramStatement) -> ProgramFunction {
     let storage = ResourceSpec::owned_memory(MemorySegment::new(
-        crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME),
+        crate::kernel::program_expression::variable(CONTRACT_RESULT),
         crate::kernel::program_expression::int32_literal(0),
         crate::kernel::program_expression::int32_literal(4),
     ));
@@ -119,7 +119,7 @@ fn construction_function(name: &str, body: ProgramStatement) -> ProgramFunction 
 }
 
 fn node_construction_body() -> ProgramStatement {
-    let destination = crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME);
+    let destination = crate::kernel::program_expression::variable(CONTRACT_RESULT);
     let field = crate::kernel::program_expression::cast(
         crate::kernel::program_expression::pointer_offset_bytes(destination.clone(), 8),
         ProgramType::Int32Pointer,
@@ -150,13 +150,11 @@ fn construction_return_preserves_exact_destination_through_two_factories() {
             name,
             program_seq(
                 program_call_construct(
-                    C_CONTRACT_RESULT_NAME,
+                    CONTRACT_RESULT,
                     callee,
                     vec![crate::kernel::program_expression::variable("input")],
                 ),
-                program_return(crate::kernel::program_expression::variable(
-                    C_CONTRACT_RESULT_NAME,
-                )),
+                program_return(crate::kernel::program_expression::variable(CONTRACT_RESULT)),
             ),
         )
     };
@@ -248,19 +246,17 @@ fn construction_return_rejects_missing_binding_authority_and_partial_values() {
         "partial_node",
         program_seq(
             program_typed_store(
-                crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME),
+                crate::kernel::program_expression::variable(CONTRACT_RESULT),
                 crate::kernel::program_expression::cast(
                     crate::kernel::program_expression::pointer_offset_bytes(
-                        crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME),
+                        crate::kernel::program_expression::variable(CONTRACT_RESULT),
                         8,
                     ),
                     ProgramType::Int32Pointer,
                 ),
                 ProgramType::Int32Pointer,
             ),
-            program_return(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
-            )),
+            program_return(crate::kernel::program_expression::variable(CONTRACT_RESULT)),
         ),
     );
     let paths = execute_program_function_call_paths(
@@ -281,7 +277,7 @@ fn construction_return_rejects_missing_binding_authority_and_partial_values() {
 #[test]
 fn construction_destination_can_alias_an_argument_without_becoming_fresh() {
     let _session = crate::kernel::VerificationSession::enter();
-    let result = crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME);
+    let result = crate::kernel::program_expression::variable(CONTRACT_RESULT);
     let field = crate::kernel::program_expression::cast(
         crate::kernel::program_expression::pointer_offset_bytes(result.clone(), 8),
         ProgramType::Int32Pointer,
@@ -366,7 +362,7 @@ fn construction_destination_can_alias_an_argument_without_becoming_fresh() {
 fn construction_temporary_retirement_preserves_copies_and_external_backing() {
     for points_to_self in [false, true] {
         let _session = crate::kernel::VerificationSession::enter();
-        let result = crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME);
+        let result = crate::kernel::program_expression::variable(CONTRACT_RESULT);
         let field = crate::kernel::program_expression::cast(
             crate::kernel::program_expression::pointer_offset_bytes(result.clone(), 8),
             ProgramType::Int32Pointer,
@@ -774,7 +770,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     let before = Memory::new().with_block(input.block.clone(), 1);
     let read = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(memory.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
             Box::new(input.clone()),
             LoadKind::UInt8,
         )
@@ -1555,4 +1551,58 @@ fn aggregate_return_temporary_copy_requires_its_recorded_extent() {
             "external storage still requires a resource"
         );
     }
+}
+
+#[test]
+fn aggregate_return_storage_is_distinct_from_a_same_frame_source_named_return() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Memory::frame_local_pointer(0, "__return");
+    let self_pointer =
+        ProgramValue::typed_pointer(source.offset_by_bytes(8), ProgramType::Int32Pointer);
+    let caller = Memory::new();
+    let mut state = ExecutionState::new().with_memory(
+        caller
+            .clone()
+            .with_block(source.block.clone(), 16)
+            .store(source.clone(), self_pointer.clone())
+            .store(source.offset_by_bytes(8), int32(37)),
+    );
+    state
+        .locals
+        .set_aggregate_object_at("__return", node_layout(), source.clone());
+    let function = copy_function();
+    let first = complete_aggregate_return(
+        &mut state,
+        &function,
+        ProgramValue::typed_pointer(source.clone(), ProgramType::VoidPointer),
+    )
+    .unwrap();
+    let second = complete_aggregate_return(&mut state, &function, first.clone()).unwrap();
+    assert_eq!(
+        pointer(&first).block,
+        PointerBlock::AggregateReturn { frame: 0 }
+    );
+    assert_eq!(
+        pointer(&second).block,
+        PointerBlock::AggregateReturn { frame: 1 }
+    );
+    assert_eq!(state.next_local_frame, 2);
+    for result in [&first, &second] {
+        let destination = pointer(result);
+        assert!(destination.block.proven_distinct(&source.block));
+        assert_eq!(
+            state.memory.known_value(&destination),
+            Some(self_pointer.clone())
+        );
+        assert_eq!(
+            state.memory.known_value(&destination.offset_by_bytes(8)),
+            Some(int32(37))
+        );
+    }
+    set_function_result(&mut state, &function, second.clone());
+    let after =
+        end_function_body_automatic_lifetimes(&state, &function, &caller, Some(&second)).unwrap();
+    assert!(!after.has_block(&source.block));
+    assert!(after.has_block(&pointer(&second).block));
+    assert_eq!(after.known_value(&pointer(&second)), Some(self_pointer));
 }

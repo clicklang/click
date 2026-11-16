@@ -3115,7 +3115,10 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
         | PointerBlock::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        PointerBlock::AutomaticLocal { .. }
+        PointerBlock::ContractResult
+        | PointerBlock::AggregateReturn { .. }
+        | PointerBlock::StaticObject { .. }
+        | PointerBlock::AutomaticLocal { .. }
         | PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
@@ -3462,7 +3465,7 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
             // Memory states are immutable kernel values; their free
             // variable collector remains the source of truth for state
             // contents, while the pointer can contain nested fold terms.
-            collect_memory_bitvector_variables(memory, variables);
+            collect_memory_bitvector_variables(memory.memory(), variables);
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
         MachineTerm::PointerAddress(pointer, _) => {
@@ -5772,7 +5775,11 @@ fn substitute_through_load_variable(
         );
     }
     Some(crate::kernel::eval::canonical_term(
-        &MachineTerm::MemoryLoad(substituted_memory, Box::new(substituted_pointer), kind),
+        &MachineTerm::MemoryLoad(
+            ProgramPoint::at(&substituted_memory),
+            Box::new(substituted_pointer),
+            kind,
+        ),
     ))
 }
 
@@ -5911,9 +5918,10 @@ pub(crate) fn substitute_bitvector_variable(
                 .collect(),
         },
         MachineTerm::MemoryLoad(memory, pointer, kind) => {
-            let rewritten_memory = substitute_bitvector_variable_in_shared_memory(memory, from, to);
+            let rewritten_memory =
+                substitute_bitvector_variable_in_shared_memory(memory.shared_memory(), from, to);
             let rewritten_pointer = substitute_bitvector_variable_in_pointer(pointer, from, to);
-            if rewritten_memory == *memory && rewritten_pointer == **pointer {
+            if rewritten_memory == *memory.shared_memory() && rewritten_pointer == **pointer {
                 return term.clone();
             }
             let read = crate::kernel::eval::scalar_read_observation(
@@ -5924,8 +5932,10 @@ pub(crate) fn substitute_bitvector_variable(
             // for. Renaming that address must project the original source
             // again, just as direct lowering at the new binder does.
             if rewritten_pointer != **pointer
-                && let Some(source) =
-                    super::memory_resolution::canonical_load_projection_source(memory, pointer)
+                && let Some(source) = super::memory_resolution::canonical_load_projection_source(
+                    memory.shared_memory(),
+                    pointer,
+                )
             {
                 let source = substitute_bitvector_variable_in_shared_memory(&source, from, to);
                 crate::kernel::eval::record_load_access_width(
@@ -5934,7 +5944,7 @@ pub(crate) fn substitute_bitvector_variable(
                     read.bytes,
                 );
                 return crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-                    source,
+                    ProgramPoint::at(&source),
                     Box::new(rewritten_pointer),
                     *kind,
                 ));
@@ -7361,6 +7371,11 @@ fn substitute_pointer_variable_in_spec_expression(
     to: &Pointer,
 ) -> SpecExpression {
     match expression {
+        SpecExpression::ObjectAddress(address) => {
+            SpecExpression::ObjectAddress(Box::new(address.with_base(
+                substitute_pointer_variable_in_spec_expression(&address.base, from, to),
+            )))
+        }
         SpecExpression::ResourceField { .. } => expression.clone(),
         SpecExpression::IntegerToMachine { value, destination } => {
             SpecExpression::IntegerToMachine {
@@ -7981,18 +7996,6 @@ fn substitute_pointer_variable_in_spec_proposition(
                         }
                     }
                 })
-                .collect(),
-        },
-        SpecProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => SpecProposition::ChangesOnly {
-            before: substitute_pointer_variable_in_spec_memory(before, from, to),
-            after: substitute_pointer_variable_in_spec_memory(after, from, to),
-            resources: resources
-                .iter()
-                .map(|r| substitute_pointer_variable_in_spec_resource(r, from, to))
                 .collect(),
         },
         SpecProposition::ResourceSeparate { left, right } => SpecProposition::ResourceSeparate {
@@ -9226,14 +9229,18 @@ mod integer_range_fold_substitution_tests {
         ));
         crate::kernel::eval::record_load_access_width(source.memory(), &pointer, 4);
         let original = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-            source.clone(),
+            ProgramPoint::at(&source),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         ));
         let MachineTerm::MemoryLoad(projected, _, _) = &original else {
             panic!("structural read");
         };
-        assert_ne!(*projected, source, "exercise a projected state");
+        assert_ne!(
+            *projected.shared_memory(),
+            source,
+            "exercise a projected state"
+        );
         let renamed_pointer = substitute_bitvector_variable_in_pointer(
             &pointer,
             binder,
@@ -9243,7 +9250,7 @@ mod integer_range_fold_substitution_tests {
             substitute_bitvector_variable(&original, binder, &MachineTerm::Variable(renamed));
         crate::kernel::eval::record_load_access_width(source.memory(), &renamed_pointer, 4);
         let expected = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-            source,
+            ProgramPoint::at(&source),
             Box::new(renamed_pointer),
             crate::kernel::LoadKind::Int32,
         ));

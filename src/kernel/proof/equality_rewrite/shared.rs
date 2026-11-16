@@ -1097,8 +1097,12 @@ mod tests {
             op: O::Add,
             left: MachineTerm::If {
                 condition: ConditionTerm::Variable(Variable(1006430)).into(),
-                then_term: MachineTerm::MemoryLoad(memory, pointer.clone().into(), LoadKind::Int32)
-                    .into(),
+                then_term: MachineTerm::MemoryLoad(
+                    ProgramPoint::at(&memory),
+                    pointer.clone().into(),
+                    LoadKind::Int32,
+                )
+                .into(),
                 else_term: MachineTerm::Variable(Variable(1006431)).into(),
             }
             .into(),
@@ -1321,8 +1325,11 @@ mod tests {
         let _session = VerificationSession::enter();
         let pointer = Memory::global_pointer("shared-exact-load");
         let memory = intern_memory(Memory::new().with_block("shared-exact-load", 16));
-        let raw =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
+        let raw = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer.clone()),
+            LoadKind::Int32,
+        );
         let named = crate::kernel::eval::canonical_term(&raw);
         assert!(matches!(named, MachineTerm::MemoryLoad(..)));
         let add = |value| MachineTerm::Binary {

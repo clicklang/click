@@ -60,7 +60,7 @@ impl KernelTermImport {
     ) -> Option<KernelTerm> {
         match value {
             MachineTerm::MemoryLoad(memory, address, kind) => {
-                KernelTerm::scalar_read_descriptor(format, memory, address, *kind)
+                KernelTerm::scalar_read_descriptor(format, memory.shared_memory(), address, *kind)
             }
             MachineTerm::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
                 self.machine_input_requires_export = true;
@@ -93,7 +93,7 @@ impl KernelTerm {
         };
         Some(Self::shared_pointer_read(
             SharedPointerValue::import(value),
-            memory,
+            memory.into_shared_memory(),
             SharedPointerAddress::import(&address),
         ))
     }
@@ -126,7 +126,7 @@ impl KernelTerm {
         };
         Some(self.0.machine_leaf.get_or_init(|| {
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(address.export().expect("retained read address")),
                 *kind,
             )
@@ -295,7 +295,8 @@ mod tests {
             (LoadKind::Int128, MachineIntegerType::Int128),
             (LoadKind::UInt128, MachineIntegerType::UInt128),
         ] {
-            let native = MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), kind);
+            let native =
+                MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(address.clone()), kind);
             let term = KernelTermImport::default().machine(format, &native);
             assert!(
                 matches!(term.node(), KernelTermNode::MemoryLoad { memory: m, address: p, kind: k } if m == &memory && p == &SharedPointerAddress::import(&address) && *k == kind)
@@ -380,17 +381,23 @@ mod tests {
                 &MachineTerm::MemoryLoad(memory, Box::new(address), kind),
             )
         };
-        let first = load(memory.clone(), address.clone(), LoadKind::Int32);
-        assert_ne!(first, load(written, address.clone(), LoadKind::Int32));
+        let first = load(ProgramPoint::at(&memory), address.clone(), LoadKind::Int32);
+        assert_ne!(
+            first,
+            load(ProgramPoint::at(&written), address.clone(), LoadKind::Int32)
+        );
         assert_ne!(
             first,
             load(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Pointer::symbolic(Variable(993111)),
                 LoadKind::Int32
             )
         );
-        assert_ne!(first, load(memory, address, LoadKind::UInt32));
+        assert_ne!(
+            first,
+            load(ProgramPoint::at(&memory), address, LoadKind::UInt32)
+        );
     }
 
     #[test]
@@ -398,7 +405,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let raw = MachineTerm::MemoryLoad(
-            intern_memory(Memory::new()),
+            ProgramPoint::at(&(intern_memory(Memory::new()))),
             Box::new(Pointer::symbolic(Variable(993120))),
             LoadKind::Int32,
         );
@@ -417,7 +424,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
         let raw = MachineTerm::MemoryLoad(
-            intern_memory(Memory::new()),
+            ProgramPoint::at(&(intern_memory(Memory::new()))),
             Box::new(Pointer::symbolic(Variable(993126))),
             LoadKind::UInt32,
         );
@@ -442,7 +449,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let raw = MachineTerm::MemoryLoad(
-            intern_memory(Memory::new()),
+            ProgramPoint::at(&(intern_memory(Memory::new()))),
             Box::new(Pointer::symbolic(Variable(993125))),
             LoadKind::Int32,
         );
@@ -469,11 +476,15 @@ mod tests {
         );
         let nested = |inner: SharedMemory, outer: SharedMemory, kind| {
             MachineTerm::MemoryLoad(
-                outer,
+                ProgramPoint::at(&outer),
                 Box::new(Pointer {
                     block: PointerBlock::Symbolic(Variable(993141)),
                     offset: PointerOffsetTerm::scaled_int32_node(
-                        MachineTerm::MemoryLoad(inner, Box::new(p.clone()), kind),
+                        MachineTerm::MemoryLoad(
+                            ProgramPoint::at(&inner),
+                            Box::new(p.clone()),
+                            kind,
+                        ),
                         4,
                     ),
                 }),
@@ -518,12 +529,12 @@ mod tests {
                 LoadKind::Int32,
             )
         };
-        let offset = PointerOffsetTerm::scaled_int32_node(read(first.clone()), 4);
+        let offset = PointerOffsetTerm::scaled_int32_node(read(ProgramPoint::at(&first)), 4);
         assert_eq!(offset.map_scaled_operands(Clone::clone), offset);
         assert_ne!(
             offset.map_scaled_operands(|value| SharedMachineIntegerTerm::index(
                 value.ty(),
-                read(second.clone())
+                read(ProgramPoint::at(&second))
             )),
             offset
         );
@@ -532,7 +543,7 @@ mod tests {
             KernelTermImport::default().machine(
                 MachineIntegerType::Int32,
                 &MachineTerm::MemoryLoad(
-                    outer.clone(),
+                    ProgramPoint::at(&outer),
                     Box::new(Pointer {
                         block: PointerBlock::Symbolic(Variable(993151)),
                         offset: PointerOffsetTerm::scaled_int32_node(
@@ -548,14 +559,14 @@ mod tests {
                 ),
             )
         };
-        let first_term = import(first.clone());
-        let second_term = import(second);
+        let first_term = import(ProgramPoint::at(&first));
+        let second_term = import(ProgramPoint::at(&second));
         assert!(matches!(
             first_term.node(),
             KernelTermNode::MemoryLoad { .. }
         ));
         assert_ne!(first_term, second_term);
-        assert_eq!(first_term, import(first));
+        assert_eq!(first_term, import(ProgramPoint::at(&first)));
     }
 
     #[test]
@@ -566,7 +577,7 @@ mod tests {
             (MachineIntegerType::Int64, LoadKind::Bits64, true),
         ] {
             let read = MachineTerm::MemoryLoad(
-                intern_memory(Memory::new()),
+                ProgramPoint::at(&(intern_memory(Memory::new()))),
                 Box::new(Pointer::symbolic(Variable(993160))),
                 kind,
             );
@@ -674,7 +685,7 @@ mod tests {
             ),
         };
         let native = MachineTerm::MemoryLoad(
-            intern_memory(Memory::new()),
+            ProgramPoint::at(&(intern_memory(Memory::new()))),
             Box::new(address),
             LoadKind::Int32,
         );

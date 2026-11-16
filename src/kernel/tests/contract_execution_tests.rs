@@ -1295,12 +1295,12 @@ fn signed_addition_matches_interval_facts_across_unchanged_states() {
     let before = Memory::new();
     let after = before.clone().with_block("local:temporary", 4);
     let before_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before))),
         Box::new(cell.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let after_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(after),
+        ProgramPoint::at(&(crate::kernel::intern_memory(after))),
         Box::new(cell),
         crate::kernel::LoadKind::Int32,
     );
@@ -1574,7 +1574,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         Vec::new(),
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
@@ -1689,7 +1689,7 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
     };
     let returns_one = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            C_CONTRACT_RESULT_NAME,
+            CONTRACT_RESULT,
         )),
         operator: ComparisonOperator::Equal,
         right: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
@@ -1846,7 +1846,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
         Vec::new(),
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
@@ -1932,7 +1932,7 @@ fn verified_immutable_calls_allocate_distinct_results() {
         Vec::new(),
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
@@ -2014,7 +2014,7 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
         Vec::new(),
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
@@ -2188,7 +2188,7 @@ fn verified_function_rule_rejects_unclaimed_contract_obligations() {
         Vec::new(),
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(0)),
@@ -2302,7 +2302,7 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
 fn verified_exceptional_rule_produces_isolated_outcome_paths() {
     let normal_ensure = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            C_CONTRACT_RESULT_NAME,
+            CONTRACT_RESULT,
         )),
         operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(int32(5)),
@@ -2574,7 +2574,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         Vec::new(),
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(99)),
@@ -2970,13 +2970,13 @@ fn contract_certification_does_not_accept_injected_opaque_predicate_facts() {
         name: "positive".to_string(),
         arguments: vec![SpecPredicateArgument::Value(
             SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
         )],
     };
     let positive_body = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            C_CONTRACT_RESULT_NAME,
+            CONTRACT_RESULT,
         )),
         operator: ComparisonOperator::GreaterEqual,
         right: SpecExpression::Value(int32(1)),
@@ -3345,7 +3345,7 @@ fn contract_certification_refuses_split_entry_artifacts() {
         Vec::new(),
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
             operator: ComparisonOperator::NotEqual,
             right: SpecExpression::Value(int32(0)),
@@ -3449,7 +3449,7 @@ fn contract_certification_reuses_definitionally_equal_entry_resources() {
         Vec::new(),
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(0)),
@@ -3569,7 +3569,7 @@ fn contract_claim_rejects_same_source_function_with_a_different_contract() {
             Vec::new(),
             vec![SpecProposition::Comparison {
                 left: SpecExpression::ProgramExpression(
-                    crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME),
+                    crate::kernel::program_expression::variable(CONTRACT_RESULT),
                 ),
                 operator: ComparisonOperator::Equal,
                 right: SpecExpression::Value(int32(1)),
@@ -3978,7 +3978,7 @@ fn contract_claim_rejects_caller_supplied_false_entry_fact() {
         Vec::new(),
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(1)),
@@ -5215,7 +5215,7 @@ fn call_requirement_obligations_carry_their_lowering_record() {
     };
     let returns_one = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            C_CONTRACT_RESULT_NAME,
+            CONTRACT_RESULT,
         )),
         operator: ComparisonOperator::Equal,
         right: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
@@ -5305,7 +5305,7 @@ fn drain_with_expression_measure() -> ProgramFunction {
         Vec::new(),
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::ProgramExpression(
@@ -5445,7 +5445,7 @@ fn an_anchor_ranks_only_calls_to_the_function_it_names() {
         Vec::new(),
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::ProgramExpression(
@@ -6197,7 +6197,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             AggregateField::new("value", 8, ProgramType::Int32),
         ],
     );
-    let result = crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME);
+    let result = crate::kernel::program_expression::variable(CONTRACT_RESULT);
     let field = crate::kernel::program_expression::cast(
         crate::kernel::program_expression::pointer_offset_bytes(result.clone(), 8),
         ProgramType::Int32Pointer,
@@ -6303,13 +6303,11 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             function.parameters().to_vec(),
             program_seq(
                 program_call_construct(
-                    C_CONTRACT_RESULT_NAME,
+                    CONTRACT_RESULT,
                     callee,
                     vec![crate::kernel::program_expression::variable("input")],
                 ),
-                program_return(crate::kernel::program_expression::variable(
-                    C_CONTRACT_RESULT_NAME,
-                )),
+                program_return(crate::kernel::program_expression::variable(CONTRACT_RESULT)),
             ),
         )
         .with_construction_return(layout.clone())
@@ -6655,7 +6653,7 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
         .with_verified_function_rule(rule);
     // A returned-construction factory uses the same ordinary constructor
     // summary while retaining its own hidden destination across the void call.
-    let result = crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME);
+    let result = crate::kernel::program_expression::variable(CONTRACT_RESULT);
     let storage = MemorySegment::new(
         result.clone(),
         crate::kernel::program_expression::int32_literal(0),

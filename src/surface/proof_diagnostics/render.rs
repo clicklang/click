@@ -2166,7 +2166,7 @@ impl Renderer<'_> {
             } else {
                 self.push("load(");
             }
-            self.memory(retained_state.as_ref());
+            self.memory(retained_state.shared_memory().as_ref());
             self.push(", pointer=");
             self.pointer(pointer);
             self.push(")");
@@ -2394,6 +2394,13 @@ impl Renderer<'_> {
         }
         self.push("pointer(");
         match &p.block {
+            crate::kernel::PointerBlock::AggregateReturn { frame } => {
+                self.fmt(format_args!("result.storage(frame, {frame})"))
+            }
+            crate::kernel::PointerBlock::ContractResult => self.push("result.storage()"),
+            crate::kernel::PointerBlock::StaticObject { binding } => {
+                self.fmt(format_args!("{binding}.storage()"))
+            }
             crate::kernel::PointerBlock::AutomaticLocal { binding, instance } => {
                 self.fmt(format_args!("{binding} [{instance:?}]"))
             }

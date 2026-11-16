@@ -3235,7 +3235,7 @@ impl PureFactContext {
         let mut forms = vec![term.as_ref().clone()];
         if let MachineTerm::MemoryLoad(memory, pointer, kind) = term.as_ref() {
             let named = crate::kernel::canonical_form_of_load(
-                memory.clone(),
+                memory.shared_memory().clone(),
                 pointer.as_ref().clone(),
                 *kind,
             );
@@ -3657,6 +3657,7 @@ impl PureFactContext {
                         && !matches!(
                             coordinate.representative,
                             PointerBlock::Heap(_)
+                                | PointerBlock::StaticObject { .. }
                                 | PointerBlock::AutomaticLocal { .. }
                                 | PointerBlock::Temporary(_)
                                 | PointerBlock::StringLiteral { .. }
@@ -3701,6 +3702,17 @@ impl PureFactContext {
             return true;
         }
 
+        // Exact physical spans keep stated separation across pointer copies.
+        // The address-class/extent index constructs this selected authority;
+        // no alias enumeration or unrelated separation bucket is consulted.
+        if let (Resource::Memory(left), Resource::Memory(right)) = (left, right)
+            && let Some(fact) =
+                self.separated_address_classes
+                    .exact_spans(left, right, &self.equality_graph)
+        {
+            record_implicit_reasoning_provenance(self, &fact);
+            return true;
+        }
         if let (Resource::Memory(a), Resource::Memory(b)) = (left, right)
             && self
                 .borrow_partition_separated_members(
@@ -6636,5 +6648,93 @@ mod shared_range_index_tests {
         include!(
             "../../scaling_tests/kernel/assumptions/memory_reasoning/shared_range_index_tests.rs"
         );
+    }
+}
+
+#[cfg(test)]
+mod separation_pointer_copy_tests {
+    use super::*;
+
+    fn bytes(pointer: Pointer, count: u32) -> Resource {
+        Resource::Memory(MemoryRange::new_with_element_width(
+            pointer,
+            0u32.into(),
+            count.into(),
+            1,
+        ))
+    }
+
+    #[test]
+    fn exact_separation_follows_pointer_copies_without_storage_anchors() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let p = Pointer::symbolic(Variable(9_923_001));
+        let q = Pointer::symbolic(Variable(9_923_002));
+        let copied = Pointer::symbolic(Variable(9_923_003));
+        let stated = Proposition::ResourceSeparate {
+            left: Box::new(bytes(p.clone(), 1)),
+            right: Box::new(bytes(q.clone(), 4)),
+        };
+        let root = PureFactContext::new().assume_proposition(stated);
+        let branch = root
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(copied.clone(), p), true);
+        assert!(branch.proves_resource_separate(&bytes(copied.clone(), 1), &bytes(q.clone(), 4)));
+        assert!(branch.contains_known(&Proposition::ResourceSeparate {
+            left: Box::new(bytes(copied.clone(), 1)),
+            right: Box::new(bytes(q.clone(), 4)),
+        }));
+        assert!(!root.proves_resource_separate(&bytes(copied.clone(), 1), &bytes(q.clone(), 4)));
+        assert!(!branch.proves_resource_separate(&bytes(copied.clone(), 2), &bytes(q.clone(), 4)));
+        assert!(!branch.proves_resource_separate(&bytes(copied, 1), &bytes(q, 5)));
+    }
+    #[test]
+    fn exact_separation_keeps_width_orientation_when_address_classes_merge() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let early = Pointer::symbolic(Variable(9_924_001));
+        let p = Pointer::symbolic(Variable(9_924_002));
+        let q = Pointer::symbolic(Variable(9_924_003));
+        let context = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::pointer_equal(early.clone(), Pointer::symbolic(Variable(9_924_004))),
+                true,
+            )
+            .assume_proposition(Proposition::ResourceSeparate {
+                left: Box::new(bytes(p.clone(), 1)),
+                right: Box::new(bytes(q.clone(), 4)),
+            });
+        let branch = context.assume_condition(ConditionTerm::pointer_equal(q, early.clone()), true);
+        assert!(branch.proves_resource_separate(&bytes(p.clone(), 1), &bytes(early.clone(), 4)));
+        assert!(branch.proves_resource_separate(&bytes(early, 4), &bytes(p, 1)));
+    }
+    #[test]
+    fn exact_separation_compares_bytes_and_never_overrides_an_overlap() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let p = Pointer::symbolic(Variable(9_925_001));
+        let q = Pointer::symbolic(Variable(9_925_002));
+        let copied = Pointer::symbolic(Variable(9_925_003));
+        let context = PureFactContext::new()
+            .assume_proposition(Proposition::ResourceSeparate {
+                left: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
+                    p.clone(),
+                    0u32.into(),
+                    1u32.into(),
+                    4,
+                ))),
+                right: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
+                    q.clone(),
+                    0u32.into(),
+                    1u32.into(),
+                    8,
+                ))),
+            })
+            .assume_condition(
+                ConditionTerm::pointer_equal(copied.clone(), p.clone()),
+                true,
+            );
+        assert!(context.proves_resource_separate(&bytes(copied.clone(), 4), &bytes(q.clone(), 8)));
+        assert!(!context.proves_resource_separate(&bytes(copied, 5), &bytes(q.clone(), 8)));
+        let conflicting =
+            context.assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+        assert!(!conflicting.proves_resource_separate(&bytes(p, 4), &bytes(q, 8)));
     }
 }

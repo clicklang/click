@@ -4,8 +4,10 @@ This checks that a fixed-size two-pass bubble sort over three cells can prove
 sortedness from loop VCs and quantified invariants, without bounded execution.
 
 The proof below is a saved expansion of explicit branch arguments and invariant
-closure bodies. Keeping the simple steps avoids repeating the expensive `solve`
-search; the C and invariants are unchanged.
+closure bodies. Each swap preserves untouched cells with explicit separation
+and one-store `preserve` steps. The two stored-value equalities name the
+respective store exits, and ordinary arithmetic combines the resulting facts.
+No written or expanded `transport` is needed; the C and invariants are unchanged.
 
 ```c filename=bubble_sort3_two_pass.c
 int32 bubble_sort3_two_pass(int32 p[3]) {
@@ -94,22 +96,47 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     if k < (j - 1) {
                         have k < at(region(4).entry, j);
                         instantiate(forall (__click_q0: int32) { at(region(6).entry, 0) <= at(region(6).entry, __click_q0) and at(region(6).entry, 0) <= at(region(6).entry, __click_q0) and at(region(6).entry, __click_q0) < at(region(6).entry, j) implies at(region(6).entry, p[__click_q0]) <= at(region(6).entry, tmp) }, k);
-                        transport(at(region(6).entry, p[k]) <= at(region(6).entry, tmp), p[k] <= p[j]) using {
-                            at(region(6).entry, p[k]) <= at(region(6).entry, tmp);
-                            at(region(4).entry, j) < at(region(4).entry, 2);
-                            k < (j - 1);
-                            k < j;
-                            at(region(7).entry, p[(j + 1)]) < at(region(7).entry, tmp);
-                            0 <= k;
-                            at(region(4).entry, j) <= at(region(4).entry, 2);
-                            at(region(4).entry, j) >= at(region(4).entry, 0);
-                            at(function.entry, viewable(p[0..3]));
-                        };
+                        have at(region(4).entry, j) != k by { solve(); }
+                        have at(region(4).entry, separate(memory(p[j]), memory(p[k]))) by {
+                            apply(click::separation::separate_elements(p, at(region(4).entry, j), k)) using { at(region(4).entry, j) != k; };
+                        }
+                        have separate(statement(3).statement(0).statement(1).footprint, memory(p[k])) by {
+                            normalize() using { at(region(4).entry, separate(memory(p[j]), memory(p[k]))); };
+                        }
+                        have at(statement(3).statement(0).statement(1).exit, p[k]) == at(statement(3).statement(0).statement(1).entry, p[k]) by {
+                            preserve(separate(statement(3).statement(0).statement(1).footprint, memory(p[k])));
+                        }
+                        have j != k by { solve(); }
+                        have separate(memory(p[j]), memory(p[k])) by {
+                            apply(click::separation::separate_elements(p, j, k)) using { j != k; };
+                        }
+                        have separate(statement(3).statement(0).statement(2).footprint, memory(p[k])) by {
+                            normalize() using { separate(memory(p[j]), memory(p[k])); };
+                        }
+                        have at(statement(3).statement(0).statement(2).exit, p[k]) == at(statement(3).statement(0).statement(2).entry, p[k]) by {
+                            preserve(separate(statement(3).statement(0).statement(2).footprint, memory(p[k])));
+                        }
+                        known();
                     } else {
                         have k == (j - 1);
                         have to_integer(k) == to_integer(at(region(4).entry, j));
-                        rewrite(k, at(region(4).entry, j));
+                        have j != k by { solve(); }
+                        have separate(memory(p[j]), memory(p[k])) by {
+                            apply(click::separation::separate_elements(p, j, k)) using { j != k; };
+                        }
+                        have separate(statement(3).statement(0).statement(2).footprint, memory(p[k])) by {
+                            normalize() using { separate(memory(p[j]), memory(p[k])); };
+                        }
+                        have at(statement(3).statement(0).statement(2).exit, p[k]) == at(statement(3).statement(0).statement(2).entry, p[k]) by {
+                            preserve(separate(statement(3).statement(0).statement(2).footprint, memory(p[k])));
+                        }
+
+                        have p[k] == at(region(7).entry, p[(j + 1)]) by { rewrite(k, at(region(4).entry, j)); known(); }
+                        have p[j] == at(region(7).entry, tmp) by { known(); }
                         solve() using {
+                            k == at(region(4).entry, j);
+                            p[k] == at(region(7).entry, p[(j + 1)]);
+                            p[j] == at(region(7).entry, tmp);
                             at(region(7).entry, p[(j + 1)]) < at(region(7).entry, tmp);
                         };
                     }
@@ -125,17 +152,13 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     if k < (j - 1) {
                         have k < at(region(4).entry, j);
                         instantiate(forall (__click_q0: int32) { at(region(9).entry, 0) <= at(region(9).entry, __click_q0) and at(region(9).entry, 0) <= at(region(9).entry, __click_q0) and at(region(9).entry, __click_q0) < at(region(9).entry, j) implies at(region(9).entry, p[__click_q0]) <= at(region(9).entry, p[j]) }, k);
-                        transport(at(region(9).entry, p[k]) <= at(region(9).entry, p[j]), p[k] <= p[j]) using {
-                            at(region(9).entry, p[k]) <= at(region(9).entry, p[j]);
-                            at(region(4).entry, j) < at(region(4).entry, 2);
-                            k < (j - 1);
-                            k < j;
-                            not at(region(9).entry, p[(j + 1)]) < at(region(9).entry, p[j]);
-                            0 <= k;
-                            at(region(4).entry, j) <= at(region(4).entry, 2);
-                            at(region(4).entry, j) >= at(region(4).entry, 0);
-                            at(function.entry, viewable(p[0..3]));
-                        };
+                        have p[k] <= p[j] by {
+                            solve() using {
+                                at(region(9).entry, p[k]) <= at(region(9).entry, p[j]);
+                                not at(region(9).entry, p[(j + 1)]) < at(region(9).entry, p[j]);
+                            };
+                        }
+                        known();
                     } else {
                         have k == (j - 1);
                         have to_integer(k) == to_integer(at(region(4).entry, j));
@@ -174,12 +197,13 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     at(loop(0).exit, j) <= at(loop(0).exit, 2);
                     at(loop(0).exit, j) >= at(loop(0).exit, 0);
                 };
-                transport(at(region(10).entry, p[k]) <= at(region(10).entry, p[j]), p[k] <= p[2]) using {
+                have at(loop(0).exit, j) == 2 by { solve(); }
+                have at(region(10).entry, p[j]) == p[2] by {
+                    normalize() using { at(loop(0).exit, j) == 2; };
+                }
+                solve() using {
                     at(region(10).entry, p[k]) <= at(region(10).entry, p[j]);
-                    0 <= k and 0 <= k and k < 2;
-                    not at(loop(0).exit, j) < at(loop(0).exit, 2);
-                    at(loop(0).exit, j) <= at(loop(0).exit, 2);
-                    at(loop(0).exit, j) >= at(loop(0).exit, 0);
+                    at(region(10).entry, p[j]) == p[2];
                 };
             }
             have all_le_range(p, 0, j, p[j]) by {
@@ -212,14 +236,47 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 step();
                 step();
                 step();
-                transport(at(before_swap, p[1] <= p[2]), p[0] <= p[2]) using {
-                    at(before_swap, p[1] <= p[2]);
-                    at(before_swap, j) == 0;
-                };
-                transport(at(before_swap, p[0] <= p[2]), p[1] <= p[2]) using {
-                    at(before_swap, p[0] <= p[2]);
-                    at(before_swap, j) == 0;
-                };
+                have at(before_swap, j) != 2 by { solve(); }
+                have at(before_swap, separate(memory(p[j]), memory(p[2]))) by {
+                    apply(click::separation::separate_elements(p, at(before_swap, j), 2)) using { at(before_swap, j) != 2; };
+                }
+                have separate(statement(5).statement(0).statement(1).footprint, memory(p[2])) by {
+                    normalize() using { at(before_swap, separate(memory(p[j]), memory(p[2]))); };
+                }
+                have at(statement(5).statement(0).statement(1).exit, p[2]) == at(statement(5).statement(0).statement(1).entry, p[2]) by {
+                    preserve(separate(statement(5).statement(0).statement(1).footprint, memory(p[2])));
+                }
+                have j != 2 by { solve(); }
+                have separate(memory(p[j]), memory(p[2])) by {
+                    apply(click::separation::separate_elements(p, j, 2)) using { j != 2; };
+                }
+                have separate(statement(5).statement(0).statement(2).footprint, memory(p[2])) by {
+                    normalize() using { separate(memory(p[j]), memory(p[2])); };
+                }
+                have at(statement(5).statement(0).statement(2).exit, p[2]) == at(statement(5).statement(0).statement(2).entry, p[2]) by {
+                    preserve(separate(statement(5).statement(0).statement(2).footprint, memory(p[2])));
+                }
+                have j != 0 by { solve(); }
+                have separate(memory(p[j]), memory(p[0])) by {
+                    apply(click::separation::separate_elements(p, j, 0)) using { j != 0; };
+                }
+                have separate(statement(5).statement(0).statement(2).footprint, memory(p[0])) by {
+                    normalize() using { separate(memory(p[j]), memory(p[0])); };
+                }
+                have at(statement(5).statement(0).statement(2).exit, p[0]) == at(statement(5).statement(0).statement(2).entry, p[0]) by {
+                    preserve(separate(statement(5).statement(0).statement(2).footprint, memory(p[0])));
+                }
+                have at(statement(5).statement(0).statement(1).exit, p[0]) == at(before_swap, p[1]) by {
+                    normalize() using { at(before_swap, j) == 0; };
+                }
+                have p[0] == at(before_swap, p[1]) by { known(); }
+                have at(statement(5).statement(0).statement(2).exit, p[1]) == at(before_swap, p[0]) by {
+                    normalize() using { at(before_swap, j) == 0; };
+                }
+                have p[1] == at(before_swap, p[0]) by { known(); }
+                have p[2] == at(before_swap, p[2]) by { known(); }
+                have p[0] <= p[2] by { solve() using { p[0] == at(before_swap, p[1]); p[2] == at(before_swap, p[2]); at(before_swap, p[1] <= p[2]); }; }
+                have p[1] <= p[2] by { solve() using { p[1] == at(before_swap, p[0]); p[2] == at(before_swap, p[2]); at(before_swap, p[0] <= p[2]); }; }
                 have forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] } by {
                     enumerate();
                 }
@@ -227,10 +284,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     rewrite(at(region(17).entry, j), at(region(17).entry, 0));
                     normalize();
                 }
-                transport(at(before_swap, p[(j + 1)] < p[j]), p[0] < p[1]) using {
-                    at(before_swap, j) == 0;
-                    at(before_swap, p[(j + 1)] < p[j]);
-                };
+                have p[0] < p[1] by { known(); }
                 have p[0] <= p[1] by {
                     solve() using {
                         p[0] < p[1];
@@ -267,10 +321,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     rewrite(at(region(17).entry, j), at(region(17).entry, 0));
                     normalize();
                 }
-                transport(at(before_swap, not p[(j + 1)] < p[j]), not p[1] < p[0]) using {
-                    at(before_swap, j) == 0;
-                    at(before_swap, not p[(j + 1)] < p[j]);
-                };
+                have not p[1] < p[0] by { known(); }
                 have p[0] <= p[1] by {
                     have p[0] <= p[1] by {
                         solve() using {
@@ -306,7 +357,13 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 at(loop(1).exit, j) <= at(loop(1).exit, 1);
                 at(loop(1).exit, j) >= at(loop(1).exit, 0);
             };
-            transport(at(loop(1).exit, p)[0] <= at(loop(1).exit, p[j]), p[0] <= p[1]) using {
+            have at(loop(1).exit, j) == 1 by { solve(); }
+            have at(loop(1).exit, p[j]) == p[1] by {
+                normalize() using { at(loop(1).exit, j) == 1; };
+            }
+            solve() using {
+                at(loop(1).exit, p)[0] <= at(loop(1).exit, p[j]);
+                at(loop(1).exit, p[j]) == p[1];
             };
         }
         have p[1] <= p[2] by {

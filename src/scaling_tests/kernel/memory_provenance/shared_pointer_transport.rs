@@ -22,7 +22,11 @@ fn shared_pointer_transport_walks_offset_dags_once_beside_unrelated_state() {
         for size in [16, 64, 256] {
             let index = KernelTermImport::default().machine(
                 MachineIntegerType::Int32,
-                &MachineTerm::MemoryLoad(before.clone(), Box::new(field.clone()), LoadKind::Int32),
+                &MachineTerm::MemoryLoad(
+                    ProgramPoint::at(&before),
+                    Box::new(field.clone()),
+                    LoadKind::Int32,
+                ),
             );
             let mut offset = KernelPointerOffset::Int32Scaled {
                 value: index,

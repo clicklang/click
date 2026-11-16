@@ -185,7 +185,7 @@ mod disjunction_projection_tests {
             Proposition::ConditionIs(
                 ConditionTerm::equal(
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(memory),
+                        ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(pointer.clone()),
                         LoadKind::Int32,
                     ),
@@ -3355,7 +3355,7 @@ fn bitvector_equality_atom_key(term: &MachineTerm) -> Option<BitvectorEqualityAt
             std::hash::Hash::hash(pointer.as_ref(), &mut hasher);
             std::hash::Hash::hash(kind, &mut hasher);
             Some(BitvectorEqualityAtomKey::MemoryLoad {
-                memory: memory.arena_id(),
+                memory: memory.shared_memory().arena_id(),
                 pointer_hash: std::hash::Hasher::finish(&hasher),
             })
         }
@@ -3932,7 +3932,7 @@ mod integer_equality_fact_index_tests {
         let goal = Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(Memory::new()),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
                     Box::new(read.offset_by_bytes(4)),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -4017,7 +4017,7 @@ mod integer_equality_fact_index_tests {
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
                 MachineTerm::MemoryLoad(
-                    memory.clone(),
+                    ProgramPoint::at(&memory),
                     Box::new(Pointer {
                         block: "retained_state-alpha-facts".into(),
                         offset: PointerOffsetTerm::Constant(0),

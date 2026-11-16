@@ -19,7 +19,7 @@ fn context_with_member_view(
     let nominal = unit.structs["Node"].clone();
     let layout = nominal.to_kernel_aggregate_layout();
     let member = nominal.field("value").unwrap();
-    let destination = crate::kernel::program_expression::variable(C_CONTRACT_RESULT_NAME);
+    let destination = crate::kernel::program_expression::variable(CONTRACT_RESULT);
     let field = crate::kernel::program_expression::cast(
         crate::kernel::program_expression::pointer_offset_bytes(
             destination.clone(),
@@ -68,7 +68,7 @@ fn context_with_member_view(
         vec![program_parameter("input", ProgramType::Int32)],
         program_seq(
             program_call_construct(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
                 "factory",
                 vec![crate::kernel::program_expression::variable("input")],
             ),

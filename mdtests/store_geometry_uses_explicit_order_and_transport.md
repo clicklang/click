@@ -2,7 +2,7 @@
 
 The wide store uses one stated endpoint order instead of walking an ambient
 order chain. The array store may forget a compact run's possible write window;
-the stated index inequality and explicit transport recover the selected old value.
+the stated index inequality and explicit preservation recover the selected old value.
 
 ```c filename=store_geometry.c
 int32 wide_after(int32* a, int32 i, int32 middle, int32 j) {
@@ -43,9 +43,13 @@ int32 keep_first(int32* a, int32 i) {
 } by {
     step();
     have a[0] == old(a[0]) by {
-        transport(old(a[0]) == old(a[0]), a[0] == old(a[0])) using {
-            i != 0;
-        };
+        have separate(memory(a[i]), memory(a[0])) by {
+            apply(click::separation::separate_elements(a, i, 0)) using { i != 0; };
+        }
+        have separate(statement(0).footprint, memory(a[0])) by {
+            normalize() using { separate(memory(a[i]), memory(a[0])); };
+        }
+        preserve(separate(statement(0).footprint, memory(a[0])));
     }
     step();
 }

@@ -287,3 +287,21 @@ fn reassigned_numeric_parameter_descent_expands_into_ordinary_steps() {
     without_implicit_solve(|| verify_c_sources(&expanded, &c))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
+
+#[test]
+#[ignore = "nightly: anonymous resource verification, expansion, and cold recheck"]
+fn anonymous_resource_descent_completes_and_expands_without_a_source_walk() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/c_decreases_resource_avoids_recursive_loop.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.unwrap();
+    let inputs = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c_sources(&source, &inputs).unwrap();
+    let expanded = expand_function_proof_source(&source, &inputs, "walk").unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &inputs))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}

@@ -116,18 +116,8 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> Option<ResourceEntryIds> {
         let (shape, pointer) = shape_pointer(fact)?;
-        let prepared = self
-            .memory_equalities
-            .lock()
-            .expect("memory equality index")
-            .by_inputs
-            .get(&assumptions.equality_graph.input_key().root())
-            .is_some_and(|index| index.points_initialized);
-        if !prepared {
-            return None;
-        }
         let index = self.pair_memory_equalities_in_graph(
-            assumptions.equality_graph.clone(),
+            graph_for_memory_query(assumptions, pointer),
             false,
             Some(MemoryQuery::Address(pointer)),
         );

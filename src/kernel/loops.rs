@@ -5942,6 +5942,11 @@ pub(super) fn prepare_loop_top_state(
             .as_ref()
             .map(|frame| CallKeptRanges::new(frame.clone(), Vec::new(), None)),
     )?;
+    if statement_may_write_memory(entry_state, body) {
+        let mut resources = top_state.resources().clone();
+        resources.havoc_owned_structural_witnesses();
+        top_state = top_state.with_resource_context(resources);
+    }
     let mut summaries =
         collect_whole_loop_effect_summaries(entry_state, &top_state, &effect_ranges);
 

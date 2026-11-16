@@ -1926,10 +1926,14 @@ fn annotate_function(
         Some(FunctionDecrease::Binder(binder)) => Some(binder.clone()),
         _ => None,
     };
-    if !recursion_measure.is_empty() || recursion_binder.is_some() {
+    let recursion_resource =
+        crate::surface::verification::function_recursion_resource_requirement(function_block)?;
+    if !recursion_measure.is_empty() || recursion_binder.is_some() || recursion_resource.is_some() {
         function = function.with_recursion_peers(function_block.recursion_peers().to_vec());
     }
-    function = function.with_recursion_binder(recursion_binder);
+    function = function
+        .with_recursion_binder(recursion_binder)
+        .with_recursion_resource(recursion_resource);
     function = function.with_recursion_measure(recursion_measure);
     if function_block.signature().exceptional_type().is_some() {
         function = function
@@ -2155,15 +2159,10 @@ fn fixed_state_elaboration<'a>(
         array_memories: bound_array_memories.into_iter().collect(),
         ..SpecElaborationContext::default()
     };
-    if let Some(result) = result {
-        context.values.insert(
-            crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
-            SpecExpression::Value(result.clone()),
-        );
-    }
-    context.contract_result_in_scope = context
-        .values
-        .contains_key(&crate::kernel::C_CONTRACT_RESULT_NAME.to_string());
+    context.contract_result = result
+        .cloned()
+        .map(|value| std::sync::Arc::new(SpecExpression::Value(value)));
+    context.contract_result_in_scope = context.contract_result.is_some();
     (lowerer, context)
 }
 
@@ -2781,9 +2780,7 @@ pub(in crate::surface) fn function_contract_summary(
 
     let mut exceptional_ensures = Vec::new();
     let mut exceptional_context = context.clone();
-    exceptional_context
-        .values
-        .remove(&crate::kernel::C_CONTRACT_RESULT_NAME.to_string());
+    exceptional_context.contract_result = None;
     exceptional_context.values.insert(
         "exception".to_string(),
         SpecExpression::ProgramExpression(ProgramExpression::Variable(
@@ -2889,8 +2886,7 @@ pub(in crate::surface) fn function_contract_summary(
 fn proposition_supported_in_opaque_contract(proposition: &ClickProposition) -> bool {
     match proposition {
         ClickProposition::Value(_) => true,
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
@@ -3019,8 +3015,7 @@ fn loop_resource_declarations(
             .filter_map(|name| {
                 let element = bindings
                     .and_then(|bindings| bindings.get(&name))
-                    .and_then(|(_, binding)| binding.local_id())
-                    .and_then(|id| id.program_type())
+                    .and_then(|(_, binding)| binding.program_type())
                     .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()))
                     .or_else(|| lowerer.pointer_element_types.get(&name).copied())?;
                 Some((name, element))
@@ -3666,8 +3661,14 @@ impl AnnotationLowerer<'_> {
         name: impl Into<crate::kernel::BindingName>,
     ) -> Option<ProgramType> {
         let name = self.source_binding(name.into());
-        if let Some(id) = name.local_id() {
-            return id
+        if name == crate::kernel::CONTRACT_RESULT {
+            return self
+                .result_type
+                .pointee_type()
+                .or_else(|| self.result_type.array_element_type());
+        }
+        if name.named().is_none() {
+            return name
                 .program_type()
                 .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()));
         }
@@ -4436,7 +4437,6 @@ impl AnnotationLowerer<'_> {
             }
             ClickProposition::Comparison { .. }
             | ClickProposition::FloatClassification { .. }
-            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
@@ -5385,26 +5385,6 @@ impl AnnotationLowerer<'_> {
                     syntax::CFloatClassification::Nan => FloatClassification::Nan,
                 },
             }),
-            ClickProposition::ChangesOnly {
-                before,
-                after,
-                resources,
-            } => {
-                let before = self
-                    .point_environment(before, environment)?
-                    .ok_or("changes_only requires a recorded before state")?;
-                let after = self
-                    .point_environment(after, environment)?
-                    .ok_or("changes_only requires a recorded after state")?;
-                Ok(SpecProposition::ChangesOnly {
-                    before: before.current_memory.clone(),
-                    after: after.current_memory.clone(),
-                    resources: resources
-                        .iter()
-                        .map(|r| self.lower_resource_subject_to_spec(r, &before))
-                        .collect::<Result<_, _>>()?,
-                })
-            }
             ClickProposition::Separate { left, right } => Ok(SpecProposition::ResourceSeparate {
                 left: self.lower_resource_subject_to_spec(left, environment)?,
                 right: self.lower_resource_subject_to_spec(right, environment)?,
@@ -5552,8 +5532,11 @@ impl AnnotationLowerer<'_> {
     /// its typed entry value or the live declaration state.
     fn c_variable_type(&self, name: impl Into<crate::kernel::BindingName>) -> Option<ProgramType> {
         let name = self.source_binding(name.into());
-        if let Some(id) = name.local_id() {
-            return id.program_type();
+        if name == crate::kernel::CONTRACT_RESULT {
+            return Some(self.result_type);
+        }
+        if name.named().is_none() {
+            return name.program_type();
         }
         name.named_in(&self.program_parameter_types)
             .copied()
@@ -6590,7 +6573,7 @@ impl AnnotationLowerer<'_> {
                             BTreeMap::from([(
                                 "result".to_string(),
                                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                                    (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
+                                    crate::kernel::CONTRACT_RESULT,
                                 )),
                             )])
                         } else {
@@ -7372,8 +7355,11 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<ProgramType> {
         let name = self.source_binding(name.into());
-        if let Some(id) = name.local_id() {
-            return id.program_type();
+        if name == crate::kernel::CONTRACT_RESULT {
+            return Some(self.result_type);
+        }
+        if name.named().is_none() {
+            return name.program_type();
         }
         if name.named_in(&environment.algebraic_values).is_some() {
             return None;
@@ -8633,6 +8619,7 @@ impl AnnotationLowerer<'_> {
             at_function_entry: false,
             reference_state: Some(state.clone()),
             contract_result_in_scope: environment.contract_result_in_scope,
+            contract_result: environment.contract_result.clone(),
             checking_definedness: environment.checking_definedness,
         }))
     }
@@ -8999,6 +8986,51 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecExpression, String> {
         let name = name.into();
         crate::instrumentation::record_deterministic_work(1);
+        if let Some(id) = name.static_id() {
+            let metadata = id
+                .metadata()
+                .ok_or_else(|| format!("unknown C static declaration `{id}`"))?;
+            let pointer = crate::kernel::Memory::global_pointer(&name);
+            if metadata.aggregate || metadata.array_shape.is_some() {
+                let pointer_type = if metadata.aggregate {
+                    ProgramType::UInt8Pointer
+                } else {
+                    metadata
+                        .program_type
+                        .array_element_type()
+                        .and_then(ProgramType::pointer_to)
+                        .ok_or_else(|| format!("static array `{id}` has no element pointer type"))?
+                };
+                return Ok(SpecExpression::Value(
+                    ProgramValue::typed_pointer_with_pointee_constant(
+                        pointer,
+                        pointer_type,
+                        metadata.constant,
+                    ),
+                ));
+            }
+            if metadata.volatile {
+                return Err(format!(
+                    "volatile object `{id}` cannot be read in a specification"
+                ));
+            }
+            // A typed read names its scalar type separately from the storage
+            // address. Use the byte-address carrier also for bools and pointer
+            // cells whose C pointer-to-type has no kernel carrier.
+            let pointer_type = ProgramType::UInt8Pointer;
+            return Ok(SpecExpression::MemoryLoad {
+                memory: environment.current_memory.clone(),
+                pointer: Box::new(SpecExpression::Value(
+                    ProgramValue::typed_pointer_with_pointee_constant(
+                        pointer,
+                        pointer_type,
+                        metadata.constant,
+                    ),
+                )),
+                value_type: metadata.program_type,
+            });
+        }
+
         if name.local_id().is_some()
             && let Some(state) = environment.reference_state.as_ref().or_else(|| {
                 (environment.at_function_entry && !environment.function_contract)
@@ -9017,6 +9049,11 @@ impl AnnotationLowerer<'_> {
                 })
         {
             return Ok(SpecExpression::Value(value));
+        }
+        if name == crate::kernel::CONTRACT_RESULT
+            && let Some(value) = &environment.contract_result
+        {
+            return Ok(value.as_ref().clone());
         }
         match name.named_in(&environment.values) {
             Some(value) => Ok(value.clone()),
@@ -9096,7 +9133,7 @@ impl AnnotationLowerer<'_> {
                 })
             }
             None if matches!(environment.current_memory, SpecMemory::Fixed(_)) => {
-                if name.is_named(crate::kernel::C_CONTRACT_RESULT_NAME) {
+                if name == crate::kernel::CONTRACT_RESULT {
                     Err("`result` is not available inside `old(...)`".to_string())
                 } else {
                     Err(format!("unknown old-state variable `{name}`"))
@@ -9113,6 +9150,32 @@ impl AnnotationLowerer<'_> {
         expression: &ProgramExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
+        if let ProgramExpression::AddressOf(target)
+        | ProgramExpression::CheckedObjectAddress(target) = expression
+            && let ProgramExpression::Variable(name) = target.as_ref()
+            && let Some(id) = name.static_id()
+        {
+            let metadata = id
+                .metadata()
+                .ok_or_else(|| format!("unknown C static declaration `{id}`"))?;
+            let pointer_type = if metadata.aggregate {
+                ProgramType::UInt8Pointer
+            } else {
+                metadata
+                    .program_type
+                    .array_element_type()
+                    .unwrap_or(metadata.program_type)
+                    .pointer_to()
+                    .ok_or_else(|| format!("static object `{id}` has no address type"))?
+            };
+            return Ok(SpecExpression::Value(
+                ProgramValue::typed_pointer_with_pointee_constant(
+                    crate::kernel::Memory::global_pointer(name),
+                    pointer_type,
+                    metadata.constant,
+                ),
+            ));
+        }
         if !environment.checking_definedness
             && let ProgramExpression::AddressOf(target)
             | ProgramExpression::CheckedObjectAddress(target) = expression
@@ -9170,68 +9233,41 @@ impl AnnotationLowerer<'_> {
                 source,
             } = target.as_ref()
         {
-            // The address operand belongs to this elaboration environment,
-            // which may select a saved memory. A raw ProgramExpression here would
-            // silently evaluate nested pointer reads in the current state.
-            // Bind only that operand, then use the existing address operation
-            // to retain its designation, extent, and qualifiers.
-            let name = "<spec-address-operand>".to_string();
-            fn bind_address_base<'a>(
-                pointer: &'a ProgramExpression,
-                name: &str,
-            ) -> (&'a ProgramExpression, ProgramExpression) {
-                match pointer {
+            // Evaluate only the base through the selected specification state.
+            // Retain the C place steps for designation, extent and qualification.
+            let mut base = pointer.as_ref();
+            let mut steps = Vec::new();
+            loop {
+                match base {
                     ProgramExpression::Subobject { pointer, width } => {
-                        let (base, pointer) = bind_address_base(pointer, name);
-                        (
-                            base,
-                            ProgramExpression::Subobject {
-                                pointer: Box::new(pointer),
-                                width: *width,
-                            },
-                        )
+                        steps.push(crate::kernel::SpecAddressStep::Subobject { width: *width });
+                        base = pointer;
                     }
                     ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
-                        let (base, pointer) = bind_address_base(pointer, name);
-                        (
-                            base,
-                            ProgramExpression::PointerOffsetBytes {
-                                pointer: Box::new(pointer),
-                                bytes: *bytes,
-                            },
-                        )
+                        steps.push(crate::kernel::SpecAddressStep::OffsetBytes { bytes: *bytes });
+                        base = pointer;
                     }
-                    base => (base, ProgramExpression::Variable(name.into())),
+                    _ => break,
                 }
             }
-            // C member selection records a designation, not merely an extent.
-            // Retain that selected syntax around the state-bound base.
-            let (base, pointer) = bind_address_base(pointer, &name);
-            let target = Box::new(ProgramExpression::TypedLoad {
-                pointer: Box::new(pointer),
-                value_type: *value_type,
-                volatile: *volatile,
-                pointee_constant: *pointee_constant,
-                access_class: access_class.clone(),
-                source: source.clone(),
-            });
-            let address = match expression {
-                ProgramExpression::CheckedObjectAddress(_) => {
-                    ProgramExpression::CheckedObjectAddress(target)
-                }
-                _ => ProgramExpression::AddressOf(target),
-            };
-            return Ok(SpecExpression::Let {
-                name,
-                value: Box::new(self.lower_program_expression_to_spec(base, environment)?),
-                body: Box::new(SpecExpression::ProgramExpression(address)),
-            });
+            return Ok(SpecExpression::ObjectAddress(Box::new(
+                crate::kernel::SpecObjectAddress {
+                    base: Box::new(self.lower_program_expression_to_spec(base, environment)?),
+                    steps,
+                    value_type: *value_type,
+                    volatile: *volatile,
+                    pointee_constant: *pointee_constant,
+                    access_class: access_class.clone(),
+                    source: source.clone(),
+                    checked: matches!(expression, ProgramExpression::CheckedObjectAddress(_)),
+                },
+            )));
         }
         match expression {
             ProgramExpression::Value(value) => Ok(SpecExpression::Value(value.clone())),
             ProgramExpression::Variable(name) => self.lower_program_binding_to_spec(
                 if name.is_named("result") && environment.contract_result_in_scope {
-                    crate::kernel::BindingName::from(crate::kernel::C_CONTRACT_RESULT_NAME)
+                    crate::kernel::CONTRACT_RESULT
                 } else {
                     name.clone()
                 },
@@ -9468,7 +9504,7 @@ impl AnnotationLowerer<'_> {
                         &ContractSubstitutions::for_contract_result(&BTreeMap::from([(
                             "result".to_string(),
                             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                                (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
+                                crate::kernel::CONTRACT_RESULT,
                             )),
                         )])),
                     )?
@@ -9720,17 +9756,19 @@ impl AnnotationLowerer<'_> {
         name: &str,
         environment: &SpecElaborationContext,
     ) -> ProgramType {
-        let name = if name == "result" && environment.contract_result_in_scope {
-            crate::kernel::C_CONTRACT_RESULT_NAME
-        } else {
-            name
-        };
+        if name == "result" && environment.contract_result_in_scope {
+            return self
+                .result_type
+                .pointee_type()
+                .or_else(|| match environment.contract_result.as_deref() {
+                    Some(SpecExpression::Value(ProgramValue::Pointer(pointer))) => {
+                        pointer.program_type().pointee_type()
+                    }
+                    _ => None,
+                })
+                .unwrap_or(ProgramType::Int32);
+        }
         self.declared_pointer_element_type(name)
-            .or_else(|| {
-                (name == crate::kernel::C_CONTRACT_RESULT_NAME)
-                    .then(|| self.result_type.pointee_type())
-                    .flatten()
-            })
             .or_else(|| self.entry_state.global_array_element_type(name))
             .or_else(|| {
                 environment.values.get(name).and_then(|value| match value {
@@ -9959,9 +9997,7 @@ impl AnnotationLowerer<'_> {
             && environment.contract_result_in_scope
         {
             return self.program_expression_array_element_type(
-                &ProgramExpression::Variable(
-                    (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
-                ),
+                &ProgramExpression::Variable(crate::kernel::CONTRACT_RESULT),
                 environment,
             );
         }
@@ -9981,7 +10017,7 @@ impl AnnotationLowerer<'_> {
                 .map(|array_ref| array_ref.element_type)
                 .or_else(|| self.declared_pointer_element_type(name))
                 .or_else(|| {
-                    (name.is_named(crate::kernel::C_CONTRACT_RESULT_NAME))
+                    (name == &crate::kernel::CONTRACT_RESULT)
                         .then(|| self.result_type.pointee_type())
                         .flatten()
                 })
@@ -10039,9 +10075,7 @@ impl AnnotationLowerer<'_> {
             && environment.contract_result_in_scope
         {
             return self.program_expression_array_element_width(
-                &ProgramExpression::Variable(
-                    (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
-                ),
+                &ProgramExpression::Variable(crate::kernel::CONTRACT_RESULT),
                 environment,
             );
         }
@@ -10082,7 +10116,7 @@ impl AnnotationLowerer<'_> {
                         .map(|ty| ty.byte_width())
                 })
                 .or_else(|| {
-                    (name.is_named(crate::kernel::C_CONTRACT_RESULT_NAME))
+                    (name == &crate::kernel::CONTRACT_RESULT)
                         .then(|| self.result_type.pointee_type())
                         .flatten()
                         .map(ProgramType::byte_width)

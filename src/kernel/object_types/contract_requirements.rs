@@ -295,7 +295,7 @@ pub(in crate::kernel) fn declared_return_class(
     None
 }
 fn direct_result(value: &SpecExpression) -> bool {
-    matches!(value, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named(C_CONTRACT_RESULT_NAME))
+    matches!(value, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name == &CONTRACT_RESULT)
 }
 fn zero(value: &SpecExpression) -> bool {
     match value {
@@ -377,8 +377,8 @@ mod tests {
     fn class() -> CAccessClass {
         CAccessClass::Struct(CStructClass::opaque("node"))
     }
-    fn variable(name: &str) -> SpecExpression {
-        SpecExpression::ProgramExpression(ProgramExpression::Variable((name.to_string()).into()))
+    fn variable(name: impl Into<BindingName>) -> SpecExpression {
+        SpecExpression::ProgramExpression(ProgramExpression::Variable(name.into()))
     }
     fn typed(value: SpecExpression) -> SpecExpression {
         SpecExpression::PureFunctionApplication {
@@ -495,11 +495,11 @@ mod tests {
         interface
     }
     fn return_check() -> SpecProposition {
-        SpecProposition::Defined(typed(variable(C_CONTRACT_RESULT_NAME)))
+        SpecProposition::Defined(typed(variable(CONTRACT_RESULT)))
     }
     fn return_guard(operator: ComparisonOperator) -> SpecProposition {
         SpecProposition::Comparison {
-            left: variable(C_CONTRACT_RESULT_NAME),
+            left: variable(CONTRACT_RESULT),
             operator,
             right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
         }
@@ -538,7 +538,7 @@ mod tests {
         );
         let branched = SpecExpression::If {
             condition: Box::new(SpecProposition::Defined(variable("flag"))),
-            then_branch: Box::new(typed(variable(C_CONTRACT_RESULT_NAME))),
+            then_branch: Box::new(typed(variable(CONTRACT_RESULT))),
             else_branch: Box::new(variable("other")),
         };
         assert_eq!(

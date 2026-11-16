@@ -235,7 +235,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "constructs",
     "consumes",
     "contains",
-    "changes_only",
     "contract",
     "contradiction",
     "conclusion",
@@ -388,7 +387,6 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "by",
     "c-fragment",
     "contains-proposition",
-    "changes-only",
     "contract",
     "decreases",
     "defined",
@@ -2357,11 +2355,6 @@ pub enum ResourceKind {
 pub enum ClickProposition {
     /// Assert a proposition-valued expression, such as a lambda application.
     Value(ContractExpression),
-    ChangesOnly {
-        before: ProgramPointSelector,
-        after: ProgramPointSelector,
-        resources: Vec<ResourceSubject>,
-    },
     Comparison {
         left: ContractExpression,
         operator: ComparisonOperator,
@@ -2445,15 +2438,6 @@ impl Clone for ClickProposition {
 fn clone_click_proposition_atom(proposition: &ClickProposition) -> ClickProposition {
     match proposition {
         ClickProposition::Value(expression) => ClickProposition::Value(expression.clone()),
-        ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => ClickProposition::ChangesOnly {
-            before: before.clone(),
-            after: after.clone(),
-            resources: resources.clone(),
-        },
 
         ClickProposition::Comparison {
             left,
@@ -3200,7 +3184,6 @@ fn collect_current_proposition_variables(
             ClickProposition::Value(expression) => {
                 collect_current_contract_expression_variables(expression, names)
             }
-            ClickProposition::ChangesOnly { .. } => {}
 
             ClickProposition::Comparison { left, right, .. } => {
                 collect_current_contract_expression_variables(left, names);
@@ -3601,9 +3584,9 @@ struct RecordedStates {
     /// `region(N)` point it is recorded at.
     source_layout: Option<lowering::SourceExecutionLayout>,
     /// The name of each recorded point, by the identity of the point its
-    /// state's path reached there ([`crate::kernel::reached_point`]): a
+    /// state's path reached there ([`crate::kernel::ProgramPoint`]): a
     /// direct lookup, independent of what the memory there holds.
-    point_names: imbl::HashMap<crate::kernel::reached_point::ProgramPointId, ProgramPointSelector>,
+    point_names: imbl::HashMap<crate::kernel::program_point::ProgramPointId, ProgramPointSelector>,
     /// The newest recorded point whose memory reads each set of program
     /// bytes, keyed by the memory's read identity. A load registered in a
     /// memory other than the one being spelled is looked up here and
@@ -4578,7 +4561,7 @@ impl RecordedStates {
     #[cfg_attr(not(test), allow(dead_code))]
     fn point_name(
         &self,
-        id: crate::kernel::reached_point::ProgramPointId,
+        id: crate::kernel::program_point::ProgramPointId,
     ) -> Option<&ProgramPointSelector> {
         self.point_names.get(&id)
     }
@@ -4879,7 +4862,7 @@ impl RecordedStates {
             .insert(selector.clone(), self.effect_log.len());
         let prior = self.get(&selector).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), Some(&state));
-        if let Some(id) = state.reached_point().id() {
+        if let Some(id) = state.program_point_id() {
             self.point_names.insert(id, selector.clone());
         }
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
@@ -4963,7 +4946,7 @@ impl RecordedStates {
             self.record_read_event_values(*index, std::iter::empty());
         }
 
-        if let Some(id) = prior.as_ref().and_then(|state| state.reached_point().id())
+        if let Some(id) = prior.as_ref().and_then(|state| state.program_point_id())
             && self.point_names.get(&id) == Some(&selector)
         {
             self.point_names.remove(&id);
@@ -5439,6 +5422,8 @@ struct SpecElaborationContext {
     /// Bare `result` names the internal contract-return binding here;
     /// explicit C bindings keep their source identifier and value.
     contract_result_in_scope: bool,
+    /// A fixed return value, separate from all lexical bindings.
+    contract_result: Option<std::sync::Arc<SpecExpression>>,
     /// Preserve native address checks inside an explicit `defined(...)`.
     checking_definedness: bool,
 }
@@ -5457,6 +5442,7 @@ impl Default for SpecElaborationContext {
             function_contract: false,
             reference_state: None,
             contract_result_in_scope: false,
+            contract_result: None,
             checking_definedness: false,
         }
     }
@@ -5511,6 +5497,7 @@ impl SpecElaborationContext {
                 at_function_entry: true,
                 reference_state: None,
                 contract_result_in_scope: false,
+                contract_result: None,
                 checking_definedness: self.checking_definedness,
             });
         }
@@ -5544,6 +5531,7 @@ impl SpecElaborationContext {
             // The return value is a logical proof binding, like `let`.
             // Historical C reads still use their own entry bindings.
             contract_result_in_scope: self.contract_result_in_scope,
+            contract_result: self.contract_result.clone(),
             checking_definedness: self.checking_definedness,
         })
     }
@@ -8239,8 +8227,7 @@ fn click_proposition_reads_memory(
         }
         // Resource separation, containment, loadability, states, and
         // predicates all observe the C state.
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
@@ -8600,6 +8587,8 @@ struct ReportDetail {
     /// The prepared program's accessor spellings, retained for lazy reports.
     model_accessors: Option<diagnostics::CapturedModelAccessors>,
     missing_tactic_requirement: Option<String>,
+    /// Instantiated declared theorem prerequisite, for discovery diagnostics only.
+    missing_theorem_requirement: Option<String>,
     /// The Click declaration (a function block, named contract or theorem)
     /// this failure is about, when no C statement has run and no tactic has
     /// been checked: a contract that could not be set up at entry, or an
@@ -11315,6 +11304,20 @@ impl ClickError {
         std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).goal = Some(goal);
         self.rendered = std::sync::OnceLock::new();
         self
+    }
+
+    pub(in crate::surface) fn with_missing_theorem_requirement(mut self, fact: String) -> Self {
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default())
+            .missing_theorem_requirement = Some(fact);
+        self.rendered = std::sync::OnceLock::new();
+        self
+    }
+
+    pub(in crate::surface) fn missing_theorem_requirement(&self) -> Option<&str> {
+        self.report_detail
+            .as_ref()?
+            .missing_theorem_requirement
+            .as_deref()
     }
 
     pub(in crate::surface) fn unresolved_requirement(&self) -> Option<&UnresolvedRequirement> {

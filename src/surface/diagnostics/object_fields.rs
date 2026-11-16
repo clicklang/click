@@ -29,7 +29,7 @@ struct ObjectField {
 /// kernel name (`None` when declarations sharing the name differ in layout).
 #[derive(Default)]
 struct ObjectFields {
-    globals: std::collections::HashMap<String, (String, u32, Vec<ObjectField>)>,
+    globals: std::collections::HashMap<PointerBlock, (String, u32, Vec<ObjectField>)>,
     locals: std::collections::HashMap<
         crate::kernel::BindingName,
         Option<(String, u32, Vec<ObjectField>)>,
@@ -54,11 +54,7 @@ pub(crate) fn enter_ambient_object_fields(
         ..ObjectFields::default()
     };
     for aggregate in function.global_aggregates().values() {
-        let block = if PointerBlock::is_global_name(aggregate.kernel_name()) {
-            aggregate.kernel_name().to_string()
-        } else {
-            format!("global:{}", aggregate.kernel_name())
-        };
+        let block = crate::kernel::Memory::global_pointer(aggregate.kernel_name()).block;
         let mut fields = Vec::new();
         collect_struct_fields(function, aggregate.layout(), "", 0, &mut fields, 0);
         objects.globals.insert(
@@ -112,6 +108,9 @@ fn declared_object<'a>(
     objects: &'a ObjectFields,
     block: &PointerBlock,
 ) -> Option<&'a (String, u32, Vec<ObjectField>)> {
+    if let Some(object) = objects.globals.get(block) {
+        return Some(object);
+    }
     if let PointerBlock::AutomaticLocal { binding, .. } = block {
         return objects.locals.get(&binding.clone().into())?.as_ref();
     }
@@ -131,7 +130,7 @@ fn declared_object<'a>(
         }
         return objects.locals.get(&name.into())?.as_ref();
     }
-    objects.globals.get(block)
+    None
 }
 
 pub(crate) fn clear_ambient_object_fields() {

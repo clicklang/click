@@ -73,11 +73,24 @@ void walk(struct Node* p, int32* marker) {
             have q == identity;
             have separate(memory(marker[0]), memory(identity->next));
             have marker[0] == 9;
-            mark before_store;
-            step();
-            have marker[0] == 9 by {
+            have separate(memory(identity->next), memory(marker[0])) by {
+                apply(click::separation::separate_symm(memory(marker[0]), memory(identity->next))) using {
+                    separate(memory(marker[0]), memory(identity->next));
+                };
+            }
+            have separate(memory(q->next), memory(marker[0])) by {
+                rewrite(q, identity);
                 known();
             }
+            mark before_store;
+            step();
+            have separate(statement(2).footprint, memory(marker[0])) by {
+                normalize() using { at(before_store, separate(memory(q->next), memory(marker[0]))); };
+            }
+            have marker[0] == at(before_store, marker[0]) by {
+                preserve(separate(statement(2).footprint, memory(marker[0])));
+            }
+            have marker[0] == 9 by { known(); }
             step_until(function.exit); solve();
         },
     }

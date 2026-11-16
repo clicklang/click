@@ -48,6 +48,13 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
 
 fn write_havoc_block(identity: &mut String, block: PointerBlock) {
     match block {
+        PointerBlock::AggregateReturn { frame } => {
+            let _ = write!(identity, "breturn{frame};");
+        }
+        PointerBlock::ContractResult => identity.push_str("br;"),
+        PointerBlock::StaticObject { binding } => {
+            write_havoc_string(identity, "bst", &binding.to_string())
+        }
         PointerBlock::AutomaticLocal { binding, instance } => {
             write_havoc_string(identity, "bl", &binding.to_string());
             let _ = write!(identity, "{instance:?};");
@@ -1303,7 +1310,9 @@ impl LocalEnvironment {
                 .and_then(|entries| entries.last())
                 .map(|(_, binding)| binding.clone())
                 .unwrap_or_else(|| name.clone()),
-            BindingName::Local(_) => name.clone(),
+            BindingName::Local(_) | BindingName::Static(_) | BindingName::ContractResult => {
+                name.clone()
+            }
         }
     }
     /// The source spelling of this active lexical binding, for source-name
@@ -1311,7 +1320,9 @@ impl LocalEnvironment {
     pub(crate) fn active_source_name<'a>(&self, name: &'a BindingName) -> Option<&'a str> {
         let source = match name {
             BindingName::Local(id) => id.spelling()?,
+            BindingName::Static(id) => id.spelling(),
             BindingName::Named(name) => name,
+            BindingName::ContractResult => return None,
         };
         (self.resolve_binding(&BindingName::from(source)) == *name).then_some(source)
     }
@@ -5466,7 +5477,7 @@ impl Memory {
         // dropped recorded initialized, and without the zero readings under
         // a dropped value or the write set ([`Memory::forget_cached_values`]).
         let mut expected = before.clone();
-        expected.record_dropped_local_cells(&dropped_initialized);
+        expected.record_dropped_initialized_cells(&dropped_initialized);
         expected.forget_zero_readings_under(
             dropped_initialized
                 .iter()
@@ -6950,15 +6961,16 @@ impl Memory {
     }
 
     /// Records the bytes of cells whose cached values an operation dropped
-    /// as initialized, where they are automatic storage: a store only ever
-    /// initializes, so the bytes stay initialized with the value unknown.
-    /// Heap cells need nothing here — a heap store records its bytes as it
-    /// writes them. Costs the dropped cells.
-    fn record_dropped_local_cells(&mut self, dropped: &[(Pointer, u32)]) {
+    /// as initialized wherever a later read must establish initialization.
+    /// Automatic storage always needs that record. An unwritten-object marker
+    /// also makes external reads check it: their input observations may predate
+    /// the marker, so losing a cached value must retain those initialized bytes.
+    /// Heap stores already record their bytes. Costs only the dropped cells.
+    fn record_dropped_initialized_cells(&mut self, dropped: &[(Pointer, u32)]) {
         let mut record = self.heap.initialized.clone();
         let mut changed = false;
         for (pointer, width) in dropped {
-            if pointer.block.is_local_block() {
+            if pointer.block.is_local_block() || !self.heap.uninitialized_objects.is_empty() {
                 changed |= record.record(pointer, *width);
             }
         }
@@ -6985,12 +6997,13 @@ impl Memory {
     /// cell and each union view by the same rule; `run_rule` answers for a
     /// run as a whole, as [`CellStore::retain_candidates_outside_by`] asks.
     /// What is [`CachedValueFate::Forgotten`] then also loses its zero
-    /// reading, and, in automatic storage, stays recorded initialized (a
-    /// write only ever initializes). A new representation of cached bytes
-    /// belongs in this function, so no transition can miss it.
+    /// reading, and stays recorded initialized wherever later reads require
+    /// initialization evidence (a write only ever initializes). A new
+    /// representation of cached bytes belongs in this function, so no
+    /// transition can miss it.
     ///
     /// The slots `run_rule` drops as a whole run are recorded initialized
-    /// where they are automatic ([`Self::record_dropped_local_run_slots`]),
+    /// where later reads require evidence ([`Self::record_dropped_initialized_run_slots`]),
     /// whatever `fate` would say of them: a dropped slot was written, and a
     /// caller that retires the storage forgets its record afterwards. A run
     /// carries no zero reading to lose: it is never seeded where a live
@@ -7078,10 +7091,10 @@ impl Memory {
                 }
             }
         }
-        self.record_dropped_local_cells(&forgotten_cells);
+        self.record_dropped_initialized_cells(&forgotten_cells);
         // A run's slots are cells too, dropped by `run_rule` as a whole run
-        // without `fate` being asked; automatic ones stay initialized.
-        self.record_dropped_local_run_slots(&dropped_run_slots);
+        // without `fate` being asked; preserve their initialization evidence.
+        self.record_dropped_initialized_run_slots(&dropped_run_slots);
         self.forget_zero_readings_under(forgotten_cells.iter().map(|(pointer, _)| &pointer.block));
         !forgotten_cells.is_empty()
     }
@@ -7113,21 +7126,21 @@ impl Memory {
         }
     }
 
-    /// [`Self::record_dropped_local_cells`] for run slots dropped as a whole
+    /// [`Self::record_dropped_initialized_cells`] for run slots dropped as a whole
     /// run. A dropped interval whose bytes the record already holds costs
     /// one covering query: the usual case, as a declaration's initializer,
     /// which is what makes a run of automatic storage, records its whole
     /// object ([`Self::with_initialized_object`]). Otherwise contiguous
     /// slots are one run of bytes, and only slots strided apart or at a
     /// symbolic offset are recorded one by one, each as a dropped cell.
-    fn record_dropped_local_run_slots(&mut self, dropped: &[DroppedRunSlots]) {
+    fn record_dropped_initialized_run_slots(&mut self, dropped: &[DroppedRunSlots]) {
         if dropped.is_empty() {
             return;
         }
         let mut record = self.heap.initialized.clone();
         let mut changed = false;
         for DroppedRunSlots { run, elements } in dropped {
-            if !run.base().block.is_local_block() {
+            if !run.base().block.is_local_block() && self.heap.uninitialized_objects.is_empty() {
                 continue;
             }
             let width = run.value_width();
@@ -7289,7 +7302,7 @@ impl Memory {
         // or one the store writes only part of, is knowledge the result no
         // longer has: it is `Forgotten`, which is what has to show in the
         // content, keeps automatic bytes initialized (see
-        // `record_dropped_local_cells`), and ends a zero reading under it.
+        // `record_dropped_initialized_cells`), and ends a zero reading under it.
         // Every cell in a block proven distinct from the written one is kept
         // by each ladder below (its bytes are `Separate` and its address is
         // proven distinct on the first rung), so only the candidates are
@@ -7535,7 +7548,11 @@ impl Memory {
                 binding,
                 instance: LocalStorageInstance::ValueParameter,
             },
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:value-parameter:{name}").into(),
+            BindingName::ContractResult => {
+                unreachable!("contract result is not an automatic declaration")
+            }
         };
         Pointer {
             block,
@@ -7550,7 +7567,9 @@ impl Memory {
                 binding,
                 instance: LocalStorageInstance::Implicit,
             },
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:{name}").into(),
+            BindingName::ContractResult => PointerBlock::ContractResult,
         };
         Pointer {
             block,
@@ -7568,7 +7587,11 @@ impl Memory {
                 binding,
                 instance: LocalStorageInstance::Lifetime(lifetime),
             },
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:lifetime:{lifetime}:{name}").into(),
+            BindingName::ContractResult => {
+                unreachable!("contract result is not an automatic declaration")
+            }
         };
         Pointer {
             block,
@@ -7576,13 +7599,16 @@ impl Memory {
         }
     }
 
-    pub(crate) fn global_pointer(name: &str) -> Pointer {
-        Self::global_pointer_named(name)
-    }
-
-    fn global_pointer_named(name: &str) -> Pointer {
+    pub(crate) fn global_pointer(name: impl Into<BindingName>) -> Pointer {
+        let block = match name.into() {
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
+            BindingName::Named(name) => format!("global:{name}").into(),
+            BindingName::Local(_) | BindingName::ContractResult => {
+                unreachable!("non-global binding used as a global")
+            }
+        };
         Pointer {
-            block: format!("global:{name}").into(),
+            block,
             offset: PointerOffsetTerm::Constant(0),
         }
     }
@@ -7597,9 +7623,24 @@ impl Memory {
         }
     }
 
-    pub(crate) fn static_pointer(function: &str, name: &str) -> Pointer {
+    pub(crate) fn static_pointer(function: &str, name: impl Into<BindingName>) -> Pointer {
+        let block = match name.into() {
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
+            BindingName::Named(name) => format!("static:{function}:{name}").into(),
+            BindingName::Local(_) | BindingName::ContractResult => {
+                unreachable!("non-static binding used as a static")
+            }
+        };
         Pointer {
-            block: format!("static:{function}:{name}").into(),
+            block,
+            offset: PointerOffsetTerm::Constant(0),
+        }
+    }
+
+    /// Materialized return storage has a typed identity, never a C local name.
+    pub(in crate::kernel) fn aggregate_return_pointer(frame: u64) -> Pointer {
+        Pointer {
+            block: PointerBlock::AggregateReturn { frame },
             offset: PointerOffsetTerm::Constant(0),
         }
     }
@@ -7616,6 +7657,13 @@ impl Memory {
                 },
                 offset: PointerOffsetTerm::Constant(0),
             },
+            BindingName::Static(binding) => Pointer {
+                block: PointerBlock::StaticObject { binding },
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            BindingName::ContractResult => {
+                unreachable!("contract result is not a frame-local declaration")
+            }
             BindingName::Named(name) => Pointer {
                 block: format!("local:frame:{frame}:{name}").into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -7801,7 +7849,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Pointer) -> ProgramValue {
         int32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         ))
@@ -7819,7 +7867,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Pointer) -> ProgramValue {
         int16(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Int16,
         ))
@@ -7827,7 +7875,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Pointer) -> ProgramValue {
         uint8(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::UInt8,
         ))
@@ -7835,7 +7883,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Pointer) -> ProgramValue {
         uint16(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::UInt16,
         ))
@@ -7843,7 +7891,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Pointer) -> ProgramValue {
         uint32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::UInt32,
         ))
@@ -7851,7 +7899,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::Int64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         ))
@@ -7859,7 +7907,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::UInt64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         ))
@@ -7874,7 +7922,7 @@ impl Memory {
             return None;
         }
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::of_type(ty.program_type())?,
         );
@@ -7887,7 +7935,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::Float32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Float32,
         ))
@@ -7895,7 +7943,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::Float64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Float64,
         ))
@@ -7929,7 +7977,7 @@ impl Memory {
     ) -> ProgramValue {
         let retained_state = crate::kernel::intern_memory(self.clone());
         let value = Pointer::loaded(&MachineTerm::MemoryLoad(
-            retained_state.clone(),
+            ProgramPoint::at(&retained_state),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         ))
@@ -8910,7 +8958,7 @@ impl ExecutionState {
             components.push((
                 description.clone(),
                 Some(MachineTerm::MemoryLoad(
-                    intern_memory_ref(&self.memory),
+                    ProgramPoint::at(&(intern_memory_ref(&self.memory))),
                     Box::new(anchor.clone()),
                     LoadKind::Int32,
                 )),
@@ -9686,9 +9734,16 @@ impl ExecutionState {
         self.point = self.point.after();
     }
 
-    /// The point this state's path has reached.
-    pub(crate) fn reached_point(&self) -> &super::reached_point::ReachedPoint {
-        &self.point
+    /// The point this state stands at on its path.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn program_point(&self) -> super::ProgramPoint {
+        super::ProgramPoint::of_state(&self.memory, &self.point)
+    }
+
+    /// The identity of the point this state stands at, without interning its
+    /// memory.
+    pub(crate) fn program_point_id(&self) -> Option<super::program_point::ProgramPointId> {
+        self.point.id()
     }
 
     /// Replace memory without the resource invalidation of
@@ -9707,8 +9762,8 @@ impl ExecutionState {
     }
 
     /// Stand this state at a new point reached from both arms of a join.
-    pub(crate) fn join_reached_points(&mut self, left: &Self, right: &Self) {
-        self.point = super::reached_point::ReachedPoint::joining(&left.point, &right.point);
+    pub(crate) fn join_program_points(&mut self, left: &Self, right: &Self) {
+        self.point = super::program_point::PathLink::joining(&left.point, &right.point);
     }
 
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {
@@ -10622,7 +10677,7 @@ fn ask_every_slot(_: &CellRun) -> (SlotSet, crate::kernel::primitives::RuleAnswe
     )
 }
 
-/// Collects one dropped cell for [`Memory::record_dropped_local_cells`],
+/// Collects one dropped cell for [`Memory::record_dropped_initialized_cells`],
 /// except from inside a debug self-check that re-asks a retain predicate:
 /// that would record, in a debug build only, cells a release build keeps
 /// by a whole-run answer.
@@ -10645,6 +10700,68 @@ fn local_block_entries<'a, K: BlockKeyed, V>(
 #[cfg(test)]
 mod initialization_record_tests {
     use super::*;
+
+    #[test]
+    fn unwritten_output_keeps_forgotten_external_input_fields_initialized() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let output = Pointer::symbolic(Variable(924_040));
+        for field in [
+            Pointer::symbolic(Variable(924_041)),
+            Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(924_042)), 4),
+            },
+        ] {
+            for seeded in [false, true] {
+                let input = if seeded {
+                    Memory::new().with_seeded_cells(
+                        field.clone(),
+                        8,
+                        ProgramType::UInt8Pointer,
+                        0,
+                        1,
+                        intern_memory(Memory::new()),
+                    )
+                } else {
+                    Memory::new().store(field.clone(), ProgramValue::pointer(Pointer::null()))
+                };
+                assert!(!input.has_initialized_bytes_at(&field, 8));
+                let before = input.with_uninitialized_object(output.clone(), 4);
+                let after =
+                    before.without_possible_aliasing_cells(&output, 1, &PureFactContext::new());
+                assert!(after.known_value(&field).is_none());
+                assert!(
+                    after.has_initialized_bytes_at(&field, 8),
+                    "seeded={seeded}: {field:?}"
+                );
+                assert!(!after.has_initialized_bytes_at(&field, 9));
+                assert!(!after.has_initialized_bytes_at(&output.offset_by_bytes(1), 1));
+            }
+        }
+    }
+
+    #[test]
+    fn forgotten_external_observations_preserve_only_the_bytes_observed() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(924_043));
+        let output = Pointer::symbolic(Variable(924_044));
+        for count in [0, 1, 2] {
+            let before = Memory::new()
+                .with_seeded_cells(
+                    field.clone(),
+                    4,
+                    ProgramType::Int32,
+                    0,
+                    count,
+                    intern_memory(Memory::new()),
+                )
+                .with_uninitialized_object(output.clone(), 4);
+            let after = before.without_possible_aliasing_cells(&output, 1, &PureFactContext::new());
+            assert_eq!(after.has_initialized_bytes_at(&field, 8), count == 2);
+            assert_eq!(after.has_initialized_bytes_at(&field, 4), count != 0);
+            assert!(!after.has_initialized_bytes_at(&field, 9));
+        }
+    }
 
     fn element(block: &str, index: i64) -> Pointer {
         Pointer {

@@ -229,7 +229,9 @@ pub(in crate::surface) fn program_value_matches_click_type(
         | (ProgramValue::Int64(_), InterfaceType::Int64(_))
         | (ProgramValue::UInt64(_), InterfaceType::UInt64(_))
         | (ProgramValue::Int128(_), InterfaceType::Int128)
-        | (ProgramValue::UInt128(_), InterfaceType::UInt128) => true,
+        | (ProgramValue::UInt128(_), InterfaceType::UInt128)
+        | (ProgramValue::Float32(_), InterfaceType::Float32)
+        | (ProgramValue::Float64(_), InterfaceType::Float64) => true,
         (ProgramValue::Pointer(pointer), interface_type) if interface_type.is_pointer() => pointer
             .program_type()
             .pointer_types_compatible(interface_type.to_kernel_type()),
@@ -400,6 +402,36 @@ mod tests {
         let (values, arrays) =
             contract_environment_for_names(ParameterBinding::default(), &names, &state).unwrap();
         assert_bytes(&values, &arrays, &expected, ProgramType::UInt8);
+    }
+
+    #[test]
+    fn float_argument_types_preserve_their_width() {
+        let single = ProgramValue::Float32(MachineTerm::Variable(Variable(41501)));
+        let double = ProgramValue::Float64(MachineTerm::Variable(Variable(41502)));
+        assert!(program_value_matches_click_type(
+            &single,
+            InterfaceType::Float32
+        ));
+        assert!(program_value_matches_click_type(
+            &double,
+            InterfaceType::Float64
+        ));
+        assert!(!program_value_matches_click_type(
+            &single,
+            InterfaceType::Float64
+        ));
+        assert!(!program_value_matches_click_type(
+            &double,
+            InterfaceType::Float32
+        ));
+        assert!(!program_value_matches_click_type(
+            &single,
+            InterfaceType::Int32
+        ));
+        assert!(!program_value_matches_click_type(
+            &double,
+            InterfaceType::Int64(syntax::LongRank::Long)
+        ));
     }
 
     mod scaling_tests {

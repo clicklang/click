@@ -62,9 +62,11 @@ fn generation_and_execution_scale_with_requirements_and_completion_only_moves_th
         let root = ProgramContractProof::open(requested, BTreeSet::new(), &BTreeSet::new());
         let (proof, generation_work) = crate::instrumentation::measure_deterministic_work(|| {
             root.generate_termination(ProgramTerminationInputs {
-                partial_rules: &rules,
+                independent: crate::kernel::IndependentTerminationInputs {
+                    rules: &rules,
+                    bodies: &[],
+                },
                 plans: &[],
-                inline_bodies: &[],
                 assumed_terminating: &BTreeSet::new(),
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,

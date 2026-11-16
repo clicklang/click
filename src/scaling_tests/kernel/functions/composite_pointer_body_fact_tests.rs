@@ -428,7 +428,7 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
         // so the canonical walk cannot be warmed by the preceding measurement.
         let (_, canonical_work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::memory_provenance::canonicalize_atomic_loads(&MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(&memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                 Box::new(input(719_104)),
                 LoadKind::Bits64,
             ))

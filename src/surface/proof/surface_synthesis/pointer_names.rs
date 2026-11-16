@@ -234,7 +234,7 @@ mod tests {
                 SubobjectExtent {
                     start: pointer.clone(),
                     width: MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(memory),
+                        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(address.clone()),
                         crate::kernel::LoadKind::Int32,
                     ),

@@ -16,6 +16,7 @@ use std::sync::{Arc, OnceLock};
 mod bindings;
 pub use bindings::{
     BindingDeclaration, BindingName, LocalBindingId, LocalFunctionId, LocalStorageInstance,
+    StaticBindingId, StaticBindingMetadata, StaticBindingOwner,
 };
 
 pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
@@ -62,7 +63,8 @@ pub(in crate::kernel) mod float_conversion;
 mod heap_extent_tests;
 #[cfg(test)]
 mod memory_construction_tests;
-pub(crate) mod reached_point;
+pub(crate) mod program_point;
+pub use program_point::ProgramPoint;
 mod statement_clone;
 #[cfg(test)]
 pub(crate) use contracts::memory_range_byte_count_guards;
@@ -816,7 +818,7 @@ pub enum MachineTerm {
     /// The kind is part of the load's identity: two reads of one address
     /// that differ in width or, below four bytes, in signedness return
     /// different values, so they are different terms. See [`LoadKind`].
-    MemoryLoad(SharedMemory, Box<Pointer>, LoadKind),
+    MemoryLoad(ProgramPoint, Box<Pointer>, LoadKind),
     /// The physical LP64 address bits of an object pointer. This numeric
     /// observation carries no designation or selected extent. Complete C
     /// integer copies retain that information separately in PointerInteger.
@@ -2510,7 +2512,10 @@ impl PointerValue {
         let known_root = is_function
             || matches!(
                 pointer.block,
-                PointerBlock::AutomaticLocal { .. }
+                PointerBlock::AggregateReturn { .. }
+                    | PointerBlock::ContractResult
+                    | PointerBlock::StaticObject { .. }
+                    | PointerBlock::AutomaticLocal { .. }
                     | PointerBlock::Concrete(_)
                     | PointerBlock::Heap(_)
                     | PointerBlock::Temporary(_)
@@ -3025,6 +3030,16 @@ pub enum PointerBlock {
         binding: LocalBindingId,
         instance: LocalStorageInstance,
     },
+    StaticObject {
+        binding: StaticBindingId,
+    },
+    /// Value-only bookkeeping slot for the contract result, never C storage.
+    ContractResult,
+    /// Caller-owned copy materialized at the aggregate return boundary.
+    /// Uses the frame allocator, independently of every source local name.
+    AggregateReturn {
+        frame: u64,
+    },
 }
 
 impl std::hash::Hash for PointerBlock {
@@ -3033,6 +3048,15 @@ impl std::hash::Hash for PointerBlock {
         // Pointer hashes feed deterministic load-variable identities, so
         // inserting a new enum variant must not renumber existing blocks.
         match self {
+            Self::AggregateReturn { frame } => {
+                14u64.hash(state);
+                frame.hash(state);
+            }
+            Self::ContractResult => 13u64.hash(state),
+            Self::StaticObject { binding } => {
+                12u64.hash(state);
+                binding.hash(state);
+            }
             Self::AutomaticLocal { binding, instance } => {
                 11u64.hash(state);
                 binding.hash(state);
@@ -3118,12 +3142,14 @@ impl PointerBlock {
 
     /// A file-scope object with external linkage.
     pub(crate) fn is_global_block(&self) -> bool {
-        self.starts_with(GLOBAL_BLOCK_PREFIX)
+        matches!(self, Self::StaticObject { binding } if binding.function().is_none())
+            || self.starts_with(GLOBAL_BLOCK_PREFIX)
     }
 
     /// A file-scope or function-scope `static` object.
     pub(crate) fn is_static_block(&self) -> bool {
-        self.starts_with(STATIC_BLOCK_PREFIX)
+        matches!(self, Self::StaticObject { binding } if binding.function().is_some())
+            || self.starts_with(STATIC_BLOCK_PREFIX)
     }
 
     /// Static storage of either linkage.
@@ -3156,6 +3182,8 @@ impl PointerBlock {
                         LocalStorageInstance::Implicit => false,
                     }
             }
+            Self::AggregateReturn { .. } => prefix == "local:" || prefix == "local:frame:",
+            Self::ContractResult => prefix == "local:",
             Self::Concrete(name) => name.starts_with(prefix),
             Self::StringLiteral { .. } => prefix == "string:",
             _ => false,
@@ -3165,7 +3193,10 @@ impl PointerBlock {
     pub(crate) fn strip_prefix<'a>(&'a self, prefix: &str) -> Option<&'a str> {
         match self {
             Self::Concrete(name) => name.strip_prefix(prefix),
-            Self::AutomaticLocal { .. }
+            Self::AggregateReturn { .. }
+            | Self::ContractResult
+            | Self::StaticObject { .. }
+            | Self::AutomaticLocal { .. }
             | Self::StringLiteral { .. }
             | Self::Function(_)
             | Self::FunctionSymbolic(_)
@@ -3273,7 +3304,12 @@ impl PointerBlock {
             matches!(left, Self::StringLiteral { .. })
                 && matches!(
                     right,
-                    Self::AutomaticLocal { .. } | Self::Concrete(_) | Self::Function(_)
+                    Self::AggregateReturn { .. }
+                        | Self::ContractResult
+                        | Self::StaticObject { .. }
+                        | Self::AutomaticLocal { .. }
+                        | Self::Concrete(_)
+                        | Self::Function(_)
                 )
         };
         self != other
@@ -3290,10 +3326,27 @@ impl PointerBlock {
                     (self, other),
                     (Self::Concrete(left), Self::Concrete(right)) if left != right
                 )
-                || (matches!(self, Self::AutomaticLocal { .. })
-                    && matches!(other, Self::AutomaticLocal { .. } | Self::Concrete(_)))
-                || (matches!(other, Self::AutomaticLocal { .. })
-                    && matches!(self, Self::Concrete(_)))
+                || (matches!(
+                    self,
+                    Self::AggregateReturn { .. }
+                        | Self::ContractResult
+                        | Self::AutomaticLocal { .. }
+                        | Self::StaticObject { .. }
+                ) && matches!(
+                    other,
+                    Self::AggregateReturn { .. }
+                        | Self::ContractResult
+                        | Self::AutomaticLocal { .. }
+                        | Self::StaticObject { .. }
+                        | Self::Concrete(_)
+                ))
+                || (matches!(
+                    other,
+                    Self::AggregateReturn { .. }
+                        | Self::ContractResult
+                        | Self::AutomaticLocal { .. }
+                        | Self::StaticObject { .. }
+                ) && matches!(self, Self::Concrete(_)))
                 || literal_versus_declared(self, other)
                 || literal_versus_declared(other, self)
                 || local_versus_argument(self, other)
@@ -3351,6 +3404,9 @@ impl From<&str> for PointerBlock {
 impl std::fmt::Display for PointerBlock {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::AggregateReturn { frame } => write!(formatter, "result.storage(frame, {frame})"),
+            Self::ContractResult => formatter.write_str("result.storage()"),
+            Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
             Self::AutomaticLocal { binding, instance } => {
                 write!(formatter, "{binding}.storage({instance})")
             }
@@ -4158,6 +4214,77 @@ pub enum SpecExpression {
         requirement: Box<SpecProposition>,
         value: Box<SpecExpression>,
     },
+    /// Address a C place whose base is evaluated by the specification's state.
+    /// No lexical binding or execution local is introduced.
+    ObjectAddress(Box<SpecObjectAddress>),
+}
+
+/// The C place operations around a specification-evaluated address base.
+/// Steps are stored outside-in, preserving C subobject designation formation.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum SpecAddressStep {
+    Subobject { width: u32 },
+    OffsetBytes { bytes: u32 },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct SpecObjectAddress {
+    pub base: Box<SpecExpression>,
+    pub steps: Vec<SpecAddressStep>,
+    pub value_type: ProgramType,
+    pub volatile: bool,
+    pub pointee_constant: bool,
+    pub access_class: Option<crate::kernel::effective_type::CAccessClass>,
+    pub source: ExpressionLoadSource,
+    pub checked: bool,
+}
+
+impl SpecObjectAddress {
+    /// Rebuild only this node's metadata while a spec traversal maps its base.
+    pub(crate) fn with_base(&self, base: SpecExpression) -> Self {
+        Self {
+            base: Box::new(base),
+            steps: self.steps.clone(),
+            value_type: self.value_type,
+            volatile: self.volatile,
+            pointee_constant: self.pointee_constant,
+            access_class: self.access_class.clone(),
+            source: self.source.clone(),
+            checked: self.checked,
+        }
+    }
+
+    /// Feed the selected base value to the ordinary C address operation.
+    /// All place steps remain syntax, so member designation is formed by the
+    /// same checked transition as a program address, without a fake variable.
+    pub(crate) fn program_expression(&self, base: ProgramValue) -> ProgramExpression {
+        let mut pointer = ProgramExpression::Value(base);
+        for step in self.steps.iter().rev() {
+            pointer = match step {
+                SpecAddressStep::Subobject { width } => ProgramExpression::Subobject {
+                    pointer: Box::new(pointer),
+                    width: *width,
+                },
+                SpecAddressStep::OffsetBytes { bytes } => ProgramExpression::PointerOffsetBytes {
+                    pointer: Box::new(pointer),
+                    bytes: *bytes,
+                },
+            };
+        }
+        let target = Box::new(ProgramExpression::TypedLoad {
+            pointer: Box::new(pointer),
+            value_type: self.value_type,
+            volatile: self.volatile,
+            pointee_constant: self.pointee_constant,
+            access_class: self.access_class.clone(),
+            source: self.source.clone(),
+        });
+        if self.checked {
+            ProgramExpression::CheckedObjectAddress(target)
+        } else {
+            ProgramExpression::AddressOf(target)
+        }
+    }
 }
 
 impl SpecExpression {
@@ -4669,7 +4796,11 @@ impl AlgebraicTermNode {
     /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
     /// address as it reaches a scalar load's.
     pub(crate) fn memory_load_carrier(memory: &SharedMemory, pointer: &Pointer) -> MachineTerm {
-        MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
+        MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer.clone()),
+            LoadKind::Bits64,
+        )
     }
 
     /// The [`AlgebraicTermNode::MemoryLoad`] whose carrier a rewrite of
@@ -4679,7 +4810,7 @@ impl AlgebraicTermNode {
         match carrier {
             ProgramValue::UInt64(MachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64)) => {
                 Some(Self::MemoryLoad {
-                    memory: memory.clone(),
+                    memory: memory.shared_memory().clone(),
                     pointer: pointer.clone(),
                 })
             }
@@ -5234,11 +5365,6 @@ pub enum SpecPredicateArgument {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecProposition {
-    ChangesOnly {
-        before: SpecMemory,
-        after: SpecMemory,
-        resources: Vec<SpecResource>,
-    },
     IntegerComparison {
         left: SpecIntegerExpression,
         operator: IntegerComparisonOperator,
@@ -5892,7 +6018,7 @@ pub struct ProgramParameter {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Global {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) program_type: ProgramType,
     pub(super) initial_value: ProgramValue,
     pub(super) volatile: bool,
@@ -5907,7 +6033,7 @@ pub struct Global {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct GlobalArray {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) element_type: ProgramType,
     pub(super) length: u32,
     pub(super) initial_values: ArrayContents,
@@ -5923,7 +6049,7 @@ pub struct GlobalArray {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct GlobalAggregate {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) layout: AggregateLayout,
     pub(super) initializers: Vec<AggregateInitializer>,
     pub(super) constant: bool,
@@ -5938,7 +6064,7 @@ pub struct GlobalAggregate {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct GlobalAggregateArray {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) layout: AggregateLayout,
     pub(super) length: u32,
     pub(super) initializers: Vec<AggregateInitializer>,
@@ -5951,7 +6077,7 @@ pub struct GlobalAggregateArray {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StaticLocal {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) program_type: ProgramType,
     pub(super) initial_value: ProgramValue,
     pub(super) volatile: bool,
@@ -5963,7 +6089,7 @@ pub struct StaticLocal {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StaticArray {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) element_type: ProgramType,
     pub(super) length: u32,
     pub(super) initial_values: ArrayContents,
@@ -6157,7 +6283,7 @@ impl ZeroCell {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StaticAggregate {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) layout: AggregateLayout,
     pub(super) initializers: Vec<AggregateInitializer>,
     pub(super) constant: bool,
@@ -6167,7 +6293,7 @@ pub struct StaticAggregate {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct StaticAggregateArray {
     pub(super) source_name: String,
-    pub(super) kernel_name: String,
+    pub(super) kernel_name: BindingDeclaration,
     pub(super) layout: AggregateLayout,
     pub(super) length: u32,
     pub(super) initializers: Vec<AggregateInitializer>,
@@ -6501,6 +6627,7 @@ pub struct FunctionContractInterface {
     /// own measured binder, an instance whose model is strictly contained in
     /// this function's entry model.
     pub(crate) recursion_binder: Option<String>,
+    pub(crate) recursion_resource: Option<usize>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -6771,17 +6898,12 @@ pub enum FunctionContractClaimTarget {
     ExceptionalEnsureProposition(usize),
 }
 
-/// Contract return value, separate from every source C identifier.
-pub(crate) const C_CONTRACT_RESULT_NAME: &str = "@click:result";
+/// The contract return value is independent of every program/proof identifier.
+pub(crate) const CONTRACT_RESULT: BindingName = BindingName::ContractResult;
 
-/// The Click spelling of the C local `name`: the contract result's internal
-/// local is `result`; every other local is its own name.
+/// Preserve typed identities when raising a program binding to Surface.
 pub(crate) fn program_local_source_name(name: impl Into<BindingName>) -> BindingName {
-    let name = name.into();
-    match &name {
-        BindingName::Named(name) if name == C_CONTRACT_RESULT_NAME => "result".into(),
-        _ => name.clone(),
-    }
+    name.into()
 }
 
 /// Kernel-only binding used while lowering an exceptional postcondition.
@@ -7483,6 +7605,8 @@ pub struct RecursionAnchor {
     /// For a structural measure, the instance the measured binder held at
     /// the function's own entry; `components` and `measure` are then empty.
     pub(super) structural_entry: Option<ResourceInstance>,
+    pub(super) structural_resource:
+        Option<crate::kernel::termination::resource_descent::ResourceDescent>,
     pub(super) entry_obligations: Vec<ProofObligation>,
 }
 
@@ -7522,6 +7646,15 @@ impl RecursionAnchor {
         self.function == function
             && interface.recursion_measure().unwrap_or_default() == self.components.as_slice()
             && interface.recursion_binder().is_some() == self.structural_entry.is_some()
+            && interface.recursion_resource()
+                == self
+                    .structural_resource
+                    .as_ref()
+                    .map(|resource| resource.requirement)
+            && self
+                .structural_resource
+                .as_ref()
+                .is_none_or(|resource| resource.matches_declaration(interface))
             && interface.recursion_peers() == self.peers.as_slice()
     }
 
@@ -10280,8 +10413,8 @@ pub struct ExecutionState {
     pub(super) locals: LocalEnvironment,
     pub(super) memory: Memory,
     /// The point this state's path has reached; not part of equality
-    /// ([`reached_point::ReachedPoint`]).
-    pub(super) point: reached_point::ReachedPoint,
+    /// ([`program_point::PathLink`]).
+    pub(super) point: program_point::PathLink,
     pub(super) resources: ResourceContext,
     /// Active stable-view authority. `None` is the canonical empty ledger so
     /// independently constructed states retain ordinary structural equality.
@@ -10597,6 +10730,8 @@ pub struct ResourceContext {
     /// different loan origins, and a rewrite must preserve the opaque
     /// occurrence identity rather than rediscovering it from the term.
     pub(super) loan_dependencies: std::sync::Arc<crate::kernel::loans::LoanViewBindingsState>,
+    pub(super) structural_witnesses:
+        Option<std::sync::Arc<crate::kernel::termination::resource_descent::ResourceWitnesses>>,
 }
 
 impl Clone for ResourceContext {
@@ -10606,6 +10741,7 @@ impl Clone for ResourceContext {
             storage: self.storage.clone(),
             observable_projection: self.observable_projection.clone(),
             loan_dependencies: self.loan_dependencies.clone(),
+            structural_witnesses: self.structural_witnesses.clone(),
             memory_equalities: std::sync::Mutex::new(
                 self.memory_equalities
                     .lock()
@@ -13112,11 +13248,18 @@ pub enum Proposition {
         parent: Box<Resource>,
         child: Box<Resource>,
     },
+    /// Internal write bound for a recorded transition, using constant byte
+    /// counts. Listed ranges may conservatively include bytes that were not
+    /// written. Preservation proofs use recorded region footprints; allocation
+    /// lifetime effects are recorded separately.
     MemoryMutatesOnly {
         before: Memory,
         after: Memory,
         writes: Vec<(Pointer, u32)>,
     },
+    /// Internal write bound expressed as [`MemoryRange`] descriptors, including
+    /// symbolic extents. Like [`Self::MemoryMutatesOnly`], this bounds possible
+    /// writes rather than claiming that every listed cell changed.
     MemoryEffectSummary {
         before: Memory,
         after: Memory,
@@ -14580,16 +14723,16 @@ pub struct PureFactContext {
         PointerBlock,
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<Proposition>>,
     >,
-    /// The `ResourceContains` facts, filed by their parent: a memory
-    /// range under its base block, any other resource under itself. A
-    /// containment walk reads the facts under the resource it has reached,
-    /// not every proposition fact.
     /// The memory effect facts (`MemoryEffectSummary`, `MemoryMutatesOnly`,
     /// `HeapAllocationFreed`), filed under both of their memories, so a load
     /// comparison between two states reads the effects naming one of
     /// them, not every proposition fact.
     pub(super) memory_effect_facts:
         crate::persistent::PersistentMap<Memory, crate::persistent::PersistentSet<Proposition>>,
+    /// The `ResourceContains` facts, filed by their parent: a memory
+    /// range under its base block, any other resource under itself. A
+    /// containment walk reads the facts under the resource it has reached,
+    /// not every proposition fact.
     pub(super) resource_contains_facts: crate::persistent::PersistentMap<
         super::assumptions::ResourceContainsKey,
         crate::persistent::PersistentSet<Proposition>,

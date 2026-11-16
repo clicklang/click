@@ -220,7 +220,8 @@ impl MemoryStateLabels {
         } else {
             match &pointer.block {
                 PointerBlock::Concrete(name) => format!("object `{}`", short(name)),
-                block @ PointerBlock::AutomaticLocal { .. } => format!("object `{block}`"),
+                block @ (PointerBlock::AutomaticLocal { .. }
+                | PointerBlock::StaticObject { .. }) => format!("object `{block}`"),
                 PointerBlock::Symbolic(variable) | PointerBlock::ExternalObject(variable) => {
                     format!(
                         "<{}; source binding unavailable>",

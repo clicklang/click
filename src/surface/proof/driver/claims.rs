@@ -2055,6 +2055,15 @@ fn apply_post_execution_arithmetic_using<'a>(
             .iter()
             .map(|(kernel, _)| kernel.clone())
             .collect::<Vec<_>>();
+        if crate::kernel::proof::arithmetic_special::signed_definedness_query(goal).is_some() {
+            return crate::kernel::search::ProofSearch::try_restricted_signed_definedness_closure(
+                focused, &pairs,
+            )?
+            .ok_or_else(|| {
+                focused
+                    .step_error("post-execution signed definedness needs explicit operand bounds")
+            });
+        }
         use crate::surface::checking::ArithmeticPlan;
         let plan = crate::surface::checking::arithmetic_plans(goal, &kernel_premises, false)
             .next()
@@ -2063,11 +2072,22 @@ fn apply_post_execution_arithmetic_using<'a>(
             })?;
         let certificate = match plan {
             ArithmeticPlan::Special(plan) => {
-                crate::surface::checking::special_plan_to_surface_certificate(
+                let certificate = crate::surface::checking::special_plan_to_surface_certificate(
                     &plan,
                     surface_premises,
                     surface_goal,
-                )
+                );
+                let ArithmeticCertificateFamily::Special(plan) = &certificate.family else {
+                    unreachable!()
+                };
+                return crate::kernel::search::ProofSearch::apply_specialized_composition(
+                    focused, plan,
+                )?
+                .ok_or_else(|| {
+                    focused.step_error(
+                        "post-execution specialized arithmetic needs explicit intermediate facts",
+                    )
+                });
             }
             ArithmeticPlan::IntegerAffine(plan) => {
                 let retained_state = surface_program_point_selector(surface_goal);
@@ -2121,9 +2141,15 @@ fn apply_post_execution_arithmetic_using<'a>(
                             "post-execution signed arithmetic certificate could not be transcribed",
                         )
                     })?;
-                ArithmeticCertificate {
-                    family: ArithmeticCertificateFamily::SignedInt32(certificate),
-                }
+                return crate::kernel::search::ProofSearch::apply_signed_interval_composition(
+                    focused,
+                    &certificate,
+                )?
+                .ok_or_else(|| {
+                    focused.step_error(
+                        "post-execution signed arithmetic needs explicit intermediate bounds",
+                    )
+                });
             }
         };
         focused
@@ -2675,6 +2701,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                     selected = false;
                     break;
                 }
+                let mut search = attempt::search_scope("checked outcome closure");
                 let (selected_scope, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| -> Result<_, ClickError> {
                     Ok(if let Some(premises) = restricted_premises {
                     let selected = (scope).driver().try_restricted_solve_closure(premises);
@@ -2686,7 +2713,11 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                     (scope).driver().try_solve_closure()?
                 })
                 });
-                let selected_scope = selected_scope.map_err(|error| error.with_check_observations(checks.clone()))?;
+                let selected_scope = match selected_scope {
+                    Ok(selected) => selected,
+                    Err(error) => return Err(error.with_check_observations(checks)
+                        .with_search_failures(search.finish())),
+                };
                 let Some(scope) = selected_scope else {
                     check_verification_deadline()?;
                     if !require_explicit_closers {
@@ -2740,8 +2771,9 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                         .unwrap_or_default();
                     return Err(scope.body().step_error(format!(
                         "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` search did not retain a complete proof for `{claim_label}`{detail}{transition_detail}",
-                    )).with_check_observations(checks));
+                    )).with_check_observations(checks).with_search_failures(search.finish()));
                 };
+                search.succeed();
                 let joined = scope.join()?;
                 direct_proof = joined;
             }

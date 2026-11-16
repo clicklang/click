@@ -441,7 +441,11 @@ fn a_registered_zero_index_permits_null_pointer_formation() {
     let result = pointer_offset_by_elements_paths(
         &ExecutionState::new(),
         PointerValue::new(Pointer::null(), ProgramType::Int32Pointer),
-        MachineTerm::MemoryLoad(memory, Box::new(address), LoadKind::Int32),
+        MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(address),
+            LoadKind::Int32,
+        ),
         4,
         false,
         false,

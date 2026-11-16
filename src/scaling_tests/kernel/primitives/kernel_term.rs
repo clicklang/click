@@ -370,7 +370,7 @@ fn retained_load_terms_grow_without_rewalking_states_or_prior_arithmetic() {
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for index in 0..size {
                     let read = MachineTerm::MemoryLoad(
-                        memory.clone(),
+                        ProgramPoint::at(&memory),
                         Box::new(Pointer::symbolic(Variable(993201 + index))),
                         LoadKind::Int32,
                     );
@@ -410,7 +410,7 @@ fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
             );
         }
         let raw = MachineTerm::MemoryLoad(
-            intern_memory(Memory::new()),
+            ProgramPoint::at(&(intern_memory(Memory::new()))),
             Box::new(Pointer {
                 block: PointerBlock::Symbolic(Variable(993499)),
                 offset,
@@ -442,7 +442,7 @@ fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let raw = MachineTerm::MemoryLoad(
-            intern_memory(Memory::new()),
+            ProgramPoint::at(&(intern_memory(Memory::new()))),
             Box::new(Pointer::symbolic(Variable(994110))),
             LoadKind::Int32,
         );
@@ -494,7 +494,7 @@ fn nested_read_address_import_is_linear_beside_unrelated_memory() {
             let mut raw = MachineTerm::constant(0);
             for _ in 0..depth {
                 raw = MachineTerm::MemoryLoad(
-                    memory.clone(),
+                    ProgramPoint::at(&memory),
                     Box::new(Pointer {
                         block: PointerBlock::Symbolic(Variable(996999)),
                         offset: PointerOffsetTerm::scaled_int32_node(raw, 4),
@@ -1033,7 +1033,11 @@ fn growing_common_boolean_comparisons_keep_operands_shared() {
             };
             KernelTermImport::default().machine(
                 format,
-                &MachineTerm::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32),
+                &MachineTerm::MemoryLoad(
+                    ProgramPoint::at(&memory),
+                    Box::new(pointer),
+                    crate::kernel::LoadKind::Int32,
+                ),
             )
         };
         let mut left = read("bool-left");

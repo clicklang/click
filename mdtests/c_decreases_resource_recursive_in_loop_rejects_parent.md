@@ -66,5 +66,5 @@ void repeat_node_loop(struct node* node) {
 ```
 
 ```expect
-fail: does not pass a direct contained child
+fail: must receive a retained child witness of the entry resource
 ```

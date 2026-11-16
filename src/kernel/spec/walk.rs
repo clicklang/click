@@ -36,11 +36,6 @@ impl<'a> SpecNode<'a> {
         use SpecNode as N;
         match self {
             N::Proposition(proposition) => match proposition {
-                SpecProposition::ChangesOnly { resources, .. } => {
-                    for r in resources {
-                        visit(N::Resource(r));
-                    }
-                }
                 SpecProposition::Comparison { left, right, .. } => {
                     visit(N::Expression(left));
                     visit(N::Expression(right));
@@ -103,6 +98,7 @@ impl<'a> SpecNode<'a> {
                 }
             },
             N::Expression(expression) => match expression {
+                SpecExpression::ObjectAddress(address) => visit(N::Expression(&address.base)),
                 SpecExpression::Value(_)
                 | SpecExpression::ProgramExpression(_)
                 | SpecExpression::ResourceField { .. } => {}

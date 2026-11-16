@@ -208,7 +208,7 @@ try_zero_witness_closure
 try_entry_existential_closure
 try_selected_entry_existential_closure
 try_carry_entry_conjunct
-try_signed_definedness_certificate
+try_signed_definedness_bounds
 try_unsigned_strict_fact
 try_open_for_missing_resource
 apply_planned_fact_transport
@@ -230,4 +230,10 @@ try_history_indexed_equalities
 try_integer_composition_using
 apply_integer_composition
 try_recorded_footprint_preservation
+try_signed_interval_using
+ordinary_integer_fact
+apply_signed_interval_composition
+
+apply_specialized_composition
+prepare_integer_read_domain
 try_single_theorem_using

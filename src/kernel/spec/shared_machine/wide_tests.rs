@@ -119,7 +119,7 @@ fn wide_reads_keep_type_and_state_in_casts_and_observations() {
         let roots = [before.clone(), after.clone()].map(|memory| {
             KernelTermImport::default().machine(
                 format,
-                &MachineTerm::MemoryLoad(memory, Box::new(address.clone()), kind),
+                &MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(address.clone()), kind),
             )
         });
         assert_ne!(roots[0], roots[1]);
@@ -138,7 +138,7 @@ fn wide_reads_keep_type_and_state_in_casts_and_observations() {
         let bad = KernelTermImport::default().machine(
             format,
             &MachineTerm::MemoryLoad(
-                before.clone(),
+                ProgramPoint::at(&before),
                 Box::new(address.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -177,7 +177,7 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                                 MachineTerm::Variable(Variable(id)),
                             ),
                             5 => MachineTerm::MemoryLoad(
-                                crate::kernel::intern_memory(Memory::new()),
+                                ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
                                 Box::new(Pointer::symbolic(Variable(id))),
                                 crate::kernel::LoadKind::of_type(format.program_type()).unwrap(),
                             ),
