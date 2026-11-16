@@ -399,7 +399,7 @@ impl CheckedReturnProposition {
         // As for checked function propositions, resource representation may
         // change during the proof. The program state and result may not.
         if outcome.is_exceptional
-            || !value.matches_native(outcome.result.as_ref())
+            || value != &outcome.result
             || outcome.state.locals() != state.locals()
             || outcome.state.aggregate_destination != state.aggregate_destination
             || !crate::kernel::api::contract_certification::memories_definitionally_equal(

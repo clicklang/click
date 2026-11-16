@@ -467,6 +467,28 @@ zero machine exports. All 2,152 API, specification, execution-value, expression
 and scaling checks passed, as did quality checks and five exact regular
 return/exception fixtures with zero fact-stability differences.
 
+### 9w Contract-result publication
+
+Checked outcomes retain their `StoredExecutionValue` through publication,
+reopening, return completion and Surface outcome successors. Fixed-state proof
+frames borrow either the native or retained result instead of requiring an
+export while the view is constructed. Storage comparisons keep their existing identity contract; outcome refresh
+keeps its exact native-payload comparison with an unchanged-root fast path.
+Publication ownership remains generative.
+
+Resource lowering, allocation checks, embedded Surface value syntax and native
+fixed-state lowering still use explicit selected compatibility readings. These
+readings are not additional stored copies; a lowering operation reuses its
+selected native result view. No proof rules or search policy change.
+
+Focused coverage includes return/exception publication, pointer metadata and
+native identity parity, publication ownership, and constant deterministic work
+with zero machine exports for growing published operands and borrowed frames.
+All 3,182 selected API, proof, specification, execution and scaling checks
+passed. Two wall-clock outliers passed isolated serial checks under the unchanged
+30-second cap; no test or budget was relaxed. Five exact regular return/exception
+fixtures passed with zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

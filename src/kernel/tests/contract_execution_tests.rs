@@ -6365,7 +6365,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             let core = OutcomeProofCore {
                 publication: None,
                 identity: OutcomeIdentity::fresh(),
-                result: Arc::new(value.clone().into_native()),
+                result: value.clone(),
                 store_consequences_available: true,
                 state: state.as_ref().clone().into(),
                 is_exceptional: false,
@@ -6412,7 +6412,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                     OutcomeProofCore {
                         publication: None,
                         identity: OutcomeIdentity::fresh(),
-                        result: Arc::new(value.clone().into_native()),
+                        result: value.clone(),
                         store_consequences_available: true,
                         state: state.as_ref().clone().into(),
                         is_exceptional: false,

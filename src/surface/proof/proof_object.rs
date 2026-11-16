@@ -2313,13 +2313,13 @@ impl Proof<'_> {
             _ => Vec::new(),
         };
         let result = match self.context.as_ref() {
-            ProofContext::FixedState(context) => context.fixed_state.result,
+            ProofContext::FixedState(context) => context.fixed_state.native_result(),
             _ => self
                 .outcome_fixed_state_view()
-                .and_then(|view| view.fixed_state.result),
+                .and_then(|view| view.fixed_state.native_result()),
         };
-        source_types.extend(result.and_then(|value| {
-            diagnostic_value_variable(value).map(|variable| (variable, value.program_type()))
+        source_types.extend(result.as_deref().and_then(|value| {
+            diagnostic_value_variable(&value).map(|variable| (variable, value.program_type()))
         }));
         let source_names = match self.context.as_ref() {
             ProofContext::Pure(context) => {
@@ -2424,7 +2424,7 @@ impl Proof<'_> {
             history,
             None,
             source_types,
-            result.cloned(),
+            result.map(std::borrow::Cow::into_owned),
             Vec::new(),
             None,
             self.proof_context_description(),
@@ -3202,9 +3202,9 @@ impl<'a> Proof<'a> {
     }
 
     #[cfg(test)]
-    fn outcome_result(&self) -> Option<&ProgramValue> {
+    fn outcome_result(&self) -> Option<&crate::kernel::StoredExecutionValue> {
         match self.focused_obligation()? {
-            Obligation::FunctionOutcome(goal) => Some(goal.data.core.result.as_ref()),
+            Obligation::FunctionOutcome(goal) => Some(&goal.data.core.result),
             _ => None,
         }
     }
