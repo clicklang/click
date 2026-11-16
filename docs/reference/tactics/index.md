@@ -2728,6 +2728,15 @@ names are in scope, and:
   equation just added. After that only `known`, `solve`, or `normalize`
   may follow.
 - At a C execution frontier, adds the equation and leaves the frontier.
+- For an `Integer` range-fold body, a decided empty range exposes its initial
+  value; a decided nonempty range exposes its append-last-cell equation over
+  the same function at the predecessor endpoint. Any missing law guards are
+  ordinary obligations, proved by the implicit solver and retained by expansion.
+  The append form has the same endpoint restrictions as `peel` below. When the
+  range case is undecided or that form cannot name a predecessor call, ordinary
+  unfolding retains the raw defining equation; split the range case or prove
+  the needed equation explicitly. A goal that already states the defining
+  equation continues to unfold that definition directly.
 
 **Outside it**, with what to write instead:
 
@@ -2736,8 +2745,6 @@ names are in scope, and:
 - A call whose arguments mention a quantifier's binder before it is
   introduced: `intro()` first.
 - More than one layer: `unfold` again at the exposed call.
-- A function whose body is a range fold over a symbolic range, or a fold at
-  constant endpoints that `normalize` should evaluate: `peel`.
 - A `using` list: `unfold` takes none; write `peel(f(args)) using { ... }`.
 
 The refreshed goal can also come out further simplified, as the lowering of
@@ -2749,10 +2756,11 @@ goal needs it.
 
 An unknown function ("unknown pure function `h` in `unfold`") or an argument
 count mismatch fails; an argument that does not lower at this point fails with
-"could not lower defining equation". Expansion is unchanged, and profiling
-charges the arguments and one body layer.
+"could not lower defining equation". Expansion retains any generated guard proofs before the checked `unfold`;
+replay needs no implicit solver. Profiling charges the arguments, one body
+layer, and any implicit guard proofs.
 
-**Checked examples:** [`pure_function_unfold.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_function_unfold.md), [`unfold_rewrites_each_occurrence_of_the_exact_call.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_rewrites_each_occurrence_of_the_exact_call.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`a_step_after_an_unfold_that_closed_the_goal_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_after_an_unfold_that_closed_the_goal_is_refused.md), [`unfold_function_after_integer_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_after_integer_intro.md), [`unfold_function_integer_shadow.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_integer_shadow.md), [`unfold_using_names_peel.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_using_names_peel.md)
+**Checked examples:** [`unfold_fold_empty_uses_ordinary_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_empty_uses_ordinary_obligations.md), [`unfold_fold_int32_uses_ordinary_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_fold_int32_uses_ordinary_obligations.md), [`pure_function_unfold.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_function_unfold.md), [`unfold_rewrites_each_occurrence_of_the_exact_call.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_rewrites_each_occurrence_of_the_exact_call.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`a_step_after_an_unfold_that_closed_the_goal_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_after_an_unfold_that_closed_the_goal_is_refused.md), [`unfold_function_after_integer_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_after_integer_intro.md), [`unfold_function_integer_shadow.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_function_integer_shadow.md), [`unfold_using_names_peel.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_using_names_peel.md)
 
 ### Peeling a pure function
 

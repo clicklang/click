@@ -4105,3 +4105,33 @@ fn c_declaration_references_raise_expand_and_recheck() {
         verify_c_sources(&expanded, &sources).expect("declaration reference expansion");
     }
 }
+
+#[test]
+fn ordinary_fold_unfold_expands_with_replayable_guard_proofs() {
+    let source = r#"
+function tally(lo: int32, hi: int32) -> Integer {
+    (lo..hi).fold(0, |acc, k| { acc + 1 })
+}
+theorem append_tally(lo: int32, hi: int32) {
+    requires 0 <= lo;
+    requires lo < hi;
+    ensures tally(lo, hi) == tally(lo, hi - 1) + 1 by {
+        unfold(tally(lo, hi));
+        normalize();
+    }
+}
+"#;
+    let expanded = expand_c_claim_source_by_label(source, &[], "append_tally.ensures_0")
+        .expect("ordinary unfolding proves its fold guards");
+    assert!(!expanded.contains("peel("), "{expanded}");
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+        .expect("the generated guard proofs replay without search");
+    let invalid = expanded.replacen(
+        "ensures tally(lo, hi) == tally(lo, hi - 1) + 1",
+        "ensures tally(lo, hi) == tally(lo, hi - 1) + 2",
+        1,
+    );
+    assert_ne!(expanded, invalid);
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&invalid, &[]))
+        .expect_err("a different last-step value must be rejected");
+}

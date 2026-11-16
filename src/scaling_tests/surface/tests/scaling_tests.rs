@@ -11134,3 +11134,44 @@ fn nested_call_results_scale_with_the_statements_that_read_them() {
         "nested call results grew per statement: {samples:?}"
     );
 }
+
+#[test]
+fn ordinary_fold_unfold_checks_only_selected_guards() {
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let facts = (0..size)
+            .map(|index| format!("requires unrelated({index});\n"))
+            .collect::<String>();
+        let source = format!(
+            r#"
+predicate unrelated(n: int32) {{ n >= 0 }}
+function tally(lo: int32, hi: int32) -> Integer {{
+    (lo..hi).fold(0, |acc, k| {{ acc + 1 }})
+}}
+theorem append_tally(lo: int32, hi: int32) {{
+    {facts}
+    requires 0 <= lo;
+    requires lo < hi;
+    ensures tally(lo, hi) == tally(lo, hi - 1) + 1 by {{
+        unfold(tally(lo, hi));
+        normalize();
+    }}
+}}
+"#
+        );
+        let (result, work) =
+            crate::instrumentation::collect_tactic_work(|| verify_click_theorems(&source));
+        result.unwrap();
+        let unfold = work
+            .iter()
+            .find(|sample| sample.tactic.tactic_name == "unfold")
+            .expect("the selected unfolding ran")
+            .work;
+        samples.push((size, unfold));
+    }
+    let baseline = samples[0].1;
+    assert!(
+        samples.iter().all(|(_, work)| *work <= baseline * 2 + 64),
+        "unrelated facts grew selected fold checking: {samples:?}"
+    );
+}

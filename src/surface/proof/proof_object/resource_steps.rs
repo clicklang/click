@@ -1486,14 +1486,17 @@ impl<'a> Proof<'a> {
             ))
         })?;
 
-        // `peel(f(args)) using { ... }` opens one layer too, but the layer
-        // it opens is the range-fold law the listed guards select, stated
-        // over `f(args)` rather than over the fold the declaration writes.
-        // Its single fact is that equation, and the goal is refreshed through
-        // it; the raw defining equation stays inside the step, where the
-        // kernel law consumes it.
-        if let Some(premises) = premises {
-            let derived = self.derive_function_range_fold_equation(
+        // A decided range exposes its empty or append equation over the
+        // named function. Plain unfold generates ordinary guard obligations;
+        // peel retains its exact, explicitly selected evidence semantics.
+        let fold_equation = if premises.is_some()
+            || (matches!(&equality,
+                Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, folded), true)
+                    if matches!(folded.as_ref(), IntegerTerm::RangeFold { .. }))
+                && !self.goal().is_some_and(|goal| {
+                    crate::kernel::proof::propositions_are_alpha_equal(goal, &equality)
+                })) {
+            self.derive_function_range_fold_equation(
                 application,
                 &definition,
                 premises,
@@ -1505,7 +1508,11 @@ impl<'a> Proof<'a> {
                 fixed_state,
                 spec_definitions,
                 &parameter_pointer_element_widths,
-            )?;
+            )?
+        } else {
+            None
+        };
+        if let Some(derived) = fold_equation {
             let mut facts = self.facts().clone();
             let added = (!facts.contains_top_level(&derived))
                 .then(|| derived.clone())
@@ -1783,21 +1790,16 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// The `using` half of a pure-function unfold: the range-fold law the
-    /// listed guards select, restated over the function application by
-    /// `crate::kernel::prove_integer_range_fold_over_equal_terms`.
-    ///
-    /// Returns the facts to publish beside the defining equation: the
-    /// predecessor instance of that equation for the append form, then the
-    /// law's conclusion. Every premise the kernel theorem carries -- the two
-    /// defining equations and the law's own guards -- is discharged here
-    /// against exactly the listed evidence; nothing is searched.
+    /// State one fold equation over the selected call. Explicit peel evidence
+    /// selects its law as before. Plain unfold selects a decided range case
+    /// and exposes its guards to the ordinary obligation driver. With no
+    /// decided case it retains the raw defining equation.
     #[allow(clippy::too_many_arguments)]
     fn derive_function_range_fold_equation(
         &self,
         application: &ClickFunctionApplication,
         definition: &ClickFunctionDefinition,
-        premises: &[ClickProposition],
+        premises: Option<&[ClickProposition]>,
         equality: &Proposition,
         values: &BTreeMap<String, ProgramValue>,
         array_refs: &ClickArrayRefs,
@@ -1809,7 +1811,7 @@ impl<'a> Proof<'a> {
         fixed_state: FixedStateFrame<'_>,
         spec_definitions: SpecDefinitions<'_>,
         parameter_pointer_element_widths: &BTreeMap<String, u32>,
-    ) -> Result<Proposition, ClickError> {
+    ) -> Result<Option<Proposition>, ClickError> {
         let name = &application.name;
         let lower =
             |proposition: &ClickProposition, what: &str| -> Result<Proposition, ClickError> {
@@ -1838,7 +1840,7 @@ impl<'a> Proof<'a> {
 
         // Exactly the listed premises, each of which must already hold.
         let mut available = Vec::new();
-        for premise in premises {
+        for premise in premises.into_iter().flatten() {
             let lowered = lower(premise, "a `peel ... using` premise")?;
             if !self.facts().listed_premise_available(&lowered, &[], false) {
                 return Err(self.step_error(format!(
@@ -1867,7 +1869,7 @@ impl<'a> Proof<'a> {
             // are constants, so the fold is its initial value or one step.
             // The defining equation is then the law itself, with no guard
             // left to discharge.
-            return Ok(equality.clone());
+            return Ok(Some(equality.clone()));
         };
 
         let empty = crate::kernel::prove_integer_range_fold_over_equal_terms(
@@ -1885,16 +1887,78 @@ impl<'a> Proof<'a> {
             ))
         })?;
         available.push(equality.clone());
+        let automatic_case = if premises.is_none() {
+            let Proposition::Implies(guard, _) = empty.proposition() else {
+                return Err(self.step_error("the Integer fold law must be guarded"));
+            };
+            let mut required = Vec::new();
+            collect_conjunctive_premises(guard, &mut required);
+            let Some(Proposition::ConditionIs(condition, expected)) =
+                required.into_iter().find(|premise| *premise != equality)
+            else {
+                return Err(self.step_error("the empty fold law must have a range guard"));
+            };
+            match self.facts().assumptions().decide(condition) {
+                Some(value) => Some(value == *expected),
+                None => return Ok(None),
+            }
+        } else {
+            None
+        };
+        if automatic_case == Some(true) {
+            let Proposition::Implies(guard, conclusion) = empty.proposition() else {
+                unreachable!("the selected empty law is guarded")
+            };
+            let mut required = Vec::new();
+            collect_conjunctive_premises(guard, &mut required);
+            for premise in required {
+                if premise != equality {
+                    self.require_function_fold_guard(premise)?;
+                }
+            }
+            return Ok(Some(conclusion.as_ref().clone()));
+        }
         let mut empty_missing = Vec::new();
-        if discharge_restated_fold_law(&empty, &available, &mut empty_missing) {
+        if premises.is_some() && discharge_restated_fold_law(&empty, &available, &mut empty_missing)
+        {
             let Proposition::Implies(_, conclusion) = empty.proposition() else {
                 return Err(
                     self.step_error("the Integer fold law did not produce a guarded theorem")
                 );
             };
-            return Ok(conclusion.as_ref().clone());
+            return Ok(Some(conclusion.as_ref().clone()));
         }
 
+        if premises.is_none() {
+            // Folds that capture their end, or do not have a machine endpoint
+            // parameter, still admit their ordinary defining equation. Check
+            // this source shape explicitly; do not hide a failed kernel law.
+            let fold_body = definition
+                .body()
+                .map(lambdas::reduce_head_fully)
+                .transpose()
+                .map_err(|message| self.step_error(message))?;
+            let Some(ContractExpression::RangeFold {
+                start,
+                end,
+                initial,
+                body,
+                ..
+            }) = fold_body.as_deref()
+            else {
+                return Ok(None);
+            };
+            let Some(end_parameter) = fold_end_parameter_name(end) else {
+                return Ok(None);
+            };
+            if matches!(index, crate::kernel::IntegerRangeFoldIndex::Integer { .. })
+                || [start.as_ref(), initial.as_ref(), body.as_ref()]
+                    .into_iter()
+                    .any(|part| contract_expression_reads_binding(part, end_parameter))
+            {
+                return Ok(None);
+            }
+        }
         let prior =
             self.function_range_fold_predecessor_application(application, definition, whole)?;
         let append = crate::kernel::prove_integer_range_fold_over_equal_terms(
@@ -1935,7 +1999,9 @@ impl<'a> Proof<'a> {
                 predecessor_equality = true;
                 continue;
             }
-            if !exact_fact_is_available(premise, &available)
+            if premises.is_none() {
+                self.require_function_fold_guard(premise)?;
+            } else if !exact_fact_is_available(premise, &available)
                 && !matches!(normalize_proposition(premise), NormalizedProposition::True)
             {
                 append_missing.push(premise.clone());
@@ -1957,7 +2023,21 @@ impl<'a> Proof<'a> {
                 "the Integer fold append law over `{name}` did not state its predecessor endpoint"
             )));
         }
-        Ok(append_conclusion.as_ref().clone())
+        Ok(Some(append_conclusion.as_ref().clone()))
+    }
+
+    /// One explicit law guard, checked from its exact fact key or emitted
+    /// as an ordinary obligation. No premise or state history is searched.
+    fn require_function_fold_guard(&self, guard: &Proposition) -> Result<(), ClickError> {
+        if self.facts().listed_premise_available(guard, &[], false) {
+            return Ok(());
+        }
+        crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+            self.step_error("`unfold` has an unproved range-fold guard")
+                .with_unresolved_requirement(
+                    &crate::kernel::ProofObligation::verification_condition(guard.clone()),
+                ),
+        )
     }
 
     /// `f(args)` with the argument that supplies the fold's end replaced by
