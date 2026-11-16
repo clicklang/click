@@ -18539,6 +18539,9 @@ int twice(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
 }
+theorem twice_doubles() {
+    ensures Doubling(&twice) by { unfold(Doubling); solve(); }
+}
 int stored(int (*f)(int), int x) {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
@@ -18552,7 +18555,7 @@ int relay(int (*f)(int), int x) {
 int caller(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-}
+} by { apply(twice_doubles()); }
 "#;
 
 // A function-pointer local holds `&twice` or a parameter's pointer, a call
@@ -18587,7 +18590,7 @@ fn stored_and_forwarded_cpp_function_pointers_keep_their_contract() {
         ("stored", "cannot verify call through function pointer `g`"),
         (
             "relay",
-            "is missing prerequisite (precondition clause 1 of `stored`)",
+            "requires an explicit prerequisite proof (precondition clause 1 of `stored`)",
         ),
     ] {
         let hostile = STORED_FUNCTION_POINTER_SIDECAR.replace(
@@ -18601,8 +18604,8 @@ fn stored_and_forwarded_cpp_function_pointers_keep_their_contract() {
         assert!(error.message().contains(expected), "{}", error.message());
     }
     let weak_twice = STORED_FUNCTION_POINTER_SIDECAR.replacen(
-        "    ensures result == x + x;\n}\nint stored",
-        "    ensures result >= 0;\n}\nint stored",
+        "    ensures result == x + x;\n}\ntheorem twice_doubles",
+        "    ensures result >= 0;\n}\ntheorem twice_doubles",
         1,
     );
     assert_ne!(weak_twice, STORED_FUNCTION_POINTER_SIDECAR);
@@ -18612,7 +18615,7 @@ fn stored_and_forwarded_cpp_function_pointers_keep_their_contract() {
     assert!(
         error
             .message()
-            .contains("does not satisfy named contract `Doubling`"),
+            .contains("contract-refinement proof does not establish `Doubling(&twice)`"),
         "{}",
         error.message()
     );

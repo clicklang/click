@@ -1685,16 +1685,14 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     let (verification, profile) =
         instrumentation::collect(|| verify_program_prepared_project(&project, &imported));
     verification.expect("verify the exact inclusive range contract");
-    let finished_claims = profile
-        .iter()
-        .filter_map(|event| match event {
-            VerificationEvent::ClaimFinished { key, .. } => Some(key.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    // Whole-contract proof checking reports completion of the function; it
+    // does not run the compatibility per-claim certification pass.
     assert!(
-        !finished_claims.is_empty(),
-        "profile must observe checked claims"
+        profile.iter().any(|event| matches!(event,
+            VerificationEvent::FunctionFinished { name, .. }
+                if display_source_names(name) == "MoneyRange"
+        )),
+        "profile must observe the checked MoneyRange function"
     );
     assert!(
         profile
