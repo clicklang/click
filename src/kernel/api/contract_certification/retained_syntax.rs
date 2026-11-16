@@ -1,8 +1,10 @@
 //! Allocation-independent written syntax at the certification boundary.
-//! No arithmetic observation, fact lookup, read resolution, or DAG export.
+//! No arithmetic observation, fact lookup, or read resolution. Selected native
+//! adapters preserve the existing certification admission policy.
 use super::*;
 use crate::kernel::{KernelTermNode as N, PureFunctionArgument as A};
 use std::collections::HashSet;
+mod pointers;
 
 #[derive(Clone, Copy)]
 enum CallArgument<'a> {
@@ -307,95 +309,6 @@ impl Comparison {
         true
     }
 
-    fn pointer(&mut self, a: &crate::kernel::Pointer, b: &crate::kernel::Pointer) -> bool {
-        use crate::kernel::{PointerBlock as B, PointerOffsetTerm as O};
-        let blocks = match (&a.block, &b.block) {
-            (B::PureFunctionApplication(a), B::PureFunctionApplication(b)) => {
-                a.name() == b.name()
-                    && a.arguments().len() == b.arguments().len()
-                    && a.arguments()
-                        .iter()
-                        .zip(b.arguments())
-                        .all(|(a, b)| self.argument(a, b))
-            }
-            _ => a.block == b.block,
-        };
-        if !blocks {
-            return false;
-        }
-        let mut pending = vec![(&a.offset, &b.offset)];
-        while let Some((a, b)) = pending.pop() {
-            crate::instrumentation::record_deterministic_work(1);
-            match (a, b) {
-                (O::Constant(a), O::Constant(b)) if a == b => {}
-                (O::Variable(a), O::Variable(b)) if a == b => {}
-                (O::Add(al, ar), O::Add(bl, br)) => {
-                    pending.extend([(al.as_ref(), bl.as_ref()), (ar.as_ref(), br.as_ref())])
-                }
-                (
-                    O::Int32Scaled {
-                        value: a,
-                        byte_width: aw,
-                    },
-                    O::Int32Scaled {
-                        value: b,
-                        byte_width: bw,
-                    },
-                ) if aw == bw => {
-                    if a.ty() != b.ty() || !self.machine(a.operand_view(), b.operand_view()) {
-                        return false;
-                    }
-                }
-                (
-                    O::Int64Scaled {
-                        value: a,
-                        byte_width: aw,
-                        unsigned: au,
-                    },
-                    O::Int64Scaled {
-                        value: b,
-                        byte_width: bw,
-                        unsigned: bu,
-                    },
-                ) if aw == bw && au == bu => {
-                    if a.ty() != b.ty() || !self.machine(a.operand_view(), b.operand_view()) {
-                        return false;
-                    }
-                }
-                _ => return false,
-            }
-        }
-        true
-    }
-
-    fn pointer_value(
-        &mut self,
-        a: &crate::kernel::PointerValue,
-        b: &crate::kernel::PointerValue,
-    ) -> bool {
-        if !a.retained_nonaddress_metadata_eq(b) {
-            return false;
-        }
-        if !self.pointer(a.pointer(), b.pointer())
-            || !self.pointer(a.designation(), b.designation())
-        {
-            return false;
-        }
-        match (a.opaque_extent(), b.opaque_extent()) {
-            (Some(a), Some(b)) if self.pointer(a, b) => {}
-            (None, None) => {}
-            _ => return false,
-        }
-        match (a.extent(), b.extent()) {
-            (Some(a), Some(b)) => {
-                self.pointer(&a.start, &b.start)
-                    && self.machine(Operand::Legacy(&a.width), Operand::Legacy(&b.width))
-            }
-            (None, None) => true,
-            _ => false,
-        }
-    }
-
     fn call_argument(&mut self, left: CallArgument<'_>, right: CallArgument<'_>) -> bool {
         use CallArgument::{Native, Shared};
         if let Shared(root) = left
@@ -408,21 +321,33 @@ impl Comparison {
         {
             return self.call_argument(left, Native(value.value()));
         }
-        // These argument carriers retain their established native admission
-        // policy (including parameter-value refusal) at this selected boundary.
+        // Only literals and raw C Boolean variables have an admitted word
+        // reading here. Other logical roots become native BoolCast syntax,
+        // which this route refuses; do not export their condition to refuse it.
         if let Shared(root) = left
-            && let Some(argument) = root
-                .pointer_argument_native()
-                .or_else(|| root.boolean_argument_native())
+            && matches!(
+                root.ty(),
+                KernelType::Bool | KernelType::Program(ProgramType::Bool)
+            )
         {
-            return self.call_argument(Native(argument), right);
+            let Some(word) = boolean_argument_word(root) else {
+                return false;
+            };
+            return self.call_argument(Native(&A::Value(ProgramValue::Bool(word))), right);
         }
         if let Shared(root) = right
-            && let Some(argument) = root
-                .pointer_argument_native()
-                .or_else(|| root.boolean_argument_native())
+            && matches!(
+                root.ty(),
+                KernelType::Bool | KernelType::Program(ProgramType::Bool)
+            )
         {
-            return self.call_argument(left, Native(argument));
+            let Some(word) = boolean_argument_word(root) else {
+                return false;
+            };
+            return self.call_argument(left, Native(&A::Value(ProgramValue::Bool(word))));
+        }
+        if let Some(equal) = self.pointer_arguments(left, right) {
+            return equal;
         }
         match (left, right) {
             (Native(a), Native(b)) => self.argument(a, b),
@@ -430,7 +355,7 @@ impl Comparison {
                 self.common_algebraic(a, b)
             }
             (Shared(a), Native(A::Algebraic(b))) | (Native(A::Algebraic(b)), Shared(a)) => {
-                self.common_algebraic(a, &crate::kernel::KernelTermImport::default().algebraic(b))
+                self.mixed_algebraic(a, b)
             }
             (Shared(a), Shared(b))
                 if a.ty() == b.ty()
@@ -458,6 +383,30 @@ impl Comparison {
         }
     }
 
+    fn mixed_algebraic(&mut self, shared: &KernelTerm, native: &AlgebraicTerm) -> bool {
+        use crate::kernel::AlgebraicTermNode as T;
+        crate::instrumentation::record_deterministic_work(1);
+        if shared.ty() != &KernelType::Algebraic(native.algebraic_type.clone()) {
+            return false;
+        }
+        match (shared.node(), &native.node) {
+            (N::Variable(a), T::Variable(b)) => a == b,
+            (N::AlgebraicCall(_), T::PureFunctionApplication { .. })
+            | (N::AlgebraicRead(_), T::MemoryLoad { .. }) => {
+                // Mixed call admission already compares imported arguments as
+                // common roots, including their exact shared identities. Keep
+                // that policy at this selected adapter, not native Eq/Ord.
+                self.common_algebraic(
+                    shared,
+                    &crate::kernel::KernelTermImport::default().algebraic(native),
+                )
+            }
+            // Constructors, matches and conditionals are not admitted here.
+            // Refusal must not import all their fields, arms or branches.
+            _ => false,
+        }
+    }
+
     fn common_algebraic(&mut self, a: &KernelTerm, b: &KernelTerm) -> bool {
         if a.ty() != b.ty() {
             return false;
@@ -481,11 +430,7 @@ impl Comparison {
             (N::AlgebraicRead(a), N::AlgebraicRead(b)) => {
                 let (am, ap) = a.parts();
                 let (bm, bp) = b.parts();
-                am.arena_id() == bm.arena_id()
-                    && self.pointer(
-                        &ap.export().expect("read address"),
-                        &bp.export().expect("read address"),
-                    )
+                am.arena_id() == bm.arena_id() && self.shared_addresses(ap, bp)
             }
             _ => false,
         }
@@ -549,6 +494,21 @@ impl Comparison {
     }
 }
 
+fn boolean_argument_word(root: &KernelTerm) -> Option<MachineTerm> {
+    if let Some(value) = crate::kernel::BooleanOperandView::Shared(root).constant() {
+        return Some(MachineTerm::bool_cast(
+            MachineIntegerType::UInt8,
+            ConditionTerm::Constant(value),
+        ));
+    }
+    if root.ty() == &KernelType::Program(ProgramType::Bool)
+        && let N::Variable(variable) = root.node()
+    {
+        return Some(MachineTerm::Variable(*variable));
+    }
+    None
+}
+
 fn numeric_call(view: Operand<'_>) -> Option<(&str, Vec<CallArgument<'_>>)> {
     match view {
         Operand::Shared(root) => match root.node() {
@@ -598,6 +558,287 @@ fn numeric_conversion(view: Operand<'_>) -> Option<((ProgramType, ProgramType), 
 mod tests {
     use super::*;
     use crate::kernel::{KernelTermExport, VerificationSession};
+
+    #[test]
+    fn shared_pointer_certification_preserves_complete_metadata_and_extent_admission() {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        use crate::kernel::{
+            IntegerTerm, ObjectTypeEvidence, Pointer, PointerValue, SharedPointerValue,
+            SubobjectExtent,
+        };
+        let _session = VerificationSession::enter();
+        let base = PointerValue::new(
+            Pointer::symbolic(Variable(999980)),
+            ProgramType::Int32Pointer,
+        );
+        let class = CAccessClass::Scalar(CScalarClass::Int);
+        let extent = SubobjectExtent {
+            start: base.pointer().clone(),
+            width: MachineTerm::constant(4),
+        };
+        let values = vec![
+            base.clone(),
+            base.clone()
+                .with_pointee_constant(true)
+                .with_pointee_constant(false),
+            base.clone().with_pointee_constant(true),
+            base.clone().with_pointee_volatile(true),
+            base.clone().with_type(ProgramType::VoidPointer),
+            base.clone()
+                .with_designation(std::sync::Arc::new(Pointer::symbolic(Variable(999979)))),
+            base.clone()
+                .with_opaque_extent(Some(std::sync::Arc::new(Pointer::symbolic(Variable(
+                    999978,
+                ))))),
+            base.clone().with_extent(Some(extent)),
+            base.clone().with_extent(Some(SubobjectExtent {
+                start: base.pointer().clone(),
+                width: MachineTerm::IntegerToMachine {
+                    destination: MachineIntegerType::Int32,
+                    value: IntegerTerm::Variable(Variable(999977)).into(),
+                },
+            })),
+            base.clone()
+                .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(
+                    class.clone(),
+                    3,
+                    1,
+                    false,
+                ))),
+            base.clone()
+                .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(class, 3, 2, false))),
+            base.clone()
+                .with_declared_object_class(Some(CAccessClass::Scalar(CScalarClass::Short))),
+            base.with_local_reference(
+                crate::kernel::loans::LocalScalarReference::fresh_for_payload_test(),
+            ),
+        ];
+        for a in &values {
+            for b in &values {
+                let expected = Comparison::default().pointer_value(a, b);
+                let (ar, br) = (
+                    KernelTerm::shared_pointer_value(SharedPointerValue::import(a)),
+                    KernelTerm::shared_pointer_value(SharedPointerValue::import(b)),
+                );
+                let (an, bn) = (
+                    A::Value(ProgramValue::Pointer(a.clone())),
+                    A::Value(ProgramValue::Pointer(b.clone())),
+                );
+                for (a, b) in [
+                    (CallArgument::Shared(&ar), CallArgument::Shared(&br)),
+                    (CallArgument::Shared(&ar), CallArgument::Native(&bn)),
+                    (CallArgument::Native(&an), CallArgument::Shared(&br)),
+                ] {
+                    assert_eq!(Comparison::default().call_argument(a, b), expected);
+                }
+            }
+        }
+        // A shared extent must not acquire the numeric identity shortcut.
+        assert!(!Comparison::default().pointer_value(&values[8], &values[8]));
+    }
+
+    #[test]
+    fn shared_captured_pointer_certification_preserves_memory_state() {
+        use crate::kernel::{Memory, Pointer, PointerValue, SharedPointerValue};
+        let _session = VerificationSession::enter();
+        let memory = Memory::new();
+        let changed = memory.clone().store(
+            Pointer::null(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        );
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(999976)),
+            ProgramType::Int32Pointer,
+        );
+        let root = KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer));
+        let shared = |memory: &Memory| {
+            KernelTerm::shared_array_reference(
+                crate::kernel::intern_memory_ref(memory),
+                root.clone(),
+                ProgramType::Int32,
+            )
+        };
+        let a = shared(&memory);
+        for (memory, expected) in [(&memory, true), (&changed, false)] {
+            let b = shared(memory);
+            let native = A::ArrayRef {
+                memory: memory.clone(),
+                pointer: ProgramValue::Pointer(pointer.clone()),
+                element_type: ProgramType::Int32,
+            };
+            assert_eq!(
+                Comparison::default()
+                    .call_argument(CallArgument::Shared(&a), CallArgument::Shared(&b)),
+                expected
+            );
+            assert_eq!(
+                Comparison::default()
+                    .call_argument(CallArgument::Shared(&a), CallArgument::Native(&native)),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn shared_algebraic_read_certification_preserves_address_and_state_identity() {
+        use crate::kernel::{
+            AlgebraicTermNode, AlgebraicType, Memory, Pointer, SharedPointerAddress,
+        };
+        let _session = VerificationSession::enter();
+        let memory = crate::kernel::intern_memory_ref(&Memory::new());
+        let changed = crate::kernel::intern_memory_ref(&memory.memory().clone().store(
+            Pointer::null(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        ));
+        let pointer = Pointer::symbolic(Variable(999974));
+        let other = Pointer::symbolic(Variable(999973));
+        let ty = AlgebraicType::parameter("T".into());
+        let root = KernelTerm::algebraic_read(
+            ty.clone(),
+            memory.clone(),
+            SharedPointerAddress::import(&pointer),
+        );
+        for (state, address, expected) in [
+            (&memory, &pointer, true),
+            (&changed, &pointer, false),
+            (&memory, &other, false),
+        ] {
+            let right = KernelTerm::algebraic_read(
+                ty.clone(),
+                state.clone(),
+                SharedPointerAddress::import(address),
+            );
+            let native = AlgebraicTerm {
+                algebraic_type: ty.clone(),
+                node: AlgebraicTermNode::MemoryLoad {
+                    memory: state.clone(),
+                    pointer: Box::new(address.clone()),
+                },
+            };
+            assert_eq!(
+                Comparison::default().common_algebraic(&root, &right),
+                expected
+            );
+            assert_eq!(
+                Comparison::default().mixed_algebraic(&root, &native),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn shared_pointer_opaque_indices_keep_the_native_refusal() {
+        use crate::kernel::{
+            IntegerTerm, KernelPointerOffset, Pointer, PointerValue, SharedPointerAddress,
+            SharedPointerValue,
+        };
+        let _session = VerificationSession::enter();
+        let native = MachineTerm::PureFunctionApplication {
+            name: "opaque_index".into(),
+            arguments: vec![MachineTerm::IntegerToMachine {
+                destination: MachineIntegerType::Int32,
+                value: IntegerTerm::Variable(Variable(999975)).into(),
+            }],
+        };
+        let index = KernelTerm::retained_native_machine_operand(MachineIntegerType::Int32, &native);
+        assert!(matches!(index.node(), N::Legacy(_)));
+        let base = SharedPointerValue::import(&PointerValue::new(
+            Pointer::null(),
+            ProgramType::Int32Pointer,
+        ));
+        let mut value = base.node().clone();
+        value.address = SharedPointerAddress::new(
+            value.address.node().block.clone(),
+            KernelPointerOffset::Int32Scaled {
+                value: index,
+                byte_width: 4,
+            }
+            .into_shared()
+            .unwrap(),
+        );
+        value.designation = value.address.clone();
+        let root = KernelTerm::shared_pointer_value(SharedPointerValue::new(value));
+        assert!(
+            !Comparison::default()
+                .call_argument(CallArgument::Shared(&root), CallArgument::Shared(&root))
+        );
+    }
+
+    #[test]
+    fn boolean_argument_certification_keeps_literal_raw_word_and_logical_admission() {
+        let _session = VerificationSession::enter();
+        let mut cases = Vec::new();
+        for condition in [
+            ConditionTerm::Constant(false),
+            ConditionTerm::Constant(true),
+            ConditionTerm::Variable(Variable(999983)),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(MachineTerm::Variable(Variable(999983))),
+                right: Box::new(MachineTerm::constant(4)),
+            },
+            ConditionTerm::BoolIf {
+                condition: Box::new(ConditionTerm::Variable(Variable(999983))),
+                then_condition: Box::new(ConditionTerm::Constant(true)),
+                else_condition: Box::new(ConditionTerm::Constant(false)),
+            },
+        ] {
+            let root = crate::kernel::KernelTermImport::default().condition(&condition);
+            let native = A::Value(ProgramValue::Bool(MachineTerm::bool_cast(
+                MachineIntegerType::UInt8,
+                condition,
+            )));
+            cases.push((root, native));
+        }
+        cases.push((
+            KernelTerm::variable(KernelType::Program(ProgramType::Bool), Variable(999983)),
+            A::Value(ProgramValue::Bool(MachineTerm::Variable(Variable(999983)))),
+        ));
+        let raw = A::Value(ProgramValue::Bool(MachineTerm::Constant {
+            format: MachineIntegerType::UInt8,
+            bits: 2,
+        }));
+        cases.push((
+            crate::kernel::KernelTermImport::default().argument(&raw),
+            raw,
+        ));
+        for (root, native) in cases {
+            let expected = Comparison::default().argument(&native, &native);
+            let exports = KernelTermExport::machine_export_count();
+            for (left, right) in [
+                (CallArgument::Shared(&root), CallArgument::Native(&native)),
+                (CallArgument::Native(&native), CallArgument::Shared(&root)),
+                (CallArgument::Shared(&root), CallArgument::Shared(&root)),
+            ] {
+                assert_eq!(Comparison::default().call_argument(left, right), expected);
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    #[test]
+    fn mixed_algebraic_call_certification_preserves_imported_argument_identity() {
+        use crate::kernel::{AlgebraicTermNode, AlgebraicType, IntegerTerm};
+        let _session = VerificationSession::enter();
+        let native = AlgebraicTerm {
+            algebraic_type: AlgebraicType::parameter("T".into()),
+            node: AlgebraicTermNode::PureFunctionApplication {
+                name: "identity_boundary".into(),
+                arguments: vec![A::Value(ProgramValue::Int32(
+                    MachineTerm::IntegerToMachine {
+                        destination: MachineIntegerType::Int32,
+                        value: IntegerTerm::Variable(Variable(999982)).into(),
+                    },
+                ))],
+            },
+        };
+        let shared = crate::kernel::KernelTermImport::default().algebraic(&native);
+        // The existing mixed route uses common argument identity; the native
+        // syntax route still refuses this conversion. Consolidation keeps both.
+        assert!(!algebraic_equal(&native, &native));
+        assert!(Comparison::default().mixed_algebraic(&shared, &native));
+    }
 
     #[test]
     fn retained_numeric_calls_keep_native_admission_without_argument_exports() {

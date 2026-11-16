@@ -4452,7 +4452,12 @@ fn execute_verified_function_applications_with_suspension(
             &post_state,
         );
         drop(allocation_delta_timing);
-        let (memory, allocation_effects, retired_creations) = match allocation_delta {
+        let VerifiedAllocationDelta {
+            memory,
+            effects: allocation_effects,
+            retired_creations,
+            continued_tokens,
+        } = match allocation_delta {
             Ok(result) => result,
             Err(VerifiedAllocationDeltaError::Runtime(error)) => {
                 paths.push(FunctionPath::new(
@@ -4463,6 +4468,19 @@ fn execute_verified_function_applications_with_suspension(
                 continue;
             }
             Err(VerifiedAllocationDeltaError::InconsistentReturnedAllocation) => continue,
+        };
+        // The caller receives back the very token it lent for an allocation
+        // the call continues, so its creation anchor, its live heap claim, and
+        // a later `free` all name the block the caller allocated.
+        let Some((output_resources, return_resources)) =
+            with_continued_allocation_tokens(output_resources, &continued_tokens).zip(
+                with_continued_allocation_tokens(return_resources, &continued_tokens),
+            )
+        else {
+            paths.push(resource_call_failure(
+                "a continued allocation token is not among the call's returned resources",
+            ));
+            continue;
         };
         facts.extend(allocation_effects);
         post_state.set_memory(memory);
@@ -8753,7 +8771,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
                 rewrite(then_branch, ranges);
                 rewrite(else_branch, ranges);
             }
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 effect_checks,
                 body,
                 ..
@@ -8799,7 +8817,7 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 else_branch,
                 ..
             } => has_inherited_loop_frame(then_branch) || has_inherited_loop_frame(else_branch),
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 effect_checks,
                 body,
                 ..
@@ -8856,7 +8874,7 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 }
                 check_statement(else_branch)
             }
-            ProgramStatement::While {
+            ProgramStatement::Loop {
                 effect_checks,
                 body,
                 ..
@@ -9467,9 +9485,10 @@ fn apply_verified_heap_allocation_delta(
     ledger: Option<&LoanLedger>,
     mutex_state: &ExecutionState,
     output_state: &ExecutionState,
-) -> Result<(Memory, ExecutionFacts, Vec<PointerBlock>), VerifiedAllocationDeltaError> {
+) -> Result<VerifiedAllocationDelta, VerifiedAllocationDeltaError> {
     let mut effects = Vec::new();
     let mut retired_creations = Vec::new();
+    let mut continued_tokens = Vec::new();
     // What the callee consumed is read where it was consumed: at the call's
     // entry. The post-call memory may have rewritten a pointer field the lent
     // resources owned, so an allocation named through it at the post state
@@ -9536,12 +9555,26 @@ fn apply_verified_heap_allocation_delta(
     // unless its block is proven distinct: a different block spelling is not
     // a different allocation (two reads of `p->data` are two blocks), and a
     // missed candidate would assert a free the contract never promised.
+    // The call's own returned tokens, as the contract states them; a token
+    // inside a returned composite is not one the caller holds directly.
+    let returned_tokens = output_resources
+        .facts()
+        .iter()
+        .filter(|fact| fact.allocation().is_some())
+        .collect::<Vec<_>>();
     let output_allocations = output
         .facts()
         .iter()
         .chain(preserved.facts())
-        .filter_map(ResourceFact::allocation_extent)
-        .map(|(base, bytes)| (base.pointer().clone(), bytes))
+        .filter_map(|fact| {
+            fact.allocation_extent().map(|(base, bytes)| {
+                (
+                    base.pointer().clone(),
+                    bytes,
+                    returned_tokens.contains(&fact).then_some(fact),
+                )
+            })
+        })
         .collect::<Vec<_>>();
 
     for (fact, base, bytes) in input_allocations {
@@ -9560,16 +9593,41 @@ fn apply_verified_heap_allocation_delta(
             )
             .is_some()
         {
+            // The call returns the consumed allocation. When it spells the
+            // returned token by another block (`result` proven equal to
+            // `p`), that token continues the consumed one, and its creation
+            // anchor returns under the consumed block's name. Only the
+            // call's own returned tokens are compared.
+            for (output_base, output_bytes, returned) in &output_allocations {
+                if let Some(returned) = returned
+                    && output_base.block != base.block
+                    && matches!(
+                        allocation_continuity(
+                            &base,
+                            &bytes,
+                            output_base,
+                            output_bytes,
+                            &allocation_assumptions,
+                        ),
+                        AllocationContinuity::Same
+                    )
+                    && !continued_tokens
+                        .iter()
+                        .any(|(token, _): &(ResourceFact, ResourceFact)| token == *returned)
+                {
+                    continued_tokens.push(((*returned).clone(), fact.clone()));
+                }
+            }
             continue;
         }
         let candidates = output_allocations
             .iter()
-            .filter(|(output_base, _)| !base.blocks_proven_distinct(output_base))
+            .filter(|(output_base, _, _)| !base.blocks_proven_distinct(output_base))
             .collect::<Vec<_>>();
         if !candidates.is_empty() {
             let mut retained = false;
             let mut continuity_is_undecided = false;
-            for (output_base, output_bytes) in candidates {
+            for (output_base, output_bytes, returned) in candidates {
                 match allocation_continuity(
                     &base,
                     &bytes,
@@ -9577,7 +9635,15 @@ fn apply_verified_heap_allocation_delta(
                     output_bytes,
                     &allocation_assumptions,
                 ) {
-                    AllocationContinuity::Same => retained = true,
+                    AllocationContinuity::Same => {
+                        retained = true;
+                        if let Some(returned) = returned
+                            && output_base.block != base.block
+                            && !continued_tokens.iter().any(|(token, _)| token == *returned)
+                        {
+                            continued_tokens.push(((*returned).clone(), fact.clone()));
+                        }
+                    }
                     AllocationContinuity::Distinct => {}
                     AllocationContinuity::Undecided(_) => continuity_is_undecided = true,
                     AllocationContinuity::Inconsistent => {
@@ -9718,7 +9784,42 @@ fn apply_verified_heap_allocation_delta(
                 ))
             })?;
     }
-    Ok((memory, effects.into(), retired_creations))
+    Ok(VerifiedAllocationDelta {
+        memory,
+        effects: effects.into(),
+        retired_creations,
+        continued_tokens,
+    })
+}
+
+/// Replaces each returned allocation token that continues a consumed one by
+/// the consumed token: the same allocation, spelled by the block the caller
+/// lent.
+fn with_continued_allocation_tokens(
+    context: ResourceContext,
+    continued_tokens: &[(ResourceFact, ResourceFact)],
+) -> Option<ResourceContext> {
+    continued_tokens
+        .iter()
+        .try_fold(context, |context, (returned, consumed)| {
+            Some(
+                context
+                    .without_exact_representation(returned)?
+                    .unchecked_with_fact(consumed.clone()),
+            )
+        })
+}
+
+/// The memory and facts after a verified call's allocation effects, with
+/// the consumed blocks the call retires and, for each returned allocation
+/// token proven to continue a consumed one under another block spelling
+/// (`result` proven equal to `p`), that returned token and the consumed
+/// token it continues.
+struct VerifiedAllocationDelta {
+    memory: Memory,
+    effects: ExecutionFacts,
+    retired_creations: Vec<PointerBlock>,
+    continued_tokens: Vec<(ResourceFact, ResourceFact)>,
 }
 
 mod call_arguments;

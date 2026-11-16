@@ -3598,7 +3598,7 @@ fn statement_contains_internal_throw(statement: &ProgramStatement) -> bool {
             statement_contains_internal_throw(then_branch)
                 || statement_contains_internal_throw(else_branch)
         }
-        ProgramStatement::While { body, .. } => statement_contains_internal_throw(body),
+        ProgramStatement::Loop { body, .. } => statement_contains_internal_throw(body),
         ProgramStatement::Switch { cases, .. } => cases
             .iter()
             .any(|case| statement_contains_internal_throw(&case.body)),

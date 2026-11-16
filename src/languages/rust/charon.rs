@@ -4168,7 +4168,7 @@ mod tests {
                     let b = shape(else_branch);
                     (1 + a.0 + b.0, a.1 + b.1)
                 }
-                ProgramStatement::While { body, .. } => {
+                ProgramStatement::Loop { body, .. } => {
                     let a = shape(body);
                     (1 + a.0, a.1)
                 }
@@ -4875,7 +4875,7 @@ mod tests {
                         visit(statement, depth, loops);
                     }
                 }
-                C::While { body, .. } => {
+                C::Loop { body, .. } => {
                     loops.push(depth);
                     visit(body, depth + 1, loops);
                 }
@@ -5592,7 +5592,7 @@ mod tests {
                         visit(statement, guards);
                     }
                 }
-                C::While {
+                C::Loop {
                     condition, body, ..
                 } => {
                     guards.push(format!("{condition:?}"));
