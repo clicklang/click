@@ -45,6 +45,8 @@ impl ResourceContext {
     /// this frame. The body producer established its own composition; query
     /// only cross-boundary memory overlap, without inserting temporary child
     /// owners or validating either side again. Tokens add and views duplicate.
+    /// A finite recursive body's folded child stays opaque; this query checks
+    /// its explicitly exposed memory frontier and does not unfold that child.
     pub(in crate::kernel) fn admit_returned_flat_body(
         &self,
         body: &crate::kernel::functions::ConstructedReturnBody,
