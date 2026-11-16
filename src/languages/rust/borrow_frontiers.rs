@@ -515,6 +515,7 @@ fn alias_effect(expr: &E, aliases: &BTreeSet<&str>) -> Result<(bool, bool), Fron
         // A call step's result is a scalar or enum value, which holds no
         // reference.
         | E::CallResult { .. } => return Ok((false, false)),
+        E::VariantIs { value, .. } => vec![value],
         E::SharedArrayHasNext { .. }
         | E::RangeHasNext { .. }
         | E::EnumerateOptionIndex { .. }

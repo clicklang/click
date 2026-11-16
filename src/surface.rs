@@ -489,6 +489,9 @@ pub(crate) fn rust_iterator_accessors(
         }
         crate::languages::interface::RustIteratorKind::Range => &["start", "end", "len()"],
         crate::languages::interface::RustIteratorKind::RangeInclusive => &["start()", "end()"],
+        // A crate's own iterator is a struct the program holds: a proof
+        // reads its fields through the local, `iter.n`.
+        crate::languages::interface::RustIteratorKind::User => &[],
         crate::languages::interface::RustIteratorKind::Chunks => {
             &["v", "v.len()", "rem", "rem.len()", "chunk_size", "len()"]
         }
@@ -537,6 +540,7 @@ pub(crate) fn rust_iterator_method(
                     K::Enumerate => "enumerated",
                     K::Range => "range",
                     K::RangeInclusive => "inclusive range",
+                    K::User => "crate",
                     K::Chunks => "`chunks_exact`",
                 },
                 match rust_iterator_accessors(iterator.kind) {
