@@ -383,6 +383,24 @@ pointer-cast regressions and three serial scaling checks also passed with the
 9o cast fix integrated. Quality and four regular mixed-call proof fixtures passed
 with zero fact-stability differences.
 
+### 9r Scoped fold and match handoffs
+
+Concrete and symbolic fold bodies and all three match result families use one
+scoped binding handoff. Selected common constructor fields keep their roots;
+native fields use one borrowed dispatch. Fold accumulators keep the existing
+retained-local binding rules, including C-expression context. Lexical shadowing,
+old-state lookup, binder allocation and path obligations are unchanged. Native
+algebraic bindings are copied only when a native algebraic field is inserted.
+Integer binders still use the existing typed stack required by native Integer
+result storage; removing that storage is package 10 work.
+
+Validation: 42 focused fold/match tests and all 2,135 API, specification,
+execution-value, expression and scaling tests passed. A growing accumulator keeps
+its root through repeated fold-body bindings with constant deterministic work and
+zero machine exports; old-state lookup and outer binding restoration are covered.
+Quality checks and five exact regular fold/match fixtures passed, with zero
+fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
