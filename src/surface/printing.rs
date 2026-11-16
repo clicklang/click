@@ -1064,6 +1064,16 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             }
             line(output, &prefix, "}");
         }
+        ProofTactic::ObserveSavedMemory { base, start, end } => line(
+            output,
+            &prefix,
+            &format!(
+                "observe({}[{}..{}]);",
+                describe_contract_expression(base),
+                describe_contract_expression(start),
+                describe_contract_expression(end)
+            ),
+        ),
         ProofTactic::ObserveResource(resource) => line(
             output,
             &prefix,

@@ -31,7 +31,7 @@ impl SourceContext {
             tactic,
             ProofTactic::ObserveResource(
                 ResourceClause::ViewMemory(_) | ResourceClause::OwnMemory(_)
-            )
+            ) | ProofTactic::ObserveSavedMemory { .. }
         ) {
             return true;
         }

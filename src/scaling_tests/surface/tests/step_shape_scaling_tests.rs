@@ -1561,3 +1561,65 @@ fn observing_one_memory_range_ignores_unrelated_parameters_and_owners() {
         );
     }
 }
+
+#[test]
+#[ignore = "nightly: saved memory observation parameter, alias, ownership and state scaling"]
+fn observing_saved_memory_ignores_aliases_states_and_unrelated_owners() {
+    for owned in [false, true] {
+        let mut curves = Vec::new();
+        for count in [1, 2, 4] {
+            let parameters = (0..count)
+                .map(|i| format!(", int32* alias{i}, int32* spare{i}"))
+                .collect::<String>();
+            let requirements = (0..count)
+                .map(|i| format!("requires alias{i} == selected; owns spare{i}[0..1];"))
+                .collect::<String>();
+            let marks = (0..count)
+                .map(|i| format!("mark unrelated{i};"))
+                .collect::<String>();
+            let owner = if owned {
+                "owns selected[index..index + 1];"
+            } else {
+                ""
+            };
+            let c = format!(
+                "void check(int32* selected, int32 index{parameters}) {{ int32 scratch; scratch = 1; }}"
+            );
+            let proof = format!(
+                r#"
+                verifying "observe.c";
+                void check(int32* selected, int32 index{parameters}) {{ requires 0 <= index; requires index < 64; {owner} {requirements} }} by {{
+                    {marks}
+                    mark before;
+                    step(); step();
+                    observe(at(before, selected)[index..index + 1]);
+                    observe(at(before, selected)[index..index + 1]);
+                    step();
+                }}
+            "#
+            );
+            let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+                verify_c_sources(&proof, &[("observe.c", c.as_str())])
+            });
+            if owned {
+                result.unwrap_or_else(|error| panic!("{count}: {}", error.report()));
+            } else {
+                assert!(result.unwrap_err().message().contains("exact memory range"));
+            }
+            let work = samples
+                .iter()
+                .filter(|sample| sample.tactic.tactic_name == "observe")
+                .map(|sample| sample.work)
+                .collect::<Vec<_>>();
+            assert_eq!(work.len(), if owned { 2 } else { 1 });
+            curves.push(work);
+        }
+        assert!(
+            curves.windows(2).all(|pair| pair[0]
+                .iter()
+                .zip(&pair[1])
+                .all(|(small, large)| *large <= *small + 32)),
+            "owned={owned}: {curves:?}"
+        );
+    }
+}
