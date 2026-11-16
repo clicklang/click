@@ -136,6 +136,11 @@ fn binary_uncached(format: T, op: O, mut left: KernelTerm, mut right: KernelTerm
                 (_, Some(0)) => return left,
                 _ => {}
             },
+            O::Divide | O::Remainder | O::ShiftRight => {
+                if let (Some(a), Some(b)) = (literal(&left), literal(&right)) {
+                    return imported(format, &MachineTerm::machine_binary(format, op, a, b));
+                }
+            }
             _ => {} // Every other 32-bit binary rewrite is a raw node.
         }
         return raw(left, right);

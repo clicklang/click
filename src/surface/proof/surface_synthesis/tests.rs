@@ -6495,3 +6495,123 @@ fn closed_machine_order_lowering_preserves_relations_and_truth_checking() {
         }
     }
 }
+
+/// Parsed arithmetic, checked rewriting, and the ordinary speller retain one
+/// exact form after a substitution exposes literal operands.
+#[test]
+fn machine_arithmetic_round_trips_after_checked_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    use crate::kernel::proof::ProofFacts;
+    let mut failures = Vec::new();
+    for (format, spelling, suffix) in [
+        (T::Int32, "int32", ""),
+        (T::UInt32, "uint32", "u32"),
+        (T::Int64, "int64", "i64"),
+        (T::UInt64, "uint64", "u64"),
+    ] {
+        for bound in [5, 100] {
+            for operator in [
+                None,
+                Some("+"),
+                Some("-"),
+                Some("*"),
+                Some("/"),
+                Some("%"),
+                Some("<<"),
+                Some(">>"),
+            ] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let value = MachineTerm::Variable(Variable(999701));
+                let value = match format {
+                    T::Int32 => ProgramValue::Int32(value),
+                    T::UInt32 => ProgramValue::UInt32(value),
+                    T::Int64 => ProgramValue::Int64(value),
+                    T::UInt64 => ProgramValue::UInt64(value),
+                    _ => unreachable!(),
+                };
+                let state = ExecutionState::new().with_local("x", value.clone());
+                let values = BTreeMap::from([("x".to_string(), value)]);
+                let empty = BTreeMap::new();
+                let lower = |surface: &ClickProposition| {
+                    crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+                        surface, &PureFactContext::new(), ContractEnvironment::new(&values, &empty),
+                        FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+                        SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
+                        FixedStateLoweringOptions::default(),
+                    ).unwrap().0
+                };
+                let expression = operator.map_or_else(
+                    || "x".to_string(),
+                    |op| format!("(x {op} 3{suffix}) as {spelling}"),
+                );
+                let file = parser::parse(&format!("theorem probe(x: {spelling}) {{ requires x == 9{suffix}; ensures {expression} <= {bound}{suffix}; }}")).unwrap();
+                let theorem = &file.theorem_definitions()[0];
+                let Requirement::Proposition(equality) = &theorem.requires()[0] else {
+                    panic!("requirement")
+                };
+                let Ensure::Proposition(goal) = theorem.ensures()[0].ensure() else {
+                    panic!("ensure")
+                };
+                let equality = lower(equality);
+                let original = lower(goal);
+                let facts = ProofFacts::from_ordered(std::slice::from_ref(&equality));
+                let produced = facts
+                    .check_equality_rewrite(&original, &equality)
+                    .unwrap()
+                    .proposition()
+                    .clone();
+                let value = match operator {
+                    None => 9,
+                    Some("+") => 12,
+                    Some("-") => 6,
+                    Some("*") => 27,
+                    Some("/") => 3,
+                    Some("%") => 0,
+                    Some("<<") => 72,
+                    Some(">>") => 1,
+                    _ => unreachable!(),
+                };
+                let Proposition::ConditionIs(condition, truth) = &produced else {
+                    panic!("expected an arithmetic comparison: {produced:?}")
+                };
+                assert_eq!(
+                    PureFactContext::new()
+                        .decide(condition)
+                        .map(|value| value == *truth),
+                    Some(value <= bound)
+                );
+                let Some(raised) =
+                    synthesize_surface_proposition(&produced, ParameterBinding::default(), &state)
+                else {
+                    println!("UNSPELLABLE {format:?} {operator:?} bound={bound}: {produced:?}");
+                    failures.push(format!(
+                        "{format:?} {operator:?} bound={bound} (unspellable)"
+                    ));
+                    continue;
+                };
+                let text = crate::surface::printing::source_click_proposition(&raised);
+                let file = parser::parse(&format!(
+                    "theorem probe(x: {spelling}) {{ requires {text}; ensures true; }}"
+                ))
+                .unwrap();
+                let Requirement::Proposition(written) =
+                    &file.theorem_definitions()[0].requires()[0]
+                else {
+                    panic!("requirement")
+                };
+                let restored = lower(written);
+                if restored != produced {
+                    println!(
+                        "BROKEN {format:?} {operator:?} bound={bound}: {text}\n  produced: {produced:?}\n  restored: {restored:?}"
+                    );
+                    failures.push(format!("{format:?} {operator:?} bound={bound}"));
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "round-trip failures: {}",
+        failures.join(", ")
+    );
+}
