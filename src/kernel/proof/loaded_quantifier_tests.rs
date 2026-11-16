@@ -164,6 +164,76 @@ fn loaded_quantifier_shared_guard_does_not_rename_a_variable_inside_state() {
 }
 
 #[test]
+fn loaded_quantifier_native_guard_does_not_capture_a_variable_inside_state() {
+    for existential in [false, true] {
+        for shared in [false, true] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let a = Variable(920_001);
+            let b = Variable(920_002);
+            let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64).store(
+                Pointer {
+                    block: "loaded-quantifier".into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                ProgramValue::Int32(MachineTerm::Variable(a)),
+            ));
+            let quantify = |binder| {
+                let fact = loaded_fact(&memory, binder, shared);
+                if existential {
+                    let Proposition::ForAll {
+                        var, sort, body, ..
+                    } = fact
+                    else {
+                        unreachable!()
+                    };
+                    Proposition::Exists {
+                        name: Default::default(),
+                        var,
+                        sort,
+                        body,
+                    }
+                } else {
+                    fact
+                }
+            };
+            let first = quantify(a);
+            let second = quantify(b);
+            for (source, requested) in [(&first, &second), (&second, &first)] {
+                assert!(!quantified_binder_equivalent(source, requested));
+                let facts = ProofFacts::from_ordered(std::slice::from_ref(source));
+                assert!(facts.matching_quantified_fact(requested).is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn loaded_quantifier_matching_renames_both_state_binders_without_swapping_free_variables() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let a = Variable(970_001);
+    let b = Variable(970_002);
+    let fact = |binder, stored| {
+        let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64).store(
+            Pointer {
+                block: "loaded-quantifier".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            ProgramValue::Int32(MachineTerm::Variable(stored)),
+        ));
+        loaded_fact(&memory, binder, false)
+    };
+    let left = fact(a, a);
+    let right = fact(b, b);
+    assert!(quantified_binder_equivalent(&left, &right));
+    assert!(quantified_binder_equivalent(&right, &left));
+    // Swapping both a bound and a free name is not alpha equivalence.
+    let left = fact(a, b);
+    let right = fact(b, a);
+    assert!(!quantified_binder_equivalent(&left, &right));
+    assert!(!quantified_binder_equivalent(&right, &left));
+}
+
+#[test]
 fn loaded_quantifier_guard_matching_preserves_machine_binder_width() {
     for format in [
         MachineIntegerType::Int32,
