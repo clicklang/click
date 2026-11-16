@@ -1,6 +1,7 @@
 //! Existing slow dependencies extracted without changing their decisions.
 //! Each entry remains reachable only through its inventoried compatibility caller.
 use super::*;
+use crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap;
 
 impl ResourceContext {
     /// Compatibility admission: indexed checking first, then explicitly
@@ -16,6 +17,114 @@ impl ResourceContext {
             OwnershipAdmission::Conflict(error) => Err(error),
             OwnershipAdmission::Unsupported(pending) => pending.resume_legacy_discovery(),
         }
+    }
+}
+
+impl ResourceContext {
+    /// Compatibility query for one new memory owner. Retain the selected held
+    /// fact at the comparison, rather than rediscovering it for diagnostics.
+    /// Only old/new pairs are checked; neither partition is revalidated.
+    fn legacy_memory_boundary_conflict(
+        &self,
+        right: &ResourceFact,
+        before: ResourceEntryId,
+        assumptions: &PureFactContext,
+    ) -> Option<(ResourceContextValidityError, ResourceFact)> {
+        let right_range = right.memory_own_range()?;
+        let coordinates = constant_memory_coordinates(right_range);
+        if coordinates
+            .as_ref()
+            .is_some_and(|(_, start, end)| start >= end)
+        {
+            return None;
+        }
+        let same_origin_neighbors = coordinates.and_then(|(origin, start, end)| {
+            let members = self
+                .storage
+                .index
+                .owned_memory_by_block
+                .get(&right_range.base().block)?
+                .len();
+            self.constant_owned_neighbors(&origin, start, end, members)
+        });
+        if let Some(mut candidates) = same_origin_neighbors {
+            candidates.remove(&before);
+            // Every owned range of this block has this origin, so the two
+            // neighbours stand for the block; ranges an exact alias
+            // relates from other blocks are still compared.
+            if assumptions.has_pointer_block_aliases() {
+                candidates.extend(
+                    self.owned_validity_candidates(
+                        right_range,
+                        Some(&right_range.base().block),
+                        assumptions,
+                    )
+                    .into_iter()
+                    .filter(|entry| *entry < before),
+                );
+            }
+            for left_entry in candidates {
+                crate::instrumentation::record_deterministic_work(1);
+                let left = self.fact(left_entry);
+                if let Some(error) = resource_family_algebra(left.family()).pair_validity_error(
+                    left,
+                    right,
+                    assumptions,
+                ) {
+                    return Some((error, left.clone()));
+                }
+            }
+            return None;
+        }
+        for left_entry in self.owned_validity_candidates(right_range, None, assumptions) {
+            if left_entry >= before {
+                break;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            let left = self.fact(left_entry);
+            if let Some(error) =
+                resource_family_algebra(left.family()).pair_validity_error(left, right, assumptions)
+            {
+                return Some((error, left.clone()));
+            }
+        }
+        None
+    }
+
+    /// Check only the new boundary of an already constructed return body.
+    /// Unsupported memory geometry explicitly retains legacy discovery.
+    pub(in crate::kernel) fn returned_boundary_conflict_with_legacy_discovery(
+        &self,
+        frontier: &[ResourceFact],
+        assumptions: &PureFactContext,
+    ) -> Option<(ResourceFact, ResourceFact)> {
+        for piece in frontier {
+            crate::instrumentation::record_deterministic_work(1);
+            let exclusive = match piece.resource() {
+                Resource::Instance(instance) => {
+                    self.storage.index.instances.get(&instance.identity)
+                }
+                Resource::PopulationAuthority(_)
+                | Resource::MutexGuard(_)
+                | Resource::MutexLive(_)
+                | Resource::MutexUse(_) => self.storage.index.by_resource.get(piece.resource()),
+                _ => None,
+            };
+            if let Some(entry) = exclusive.and_then(|entries| entries.iter().next()) {
+                return Some((piece.clone(), self.fact(*entry).clone()));
+            }
+            let held = match self.constant_owned_overlap(piece, assumptions) {
+                ConstantOwnedOverlap::Clear => None,
+                ConstantOwnedOverlap::Overlap(entry) => Some(self.fact(entry).clone()),
+                ConstantOwnedOverlap::Unsupported => self
+                    .legacy_memory_boundary_conflict(piece, self.storage.next_entry_id, assumptions)
+                    .map(|(_, held)| held),
+            };
+            if let Some(held) = held {
+                return Some((piece.clone(), held));
+            }
+        }
+        None
     }
 }
 
@@ -44,68 +153,10 @@ impl PendingOwnershipAdmission<'_> {
             if indexed_checked[(right_entry - first_new) as usize] {
                 continue;
             }
-            let Some(right_range) = right.memory_own_range() else {
-                continue;
-            };
-            let coordinates = constant_memory_coordinates(right_range);
-            if coordinates
-                .as_ref()
-                .is_some_and(|(_, start, end)| start >= end)
+            if let Some((error, _)) =
+                context.legacy_memory_boundary_conflict(right, right_entry, assumptions)
             {
-                continue;
-            }
-            let same_origin_neighbors = coordinates.and_then(|(origin, start, end)| {
-                let members = context
-                    .storage
-                    .index
-                    .owned_memory_by_block
-                    .get(&right_range.base().block)?
-                    .len();
-                context.constant_owned_neighbors(&origin, start, end, members)
-            });
-            if let Some(mut candidates) = same_origin_neighbors {
-                candidates.remove(&right_entry);
-                // Every owned range of this block has this origin, so the two
-                // neighbours stand for the block; ranges an exact alias
-                // relates from other blocks are still compared.
-                if assumptions.has_pointer_block_aliases() {
-                    candidates.extend(
-                        context
-                            .owned_validity_candidates(
-                                right_range,
-                                Some(&right_range.base().block),
-                                assumptions,
-                            )
-                            .into_iter()
-                            .filter(|entry| *entry < right_entry),
-                    );
-                }
-                for left_entry in candidates {
-                    crate::instrumentation::record_deterministic_work(1);
-                    let left = context.fact(left_entry);
-                    if let Some(error) = resource_family_algebra(left.family()).pair_validity_error(
-                        left,
-                        right,
-                        assumptions,
-                    ) {
-                        return Err(error);
-                    }
-                }
-                continue;
-            }
-            for left_entry in context.owned_validity_candidates(right_range, None, assumptions) {
-                if left_entry >= right_entry {
-                    break;
-                }
-                crate::instrumentation::record_deterministic_work(1);
-                let left = context.fact(left_entry);
-                if let Some(error) = resource_family_algebra(left.family()).pair_validity_error(
-                    left,
-                    right,
-                    assumptions,
-                ) {
-                    return Err(error);
-                }
+                return Err(error);
             }
         }
         context.advance_prepared_memory_equalities(assumptions);

@@ -105,3 +105,51 @@ fn generic_identity_preserves_the_actual_pointer_origin() {
 mod scaling_tests {
     include!("../../scaling_tests/surface/pointer_result_types/tests.rs");
 }
+
+#[test]
+fn enum_match_fields_keep_their_types_in_scalar_return_conditions() {
+    let prefix = "spec enum Color { Red, Black } spec enum Tree { Empty, Node(Color, Tree) } ";
+    for condition in [
+        "c == Color::Black",
+        "Color::Black == c",
+        "c != Color::Red",
+        "not (c == Color::Red)",
+        "c == Color::Black and 0 == 0",
+        "0 == 1 or c == Color::Black",
+    ] {
+        for (result, yes, no) in [
+            ("int32", "1", "0"),
+            ("Bool", "true", "false"),
+            ("int32*", "p", "0"),
+        ] {
+            let source = format!(
+                "{prefix} function choose(t: Tree, p: int32*) -> {result} {{ match t {{ Tree::Empty => {no}, Tree::Node(c, tail) => if {condition} {{ {yes} }} else {{ {no} }}, }} }}"
+            );
+            parser::parse(&source).unwrap_or_else(|error| panic!("{condition}: {error:?}"));
+        }
+    }
+}
+
+#[test]
+fn scalar_return_conditions_retain_comparison_type_rejections() {
+    let prefix = "spec enum Color { Red, Black } spec enum Other { Red } spec enum Tree { Empty, Node(Color, Tree) } ";
+    for condition in [
+        "c == Other::Red",
+        "c == 0",
+        "c < Color::Black",
+        "c == Color::Black and true == 1",
+        "c == Color::Black and [1] == [true]",
+        "true == 1",
+        "[1] == [true]",
+    ] {
+        let source = format!(
+            "{prefix} function wrong(t: Tree) -> int32 {{ match t {{ Tree::Empty => 0, Tree::Node(c, tail) => if {condition} {{ 1 }} else {{ 0 }}, }} }}"
+        );
+        assert!(parser::parse(&source).is_err(), "accepted {condition}");
+    }
+    for condition in ["[1] == [1]", "([1] ++ [2]) == [1, 2]"] {
+        let source =
+            format!("function sequence_guard() -> int32 {{ if {condition} {{ 1 }} else {{ 0 }} }}");
+        parser::parse(&source).unwrap_or_else(|error| panic!("{condition}: {error:?}"));
+    }
+}

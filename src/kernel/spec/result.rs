@@ -196,7 +196,7 @@ impl SpecValue {
                 ComparisonOperator::GreaterEqual => CompareRelation::GreaterEqual,
             };
             return Ok(Some(Proposition::ConditionIs(
-                crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
                     format,
                     relation,
                     [left, right],
