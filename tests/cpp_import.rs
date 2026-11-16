@@ -2302,11 +2302,13 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
         .expect("the expansion must keep a threw certificate");
     assert!(
         expanded.contains("outcomes {")
-            && returned_proof.contains("normalize();")
+            && returned_proof.contains("have result == 7 by {")
+            && threw_proof.contains("have result == 7 by {")
+            && returned_proof.contains("known();")
             && threw_proof.contains("known();")
-            && !threw_proof.contains("normalize();")
+            && !expanded.contains("solve(")
             && !expanded.contains("trivial();"),
-        "distinct exact path closers should retain returned/threw certificates: {expanded}"
+        "each outcome should retain its own explicit result certificate: {expanded}"
     );
     let rewritten = click_project.with_entry_source(expanded.clone());
     // Session construction cold-verifies this complete program once.
