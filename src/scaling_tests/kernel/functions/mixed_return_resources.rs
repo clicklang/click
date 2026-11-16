@@ -104,7 +104,7 @@ fn projecting_equal_return_descriptions_uses_selected_occurrences() {
                 project_return_resource_cores(
                     &evaluated.resources,
                     &transfers,
-                    &FlatReturnBodies::default(),
+                    &ConstructedReturnBodies::default(),
                     &[],
                     &state,
                     &facts,
@@ -403,6 +403,7 @@ fn selected_scalar_transfers_scale_with_the_return_delta() {
             occurrences: emitted
                 .into_iter()
                 .map(|(_, source)| EvaluatedReturnOccurrence {
+                    clause: None,
                     source,
                     origin: ReturnOwnershipOrigin::Description,
                 })
@@ -546,6 +547,7 @@ fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
             let mut evaluated = EvaluatedReturnResources {
                 resources,
                 occurrences: vec![EvaluatedReturnOccurrence {
+                    clause: None,
                     source: inserted[0].1,
                     origin: ReturnOwnershipOrigin::Description,
                 }],
@@ -657,6 +659,7 @@ fn fresh_allocation_returns_ignore_creation_history_aliases_and_retained_owners(
                         .restore_entry_borrows(
                             frame.clone(),
                             ReturnResourceComposition::BodyAllocations {
+                                consumed: None,
                                 creator: &creator,
                                 events: &events,
                             },
@@ -710,6 +713,7 @@ fn fresh_allocation_return_work_scales_with_selected_return_pieces() {
             occurrences: inserted
                 .iter()
                 .map(|(_, source)| EvaluatedReturnOccurrence {
+                    clause: None,
                     source: *source,
                     origin: ReturnOwnershipOrigin::Description,
                 })
@@ -729,6 +733,7 @@ fn fresh_allocation_return_work_scales_with_selected_return_pieces() {
                     .restore_entry_borrows(
                         caller.resources().clone(),
                         ReturnResourceComposition::BodyAllocations {
+                            consumed: None,
                             creator: &creator,
                             events,
                         },
@@ -805,7 +810,8 @@ fn flat_return_body_consumers_scale_with_output_and_ignore_ambient_state() {
                 )
                 .unwrap();
             let state = ExecutionState::new();
-            let bodies = FlatReturnBodies::construct(&evaluated, &definitions, &state, &facts);
+            let bodies =
+                ConstructedReturnBodies::construct(&evaluated, &definitions, &state, &facts);
             assert_eq!(bodies.0.len(), 1);
             let prepared = evaluated
                 .restore_entry_borrows(
@@ -963,4 +969,108 @@ fn flat_body_admission_scales_with_the_constructed_frontier() {
         samples.push(work);
     }
     assert!(samples[2] <= samples[0] * 20 + 64, "frontier: {samples:?}");
+}
+
+#[test]
+fn nested_consumed_transfer_planning_and_construction_scale_with_the_selected_tree() {
+    let mut samples = Vec::new();
+    for depth in [4_usize, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let pointer = Pointer::symbolic(Variable(8_840_500));
+        let function = super::tests::nested_transfer_function(depth);
+        let caller = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
+            ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into())),
+        );
+        let transfer =
+            super::tests::prepare_scalar_transfer(&function, pointer.clone(), caller, &facts);
+        let state = ExecutionState::new().with_local("p", ProgramValue::pointer(pointer));
+        let evaluated =
+            super::tests::evaluate_mixed_scalar(&function, &state, &transfer, &facts).unwrap();
+        let (bodies, work) = crate::instrumentation::measure_deterministic_work(|| {
+            ConstructedReturnBodies::try_construct(
+                &evaluated,
+                function
+                    .contract_interface()
+                    .composite_resource_definitions(),
+                &state,
+                ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+                &facts,
+            )
+            .unwrap()
+        });
+        let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+        assert_eq!(body.transfers.len(), depth);
+        assert!(body.boundary.is_empty());
+        samples.push(work);
+    }
+    assert!(
+        samples[2] <= samples[0] * 40 + 256,
+        "selected tree: {samples:?}"
+    );
+}
+
+#[test]
+fn composite_transfer_consumers_ignore_unrelated_inputs_aliases_and_creation_history() {
+    for fresh in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (caller, entry, mut post, pointer) =
+                super::fresh_allocation_tests::allocated_call(16);
+            let mut events = post.population_effects.creation.as_ref().unwrap().clone();
+            let mut facts = PureFactContext::new();
+            let mut frame = caller.resources().clone();
+            for index in 0..count {
+                events = events.created(PointerBlock::Heap(8_960_000 + u64::from(index)));
+                let alias = Pointer::symbolic(Variable(8_841_000 + u64::from(index)));
+                facts = facts
+                    .assume_condition(ConditionTerm::pointer_equal(pointer.clone(), alias), true);
+                frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                    Pointer::symbolic(Variable(8_842_000 + u64::from(index))),
+                    0u32.into(),
+                    1u32.into(),
+                )));
+                post = post.with_local(
+                    format!("unrelated_{index}"),
+                    ProgramValue::Int32(MachineTerm::constant(index)),
+                );
+            }
+            frame.synchronize_memory_equalities(&facts);
+            let (evaluated, _) = super::tests::constructed_flat_return(&pointer, 1, &facts);
+            let definition = super::tests::flat_body_definition("boundary_return", &pointer, 1);
+            let mode = if fresh {
+                ReturnResourceComposition::BodyAllocations {
+                    consumed: None,
+                    creator: entry.population_effects.creation.as_ref().unwrap(),
+                    events: &events,
+                }
+            } else {
+                ReturnResourceComposition::ValidateDescriptions
+            };
+            let bodies = ConstructedReturnBodies::try_construct(
+                &evaluated,
+                &[definition],
+                &post,
+                mode,
+                &facts,
+            )
+            .unwrap();
+            let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "explicit composite child transfers",
+                );
+                assert!(matches!(
+                    frame.admit_returned_flat_body(body, &facts),
+                    FlatBodyAdmission::Admitted
+                ));
+            });
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 64),
+            "fresh={fresh}: {samples:?}"
+        );
+    }
 }
