@@ -90,3 +90,35 @@ fn loaded_quantifier_matching_scales_with_selected_body() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn substituted_retained_comparison_body_scales_with_selected_input() {
+    let mut costs = Vec::new();
+    for size in [8, 16, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64));
+        let body = |shared| {
+            let Proposition::ForAll { body, .. } = loaded_fact(&memory, Variable(960_001), shared)
+            else {
+                unreachable!()
+            };
+            let leaf = *body;
+            let mut result = leaf.clone();
+            for _ in 1..size {
+                result = Proposition::And(Box::new(result), Box::new(leaf.clone()));
+            }
+            result
+        };
+        let native = body(false);
+        let shared = body(true);
+        let (matched, work) = crate::instrumentation::measure_deterministic_work(|| {
+            substituted_body_retained_order_equivalent(&native, &shared)
+        });
+        assert!(matched);
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs.windows(2).all(|p| p[1] <= 3 * p[0]),
+        "{costs:?}"
+    );
+}
