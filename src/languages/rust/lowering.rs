@@ -813,7 +813,7 @@ fn lower_function(
             mir.locals
                 .iter()
                 .filter_map(|local| match &local.value_type {
-                    Type::Record { name } => Some((local.name.clone(), name.clone())),
+                    Type::Record { name } => Some((local.name.clone().into(), name.clone())),
                     _ => None,
                 })
                 .collect()
@@ -903,7 +903,7 @@ impl Context<'_> {
         arguments: Vec<ProgramExpression>,
     ) -> ProgramStatement {
         let (call, value) = self.call_value(function, arguments);
-        program_seq(call, program_assign(target, value))
+        program_seq(call, program_assign(Into::<String>::into(target), value))
     }
 
     fn reference_source(

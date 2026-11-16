@@ -48,6 +48,10 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
 
 fn write_havoc_block(identity: &mut String, block: PointerBlock) {
     match block {
+        PointerBlock::AutomaticLocal { binding, instance } => {
+            write_havoc_string(identity, "bl", &binding.to_string());
+            let _ = write!(identity, "{instance:?};");
+        }
         PointerBlock::PureFunctionApplication(application) => {
             let _ = write!(identity, "bpure{};", application.id());
         }
@@ -1277,60 +1281,136 @@ pub(crate) fn resource_context_has_symbolic_range_read(
 }
 
 impl LocalEnvironment {
+    pub(crate) fn resolve_binding(&self, name: &BindingName) -> BindingName {
+        if self.visible_names.is_empty() {
+            return name.clone();
+        }
+        match name {
+            BindingName::Named(_)
+                if matches!(
+                    self.bindings.get(name),
+                    Some(LocalBinding::Object {
+                        storage_declared: false,
+                        ..
+                    })
+                ) =>
+            {
+                name.clone()
+            }
+            BindingName::Named(source) => self
+                .visible_names
+                .get(source)
+                .and_then(|entries| entries.last())
+                .map(|(_, binding)| binding.clone())
+                .unwrap_or_else(|| name.clone()),
+            BindingName::Local(_) => name.clone(),
+        }
+    }
+    /// The source spelling of this active lexical binding, for source-name
+    /// environments. Hidden declarations remain addressable by their typed ID.
+    pub(crate) fn active_source_name<'a>(&self, name: &'a BindingName) -> Option<&'a str> {
+        let source = match name {
+            BindingName::Local(id) => id.spelling()?,
+            BindingName::Named(name) => name,
+        };
+        (self.resolve_binding(&BindingName::from(source)) == *name).then_some(source)
+    }
+    fn index_source_binding(&mut self, name: &BindingName) {
+        let BindingName::Local(id) = name else {
+            return;
+        };
+        let Some(source) = id.spelling() else {
+            return;
+        };
+        let mut entries = self.visible_names.get(source).cloned().unwrap_or_default();
+        entries.insert(
+            (id.scope_depth(), !id.is_parameter(), id.ordinal()),
+            name.clone(),
+        );
+        self.visible_names.insert(source.to_owned(), entries);
+    }
+    fn unindex_source_binding(&mut self, name: &BindingName) {
+        let BindingName::Local(id) = name else {
+            return;
+        };
+        let Some(source) = id.spelling() else {
+            return;
+        };
+        let Some(mut entries) = self.visible_names.get(source).cloned() else {
+            return;
+        };
+        entries.remove(&(id.scope_depth(), !id.is_parameter(), id.ordinal()));
+        if entries.is_empty() {
+            self.visible_names.remove(&source.to_owned());
+        } else {
+            self.visible_names.insert(source.to_owned(), entries);
+        }
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn with(mut self, name: impl Into<String>, value: ProgramValue) -> Self {
+    pub fn with(mut self, name: impl Into<BindingName>, value: ProgramValue) -> Self {
+        let name = self.resolve_binding(&name.into());
         self.set(name, value);
         self
     }
 
-    pub fn set(&mut self, name: impl Into<String>, value: ProgramValue) {
+    pub fn set(&mut self, name: impl Into<BindingName>, value: ProgramValue) {
+        let name = self.resolve_binding(&name.into());
         let program_type = value.program_type();
         self.set_typed(name, value, program_type);
     }
 
     pub fn set_typed(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         value: ProgramValue,
         program_type: ProgramType,
     ) {
+        let name = self.resolve_binding(&name.into());
         self.set_typed_with_qualifiers(name, value, program_type, false, false);
     }
 
     /// Bind model data independently of any same-named automatic object.
     pub(in crate::kernel) fn bind_logical_typed(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         value: ProgramValue,
         program_type: ProgramType,
     ) {
         let name = name.into();
-        self.set_typed(name.clone(), value, program_type);
-        let mut binding = self
+        let slot = self
             .bindings
             .get(&name)
-            .expect("new logical binding")
-            .clone();
-        if let LocalBinding::Object {
-            storage_declared, ..
-        } = &mut binding
-        {
-            *storage_declared = false;
-        }
-        self.insert_binding(name, binding);
+            .map(LocalBinding::slot)
+            .cloned()
+            .unwrap_or_else(|| Memory::local_pointer(&name));
+        self.insert_binding(
+            name,
+            LocalBinding::Object {
+                storage_declared: false,
+                value: value.retag_pointer(program_type).into(),
+                program_type,
+                slot,
+                volatile: false,
+                pointee_volatile: false,
+                constant: false,
+                pointee_constant: false,
+            },
+        );
     }
 
     pub(in crate::kernel) fn set_typed_with_qualifiers(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         value: ProgramValue,
         program_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
     ) {
+        let name = self.resolve_binding(&name.into());
         self.set_typed_with_all_qualifiers(
             name,
             value,
@@ -1344,7 +1424,7 @@ impl LocalEnvironment {
 
     pub(in crate::kernel) fn set_typed_with_all_qualifiers(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         value: ProgramValue,
         program_type: ProgramType,
         volatile: bool,
@@ -1352,7 +1432,7 @@ impl LocalEnvironment {
         constant: bool,
         pointee_constant: bool,
     ) {
-        let name = name.into();
+        let name = self.resolve_binding(&name.into());
         let slot = self
             .bindings
             .get(&name)
@@ -1373,7 +1453,7 @@ impl LocalEnvironment {
 
     pub(in crate::kernel) fn set_typed_qualified_with_all_qualifiers(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         value: ProgramValue,
         program_type: ProgramType,
         slot: Pointer,
@@ -1382,7 +1462,7 @@ impl LocalEnvironment {
         constant: bool,
         pointee_constant: bool,
     ) {
-        let name = name.into();
+        let name = self.resolve_binding(&name.into());
         let storage_declared = self.bindings.get(&name).is_some_and(|binding| {
             binding.slot() == &slot
                 && matches!(
@@ -1413,7 +1493,7 @@ impl LocalEnvironment {
 
     pub(in crate::kernel) fn set_global_with_all_qualifiers(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         program_type: ProgramType,
         slot: Pointer,
         volatile: bool,
@@ -1421,8 +1501,9 @@ impl LocalEnvironment {
         constant: bool,
         pointee_constant: bool,
     ) {
+        let name = self.resolve_binding(&name.into());
         self.insert_binding(
-            name.into(),
+            name,
             LocalBinding::GlobalObject {
                 program_type,
                 slot,
@@ -1436,7 +1517,7 @@ impl LocalEnvironment {
 
     pub(in crate::kernel) fn set_uninitialized_with_all_qualifiers(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         program_type: ProgramType,
         slot: Pointer,
         volatile: bool,
@@ -1444,8 +1525,9 @@ impl LocalEnvironment {
         constant: bool,
         pointee_constant: bool,
     ) {
+        let name = self.resolve_binding(&name.into());
         self.insert_binding(
-            name.into(),
+            name,
             LocalBinding::UninitializedObject {
                 program_type,
                 slot,
@@ -1459,24 +1541,26 @@ impl LocalEnvironment {
 
     pub(in crate::kernel) fn set_array_object_at(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         element_type: ProgramType,
         length: u32,
         slot: Pointer,
     ) {
+        let name = self.resolve_binding(&name.into());
         self.set_array_object_at_with_constant(name, element_type, length, slot, false);
     }
 
     pub(in crate::kernel) fn set_array_object_at_with_constant(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         element_type: ProgramType,
         length: u32,
         slot: Pointer,
         constant: bool,
     ) {
+        let name = self.resolve_binding(&name.into());
         self.insert_binding(
-            name.into(),
+            name,
             LocalBinding::ArrayObject {
                 element_type,
                 length,
@@ -1488,22 +1572,24 @@ impl LocalEnvironment {
 
     pub(in crate::kernel) fn set_aggregate_object_at(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         layout: AggregateLayout,
         slot: Pointer,
     ) {
+        let name = self.resolve_binding(&name.into());
         self.set_aggregate_object_at_with_constant(name, layout, slot, false);
     }
 
     pub(in crate::kernel) fn set_aggregate_object_at_with_constant(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         layout: AggregateLayout,
         slot: Pointer,
         constant: bool,
     ) {
+        let name = self.resolve_binding(&name.into());
         self.insert_binding(
-            name.into(),
+            name,
             LocalBinding::AggregateObject {
                 layout,
                 slot,
@@ -1514,7 +1600,7 @@ impl LocalEnvironment {
 
     pub(in crate::kernel) fn set_retained_typed_with_all_qualifiers(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         value: impl Into<StoredExecutionValue>,
         program_type: ProgramType,
         volatile: bool,
@@ -1543,7 +1629,7 @@ impl LocalEnvironment {
         } else {
             value
         };
-        let name = name.into();
+        let name = self.resolve_binding(&name.into());
         let slot = self
             .bindings
             .get(&name)
@@ -1564,7 +1650,7 @@ impl LocalEnvironment {
 
     pub(in crate::kernel) fn set_retained_typed_qualified_with_all_qualifiers(
         &mut self,
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         value: impl Into<StoredExecutionValue>,
         program_type: ProgramType,
         slot: Pointer,
@@ -1596,7 +1682,7 @@ impl LocalEnvironment {
         } else {
             value
         };
-        let name = name.into();
+        let name = self.resolve_binding(&name.into());
         let storage_declared = self.bindings.get(&name).is_some_and(|binding| {
             binding.slot() == &slot
                 && matches!(
@@ -1623,8 +1709,9 @@ impl LocalEnvironment {
     }
 
     /// Borrow the exact retained value. Use `get_native` only at a native output boundary.
-    pub fn get(&self, name: &str) -> Option<&StoredExecutionValue> {
-        match self.bindings.get(name) {
+    pub fn get(&self, name: impl Into<BindingName>) -> Option<&StoredExecutionValue> {
+        let name = self.resolve_binding(&name.into());
+        match self.bindings.get(&name) {
             Some(LocalBinding::Object { value, .. }) => Some(value),
             Some(LocalBinding::UninitializedObject { .. })
             | Some(LocalBinding::GlobalObject { .. })
@@ -1635,13 +1722,18 @@ impl LocalEnvironment {
     }
 
     /// Explicit legacy output: reconstruct one selected native value, without caching it.
-    pub fn get_native(&self, name: &str) -> Option<std::borrow::Cow<'_, ProgramValue>> {
-        self.get(name).map(|value| value.native())
+    pub fn get_native(
+        &self,
+        name: impl Into<BindingName>,
+    ) -> Option<std::borrow::Cow<'_, ProgramValue>> {
+        let name = self.resolve_binding(&name.into());
+        self.get(&name).map(|value| value.native())
     }
 
     /// Read one automatic array's metadata by name without scanning the frame.
-    pub fn array_object_element_type(&self, name: &str) -> Option<ProgramType> {
-        match self.bindings.get(name) {
+    pub fn array_object_element_type(&self, name: impl Into<BindingName>) -> Option<ProgramType> {
+        let name = self.resolve_binding(&name.into());
+        match self.bindings.get(&name) {
             Some(LocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
             _ => None,
         }
@@ -1650,8 +1742,9 @@ impl LocalEnvironment {
     /// Exact name membership, including arrays and uninitialized objects.
     /// Proof-local binders use this indexed query to reject shadowing without
     /// materializing or scanning the complete local environment.
-    pub fn contains_name(&self, name: &str) -> bool {
-        self.bindings.contains_key(name)
+    pub fn contains_name(&self, name: impl Into<BindingName>) -> bool {
+        let name = self.resolve_binding(&name.into());
+        self.bindings.contains_key(&name)
     }
 
     /// Whether this frame has bound anything at all.
@@ -1669,19 +1762,20 @@ impl LocalEnvironment {
     /// execution has not produced yet. Reading it has no defined path, so a
     /// proposition that names it cannot lower; a diagnostic uses this to name
     /// the local instead of reporting a path count.
-    pub fn is_uninitialized_object(&self, name: &str) -> bool {
+    pub fn is_uninitialized_object(&self, name: impl Into<BindingName>) -> bool {
+        let name = self.resolve_binding(&name.into());
         matches!(
-            self.bindings.get(name),
+            self.bindings.get(&name),
             Some(LocalBinding::UninitializedObject { .. })
         )
     }
 
     /// Iterate values without expanding shared expression payloads.
-    pub fn object_values(&self) -> impl Iterator<Item = (&str, &StoredExecutionValue)> {
+    pub fn object_values(&self) -> impl Iterator<Item = (&BindingName, &StoredExecutionValue)> {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
-                LocalBinding::Object { value, .. } => Some((name.as_str(), value)),
+                LocalBinding::Object { value, .. } => Some((name, value)),
                 LocalBinding::UninitializedObject { .. }
                 | LocalBinding::GlobalObject { .. }
                 | LocalBinding::ArrayObject { .. }
@@ -1691,13 +1785,11 @@ impl LocalEnvironment {
 
     pub fn aggregate_object_values(
         &self,
-    ) -> impl Iterator<Item = (&str, &AggregateLayout, &Pointer)> + '_ {
+    ) -> impl Iterator<Item = (&BindingName, &AggregateLayout, &Pointer)> + '_ {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
-                LocalBinding::AggregateObject { layout, slot, .. } => {
-                    Some((name.as_str(), layout, slot))
-                }
+                LocalBinding::AggregateObject { layout, slot, .. } => Some((name, layout, slot)),
                 LocalBinding::Object { .. }
                 | LocalBinding::UninitializedObject { .. }
                 | LocalBinding::GlobalObject { .. }
@@ -1708,8 +1800,12 @@ impl LocalEnvironment {
     /// The type of the value local `name`'s object holds, and the object's
     /// address, for a local that keeps one value in memory
     /// ([`AggregateLayout::holding_value`]).
-    pub fn held_value_local(&self, name: &str) -> Option<(ProgramType, &Pointer)> {
-        match self.bindings.get(name)? {
+    pub fn held_value_local(
+        &self,
+        name: impl Into<BindingName>,
+    ) -> Option<(ProgramType, &Pointer)> {
+        let name = self.resolve_binding(&name.into());
+        match self.bindings.get(&name)? {
             LocalBinding::AggregateObject { layout, slot, .. } => {
                 Some((layout.value_type()?, slot))
             }
@@ -1719,7 +1815,9 @@ impl LocalEnvironment {
 
     /// The locals that keep one value in memory, with the value's type and
     /// the object's address.
-    pub fn held_value_locals(&self) -> impl Iterator<Item = (&str, ProgramType, &Pointer)> + '_ {
+    pub fn held_value_locals(
+        &self,
+    ) -> impl Iterator<Item = (&BindingName, ProgramType, &Pointer)> + '_ {
         self.aggregate_object_values()
             .filter_map(|(name, layout, slot)| Some((name, layout.value_type()?, slot)))
     }
@@ -1727,13 +1825,17 @@ impl LocalEnvironment {
     /// Read one local array's pointer and element type without scanning the frame.
     /// `None` for an array whose elements have no pointer type of their own,
     /// as [`Self::array_object_values`] leaves it out.
-    pub fn array_object_value(&self, name: &str) -> Option<(ProgramValue, ProgramType)> {
+    pub fn array_object_value(
+        &self,
+        name: impl Into<BindingName>,
+    ) -> Option<(ProgramValue, ProgramType)> {
+        let name = self.resolve_binding(&name.into());
         let LocalBinding::ArrayObject {
             element_type,
             slot,
             constant,
             ..
-        } = self.bindings.get(name)?
+        } = self.bindings.get(&name)?
         else {
             return None;
         };
@@ -1753,7 +1855,7 @@ impl LocalEnvironment {
     /// out: a proof cannot name it, though execution reads it.
     pub fn array_object_values(
         &self,
-    ) -> impl Iterator<Item = (&str, ProgramValue, ProgramType)> + '_ {
+    ) -> impl Iterator<Item = (&BindingName, ProgramValue, ProgramType)> + '_ {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
@@ -1763,7 +1865,7 @@ impl LocalEnvironment {
                     constant,
                     ..
                 } => Some((
-                    name.as_str(),
+                    name,
                     ProgramValue::typed_pointer_with_pointee_constant(
                         slot.clone(),
                         element_type.pointer_to()?,
@@ -1778,8 +1880,12 @@ impl LocalEnvironment {
             })
     }
 
-    pub(in crate::kernel) fn object_type(&self, name: &str) -> Option<ProgramType> {
-        match self.binding(name) {
+    pub(in crate::kernel) fn object_type(
+        &self,
+        name: impl Into<BindingName>,
+    ) -> Option<ProgramType> {
+        let name = self.resolve_binding(&name.into());
+        match self.binding(&name) {
             Some(LocalBinding::Object { program_type, .. }) => Some(*program_type),
             Some(LocalBinding::UninitializedObject { program_type, .. }) => Some(*program_type),
             Some(LocalBinding::GlobalObject { program_type, .. }) => Some(*program_type),
@@ -1789,8 +1895,9 @@ impl LocalEnvironment {
         }
     }
 
-    pub(crate) fn scalar_object_type(&self, name: &str) -> Option<ProgramType> {
-        match self.binding(name) {
+    pub(crate) fn scalar_object_type(&self, name: impl Into<BindingName>) -> Option<ProgramType> {
+        let name = self.resolve_binding(&name.into());
+        match self.binding(&name) {
             Some(LocalBinding::Object { program_type, .. }) => Some(*program_type),
             Some(LocalBinding::UninitializedObject { program_type, .. }) => Some(*program_type),
             Some(LocalBinding::GlobalObject { .. }) => None,
@@ -1800,20 +1907,22 @@ impl LocalEnvironment {
         }
     }
 
-    pub(in crate::kernel) fn binding(&self, name: &str) -> Option<&LocalBinding> {
-        self.bindings.get(name)
+    pub(in crate::kernel) fn binding(&self, name: impl Into<BindingName>) -> Option<&LocalBinding> {
+        let name = self.resolve_binding(&name.into());
+        self.bindings.get(&name)
     }
 
-    pub(in crate::kernel) fn slot(&self, name: &str) -> Option<&Pointer> {
-        self.binding(name).map(LocalBinding::slot)
+    pub(in crate::kernel) fn slot(&self, name: impl Into<BindingName>) -> Option<&Pointer> {
+        let name = self.resolve_binding(&name.into());
+        self.binding(&name).map(LocalBinding::slot)
     }
 
     pub(in crate::kernel) fn slots(&self) -> impl Iterator<Item = &Pointer> {
         self.slots.keys()
     }
 
-    pub(crate) fn name_for_slot(&self, pointer: &Pointer) -> Option<&str> {
-        self.slots.get(pointer).map(String::as_str)
+    pub(crate) fn name_for_slot(&self, pointer: &Pointer) -> Option<&BindingName> {
+        self.slots.get(pointer)
     }
 
     /// The array objects whose slots lie in `block`, with their element
@@ -1822,7 +1931,7 @@ impl LocalEnvironment {
     pub(crate) fn array_objects_with_slot_in(
         &self,
         block: &PointerBlock,
-    ) -> Vec<(&str, ProgramType, &Pointer)> {
+    ) -> Vec<(&BindingName, ProgramType, &Pointer)> {
         self.names_with_slot_in(block)
             .into_iter()
             .filter_map(|name| match self.binding(name)? {
@@ -1836,20 +1945,20 @@ impl LocalEnvironment {
 
     /// The names whose slots lie in `block`, found through the slot index:
     /// pointers order by block first, so they are one run of slot keys.
-    pub(in crate::kernel) fn names_with_slot_in(&self, block: &PointerBlock) -> Vec<&str> {
+    pub(in crate::kernel) fn names_with_slot_in(&self, block: &PointerBlock) -> Vec<&BindingName> {
         let mut names = Vec::new();
         let mut at = Pointer {
             block: block.clone(),
             offset: PointerOffsetTerm::Constant(i64::MIN),
         };
         if let Some(name) = self.slots.get(&at) {
-            names.push(name.as_str());
+            names.push(name);
         }
         while let Some((pointer, name)) = self.slots.get_greater_than(&at) {
             if &pointer.block != block {
                 break;
             }
-            names.push(name.as_str());
+            names.push(name);
             at = pointer.clone();
         }
         names
@@ -1861,37 +1970,48 @@ impl LocalEnvironment {
     pub(in crate::kernel) fn differing_names<'a>(
         &'a self,
         other: &'a Self,
-    ) -> impl Iterator<Item = &'a str> + 'a {
+    ) -> impl Iterator<Item = &'a BindingName> + 'a {
         self.bindings.diff(&other.bindings).map(|(name, _, _)| {
             crate::instrumentation::record_deterministic_work(1);
-            name.as_str()
+            name
         })
     }
 
-    pub(in crate::kernel) fn is_array_object(&self, name: &str) -> bool {
-        matches!(self.binding(name), Some(LocalBinding::ArrayObject { .. }))
+    pub(in crate::kernel) fn is_array_object(&self, name: impl Into<BindingName>) -> bool {
+        let name = self.resolve_binding(&name.into());
+        matches!(self.binding(&name), Some(LocalBinding::ArrayObject { .. }))
     }
 
-    pub(in crate::kernel) fn is_global_object(&self, name: &str) -> bool {
-        matches!(self.binding(name), Some(LocalBinding::GlobalObject { .. }))
+    pub(in crate::kernel) fn is_global_object(&self, name: impl Into<BindingName>) -> bool {
+        let name = self.resolve_binding(&name.into());
+        matches!(self.binding(&name), Some(LocalBinding::GlobalObject { .. }))
     }
 
-    pub(in crate::kernel) fn is_aggregate_object(&self, name: &str) -> bool {
+    pub(in crate::kernel) fn is_aggregate_object(&self, name: impl Into<BindingName>) -> bool {
+        let name = self.resolve_binding(&name.into());
         matches!(
-            self.binding(name),
+            self.binding(&name),
             Some(LocalBinding::AggregateObject { .. })
         )
     }
 
-    pub(crate) fn aggregate_object_pointer(&self, name: &str) -> Option<&Pointer> {
-        match self.binding(name) {
+    pub(crate) fn aggregate_object_pointer(
+        &self,
+        name: impl Into<BindingName>,
+    ) -> Option<&Pointer> {
+        let name = self.resolve_binding(&name.into());
+        match self.binding(&name) {
             Some(LocalBinding::AggregateObject { slot, .. }) => Some(slot),
             _ => None,
         }
     }
 
-    pub(crate) fn aggregate_layout(&self, name: &str) -> Option<&AggregateLayout> {
-        match self.binding(name) {
+    pub(crate) fn aggregate_layout(
+        &self,
+        name: impl Into<BindingName>,
+    ) -> Option<&AggregateLayout> {
+        let name = self.resolve_binding(&name.into());
+        match self.binding(&name) {
             Some(LocalBinding::AggregateObject { layout, .. }) => Some(layout),
             _ => None,
         }
@@ -2102,8 +2222,8 @@ impl LocalEnvironment {
     /// An environment of these bindings and slots, with its held-term index
     /// built from the bindings.
     pub(in crate::kernel) fn from_parts(
-        bindings: crate::persistent::PersistentMap<String, LocalBinding>,
-        slots: crate::persistent::PersistentMap<Pointer, String>,
+        bindings: crate::persistent::PersistentMap<BindingName, LocalBinding>,
+        slots: crate::persistent::PersistentMap<Pointer, BindingName>,
     ) -> Self {
         let held_terms = bindings
             .iter()
@@ -2113,7 +2233,7 @@ impl LocalEnvironment {
             .collect();
         let mut pointer_objects_by_block = crate::persistent::PersistentMap::<
             PointerBlock,
-            crate::persistent::PersistentMap<String, ()>,
+            crate::persistent::PersistentMap<BindingName, ()>,
         >::default();
         for (name, binding) in bindings.iter() {
             if let Some(block) = held_pointer_block(binding) {
@@ -2125,15 +2245,23 @@ impl LocalEnvironment {
                 pointer_objects_by_block.insert(block.clone(), names);
             }
         }
-        Self {
+        let mut result = Self {
             bindings,
             slots,
             held_terms,
             pointer_objects_by_block,
+            visible_names: Default::default(),
+        };
+        for (name, _) in result.bindings.clone().iter() {
+            result.index_source_binding(name);
         }
+        result
     }
 
-    pub(in crate::kernel) fn insert_binding(&mut self, name: String, binding: LocalBinding) {
+    pub(in crate::kernel) fn insert_binding(&mut self, name: BindingName, binding: LocalBinding) {
+        if !self.bindings.contains_key(&name) {
+            self.index_source_binding(&name);
+        }
         let slot = binding.slot().clone();
         let old = self.bindings.get(&name);
         let old_slot = old.map(LocalBinding::slot).cloned();
@@ -2172,11 +2300,12 @@ impl LocalEnvironment {
         self.slots.insert(slot, name);
     }
 
-    fn remove_pointer_object(&mut self, block: &PointerBlock, name: &str) {
+    fn remove_pointer_object(&mut self, block: &PointerBlock, name: impl Into<BindingName>) {
+        let name = self.resolve_binding(&name.into());
         let Some(mut names) = self.pointer_objects_by_block.get(block).cloned() else {
             return;
         };
-        names.remove(&name.to_string());
+        names.remove(&name.clone());
         if names.is_empty() {
             self.pointer_objects_by_block.remove(block);
         } else {
@@ -2189,7 +2318,7 @@ impl LocalEnvironment {
     pub(crate) fn pointer_objects_in_block<'a>(
         &'a self,
         block: &PointerBlock,
-    ) -> impl Iterator<Item = (&'a str, &'a PointerValue)> {
+    ) -> impl Iterator<Item = (&'a BindingName, &'a PointerValue)> {
         self.pointer_objects_by_block
             .get(block)
             .into_iter()
@@ -2198,7 +2327,7 @@ impl LocalEnvironment {
                 let Some(pointer) = self.get(name).and_then(|value| value.pointer()) else {
                     unreachable!("pointer object index follows its binding")
                 };
-                (name.as_str(), pointer)
+                (name, pointer)
             })
     }
 
@@ -2208,7 +2337,7 @@ impl LocalEnvironment {
     pub(crate) fn names_holding_integer<'a, 't>(
         &'a self,
         term: &'t MachineTerm,
-    ) -> impl Iterator<Item = &'a str> + use<'a, 't> {
+    ) -> impl Iterator<Item = &'a BindingName> + use<'a, 't> {
         self.names_holding_integer_matching(Some(held_term_fingerprint(term)), move |held| {
             if let Some(root) = held.shared() {
                 held.machine().is_some_and(|(format, _)| {
@@ -2229,7 +2358,7 @@ impl LocalEnvironment {
     pub(crate) fn names_holding_kernel_integer<'a, 't>(
         &'a self,
         term: &'t KernelTerm,
-    ) -> impl Iterator<Item = &'a str> + use<'a, 't> {
+    ) -> impl Iterator<Item = &'a BindingName> + use<'a, 't> {
         self.names_holding_integer_matching(held_kernel_term_fingerprint(term), move |held| {
             let KernelType::Program(ty) = term.ty() else {
                 return false;
@@ -2255,8 +2384,9 @@ impl LocalEnvironment {
         &'a self,
         fingerprint: Option<u64>,
         mut matches: F,
-    ) -> impl Iterator<Item = &'a str> + use<'a, 't, F> {
-        let mut at = fingerprint.map(|fingerprint| (fingerprint, String::new()));
+    ) -> impl Iterator<Item = &'a BindingName> + use<'a, 't, F> {
+        let mut at =
+            fingerprint.map(|fingerprint| (fingerprint, BindingName::Named(String::new())));
         let mut first = true;
         std::iter::from_fn(move || {
             loop {
@@ -2290,7 +2420,7 @@ impl LocalEnvironment {
                     })
                     .is_some_and(&mut matches)
                 {
-                    return Some(name.as_str());
+                    return Some(name);
                 }
             }
         })
@@ -2298,12 +2428,15 @@ impl LocalEnvironment {
 
     /// The names, in name order, of the objects holding exactly the named
     /// specification value `term`, by the same index.
-    pub(crate) fn names_holding_algebraic<'a>(&'a self, term: &AlgebraicTerm) -> Vec<&'a str> {
+    pub(crate) fn names_holding_algebraic<'a>(
+        &'a self,
+        term: &AlgebraicTerm,
+    ) -> Vec<&'a BindingName> {
         let Some(fingerprint) = held_algebraic_fingerprint(term) else {
             return Vec::new();
         };
         let mut names = Vec::new();
-        let mut at = (fingerprint, String::new());
+        let mut at = (fingerprint, BindingName::Named(String::new()));
         let mut entry = self
             .held_terms
             .get_key_value(&at)
@@ -2319,7 +2452,7 @@ impl LocalEnvironment {
             }
             crate::instrumentation::record_deterministic_work(1);
             if self.bindings.get(name).and_then(held_algebraic_value) == Some(term) {
-                names.push(name.as_str());
+                names.push(name);
             }
             at = (fingerprint, name.clone());
             entry = self
@@ -2337,12 +2470,13 @@ impl LocalEnvironment {
     pub(crate) fn changed_integer_holdings<'a>(
         &'a self,
         earlier: Option<&'a Self>,
-    ) -> Vec<(&'a str, &'a MachineTerm)> {
-        let changed =
-            |name: &'a String, now: Option<&'a LocalBinding>, before: Option<&LocalBinding>| {
-                let held = held_integer_term(now?)?;
-                (before.and_then(held_integer_term) != Some(held)).then_some((name.as_str(), held))
-            };
+    ) -> Vec<(&'a BindingName, &'a MachineTerm)> {
+        let changed = |name: &'a BindingName,
+                       now: Option<&'a LocalBinding>,
+                       before: Option<&LocalBinding>| {
+            let held = held_integer_term(now?)?;
+            (before.and_then(held_integer_term) != Some(held)).then_some((name, held))
+        };
         match earlier {
             Some(earlier) => self
                 .bindings
@@ -2365,12 +2499,12 @@ impl LocalEnvironment {
     pub(crate) fn changed_pointer_blocks<'a>(
         &'a self,
         earlier: Option<&'a Self>,
-    ) -> Vec<(&'a str, &'a PointerBlock)> {
-        let changed = |name: &'a String,
+    ) -> Vec<(&'a BindingName, &'a PointerBlock)> {
+        let changed = |name: &'a BindingName,
                        now: Option<&'a LocalBinding>,
                        before: Option<&LocalBinding>| {
             let block = held_pointer_block(now?)?;
-            (before.and_then(held_pointer_block) != Some(block)).then_some((name.as_str(), block))
+            (before.and_then(held_pointer_block) != Some(block)).then_some((name, block))
         };
         match earlier {
             Some(earlier) => self
@@ -2387,25 +2521,40 @@ impl LocalEnvironment {
     }
 
     /// Whether the object `name` holds a pointer into `block`.
-    pub(crate) fn holds_pointer_in_block(&self, name: &str, block: &PointerBlock) -> bool {
-        self.bindings.get(name).and_then(held_pointer_block) == Some(block)
+    pub(crate) fn holds_pointer_in_block(
+        &self,
+        name: impl Into<BindingName>,
+        block: &PointerBlock,
+    ) -> bool {
+        let name = self.resolve_binding(&name.into());
+        self.bindings.get(&name).and_then(held_pointer_block) == Some(block)
     }
 
     /// Whether the scalar object `name` holds exactly `term`.
-    pub(crate) fn holds_integer(&self, name: &str, term: &MachineTerm) -> bool {
-        self.bindings.get(name).and_then(held_integer_term) == Some(term)
+    pub(crate) fn holds_integer(&self, name: impl Into<BindingName>, term: &MachineTerm) -> bool {
+        let name = self.resolve_binding(&name.into());
+        self.bindings.get(&name).and_then(held_integer_term) == Some(term)
     }
 
     /// Puts back a binding read from another environment with
     /// [`Self::binding`].
-    pub(in crate::kernel) fn restore_binding(&mut self, name: &str, binding: LocalBinding) {
-        self.insert_binding(name.to_string(), binding);
+    pub(in crate::kernel) fn restore_binding(
+        &mut self,
+        name: impl Into<BindingName>,
+        binding: LocalBinding,
+    ) {
+        let name = self.resolve_binding(&name.into());
+        self.insert_binding(name.clone(), binding);
     }
 
     /// Makes an initialized scalar object uninitialized again, keeping its
     /// slot, type and qualifiers, so a read of it is refused. Returns whether
     /// the name held such an object.
-    pub(in crate::kernel) fn forget_initialization(&mut self, name: &str) -> bool {
+    pub(in crate::kernel) fn forget_initialization(
+        &mut self,
+        name: impl Into<BindingName>,
+    ) -> bool {
+        let name = self.resolve_binding(&name.into());
         let Some(LocalBinding::Object {
             program_type,
             slot,
@@ -2414,12 +2563,12 @@ impl LocalEnvironment {
             constant,
             pointee_constant,
             ..
-        }) = self.bindings.get(name).cloned()
+        }) = self.bindings.get(&name).cloned()
         else {
             return false;
         };
         self.insert_binding(
-            name.to_string(),
+            name.clone(),
             LocalBinding::UninitializedObject {
                 program_type,
                 slot,
@@ -2437,17 +2586,19 @@ impl LocalEnvironment {
     /// The object's storage is retired separately; this removes the name that
     /// designated it, so a later declaration of that name is a declaration
     /// rather than a re-entry of one this frame still holds.
-    pub(in crate::kernel) fn remove(&mut self, name: &str) {
-        let Some(binding) = self.bindings.get(name).cloned() else {
+    pub(in crate::kernel) fn remove(&mut self, name: impl Into<BindingName>) {
+        let name = self.resolve_binding(&name.into());
+        let Some(binding) = self.bindings.get(&name).cloned() else {
             return;
         };
         if let Some(fingerprint) = held_fingerprint(&binding) {
-            self.held_terms.remove(&(fingerprint, name.to_string()));
+            self.held_terms.remove(&(fingerprint, name.clone()));
         }
         if let Some(block) = held_pointer_block(&binding) {
-            self.remove_pointer_object(block, name);
+            self.remove_pointer_object(block, &name);
         }
-        self.bindings.remove(&name.to_string());
+        self.bindings.remove(&name);
+        self.unindex_source_binding(&name);
         self.slots.remove(binding.slot());
     }
 }
@@ -7379,23 +7530,50 @@ impl Memory {
     /// Value-only parameters never own storage. Give their pseudo-slots a
     /// separate namespace so a caller's same-named local cannot supply a cell
     /// or be overwritten by a parameter assignment.
-    pub(in crate::kernel) fn value_parameter_pointer(name: &str) -> Pointer {
+    pub(in crate::kernel) fn value_parameter_pointer(name: impl Into<BindingName>) -> Pointer {
+        let name = name.into();
+        let block = match name {
+            BindingName::Local(binding) => PointerBlock::AutomaticLocal {
+                binding,
+                instance: LocalStorageInstance::ValueParameter,
+            },
+            BindingName::Named(name) => format!("local:value-parameter:{name}").into(),
+        };
         Pointer {
-            block: format!("local:value-parameter:{name}").into(),
+            block,
             offset: PointerOffsetTerm::Constant(0),
         }
     }
 
-    pub(in crate::kernel) fn local_pointer(name: &str) -> Pointer {
+    pub(in crate::kernel) fn local_pointer(name: impl Into<BindingName>) -> Pointer {
+        let name = name.into();
+        let block = match name {
+            BindingName::Local(binding) => PointerBlock::AutomaticLocal {
+                binding,
+                instance: LocalStorageInstance::Implicit,
+            },
+            BindingName::Named(name) => format!("local:{name}").into(),
+        };
         Pointer {
-            block: format!("local:{name}").into(),
+            block,
             offset: PointerOffsetTerm::Constant(0),
         }
     }
 
-    pub(in crate::kernel) fn local_lifetime_pointer(lifetime: u64, name: &str) -> Pointer {
+    pub(in crate::kernel) fn local_lifetime_pointer(
+        lifetime: u64,
+        name: impl Into<BindingName>,
+    ) -> Pointer {
+        let name = name.into();
+        let block = match name {
+            BindingName::Local(binding) => PointerBlock::AutomaticLocal {
+                binding,
+                instance: LocalStorageInstance::Lifetime(lifetime),
+            },
+            BindingName::Named(name) => format!("local:lifetime:{lifetime}:{name}").into(),
+        };
         Pointer {
-            block: format!("local:lifetime:{lifetime}:{name}").into(),
+            block,
             offset: PointerOffsetTerm::Constant(0),
         }
     }
@@ -7428,10 +7606,22 @@ impl Memory {
         }
     }
 
-    pub(in crate::kernel) fn frame_local_pointer(frame: u64, name: &str) -> Pointer {
-        Pointer {
-            block: format!("local:frame:{frame}:{name}").into(),
-            offset: PointerOffsetTerm::Constant(0),
+    pub(in crate::kernel) fn frame_local_pointer(
+        frame: u64,
+        name: impl Into<BindingName>,
+    ) -> Pointer {
+        match name.into() {
+            BindingName::Local(binding) => Pointer {
+                block: PointerBlock::AutomaticLocal {
+                    binding,
+                    instance: LocalStorageInstance::Frame(frame),
+                },
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            BindingName::Named(name) => Pointer {
+                block: format!("local:frame:{frame}:{name}").into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
         }
     }
 
@@ -7768,8 +7958,9 @@ impl ExecutionState {
     /// one value of an abstract or enum type in memory, as a Click name reads
     /// it: the read of the object at the point it was last written, never
     /// the value a store left there, so `o` names one read per version.
-    pub fn held_local_value(&self, name: &str) -> Option<ProgramValue> {
-        let (ProgramType::Parameter(value_type), slot) = self.locals().held_value_local(name)?
+    pub fn held_local_value(&self, name: impl Into<BindingName>) -> Option<ProgramValue> {
+        let name = name.into();
+        let (ProgramType::Parameter(value_type), slot) = self.locals().held_value_local(&name)?
         else {
             return None;
         };
@@ -8671,7 +8862,7 @@ impl ExecutionState {
             {
                 return Err("control must own exact memory, allocation, and authority".into());
             }
-            let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name == parameter);
+            let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named(parameter));
             let is_counter_load = |expression: &SpecExpression| {
                 let SpecExpression::MemoryLoad {
                     memory: SpecMemory::Current,
@@ -9434,7 +9625,7 @@ impl ExecutionState {
                 .shares_storage_with(&other.observed_population_families)
     }
 
-    pub fn with_local(mut self, name: impl Into<String>, value: ProgramValue) -> Self {
+    pub fn with_local(mut self, name: impl Into<BindingName>, value: ProgramValue) -> Self {
         self.locals.set(name, value);
         self
     }
@@ -9494,6 +9685,32 @@ impl ExecutionState {
             self.resources.loan_dependency_state(),
         );
         self.memory = memory;
+        self.point = self.point.after();
+    }
+
+    /// The point this state's path has reached.
+    pub(crate) fn reached_point(&self) -> &super::reached_point::ReachedPoint {
+        &self.point
+    }
+
+    /// Replace memory without the resource invalidation of
+    /// [`Self::set_memory`], for a transition that has already accounted for
+    /// it. It is still a transition, so the state moves to a new point.
+    pub(crate) fn set_memory_directly(&mut self, memory: Memory) {
+        self.memory = memory;
+        self.point = self.point.after();
+    }
+
+    /// Keep `before`'s memory, and so stand where `before` stood: a state
+    /// rebuilt around unchanged memory has not moved.
+    pub(crate) fn keep_memory_of(&mut self, before: &Self) {
+        self.memory = before.memory.clone();
+        self.point = before.point.clone();
+    }
+
+    /// Stand this state at a new point reached from both arms of a join.
+    pub(crate) fn join_reached_points(&mut self, left: &Self, right: &Self) {
+        self.point = super::reached_point::ReachedPoint::joining(&left.point, &right.point);
     }
 
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {
@@ -9597,21 +9814,26 @@ impl ExecutionState {
         &self.locals
     }
 
-    pub(crate) fn local_object_type(&self, name: &str) -> Option<ProgramType> {
+    pub(crate) fn local_object_type(&self, name: impl Into<BindingName>) -> Option<ProgramType> {
         self.locals.object_type(name)
     }
 
-    pub(crate) fn global_object_type(&self, name: &str) -> Option<ProgramType> {
+    pub(crate) fn global_object_type(&self, name: impl Into<BindingName>) -> Option<ProgramType> {
+        let name = name.into();
         self.locals
-            .is_global_object(name)
-            .then(|| self.locals.object_type(name))
+            .is_global_object(&name)
+            .then(|| self.locals.object_type(&name))
             .flatten()
     }
 
-    pub(crate) fn global_array_element_type(&self, name: &str) -> Option<ProgramType> {
+    pub(crate) fn global_array_element_type(
+        &self,
+        name: impl Into<BindingName>,
+    ) -> Option<ProgramType> {
+        let name = name.into();
         self.locals
-            .is_array_object(name)
-            .then(|| self.locals.object_type(name))
+            .is_array_object(&name)
+            .then(|| self.locals.object_type(&name))
             .flatten()
     }
 
@@ -9622,8 +9844,9 @@ impl ExecutionState {
     /// The value one scalar local or parameter holds now, by name: a stored
     /// local's slot cell, or a logical parameter's binding, which no store
     /// can change. Nothing when a stored slot's cell is not known.
-    pub(crate) fn scalar_local_value(&self, name: &str) -> Option<ProgramValue> {
-        match self.locals.binding(name)? {
+    pub(crate) fn scalar_local_value(&self, name: impl Into<BindingName>) -> Option<ProgramValue> {
+        let name = name.into();
+        match self.locals.binding(&name)? {
             LocalBinding::Object {
                 storage_declared: false,
                 value,
@@ -9641,7 +9864,7 @@ impl ExecutionState {
     /// The values held by memory-resident scalar locals at offset zero.
     /// Resolve names through the local-slot index so framed parameter blocks
     /// are exposed with their source name rather than their internal block id.
-    pub fn local_cell_values(&self) -> impl Iterator<Item = (&str, ProgramValue)> + '_ {
+    pub fn local_cell_values(&self) -> impl Iterator<Item = (&BindingName, ProgramValue)> + '_ {
         // A local's slot is at offset zero of its block, so a run holds one
         // only at the slot spelled that way, looked up rather than visited.
         let run_slots = self.memory.cells.runs().filter_map(|run| {
@@ -9673,7 +9896,10 @@ impl ExecutionState {
     /// A speculative spelling lookup visits only declared local slots. It
     /// borrows each atom, never materializing all local values or array runs.
     /// Slot order retains the same deterministic first name as local_cell_values.
-    pub(crate) fn local_name_holding_bitvector_variable(&self, variable: Variable) -> Option<&str> {
+    pub(crate) fn local_name_holding_bitvector_variable(
+        &self,
+        variable: Variable,
+    ) -> Option<&BindingName> {
         // The candidates are the scalar locals bound to the variable, found
         // through the held-term index; each must still hold it in current
         // memory at its slot's start. The first such slot answers.
@@ -9688,7 +9914,7 @@ impl ExecutionState {
             };
             if pointer.offset == PointerOffsetTerm::Constant(0)
                 && self.memory.cells.bitvector_variable_at(pointer) == Some(variable)
-                && held.is_none_or(|(first, _): (&Pointer, &str)| pointer < first)
+                && held.is_none_or(|(first, _): (&Pointer, &BindingName)| pointer < first)
             {
                 held = Some((pointer, name));
             }
@@ -9701,7 +9927,7 @@ impl ExecutionState {
         &self,
         variable: Variable,
         pointer: &Pointer,
-    ) -> Option<&str> {
+    ) -> Option<&BindingName> {
         if crate::instrumentation::deadline_exceeded() {
             return None;
         }
@@ -9915,7 +10141,7 @@ pub(crate) fn registered_block_alignment_charged(
 #[derive(Clone)]
 pub(crate) struct BlockRegistriesState {
     alignment: BTreeMap<PointerBlock, u64>,
-    never_address_taken: BTreeSet<String>,
+    never_address_taken: BTreeSet<BindingName>,
     never_address_taken_key: std::sync::Arc<()>,
 }
 
@@ -9942,26 +10168,14 @@ pub(crate) fn clear_block_alignment_registry() {
 
 thread_local! {
     static NEVER_ADDRESS_TAKEN_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
-    /// The names of automatic objects — locals and parameters — whose address
-    /// no function in this session's C sources ever takes, and which are
-    /// declared everywhere with a scalar or pointer type.
-    ///
-    /// Deliberately a set of *names*, not of blocks. A block identity says
-    /// nothing about which function declared it (`local:x` in `f` and in `g`
-    /// are one spelling), and the resolution memo and the canonical-load
-    /// projection cache are scoped to a verification rather than to a
-    /// function. An answer that differed between two functions of one session
-    /// would therefore be cached under the first function's answer and served
-    /// to the second. Indexing by name makes the answer function-independent:
-    /// a name taken in *any* function is absent for *every* function, which
-    /// loses proofs about the innocent one and can never serve a stale answer.
-    ///
-    /// Populated once, before any query, by the surface's pre-pass over every
-    /// parsed function body, and emptied when a session starts. Absence is the
-    /// answer for everything else, including the verifier's own synthetic
-    /// names, so an unpopulated registry decides nothing.
+    /// Automatic declarations whose address the selected source never takes.
+    /// Typed C IDs distinguish functions and lexical scopes, independently of
+    /// source spelling and storage-instance counters. Legacy Named bindings
+    /// keep the conservative program-wide treatment of the other frontends.
+    /// Populated by the source pre-pass before any query. Missing declarations
+    /// are addressable by default; a session revision scopes resolution caches.
     static NEVER_ADDRESS_TAKEN_LOCALS_KEY: std::cell::RefCell<std::sync::Arc<()>> = std::cell::RefCell::new(std::sync::Arc::new(()));
-    static NEVER_ADDRESS_TAKEN_LOCALS: std::cell::RefCell<BTreeSet<String>> =
+    static NEVER_ADDRESS_TAKEN_LOCALS: std::cell::RefCell<BTreeSet<BindingName>> =
         const { std::cell::RefCell::new(BTreeSet::new()) };
 }
 
@@ -9989,7 +10203,7 @@ pub(crate) fn never_address_taken_locals_key() -> std::sync::Arc<()> {
     NEVER_ADDRESS_TAKEN_LOCALS_KEY.with(|key| key.borrow().clone())
 }
 
-pub(crate) fn set_never_address_taken_locals(names: BTreeSet<String>) {
+pub(crate) fn set_never_address_taken_locals(names: BTreeSet<BindingName>) {
     NEVER_ADDRESS_TAKEN_LOCALS_KEY.with(|key| *key.borrow_mut() = std::sync::Arc::new(()));
     NEVER_ADDRESS_TAKEN_LOCALS.with(|registry| *registry.borrow_mut() = names);
     advance_never_address_taken_generation();
@@ -10002,7 +10216,7 @@ pub(crate) fn set_never_address_taken_locals(names: BTreeSet<String>) {
 /// tables that may already hold an answer computed while the name was still
 /// in the registry. Today no caller joins a session with different sources,
 /// and this keeps that from becoming a silent staleness bug if one appears.
-pub(crate) fn withdraw_never_address_taken_locals(taken: &BTreeSet<String>) -> bool {
+pub(crate) fn withdraw_never_address_taken_locals(taken: &BTreeSet<BindingName>) -> bool {
     let changed = NEVER_ADDRESS_TAKEN_LOCALS.with(|registry| {
         let mut registry = registry.borrow_mut();
         let before = registry.len();
@@ -10016,21 +10230,18 @@ pub(crate) fn withdraw_never_address_taken_locals(taken: &BTreeSet<String>) -> b
     changed
 }
 
-/// The automatic object a `local:` block holds, as the program names it, or
-/// `None` when the spelling is not one automatic object's.
-///
-/// Three spellings reach a `local:` block: `local:x` for a declaration,
-/// `local:lifetime:2:x` for a re-entered one, and `local:frame:3:x` for a
-/// call frame's. A C identifier contains no colon, so the forms cannot be
-/// confused with a local genuinely named `frame` or `lifetime`, and any other
-/// shape is refused rather than guessed.
-fn local_block_object_name(block: &PointerBlock) -> Option<&str> {
+/// The declaration a storage block belongs to. Typed C blocks carry this
+/// directly; non-C legacy blocks retain their original prefix grammar.
+fn local_block_object_name(block: &PointerBlock) -> Option<BindingName> {
+    if let PointerBlock::AutomaticLocal { binding, .. } = block {
+        return Some(binding.clone().into());
+    }
     let rest = block.strip_prefix("local:")?;
     match rest.split_once(':') {
-        None => Some(rest),
+        None => Some(rest.into()),
         Some(("lifetime" | "frame", tail)) => {
             let (_, name) = tail.split_once(':')?;
-            (!name.contains(':')).then_some(name)
+            (!name.contains(':')).then(|| name.into())
         }
         Some(_) => None,
     }
@@ -10062,7 +10273,7 @@ pub(crate) fn block_is_never_address_taken_local(block: &PointerBlock) -> bool {
     let Some(name) = local_block_object_name(block) else {
         return false;
     };
-    NEVER_ADDRESS_TAKEN_LOCALS.with(|registry| registry.borrow().contains(name))
+    NEVER_ADDRESS_TAKEN_LOCALS.with(|registry| registry.borrow().contains(&name))
 }
 
 pub(crate) fn clear_never_address_taken_locals() {
@@ -10079,7 +10290,7 @@ mod hidden_local_distinctness_tests {
     /// address is never taken, and still not from one whose address is.
     #[test]
     fn a_pointer_value_never_reaches_a_local_whose_address_is_never_taken() {
-        set_never_address_taken_locals(BTreeSet::from(["hidden".to_string()]));
+        set_never_address_taken_locals(BTreeSet::from(["hidden".into()]));
         let hidden: PointerBlock = "local:hidden".into();
         let taken: PointerBlock = "local:taken".into();
         for value in [
@@ -10847,12 +11058,16 @@ mod local_variable_spelling_tests {
             value,
         );
         assert_eq!(
-            state.local_name_holding_bitvector_variable(variable),
+            state
+                .local_name_holding_bitvector_variable(variable)
+                .and_then(BindingName::named),
             Some("a")
         );
         let pointer = Memory::local_pointer("a");
         assert_eq!(
-            state.local_name_holding_bitvector_variable_at(variable, &pointer),
+            state
+                .local_name_holding_bitvector_variable_at(variable, &pointer)
+                .and_then(BindingName::named),
             Some("a")
         );
         let state = state.clone().with_memory(state.memory().clone().store(
@@ -10860,11 +11075,15 @@ mod local_variable_spelling_tests {
             ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
         ));
         assert_eq!(
-            state.local_name_holding_bitvector_variable(variable),
+            state
+                .local_name_holding_bitvector_variable(variable)
+                .and_then(BindingName::named),
             Some("z")
         );
         assert_eq!(
-            state.local_name_holding_bitvector_variable_at(variable, &pointer),
+            state
+                .local_name_holding_bitvector_variable_at(variable, &pointer)
+                .and_then(BindingName::named),
             None,
             "a recorded address must still hold the atom in current memory"
         );
@@ -10872,7 +11091,12 @@ mod local_variable_spelling_tests {
             Memory::local_pointer("z"),
             ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
         ));
-        assert_eq!(state.local_name_holding_bitvector_variable(variable), None);
+        assert_eq!(
+            state
+                .local_name_holding_bitvector_variable(variable)
+                .and_then(BindingName::named),
+            None
+        );
     }
 
     #[cfg(test)]

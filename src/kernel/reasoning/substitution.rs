@@ -896,6 +896,8 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
             })
         }),
         memory: s.memory(&state.memory),
+        // Renaming values leaves the state where its path put it.
+        point: state.point.clone(),
         resource_bindings: state.resource_bindings.clone(),
         instance_field_scope: walk_resource_context(&state.instance_field_scope, s),
         resources: walk_resource_context(&state.resources, s),
@@ -3113,7 +3115,8 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
         | PointerBlock::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        PointerBlock::Concrete(_)
+        PointerBlock::AutomaticLocal { .. }
+        | PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
         | PointerBlock::ExternalArgument

@@ -2734,7 +2734,7 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
     );
     assert!(edges.iter().any(|(try_body, _)| {
         matches!(try_body, ProgramStatement::Seq(sequence)
-            if { let (declare, call) = (sequence.first(), &sequence.rest()); matches!(declare.as_ref(), ProgramStatement::Declare { name, .. } if name == "ignored")
+            if { let (declare, call) = (sequence.first(), &sequence.rest()); matches!(declare.as_ref(), ProgramStatement::Declare { name, .. } if name.is_named("ignored"))
                 && contains_call(call, "helper") })
     }));
 }
@@ -3818,7 +3818,7 @@ fn destructor_object_order<'a>(statement: &'a ProgramStatement, destructor: &str
                 if let [ProgramExpression::Cast { expression, .. }] = arguments.as_slice()
                     && let ProgramExpression::Variable(name) = expression.as_ref()
                 {
-                    objects.push(name);
+                    objects.push(name.source_name());
                 }
             }
             ProgramStatement::Seq(statements) => {
@@ -3848,7 +3848,7 @@ fn contains_raw_aggregate_destination(statement: &ProgramStatement, expected: &s
             name,
             kind: click::kernel::AggregateDeclarationKind::ConstructionDestination,
             ..
-        } => name == expected,
+        } => name.is_named(expected),
         ProgramStatement::Seq(statements) => statements
             .iter()
             .any(|statement| contains_raw_aggregate_destination(statement, expected)),
@@ -3883,7 +3883,7 @@ fn contains_scalar_local_pipeline(
                 name,
                 program_type: ProgramType::Int32,
                 ..
-            } if name == call_local => found[0] = true,
+            } if name.is_named(call_local) => found[0] = true,
             ProgramStatement::CallResult { function_name, .. } if function_name == callee => {
                 found[1] = true
             }
@@ -3891,8 +3891,8 @@ fn contains_scalar_local_pipeline(
                 name,
                 program_type: ProgramType::Int32,
                 ..
-            } if name == value_local => found[2] = true,
-            ProgramStatement::Assign { name, .. } if name == value_local => found[3] = true,
+            } if name.is_named(value_local) => found[2] = true,
+            ProgramStatement::Assign { name, .. } if name.is_named(value_local) => found[3] = true,
             ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     visit(statement, call_local, value_local, callee, found);
@@ -3917,7 +3917,7 @@ fn contains_local_aggregate_pipeline(statement: &ProgramStatement, local: &str) 
     let mut found = [false; 3];
     fn visit(statement: &ProgramStatement, local: &str, found: &mut [bool; 3]) {
         match statement {
-            ProgramStatement::DeclareAggregate { name, layout, .. } if name == local => {
+            ProgramStatement::DeclareAggregate { name, layout, .. } if name.is_named(local) => {
                 found[0] = layout.size_bytes() == 16
                     && layout.alignment_bytes() == 8
                     && layout.fields().len() == 2;
@@ -3927,13 +3927,13 @@ fn contains_local_aggregate_pipeline(statement: &ProgramStatement, local: &str) 
                 value_type,
                 ..
             } => {
-                if matches!(pointer, ProgramExpression::Variable(name) if name == local)
+                if matches!(pointer, ProgramExpression::Variable(name) if name.is_named(local))
                     && *value_type == ProgramType::Int32Pointer
                 {
                     found[1] = true;
                 }
                 if let ProgramExpression::PointerOffsetBytes { pointer, bytes } = pointer
-                    && matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name == local)
+                    && matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name.is_named(local))
                 {
                     if *bytes == 0 && *value_type == ProgramType::Int32Pointer {
                         found[1] = true;
@@ -4751,7 +4751,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
                     if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
                         returned.as_ref(),
                         ProgramStatement::Return(ProgramExpression::Variable(name))
-                            if name.starts_with("__click_cpp_return_value")
+                            if name.source_name().starts_with("__click_cpp_return_value")
                     ) }
             ) }
     ));
@@ -6152,7 +6152,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                     volatile: false,
                     pointee_constant: false,
                     ..
-                } if pointer == "&value"
+                } if pointer.is_named("&value")
                     && matches!(
                         left.as_ref(),
                         ProgramExpression::TypedLoad {
@@ -6160,7 +6160,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                             value_type: ProgramType::Int32,
                             volatile: false,
                             ..
-                        } if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name == "&value")
+                        } if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name.is_named("&value"))
                     )
                     && matches!(right.as_ref(), ProgramExpression::Value(value) if value == &int32(1))
             )
@@ -6171,7 +6171,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                     value_type: ProgramType::Int32,
                     volatile: false,
                     ..
-                }) if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name == "&value")
+                }) if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name.is_named("&value"))
             ) }
     ));
 
@@ -10127,7 +10127,7 @@ int32 initialized_cleanup(int32& value) { owns value; ensures result == 7; ensur
     assert_eq!(
         caller
             .local_struct_values()
-            .get("guard")
+            .get(&("guard").into())
             .map(String::as_str),
         Some("Restore")
     );

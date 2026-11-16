@@ -58,5 +58,5 @@ int32 stuck_loop(int32 n) {
 ```
 
 ```expect
-fail: recursive call to `stuck_loop` must pass `n - K`
+fail: stuck_loop recursion measure: `n` decreases at the recursive call
 ```

@@ -732,7 +732,7 @@ existing polarity error: float `!=` already carries `NotEqual`, so lowering
 must not negate it again. Ordinary, NaN and signed-zero cases retain their IEEE
 meaning in propositions and Boolean values.
 
-8y retains float comparisons and classifications as typed Boolean nodes with
+8y ([PR #2897](https://github.com/clicklang/click/pull/2897)) retains float comparisons and classifications as typed Boolean nodes with
 common float operands. Borrowed predicate readers preserve comparison width,
 operator, classification and exact operand syntax, including signed-zero and
 NaN payloads. These are structural constructors; existing producers retain
@@ -743,6 +743,46 @@ condition export and selected Boolean rewrite/key adapters remain explicit
 boundaries for the closure audit; this does not migrate float calls or storage.
 The 90 focused float checks, float fact-stability audit (zero differences),
 2,155 reader/scaling checks and quality checks passed.
+
+8z retains typed Click float calls with common argument roots and result width.
+Original `Value(machine)` versus `SharedMachine` argument carriers remain
+exact, as for algebraic calls. Native float-call import/export is iterative;
+constructing nested shared calls does not export their argument prefixes.
+Specification production retains float arguments through float-result calls,
+and Surface raising uses the existing function-call spelling in the separate
+float renderer. Variable readers, certification admission, load detection and
+candidate fingerprints preserve their existing policies. Call argument
+fingerprints remain exact under the memory-blind selector and stable across
+verification sessions, using the existing memo for shared float prefixes.
+Selected nonfloat argument payload adapters remain for 8ac; unknown untyped
+native intrinsic calls remain explicit legacy boundaries for 8ad. Execution
+and memory handoffs remain 8aa–8ab. The 101 focused float, fixture and deep
+integer-synthesis checks passed, with zero float fact-stability differences.
+
+8aa retains float roots through local bindings, same-format argument and return
+coercions, caller results, temporary step results and specification value
+handoffs. Stored local values preserve exact native equality/order/hash keys;
+root-preserving handoffs do not materialize float expression prefixes. Equal
+float conditional arms retain their root, while unequal arms keep the existing
+refusal. Native arithmetic and changed-format coercion remain explicit producer
+bridges; memory-cell storage is the separate 8ab slice. Deterministic tests
+cover growing shared prefixes through local, temporary and return handoffs.
+All 2,209 handoff/scaling checks passed; after integrating upstream, 147
+float/loop/fixture checks passed with zero float fact-stability differences.
+Quality checks passed.
+
+8ab retains float roots in memory cells and same-type store/load handoffs.
+Memory keys continue to use the exact native payload, including width, NaN
+bits and signed zero; native views are requested at the existing memory-key
+and access/conversion boundaries. Cell-carrier copies retain shared prefixes
+without exporting them. Tests cover both float widths, exact key parity and
+loads from materialized cells. This changes no alias, ownership, effective-type,
+volatile or byte-reinterpretation rules. The 109 focused float/fixture checks
+passed with zero fact-stability differences; quality checks passed. All 1,997
+selected memory/scaling checks have passing results across the broad, isolated
+and completion runs. The broad run passed 1,939 before the existing conjunction
+selection transport test hit its 30-second limit; it passed unchanged in
+isolation in 12.792s, and the remaining 57 checks passed separately.
 
 ### 8a inventory
 

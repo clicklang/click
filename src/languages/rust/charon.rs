@@ -3743,6 +3743,7 @@ pub(super) fn decode_crate(
         let mut locals = locals;
         temporaries::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
+        temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         functions.push(out::Function {
             sites: source_statements
                 .iter()
@@ -5623,7 +5624,10 @@ mod tests {
         }
         let mut guards = Vec::new();
         visit(function.body(), &mut guards);
-        assert_eq!(guards, ["LessThan(Variable(\"i\"), Variable(\"n\"))"]);
+        assert_eq!(
+            guards,
+            ["LessThan(Variable(Named(\"i\")), Variable(Named(\"n\")))"]
+        );
     }
 
     #[test]

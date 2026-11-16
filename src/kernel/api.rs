@@ -1217,7 +1217,7 @@ pub fn loop_invariant_obligations_at_back_edge(
 pub fn program_reject_address_escaped_loop_measures(
     function_name: &str,
     measures: &[RankingComponent],
-    addressed: &BTreeSet<String>,
+    addressed: &BTreeSet<BindingName>,
 ) -> Result<(), String> {
     crate::kernel::termination::program_reject_address_escaped_loop_measures(
         function_name,
@@ -1228,7 +1228,7 @@ pub fn program_reject_address_escaped_loop_measures(
 
 /// The locals whose address `body` takes anywhere: the one walk the
 /// address-escape checks read (see the termination module).
-pub fn program_address_taken_locals(body: &ProgramStatement) -> BTreeSet<String> {
+pub fn program_address_taken_locals(body: &ProgramStatement) -> BTreeSet<BindingName> {
     crate::kernel::termination::address_taken_locals(body)
 }
 
@@ -1477,7 +1477,7 @@ pub struct StateJoinAbstraction {
 /// the abstract frontier.
 pub fn abstract_execution_state_for_join(
     state: &ExecutionState,
-    stable_entry_locals: &BTreeMap<String, ProgramValue>,
+    stable_entry_locals: &BTreeMap<BindingName, ProgramValue>,
     next_kernel_variable: u64,
 ) -> Result<StateJoinAbstraction, String> {
     abstract_execution_state_for_join_across(
@@ -1502,7 +1502,7 @@ pub fn abstract_execution_state_for_join(
 pub fn abstract_execution_state_for_join_across(
     state: &ExecutionState,
     sibling_states: &[&ExecutionState],
-    stable_entry_locals: &BTreeMap<String, ProgramValue>,
+    stable_entry_locals: &BTreeMap<BindingName, ProgramValue>,
     next_kernel_variable: u64,
 ) -> Result<StateJoinAbstraction, String> {
     abstract_execution_state_for_join_across_with_policy(
@@ -1540,7 +1540,7 @@ pub fn abstract_execution_state_for_interface_join_across(
 /// value, or, at an interface join, those every arm holds alike.
 #[derive(Clone, Copy)]
 enum JoinLocals<'a> {
-    Stable(&'a BTreeMap<String, ProgramValue>),
+    Stable(&'a BTreeMap<BindingName, ProgramValue>),
     ArmsAgree,
 }
 
@@ -1549,7 +1549,7 @@ enum JoinLocals<'a> {
 /// keeps without visiting. The second is read from the slot index.
 struct InterfacePreservedBlocks<'a> {
     locals: &'a LocalEnvironment,
-    differing: &'a BTreeSet<&'a str>,
+    differing: &'a BTreeSet<&'a BindingName>,
     visited: &'a BTreeSet<PointerBlock>,
 }
 
@@ -1756,7 +1756,7 @@ fn abstract_execution_state_for_join_across_with_policy(
     }
     let mut left_uninitialized = Vec::new();
 
-    let visited: Box<dyn Iterator<Item = (&String, &LocalBinding)>> = match join_locals {
+    let visited: Box<dyn Iterator<Item = (&BindingName, &LocalBinding)>> = match join_locals {
         JoinLocals::Stable(_) => Box::new(state.locals.bindings.iter()),
         JoinLocals::ArmsAgree => Box::new(
             differing
@@ -1775,7 +1775,7 @@ fn abstract_execution_state_for_join_across_with_policy(
             pointee_constant,
             ..
         } = binding
-            && uninitialized_in_an_arm.contains(name.as_str())
+            && uninitialized_in_an_arm.contains(name)
         {
             // Its block is not preserved, so the memory join below drops
             // the value this arm stored and its initialization record.
@@ -2144,7 +2144,10 @@ pub fn composite_resource_witness_values(
     )
 }
 
-pub fn program_assign(name: impl Into<String>, expression: ProgramExpression) -> ProgramStatement {
+pub fn program_assign(
+    name: impl Into<BindingName>,
+    expression: ProgramExpression,
+) -> ProgramStatement {
     ProgramStatement::Assign {
         name: name.into(),
         expression,
@@ -2183,7 +2186,7 @@ pub fn program_call_value(
 /// Two explicit operations: a call retaining its value, then a scalar assignment.
 pub fn program_call_then_assign(
     call: u32,
-    target: impl Into<String>,
+    target: impl Into<BindingName>,
     function_name: impl Into<String>,
     arguments: Vec<ProgramExpression>,
 ) -> ProgramStatement {
@@ -2194,7 +2197,7 @@ pub fn program_call_then_assign(
 /// A reallocation result followed by its destination assignment.
 pub fn program_reallocate_then_assign(
     call: u32,
-    target: impl Into<String>,
+    target: impl Into<BindingName>,
     result_type: ProgramType,
     arguments: Vec<ProgramExpression>,
 ) -> ProgramStatement {
@@ -2210,7 +2213,7 @@ pub fn program_reallocate_then_assign(
 }
 
 pub fn program_call_construct(
-    target: impl Into<String>,
+    target: impl Into<BindingName>,
     function_name: impl Into<String>,
     arguments: Vec<ProgramExpression>,
 ) -> ProgramStatement {
@@ -2232,7 +2235,7 @@ pub fn program_call(
     }
 }
 
-pub fn program_heap_allocate(target: impl Into<String>, bytes: u32) -> ProgramStatement {
+pub fn program_heap_allocate(target: impl Into<BindingName>, bytes: u32) -> ProgramStatement {
     program_heap_allocate_sized(
         target,
         crate::kernel::program_expression::int32_literal(bytes),
@@ -2240,14 +2243,14 @@ pub fn program_heap_allocate(target: impl Into<String>, bytes: u32) -> ProgramSt
 }
 
 pub fn program_heap_allocate_sized(
-    target: impl Into<String>,
+    target: impl Into<BindingName>,
     bytes: ProgramExpression,
 ) -> ProgramStatement {
     program_heap_allocate_sized_with_zeroed(target, bytes, false)
 }
 
 pub fn program_heap_allocate_sized_with_zeroed(
-    target: impl Into<String>,
+    target: impl Into<BindingName>,
     bytes: ProgramExpression,
     zeroed: bool,
 ) -> ProgramStatement {
@@ -2264,12 +2267,15 @@ pub fn program_heap_free(pointer: ProgramExpression) -> ProgramStatement {
     ProgramStatement::HeapFree { pointer }
 }
 
-pub fn program_declare(name: impl Into<String>, program_type: ProgramType) -> ProgramStatement {
+pub fn program_declare(
+    name: impl Into<BindingName>,
+    program_type: ProgramType,
+) -> ProgramStatement {
     program_declare_volatile(name, program_type, false)
 }
 
 pub fn program_declare_volatile(
-    name: impl Into<String>,
+    name: impl Into<BindingName>,
     program_type: ProgramType,
     volatile: bool,
 ) -> ProgramStatement {
@@ -2277,7 +2283,7 @@ pub fn program_declare_volatile(
 }
 
 pub fn program_declare_qualified(
-    name: impl Into<String>,
+    name: impl Into<BindingName>,
     program_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
@@ -2293,7 +2299,7 @@ pub fn program_declare_qualified(
 }
 
 pub fn program_declare_with_all_qualifiers(
-    name: impl Into<String>,
+    name: impl Into<BindingName>,
     program_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
@@ -2301,7 +2307,7 @@ pub fn program_declare_with_all_qualifiers(
     pointee_constant: bool,
 ) -> ProgramStatement {
     ProgramStatement::Declare {
-        name: name.into(),
+        name: Into::<BindingName>::into(name).into(),
         program_type,
         volatile,
         pointee_volatile,
@@ -2317,7 +2323,7 @@ pub fn program_declare_with_all_qualifiers(
 /// `zero_fill` says how: an automatic array declared with an initializer,
 /// whose written elements follow as ordinary stores ([`ZeroFill`]).
 pub fn program_declare_with_zero_fill(
-    name: impl Into<String>,
+    name: impl Into<BindingName>,
     program_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
@@ -2326,7 +2332,7 @@ pub fn program_declare_with_zero_fill(
     zero_fill: Option<ZeroFill>,
 ) -> ProgramStatement {
     ProgramStatement::Declare {
-        name: name.into(),
+        name: Into::<BindingName>::into(name).into(),
         program_type,
         volatile,
         pointee_volatile,
@@ -2341,7 +2347,7 @@ pub fn program_declare_with_zero_fill(
 /// Allocate a fresh scalar and initialize it once. Ordinary stores remain
 /// subject to the object's const qualification after this transition.
 pub fn program_declare_initialized(
-    name: impl Into<String>,
+    name: impl Into<BindingName>,
     program_type: ProgramType,
     expression: ProgramExpression,
     volatile: bool,
@@ -2350,7 +2356,7 @@ pub fn program_declare_initialized(
     pointee_constant: bool,
 ) -> ProgramStatement {
     ProgramStatement::Declare {
-        name: name.into(),
+        name: Into::<BindingName>::into(name).into(),
         program_type,
         volatile,
         pointee_volatile,
@@ -2363,11 +2369,11 @@ pub fn program_declare_initialized(
 }
 
 pub fn program_declare_aggregate(
-    name: impl Into<String>,
+    name: impl Into<BindingName>,
     layout: AggregateLayout,
 ) -> ProgramStatement {
     ProgramStatement::DeclareAggregate {
-        name: name.into(),
+        name: Into::<BindingName>::into(name).into(),
         layout,
         kind: AggregateDeclarationKind::Local,
         declared_class: None,
@@ -2376,12 +2382,12 @@ pub fn program_declare_aggregate(
 
 /// [`program_declare_aggregate`] of an object whose class is `declared_class`.
 pub(crate) fn program_declare_classed_aggregate(
-    name: impl Into<String>,
+    name: impl Into<BindingName>,
     layout: AggregateLayout,
     declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 ) -> ProgramStatement {
     ProgramStatement::DeclareAggregate {
-        name: name.into(),
+        name: Into::<BindingName>::into(name).into(),
         layout,
         kind: AggregateDeclarationKind::Local,
         declared_class,
@@ -2389,11 +2395,11 @@ pub(crate) fn program_declare_classed_aggregate(
 }
 
 pub fn program_begin_aggregate_construction(
-    name: impl Into<String>,
+    name: impl Into<BindingName>,
     layout: AggregateLayout,
 ) -> ProgramStatement {
     ProgramStatement::DeclareAggregate {
-        name: name.into(),
+        name: Into::<BindingName>::into(name).into(),
         layout,
         kind: AggregateDeclarationKind::Constructor,
         declared_class: None,
@@ -2403,11 +2409,11 @@ pub fn program_begin_aggregate_construction(
 /// Allocates fresh owned aggregate storage without initializing its fields.
 /// This grants authority over the allocation, not over any future pointees.
 pub fn program_allocate_aggregate_destination(
-    name: impl Into<String>,
+    name: impl Into<BindingName>,
     layout: AggregateLayout,
 ) -> ProgramStatement {
     ProgramStatement::DeclareAggregate {
-        name: name.into(),
+        name: Into::<BindingName>::into(name).into(),
         layout,
         kind: AggregateDeclarationKind::ConstructionDestination,
         declared_class: None,
@@ -2428,7 +2434,7 @@ pub fn program_copy_aggregate(
 
 /// Retire automatic storage at a source-language lifetime boundary. Frontends
 /// supply the objects whose lifetimes end; this grants no cleanup authority.
-pub fn program_end_automatic_lifetimes(names: Vec<String>) -> ProgramStatement {
+pub fn program_end_automatic_lifetimes(names: Vec<BindingName>) -> ProgramStatement {
     ProgramStatement::EndAutomaticLifetimes {
         names,
         steps: Vec::new(),
@@ -2775,7 +2781,7 @@ pub fn program_for_body_with_step(
     fn rewrite(
         statement: ProgramStatement,
         step: &ProgramStatement,
-        scopes: &mut Vec<String>,
+        scopes: &mut Vec<BindingName>,
     ) -> ProgramStatement {
         match statement {
             ProgramStatement::Continue => ProgramStatement::ForStep {
@@ -2818,7 +2824,7 @@ pub fn program_for_body_with_step(
             statement => statement,
         }
     }
-    fn first_step(step: ProgramStatement, names: Vec<String>) -> ProgramStatement {
+    fn first_step(step: ProgramStatement, names: Vec<BindingName>) -> ProgramStatement {
         match step {
             ProgramStatement::Seq(statements) => ProgramStatement::Seq(statements.with_statement(
                 0,
@@ -2843,12 +2849,15 @@ pub fn program_for_body_with_step(
     program_seq(rewritten, step)
 }
 
-pub fn program_parameter(name: impl Into<String>, program_type: ProgramType) -> ProgramParameter {
+pub fn program_parameter(
+    name: impl Into<BindingName>,
+    program_type: ProgramType,
+) -> ProgramParameter {
     ProgramParameter::new(name, program_type)
 }
 
 pub fn program_parameter_with_aggregate_layout(
-    name: impl Into<String>,
+    name: impl Into<BindingName>,
     program_type: ProgramType,
     layout: AggregateLayout,
 ) -> ProgramParameter {
@@ -2881,7 +2890,7 @@ pub fn program_check_contract_clauses_lower(
     let mut entry_state = state.clone();
     for (parameter, argument) in function.parameters().iter().zip(arguments) {
         entry_state.locals.bind_logical_typed(
-            parameter.name(),
+            parameter.binding_name(),
             argument.clone(),
             parameter.program_type(),
         );
@@ -4697,6 +4706,7 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
             ));
             SymbolicExecutionPath {
                 call_parameters: path.call_parameters,
+                descent_step: None,
                 completion_origin: None,
                 call_result: path.call_result,
                 assumptions: assumptions.clone(),
@@ -5001,6 +5011,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
             ));
             SymbolicExecutionPath {
                 call_parameters: path.call_parameters,
+                descent_step: crate::kernel::DescentStep::under(environment),
                 completion_origin: None,
                 call_result: path.call_result,
                 assumptions: assumptions.clone(),
@@ -5244,6 +5255,7 @@ fn prove_symbolic_program_function_execution_paths_with_contract_resources(
             ));
             SymbolicExecutionPath {
                 call_parameters: None,
+                descent_step: None,
                 completion_origin: None,
                 call_result: None,
                 assumptions: assumptions.clone(),
@@ -5354,6 +5366,7 @@ pub fn prove_checked_program_function_execution_with_environment(
     };
     let path_count = execution.paths().len();
     CheckedFunctionExecution {
+        retained_descent: false,
         published_outcomes: Default::default(),
         contract_completion: None,
         entry_authority: None,
@@ -6386,6 +6399,7 @@ fn checked_execution_at_definitionally_equal_entry_state(
         };
         paths.push(SymbolicExecutionPath {
             call_parameters: None,
+            descent_step: path.descent_step.clone(),
             completion_origin: None,
             call_result: None,
             assumptions: path.assumptions.clone(),
@@ -7737,6 +7751,7 @@ pub fn substitute_integer_term_in_proposition(
 }
 
 /// The opaque application `f(args)` with the int32 or uint64 argument at `position`
+/// replaced by its predecessor, or an already specialized fold with its end
 /// replaced by its predecessor, for restating a range fold one endpoint
 /// lower. The subtraction is wrapping bitvector arithmetic, matching the
 /// endpoint `integer_range_fold_predecessor_index` builds, so the two agree
@@ -7745,6 +7760,23 @@ pub fn integer_range_fold_predecessor_application(
     whole: &IntegerTerm,
     position: usize,
 ) -> Option<IntegerTerm> {
+    if let IntegerTerm::RangeFold {
+        index,
+        initial,
+        accumulator,
+        item,
+        body,
+    } = whole
+    {
+        let (index, _) = integer_range_fold_predecessor_index(index)?;
+        return Some(IntegerTerm::range_fold(
+            index,
+            initial.as_ref().clone(),
+            *accumulator,
+            *item,
+            body.as_ref().clone(),
+        ));
+    }
     let IntegerTerm::PureFunctionApplication(applied) = whole else {
         return None;
     };
@@ -8317,7 +8349,7 @@ pub(crate) fn prove_executed_contract_refinement(
                 name: source.predicate_name(),
                 arguments: std::iter::once(SpecPredicateArgument::Value(
                     SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                        callback.name().to_string(),
+                        (callback.name().to_string()).into(),
                     )),
                 ))
                 .chain(source_values.iter().map(|value| {
@@ -8410,7 +8442,7 @@ fn pop_executed_value_pins(function: &mut ProgramFunction, values: &[ProgramValu
     for (parameter, value) in parameters.iter().zip(values).rev() {
         let pin = SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                parameter.name().to_string(),
+                (parameter.name().to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(value.clone()),
@@ -8432,7 +8464,7 @@ fn executed_call_arguments(
     Some(
         function.parameters()[..call_count]
             .iter()
-            .map(|parameter| ProgramExpression::Variable(parameter.name().to_string()))
+            .map(|parameter| ProgramExpression::Variable((parameter.name().to_string()).into()))
             .collect(),
     )
 }

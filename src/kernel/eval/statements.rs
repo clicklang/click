@@ -637,6 +637,8 @@ fn write_program_lvalue_paths_without_local_reference(
         && matches!(
             value.program_type(),
             ProgramType::Bool
+                | ProgramType::Float32
+                | ProgramType::Float64
                 | ProgramType::Parameter(_)
                 | ProgramType::Int8
                 | ProgramType::UInt8
@@ -804,7 +806,9 @@ fn write_program_lvalue_paths_without_local_reference(
             let retained_direct = value
                 .shared()
                 .filter(|root| {
-                    root.ty() == &KernelType::Bool || matches!(root.ty(), KernelType::Algebraic(_))
+                    root.ty() == &KernelType::Bool
+                        || matches!(root.ty(), KernelType::Algebraic(_))
+                        || FloatOperandView::from_shared(root).is_some()
                 })
                 .cloned();
             let retained_pointer = value
@@ -1069,8 +1073,8 @@ fn write_program_lvalue_paths_without_local_reference(
                 && ExecutionValue::Shared(root.clone()).program_type()
                     == written_value.program_type()
             {
-                // Byte assembly produces an integer. An unchanged Boolean or
-                // algebraic type keeps the original selected producer.
+                // Byte assembly produces an integer. An unchanged Boolean,
+                // algebraic or float type keeps the original selected producer.
                 ExecutionValue::Shared(root)
             } else {
                 match retained_pointer {
@@ -1518,7 +1522,7 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
 
 #[derive(Clone, Copy)]
 enum AllocationDestination<'a> {
-    Local(&'a str),
+    Local(&'a BindingName),
     Value(ProgramType),
 }
 
@@ -1559,7 +1563,7 @@ impl AllocationDestination<'_> {
 
 pub(super) fn execute_program_heap_allocate_paths(
     state: &ExecutionState,
-    target: &str,
+    target: &BindingName,
     bytes_expression: &ProgramExpression,
     zeroed: bool,
     object_type: Option<&(crate::kernel::effective_type::CAccessClass, u32, u32)>,
@@ -3455,10 +3459,10 @@ fn pending_allocation_outcome_paths(
 ///
 /// Bounded by the scope's own spine: the `Seq` nodes above its declarations,
 /// which a source block has one of per statement it holds.
-fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<String>) {
+fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<BindingName>) {
     match statement {
         ProgramStatement::Declare { name, .. } | ProgramStatement::DeclareAggregate { name, .. } => {
-            names.push(name.clone());
+            names.push(name.binding().clone());
         }
         ProgramStatement::Seq(statements) => {
             for statement in statements.iter() {
@@ -3499,7 +3503,7 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<St
 }
 
 /// The names a scope declares, in the order it declares them.
-pub(in crate::kernel) fn scope_declared_names(statement: &ProgramStatement) -> Vec<String> {
+pub(in crate::kernel) fn scope_declared_names(statement: &ProgramStatement) -> Vec<BindingName> {
     let mut names = Vec::new();
     collect_scope_declared_names(statement, &mut names);
     names
@@ -3521,7 +3525,7 @@ pub(in crate::kernel) fn scope_declared_names(statement: &ProgramStatement) -> V
 /// and no other block.
 pub(in crate::kernel) fn end_scope_automatic_lifetimes(
     state: &ExecutionState,
-    declared: &[String],
+    declared: &[BindingName],
 ) -> Result<ExecutionState, RuntimeError> {
     let mut state = state.clone();
     let mut memory = state.memory.clone();
@@ -3576,7 +3580,7 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
 /// error — have no successor to retire anything in.
 pub(in crate::kernel) fn paths_after_scope_exit(
     paths: Vec<StatementExecutionPath>,
-    declared: &[String],
+    declared: &[BindingName],
 ) -> Vec<StatementExecutionPath> {
     if declared.is_empty() {
         return paths;
@@ -4658,19 +4662,29 @@ fn execute_execution_statement_leaf_paths(
                 {
                     let outcome = match path.outcome {
                         ExpressionOutcome::Value(value) => {
-                            let retained_direct = value
-                                .shared()
-                                .filter(|root| {
-                                    root.ty() == &KernelType::Bool
-                                        || matches!(root.ty(), KernelType::Algebraic(_))
-                                })
-                                .cloned();
-                            let retained_pointer = value
-                                .shared()
-                                .filter(|root| root.pointer_payload().is_some())
-                                .cloned();
-                            let value = value.into_native();
-                            let value = match value_type {
+                            if value.shared().is_some()
+                                && value.float().is_some()
+                                && value_type.is_none_or(|ty| ty == value.program_type())
+                            {
+                                let mut next = state.clone();
+                                for step in steps {
+                                    next.set_retained_step_result(*step, value.clone());
+                                }
+                                StatementOutcome::Normal(Box::new(next))
+                            } else {
+                                let retained_direct = value
+                                    .shared()
+                                    .filter(|root| {
+                                        root.ty() == &KernelType::Bool
+                                            || matches!(root.ty(), KernelType::Algebraic(_))
+                                    })
+                                    .cloned();
+                                let retained_pointer = value
+                                    .shared()
+                                    .filter(|root| root.pointer_payload().is_some())
+                                    .cloned();
+                                let value = value.into_native();
+                                let value = match value_type {
                             Some(value_type) => {
                                 crate::kernel::functions::coerce_program_value_with_pointee_constant(
                                     value,
@@ -4682,29 +4696,32 @@ fn execute_execution_statement_leaf_paths(
                             }
                             None => Some(value),
                         };
-                            match value {
-                                Some(value) => {
-                                    let mut next = state.clone();
-                                    let value = if let Some(root) = retained_direct
-                                        && ExecutionValue::Shared(root.clone()).program_type()
-                                            == value.program_type()
-                                    {
-                                        ExecutionValue::Shared(root)
-                                    } else {
-                                        match retained_pointer {
-                                            Some(root) => ExecutionValue::Shared(root)
-                                                .retain_checked_pointer(value),
-                                            None => {
-                                                ExecutionValue::from(value).retain_pointer_result()
+                                match value {
+                                    Some(value) => {
+                                        let mut next = state.clone();
+                                        let value = if let Some(root) = retained_direct
+                                            && ExecutionValue::Shared(root.clone()).program_type()
+                                                == value.program_type()
+                                        {
+                                            ExecutionValue::Shared(root)
+                                        } else {
+                                            match retained_pointer {
+                                                Some(root) => ExecutionValue::Shared(root)
+                                                    .retain_checked_pointer(value),
+                                                None => ExecutionValue::from(value)
+                                                    .retain_pointer_result()
+                                                    .retain_float_result(),
                                             }
+                                        };
+                                        for step in steps {
+                                            next.set_retained_step_result(*step, value.clone());
                                         }
-                                    };
-                                    for step in steps {
-                                        next.set_retained_step_result(*step, value.clone());
+                                        StatementOutcome::Normal(Box::new(next))
                                     }
-                                    StatementOutcome::Normal(Box::new(next))
+                                    None => {
+                                        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
+                                    }
                                 }
-                                None => StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                             }
                         }
                         ExpressionOutcome::UndefinedBehavior(error) => {
@@ -4797,7 +4814,7 @@ fn execute_execution_statement_leaf_paths(
                 } = &try_path.outcome
                     && value.program_type() == ProgramType::Int32
                 {
-                    if thrown_state.locals.bindings.contains_key(binding) {
+                    if thrown_state.locals.contains_name(binding) {
                         paths.push(StatementExecutionPath {
                             call_parameters: None,
                             loop_invariant_correspondence: Default::default(),
@@ -5647,7 +5664,7 @@ pub(in crate::kernel) fn execute_program_while_paths(
 /// established rather than assumed.
 fn local_declaration_pointer(
     state: &mut ExecutionState,
-    name: &str,
+    name: &BindingName,
 ) -> Result<Pointer, RuntimeError> {
     let previous = state.locals.slot(name).cloned();
     if let Some(previous) = previous
@@ -5717,7 +5734,7 @@ pub(in crate::kernel) fn retire_automatic_storage_owner(
 /// counter is monotone and every generation it hands out is declared, so the
 /// first candidate is free; checking it is what makes the uniqueness
 /// invariant enforced at the one place it is created.
-fn fresh_local_object_identity(state: &mut ExecutionState, name: &str) -> Pointer {
+fn fresh_local_object_identity(state: &mut ExecutionState, name: &BindingName) -> Pointer {
     loop {
         let lifetime = state.next_local_lifetime();
         assert!(
@@ -5741,7 +5758,10 @@ fn fresh_local_object_identity(state: &mut ExecutionState, name: &str) -> Pointe
 
 /// The declaration, rather than a later memory claim or address lookup, is
 /// the trusted creation event for an automatic object.
-fn note_declared_population_storage(mut state: ExecutionState, name: &str) -> ExecutionState {
+fn note_declared_population_storage(
+    mut state: ExecutionState,
+    name: &BindingName,
+) -> ExecutionState {
     if let Some(slot) = state.locals.slot(name).cloned()
         && slot.block.is_local_block()
         && state.memory.has_block(&slot.block)
@@ -5762,7 +5782,7 @@ fn note_declared_population_storage(mut state: ExecutionState, name: &str) -> Ex
 /// one, which leaves the same cells.
 fn zero_fill_declared_array(
     mut state: ExecutionState,
-    name: &str,
+    name: &BindingName,
     zero_fill: &ZeroFill,
 ) -> Result<ExecutionState, RuntimeError> {
     let slot = state
@@ -5854,7 +5874,7 @@ fn own_local_array(state: &mut ExecutionState, pointer: &Pointer, bytes: u32) {
 
 pub(in crate::kernel) fn declare_local(
     state: &ExecutionState,
-    name: &str,
+    name: &BindingName,
     program_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
@@ -5915,7 +5935,7 @@ pub(in crate::kernel) fn declare_local(
             ));
             own_local_array(&mut state, &pointer, length.saturating_mul(4));
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 ProgramType::Int32,
                 length,
                 pointer,
@@ -5931,7 +5951,7 @@ pub(in crate::kernel) fn declare_local(
             ));
             own_local_array(&mut state, &pointer, length);
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 ProgramType::UInt8,
                 length,
                 pointer,
@@ -5947,7 +5967,7 @@ pub(in crate::kernel) fn declare_local(
             ));
             own_local_array(&mut state, &pointer, length);
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 ProgramType::Int8,
                 length,
                 pointer,
@@ -5963,7 +5983,7 @@ pub(in crate::kernel) fn declare_local(
             ));
             own_local_array(&mut state, &pointer, length.saturating_mul(2));
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 ProgramType::Int16,
                 length,
                 pointer,
@@ -5979,7 +5999,7 @@ pub(in crate::kernel) fn declare_local(
             ));
             own_local_array(&mut state, &pointer, length.saturating_mul(2));
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 ProgramType::UInt16,
                 length,
                 pointer,
@@ -5995,7 +6015,7 @@ pub(in crate::kernel) fn declare_local(
             ));
             own_local_array(&mut state, &pointer, length.saturating_mul(4));
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 ProgramType::UInt32,
                 length,
                 pointer,
@@ -6011,7 +6031,7 @@ pub(in crate::kernel) fn declare_local(
             ));
             own_local_array(&mut state, &pointer, length.saturating_mul(8));
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 ProgramType::Int64,
                 length,
                 pointer,
@@ -6027,7 +6047,7 @@ pub(in crate::kernel) fn declare_local(
             ));
             own_local_array(&mut state, &pointer, length.saturating_mul(16));
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 ProgramType::Int128,
                 length,
                 pointer,
@@ -6043,7 +6063,7 @@ pub(in crate::kernel) fn declare_local(
             ));
             own_local_array(&mut state, &pointer, length.saturating_mul(8));
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 ProgramType::UInt64,
                 length,
                 pointer,
@@ -6059,7 +6079,7 @@ pub(in crate::kernel) fn declare_local(
             ));
             own_local_array(&mut state, &pointer, length.saturating_mul(16));
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 ProgramType::UInt128,
                 length,
                 pointer,
@@ -6075,7 +6095,7 @@ pub(in crate::kernel) fn declare_local(
             ));
             own_local_array(&mut state, &pointer, length.saturating_mul(4));
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 ProgramType::Float32,
                 length,
                 pointer,
@@ -6091,7 +6111,7 @@ pub(in crate::kernel) fn declare_local(
             ));
             own_local_array(&mut state, &pointer, length.saturating_mul(8));
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 ProgramType::Float64,
                 length,
                 pointer,
@@ -6111,7 +6131,7 @@ pub(in crate::kernel) fn declare_local(
                 length.saturating_mul(C_POINTER_BYTE_WIDTH),
             );
             state.locals.set_array_object_at_with_constant(
-                name.to_string(),
+                name.clone(),
                 element.pointer_type(),
                 length,
                 pointer,
@@ -6139,7 +6159,7 @@ pub(in crate::kernel) fn declare_local(
         ));
     if volatile {
         state.locals.set_uninitialized_with_all_qualifiers(
-            name.to_string(),
+            name.clone(),
             program_type,
             pointer,
             true,
@@ -6149,7 +6169,7 @@ pub(in crate::kernel) fn declare_local(
         );
     } else {
         state.locals.set_uninitialized_with_all_qualifiers(
-            name.to_string(),
+            name.clone(),
             program_type,
             pointer,
             false,
@@ -6163,7 +6183,7 @@ pub(in crate::kernel) fn declare_local(
 
 pub(in crate::kernel) fn declare_aggregate_local(
     state: &ExecutionState,
-    name: &str,
+    name: &BindingName,
     layout: &AggregateLayout,
     declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 ) -> Result<ExecutionState, RuntimeError> {
@@ -6189,7 +6209,7 @@ pub(in crate::kernel) fn declare_aggregate_local(
     state.set_memory(memory);
     state
         .locals
-        .set_aggregate_object_at(name.to_string(), layout.clone(), pointer.clone());
+        .set_aggregate_object_at(name.clone(), layout.clone(), pointer.clone());
     // Every automatic record owns its complete storage, just like a scalar
     // local or a construction destination. A modular pointer result can name
     // this storage through a symbolic address, where implicit local access
@@ -6210,7 +6230,7 @@ pub(in crate::kernel) fn declare_aggregate_local(
 
 fn begin_aggregate_construction(
     state: &ExecutionState,
-    name: &str,
+    name: &BindingName,
     layout: &AggregateLayout,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ExecutionState, RuntimeError>> {
@@ -6275,7 +6295,7 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
         block: pointer.block.clone(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let Some(name) = state.locals.name_for_slot(&slot).map(str::to_string) else {
+    let Some(name) = state.locals.name_for_slot(&slot).cloned() else {
         return;
     };
     let Some(program_type) = state.locals.scalar_object_type(&name) else {
@@ -6301,7 +6321,7 @@ pub(in crate::kernel) fn refresh_scalar_local_from_memory(
     slot: &Pointer,
     assumptions: &PureFactContext,
 ) {
-    let Some(name) = state.locals.name_for_slot(slot).map(str::to_string) else {
+    let Some(name) = state.locals.name_for_slot(slot).cloned() else {
         return;
     };
     let Some(program_type) = state.locals.scalar_object_type(&name) else {
@@ -6312,7 +6332,7 @@ pub(in crate::kernel) fn refresh_scalar_local_from_memory(
 
 fn refresh_scalar_local_binding(
     state: &mut ExecutionState,
-    name: String,
+    name: BindingName,
     slot: Pointer,
     program_type: ProgramType,
     assumptions: &PureFactContext,
@@ -6378,7 +6398,7 @@ fn refresh_scalar_local_binding(
 
 pub(in crate::kernel) fn sync_stack_local(
     state: &mut ExecutionState,
-    name: &str,
+    name: &BindingName,
     value: &ProgramValue,
 ) {
     let Some(pointer) = state.locals.slot(name).cloned() else {
@@ -6392,7 +6412,7 @@ pub(in crate::kernel) fn sync_stack_local(
 /// Keep the same retained value in a local and its memory-resident slot.
 pub(in crate::kernel) fn sync_retained_stack_local(
     state: &mut ExecutionState,
-    name: &str,
+    name: &BindingName,
     value: &ExecutionValue,
 ) {
     let Some(pointer) = state.locals.slot(name).cloned() else {

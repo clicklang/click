@@ -197,7 +197,9 @@ fn immutable_field_hint(
     }
     let (name, base) = match base.as_ref() {
         ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => {
             let ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::Pointer(base),
             )) = locals.get(name)?

@@ -219,8 +219,8 @@ pub(super) fn population_member_requirement(member: &ResourceSpec) -> String {
     let arguments = arguments
         .iter()
         .map(|argument| match argument {
-            ProgramExpression::Variable(name) => name.as_str(),
-            _ => "...",
+            ProgramExpression::Variable(name) => name.to_string(),
+            _ => "...".to_owned(),
         })
         .collect::<Vec<_>>()
         .join(", ");
@@ -461,7 +461,7 @@ pub(super) fn authority_exchange_effects(
                     && matches!(child.term(), ResourceTerm::PopulationAuthority { protected, population_arity, .. }
                         if population_arity.map_or(arguments.len() == 1, |arity| arity == arguments.len())
                         && matches!(protected.resource.term(), ResourceTerm::Composite { name, arguments: anchor, .. }
-                            if name == family && matches!(anchor.as_slice(), [ProgramExpression::Variable(parameter)] if parameter == definition.parameters()[0].name())))
+                            if name == family && matches!(anchor.as_slice(), [ProgramExpression::Variable(parameter)] if parameter == definition.parameters()[0].binding_name())))
             })
         }) { return None; }
         }

@@ -120,7 +120,7 @@ struct PlaceScope {
     struct_pointer_parameters: Vec<Option<String>>,
     /// The parameters whose reads are printed as places, by the name each
     /// has in a kernel term.
-    carriers: std::sync::Arc<BTreeMap<String, PointeeShape>>,
+    carriers: std::sync::Arc<BTreeMap<crate::kernel::BindingName, PointeeShape>>,
     /// The fields of each struct a pointer field reaches, by struct name, so
     /// a read through a loaded pointer is a place too.
     structs: std::sync::Arc<BTreeMap<String, Vec<crate::surface::FieldPlace>>>,
@@ -140,7 +140,7 @@ thread_local! {
 /// parameters, its struct pointer parameters and locals, and the fields of
 /// each struct a pointer field reaches. Built once per function.
 pub(in crate::surface) struct StatementPlaces {
-    carriers: std::sync::Arc<BTreeMap<String, PointeeShape>>,
+    carriers: std::sync::Arc<BTreeMap<crate::kernel::BindingName, PointeeShape>>,
     structs: std::sync::Arc<BTreeMap<String, Vec<crate::surface::FieldPlace>>>,
 }
 
@@ -156,14 +156,14 @@ impl StatementPlaces {
         for parameter in function.parameters() {
             if let Some(struct_name) = parameter.struct_name()
                 && parameter.interface_type().is_pointer()
-                && !carriers.contains_key(parameter.name())
+                && !carriers.contains_key(parameter.binding_name())
                 && let Some(fields) = parameter
                     .pointee_struct_layout()
                     .map(|layout| crate::surface::scalar_field_places(layout, layouts))
                     .or_else(|| fields_of(struct_name))
             {
                 carriers.insert(
-                    parameter.name().to_string(),
+                    parameter.binding_name().clone(),
                     PointeeShape::Struct { fields },
                 );
             }
@@ -188,7 +188,7 @@ impl StatementPlaces {
 
 fn reference_carriers(
     function: &crate::languages::interface::ImportedFunction,
-) -> BTreeMap<String, PointeeShape> {
+) -> BTreeMap<crate::kernel::BindingName, PointeeShape> {
     function
         .parameters()
         .iter()
@@ -206,7 +206,7 @@ fn reference_carriers(
                         .unwrap_or_default(),
                 },
             };
-            (parameter.name().to_string(), shape)
+            (parameter.binding_name().clone(), shape)
         })
         .collect()
 }
@@ -235,11 +235,18 @@ impl ParameterPlaceScope {
         let mut shapes: BTreeMap<_, _> = parameters
             .iter()
             .filter(|parameter| parameter.is_reference() && parameter.struct_name().is_none())
-            .map(|parameter| (variable(parameter.name()), PointeeShape::ScalarReferent))
+            .map(|parameter| {
+                (
+                    crate::kernel::BindingName::from(variable(parameter.name())),
+                    PointeeShape::ScalarReferent,
+                )
+            })
             .collect();
         for (name, fields) in block.parameter_field_places() {
             shapes.insert(
-                variable(name),
+                name.named()
+                    .map(|name| crate::kernel::BindingName::from(variable(name)))
+                    .unwrap_or_else(|| name.clone()),
                 PointeeShape::Struct {
                     fields: fields.clone(),
                 },
@@ -370,7 +377,7 @@ fn struct_pointer_place<'a>(
 ) -> Option<(String, &'a [crate::surface::FieldPlace])> {
     match pointer {
         ProgramExpression::Variable(variable) => match scope.carriers.get(variable)? {
-            PointeeShape::Struct { fields } => Some((variable.clone(), fields)),
+            PointeeShape::Struct { fields } => Some((variable.to_string(), fields)),
             PointeeShape::ScalarReferent => None,
         },
         ProgramExpression::TypedLoad {
@@ -406,7 +413,12 @@ fn describe_read_through_parameter(
             && let Some(PointeeShape::ScalarReferent) = scope.carriers.get(variable)
         {
             return (offset_bytes == 0)
-                .then(|| syntax::referent_of_carrier(variable).map(str::to_string))
+                .then(|| {
+                    variable
+                        .named()
+                        .and_then(syntax::referent_of_carrier)
+                        .map(str::to_string)
+                })
                 .flatten();
         }
         let (base, fields) = struct_pointer_place(base, scope)?;
@@ -1395,34 +1407,42 @@ pub(super) fn describe_stated_fact_over_locals(
 
 /// The naming tables of `state`'s locals: the kernel variables a step or a
 /// loop head minted for them read as the locals' names.
+fn local_naming_entries(
+    state: &ExecutionState,
+) -> BTreeMap<String, (crate::kernel::BindingName, ProgramValue)> {
+    let mut entries = state
+        .locals()
+        .object_values()
+        .filter(|(name, _)| !name.named().is_some_and(|name| name.starts_with("__rust_")))
+        .map(|(name, value)| {
+            let binding = crate::kernel::program_local_source_name(name);
+            (binding.to_string(), (binding, value.clone().into_native()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    if let Some(results) = &state.step_results {
+        entries.extend(results.iter().filter_map(|(call, value)| {
+            let spelling = describe_contract_expression(&step_result_expression(*call)?);
+            Some((
+                spelling.clone(),
+                (spelling.into(), value.native().into_owned()),
+            ))
+        }));
+    }
+    entries
+}
+
 pub(super) fn local_naming_tables(
     state: &ExecutionState,
 ) -> (
     Vec<crate::languages::interface::ImportedParameter>,
     Vec<ProgramExpression>,
 ) {
-    let mut values = state
-        .locals()
-        .object_values()
-        .filter(|(name, _)| !name.starts_with("__rust_"))
-        .map(|(name, value)| {
-            (
-                crate::kernel::program_local_source_name(name).to_string(),
-                value.clone().into_native(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    // The results of the running statement's call steps, each spelled by
-    // its call: `statement(0).call(f, 0).result`.
-    if let Some(results) = &state.step_results {
-        values.extend(results.iter().filter_map(|(call, value)| {
-            Some((
-                describe_contract_expression(&step_result_expression(*call)?),
-                value.native().into_owned(),
-            ))
-        }));
-    }
-    value_naming_tables(&values)
+    value_naming_tables(
+        &local_naming_entries(state)
+            .into_iter()
+            .map(|(spelling, (_, value))| (spelling, value))
+            .collect(),
+    )
 }
 
 /// The result of step `step`, as the statements as written name it: a call
@@ -1442,9 +1462,7 @@ pub(in crate::surface) fn step_result_expression(step: u32) -> Option<ContractEx
                     },
                 ),
                 expression: Box::new(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable(
-                        crate::kernel::program_local_source_name(local).to_string(),
-                    ),
+                    ProgramExpression::Variable(crate::kernel::program_local_source_name(local)),
                 )),
             })
         }
@@ -1467,33 +1485,46 @@ pub(super) fn local_naming_tables_with_source(
     Vec<crate::languages::interface::ImportedParameter>,
     Vec<ProgramExpression>,
 ) {
-    let (mut parameters, arguments) = local_naming_tables(state);
+    // Keep the declaration key until its source metadata has been selected.
+    // The printed name is a presentation label, never a declaration lookup key.
     let source_parameters = function
         .into_iter()
         .flat_map(|function| function.parameters())
-        .map(|parameter| (parameter.name(), parameter))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    for parameter in &mut parameters {
-        if let Some(source) = source_parameters.get(parameter.name()) {
-            *parameter = (**source).clone();
-        } else if let Some((name, layout)) = function.and_then(|function| {
-            let name = function.local_struct_pointers().get(parameter.name())?;
-            Some((name, function.structs().get(name)?))
-        }) {
-            *parameter = parameter
-                .clone()
-                .with_pointee_struct_layout(name.clone(), layout.clone());
-        } else if parameter.interface_type().is_pointer() {
-            // Only the rendered cast matters here; the byte signedness is
-            // never read.
-            *parameter = crate::languages::interface::ImportedParameter::new(
-                InterfaceType::CharPointer(syntax::PlainChar::Unsigned),
-                format!("((char *){})", parameter.name()),
-                None,
-            );
-        }
-    }
-    (parameters, arguments)
+        .map(|parameter| (parameter.binding_name(), parameter))
+        .collect::<BTreeMap<_, _>>();
+    local_naming_entries(state)
+        .into_iter()
+        .map(|(spelling, (binding, value))| {
+            let mut parameter = match source_parameters.get(&binding) {
+                Some(source) => (**source).clone(),
+                None => crate::languages::interface::ImportedParameter::new(
+                    crate::surface::generics::interface_type_from_program_type(
+                        value.program_type(),
+                    ),
+                    spelling,
+                    None,
+                ),
+            };
+            if !source_parameters.contains_key(&binding) {
+                if let Some((name, layout)) = function.and_then(|function| {
+                    let name = function.local_struct_pointers().get(&binding)?;
+                    Some((name, function.structs().get(name)?))
+                }) {
+                    parameter = parameter.with_pointee_struct_layout(name.clone(), layout.clone());
+                } else if parameter.interface_type().is_pointer() {
+                    parameter = crate::languages::interface::ImportedParameter::new(
+                        InterfaceType::CharPointer(syntax::PlainChar::Unsigned),
+                        format!("((char *){})", parameter.name()),
+                        None,
+                    );
+                }
+            }
+            (
+                parameter,
+                ProgramExpression::Value(value.numeric_value().clone()),
+            )
+        })
+        .unzip()
 }
 
 /// A runtime error spelled over `state`'s locals, so an address a loop head
@@ -4324,10 +4355,10 @@ pub(in crate::surface) fn diagnostic_source_load_cell(
 ) -> Option<String> {
     // A read of exactly one scalar field of a struct-typed global or local
     // is that field, `g.b`.
-    if let (PointerOffsetTerm::Constant(offset), PointerBlock::Concrete(block)) =
-        (&pointer.offset, &pointer.block)
+    if let PointerOffsetTerm::Constant(offset) = &pointer.offset
         && let Ok(offset) = u32::try_from(*offset)
-        && let Some(field) = object_fields::object_field_spelling(block, offset, kind.byte_width())
+        && let Some(field) =
+            object_fields::object_field_spelling(&pointer.block, offset, kind.byte_width())
     {
         return Some(field);
     }
@@ -4795,10 +4826,9 @@ fn describe_source_cell_of_width(
         return Some(best);
     }
     let declared = describe_memory_block(&pointer.block, parameter_binding)?;
-    if let (Some(width), PointerOffsetTerm::Constant(offset), PointerBlock::Concrete(block)) =
-        (width, &pointer.offset, &pointer.block)
+    if let (Some(width), PointerOffsetTerm::Constant(offset)) = (width, &pointer.offset)
         && let Ok(offset) = u32::try_from(*offset)
-        && let Some(field) = object_fields::object_field_spelling(block, offset, width)
+        && let Some(field) = object_fields::object_field_spelling(&pointer.block, offset, width)
     {
         return Some(SourceCell {
             object: field,
@@ -4927,6 +4957,7 @@ pub(super) fn describe_memory_block(
         }
     }
     match block {
+        PointerBlock::AutomaticLocal { binding, .. } => binding.spelling().map(str::to_owned),
         // A block's spelling carries where the storage lives, which is the
         // verifier's business; the reader wrote only the name. `local:` covers
         // the re-declaration and call-frame forms too (`local:lifetime:2:q`,
@@ -5054,6 +5085,17 @@ pub(in crate::surface) fn describe_pointer(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
+    if matches!(pointer.block, PointerBlock::AutomaticLocal { .. }) {
+        return if pointer.offset == PointerOffsetTerm::Constant(0) {
+            pointer.block.to_string()
+        } else {
+            format!(
+                "byte_offset({}, {})",
+                pointer.block,
+                describe_pointer_offset_with_context(&pointer.offset, parameter_binding)
+            )
+        };
+    }
     if let PointerBlock::StringLiteral { identity, .. } = &pointer.block {
         return if pointer.offset == PointerOffsetTerm::Constant(0) {
             identity.to_string()
@@ -5666,7 +5708,10 @@ pub(super) fn describe_program_value(
             "f64",
         ),
         ProgramValue::Pointer(pointer)
-            if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. }) =>
+            if matches!(
+                pointer.pointer().block,
+                PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. }
+            ) =>
         {
             let base = describe_pointer(pointer, parameter_binding);
             let ty = crate::kernel::program_type_spelling(pointer.program_type());
@@ -5691,9 +5736,37 @@ pub(super) fn describe_program_value(
 
 /// Whether a rendered pointer reads as one operand under a prefix `*`.
 fn is_place_spelling(rendered: &str) -> bool {
-    rendered
-        .chars()
-        .all(|character| character.is_alphanumeric() || "_:->.".contains(character))
+    let mut delimiters = Vec::new();
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut after_comma = false;
+    for character in rendered.chars() {
+        if quoted {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                quoted = false;
+            }
+            continue;
+        }
+        match character {
+            '"' => quoted = true,
+            '(' | '[' => delimiters.push(character),
+            ')' if delimiters.pop() == Some('(') => {}
+            ']' if delimiters.pop() == Some('[') => {}
+            ',' if delimiters.last() == Some(&'(') => {
+                after_comma = true;
+                continue;
+            }
+            ' ' if after_comma => continue,
+            character if character.is_alphanumeric() || "_:->.".contains(character) => {}
+            _ => return false,
+        }
+        after_comma = false;
+    }
+    !quoted && delimiters.is_empty()
 }
 
 pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
@@ -5724,7 +5797,9 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
                 operand.as_ref(),
                 ContractExpression::Binding(_)
                     | ContractExpression::CBinding(_)
-                    | ContractExpression::ProgramExpression(ProgramExpression::Variable(_))
+                    | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        crate::kernel::BindingName::Named(_)
+                    ))
             ) =>
         {
             describe_contract_expression(operand)
@@ -5754,7 +5829,7 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             }
             None => describe_field_place(&base, name),
         },
-        ContractSegmentSurface::ObjectPlace { name, .. } => name.clone(),
+        ContractSegmentSurface::ObjectPlace { name, .. } => name.to_string(),
         // The object at a named object's address is that object.
         ContractSegmentSurface::Object(_)
             if base.strip_prefix('&').is_some_and(is_place_spelling) =>
@@ -5952,13 +6027,14 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             describe_program_value(value, ParameterBinding::default())
         }
         ProgramExpression::Variable(name)
-            if name == "result" && REFERENCE_RESULT_SOURCE.with(std::cell::Cell::get) =>
+            if name.is_named("result") && REFERENCE_RESULT_SOURCE.with(std::cell::Cell::get) =>
         {
             "&result".into()
         }
-        ProgramExpression::Variable(name) => {
-            rust_variable_spelling(name).unwrap_or_else(|| name.clone())
-        }
+        ProgramExpression::Variable(name) => name
+            .named()
+            .and_then(rust_variable_spelling)
+            .unwrap_or_else(|| name.to_string()),
         ProgramExpression::FunctionAddress(name) => format!("&{name}"),
         ProgramExpression::StepResult {
             origin: crate::kernel::StepOrigin::Call(function_name),
@@ -8150,10 +8226,10 @@ fn describe_storage_write_outside_footprint(
         crate::kernel::StorageWriteOutsideFootprint::Write { pointer, bytes } => {
             // A store that fills exactly one scalar field of a struct-typed
             // global names that field (`shared.first`), not its address.
-            if let (PointerOffsetTerm::Constant(offset), PointerBlock::Concrete(block)) =
-                (&pointer.offset, &pointer.block)
+            if let PointerOffsetTerm::Constant(offset) = &pointer.offset
                 && let Ok(offset) = u32::try_from(*offset)
-                && let Some(field) = object_fields::object_field_spelling(block, offset, *bytes)
+                && let Some(field) =
+                    object_fields::object_field_spelling(&pointer.block, offset, *bytes)
             {
                 return format!("the {bytes}-byte store to `{field}`");
             }
@@ -8591,9 +8667,9 @@ fn parameter_point_read(
 ) -> Option<ContractExpression> {
     Some(match expression {
         ContractExpression::Binding(_)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(_)) => {
-            parameter_point_root(region, expression)?
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(_),
+        )) => parameter_point_root(region, expression)?,
         ContractExpression::Field {
             pointee_struct,
             base,
@@ -8631,12 +8707,12 @@ fn parameter_point_root(
 ) -> Option<ContractExpression> {
     match base {
         ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-            Some(ContractExpression::RegionParameter {
-                region: region.clone(),
-                name: crate::kernel::program_local_source_name(name).to_string(),
-            })
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => Some(ContractExpression::RegionParameter {
+            region: region.clone(),
+            name: crate::kernel::program_local_source_name(name).to_string(),
+        }),
         _ => parameter_point_read(region, base),
     }
 }

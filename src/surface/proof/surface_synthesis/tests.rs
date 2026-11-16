@@ -1006,7 +1006,7 @@ fn full_guarded_requirement_with_variable_argument_round_trips() {
         _ => panic!("the production-shaped argument must be a pointer"),
     };
     let arguments = vec![
-        ProgramExpression::Variable("bytes".to_string()),
+        ProgramExpression::Variable(("bytes".to_string()).into()),
         concrete_arguments[1].clone(),
     ];
     let requirement_surface = full_external_guarded_range_surface();
@@ -1052,7 +1052,7 @@ fn full_guarded_constant_byte_requirement_with_variable_argument_round_trips() {
         _ => panic!("the production-shaped argument must be a pointer"),
     };
     let arguments = vec![
-        ProgramExpression::Variable("bytes".to_string()),
+        ProgramExpression::Variable(("bytes".to_string()).into()),
         concrete_arguments[1].clone(),
     ];
     let requirement_surface = full_external_guarded_range_surface();
@@ -1936,7 +1936,7 @@ fn function_array_argument_keeps_its_recorded_memory_after_other_writes() {
     };
     assert!(
         matches!(&arguments[0], SurfaceTerm::At { selector: selected, expression }
-        if *selected == selector && matches!(expression.as_ref(), SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) if name == "p"))
+        if *selected == selector && matches!(expression.as_ref(), SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named("p")))
     );
 }
 
@@ -2850,7 +2850,9 @@ fn a_local_indexes_only_addresses_formed_from_it() {
     };
     assert_eq!(
         *base,
-        ContractExpression::ProgramExpression(ProgramExpression::Variable("arena".to_string()))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            ("arena".to_string()).into()
+        ))
     );
 }
 
@@ -3508,7 +3510,12 @@ fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
     };
     let state = |pointer: &Pointer| {
         ExecutionState::new().with_local(
-            "p",
+            crate::kernel::BindingName::Local(crate::kernel::LocalBindingId::new(
+                crate::kernel::LocalFunctionId::new(None, "f".into()),
+                false,
+                0,
+                Some("p".into()),
+            )),
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         )
     };
@@ -5981,5 +5988,65 @@ fn common_float_predicates_round_trip_existing_spelling() {
             assert_eq!(value, ProgramValue::of_bool(condition), "{text}");
             assert!(obligations.is_empty(), "{text}");
         }
+    }
+}
+
+#[test]
+fn common_float_calls_round_trip_existing_function_syntax() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for (format, spelling) in [
+        (crate::kernel::KernelFloatType::Float32, "float"),
+        (crate::kernel::KernelFloatType::Float64, "double"),
+    ] {
+        let variable = MachineTerm::Variable(Variable(1008204));
+        let names = BTreeMap::from([(Variable(1008204), "x".to_string())]);
+        let state = ExecutionState::new().with_local("x", format.value(variable.clone()));
+        let source = MachineTerm::ClickFunctionApplication {
+            name: "step".into(),
+            arguments: vec![crate::kernel::PureFunctionArgument::Value(format.value(
+                MachineTerm::ClickFunctionApplication {
+                    name: "step".into(),
+                    arguments: vec![crate::kernel::PureFunctionArgument::Value(
+                        format.value(variable),
+                    )],
+                },
+            ))],
+        };
+        let root = crate::kernel::KernelTermImport::default().float(format, &source);
+        let surface =
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &names).unwrap();
+        let text = diagnostics::describe_contract_expression(&surface);
+        let parsed = parser::parse(&format!("function step(x: {spelling}) -> {spelling} {{ x }} function probe(x: {spelling}) -> {spelling} {{ {text} }}")).unwrap();
+        let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+            parsed
+                .click_function_definitions()
+                .last()
+                .unwrap()
+                .body()
+                .unwrap(),
+            BTreeMap::new(),
+            &state,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            None,
+            &RecordedStates::new(),
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(parsed.click_function_definitions()),
+            ),
+            BTreeSet::new(),
+            BTreeMap::new(),
+        )
+        .unwrap();
+        let (value, obligations) =
+            crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                &state,
+                &spec,
+                Some(&state),
+                &PureFactContext::new(),
+            )
+            .unwrap();
+        assert_eq!(value, format.value(source), "{text}");
+        assert!(obligations.is_empty());
     }
 }

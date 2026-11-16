@@ -424,14 +424,12 @@ pub(super) fn split_next_branches(blocks: &mut Vec<out::MirBlock>) -> Result<(),
         }
         let targets = [*then_target, *else_target];
         let first = blocks.len();
+        let site = next_site(&blocks[header]);
         for target in targets {
-            blocks.push(out::MirBlock {
-                terminator_site: None,
-                statements: vec![next.clone()],
-                terminator: T::Goto { target },
-            });
+            blocks.push(sited_next_block(site, next.clone(), target));
         }
         blocks[header].statements.pop();
+        blocks[header].terminator_site = site;
         blocks[header].terminator = T::If {
             condition: if shared {
                 E::SharedArrayHasNext { iterator }
@@ -490,18 +488,16 @@ fn split_range_next(
         return Err(unsupported("range next dispatch"));
     }
     let first = blocks.len();
+    let site = next_site(&blocks[header]);
     for (target, taken) in [(then_target, true), (else_target, false)] {
         let mut next = next.clone();
         if let S::RangeNext { taken: decided, .. } = &mut next {
             *decided = Some(taken);
         }
-        blocks.push(out::MirBlock {
-            terminator_site: None,
-            statements: vec![next],
-            terminator: T::Goto { target },
-        });
+        blocks.push(sited_next_block(site, next, target));
     }
     blocks[header].statements.pop();
+    blocks[header].terminator_site = site;
     blocks[header].terminator = T::If {
         condition: E::RangeHasNext {
             iterator: iterator.into(),
@@ -510,6 +506,34 @@ fn split_range_next(
         else_target: first + 1,
     };
     Ok(())
+}
+
+/// The source statement `header`'s `next` call comes from, its `for` loop:
+/// the last source site before it.
+fn next_site(header: &out::MirBlock) -> Option<u32> {
+    header
+        .statements
+        .iter()
+        .rev()
+        .find_map(|statement| match statement {
+            S::Site { site } => Some(*site),
+            _ => None,
+        })
+}
+
+/// A block that runs one outcome of a `next` call and goes on to `target`,
+/// in the source statement the call comes from.
+fn sited_next_block(site: Option<u32>, next: S, target: usize) -> out::MirBlock {
+    let mut statements = Vec::with_capacity(2);
+    if let Some(site) = site {
+        statements.push(S::Site { site });
+    }
+    statements.push(next);
+    out::MirBlock {
+        terminator_site: site,
+        statements,
+        terminator: T::Goto { target },
+    }
 }
 
 #[cfg(test)]
@@ -548,6 +572,23 @@ mod tests {
             },
         ]
     }
+    #[test]
+    fn a_next_call_s_outcomes_come_from_its_for_loop() {
+        // The header's `next` comes from source statement 4; both outcome
+        // blocks and the header's test do too.
+        let mut blocks = protocol();
+        blocks[0].statements.insert(0, S::Site { site: 4 });
+        split_next_branches(&mut blocks).unwrap();
+        assert_eq!(blocks[0].terminator_site, Some(4));
+        for index in [4, 5] {
+            assert_eq!(blocks[index].terminator_site, Some(4));
+            assert!(matches!(
+                blocks[index].statements.as_slice(),
+                [S::Site { site: 4 }, S::ChunkNext { .. }]
+            ));
+        }
+    }
+
     #[test]
     fn next_dispatch_retains_both_transitions_and_rejects_extra_effects_or_entries() {
         let mut blocks = protocol();

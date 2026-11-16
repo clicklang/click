@@ -192,6 +192,178 @@ pub(super) fn substitute_pure_values(
     locals.retain(|local| !removed.contains(&local.name));
 }
 
+/// The kind of iterator an iterator statement builds or moves.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum IteratorKind {
+    SharedArray,
+    Enumerate,
+    Range,
+    Chunk,
+}
+
+/// The iterator `statement` builds, as its kind and the local it builds.
+fn iterator_definition(statement: &mut S) -> Option<(IteratorKind, &mut String)> {
+    match statement {
+        S::SharedArrayInitialize { target, .. } | S::SharedArrayMove { target, .. } => {
+            Some((IteratorKind::SharedArray, target))
+        }
+        S::EnumerateInitialize { target, .. } | S::EnumerateMove { target, .. } => {
+            Some((IteratorKind::Enumerate, target))
+        }
+        S::RangeInitialize { target, .. } | S::RangeMove { target, .. } => {
+            Some((IteratorKind::Range, target))
+        }
+        S::ChunkInitialize { target, .. } | S::ChunkMove { target, .. } => {
+            Some((IteratorKind::Chunk, target))
+        }
+        _ => None,
+    }
+}
+
+/// The iterator `statement` moves: its kind, the local it moves into, and
+/// the local it moves from.
+fn iterator_move(statement: &S) -> Option<(IteratorKind, &String, &String)> {
+    match statement {
+        S::SharedArrayMove { target, source } => Some((IteratorKind::SharedArray, target, source)),
+        S::EnumerateMove { target, source } => Some((IteratorKind::Enumerate, target, source)),
+        S::RangeMove { target, source } => Some((IteratorKind::Range, target, source)),
+        S::ChunkMove { target, source } => Some((IteratorKind::Chunk, target, source)),
+        _ => None,
+    }
+}
+
+/// Builds each range iterator in the local the program moves it into. MIR builds
+/// a `for` loop's iterator in a temporary and moves it, sometimes twice,
+/// into the loop's own: `t1 = 0..n; t2 = t1; iter = t2` is `iter = 0..n`.
+/// A move from a temporary that nothing else names, whose definition comes
+/// just before it, past nothing but storage markers and source sites, takes
+/// that definition's place, and the temporary is gone. The definition may
+/// end a block that only jumps to the move's.
+pub(super) fn collapse_iterator_moves(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    let mut mentions = BTreeMap::<String, usize>::new();
+    let mut predecessors = vec![0usize; blocks.len()];
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            if matches!(statement, S::BeginStorage { .. } | S::EndStorage { .. }) {
+                continue;
+            }
+            let mut named = mentioned_locals(statement);
+            if let S::EnumerateInitialize { source, .. } = statement {
+                named.insert(source.clone());
+            }
+            for name in named {
+                *mentions.entry(name).or_default() += 1;
+            }
+        }
+        let mut reads = BTreeMap::new();
+        let mut named = BTreeSet::new();
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        if let Some(destination) = call_destination(&block.terminator) {
+            named.insert(destination.clone());
+        }
+        for name in named.into_iter().chain(reads.into_keys()) {
+            *mentions.entry(name).or_default() += 1;
+        }
+        for target in successors(&block.terminator) {
+            if let Some(count) = predecessors.get_mut(target) {
+                *count += 1;
+            }
+        }
+    }
+    // The block that only jumps to `block`, when `block` has no other way in.
+    let jumped_from = |blocks: &[MirBlock], block: usize| {
+        if predecessors.get(block) != Some(&1) {
+            return None;
+        }
+        blocks
+            .iter()
+            .position(|other| matches!(other.terminator, T::Goto { target } if target == block))
+    };
+    let transparent = |statement: &S| {
+        matches!(
+            statement,
+            S::BeginStorage { .. } | S::EndStorage { .. } | S::Site { .. }
+        )
+    };
+    let mut removed = BTreeSet::new();
+    for block in 0..blocks.len() {
+        let mut index = 0;
+        while index < blocks[block].statements.len() {
+            let Some((kind, target, source)) = iterator_move(&blocks[block].statements[index])
+            else {
+                index += 1;
+                continue;
+            };
+            let (target, source) = (target.clone(), source.clone());
+            // A slice or chunk iterator's moves also pass its liveness flag,
+            // which the lowering keeps per local; only a range moves as a
+            // plain value.
+            if kind != IteratorKind::Range
+                || !temporaries.contains(&source)
+                || mentions.get(&source) != Some(&2)
+            {
+                index += 1;
+                continue;
+            }
+            // The definition, found walking back past transparent statements,
+            // across a block that only jumps here.
+            let mut at = (block, index);
+            let definition = loop {
+                let (here, position) = at;
+                match position.checked_sub(1) {
+                    Some(previous) => {
+                        let statement = &blocks[here].statements[previous];
+                        if transparent(statement) {
+                            at = (here, previous);
+                            continue;
+                        }
+                        break Some((here, previous));
+                    }
+                    None => match jumped_from(blocks, here) {
+                        Some(from) if from != here => {
+                            at = (from, blocks[from].statements.len());
+                        }
+                        _ => break None,
+                    },
+                }
+            };
+            let Some((from, position)) = definition else {
+                index += 1;
+                continue;
+            };
+            let defines = matches!(
+                iterator_definition(&mut blocks[from].statements[position]),
+                Some((defined, local)) if defined == kind && *local == source
+            );
+            if !defines {
+                index += 1;
+                continue;
+            }
+            let mut statement = blocks[from].statements.remove(position);
+            if let Some((_, local)) = iterator_definition(&mut statement) {
+                *local = target;
+            }
+            if from == block {
+                index -= 1;
+            }
+            blocks[block].statements[index] = statement;
+            mentions.insert(source.clone(), 0);
+            removed.insert(source);
+        }
+    }
+    for block in blocks.iter_mut() {
+        block.statements.retain(|statement| match statement {
+            S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !removed.contains(&local.name));
+}
+
 /// The local a call terminator assigns its result to, unless the call is
 /// already a call step.
 fn call_destination(terminator: &T) -> Option<&String> {
@@ -1091,6 +1263,58 @@ mod tests {
                 value: E::Borrow { .. },
                 ..
             }]
+        ));
+    }
+
+    #[test]
+    fn a_range_is_built_in_the_local_it_is_moved_into() {
+        // `t1 = 0..a; t2 = t1; goto; b = t2` is `b = 0..a`, built where the
+        // last move was.
+        let mut locals = ["a", "b", "t1", "t2"].map(place).to_vec();
+        let mut blocks = vec![
+            MirBlock {
+                statements: vec![
+                    S::RangeInitialize {
+                        target: "t1".into(),
+                        start: E::UnsignedInteger {
+                            value: 0,
+                            value_type: Type::U32,
+                        },
+                        end: local("a"),
+                    },
+                    S::RangeMove {
+                        target: "t2".into(),
+                        source: "t1".into(),
+                    },
+                ],
+                terminator: T::Goto { target: 1 },
+                terminator_site: None,
+            },
+            MirBlock {
+                statements: vec![
+                    S::EndStorage { local: "t1".into() },
+                    S::RangeMove {
+                        target: "b".into(),
+                        source: "t2".into(),
+                    },
+                ],
+                terminator: T::Return,
+                terminator_site: None,
+            },
+        ];
+        let temporaries = BTreeSet::from(["t1".to_string(), "t2".to_string()]);
+        super::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
+        assert_eq!(
+            locals
+                .iter()
+                .map(|local| local.name.as_str())
+                .collect::<Vec<_>>(),
+            ["a", "b"]
+        );
+        assert!(blocks[0].statements.is_empty());
+        assert!(matches!(
+            blocks[1].statements.as_slice(),
+            [S::RangeInitialize { target, .. }] if target == "b"
         ));
     }
 

@@ -174,10 +174,7 @@ fn scalar_lease_local_copies_and_identity_casts_remain_expired_after_recovery() 
         StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
     ));
     let registries = crate::kernel::capture_block_registries();
-    crate::kernel::set_never_address_taken_locals(BTreeSet::from([
-        "child".to_owned(),
-        "copy".to_owned(),
-    ]));
+    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["child".into(), "copy".into()]));
     let copied = normal(statement(
         &active,
         program_assign("copy", crate::kernel::program_expression::variable("child")),

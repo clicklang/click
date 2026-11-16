@@ -86,7 +86,9 @@ impl DeclaredResourceScope {
             .enumerate()
             .map(|(index, argument)| {
                 let named = match &argument {
-                    ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        crate::kernel::BindingName::Named(name),
+                    ))
                     | ContractExpression::Binding(name)
                     | ContractExpression::CBinding(name) => Some(name.as_str()),
                     _ => None,
@@ -668,6 +670,7 @@ fn empty_library_file() -> Result<ClickFile, ClickError> {
         &[],
         &BTreeSet::new(),
         &BTreeSet::new(),
+        &BTreeSet::new(),
         &BTreeMap::new(),
         Default::default(),
     )
@@ -704,6 +707,7 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             &callees,
             &resources,
             &[],
+            &BTreeSet::new(),
             &BTreeSet::new(),
             &BTreeSet::new(),
             &BTreeMap::new(),
@@ -2626,11 +2630,9 @@ fn classify_function_decrease(
         }
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
-            if declared_binders.contains(name) =>
-        {
-            Ok(FunctionDecrease::Binder(name.clone()))
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) if declared_binders.contains(name) => Ok(FunctionDecrease::Binder(name.clone())),
         _ => Ok(FunctionDecrease::Numeric(
             expand_declared_resource_expression(expression, resource_definitions)?,
         )),

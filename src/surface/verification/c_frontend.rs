@@ -843,6 +843,7 @@ pub(super) fn c_layouts(
             }
         }
         for function in unit.functions {
+            tables.register_local_bindings(&function);
             tables.register_string_literals(&function);
             tables.qualified_functions.insert(
                 (source_path.clone(), function.source_name().to_string()),
@@ -1244,7 +1245,7 @@ pub(super) fn record_function_tables(
         match statement {
             syntax::CStatement::Declare { name, .. }
             | syntax::CStatement::DeclareStructValue { name, .. } => {
-                names.insert(name.clone());
+                names.insert(name.source_name().to_owned());
             }
             syntax::CStatement::Seq(first, second) => {
                 pending.push(second);
@@ -1317,7 +1318,7 @@ pub(super) fn record_function_tables(
     // Automatic struct values are address-backed too. Their C
     // spellings must carry a layout into sidecar field expressions;
     // otherwise `.field` silently falls back to offset zero.
-    function_aggregate_objects.extend(function.local_struct_values().clone());
+    function_aggregate_objects.extend(source_struct_names(function.local_struct_values()));
     tables
         .aggregate_objects
         .insert(function.name().to_string(), function_aggregate_objects);
@@ -1363,9 +1364,17 @@ pub(super) fn record_function_tables(
     // than guessing between them.
     let locals = parser::FunctionLocals {
         execution_name: Some(function.name().to_string()),
-        struct_pointers: function.local_struct_pointers().clone(),
-        references: function.local_references().clone(),
-        pointers: function.local_pointers().clone(),
+        struct_pointers: source_struct_names(function.local_struct_pointers()),
+        references: function
+            .local_references()
+            .iter()
+            .map(|name| name.source_name().to_owned())
+            .collect(),
+        pointers: function
+            .local_pointers()
+            .iter()
+            .map(|name| name.source_name().to_owned())
+            .collect(),
         loop_iterators: function.loop_iterators().to_vec(),
     };
     if function.name() != function.source_name() {

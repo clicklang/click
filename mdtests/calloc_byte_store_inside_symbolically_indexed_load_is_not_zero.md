@@ -28,5 +28,5 @@ int32 f(int32 k) {
 ```
 
 ```expect
-fail: result == 0; left side evaluated to at(statement(4).exit, r), right side evaluated to 0
+fail: result == 0; left side evaluated to at(statement(4).exit, "calloc_byte_store_inside_symbolically_indexed_load_is_not_zero.c"::f.local(2)), right side evaluated to 0
 ```

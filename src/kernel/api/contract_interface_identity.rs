@@ -18,7 +18,13 @@ fn normalize(interface: &FunctionContractInterface) -> FunctionContractInterface
     let mut interface = interface.clone();
     let mut names = Names::default();
     for parameter in &mut interface.parameters {
-        names.bind(&mut parameter.name);
+        let original = parameter.name.binding().clone();
+        let mut source = parameter.name.source_name().to_owned();
+        names.bind(&mut source);
+        parameter.name = BindingName::from(source).into();
+        names
+            .program_bindings
+            .insert(original, parameter.name.binding().clone());
     }
     for proposition in interface
         .contract_requires
@@ -203,6 +209,7 @@ mod tests {
 
 #[derive(Default)]
 struct Names {
+    program_bindings: BTreeMap<BindingName, BindingName>,
     bindings: BTreeMap<String, Vec<String>>,
     next: usize,
     #[cfg(test)]
@@ -245,7 +252,14 @@ impl Names {
         self.visit();
         use ProgramExpression::*;
         match expression {
-            Variable(name) => self.reference(name),
+            Variable(name) => match name {
+                BindingName::Named(source) => self.reference(source),
+                BindingName::Local(_) => {
+                    if let Some(bound) = self.program_bindings.get(name) {
+                        *name = bound.clone();
+                    }
+                }
+            },
             StringLiteral(_) | Value(_) | FunctionAddress(_) | StepResult { .. } => {}
             Cast { expression, .. }
             | FloatClassification { expression, .. }
@@ -377,7 +391,14 @@ impl Names {
             AggregateFieldValue {
                 parameter, pointer, ..
             } => {
-                self.reference(parameter);
+                match parameter {
+                    BindingName::Named(name) => self.reference(name),
+                    BindingName::Local(_) => {
+                        if let Some(bound) = self.program_bindings.get(parameter) {
+                            *parameter = bound.clone();
+                        }
+                    }
+                }
                 self.expression(pointer);
             }
             CountedResourceCount { arguments, .. } => {

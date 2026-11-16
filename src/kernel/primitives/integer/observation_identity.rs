@@ -110,6 +110,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 KernelTermNode::IntegerOperation { arguments, .. } => arguments.clone(),
                 KernelTermNode::Constructor(constructor) => constructor.fields.clone(),
                 KernelTermNode::AlgebraicCall(call) => call.arguments.clone(),
+                KernelTermNode::FloatCall(call) => call.arguments.clone(),
                 KernelTermNode::Call { arguments, .. } => arguments.clone(),
                 KernelTermNode::FloatClassify { operand, .. } | KernelTermNode::FloatConvert { operand, .. } | KernelTermNode::FloatNegate { operand } | KernelTermNode::BoolCast { operand, .. }
                 | KernelTermNode::MachineObservation { operand, .. }
@@ -162,6 +163,11 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                     KernelTerm::algebraic_if_raw(ty.clone(), arguments.each_ref().map(|arg| get(arg)))
                 }
                 KernelTermNode::AlgebraicCall(call) => {
+                    let mut call = call.clone();
+                    call.arguments = call.arguments.iter().map(|arg| get(arg)).collect();
+                    call.into_term()
+                }
+                KernelTermNode::FloatCall(call) => {
                     let mut call = call.clone();
                     call.arguments = call.arguments.iter().map(|arg| get(arg)).collect();
                     call.into_term()

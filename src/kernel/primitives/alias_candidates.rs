@@ -7,12 +7,13 @@
 //!
 //! ```text
 //! Concrete < StringLiteral < Function < FunctionSymbolic < ExternalArgument
-//!          < ExternalObject < Symbolic < Heap < Temporary
+//!          < ExternalObject < Symbolic < LoadedPointer < PureFunctionApplication
+//!          < Heap < Temporary < AutomaticLocal
 //! ```
 //!
 //! So the entries of one block are one contiguous key range, every
 //! `Symbolic` block sits in one contiguous range, and every `Heap` and
-//! `Temporary` block sits at the end.
+//! `Temporary` block precedes the typed `AutomaticLocal` interval.
 //!
 //! [`PointerBlock::proven_distinct`] is the kernel's only structural block
 //! separation rule, and it has a shape these ranges follow:
@@ -268,7 +269,7 @@ impl AliasCandidates {
             PointerBlock::Heap(_) | PointerBlock::Temporary(_) => vec![symbolic(), own()],
             // Distinct concrete names are distinct; a `local:` block is also
             // distinct from the external variants.
-            PointerBlock::Concrete(_) if block.is_local_block() => vec![
+            PointerBlock::AutomaticLocal { .. } => vec![
                 own(),
                 BlockInterval {
                     start: Some(first_function()),
@@ -276,6 +277,16 @@ impl AliasCandidates {
                 },
                 symbolic(),
             ],
+            PointerBlock::Concrete(_) if block.is_local_block() => {
+                vec![
+                    own(),
+                    BlockInterval {
+                        start: Some(first_function()),
+                        end: Upper::Before(PointerBlock::ExternalArgument),
+                    },
+                    symbolic(),
+                ]
+            }
             PointerBlock::Concrete(_) => vec![
                 own(),
                 BlockInterval {

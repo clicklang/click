@@ -1084,6 +1084,7 @@ fn scoped_call_borrows_end_before_free() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: helper,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
@@ -1757,6 +1758,7 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: function.clone(),
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
@@ -2567,7 +2569,7 @@ fn fresh_heap_struct_binding_checks_extent_alignment_and_resolution() {
             let paths = execute_execution_statement_paths(
                 &state,
                 &ProgramStatement::HeapAllocate {
-                    target: "p".to_string(),
+                    target: ("p".to_string()).into(),
                     bytes: crate::kernel::program_expression::int32_literal(bytes),
                     zeroed,
                     object_type: Some((class.clone(), 8, alignment)),
@@ -2628,7 +2630,7 @@ fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
     let paths = execute_execution_statement_paths(
         &state,
         &ProgramStatement::HeapAllocate {
-            target: "p".to_string(),
+            target: ("p".to_string()).into(),
             bytes: crate::kernel::program_expression::int32_literal(8),
             zeroed: false,
             object_type: None,

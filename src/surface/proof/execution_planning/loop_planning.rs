@@ -724,13 +724,15 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     // reason (`verify_one_loop_preservation_proof`). Starting at the base of
     // the range gave a join in the planned body the identity the head's
     // havoc had already given a local, and the two became one value.
-    let mut body_execution = ExecutionProofState::at_entry(
+    let mut body_execution = ExecutionProofState::at_entry_with_descent(
         preservation.state().clone(),
         frontier,
         recorded_states,
         surface_propositions,
         PersistentSequence::default(),
-    );
+        environment.function,
+        environment.function_environment,
+    )?;
     body_execution
         .core
         .advance_kernel_variable_mark(preservation.next_kernel_variable())
@@ -1104,13 +1106,15 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     // binding. Starting this proof's counter at the base of the identity
     // range would hand the body's first heap allocation, opaque call result
     // or nested join one of them.
-    let mut body_execution = ExecutionProofState::at_entry(
+    let mut body_execution = ExecutionProofState::at_entry_with_descent(
         preservation.state().clone(),
         frontier,
         recorded_states,
         surface_propositions,
         PersistentSequence::default(),
-    );
+        environment.function,
+        environment.function_environment,
+    )?;
     body_execution
         .core
         .advance_kernel_variable_mark(preservation.next_kernel_variable())

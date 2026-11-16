@@ -822,6 +822,23 @@ fn exact_alias_owner_neighbors_reject_supplier_scans() {
 }
 
 #[test]
+fn return_projection_rejects_fact_occurrence_censuses() {
+    for (method, accepted) in [
+        ("owned_occurrences_for_fact", false),
+        ("occurrences_for_fact", false),
+        ("owned_fact_for_occurrence", true),
+    ] {
+        let source = format!("fn project_return_resource_cores(c: C) {{ c.{method}(selected); }}");
+        assert_eq!(
+            boundary::check_source("src/kernel/functions/mixed_return_resources.rs", &source)
+                .is_ok(),
+            accepted,
+            "{source}",
+        );
+    }
+}
+
+#[test]
 fn ownership_validity_rejects_mixed_access_buckets() {
     for name in ["memory_by_base", "memory_by_block"] {
         let source = format!("fn owned_validity_candidates(c: C) {{ c.{name}.get(k); }}");

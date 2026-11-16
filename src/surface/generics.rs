@@ -720,6 +720,16 @@ pub(super) fn syntactic_expression_type(
         return Some(cast_type);
     }
     match expression {
+        ContractExpression::Lambda {
+            parameters, result, ..
+        } => Some(lambdas::signature(parameters, result)),
+        ContractExpression::Apply { function, .. } => {
+            match syntactic_expression_type(function, variables)? {
+                ClickType::Function { result, .. } => Some(*result),
+                _ => None,
+            }
+        }
+
         ContractExpression::Resource(_) => Some(ClickType::Resource),
         ContractExpression::IntegerLiteral(_) | ContractExpression::Negate(_) => {
             default_numeral_click_type(expression)
@@ -732,9 +742,9 @@ pub(super) fn syntactic_expression_type(
             Some(click_type_from_program_value(value))
         }
         ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-            variables.get(name).cloned()
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => variables.get(name).cloned(),
         ContractExpression::Old(inner)
         | ContractExpression::At {
             expression: inner, ..

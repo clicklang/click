@@ -188,6 +188,16 @@ Later stores carry the mark they were given, and so do the projections used
 for load naming: the pointer-observable form may drop cells this load is
 proven not to read, but not the mark.
 
+Content identity also means two paths that reach equal memory share one
+snapshot and its first-recorded history. Each `ExecutionState` therefore also
+carries a `ReachedPoint` (`src/kernel/primitives/reached_point.rs`): a
+`ProgramPointId` minted at every memory transition, linked to the point the
+state came from, and to both arms at a branch join. A state rebuilt around an
+earlier state's memory keeps that state's point. It is not part of state
+equality. Surface records the name of each point it records a state at
+(`RecordedStates::point_name`); naming and the version walk are to move onto
+these points.
+
 An interface join retains the identities of all incoming states in
 `join_inputs`, including through read projections. Two joins with empty cell
 maps must not become the same state when their incoming histories differ.

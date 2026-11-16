@@ -17,7 +17,7 @@ fn join(origins: impl IntoIterator<Item = Origins>) -> Origins {
     }
 }
 struct Analysis<'a> {
-    bindings: BTreeMap<&'a str, Origins>,
+    bindings: BTreeMap<BindingName, Origins>,
     origins: BTreeMap<usize, Origins>,
     required: ObjectTypeRequirements,
     demanded: BTreeSet<(usize, effective_type::CAccessClass)>,
@@ -47,7 +47,13 @@ impl<'a> Analysis<'a> {
                 .iter()
                 .chain(interface.value_parameters())
                 .enumerate()
-                .map(|(index, p)| (p.name(), Some(Arc::new(Origin::Parameter(index)))))
+                .flat_map(|(index, p)| {
+                    let origin = Some(Arc::new(Origin::Parameter(index)));
+                    [
+                        (p.binding_name().clone(), origin.clone()),
+                        (BindingName::from(p.name()), origin),
+                    ]
+                })
                 .collect(),
             origins: BTreeMap::new(),
             required: Default::default(),
@@ -74,11 +80,9 @@ impl<'a> Analysis<'a> {
 
     fn program_origins(&self, value: &ProgramExpression) -> Origins {
         match value {
-            ProgramExpression::Variable(name) => self
-                .bindings
-                .get(name.as_str())
-                .cloned()
-                .unwrap_or_default(),
+            ProgramExpression::Variable(name) => {
+                self.bindings.get(name).cloned().unwrap_or_default()
+            }
             ProgramExpression::Cast { expression, .. } => self.program_origins(expression),
             _ => None,
         }
@@ -115,7 +119,7 @@ impl<'a> Analysis<'a> {
             } => join([self.origins(then_branch), self.origins(else_branch)]),
             SpecExpression::Let { name, value, body } => {
                 let origins = self.origins(value);
-                let old = self.bindings.insert(name, origins);
+                let old = self.bindings.insert(name.into(), origins);
                 let result = self.origins(body);
                 self.restore(name, old);
                 result
@@ -160,16 +164,16 @@ impl<'a> Analysis<'a> {
     fn restore(&mut self, name: &'a str, old: Option<Origins>) {
         match old {
             Some(value) => {
-                self.bindings.insert(name, value);
+                self.bindings.insert(name.into(), value);
             }
             None => {
-                self.bindings.remove(name);
+                self.bindings.remove(&name.into());
             }
         }
     }
     fn scoped(&mut self, names: impl Iterator<Item = &'a String>, body: SpecNode<'a>) {
         let previous: Vec<_> = names
-            .map(|name| (name.as_str(), self.bindings.insert(name, None)))
+            .map(|name| (name.as_str(), self.bindings.insert(name.into(), None)))
             .collect();
         self.visit(body);
         for (name, old) in previous {
@@ -219,7 +223,7 @@ impl<'a> Analysis<'a> {
                 SpecNode::Expression(SpecExpression::Let { name, value, body }) => {
                     self.visit(SpecNode::Expression(value));
                     let origin = self.origins(value);
-                    let old = self.bindings.insert(name, origin);
+                    let old = self.bindings.insert(name.into(), origin);
                     self.visit(SpecNode::Expression(body));
                     self.restore(name, old);
                     return Visit::Skip;
@@ -291,7 +295,7 @@ pub(in crate::kernel) fn declared_return_class(
     None
 }
 fn direct_result(value: &SpecExpression) -> bool {
-    matches!(value, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name == C_CONTRACT_RESULT_NAME)
+    matches!(value, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named(C_CONTRACT_RESULT_NAME))
 }
 fn zero(value: &SpecExpression) -> bool {
     match value {
@@ -374,7 +378,7 @@ mod tests {
         CAccessClass::Struct(CStructClass::opaque("node"))
     }
     fn variable(name: &str) -> SpecExpression {
-        SpecExpression::ProgramExpression(ProgramExpression::Variable(name.to_string()))
+        SpecExpression::ProgramExpression(ProgramExpression::Variable((name.to_string()).into()))
     }
     fn typed(value: SpecExpression) -> SpecExpression {
         SpecExpression::PureFunctionApplication {

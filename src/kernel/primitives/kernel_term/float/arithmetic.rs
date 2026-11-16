@@ -91,6 +91,8 @@ impl KernelTermImport {
             Negate(KernelFloatType),
             Binary(KernelFloatType, FloatBinaryOperator),
             Convert(KernelFloatType, ProgramType),
+            Argument(&'a PureFunctionArgument),
+            Call(KernelFloatType, &'a str, &'a [PureFunctionArgument]),
         }
         let mut pending = vec![Task::Enter(format.program_type(), source)];
         let mut values = Vec::new();
@@ -123,9 +125,44 @@ impl KernelTermImport {
                         pending.extend(arguments.into_iter().rev().map(|argument| {
                             Task::Enter(ty, argument.native_compat().expect("native operand"))
                         }));
+                    } else if let MachineTerm::ClickFunctionApplication { name, arguments } = term {
+                        pending.push(Task::Call(format, name, arguments));
+                        pending.extend(arguments.iter().rev().map(Task::Argument));
                     } else {
                         values.push(self.float_atom(format, term));
                     }
+                }
+                Task::Argument(argument) => {
+                    if let PureFunctionArgument::Value(value) = argument
+                        && let Some(view) = FloatOperandView::from_value(value)
+                    {
+                        pending.push(Task::Enter(
+                            view.format().program_type(),
+                            view.native_compat().expect("native float argument"),
+                        ));
+                    } else {
+                        values.push(self.argument(argument));
+                    }
+                }
+                Task::Call(format, name, arguments) => {
+                    let roots = values.split_off(values.len() - arguments.len());
+                    values.push(KernelTerm::float_call(
+                        format,
+                        name.to_owned(),
+                        roots
+                            .into_iter()
+                            .zip(arguments)
+                            .map(|(root, original)| {
+                                let carrier = match original {
+                                    PureFunctionArgument::SharedMachine(value) => {
+                                        Some(value.clone())
+                                    }
+                                    _ => None,
+                                };
+                                (root, carrier)
+                            })
+                            .collect(),
+                    ));
                 }
                 Task::Convert(format, source) => {
                     let operand = values.pop().expect("conversion operand");
@@ -156,14 +193,20 @@ impl KernelTermImport {
 
 impl KernelTermExport {
     pub(super) fn float_machine(source: &KernelTerm) -> Result<MachineTerm, &'static str> {
+        #[cfg(test)]
+        FLOAT_EXPORT_COUNT.with(|count| count.set(count.get() + 1));
         enum Task<'a> {
             Enter(&'a KernelTerm),
             Negate(KernelFloatType),
             Binary(KernelFloatType, FloatBinaryOperator),
             Convert(KernelFloatType, ProgramType),
+            Argument(&'a KernelTerm, &'a Option<SharedMachineIntegerTerm>),
+            FloatArgument(KernelFloatType),
+            Call(&'a KernelFloatCall),
         }
         let mut pending = vec![Task::Enter(source)];
         let mut values = Vec::new();
+        let mut arguments = Vec::new();
         while let Some(task) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match task {
@@ -173,6 +216,16 @@ impl KernelTermExport {
                         continue;
                     };
                     match root.node() {
+                        KernelTermNode::FloatCall(call) => {
+                            pending.push(Task::Call(call));
+                            pending.extend(
+                                call.arguments
+                                    .iter()
+                                    .zip(&call.shared_machine_arguments)
+                                    .rev()
+                                    .map(|(root, carrier)| Task::Argument(root, carrier)),
+                            );
+                        }
                         KernelTermNode::FloatConvert {
                             source, operand, ..
                         } => {
@@ -196,6 +249,28 @@ impl KernelTermExport {
                                 .clone(),
                         ),
                     }
+                }
+                Task::Argument(root, carrier) => {
+                    if let Some(carrier) = carrier {
+                        arguments.push(PureFunctionArgument::SharedMachine(carrier.clone()));
+                    } else if let Some(view) = FloatOperandView::from_shared(root) {
+                        pending.push(Task::FloatArgument(view.format()));
+                        pending.push(Task::Enter(root));
+                    } else {
+                        arguments.push(Self::default().argument(root)?);
+                    }
+                }
+                Task::FloatArgument(format) => {
+                    arguments.push(PureFunctionArgument::Value(
+                        format.value(values.pop().expect("float argument")),
+                    ));
+                }
+                Task::Call(call) => {
+                    let arguments = arguments.split_off(arguments.len() - call.arguments.len());
+                    values.push(MachineTerm::ClickFunctionApplication {
+                        name: call.name.clone(),
+                        arguments,
+                    });
                 }
                 Task::Convert(format, source) => {
                     let operand = values.pop().expect("conversion operand");

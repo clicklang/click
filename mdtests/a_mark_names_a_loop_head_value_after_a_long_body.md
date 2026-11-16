@@ -77,5 +77,5 @@ int32 count_down(int32 n) {
 ```
 
 ```expect
-fail: to_integer(at(iteration, k) - 1) == n
+fail: to_integer(at(iteration, "a_mark_names_a_loop_head_value_after_a_long_body.c"::count_down.local(0)) - 1) == "a_mark_names_a_loop_head_value_after_a_long_body.c"::count_down.parameter(0)
 ```

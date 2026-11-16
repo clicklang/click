@@ -31,5 +31,5 @@ int32 settle(int32 state) {
 ```
 
 ```expect
-fail: `state < state` remained open
+fail: `"a_ranked_loop_with_no_invariant_refuses_an_arm_that_does_not_descend.c"::settle.parameter(0) < "a_ranked_loop_with_no_invariant_refuses_an_arm_that_does_not_descend.c"::settle.parameter(0)` remained open
 ```

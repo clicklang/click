@@ -491,7 +491,8 @@ impl<'a> Proof<'a> {
                     &expression,
                     ty,
                     self.facts().assumptions(),
-                    ContractEnvironment::new(&values, &array_refs),
+                    ContractEnvironment::new(&values, &array_refs)
+                        .with_parameters(context.parameter_binding()),
                     pre_state,
                     before,
                     &execution.presentation.recorded_states,
@@ -2461,7 +2462,8 @@ impl<'a> Proof<'a> {
                             evaluate_fixed_state_expression_through_kernel(
                                 &expression,
                                 self.facts().assumptions(),
-                                ContractEnvironment::new(&values, &array_refs),
+                                ContractEnvironment::new(&values, &array_refs)
+                                    .with_parameters(context.parameter_binding()),
                                 FixedStateFrame::new(
                                     context.old_reference_state(&execution.core.frontier, state),
                                     state,
@@ -3377,9 +3379,9 @@ fn fold_end_parameter_name(end: &ContractExpression) -> Option<&String> {
     match end {
         ContractExpression::Binding(binding)
         | ContractExpression::CBinding(binding)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(binding)) => {
-            Some(binding)
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(binding),
+        )) => Some(binding),
         _ => None,
     }
 }

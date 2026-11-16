@@ -18,7 +18,12 @@ impl TerminationObligations {
         let requirements = &self.function_goals[name];
         let recursion = &requirements.recursion;
         let addressed = std::cell::OnceCell::new();
-        if let Some(expression) = &recursion.expression {
+        if let Some(expression) = &recursion.expression
+            && !self
+                .ruled
+                .get(name.as_str())
+                .is_some_and(|index| self.partial_rules[*index].descent_completion.is_some())
+        {
             check_expression_measure_recursion(
                 name,
                 &expression.source,

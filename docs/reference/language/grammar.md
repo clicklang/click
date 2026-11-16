@@ -638,9 +638,10 @@ loaded before construction can be captured separately. Capturing a pointer
 grants no memory permission: proving `defined(read(i))` still requires a
 view covering the selected cell.
 
-Function-valued declaration parameters and results,
-function equality and algebraic lambda parameters/results are not supported
-yet. A lambda may also return `Prop`, as described below. `.fold`, `.all`,
+Specification functions accept function parameters as described below.
+Function-valued declaration results, function equality, function-valued theorem
+parameters, and algebraic lambda parameters/results are not supported yet.
+A lambda may also return `Prop`, as described below. `.fold`, `.all`,
 and `.any` accept lambda values.
 
 Applications elaborate to typed lexical value bindings, using existing kernel
@@ -674,11 +675,49 @@ theorem direct_proposition_lambda(x: Integer) {
 `fn(Integer) -> Prop` spells a proposition-valued lambda's signature.
 `prop { P }` constructs a proposition value directly; local `let` bindings
 can name that value or a proposition application. Lambda arguments remain
-scalar or `Integer` values: proposition and function parameters, and opaque
-function-valued declaration interfaces, are not supported yet. Named
-propositions still use `predicate`; `function ... -> Prop` is not introduced.
+scalar or `Integer` values: lambda parameters of proposition or function type
+and function-valued declaration results are not supported yet. Named
+propositions may use `predicate` or a transparent `function ... -> Prop` helper.
 A `Prop` lambda uses the same application-state reads and body state
 restriction as scalar-valued lambdas; it may call named predicates.
+
+### Function parameters in specification functions
+
+A specification function may take a callback with an explicit, fixed
+`fn(...) -> ...` signature. Its body can apply, alias, and forward that value,
+including passing it to a range method. The callback's parameters are scalar
+or `Integer`; its result may also be `Prop`. Signatures match exactly.
+The body is checked even if the function is never called.
+
+<!-- verified-example: mdtests/specification_function_parameters.md -->
+```click
+function twice(f: fn(Integer) -> Integer, x: Integer) -> Integer {
+    f(f(x))
+}
+```
+
+At a call site, each callback must resolve to a lambda literal or local alias.
+For example, `twice(|x: Integer| -> Integer { x + 1 }, 3)` denotes `5`.
+The frontend specializes the selected body with typed lexical argument
+bindings. Captures and application-state memory reads follow the lambda rules
+above; specialization introduces no kernel function-value form or proof search.
+
+Logical adapters return `Prop`, retaining the proposition's quantifiers:
+
+<!-- verified-example: mdtests/specification_function_parameters.md -->
+```click
+function every(predicate: fn(int32) -> Prop, lo: int32, hi: int32) -> Prop {
+    (lo..hi).all(predicate)
+}
+```
+
+A `Prop` function parses its body as a proposition and elaborates its calls
+directly to that proposition. Ordinary `intro` and `witness` rules therefore
+apply to its returned quantifier. Scalar and `Integer` helpers retain the
+usual `unfold(f(args))` syntax. Arbitrary-function theorem parameters,
+function-valued results, function equality, and recursive callback-taking
+functions remain unsupported. A named specification function is not implicitly
+a callback value; wrap its call in a typed lambda.
 
 ## Ranges and binders
 

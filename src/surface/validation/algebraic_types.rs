@@ -52,7 +52,10 @@ impl AlgebraicVariables {
             Some(interface_type) => self.interface_types.bind(name, interface_type),
             None => self.interface_types.hide(name),
         }
-        if matches!(click_type, ClickType::CObjectPointer { .. }) {
+        if matches!(
+            click_type,
+            ClickType::CObjectPointer { .. } | ClickType::Function { .. } | ClickType::Integer
+        ) {
             self.nominal_types.bind(name, click_type);
         } else {
             self.nominal_types.hide(name);
@@ -79,6 +82,10 @@ impl AlgebraicVariables {
             return Ok(Some(cast_type));
         }
         match expression {
+            ContractExpression::Lambda {
+                parameters, result, ..
+            } => return Ok(Some(lambdas::signature(parameters, result))),
+
             ContractExpression::Field {
                 pointee_struct: Some(struct_name),
                 lowered,
@@ -127,7 +134,9 @@ impl AlgebraicVariables {
             }
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => {
                 if let Some(nominal) = self.nominal_types.get(name) {
                     return Ok(Some(nominal.clone()));
                 }
@@ -147,8 +156,29 @@ impl AlgebraicVariables {
             }
             _ => {}
         }
-        infer_contract_expression_type(expression, self, functions, context)
-            .map(|inferred| inferred.map(ClickType::Program))
+        let mut names = BTreeSet::new();
+        crate::surface::lowering::collect_contract_expression_referenced_names(
+            expression, &mut names,
+        );
+        let integers = names
+            .into_iter()
+            .filter(|name| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.nominal_types.get(name) == Some(&ClickType::Integer)
+            })
+            .collect();
+        Ok(
+            match infer_scoped_spec_value_type(
+                expression, self, &integers, functions, context, false,
+            )? {
+                SpecValueType::Integer => Some(ClickType::Integer),
+                SpecValueType::Scalar(ty) => ty.map(ClickType::Program),
+                SpecValueType::Function(ty) => Some(ty),
+                SpecValueType::Proposition => Some(ClickType::Proposition),
+                SpecValueType::Algebraic(ty) => Some(ClickType::Algebraic(ty)),
+                SpecValueType::Sequence(_) => None,
+            },
+        )
     }
 }
 
@@ -598,7 +628,9 @@ pub(in crate::surface) fn resource_body_children<'b>(
                 ContractExpression::Binding(variable)
                 | ContractExpression::CBinding(variable)
                 | ContractExpression::AlgebraicVariable { name: variable, .. }
-                | ContractExpression::ProgramExpression(ProgramExpression::Variable(variable)) => {
+                | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    crate::kernel::BindingName::Named(variable),
+                )) => {
                     let (index, _) = constructor_bindings
                         .get(variable.as_str())
                         .filter(|(_, ty)| *ty == field.click_type())
@@ -1061,7 +1093,7 @@ fn validate_resource_field_declarations(
 
 pub(super) fn validate_algebraic_type_uses(
     file: &ClickFile,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    click_functions: &mut BTreeMap<String, ClickFunctionType>,
 ) -> Result<(), ClickError> {
     let algebraic_definitions = combined_algebraic_type_definitions(file)?;
     let predicates = combined_predicate_definitions(file)?;
@@ -1148,129 +1180,163 @@ pub(super) fn validate_algebraic_type_uses(
         let Some(body) = definition.body() else {
             continue;
         };
-        let mut variables = AlgebraicVariables::parameters(definition.parameters());
-        let body_type = validate_algebraic_expression(
-            body,
-            &mut variables,
+        with_function_parameter_types(
+            definition.parameters(),
             click_functions,
-            &predicate_types,
-            &definitions,
-            &format!("function `{}`", definition.name()),
-        )?;
-        if matches!(
-            definition.return_type(),
-            ClickType::Program(_) | ClickType::CObjectPointer { .. } | ClickType::Integer
-        ) {
-            let click_variables = definition
-                .parameters()
-                .iter()
-                .map(|parameter| {
-                    (
-                        parameter.name().to_string(),
-                        parameter.click_type_with_object_class(),
-                    )
-                })
-                .collect::<BTreeMap<_, _>>();
-            // An ambient C name has no type in the pure parameter scope.
-            // Diagnose that forbidden dependency before reporting an unknown
-            // result carrier, retaining the existing purity diagnostic.
-            let mut referenced = BTreeSet::new();
-            crate::surface::lowering::collect_contract_expression_referenced_names(
-                body,
-                &mut referenced,
-            );
-            if let Some(object) = referenced
-                .iter()
-                .find(|name| !click_variables.contains_key(*name))
-            {
-                return Err(ClickError::new(format!(
+            |click_functions| {
+                let mut variables = AlgebraicVariables::parameters(definition.parameters());
+                let body_type = validate_algebraic_expression(
+                    body,
+                    &mut variables,
+                    click_functions,
+                    &predicate_types,
+                    &definitions,
+                    &format!("function `{}`", definition.name()),
+                )?;
+                if matches!(
+                    definition.return_type(),
+                    ClickType::Program(_)
+                        | ClickType::CObjectPointer { .. }
+                        | ClickType::Integer
+                        | ClickType::Proposition
+                ) {
+                    let click_variables = definition
+                        .parameters()
+                        .iter()
+                        .map(|parameter| {
+                            (
+                                parameter.name().to_string(),
+                                parameter.click_type_with_object_class(),
+                            )
+                        })
+                        .collect::<BTreeMap<_, _>>();
+                    // An ambient C name has no type in the pure parameter scope.
+                    // Diagnose that forbidden dependency before reporting an unknown
+                    // result carrier, retaining the existing purity diagnostic.
+                    let mut referenced = BTreeSet::new();
+                    crate::surface::lowering::collect_contract_expression_referenced_names(
+                        body,
+                        &mut referenced,
+                    );
+                    if let Some(object) = referenced
+                        .iter()
+                        .find(|name| !click_variables.contains_key(*name))
+                    {
+                        return Err(ClickError::new(format!(
                     "pure function `{}` reads the C object `{object}` by name; a pure function body may read only its parameters, so pass the object's value as an argument",
                     definition.name()
                 )).with_kind(ClickErrorKind::Type));
-            }
-            require_scalar_return_value(
-                body,
-                definition.return_type(),
-                &mut ScopedTypes::new(click_variables),
-                click_functions,
-                &definitions,
-                &format!("function `{}`", definition.name()),
-            )?;
-        }
-        match (definition.return_type(), body_type) {
-            (ClickType::Proposition | ClickType::Function { .. }, _) => {
-                return Err(ClickError::new(
-                    "specification function parameters and results are not supported yet",
-                ));
-            }
-            (ClickType::Resource, _) => {
-                return Err(ClickError::new(
-                    "Resource function results are not supported",
-                ));
-            }
-            (ClickType::Parameter(_), _) => {}
-            (ClickType::Algebraic(expected), Some(actual)) if expected == &actual => {}
-            (ClickType::Algebraic(expected), Some(actual)) => {
-                return Err(ClickError::new(format!(
-                    "function `{}` returns {}, but its body has type {}",
-                    definition.name(),
-                    describe_click_type(&ClickType::Algebraic(expected.clone())),
-                    describe_click_type(&ClickType::Algebraic(actual))
-                )));
-            }
-            (ClickType::Algebraic(expected), None) => {
-                return Err(ClickError::new(format!(
-                    "function `{}` returns {}, but its body is not algebraic",
-                    definition.name(),
-                    describe_click_type(&ClickType::Algebraic(expected.clone()))
-                )));
-            }
-            (ClickType::Program(_) | ClickType::CObjectPointer { .. }, Some(actual)) => {
-                return Err(ClickError::new(format!(
-                    "function `{}` returns a C value, but its body has algebraic type {}",
-                    definition.name(),
-                    describe_click_type(&ClickType::Algebraic(actual))
-                )));
-            }
-            (ClickType::Program(_) | ClickType::CObjectPointer { .. }, None) => {}
-            (ClickType::Integer, None) => {}
-            (ClickType::Integer, Some(actual)) => {
-                return Err(ClickError::new(format!(
-                    "function `{}` returns Integer, but its body has algebraic type {}",
-                    definition.name(),
-                    describe_click_type(&ClickType::Algebraic(actual))
-                )));
-            }
-        }
-        if !definition.type_parameters().is_empty() {
-            let click_variables = definition
-                .parameters()
-                .iter()
-                .map(|parameter| {
-                    (
-                        parameter.name().to_string(),
-                        parameter.click_type_with_object_class(),
-                    )
-                })
-                .collect();
-            let actual = infer_generic_expression_type(
-                body,
-                &mut ScopedTypes::new(click_variables),
-                click_functions,
-                &definitions,
-                &format!("function `{}`", definition.name()),
-            )?;
-            if let Some(actual) = actual
-                && !generic_click_types_compatible(&actual, definition.return_type())
-            {
-                return Err(ClickError::new(format!(
-                    "function `{}` returns {}, but its body has type {}",
-                    definition.name(),
-                    describe_click_type(definition.return_type()),
-                    describe_click_type(&actual)
-                )));
-            }
-        }
+                    }
+                    if definition.return_type() != &ClickType::Proposition {
+                        require_scalar_return_value(
+                            body,
+                            definition.return_type(),
+                            &mut ScopedTypes::new(click_variables),
+                            click_functions,
+                            &definitions,
+                            &format!("function `{}`", definition.name()),
+                        )?;
+                    }
+                }
+                match (definition.return_type(), body_type) {
+                    (ClickType::Proposition, _) => {
+                        let types = ScopedTypes::new(
+                            definition
+                                .parameters()
+                                .iter()
+                                .map(|p| (p.name().to_string(), p.click_type().clone()))
+                                .collect(),
+                        );
+                        let actual = infer_scoped_spec_value_type(
+                            body,
+                            &types.program_value_types,
+                            &types.integers,
+                            click_functions,
+                            &format!("function `{}`", definition.name()),
+                            false,
+                        )?;
+                        if actual != SpecValueType::Proposition {
+                            return Err(ClickError::new(
+                                "a Prop function must return a proposition",
+                            ));
+                        }
+                    }
+                    (ClickType::Function { .. }, _) => {
+                        return Err(ClickError::new(
+                            "function-valued declaration results are not supported yet",
+                        ));
+                    }
+                    (ClickType::Resource, _) => {
+                        return Err(ClickError::new(
+                            "Resource function results are not supported",
+                        ));
+                    }
+                    (ClickType::Parameter(_), _) => {}
+                    (ClickType::Algebraic(expected), Some(actual)) if expected == &actual => {}
+                    (ClickType::Algebraic(expected), Some(actual)) => {
+                        return Err(ClickError::new(format!(
+                            "function `{}` returns {}, but its body has type {}",
+                            definition.name(),
+                            describe_click_type(&ClickType::Algebraic(expected.clone())),
+                            describe_click_type(&ClickType::Algebraic(actual))
+                        )));
+                    }
+                    (ClickType::Algebraic(expected), None) => {
+                        return Err(ClickError::new(format!(
+                            "function `{}` returns {}, but its body is not algebraic",
+                            definition.name(),
+                            describe_click_type(&ClickType::Algebraic(expected.clone()))
+                        )));
+                    }
+                    (ClickType::Program(_) | ClickType::CObjectPointer { .. }, Some(actual)) => {
+                        return Err(ClickError::new(format!(
+                            "function `{}` returns a C value, but its body has algebraic type {}",
+                            definition.name(),
+                            describe_click_type(&ClickType::Algebraic(actual))
+                        )));
+                    }
+                    (ClickType::Program(_) | ClickType::CObjectPointer { .. }, None) => {}
+                    (ClickType::Integer, None) => {}
+                    (ClickType::Integer, Some(actual)) => {
+                        return Err(ClickError::new(format!(
+                            "function `{}` returns Integer, but its body has algebraic type {}",
+                            definition.name(),
+                            describe_click_type(&ClickType::Algebraic(actual))
+                        )));
+                    }
+                }
+                if !definition.type_parameters().is_empty() {
+                    let click_variables = definition
+                        .parameters()
+                        .iter()
+                        .map(|parameter| {
+                            (
+                                parameter.name().to_string(),
+                                parameter.click_type_with_object_class(),
+                            )
+                        })
+                        .collect();
+                    let actual = infer_generic_expression_type(
+                        body,
+                        &mut ScopedTypes::new(click_variables),
+                        click_functions,
+                        &definitions,
+                        &format!("function `{}`", definition.name()),
+                    )?;
+                    if let Some(actual) = actual
+                        && !generic_click_types_compatible(&actual, definition.return_type())
+                    {
+                        return Err(ClickError::new(format!(
+                            "function `{}` returns {}, but its body has type {}",
+                            definition.name(),
+                            describe_click_type(definition.return_type()),
+                            describe_click_type(&actual)
+                        )));
+                    }
+                }
+                Ok(())
+            },
+        )?;
     }
     for theorem in &theorems {
         // Trusted index laws are stated over their admitted C formats. Validate
@@ -2101,7 +2167,29 @@ fn validate_algebraic_expression_node(
             checked?;
             Ok(None)
         }
-        ContractExpression::Apply { .. } => unreachable!("an application reduces above"),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            let Some(ClickType::Function { .. }) =
+                variables.argument_type(function, click_functions, context)?
+            else {
+                return Err(ClickError::new(
+                    "application expects a specification lambda value",
+                ));
+            };
+            for argument in arguments {
+                validate_algebraic_expression(
+                    argument,
+                    variables,
+                    click_functions,
+                    predicates,
+                    definitions,
+                    context,
+                )?;
+            }
+            Ok(None)
+        }
 
         ContractExpression::IntegerLiteral(_) => Ok(None),
         ContractExpression::Negate(inner) => validate_algebraic_expression(
@@ -2844,7 +2932,15 @@ fn validate_algebraic_expression_node(
                     .transpose()?
                     .unwrap_or_else(|| expected.click_type().clone());
                 match (&expected, actual) {
-                    (ClickType::Proposition | ClickType::Function { .. }, _) => {
+                    (expected @ ClickType::Function { .. }, Some(actual))
+                        if expected == &actual => {}
+                    (expected @ ClickType::Function { .. }, _) => {
+                        return Err(ClickError::new(format!(
+                            "function `{name}` callback expects {}",
+                            describe_click_type(expected)
+                        )));
+                    }
+                    (ClickType::Proposition, _) => {
                         return Err(ClickError::new(
                             "specification function parameters and results are not supported yet",
                         ));
@@ -2982,20 +3078,22 @@ fn validate_algebraic_expression_node(
         // A C name of a Rust enum's type holds that enum's value.
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-            Ok(variables.get(name).and_then(|interface_type| {
-                AlgebraicTypeApplication::of_enum_interface_type(*interface_type)
-            }))
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => Ok(variables.get(name).and_then(|interface_type| {
+            AlgebraicTypeApplication::of_enum_interface_type(*interface_type)
+        })),
         // So does `*r` for a reference `r` to one.
         ContractExpression::ProgramExpression(ProgramExpression::Load(pointer))
             if matches!(pointer.as_ref(), ProgramExpression::Variable(name)
-                if matches!(variables.get(name), Some(InterfaceType::ParameterPointer(_)))) =>
+                if matches!(name.named().and_then(|name| variables.get(name)), Some(InterfaceType::ParameterPointer(_)))) =>
         {
             let ProgramExpression::Variable(name) = pointer.as_ref() else {
                 unreachable!()
             };
-            let Some(InterfaceType::ParameterPointer(enum_type)) = variables.get(name) else {
+            let Some(InterfaceType::ParameterPointer(enum_type)) =
+                name.named().and_then(|name| variables.get(name))
+            else {
                 unreachable!()
             };
             Ok(AlgebraicTypeApplication::of_enum_interface_type(
@@ -3144,9 +3242,11 @@ fn require_scalar_return_value(
                 click_type == &Some(ClickType::Integer),
             )?;
             if matches!(inferred, SpecValueType::Function(_)) {
-                let reduced = lambdas::reduce_head(expression)
-                    .map_err(ClickError::new)?
-                    .ok_or_else(|| ClickError::new("expected a literal lambda binding"))?;
+                let reduced = crate::surface::lowering::substitute_contract_expression(
+                    body,
+                    &BTreeMap::from([(name.clone(), value.as_ref().clone())]),
+                )
+                .map_err(ClickError::new)?;
                 return require_scalar_return_value(
                     &reduced,
                     expected,
@@ -3215,10 +3315,17 @@ fn require_scalar_return_leaf(
     crate::instrumentation::record_deterministic_work(1);
     match expression {
         ContractExpression::If {
+            condition,
             then_branch,
             else_branch,
-            ..
         } => {
+            validate_theorem_proposition_expression_types(
+                condition,
+                &types.program_value_types,
+                &types.integers,
+                click_functions,
+                context,
+            )?;
             require_scalar_return_value(
                 then_branch,
                 expected,
@@ -3513,7 +3620,41 @@ fn infer_generic_expression_type(
             checked?;
             Ok(Some(lambdas::signature(parameters, result)))
         }
-        ContractExpression::Apply { .. } => unreachable!("an application reduces above"),
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            let Some(ClickType::Function { parameters, result }) = infer_generic_expression_type(
+                function,
+                variables,
+                click_functions,
+                definitions,
+                context,
+            )?
+            else {
+                return Err(ClickError::new(
+                    "application expects a specification lambda value",
+                ));
+            };
+            if parameters.len() != arguments.len() {
+                return Err(ClickError::new(format!(
+                    "lambda expects {} arguments, got {}",
+                    parameters.len(),
+                    arguments.len()
+                )));
+            }
+            for (expected, argument) in parameters.iter().zip(arguments) {
+                require_scalar_return_value(
+                    argument,
+                    expected,
+                    variables,
+                    click_functions,
+                    definitions,
+                    context,
+                )?;
+            }
+            Ok(Some(*result))
+        }
 
         ContractExpression::IntegerLiteral(_) => {
             Ok(generics::default_numeral_click_type(expression))
@@ -3568,9 +3709,9 @@ fn infer_generic_expression_type(
         }
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-            Ok(variables.get(name).cloned())
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => Ok(variables.get(name).cloned()),
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CUnary { .. }
         | ContractExpression::ProgramExpression(_) => infer_contract_expression_type(

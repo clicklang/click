@@ -220,7 +220,7 @@ fn retained_return_and_caller_receipt_do_not_export_growing_prefixes() {
                 .unwrap();
                 crate::kernel::loops::assign_call_result(
                     &mut state,
-                    "received",
+                    &("received").into(),
                     value,
                     &mut obligations,
                     &PureFactContext::new(),
@@ -362,4 +362,85 @@ fn click_negation_handoffs_retain_integer_operands_without_exports() {
         work[0] > 0 && work[1] <= 5 * work[0] && work[2] <= 5 * work[1],
         "{work:?}"
     );
+}
+
+#[test]
+fn float_steps_and_returns_keep_shared_roots_without_exporting_prefixes() {
+    let mut costs = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = crate::kernel::KernelFloatType::Float64;
+        let mut root = KernelTerm::variable(
+            KernelType::Program(format.program_type()),
+            Variable(1008302),
+        );
+        for _ in 0..size {
+            root = KernelTerm::float_call(
+                format,
+                "float_step".into(),
+                vec![(root.clone(), None), (root, None)],
+            );
+        }
+        let mut state = ExecutionState::new();
+        state.locals.set_retained_typed_with_all_qualifiers(
+            "x",
+            ExecutionValue::Shared(root.clone()),
+            format.program_type(),
+            false,
+            false,
+            false,
+            false,
+        );
+        let exports = KernelTermExport::float_export_count();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for value_type in [None, Some(format.program_type())] {
+                let statement = ProgramStatement::StepValue {
+                    aggregate_layout: None,
+                    steps: vec![11],
+                    expression: ProgramExpression::Variable("x".into()),
+                    value_type,
+                    pointee_constant: false,
+                };
+                let outcome = super::super::super::statements::execute_execution_statement(
+                    &state,
+                    &statement,
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+                let StatementOutcome::Normal(after) = outcome else {
+                    panic!("step result");
+                };
+                let expression = ProgramExpression::StepResult {
+                    step: 11,
+                    origin: crate::kernel::StepOrigin::Operator(
+                        crate::kernel::OperatorKind::Ternary,
+                    ),
+                };
+                let paths = evaluate_expression_value_paths(
+                    &after,
+                    &expression,
+                    &PureFactContext::new(),
+                    &mut ExecutionBudget::new(),
+                )
+                .unwrap();
+                let ExpressionOutcome::Value(value) = &paths[0].outcome else {
+                    panic!("retained step");
+                };
+                assert_eq!(value.shared(), Some(&root));
+                let outcome = super::super::super::statements::execute_execution_statement(
+                    &after,
+                    &ProgramStatement::Return(expression),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+                let StatementOutcome::Return { value, .. } = outcome else {
+                    panic!("return result");
+                };
+                assert_eq!(value.shared(), Some(&root));
+            }
+        });
+        assert_eq!(KernelTermExport::float_export_count(), exports);
+        costs.push(work);
+    }
+    assert!(costs.iter().all(|cost| *cost <= costs[0] * 2), "{costs:?}");
 }

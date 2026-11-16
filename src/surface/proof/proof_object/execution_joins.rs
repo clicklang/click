@@ -4135,7 +4135,7 @@ mod progress_tests {
         let function_environment = ExecutionEnvironment::new();
         let condition = ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                "x".to_string(),
+                ("x".to_string()).into(),
             )),
             operator: ComparisonOperator::GreaterEqual,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),

@@ -385,6 +385,23 @@ fn validate_scoped_integer_proposition_one(
     check_operands: bool,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::PredicateCall { name, arguments }
+            if click_functions.contains_key(name) =>
+        {
+            let actual = infer_scoped_spec_value_type(
+                &ContractExpression::Call {
+                    name: name.clone(),
+                    arguments: arguments.clone(),
+                },
+                variables,
+                integer_bindings,
+                click_functions,
+                context,
+                false,
+            )?;
+            require_proposition_value_type(actual)
+        }
+
         ClickProposition::Value(expression) => {
             require_proposition_value_type(infer_scoped_spec_value_type(
                 expression,
@@ -644,15 +661,18 @@ fn integer_expression_kind(
         return Some(false);
     }
     match expression {
-        ContractExpression::Apply { function, .. } => match function.as_ref() {
-            ContractExpression::Lambda { result, .. } => Some(*result == ClickType::Integer),
-            _ => lambdas::reduce_head(expression)
+        ContractExpression::Apply { function, .. } => {
+            if let ContractExpression::Binding(name) = function.as_ref() {
+                if let Some(ClickType::Function { result, .. }) =
+                    callback_binding_type(name, click_functions)
+                {
+                    return Some(*result == ClickType::Integer);
+                }
+            }
+            lambdas::application_result_type(function)
                 .ok()
-                .flatten()
-                .and_then(|reduced| {
-                    integer_expression_kind(&reduced, integer_bindings, click_functions, locals)
-                }),
-        },
+                .map(|result| result == ClickType::Integer)
+        }
         ContractExpression::Let { value, .. }
             if matches!(value.as_ref(), ContractExpression::Lambda { .. }) =>
         {
@@ -682,7 +702,9 @@ fn integer_expression_kind(
         ContractExpression::Binding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        ))
         | ContractExpression::CBinding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
@@ -706,6 +728,18 @@ fn integer_expression_kind(
             item,
             body,
         } => {
+            if let Some(step) = lambdas::range_fold_step(expression) {
+                if let Ok(result) = lambdas::application_result_type(step) {
+                    return Some(result == ClickType::Integer);
+                }
+                if let ContractExpression::Binding(name) = step {
+                    if let Some(ClickType::Function { result, .. }) =
+                        callback_binding_type(name, click_functions)
+                    {
+                        return Some(*result == ClickType::Integer);
+                    }
+                }
+            }
             let start_kind =
                 integer_expression_kind(start, integer_bindings, click_functions, locals);
             let end_kind = integer_expression_kind(end, integer_bindings, click_functions, locals);
@@ -981,7 +1015,9 @@ fn contains_integer_expression_signal(
         ContractExpression::Binding(name) => {
             locals.contains(name) || integer_bindings.contains(name)
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        ))
         | ContractExpression::CBinding(name) => {
             locals.contains(name) || integer_bindings.contains(name)
         }
@@ -1234,6 +1270,80 @@ pub(super) fn describe_spec_value_type(value_type: &SpecValueType) -> String {
 /// deliberately bidirectional only at explicit Integer contexts: an
 /// unsuffixed literal can inherit that context, while an existing C binding
 /// remains a C value and is rejected when it is mixed with Integer arithmetic.
+/// Bind callback signatures by name without copying the declaration environment.
+pub(super) fn with_function_parameter_types<T>(
+    parameters: &[FunctionParameter],
+    functions: &mut BTreeMap<String, ClickFunctionType>,
+    check: impl FnOnce(&BTreeMap<String, ClickFunctionType>) -> Result<T, ClickError>,
+) -> Result<T, ClickError> {
+    let mut shadowed = Vec::new();
+    for parameter in parameters {
+        if let ClickType::Function { parameters, result } = parameter.click_type() {
+            let supported = |ty: &ClickType| {
+                *ty == ClickType::Integer
+                    || ty
+                        .interface_type()
+                        .is_some_and(|ty| type_is_arithmetic(ty) && ty != InterfaceType::Void)
+            };
+            if parameters.iter().any(|ty| !supported(ty))
+                || (!supported(result) && **result != ClickType::Proposition)
+            {
+                return Err(ClickError::new(
+                    "callback signatures require scalar or Integer parameters and a scalar, Integer, or Prop result",
+                ));
+            }
+            let ty = ClickFunctionType {
+                value_parameter: true,
+                type_parameters: Vec::new(),
+                return_type: *result.clone(),
+                parameters: parameters
+                    .iter()
+                    .enumerate()
+                    .map(|(index, ty)| FunctionParameter {
+                        name: format!("argument{index}"),
+                        click_type: ty.clone(),
+                        struct_name: None,
+                        function_pointer_signature: None,
+                        constant: false,
+                        pointee_constant: false,
+                        reference: false,
+                    })
+                    .collect(),
+            };
+            shadowed.push((
+                parameter.name().to_string(),
+                functions.insert(parameter.name().to_string(), ty),
+            ));
+        }
+    }
+    let result = check(functions);
+    for (name, previous) in shadowed.into_iter().rev() {
+        if let Some(previous) = previous {
+            functions.insert(name, previous);
+        } else {
+            functions.remove(&name);
+        }
+    }
+    result
+}
+
+pub(super) fn callback_binding_type(
+    name: &str,
+    functions: &BTreeMap<String, ClickFunctionType>,
+) -> Option<ClickType> {
+    let function = functions
+        .get(name)
+        .filter(|function| function.value_parameter)?;
+    Some(ClickType::Function {
+        parameters: function
+            .parameters
+            .iter()
+            .map(|parameter| parameter.click_type().clone())
+            .collect(),
+        result: Box::new(function.return_type.clone()),
+    })
+}
+
 pub(super) fn infer_scoped_spec_value_type(
     expression: &ContractExpression,
     variables: &BTreeMap<String, InterfaceType>,
@@ -1243,6 +1353,15 @@ pub(super) fn infer_scoped_spec_value_type(
     expected_integer: bool,
 ) -> Result<SpecValueType, ClickError> {
     match expression {
+        ContractExpression::Binding(name)
+            if !variables.contains_key(name)
+                && !integer_bindings.contains(name)
+                && callback_binding_type(name, click_functions).is_some() =>
+        {
+            Ok(SpecValueType::Function(
+                callback_binding_type(name, click_functions).unwrap(),
+            ))
+        }
         ContractExpression::Proposition(proposition) => {
             validate_scoped_proposition_expression_types(
                 proposition,
@@ -1272,7 +1391,11 @@ pub(super) fn infer_scoped_spec_value_type(
                 parameters, result,
             )))
         }
-        ContractExpression::Apply { function, .. } => {
+        ContractExpression::Apply {
+            function,
+            arguments,
+        } => {
+            crate::instrumentation::record_deterministic_work(1 + arguments.len());
             if matches!(function.as_ref(), ContractExpression::Lambda { .. }) {
                 infer_scoped_spec_value_type(
                     function,
@@ -1282,6 +1405,55 @@ pub(super) fn infer_scoped_spec_value_type(
                     context,
                     false,
                 )?;
+            }
+            if !matches!(function.as_ref(), ContractExpression::Lambda { .. }) {
+                let actual = infer_scoped_spec_value_type(
+                    function,
+                    variables,
+                    integer_bindings,
+                    click_functions,
+                    context,
+                    false,
+                )?;
+                let SpecValueType::Function(ClickType::Function { parameters, result }) = actual
+                else {
+                    return Err(ClickError::new(
+                        "application expects a specification lambda value",
+                    ));
+                };
+                let ContractExpression::Apply { arguments, .. } = expression else {
+                    unreachable!()
+                };
+                if parameters.len() != arguments.len() {
+                    return Err(ClickError::new(format!(
+                        "lambda expects {} arguments, got {}",
+                        parameters.len(),
+                        arguments.len()
+                    )));
+                }
+                for (expected, argument) in parameters.iter().zip(arguments) {
+                    let actual = infer_scoped_spec_value_type(
+                        argument,
+                        variables,
+                        integer_bindings,
+                        click_functions,
+                        context,
+                        *expected == ClickType::Integer,
+                    )?;
+                    if !spec_value_matches_click_type(&actual, expected) {
+                        return Err(ClickError::new(format!(
+                            "lambda argument expects {}, got {}",
+                            describe_click_type(expected),
+                            describe_spec_value_type(&actual)
+                        )));
+                    }
+                }
+                return Ok(match *result {
+                    ClickType::Integer => SpecValueType::Integer,
+                    ClickType::Proposition => SpecValueType::Proposition,
+                    ClickType::Program(ty) => SpecValueType::Scalar(Some(ty)),
+                    _ => return Err(ClickError::new("unsupported callback result")),
+                });
             }
             let applied = lambdas::reduce_head(expression)
                 .map_err(ClickError::new)?
@@ -1305,13 +1477,27 @@ pub(super) fn infer_scoped_spec_value_type(
         ContractExpression::Binding(name) if integer_bindings.contains(name) => {
             Ok(SpecValueType::Integer)
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        ))
         | ContractExpression::CBinding(name)
             if integer_bindings.contains(name) =>
         {
             Ok(SpecValueType::Integer)
         }
         ContractExpression::Negate(inner) => {
+            if !expected_integer && matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_))
+            {
+                // Type the signed literal as a whole: INT32_MIN's positive
+                // magnitude alone needs int64, but its negation is int32.
+                return infer_contract_expression_type(
+                    expression,
+                    variables,
+                    click_functions,
+                    context,
+                )
+                .map(SpecValueType::Scalar);
+            }
             let inner = infer_scoped_spec_value_type(
                 inner,
                 variables,
@@ -1410,6 +1596,16 @@ pub(super) fn infer_scoped_spec_value_type(
             ) {
                 return Ok(left);
             }
+            if matches!(
+                expression,
+                ContractExpression::ShiftLeft(..) | ContractExpression::ShiftRight(..)
+            ) {
+                return Ok(SpecValueType::Scalar(contract_shift_result_type(
+                    scoped_scalar_type(&left),
+                    scoped_scalar_type(&right),
+                    false,
+                )));
+            }
             Ok(SpecValueType::Scalar(arithmetic_result_type(
                 scoped_scalar_type(&left),
                 scoped_scalar_type(&right),
@@ -1504,6 +1700,8 @@ pub(super) fn infer_scoped_spec_value_type(
                         "conditional branches mix mathematical Integer and C values in {context}"
                     )))
                 }
+            } else if then_type == else_type {
+                Ok(then_type)
             } else {
                 Ok(SpecValueType::Scalar(arithmetic_result_type(
                     scoped_scalar_type(&then_type),
@@ -1572,9 +1770,10 @@ pub(super) fn infer_scoped_spec_value_type(
                 value_type,
                 SpecValueType::Function(_) | SpecValueType::Proposition
             ) {
-                let reduced = lambdas::reduce_head(expression)
-                    .map_err(ClickError::new)?
-                    .ok_or_else(|| ClickError::new("expected a literal lambda binding"))?;
+                let replacements = BTreeMap::from([(name.clone(), value.as_ref().clone())]);
+                let reduced =
+                    crate::surface::lowering::substitute_contract_expression(body, &replacements)
+                        .map_err(ClickError::new)?;
                 return infer_scoped_spec_value_type(
                     &reduced,
                     variables,
@@ -1699,6 +1898,16 @@ pub(super) fn infer_scoped_spec_value_type(
                     context,
                     matches!(expected, ClickType::Integer),
                 )?;
+                if matches!(expected, ClickType::Function { .. }) {
+                    if !spec_value_matches_click_type(&actual, expected) {
+                        return Err(ClickError::new(format!(
+                            "function `{name}` callback expects {}, got {}",
+                            describe_click_type(expected),
+                            describe_spec_value_type(&actual)
+                        )));
+                    }
+                    continue;
+                }
                 if matches!(
                     &actual,
                     SpecValueType::Function(_) | SpecValueType::Proposition
@@ -1938,13 +2147,18 @@ pub(super) fn infer_scoped_range_fold_bindings(
         _ => false,
     };
 
+    let step_integer = if let Some(step) = lambdas::range_fold_step(expression) {
+        matches!(infer_scoped_spec_value_type(step, variables, integer_bindings, click_functions, context, false)?, SpecValueType::Function(ClickType::Function { result, .. }) if *result == ClickType::Integer)
+    } else {
+        false
+    };
     let initial_type = infer_scoped_spec_value_type(
         initial,
         variables,
         integer_bindings,
         click_functions,
         context,
-        expected_integer || integer_index,
+        expected_integer || integer_index || step_integer,
     )?;
     // Fold binders are represented as ordinary parser variables until this
     // scoped pass assigns their carriers.  Seed the signal walk with the
@@ -2539,6 +2753,15 @@ fn infer_spec_value_type(
     context: &str,
 ) -> Result<SpecValueType, ClickError> {
     match expression {
+        ContractExpression::Binding(name)
+            if !variables.contains_key(name)
+                && callback_binding_type(name, click_functions).is_some() =>
+        {
+            Ok(SpecValueType::Function(
+                callback_binding_type(name, click_functions).unwrap(),
+            ))
+        }
+
         ContractExpression::Proposition(_) => Ok(SpecValueType::Proposition),
         ContractExpression::Lambda {
             parameters, result, ..
@@ -2546,7 +2769,19 @@ fn infer_spec_value_type(
             parameters, result,
         ))),
         ContractExpression::Apply { function, .. } => Ok(
-            match lambdas::application_result_type(function).map_err(ClickError::new)? {
+            match match function.as_ref() {
+                ContractExpression::Binding(name)
+                    if callback_binding_type(name, click_functions).is_some() =>
+                {
+                    let ClickType::Function { result, .. } =
+                        callback_binding_type(name, click_functions).unwrap()
+                    else {
+                        unreachable!()
+                    };
+                    *result
+                }
+                _ => lambdas::application_result_type(function).map_err(ClickError::new)?,
+            } {
                 ClickType::Proposition => SpecValueType::Proposition,
                 ClickType::Integer => SpecValueType::Integer,
                 ClickType::Program(ty)
@@ -3593,6 +3828,13 @@ pub(super) fn infer_contract_expression_type(
             "a specification lambda is not a scalar value",
         )),
         ContractExpression::Apply { function, .. } => {
+            if let ContractExpression::Binding(name) = function.as_ref() {
+                if let Some(ClickType::Function { result, .. }) =
+                    callback_binding_type(name, click_functions)
+                {
+                    return Ok(result.interface_type());
+                }
+            }
             Ok(lambdas::application_result_type(function)
                 .map_err(ClickError::new)?
                 .interface_type())
@@ -4030,6 +4272,70 @@ fn validate_pointer_cast_operands(
     }
 }
 
+fn interface_type_from_program_type(target_type: &ProgramType) -> Option<InterfaceType> {
+    match target_type {
+        ProgramType::Parameter(name) => Some(InterfaceType::Parameter(*name)),
+        ProgramType::ParameterPointer(name) => Some(InterfaceType::ParameterPointer(*name)),
+        ProgramType::Int128 => Some(InterfaceType::Int128),
+        ProgramType::UInt128 => Some(InterfaceType::UInt128),
+
+        ProgramType::Bool => Some(InterfaceType::Bool),
+        ProgramType::Int8 => Some(InterfaceType::Int8),
+        ProgramType::Int16 => Some(InterfaceType::Int16),
+        ProgramType::Int32 => Some(InterfaceType::Int32),
+        ProgramType::UInt8 => Some(InterfaceType::UInt8),
+        ProgramType::UInt16 => Some(InterfaceType::UInt16),
+        ProgramType::UInt32 => Some(InterfaceType::UInt32),
+        ProgramType::Int32Pointer => Some(InterfaceType::Int32Pointer),
+        ProgramType::UInt8Pointer => Some(InterfaceType::UInt8Pointer),
+        ProgramType::Int32PointerPointer => Some(InterfaceType::Int32PointerPointer),
+        ProgramType::UInt8PointerPointer => Some(InterfaceType::UInt8PointerPointer),
+        ProgramType::FunctionPointer(signature) => Some(InterfaceType::FunctionPointer(*signature)),
+        ProgramType::Void | ProgramType::Int32Array(_) | ProgramType::UInt8Array(_) => None,
+        ProgramType::Int64 => Some(InterfaceType::Int64(LongRank::Long)),
+        ProgramType::UInt64 => Some(InterfaceType::UInt64(LongRank::Long)),
+        ProgramType::Float32 => Some(InterfaceType::Float32),
+        ProgramType::Float64 => Some(InterfaceType::Float64),
+        ProgramType::VoidPointer => Some(InterfaceType::VoidPointer),
+        ProgramType::VoidPointerPointer => Some(InterfaceType::VoidPointerPointer),
+        ProgramType::Int8Pointer => Some(InterfaceType::Int8Pointer),
+        ProgramType::Int16Pointer => Some(InterfaceType::Int16Pointer),
+        ProgramType::UInt16Pointer => Some(InterfaceType::UInt16Pointer),
+        ProgramType::UInt32Pointer => Some(InterfaceType::UInt32Pointer),
+        ProgramType::Int64Pointer => Some(InterfaceType::Int64Pointer(LongRank::Long)),
+        ProgramType::Int128Pointer => Some(InterfaceType::Int128Pointer),
+        ProgramType::UInt64Pointer => Some(InterfaceType::UInt64Pointer(LongRank::Long)),
+        ProgramType::UInt128Pointer => Some(InterfaceType::UInt128Pointer),
+        ProgramType::Int8PointerPointer => Some(InterfaceType::Int8PointerPointer),
+        ProgramType::Int16PointerPointer => Some(InterfaceType::Int16PointerPointer),
+        ProgramType::UInt16PointerPointer => Some(InterfaceType::UInt16PointerPointer),
+        ProgramType::UInt32PointerPointer => Some(InterfaceType::UInt32PointerPointer),
+        ProgramType::Int64PointerPointer => {
+            Some(InterfaceType::Int64PointerPointer(LongRank::Long))
+        }
+        ProgramType::Int128PointerPointer => Some(InterfaceType::Int128PointerPointer),
+        ProgramType::UInt64PointerPointer => {
+            Some(InterfaceType::UInt64PointerPointer(LongRank::Long))
+        }
+        ProgramType::UInt128PointerPointer => Some(InterfaceType::UInt128PointerPointer),
+        ProgramType::Float32Pointer => Some(InterfaceType::Float32Pointer),
+        ProgramType::Float64Pointer => Some(InterfaceType::Float64Pointer),
+        ProgramType::Float32PointerPointer => Some(InterfaceType::Float32PointerPointer),
+        ProgramType::Float64PointerPointer => Some(InterfaceType::Float64PointerPointer),
+        ProgramType::Int8Array(_) => None,
+        ProgramType::Int16Array(_)
+        | ProgramType::UInt16Array(_)
+        | ProgramType::UInt32Array(_)
+        | ProgramType::Int128Array(_)
+        | ProgramType::Int64Array(_)
+        | ProgramType::UInt128Array(_)
+        | ProgramType::UInt64Array(_)
+        | ProgramType::Float32Array(_)
+        | ProgramType::Float64Array(_)
+        | ProgramType::PointerArray(_, _) => None,
+    }
+}
+
 pub(in crate::surface) fn infer_program_expression_type(
     expression: &ProgramExpression,
     variables: &BTreeMap<String, InterfaceType>,
@@ -4065,74 +4371,17 @@ pub(in crate::surface) fn infer_program_expression_type(
             crate::kernel::TypeParameterName::of(&term.algebraic_type),
         )),
         ProgramExpression::Value(ProgramValue::Pointer(_)) => None,
-        ProgramExpression::Variable(name) => variables.get(name).copied(),
+        ProgramExpression::Variable(name) => match name {
+            crate::kernel::BindingName::Named(name) => variables.get(name).copied(),
+            crate::kernel::BindingName::Local(id) => id
+                .program_type()
+                .and_then(|ty| interface_type_from_program_type(&ty)),
+        },
         ProgramExpression::Cast {
             expression: _,
             target_type,
             ..
-        } => match target_type {
-            ProgramType::Parameter(name) => Some(InterfaceType::Parameter(*name)),
-            ProgramType::ParameterPointer(name) => Some(InterfaceType::ParameterPointer(*name)),
-            ProgramType::Int128 => Some(InterfaceType::Int128),
-            ProgramType::UInt128 => Some(InterfaceType::UInt128),
-
-            ProgramType::Bool => Some(InterfaceType::Bool),
-            ProgramType::Int8 => Some(InterfaceType::Int8),
-            ProgramType::Int16 => Some(InterfaceType::Int16),
-            ProgramType::Int32 => Some(InterfaceType::Int32),
-            ProgramType::UInt8 => Some(InterfaceType::UInt8),
-            ProgramType::UInt16 => Some(InterfaceType::UInt16),
-            ProgramType::UInt32 => Some(InterfaceType::UInt32),
-            ProgramType::Int32Pointer => Some(InterfaceType::Int32Pointer),
-            ProgramType::UInt8Pointer => Some(InterfaceType::UInt8Pointer),
-            ProgramType::Int32PointerPointer => Some(InterfaceType::Int32PointerPointer),
-            ProgramType::UInt8PointerPointer => Some(InterfaceType::UInt8PointerPointer),
-            ProgramType::FunctionPointer(signature) => {
-                Some(InterfaceType::FunctionPointer(*signature))
-            }
-            ProgramType::Void | ProgramType::Int32Array(_) | ProgramType::UInt8Array(_) => None,
-            ProgramType::Int64 => Some(InterfaceType::Int64(LongRank::Long)),
-            ProgramType::UInt64 => Some(InterfaceType::UInt64(LongRank::Long)),
-            ProgramType::Float32 => Some(InterfaceType::Float32),
-            ProgramType::Float64 => Some(InterfaceType::Float64),
-            ProgramType::VoidPointer => Some(InterfaceType::VoidPointer),
-            ProgramType::VoidPointerPointer => Some(InterfaceType::VoidPointerPointer),
-            ProgramType::Int8Pointer => Some(InterfaceType::Int8Pointer),
-            ProgramType::Int16Pointer => Some(InterfaceType::Int16Pointer),
-            ProgramType::UInt16Pointer => Some(InterfaceType::UInt16Pointer),
-            ProgramType::UInt32Pointer => Some(InterfaceType::UInt32Pointer),
-            ProgramType::Int64Pointer => Some(InterfaceType::Int64Pointer(LongRank::Long)),
-            ProgramType::Int128Pointer => Some(InterfaceType::Int128Pointer),
-            ProgramType::UInt64Pointer => Some(InterfaceType::UInt64Pointer(LongRank::Long)),
-            ProgramType::UInt128Pointer => Some(InterfaceType::UInt128Pointer),
-            ProgramType::Int8PointerPointer => Some(InterfaceType::Int8PointerPointer),
-            ProgramType::Int16PointerPointer => Some(InterfaceType::Int16PointerPointer),
-            ProgramType::UInt16PointerPointer => Some(InterfaceType::UInt16PointerPointer),
-            ProgramType::UInt32PointerPointer => Some(InterfaceType::UInt32PointerPointer),
-            ProgramType::Int64PointerPointer => {
-                Some(InterfaceType::Int64PointerPointer(LongRank::Long))
-            }
-            ProgramType::Int128PointerPointer => Some(InterfaceType::Int128PointerPointer),
-            ProgramType::UInt64PointerPointer => {
-                Some(InterfaceType::UInt64PointerPointer(LongRank::Long))
-            }
-            ProgramType::UInt128PointerPointer => Some(InterfaceType::UInt128PointerPointer),
-            ProgramType::Float32Pointer => Some(InterfaceType::Float32Pointer),
-            ProgramType::Float64Pointer => Some(InterfaceType::Float64Pointer),
-            ProgramType::Float32PointerPointer => Some(InterfaceType::Float32PointerPointer),
-            ProgramType::Float64PointerPointer => Some(InterfaceType::Float64PointerPointer),
-            ProgramType::Int8Array(_) => None,
-            ProgramType::Int16Array(_)
-            | ProgramType::UInt16Array(_)
-            | ProgramType::UInt32Array(_)
-            | ProgramType::Int128Array(_)
-            | ProgramType::Int64Array(_)
-            | ProgramType::UInt128Array(_)
-            | ProgramType::UInt64Array(_)
-            | ProgramType::Float32Array(_)
-            | ProgramType::Float64Array(_)
-            | ProgramType::PointerArray(_, _) => None,
-        },
+        } => interface_type_from_program_type(target_type),
         ProgramExpression::Ternary {
             condition,
             then_branch,
@@ -4444,10 +4693,22 @@ fn infer_contract_shift_type(
 ) -> Result<Option<InterfaceType>, ClickError> {
     let left_type = infer_contract_expression_type(left, variables, click_functions, context)?;
     let right_type = infer_contract_expression_type(right, variables, click_functions, context)?;
-    Ok(match (left_type, right_type) {
+    Ok(contract_shift_result_type(
+        left_type,
+        right_type,
+        retain_operand_width,
+    ))
+}
+
+fn contract_shift_result_type(
+    left_type: Option<InterfaceType>,
+    right_type: Option<InterfaceType>,
+    retain_operand_width: bool,
+) -> Option<InterfaceType> {
+    match (left_type, right_type) {
         (Some(left), Some(right)) if type_is_scalar(left) && type_is_scalar(right) => {
             if retain_operand_width {
-                return Ok(Some(left));
+                return Some(left);
             }
             Some(match left {
                 InterfaceType::UInt64(rank) => InterfaceType::UInt64(rank),
@@ -4457,7 +4718,7 @@ fn infer_contract_shift_type(
             })
         }
         _ => None,
-    })
+    }
 }
 
 fn type_is_scalar(interface_type: InterfaceType) -> bool {
@@ -4940,6 +5201,18 @@ fn validate_contract_expression_calls(
     if deep_literal_add_type(expression).is_some() {
         return Ok(());
     }
+    if let ContractExpression::Apply {
+        function,
+        arguments,
+    } = expression
+    {
+        if matches!(function.as_ref(), ContractExpression::Binding(_)) {
+            for argument in arguments {
+                validate_contract_expression_calls(argument, click_functions, context)?;
+            }
+            return Ok(());
+        }
+    }
     if let Some(reduced) = lambdas::reduce_head(expression).map_err(ClickError::new)? {
         if let ContractExpression::Let { value, .. } = expression {
             validate_contract_expression_calls(value, click_functions, context)?;
@@ -4959,7 +5232,9 @@ fn validate_contract_expression_calls(
         ContractExpression::Lambda { body, .. } => {
             validate_contract_expression_calls(body, click_functions, context)
         }
-        ContractExpression::Apply { .. } => unreachable!("applications reduce above"),
+        ContractExpression::Apply { .. } => {
+            Err(ClickError::new("application needs a concrete lambda"))
+        }
 
         ContractExpression::IntegerLiteral(_) => Ok(()),
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {

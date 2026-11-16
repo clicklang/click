@@ -6,7 +6,8 @@ use crate::kernel::{MachineCastSpelling, MachineTerm};
 use crate::kernel::{bits32_constant, constant_i64, constant_u32, int32_constant, int64_constant};
 
 impl ProgramParameter {
-    pub fn new(name: impl Into<String>, program_type: ProgramType) -> Self {
+    pub fn new(name: impl Into<BindingName>, program_type: ProgramType) -> Self {
+        let name: BindingName = name.into();
         Self {
             name: name.into(),
             program_type,
@@ -22,7 +23,10 @@ impl ProgramParameter {
     }
 
     pub fn name(&self) -> &str {
-        &self.name
+        self.name.source_name()
+    }
+    pub fn binding_name(&self) -> &BindingName {
+        self.name.binding()
     }
 
     pub(crate) fn with_slice_length_parameter(mut self, parameter: usize) -> Self {
@@ -1902,7 +1906,7 @@ impl CompositeResourceDefinition {
                     (&segment.start, &segment.end) else { return false; };
                 segment.guard.is_none()
                     && segment.element_width > 0
-                    && self.parameters.iter().any(|p| p.name() == parameter)
+                    && self.parameters.iter().any(|p| p.binding_name() == parameter)
                     && matches!((start.as_const(), end.as_const()), (Some(a), Some(b)) if (a as i32) < (b as i32))
             })
     }
@@ -1917,8 +1921,12 @@ impl CompositeResourceDefinition {
     /// question about one address needs only the composites whose arguments
     /// spell its base (`memory_state::CallKeptRanges::range_holding`).
     pub(in crate::kernel) fn has_argument_direct_body(&self) -> bool {
-        let parameter = |name: &str| self.parameters.iter().any(|p| p.name() == name);
-        fn direct(expression: &ProgramExpression, parameter: &dyn Fn(&str) -> bool) -> bool {
+        let parameter =
+            |name: &BindingName| self.parameters.iter().any(|p| p.binding_name() == name);
+        fn direct(
+            expression: &ProgramExpression,
+            parameter: &dyn Fn(&BindingName) -> bool,
+        ) -> bool {
             match expression {
                 ProgramExpression::Variable(name) => parameter(name),
                 ProgramExpression::Value(value) => !matches!(value, ProgramValue::Pointer(_)),
@@ -1932,7 +1940,10 @@ impl CompositeResourceDefinition {
                 _ => false,
             }
         }
-        fn rooted(expression: &ProgramExpression, parameter: &dyn Fn(&str) -> bool) -> bool {
+        fn rooted(
+            expression: &ProgramExpression,
+            parameter: &dyn Fn(&BindingName) -> bool,
+        ) -> bool {
             match expression {
                 ProgramExpression::Variable(name) => parameter(name),
                 ProgramExpression::Cast { expression, .. } => rooted(expression, parameter),
@@ -3905,10 +3916,27 @@ impl ExecutionEnvironment {
         let Some(anchor) = self.recursion_anchor() else {
             return true;
         };
-        !crate::kernel::termination::statement_calls_function(
-            &rule.loop_statement,
-            anchor.function(),
-        ) || rule.recursion_anchor.as_deref() == Some(anchor)
+        if rule
+            .recursion_anchor
+            .as_ref()
+            .zip(self.recursion_anchor.as_ref())
+            .is_some_and(|(produced, current)| Arc::ptr_eq(produced, current))
+        {
+            return true;
+        }
+        let calls;
+        let calls = if let Some(evidence) = &rule.loop_evidence {
+            &*evidence.calls
+        } else {
+            // Independent raw summaries have no opened source inventory.
+            // Source-owned summaries always retain their call footprint.
+            calls = crate::kernel::termination::statement_callees(&rule.loop_statement);
+            &calls
+        };
+        !calls.iter().any(|callee| {
+            crate::kernel::termination::charge_termination_work(1);
+            callee.ends_with("#indirect") || anchor.ranks_call_to(callee)
+        }) || rule.recursion_anchor.as_deref() == Some(anchor)
     }
 
     /// Whether every verified loop rule here answers for the recursion this

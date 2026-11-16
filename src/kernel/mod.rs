@@ -140,6 +140,7 @@ pub(crate) use spec::{
 };
 mod termination;
 pub(crate) use termination::StatementProofInput;
+pub(crate) use termination::descent_completion::DescentStep;
 // Checked internal fork/join; binding to imported pthread declarations is a
 // separate checkpoint, so no C execution path invokes these rules yet.
 mod threads;

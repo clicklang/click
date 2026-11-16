@@ -2252,7 +2252,10 @@ fn a_symbolic_store_skips_locals_whose_address_is_never_taken() {
     for size in [16usize, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(
-            (0..size).map(|index| format!("hidden{index}")).collect(),
+            (0..size)
+                .map(|index| format!("hidden{index}"))
+                .map(Into::into)
+                .collect(),
         );
         let slot = |index: usize| scaling_cell(&format!("local:hidden{index}"), 0);
         let mut memory = Memory::new();

@@ -968,6 +968,7 @@ fn certified_transitions_from_execution(
                 let generated_load_source_events =
                     generated_load_source_events_from_facts(&execution_facts);
                 return Ok(CertifiedStatementTransition {
+                    native_step: Arc::new(path.clone()),
                 call_result: path.call_result().cloned().map(crate::kernel::StoredExecutionValue::into_native),
                 call_parameters: path.call_parameters().cloned(),
                     theorem: path.theorem().clone(),
@@ -992,6 +993,7 @@ fn certified_transitions_from_execution(
             let generated_load_source_events =
                 generated_load_source_events_from_facts(&execution_facts);
             Ok(CertifiedStatementTransition {
+                    native_step: Arc::new(path.clone()),
                 call_result: path.call_result().cloned().map(crate::kernel::StoredExecutionValue::into_native),
                 call_parameters: path.call_parameters().cloned(),
                 theorem: path.theorem().clone(),
@@ -1179,7 +1181,10 @@ mod condition_transition_tests {
         .expect("field getter should parse with source identity");
         let statement = parsed[0].body_kernel_statement();
         let state = ExecutionState::new()
-            .with_local("owner", ProgramValue::pointer(pointer.clone()))
+            .with_local(
+                parsed[0].parameters()[0].binding_name(),
+                ProgramValue::pointer(pointer.clone()),
+            )
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),
@@ -1262,7 +1267,10 @@ mod condition_transition_tests {
         .expect("compound field update should parse with source identity");
         let statement = parsed[0].body_kernel_statement();
         let state = ExecutionState::new()
-            .with_local("counter", ProgramValue::pointer(pointer.clone()))
+            .with_local(
+                parsed[0].parameters()[0].binding_name(),
+                ProgramValue::pointer(pointer.clone()),
+            )
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),
