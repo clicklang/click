@@ -6787,16 +6787,26 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 );
                 retain_required_integer_obligation(&mut obligations, assumptions, lower_bound);
                 retain_required_integer_obligation(&mut obligations, assumptions, upper_bound);
-                let value = program_value_from_bitvector_term(
-                    destination.program_type(),
-                    MachineTerm::IntegerToMachine {
-                        value: path.value.into(),
-                        destination: *destination,
-                    },
-                )
-                .ok_or(ExecutionLimit::Paths)?;
+                let value: SpecValue = if budget.machine_result_production_disabled {
+                    program_value_from_bitvector_term(
+                        destination.program_type(),
+                        MachineTerm::IntegerToMachine {
+                            value: path.value.into(),
+                            destination: *destination,
+                        },
+                    )
+                    .ok_or(ExecutionLimit::Paths)?
+                    .into()
+                } else {
+                    KernelTerm::integer_to_machine(
+                        *destination,
+                        KernelTermImport::default().integer(&path.value.into()),
+                    )
+                    .expect("typed Integer conversion operand")
+                    .into()
+                };
                 paths.push(SpecExpressionPath {
-                    value: value.into(),
+                    value,
                     facts: path.facts,
                     obligations,
                 });

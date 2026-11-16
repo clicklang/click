@@ -106,3 +106,54 @@ fn program_expression_handoff_preserves_values_and_errors() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/spec/execution_handoff_tests.rs");
 }
+
+#[test]
+fn symbolic_integer_conversions_produce_shared_roots_with_the_same_bounds() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for destination in [
+        MachineIntegerType::Int8,
+        MachineIntegerType::UInt8,
+        MachineIntegerType::Int16,
+        MachineIntegerType::UInt16,
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+        MachineIntegerType::Int128,
+        MachineIntegerType::UInt128,
+    ] {
+        let expression = SpecExpression::IntegerToMachine {
+            value: Box::new(SpecIntegerExpression::Term(IntegerTerm::Variable(
+                Variable(999996),
+            ))),
+            destination,
+        };
+        let evaluate = |disabled| {
+            let mut budget = ExecutionBudget::new();
+            let mut evaluation = SpecEvaluation::logical(&mut budget);
+            evaluation.machine_result_production_disabled = disabled;
+            evaluate_spec_expression_paths_with_bindings_in(
+                &ExecutionState::new(),
+                &expression,
+                &PureFactContext::new(),
+                &BTreeMap::new(),
+                &mut evaluation,
+            )
+            .unwrap()
+            .pop()
+            .unwrap()
+        };
+        let native = evaluate(true);
+        let exports = KernelTermExport::machine_export_count();
+        let retained = evaluate(false);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        let root = retained.value.shared().expect("retained conversion");
+        assert!(
+            matches!(root.node(), KernelTermNode::IntegerToMachine { destination: actual, .. } if *actual == destination)
+        );
+        assert_eq!(retained.facts, native.facts);
+        assert_eq!(retained.obligations, native.obligations);
+        assert!(!retained.obligations.is_empty());
+        assert_eq!(retained.value.into_native(), native.value.into_native());
+    }
+}
