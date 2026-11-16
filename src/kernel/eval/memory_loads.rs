@@ -3848,6 +3848,7 @@ fn select_scalar_reads(term: &MachineTerm) -> MachineTerm {
                 #[cfg(test)]
                 LOAD_SUBSTITUTION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
+                    MachineTerm::ThreadHandle(_) => term_results.push(term.clone()),
                     bits32_constant!(_)
                     | int64_constant!(_)
                     | uint64_constant!(_)
@@ -4291,6 +4292,7 @@ fn common_float_conversion_mentions_load(root: &KernelTerm) -> bool {
 
 pub(in crate::kernel) fn term_mentions_a_memory_load(term: &MachineTerm) -> bool {
     match term {
+        MachineTerm::ThreadHandle(_) => false,
         bits32_constant!(_)
         | MachineTerm::Variable(_)
         | int64_constant!(_)

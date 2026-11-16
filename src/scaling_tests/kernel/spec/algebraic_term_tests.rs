@@ -47,7 +47,7 @@ fn algebraic_integer_match_scales_with_nested_depth() {
                     }),
                     arms: vec![SpecAlgebraicResultMatchArm {
                         variant: "Box".into(),
-                        bindings: vec![format!("n{level}")],
+                        bindings: vec![format!("n{level}").into()],
                         binding_types: vec![AlgebraicValueType::Integer],
                         binding_variables: vec![Some(Variable(100_000 + level as u64))],
                         body: Box::new(expression),

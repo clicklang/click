@@ -2579,3 +2579,17 @@ fn a_fully_explicit_script_has_an_auditable_fixed_point() {
     .unwrap();
     run_audit(arguments).expect("an already explicit proof is a valid fixed point");
 }
+
+#[test]
+#[ignore = "nightly: pthread handle copy expansion and cold replay"]
+fn pthread_handle_copies_expand_and_cold_replay() {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/modeled_pthread_copied_handle.md");
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        "run.contract".to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).unwrap();
+}

@@ -2134,7 +2134,7 @@ fn proof_source_printing_preserves_proposition_precedence() {
 
     let quantified = ClickProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: "k".to_string(),
+        name: "k".to_string().into(),
         written_name: None,
         body: Box::new(ClickProposition::Implies(
             Box::new(ClickProposition::And(

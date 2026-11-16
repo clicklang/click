@@ -2264,6 +2264,7 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &MachineTerm, hasher:
         std::hash::Hash::hash(spelling, hasher);
     }
     match term {
+        MachineTerm::ThreadHandle(id) => std::hash::Hash::hash(id, hasher),
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
@@ -2481,6 +2482,7 @@ fn collect_bitvector_memory_load_keys(
     keys: &mut BTreeSet<(PointerBlock, u64)>,
 ) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         bits32_constant!(_)
         | MachineTerm::Variable(_)
         | int64_constant!(_)
@@ -2808,6 +2810,7 @@ fn collect_bitvector_memory_loads_with_width(
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     match term {
+        MachineTerm::ThreadHandle(_) => Ok(()),
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,

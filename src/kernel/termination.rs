@@ -653,11 +653,11 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
             .collect()
     }
 
-    fn unbind(&self, binding: &str, paths: Vec<Self::Path>) -> Vec<Self::Path> {
+    fn unbind(&self, binding: &BindingName, paths: Vec<Self::Path>) -> Vec<Self::Path> {
         paths
             .into_iter()
             .map(|mut path| {
-                path.aliases.remove(&binding.into());
+                path.aliases.remove(binding);
                 path
             })
             .collect()
@@ -1820,11 +1820,15 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
     match statement {
         ProgramStatement::Declare { name, .. }
         | ProgramStatement::DeclareAggregate { name, .. } => {
-            names.insert(name.source_name().to_owned());
+            if let Some(spelling) = name.source_spelling() {
+                names.insert(spelling.to_owned());
+            }
         }
         ProgramStatement::CallConstruct { target: name, .. }
         | ProgramStatement::HeapAllocate { target: name, .. } => {
-            names.insert(name.source_name().to_owned());
+            if let Some(spelling) = name.source_spelling() {
+                names.insert(spelling.to_owned());
+            }
         }
         ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
@@ -1839,7 +1843,9 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
             ..
         } => {
             statement_declared_variables(try_body, names);
-            names.insert(binding.clone());
+            if let Some(name) = binding.source_spelling() {
+                names.insert(name.to_owned());
+            }
             statement_declared_variables(handler, names);
         }
         ProgramStatement::If {
@@ -1977,7 +1983,7 @@ trait TerminationWalk {
     ) -> Vec<Self::Path>;
 
     /// Drops a binding a `try`/`catch` handler does not see.
-    fn unbind(&self, binding: &str, paths: Vec<Self::Path>) -> Vec<Self::Path>;
+    fn unbind(&self, binding: &BindingName, paths: Vec<Self::Path>) -> Vec<Self::Path>;
 
     /// The paths that continue past a join, as the form prefers to hold them.
     /// Narrowing here must keep every refusal the unnarrowed list would make.
@@ -2213,7 +2219,7 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
             .collect()
     }
 
-    fn unbind(&self, _binding: &str, lower_bounds: Vec<i64>) -> Vec<i64> {
+    fn unbind(&self, _binding: &BindingName, lower_bounds: Vec<i64>) -> Vec<i64> {
         lower_bounds
     }
 
@@ -6034,7 +6040,7 @@ mod local_descent_tests {
         let body = ProgramStatement::seq(
             Arc::new(ProgramStatement::TryCatchInt32 {
                 try_body: Box::new(spin(1)),
-                binding: "code".to_string(),
+                binding: "code".into(),
                 handler: Box::new(spin(2)),
                 cleanup_unwind: false,
             }),

@@ -115,7 +115,7 @@ pub enum LoweringIntroduction {
     /// `name` is the written binder spelling and `variable` is the exact
     /// kernel variable the lowering bound it to.
     WrittenUniversal {
-        name: String,
+        name: BindingName,
         variable: Variable,
         pointer: bool,
         integer: bool,

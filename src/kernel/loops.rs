@@ -1221,6 +1221,11 @@ fn execute_modeled_pthread_join_paths(
         budget,
         Some(environment),
     )? {
+        let current = super::reasoning::path_facts::assumptions_with_path_context(
+            assumptions,
+            &path.facts,
+            &path.obligations,
+        );
         let outcome = if let Some(outcome) = path.outcome {
             match outcome {
                 FunctionOutcome::UndefinedBehavior(error) => {
@@ -1232,13 +1237,8 @@ fn execute_modeled_pthread_join_paths(
         } else if !matches!(&path.values[1], ProgramValue::Pointer(pointer) if pointer.is_null()) {
             refusal("modeled-pthread join requires a null result slot")
         } else if let Some(handle) =
-            super::threads::ThreadHandle::from_program_value(&path.values[0])
+            super::threads::ThreadHandle::resolve_program_value(&path.values[0], &current)
         {
-            let current = super::reasoning::path_facts::assumptions_with_path_context(
-                assumptions,
-                &path.facts,
-                &path.obligations,
-            );
             let joined = super::threads::ThreadContext::new(state.clone()).and_then(|context| {
                 context
                     .join(

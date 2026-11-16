@@ -736,6 +736,7 @@ fn certification_proves_signed_le_views(
 
 fn collect_shallow_term_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             ..

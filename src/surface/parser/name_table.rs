@@ -256,7 +256,7 @@ pub(super) struct NameTable {
     /// parent field that holds each `child.field`.
     pub(super) hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
     pub(super) struct_params: BTreeMap<String, String>,
-    pub(super) program_parameter_types: BTreeMap<String, InterfaceType>,
+    pub(super) program_parameter_types: BinderMap<InterfaceType>,
     /// The struct each `void *` parameter has been cast to so far; the
     /// parameters themselves are `NameKind::VoidPointerParameter` names.
     pub(super) parameter_struct_casts: BTreeMap<String, String>,
@@ -352,7 +352,15 @@ impl NameTable {
     }
 
     /// Gives or takes `name`'s binding of `kind` until the open scope ends.
-    pub(super) fn set_scoped(&mut self, kind: NameKind, name: &str, bound: bool) {
+    pub(super) fn set_scoped(
+        &mut self,
+        kind: NameKind,
+        name: &(impl binders::BinderKey + ?Sized),
+        bound: bool,
+    ) {
+        let Some(binders::BinderKeyRef::Written(name)) = name.binder_key() else {
+            return;
+        };
         let was_bound = if bound {
             !self.insert(kind, name.to_string())
         } else {
@@ -367,7 +375,14 @@ impl NameTable {
 
     /// Gives `name` the layout of struct `layout`, or none, until the open
     /// scope ends.
-    pub(super) fn set_scoped_struct_param(&mut self, name: &str, layout: Option<String>) {
+    pub(super) fn set_scoped_struct_param(
+        &mut self,
+        name: &(impl binders::BinderKey + ?Sized),
+        layout: Option<String>,
+    ) {
+        let Some(binders::BinderKeyRef::Written(name)) = name.binder_key() else {
+            return;
+        };
         let previous = match layout {
             Some(layout) => self.struct_params.insert(name.to_string(), layout),
             None => self.struct_params.remove(name),
@@ -414,7 +429,10 @@ impl NameTable {
     }
 
     /// Hides the bare resource field `name` until the open scope ends.
-    pub(super) fn hide_resource_field(&mut self, name: &str) {
+    pub(super) fn hide_resource_field(&mut self, name: &(impl binders::BinderKey + ?Sized)) {
+        let Some(binders::BinderKeyRef::Written(name)) = name.binder_key() else {
+            return;
+        };
         if let Some(field) = self.resource_fields.remove(name) {
             self.undo.push(ShadowRestore::ResourceField {
                 name: name.to_string(),
@@ -517,7 +535,14 @@ impl NameTable {
     /// ends. `intro() as` uses
     /// this directly: an introduced binder may hide a C parameter, which
     /// `outer.name` still reaches.
-    pub(super) fn hide_for_proof_binder(&mut self, name: &str, resource: bool) {
+    pub(super) fn hide_for_proof_binder(
+        &mut self,
+        name: &(impl binders::BinderKey + ?Sized),
+        resource: bool,
+    ) {
+        let Some(binders::BinderKeyRef::Written(name)) = name.binder_key() else {
+            return;
+        };
         if let Some(previous) = self.fact_names.remove(name) {
             self.undo.push(ShadowRestore::Fact {
                 name: name.to_string(),
