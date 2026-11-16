@@ -1292,22 +1292,12 @@ fn instantiate_proof_tactic(
                 .map(proposition)
                 .collect::<Result<Vec<_>, _>>()?,
         },
-        ProofTactic::InstantiateUsing {
+        ProofTactic::Instantiate {
             quantified,
             argument,
-            premises,
-        } => ProofTactic::InstantiateUsing {
+        } => ProofTactic::Instantiate {
             quantified: proposition(quantified)?,
             argument: expression(argument)?,
-            premises: premises
-                .as_ref()
-                .map(|premises| {
-                    premises
-                        .iter()
-                        .map(proposition)
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?,
         },
         ProofTactic::SolveUsing(using) => ProofTactic::SolveUsing(ProofSolveUsing {
             premises: using

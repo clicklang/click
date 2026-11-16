@@ -92,10 +92,7 @@ int32 caller(int32* occ, int32* other, int32 n) {
         have at(a, occ[k]) == 0 by {
             instantiate(forall (j: int32) {
                 0 <= j and j < n implies at(a, occ[j]) == 0
-            }, k) using {
-                0 <= k;
-                k < n;
-            };
+            }, k);
             solve();
         }
         solve();

@@ -345,10 +345,6 @@ fn chosen_step_text(step: &ProofStep) -> Option<String> {
         ProofStep::ApplyTheoremUsing { .. }
             | ProofStep::ApplyInductionUsing { .. }
             | ProofStep::TransportUsing { .. }
-            | ProofStep::InstantiateUsing {
-                premises: Some(_),
-                ..
-            }
     ) {
         return None;
     }
@@ -1535,13 +1531,13 @@ impl<'a> Proof<'a> {
             context.spec_definitions,
         )?;
         self.state
-            .apply_instantiate(
+            .apply_induction_instance(
                 quantified,
                 crate::kernel::proof::fact_reasoning::InstanceArgument::Machine(argument),
-                Some(&explicit_premises),
+                &explicit_premises,
             )
             .map(|state| {
-                // `apply_instantiate` has performed the complete kernel
+                // `apply_induction_instance` has performed the complete kernel
                 // premise/order/conclusion check. Publish its exact fact
                 // delta through the same Proof transition used by ordinary
                 // quantified instantiation.
@@ -1563,11 +1559,12 @@ impl<'a> Proof<'a> {
                 PropositionCloseError::NotProposition => {
                     self.step_error("induction application requires a proposition goal")
                 }
-                PropositionCloseError::InstantiatePremiseUnavailable(_, premise) => self
-                    .step_error(format!(
+                PropositionCloseError::InductionPremiseUnavailable(premise) => {
+                    self.step_error(format!(
                         "induction premise is not exactly available: {}",
                         self.render_diagnostic_proposition(&premise)
-                    )),
+                    ))
+                }
                 PropositionCloseError::InstantiateQuantifiedUnavailable => {
                     self.step_error("induction hypothesis is not exactly available")
                 }

@@ -3735,7 +3735,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Induct { .. } => "induct",
         ProofStep::StructuralInduct { .. } => "induct",
         ProofStep::TransportUsing { .. } => "transport",
-        ProofStep::InstantiateUsing { .. } => "instantiate",
+        ProofStep::Instantiate { .. } => "instantiate",
         ProofStep::Have { .. } => "have",
         ProofStep::Open { .. } => "open",
         ProofStep::If { .. } => "if",

@@ -1664,9 +1664,10 @@ fn outcome_instantiate_uses_the_checked_proof_path() {
         } by {
             step_until(function.exit);
             have 2 <= value by {
+                have 0 <= 2 and 2 < 3;
                 instantiate(forall (k: int32) {
                     0 <= k and k < 3 implies k <= value
-                }, 2) using {}
+                }, 2);
                 known();
             }
             known();
@@ -1697,21 +1698,23 @@ fn instantiate_does_not_discharge_guards_from_ambient_facts() {
         } by {
             step_until(function.exit);
             have 2 <= value by {
+                have 0 <= 2 and 2 < n;
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies k <= value
-                }, 2) using {}
+                }, 2);
                 known();
             }
             known();
         }
     "#;
 
-    let error = verify_c_sources(click_source, &[("pick.c", c_source)])
-        .expect_err("the symbolic upper-bound guard must name its evidence");
+    verify_c_sources(click_source, &[("pick.c", c_source)])
+        .expect("an ordinary have can prove the exact symbolic guard");
+    let without_guard = click_source.replace("                have 0 <= 2 and 2 < n;\n", "");
+    let error = verify_c_sources(&without_guard, &[("pick.c", c_source)])
+        .expect_err("instantiation must preserve the unproved symbolic guard");
     assert!(
-        error
-            .message()
-            .contains("does not follow from the listed evidence"),
+        error.message().contains("`known` requires"),
         "unexpected error: {}",
         error.message()
     );
@@ -2169,9 +2172,10 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
                 normalize();
             }
             have 1 <= x by {
+                have 0 <= 1 and 1 < 2;
                 instantiate(forall (k: int32) {
                     0 <= k and k < 2 implies k <= x
-                }, 1) using {}
+                }, 1);
                 known();
             }
             have forall (k: int32) {
@@ -2213,7 +2217,7 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
         .expanded_proof_tactics()
         .expect("the checked universal scopes should expose retained provenance");
     let expanded_debug = format!("{expanded:#?}");
-    for operation in ["Intro", "InstantiateUsing", "Enumerate"] {
+    for operation in ["Intro", "Instantiate", "Enumerate"] {
         assert!(
             expanded_debug.contains(operation),
             "the expansion should retain {operation}: {expanded_debug}"
@@ -2230,7 +2234,7 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
     verify_c_sources(&rewritten, &[("universal_haves.c", c_source)])
         .expect("the serialized universal scopes should independently reverify");
 
-    let corrupted = rewritten.replacen("}, 1) using {", "}, 0) using {", 1);
+    let corrupted = rewritten.replacen("}, 1);", "}, 0);", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the checked instantiation argument"
@@ -2241,9 +2245,7 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
     // The instantiation at the wrong argument adds a different fact, so it
     // no longer closes the `have` goal.
     assert!(
-        error
-            .message()
-            .contains("its body ran to the end with the goal still open"),
+        error.message().contains("`known` requires"),
         "the checked Proof operation should reject the tamper directly: {error:?}"
     );
 }

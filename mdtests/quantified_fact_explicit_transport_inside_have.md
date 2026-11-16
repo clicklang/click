@@ -56,8 +56,8 @@ void mark(int32 *next, int32 *visited) {
         0 <= k and k < 2 implies 0 <= next[k]
     } by {
         intro(); intro();
-        instantiate(forall (j: int32) { 0 <= j and j < 2 implies next[j] == at(entry, next[j]) }, k) using { 0 <= k; k < 2; };
-        instantiate(at(entry, forall (j: int32) { 0 <= j and j < 2 implies 0 <= next[j] }), k) using { 0 <= k; k < 2; };
+        instantiate(forall (j: int32) { 0 <= j and j < 2 implies next[j] == at(entry, next[j]) }, k);
+        instantiate(at(entry, forall (j: int32) { 0 <= j and j < 2 implies 0 <= next[j] }), k);
         rewrite(next[k], at(entry, next[k]));
         known();
     }
@@ -65,7 +65,7 @@ void mark(int32 *next, int32 *visited) {
         0 <= k and k < 2 implies at(entry, next[k]) == next[k]
     } by {
         intro(); intro();
-        instantiate(forall (j: int32) { 0 <= j and j < 2 implies next[j] == at(entry, next[j]) }, k) using { 0 <= k; k < 2; };
+        instantiate(forall (j: int32) { 0 <= j and j < 2 implies next[j] == at(entry, next[j]) }, k);
         known();
     }
 }

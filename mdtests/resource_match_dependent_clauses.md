@@ -45,10 +45,7 @@ int32 unchanged(int32* occupied, int32 capacity) {
                 intro();
                 instantiate(forall (k: int32) {
                     0 <= k and k < prefix implies occupied[k] == 1
-                }, i) using {
-                    0 <= i;
-                    i < prefix;
-                };
+                }, i);
                 known();
             }
             unfold(part);

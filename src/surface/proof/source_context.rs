@@ -61,7 +61,7 @@ impl SourceContext {
                     | ProofTactic::Contradiction(_)
                     | ProofTactic::Rewrite(_)
                     | ProofTactic::TransportUsing { .. }
-                    | ProofTactic::InstantiateUsing { .. }
+                    | ProofTactic::Instantiate { .. }
             ),
             Self::ExecutionFrontier => matches!(
                 tactic,

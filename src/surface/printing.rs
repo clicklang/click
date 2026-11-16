@@ -1251,24 +1251,19 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             write_premise_list(output, premises, indent + 1);
             line(output, &prefix, "};");
         }
-        ProofTactic::InstantiateUsing {
+        ProofTactic::Instantiate {
             quantified,
             argument,
-            premises,
         } => {
-            let instantiate = format!(
-                "instantiate({}, {})",
-                source_click_proposition(quantified),
-                describe_contract_expression(argument)
+            line(
+                output,
+                &prefix,
+                &format!(
+                    "instantiate({}, {});",
+                    source_click_proposition(quantified),
+                    describe_contract_expression(argument)
+                ),
             );
-            match premises {
-                Some(premises) => {
-                    line(output, &prefix, &format!("{instantiate} using {{"));
-                    write_premise_list(output, premises, indent + 1);
-                    line(output, &prefix, "};");
-                }
-                None => line(output, &prefix, &format!("{instantiate};")),
-            }
         }
         ProofTactic::SmartExecute
         | ProofTactic::ExecuteUntil(_)

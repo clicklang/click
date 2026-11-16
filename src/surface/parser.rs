@@ -11294,20 +11294,12 @@ impl Parser {
                 self.expect(Token::Comma)?;
                 let argument = self.parse_contract_expression()?;
                 self.expect(Token::RParen)?;
-                if self.peek_ident() != Some("using") {
-                    ProofTactic::InstantiateUsing {
-                        quantified,
-                        argument,
-                        premises: None,
-                    }
-                } else {
-                    let premises = self.parse_exact_premises()?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::InstantiateUsing {
-                        quantified,
-                        argument,
-                        premises: Some(premises),
-                    });
+                if self.peek_ident() == Some("using") {
+                    return Err(self.error("`instantiate` takes no `using` list; prove guards with ordinary `have` steps"));
+                }
+                ProofTactic::Instantiate {
+                    quantified,
+                    argument,
                 }
             }
             "solve" => {
@@ -17965,7 +17957,6 @@ mod tactic_classification_tests {
             "transport(x == 1, y == 1) using { x == y; };",
         ),
         ("instantiate", "instantiate(F, 1);"),
-        ("instantiate-using", "instantiate(F, 1) using { x == 1; };"),
         ("solve", "solve();"),
         ("solve-using", "solve() using { x == 1; };"),
         ("check-termination-local", "check_termination_local(\"f\");"),

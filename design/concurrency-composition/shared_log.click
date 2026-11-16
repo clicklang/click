@@ -140,10 +140,8 @@ int32 vector_copy(
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
         intro();
         intro();
-        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, k) using {
-            0 <= k and k < length;
-            i == length;
-        };
+        have at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i);
+        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, k);
         known();
     }
     step();

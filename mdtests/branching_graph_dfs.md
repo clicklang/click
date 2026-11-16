@@ -145,7 +145,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         } else {
             instantiate(forall (k: int32) {
                 0 <= k and k < n and k != cur implies visited[k] == old(visited[k])
-            }, k) using { 0 <= k; k < n; k != cur; };
+            }, k);
             rewrite(visited[k], old(visited[k]));
             known();
         }
@@ -158,7 +158,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         have k != cur by { solve(); }
         instantiate(forall (k: int32) {
             0 <= k and k < n and k != cur implies visited[k] == old(visited[k])
-        }, k) using { 0 <= k; k < n; k != cur; };
+        }, k);
         known();
     }
     have forall (k: int32) { cur < k and k < n implies at(before_mark, visited[k]) == visited[k] } by {
@@ -168,7 +168,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         have k != cur by { solve(); }
         instantiate(forall (k: int32) {
             0 <= k and k < n and k != cur implies visited[k] == old(visited[k])
-        }, k) using { 0 <= k; k < n; k != cur; };
+        }, k);
         known();
     }
     have viewable(visited[0..n]) by { observe(visited[0..n]); }
@@ -248,7 +248,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         have to != cur by { solve() using { cur != to; }; }
         instantiate(forall (k: int32) {
             0 <= k and k < n and k != cur implies visited[k] == old(visited[k])
-        }, to) using { 0 <= to; to < n; to != cur; };
+        }, to);
         known();
     }
     let { result: left_result } = step(dfs, {});
@@ -335,7 +335,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     }) using { left_result == 0; };
     }
     have at(after_mark, left[cur]) == old(left[cur]) by {
-        instantiate(forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(after_mark, left[k]) }, cur) using { 0 <= cur; cur < n; };
+        instantiate(forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(after_mark, left[k]) }, cur);
         known();
     }
     have at(before_right, visited[at(after_mark, left[cur])]) != 0 by {
@@ -344,7 +344,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
 
     have forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(before_right, left[k]) } by {
         intro(); intro();
-        instantiate(forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(after_mark, left[k]) }, k) using { 0 <= k; k < n; };
+        instantiate(forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(after_mark, left[k]) }, k);
         have separate(memory(visited[0..n]), memory(left[0..n])) by {
             apply(click::separation::separate_symm(memory(left[0..n]), memory(visited[0..n]))) using { separate(memory(left[0..n]), memory(visited[0..n])); };
         }
@@ -364,7 +364,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     }
     have forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(before_right, right[k]) } by {
         intro(); intro();
-        instantiate(forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(after_mark, right[k]) }, k) using { 0 <= k; k < n; };
+        instantiate(forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(after_mark, right[k]) }, k);
         have separate(memory(visited[0..n]), memory(right[0..n])) by {
             apply(click::separation::separate_symm(memory(right[0..n]), memory(visited[0..n]))) using { separate(memory(right[0..n]), memory(visited[0..n])); };
         }
@@ -476,9 +476,9 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 0 <= k and k < n and at(before_right, visited[k]) == 0 and visited[k] != 0 implies
                     visited[at(before_right, left[k])] != 0 and visited[at(before_right, right[k])] != 0
             }, k);
-            instantiate(forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(before_right, left[k]) }, k) using { 0 <= k; k < n; };
+            instantiate(forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(before_right, left[k]) }, k);
             rewrite(old(left[k]), at(before_right, left[k]));
-            instantiate(forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(before_right, right[k]) }, k) using { 0 <= k; k < n; };
+            instantiate(forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(before_right, right[k]) }, k);
             rewrite(old(right[k]), at(before_right, right[k]));
             known();
         }
@@ -491,9 +491,9 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 0 <= k and k < n and at(after_mark, visited[k]) == 0 and at(before_right, visited[k]) != 0 implies
                     at(before_right, visited[at(after_mark, left[k])]) != 0 and at(before_right, visited[at(after_mark, right[k])]) != 0
             }, k);
-            instantiate(forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(after_mark, left[k]) }, k) using { 0 <= k; k < n; };
+            instantiate(forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(after_mark, left[k]) }, k);
             rewrite(old(left[k]), at(after_mark, left[k]));
-            instantiate(forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(after_mark, right[k]) }, k) using { 0 <= k; k < n; };
+            instantiate(forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(after_mark, right[k]) }, k);
             rewrite(old(right[k]), at(after_mark, right[k]));
             known();
         }
@@ -520,7 +520,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 }, old(left[k]));
                 have visited[old(right[k])] != 0 by {
                     rewrite(k, cur);
-                    instantiate(forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(before_right, right[k]) }, cur) using { 0 <= cur; cur < n; };
+                    instantiate(forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(before_right, right[k]) }, cur);
                     rewrite(old(right[cur]), at(before_right, right[cur]));
                     known();
                 }

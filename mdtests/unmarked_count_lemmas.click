@@ -87,9 +87,10 @@ theorem unmarked_frame(
                 forall (k: int32) { lo <= k and k < m implies a[k] == b[k] };
             };
             have a[hi - 1] == b[hi - 1] by {
+                have lo <= (hi - 1) and (hi - 1) < m;
                 instantiate(forall (k: int32) {
                     lo <= k and k < m implies a[k] == b[k]
-                }, hi - 1) using { to_integer(lo) <= to_integer(hi - 1); to_integer(hi - 1) < to_integer(m); };
+                }, hi - 1);
                 known();
             }
             unfold(unmarked(a, lo, hi));
@@ -219,9 +220,10 @@ theorem unmarked_point_update(
                     forall (k: int32) { j < k and k < n implies a[k] == b[k] };
                 };
                 have a[hi - 1] == b[hi - 1] by {
+                    have j < (hi - 1) and (hi - 1) < n;
                     instantiate(forall (k: int32) {
                         j < k and k < n implies a[k] == b[k]
-                    }, hi - 1) using { to_integer(j) < to_integer(hi - 1); to_integer(hi - 1) < to_integer(n); };
+                    }, hi - 1);
                     known();
                 }
                 unfold(unmarked(a, lo, hi));

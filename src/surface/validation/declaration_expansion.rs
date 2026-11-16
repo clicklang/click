@@ -1594,7 +1594,7 @@ fn expand_declared_resource_tactic(
         | ProofTactic::ApplyInductionUsing { .. }
         | ProofTactic::ApplyTheoremUsing { .. }
         | ProofTactic::UnfoldFunction(_)
-        | ProofTactic::InstantiateUsing { .. }) => {
+        | ProofTactic::Instantiate { .. }) => {
             expand_declared_resource_tactic_with_expressions(tactic, resource_definitions)
         }
         tactic @ (ProofTactic::ArithmeticUsing(_)
@@ -1874,23 +1874,12 @@ fn expand_declared_resource_tactic_with_expressions(
             );
             Ok(ProofTactic::UnfoldFunction(application))
         }
-        ProofTactic::InstantiateUsing {
+        ProofTactic::Instantiate {
             quantified,
             argument,
-            premises,
-        } => Ok(ProofTactic::InstantiateUsing {
+        } => Ok(ProofTactic::Instantiate {
             quantified: expand_declared_resource_proposition(quantified, resource_definitions)?,
             argument: expand_declared_resource_expression(argument, resource_definitions)?,
-            premises: premises
-                .map(|premises| {
-                    premises
-                        .into_iter()
-                        .map(|premise| {
-                            expand_declared_resource_proposition(premise, resource_definitions)
-                        })
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?,
         }),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }

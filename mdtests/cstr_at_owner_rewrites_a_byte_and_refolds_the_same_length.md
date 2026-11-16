@@ -29,9 +29,7 @@ void poke(uint8* s, uint64 n) {
             rewrite(k, 0u64);
             solve();
         } else {
-            instantiate(forall (k: uint64) { 0u64 <= k and k < n implies old(s[k]) != '\0' }, k) using {
-                0u64 <= k and k < n;
-            };
+            instantiate(forall (k: uint64) { 0u64 <= k and k < n implies old(s[k]) != '\0' }, k);
             have separate(memory(s[k]), memory(s[0u64])) by {
                 apply(click::separation::separate_elements(s, k, 0u64)) using { k != 0u64; };
             }
@@ -63,9 +61,7 @@ void poke(uint8* s, uint64 n) {
             rewrite(k, 0u64);
             solve();
         } else {
-            instantiate(forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(old(s[k])) }, k) using {
-                0u64 <= k and to_integer(k) < to_integer(n + 1u64);
-            };
+            instantiate(forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(old(s[k])) }, k);
             have separate(memory(s[k]), memory(s[0u64])) by {
                 apply(click::separation::separate_elements(s, k, 0u64)) using { k != 0u64; };
             }

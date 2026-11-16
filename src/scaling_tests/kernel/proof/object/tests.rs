@@ -812,14 +812,15 @@ fn apply_fact_quantified_sources_use_selected_alpha_keys() {
                         std::slice::from_ref(&guard),
                     )
                     .unwrap();
-                assert!(
+                // Exact propagation may have published the original binder
+                // spelling already, allowing apply itself to close the goal.
+                let successor = if successor.is_complete() {
                     successor
-                        .apply_known(PropositionKnownContext::Pure)
-                        .unwrap_or_else(|_| panic!(
-                            "the applied existential must be available up to binder renaming"
-                        ))
-                        .is_complete()
-                );
+                } else {
+                    successor.apply_known(PropositionKnownContext::Pure)
+                        .unwrap_or_else(|_| panic!("the applied existential must be available up to binder renaming"))
+                };
+                assert!(successor.is_complete());
                 assert!(
                     root.apply_fact(
                         &implication(quantified(999, u32::MAX)),

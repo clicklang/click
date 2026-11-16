@@ -38,7 +38,7 @@ void fill(uint8* dst) {
             preserve(memory(dst[k]), statement(1));
         }
         instantiate(at(statement(1).entry,
-            (0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 })), k) using { k < 4u64; };
+            (0u64..4u64).all(|j| { defined(dst[j]) and dst[j] == 7 })), k);
         solve();
     }
     step();

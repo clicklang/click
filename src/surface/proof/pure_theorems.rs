@@ -4001,7 +4001,7 @@ mod tests {
             ensures x <= upper by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < limit implies k <= upper
-                }, x) using { 0 <= x; x < limit; }
+                }, x);
                 known();
             }
         }
@@ -4027,7 +4027,7 @@ mod tests {
         assert!(verified.kernel_authority.is_some());
         assert!(matches!(
             verified.proof.as_ref().unwrap().steps(),
-            [ProofStep::InstantiateUsing { .. }]
+            [ProofStep::Instantiate { .. }, ProofStep::Known]
         ));
     }
 
@@ -4051,31 +4051,17 @@ mod tests {
     }
 
     #[test]
-    fn pure_instantiate_rejects_omitted_guard_and_preserves_checked_error() {
-        let missing =
-            INSTANTIATE_BOUND.replace("using { 0 <= x; x < limit; }", "using { 0 <= x; }");
+    fn pure_instantiate_preserves_a_missing_guard_until_known() {
+        let missing = INSTANTIATE_BOUND.replace("requires x < limit;", "");
         let error = verify_instantiation_theorem(&missing)
-            .expect_err("ambient guards cannot fill a missing citation");
+            .expect_err("the guarded conclusion needs its missing bound");
         assert!(
-            error
-                .message()
-                .contains("does not follow from the listed evidence"),
+            error.message().contains("`known` requires"),
             "{}",
             error.message()
         );
         assert!(
             !error.message().contains("round-trip"),
-            "{}",
-            error.message()
-        );
-        let unavailable = INSTANTIATE_BOUND.replace("requires x < limit;", "");
-        let error = verify_instantiation_theorem(&unavailable)
-            .expect_err("a named guard must be available");
-        // Named by its position and as written, not as a kernel term.
-        assert!(
-            error
-                .message()
-                .contains("premise 2 `x < limit` is not an available exact fact"),
             "{}",
             error.message()
         );
@@ -4113,8 +4099,7 @@ mod tests {
                 ensures forall (x: int32) { x <= 10 implies x <= 20 } by {
                     intro(); intro();
                     have x <= 20 by {
-                        instantiate(forall (x: int32) { x <= 10 implies x <= 20 }, x)
-                            using { x <= 10; }
+                        instantiate(forall (x: int32) { x <= 10 implies x <= 20 }, x);
                         known();
                     }
                     known();
@@ -4124,7 +4109,7 @@ mod tests {
         let verified = verify_instantiation_theorem(source)
             .expect("intro bindings must shadow theorem parameters");
         assert!(verified.kernel_authority.is_some());
-        let invalid = source.replace("using { x <= 10; }", "using { x == 0; }");
+        let invalid = source.replace("intro(); intro();", "intro();");
         assert!(
             verify_instantiation_theorem(&invalid).is_err(),
             "the outer x cannot supply evidence for the introduced x"
@@ -4137,7 +4122,7 @@ mod tests {
             theorem nested() {
                 requires forall (k: int32) { forall (k: int32) { k == k } };
                 ensures forall (x: int32) { x == x } by {
-                    instantiate(forall (k: int32) { forall (k: int32) { k == k } }, 0) using {}
+                    instantiate(forall (k: int32) { forall (k: int32) { k == k } }, 0);
                     known();
                 }
             }
@@ -4160,6 +4145,10 @@ mod tests {
         let source = INSTANTIATE_BOUND.replace("0 <= x", "x >= 0").replace(
             "ensures x <= upper by {",
             "ensures x <= upper by { induct(x) as ih;",
+        );
+        let source = source.replace(
+            "instantiate(forall",
+            "have 0 <= x by known(); instantiate(forall",
         );
         let verified = verify_instantiation_theorem(&source);
         assert!(verified.unwrap().kernel_authority.is_some());
@@ -4218,11 +4207,18 @@ mod tests {
                 .apply_step(certificate.steps()[0].clone())
                 .unwrap();
             allocations.push(crate::persistent::persistent_node_allocations() - before);
-            // The instantiation adds the goal, which closes it.
-            assert!(instantiated.is_complete());
+            // Instantiation retains the guarded body; propagation exposes the
+            // consequence and an explicit known closes it.
+            assert!(!instantiated.is_complete());
+            assert!(instantiated.facts().pure_known_available(&goal));
             assert!(root.certificate().steps().is_empty());
             assert!(!root.facts().contains(&goal));
-            instantiated.completed_proposition().unwrap();
+            instantiated
+                .driver()
+                .apply_step(ProofStep::Known)
+                .unwrap()
+                .completed_proposition()
+                .unwrap();
         }
         for pair in allocations.windows(2) {
             assert!(
@@ -4267,7 +4263,7 @@ mod tests {
                 requires forall (k: int32) { k == k };
                 ensures forall (x: Integer) { x == x } by {
                     intro();
-                    instantiate(forall (k: int32) { k == k }, x) using {}
+                    instantiate(forall (k: int32) { k == k }, x);
                     normalize();
                 }
             }
@@ -4288,9 +4284,11 @@ mod tests {
                 requires flag == 0 or flag != 0;
                 ensures x <= 0 by {
                     if flag == 0 {
-                        instantiate(forall (k: int32) { k <= 0 }, x) using {}
+                        instantiate(forall (k: int32) { k <= 0 }, x);
+                        known();
                     } else {
-                        instantiate(forall (k: int32) { k <= 0 }, x) using {}
+                        instantiate(forall (k: int32) { k <= 0 }, x);
+                        known();
                     }
                     known();
                 }
@@ -4300,8 +4298,8 @@ mod tests {
             .replace("if flag == 0 {", "cases {\n flag == 0 => {")
             .replace("} else {", "}\n flag != 0 => {")
             .replace(
-                "using {}\n                    }\n                    known();",
-                "using {}\n                    }\n }\n                    known();",
+                "                    }\n                    known();",
+                "                    }\n }\n                    known();",
             );
         for source in [source, cases.as_str()] {
             let verified = verify_instantiation_theorem(source).unwrap();
@@ -4320,7 +4318,7 @@ mod tests {
                 _ => panic!("the checked certificate must retain both branches"),
             };
             for arm in arms {
-                assert!(matches!(arm.steps(), [ProofStep::InstantiateUsing { .. }]));
+                assert!(matches!(arm.steps(), [ProofStep::Instantiate { .. }]));
             }
             let prefix = source.split_once(" by {").unwrap().0;
             let expanded = format!(
@@ -4333,11 +4331,8 @@ mod tests {
                     .kernel_authority
                     .is_some()
             );
-            let wrong_sibling = source.replacen(
-                "instantiate(forall (k: int32) { k <= 0 }, x) using {}",
-                "",
-                1,
-            );
+            let wrong_sibling =
+                source.replacen("instantiate(forall (k: int32) { k <= 0 }, x);", "", 1);
             let error = verify_instantiation_theorem(&wrong_sibling).unwrap_err();
             assert!(error.message().contains("known"), "{}", error.message());
         }

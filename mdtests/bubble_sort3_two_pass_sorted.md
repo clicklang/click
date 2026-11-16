@@ -194,12 +194,8 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 unfold(all_le_range(p, 0, 2, p[2]));
                 intro();
                 intro();
-                instantiate(forall (__click_q0: int32) { at(region(10).entry, 0) <= at(region(10).entry, __click_q0) and at(region(10).entry, 0) <= at(region(10).entry, __click_q0) and at(region(10).entry, __click_q0) < at(region(10).entry, j) implies at(region(10).entry, p[__click_q0]) <= at(region(10).entry, p[j]) }, k) using {
-                    0 <= k and 0 <= k and k < 2;
-                    not at(loop(0).exit, j) < at(loop(0).exit, 2);
-                    at(loop(0).exit, j) <= at(loop(0).exit, 2);
-                    at(loop(0).exit, j) >= at(loop(0).exit, 0);
-                };
+                have at(region(10).entry, 0) <= at(region(10).entry, k) and at(region(10).entry, 0) <= at(region(10).entry, k) and at(region(10).entry, k) < at(region(10).entry, j);
+                instantiate(forall (__click_q0: int32) { at(region(10).entry, 0) <= at(region(10).entry, __click_q0) and at(region(10).entry, 0) <= at(region(10).entry, __click_q0) and at(region(10).entry, __click_q0) < at(region(10).entry, j) implies at(region(10).entry, p[__click_q0]) <= at(region(10).entry, p[j]) }, k);
                 have at(loop(0).exit, j) == 2 by { solve(); }
                 have at(region(10).entry, p[j]) == p[2] by {
                     normalize() using { at(loop(0).exit, j) == 2; };
@@ -357,11 +353,8 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
         unfold(sorted(p, 3));
         unfold(sorted_range(p, 0, 3));
         have p[0] <= p[1] by {
-            instantiate(forall (k: int32) { 0 <= k and at(loop(1).exit, 0) <= k and k < at(loop(1).exit, j) implies at(loop(1).exit, p)[k] <= at(loop(1).exit, p[j]) }, 0) using {
-                not at(loop(1).exit, j) < at(loop(1).exit, 1);
-                at(loop(1).exit, j) <= at(loop(1).exit, 1);
-                at(loop(1).exit, j) >= at(loop(1).exit, 0);
-            };
+            have 0 <= 0 and at(loop(1).exit, 0) <= 0 and 0 < at(loop(1).exit, j);
+            instantiate(forall (k: int32) { 0 <= k and at(loop(1).exit, 0) <= k and k < at(loop(1).exit, j) implies at(loop(1).exit, p)[k] <= at(loop(1).exit, p[j]) }, 0);
             have at(loop(1).exit, j) == 1 by { solve(); }
             have at(loop(1).exit, p[j]) == p[1] by {
                 normalize() using { at(loop(1).exit, j) == 1; };

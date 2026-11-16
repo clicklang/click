@@ -451,21 +451,16 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::IntroAs(name) => Some(driver_proof.apply_intro(Some(name))),
             ProofStep::Enumerate => Some(driver_proof.apply_enumerate()),
             ProofStep::Contradiction(surface) => Some(driver_proof.apply_contradiction(surface)),
-            ProofStep::InstantiateUsing {
+            ProofStep::Instantiate {
                 quantified,
                 argument,
-                premises,
-            } => Some(driver_proof.apply_fixed_state_instantiate_using(
-                quantified,
-                argument,
-                premises.as_deref(),
-            )),
+            } => Some(driver_proof.apply_fixed_state_instantiate(quantified, argument)),
             ProofStep::Mark(name) => Some(driver_proof.apply_execution_mark(name)),
             _ => None,
         };
         if let Some(successor) = checked_proposition_successor {
             let successor = successor?;
-            let successor = if matches!(step, ProofStep::InstantiateUsing { .. }) {
+            let successor = if matches!(step, ProofStep::Instantiate { .. }) {
                 close_goal_from_added_fact(successor)
             } else {
                 successor

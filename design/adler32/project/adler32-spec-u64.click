@@ -839,7 +839,8 @@ theorem adler_sums_extensional_u64(left: uint8[], right: uint8[], bound: uint64,
     to_integer(n - 1u64) < to_integer(n); to_integer(n - 1u64) <= to_integer(bound);
     forall (k: uint64) { k < bound implies left[k] == right[k] };
    };
-   instantiate(forall (k: uint64) { k < bound implies left[k] == right[k] }, n - 1u64) using { to_integer(n - 1u64) < to_integer(bound); };
+   have (n - 1u64) < bound;
+   instantiate(forall (k: uint64) { k < bound implies left[k] == right[k] }, n - 1u64);
    apply(adler_sum_append_u64(left, n)) using { 0u64 < n; };
    apply(adler_sum_append_u64(right, n)) using { 0u64 < n; };
    apply(adler_weighted_append_u64(left, n, weight)) using { 0u64 < n; };

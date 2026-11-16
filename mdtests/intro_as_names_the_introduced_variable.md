@@ -13,6 +13,7 @@ theorem int32_binder(n: int32) {
         intro() as row;
         intro();
         instantiate(forall (k: int32) { to_integer(k + 0) == to_integer(k) }, row);
+        known();
     }
 }
 

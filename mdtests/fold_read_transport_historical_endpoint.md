@@ -47,10 +47,8 @@ theorem same_zeros(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
             };
             have to_integer(hi - 1) < to_integer(n) by { solve(); }
             have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
-            instantiate(forall (k: int32) { lo <= k and k < n implies p[k] == q[k] }, hi - 1) using {
-                to_integer(lo) <= to_integer(hi - 1);
-                to_integer(hi - 1) < to_integer(n);
-            };
+            have lo <= (hi - 1) and (hi - 1) < n;
+            instantiate(forall (k: int32) { lo <= k and k < n implies p[k] == q[k] }, hi - 1);
             have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
             have to_integer(hi - 1) < 2147483647 by { solve(); }
             unfold(zeros(p, lo, hi));
@@ -110,9 +108,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
     have zeros(at(entry, v), 0, end) == zeros(v, 0, end) by {
         have forall (k: int32) { 0 <= k and k < end implies v[k] == at(entry, v[k]) } by {
             intro(); intro();
-            instantiate(at(entry, forall (j: int32) { 0 <= j and j < end implies separate(memory(v[m[0]]), memory(v[j])) }), k) using {
-                0 <= k; k < end;
-            };
+            instantiate(at(entry, forall (j: int32) { 0 <= j and j < end implies separate(memory(v[m[0]]), memory(v[j])) }), k);
             have separate(statement(0).footprint, memory(v[k])) by {
                 normalize() using { at(entry, separate(memory(v[m[0]]), memory(v[k]))); };
             }

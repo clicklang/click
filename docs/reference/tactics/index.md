@@ -1082,7 +1082,7 @@ establish the requested proposition; arm assumptions remain local.
 See [`have_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/have_disjunction_projection.md)
 and [`loop_exit_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_exit_disjunction_projection.md).
 
-A simple tactic that adds a fact (`instantiate ... using`,
+A simple tactic that adds a fact (`instantiate(...)`,
 `apply ... using`, `transport ... using`, and `obtain`) also closes a
 proposition goal that it adds, when it is the last written step or only
 `known`, `solve`, or `normalize` follows it. An added order fact closes
@@ -1112,7 +1112,6 @@ step is still checked.
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
 | `instantiate(F, value)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
-| `instantiate(F, value) using { P; ... }` | simple | Expansion output | Instantiate using written premises. | [Reference](#instantiation-with-selected-premises) |
 | `apply(fact)` | smart | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
 | `apply(fact) using { P; ... }` | simple | Expansion output | Apply an implication using written evidence. | [Reference](#fact-application) |
 | `apply(theorem(args))` | smart | Core | Apply a theorem, looking up its premises. | [Reference](#theorem-application) |
@@ -1202,7 +1201,7 @@ nonnegative, strict-decrease, and substituted-requirement facts.
 `enumerate` is how an explicit proof closes a finite case analysis over a
 constant-bounded universal, such as a `sorted(p, 3)` postcondition: the
 expanded proof spells one `have` per non-vacuous instance (typically closed by
-`intro`, `instantiate ... using`, an explicit transport, and `known`),
+`intro`, `instantiate(...)`, an explicit transport, and `known`),
 and `enumerate()` checks exactly those instances against the goal's own
 guard-derived ranges. A goal stated as a predicate call is unfolded to the
 body that binds the instances, and the smart `solve` proves nearest pairs
@@ -2500,101 +2499,48 @@ Expansion is unchanged, and profiling charges one leaf.
 
 **Form:** `instantiate(F, value)`
 
-**Specialized.** Write it to use a universal fact at one value when `solve` does
-not choose that value. Specialize universal fact `F` at `value` and add the
-conclusion. The guards are fixed by `F` and `value`, so this is one
-availability lookup per guard conjunct; nothing is unfolded or searched.
+**Specialized.** Substitute one value into an established universal fact and
+add its entire body, including any implication guards. No guard is proved or
+assumed by this operation.
 
-**Accepts** `F` and `value` when:
+**Accepts:**
 
-- `F` is an available fact, possibly a conjunct of a held conjunction, as
-  written or with its binder renamed, and is `forall (k: T) { ... }` for `T`
-  `int32`, `uint64`, `Integer`, or a pointer type such as `int32*`, or a
-  range quantifier `(lo..hi).all(|k| { ... })` over `int32` or `uint64`.
-- `value` is an expression of the binder's type: an `int32` C expression for
-  an `int32` binder; a `uint64` one, such as `3u64` or `u`, for a `uint64`
-  binder; an `Integer` expression, such as `5` or `to_integer(x)`, for an
-  `Integer` binder; a pointer of the binder's type, such as a parameter or
-  `result`, for a pointer binder.
-- The guards are the conjuncts of the leading implications of `F`'s body at
-  `value` (`A implies B implies C` has guards `A` and `B`; a range
-  quantifier's guard is `lo <= value and value < hi`). A guard conjunct that
-  evaluates to true needs nothing. Every other conjunct is available through
-  the shared equality-backed lookup: as written, in an equivalent operand
-  spelling (`x >= 0` for `0 <= x`, `n > x` for `x < n`), or through an
-  equality fact (`0 <= y` and `x == y` give `0 <= x`).
-- The conclusion is the rest of the body, which may itself be a universal,
-  so a nested `forall` is instantiated one binder per step. An unguarded `F`
-  needs no fact at all. If the conclusion is the goal, the goal closes
-  unless other written steps follow.
+- An available `forall (k: T) { B }` fact, including a leaf conjunct, up to
+  typed binder renaming. `T` may be `int32`, `uint64`, `Integer`, or a
+  supported pointer type. Range quantifiers `(lo..hi).all(|k| { B })` use
+  their ordinary guarded universal representation.
+- A value of the binder's type: use `3u64` for `uint64`, an `Integer`
+  expression such as `to_integer(x)` for `Integer`, and a correctly typed
+  pointer for a pointer binder.
 
-**Outside it**, with what to write instead:
+The added fact is `B[value/k]`. For a range quantifier it retains the range
+condition. Nested quantifiers remain quantified and can be instantiated one
+binder at a time. The selected value is captured at the operation's state;
+`old` or `at` in the body does not reinterpret that argument at another state.
 
-- A guard that only follows from facts, such as `0 <= x` from `1 <= x`: list
-  those facts with `instantiate(F, value) using { 1 <= x; ... }`, or prove
-  the guard first with `have`.
-- An `int32` literal for a `uint64` binder (`3`): write `3u64`.
-- `F` not available, or available only in a different spelling of its body:
-  state it first with `have`.
+For `forall (k: int32) { 0 <= k implies f(k) >= 0 }`, instantiating at `x`
+adds `0 <= x implies f(x) >= 0`. If `0 <= x` is already an exact fact,
+ordinary unit propagation also makes `f(x) >= 0` available. A guard can be
+proved later with `have 0 <= x;`, with the same result. When a guard only
+follows through equality or arithmetic, prove that exact guard with `have`;
+instantiation performs no premise search or guard discharge.
+
+**Outside it:** a universal not yet established must be proved first with
+`have`. A value of another carrier needs a conversion. The former `using`
+list is rejected; write ordinary guard proofs instead.
 
 **Failure, checking, and tools:**
 
-An absent `F` fails with "`instantiate` quantified fact is not exactly
-available"; an unavailable guard fails naming it ("missing exact guard: ...");
-a value of the wrong type fails with "`instantiate` argument did not evaluate
-to int32" (or uint64, or a pointer), and a pointer of another type with "the
-argument is not a value of the universal binder's type". The conclusion is
-the substituted body, constructed directly. Expansion is unchanged, and
-profiling charges the guards and result.
+An unavailable source names the missing quantified fact. A non-universal or
+wrongly typed argument is refused locally. Missing guards do not cause an
+instantiation error: they remain in its resulting implication. If the whole
+instance is the goal, the step closes it; otherwise `known()` can close a
+consequence made available by propagation. Expansion emits bare instantiation
+and retains any needed guard proofs as ordinary `have` blocks. Checking does
+indexed source lookup and substitution over the selected body, without scans
+of unrelated facts.
 
-**Checked examples:** [`instantiate_without_using_finds_its_guards.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_finds_its_guards.md), [`instantiate_without_using_names_a_missing_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_names_a_missing_guard.md), [`a_uint64_universal_is_not_instantiated_at_an_int32.md`](https://github.com/clicklang/click/blob/master/mdtests/a_uint64_universal_is_not_instantiated_at_an_int32.md), [`pure_theorem_instantiate.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_instantiate.md), [`instantiate_takes_an_integer_binder_at_a_literal.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_an_integer_binder_at_a_literal.md), [`instantiate_takes_an_integer_binder_at_to_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_an_integer_binder_at_to_integer.md), [`instantiate_takes_a_pointer_binder.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_a_pointer_binder.md), [`instantiate_takes_integer_and_pointer_binders_in_a_function_proof.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_takes_integer_and_pointer_binders_in_a_function_proof.md), [`instantiate_without_using_names_a_missing_integer_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_without_using_names_a_missing_integer_guard.md)
-
-### Instantiation with selected premises
-
-**Form:** `instantiate(F, value) using { P; ... }`
-
-**Expansion output.** `click expand` writes it; by hand, prefer the bare form,
-which finds its guards. Specialize universal fact `F` at `value`, discharge its
-guards from the listed premises and their checked machine readings, and add
-the conclusion.
-
-**Accepts** what the bare form accepts for `F`, `value`, and the conclusion,
-with the guards discharged differently:
-
-- Each listed `P` is an available fact, as written, in an equivalent operand
-  spelling, or as a conjunct of a held conjunction.
-- Each guard conjunct evaluates to true, equals a listed premise or a
-  conjunct of one, is a polarity or operand respelling of one, or is derived
-  from the listed premises alone by the checker's order and equality rules:
-  `1 <= x` gives `0 <= x`; `x < y` and `y <= n` give `x < n`; `x == y` and
-  `0 <= y` give `0 <= x`.
-- A listed Integer comparison over a machine addition or subtraction can
-  supply its native guard when exact indexed range facts in the proof context
-  establish that the operation does not wrap. These facts justify the reading
-  of the listed premise; they do not supply an omitted guard. For example,
-  `n - r < n` supplies the uint64 guard at `n - r` when `r <= n` is held.
-  A non-strict bound does not supply a strict guard, and a wrapping subtraction
-  is refused even if its mathematical comparison is true.
-- Unused premises are allowed; an unguarded `F` takes `using { }`.
-
-**Outside it**, with what to write instead:
-
-- A premise that is not available: prove it first with `have`.
-- A guard that needs a fact you did not list: list it. The context is read
-  only for the exact range facts establishing a listed comparison's machine
-  reading, not to search for other guard premises.
-- A guard that needs arithmetic beyond order and equality chaining: prove it
-  with `have ... by solve() using { ... };` and list it.
-
-**Failure, checking, and tools:**
-
-An unavailable premise fails naming its position ("premise 2 `x < n` is not an
-available exact fact"); an undischarged guard fails with "instantiated premise
-... does not follow from the listed evidence". Click performs the named
-instantiation; expansion is unchanged, and profiling charges the explicit
-premises and result.
-
-**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`instantiate_a_universal_over_uint64.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_a_universal_over_uint64.md), [`instantiate_using_names_the_unavailable_premise.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_using_names_the_unavailable_premise.md)
+**Checked examples:** [`instantiate_preserves_guards.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_preserves_guards.md), [`instantiate_propagates_known_guards.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_propagates_known_guards.md), [`instantiate_guard_proved_through_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_guard_proved_through_equality.md), [`instantiate_does_not_prove_guarded_conclusion.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_does_not_prove_guarded_conclusion.md), [`instantiate_rejects_using_list.md`](https://github.com/clicklang/click/blob/master/mdtests/instantiate_rejects_using_list.md)
 
 ### Fact application
 

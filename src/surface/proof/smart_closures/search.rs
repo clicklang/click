@@ -622,15 +622,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let mut scope = attempt::search_scope("quantified conjunct projection");
-        let steps = std::iter::repeat_n(ProofStep::Intro, guards + 1).chain([
-            ProofStep::InstantiateUsing {
+        let steps =
+            std::iter::repeat_n(ProofStep::Intro, guards + 1).chain([ProofStep::Instantiate {
                 quantified,
                 argument: ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     (binder).into(),
                 )),
-                premises: None,
-            },
-        ]);
+            }]);
         let mut proof = search_input.clone();
         for step in steps {
             let Some(next) = attempt::candidate_outcome(proof.driver().apply_step(step))? else {
@@ -2354,18 +2352,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let steps = match conjunct {
             ClickProposition::ForAll { name, body, .. } => {
-                let ClickProposition::Implies(guard, consequent) = body.as_ref() else {
+                let ClickProposition::Implies(_, consequent) = body.as_ref() else {
                     return Ok(None);
                 };
                 vec![
                     ProofStep::IntroAs(name.clone()),
                     ProofStep::Intro,
-                    ProofStep::InstantiateUsing {
+                    ProofStep::Instantiate {
                         quantified: entry(conjunct),
                         argument: ContractExpression::ProgramExpression(
                             ProgramExpression::Variable((name.clone()).into()),
                         ),
-                        premises: Some(vec![guard.as_ref().clone()]),
                     },
                     transport(consequent),
                 ]
@@ -7571,7 +7568,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // form used by the kernel while their recorded Surface form lowers to
         // a term carrying a check-equivalent memory state. Probe only the
         // persistent alpha/canonical-form bucket for this selected premise;
-        // `InstantiateUsing` validates the same equivalence on check.
+        // `Instantiate` validates the same equivalence on check.
         if matches!(kernel, Proposition::ForAll { .. }) {
             for candidate in search_input.facts().matching_quantified_facts(kernel) {
                 for surface in surface_facts.surfaces(&candidate) {
@@ -8932,8 +8929,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     continue;
                 }
             }
+            let driver = proof.driver();
+            if matches!(tactic, ProofTactic::Have(_)) {
+                let mut unfinished = None;
+                proof = driver
+                    .try_authoritative_linear_script_leaving_open(
+                        std::slice::from_ref(tactic),
+                        &mut unfinished,
+                    )
+                    .ok()?
+                    .or(unfinished)?;
+                continue;
+            }
             let step = SourceContext::PureGoal.leaf_step(tactic)?;
-            proof = proof.driver().apply_step(step).ok()?;
+            proof = driver.apply_step(step).ok()?;
         }
         proof.focused_discharged().then_some(proof)
     }
@@ -8941,7 +8950,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Tries available universal facts when the atomic decision cannot name
     /// an instantiated premise. Candidate
     /// discovery is read-only; a specialization is retained only after the
-    /// ordinary `InstantiateUsing` operation advances and closes this Proof.
+    /// ordinary `Instantiate` operation advances and closes this Proof.
     #[cfg(test)]
     pub(in crate::surface::proof) fn try_indexed_forall_instantiation(
         search_input: &Proof<'a>,
@@ -9226,25 +9235,33 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if !guards_available {
                         continue;
                     }
-                    let instantiated_proof =
-                        match search_input
-                            .driver()
-                            .apply_step(ProofStep::InstantiateUsing {
-                                quantified: surface.clone(),
-                                argument: argument.clone(),
-                                premises: Some(
-                                    guard_facts
-                                        .iter()
-                                        .map(|(_, surface)| surface.clone())
-                                        .collect(),
-                                ),
-                            }) {
-                            Ok(proof) => proof,
-                            Err(_) => continue,
-                        };
+                    let Some(mut tactics) = instantiation_guard_tactics(
+                        &surface,
+                        &argument,
+                        &instantiated,
+                        &guard_facts,
+                    ) else {
+                        continue;
+                    };
+                    tactics.push(ProofTactic::Instantiate {
+                        quantified: surface.clone(),
+                        argument: argument.clone(),
+                    });
                     let conclusion = current.clone();
-                    if &conclusion == goal || conclusion.clone() == goal.clone() {
-                        // The instantiation added the goal, so it closed it.
+                    if &conclusion == goal {
+                        tactics.push(ProofTactic::Known);
+                    }
+                    let mut unfinished = None;
+                    let Ok(completed) = search_input
+                        .driver()
+                        .try_authoritative_linear_script_leaving_open(&tactics, &mut unfinished)
+                    else {
+                        continue;
+                    };
+                    let Some(instantiated_proof) = completed.or(unfinished) else {
+                        continue;
+                    };
+                    if &conclusion == goal {
                         if instantiated_proof.is_complete() {
                             return Some(instantiated_proof);
                         }
@@ -9277,7 +9294,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             )
                             .is_some()
                         {
-                            // `InstantiateUsing` has already checked this
+                            // `Instantiate` has already checked this
                             // universal and published its selected conclusion.
                             // Do not feed the quantified source back into the
                             // following transport as an unrelated premise.

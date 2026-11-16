@@ -49,6 +49,67 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
     value == Some(expected)
 }
 
+/// Constant operands and reflexivity only: a bounded structural check, with
+/// no facts, affine normalization, memory walk, or equality-graph query.
+/// Unit propagation uses this intrinsic truth beside exact admitted literals.
+pub(crate) fn trivial_condition_value(condition: &ConditionTerm) -> Option<bool> {
+    match condition {
+        ConditionTerm::Constant(value) => Some(*value),
+        ConditionTerm::Compare {
+            format,
+            relation,
+            left,
+            right,
+        } => {
+            let order = if left == right {
+                std::cmp::Ordering::Equal
+            } else {
+                format
+                    .constant_from_term(left)?
+                    .to_integer()
+                    .cmp(&format.constant_from_term(right)?.to_integer())
+            };
+            Some(match relation {
+                CompareRelation::Equal => order.is_eq(),
+                CompareRelation::LessThan => order.is_lt(),
+                CompareRelation::LessEqual => !order.is_gt(),
+                CompareRelation::GreaterThan => order.is_gt(),
+                CompareRelation::GreaterEqual => !order.is_lt(),
+            })
+        }
+        ConditionTerm::IntegerEqual(left, right)
+        | ConditionTerm::IntegerNotEqual(left, right)
+        | ConditionTerm::IntegerLessThan(left, right)
+        | ConditionTerm::IntegerLessEqual(left, right)
+        | ConditionTerm::IntegerGreaterThan(left, right)
+        | ConditionTerm::IntegerGreaterEqual(left, right) => {
+            let order = if left == right {
+                std::cmp::Ordering::Equal
+            } else {
+                let (IntegerTerm::Constant(a), IntegerTerm::Constant(b)) =
+                    (left.as_ref(), right.as_ref())
+                else {
+                    return None;
+                };
+                crate::instrumentation::record_deterministic_work(
+                    a.bits() as usize + b.bits() as usize + 1,
+                );
+                a.cmp(b)
+            };
+            Some(match condition {
+                ConditionTerm::IntegerEqual(..) => order.is_eq(),
+                ConditionTerm::IntegerNotEqual(..) => !order.is_eq(),
+                ConditionTerm::IntegerLessThan(..) => order.is_lt(),
+                ConditionTerm::IntegerLessEqual(..) => !order.is_gt(),
+                ConditionTerm::IntegerGreaterThan(..) => order.is_gt(),
+                ConditionTerm::IntegerGreaterEqual(..) => !order.is_lt(),
+                _ => unreachable!(),
+            })
+        }
+        _ => None,
+    }
+}
+
 fn condition_value(condition: &ConditionTerm) -> Option<bool> {
     match condition {
         ConditionTerm::Constant(value) => Some(*value),

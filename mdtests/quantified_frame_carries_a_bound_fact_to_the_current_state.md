@@ -59,7 +59,7 @@ void mark(int32 *next, int32 *visited, int32 n, int32 cur) {
         have next[k] == at(before, next[k]) by {
             preserve(memory(next[k]), statement(0));
         }
-        instantiate(at(before, forall (j: int32) { 0 <= j and j < n implies 0 <= next[j] and next[j] < n }), k) using { 0 <= k; k < n; };
+        instantiate(at(before, forall (j: int32) { 0 <= j and j < n implies 0 <= next[j] and next[j] < n }), k);
         rewrite(next[k], at(before, next[k]));
         known();
     }

@@ -927,7 +927,8 @@ theorem adler_sums_extensional(left: uint8[], right: uint8[], bound: int32, n: i
     0 <= to_integer(n - 1); to_integer(n - 1) < to_integer(n); to_integer(n - 1) <= to_integer(bound);
     forall (k: int32) { 0 <= k and k < bound implies left[k] == right[k] };
    };
-   instantiate(forall (k: int32) { 0 <= k and k < bound implies left[k] == right[k] }, n - 1) using { 0 <= to_integer(n - 1); to_integer(n - 1) < to_integer(bound); };
+   have 0 <= (n - 1) and (n - 1) < bound;
+   instantiate(forall (k: int32) { 0 <= k and k < bound implies left[k] == right[k] }, n - 1);
    apply(adler_sum_append(left, n)) using { 0 < n; };
    apply(adler_sum_append(right, n)) using { 0 < n; };
    apply(adler_weighted_append(left, n, weight)) using { 0 < n; };

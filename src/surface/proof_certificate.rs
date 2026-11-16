@@ -126,12 +126,10 @@ pub enum ProofStep {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
-    /// `instantiate(F, value)`, with `premises` the written `using` list.
-    /// Without a list, each instantiated guard must itself be an exact fact.
-    InstantiateUsing {
+    /// Substitute one universal binder, preserving its whole body and guards.
+    Instantiate {
         quantified: ClickProposition,
         argument: ContractExpression,
-        premises: Option<Vec<ClickProposition>>,
     },
     Have {
         proposition: ClickProposition,
@@ -792,14 +790,12 @@ impl ProofStep {
                 target: target.clone(),
                 premises: premises.clone(),
             },
-            ProofTactic::InstantiateUsing {
+            ProofTactic::Instantiate {
                 quantified,
                 argument,
-                premises,
-            } => Self::InstantiateUsing {
+            } => Self::Instantiate {
                 quantified: quantified.clone(),
                 argument: argument.clone(),
-                premises: premises.clone(),
             },
             _ => return None,
         })
@@ -951,14 +947,12 @@ impl ProofStep {
                 target: target.clone(),
                 premises: premises.clone(),
             },
-            Self::InstantiateUsing {
+            Self::Instantiate {
                 quantified,
                 argument,
-                premises,
-            } => ProofTactic::InstantiateUsing {
+            } => ProofTactic::Instantiate {
                 quantified: quantified.clone(),
                 argument: argument.clone(),
-                premises: premises.clone(),
             },
             Self::Have { proposition, proof } => ProofTactic::Have(ProofHave {
                 proposition: proposition.clone(),
@@ -1166,7 +1160,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
         ProofStep::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
         ProofStep::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
-        ProofStep::InstantiateUsing { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
+        ProofStep::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
         ProofStep::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),
         ProofStep::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),
         ProofStep::Both { .. } => TacticClass::Control(ControlTactic::Both),

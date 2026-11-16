@@ -2492,26 +2492,13 @@ impl<'a> Proof<'a> {
         })
     }
 
-    pub(super) fn apply_fixed_state_instantiate_using(
+    pub(super) fn apply_fixed_state_instantiate(
         &self,
         surface_quantified: &ClickProposition,
         argument: &ContractExpression,
-        surface_premises: Option<&[ClickProposition]>,
     ) -> Result<KernelProofHandle, ClickError> {
         let surface_quantified =
             self.substitute_fixed_state_locals_in_proposition(surface_quantified)?;
-        let explicit_premises = surface_premises
-            .map(|premises| {
-                premises
-                    .iter()
-                    .map(|surface| {
-                        self.lower_cited_surface_proposition(surface, "`instantiate using` premise")
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()?;
-        let bare = surface_premises.is_none();
-        let surface_premises = surface_premises.unwrap_or_default();
         let lowered_quantified = self.lower_cited_surface_proposition(
             &surface_quantified,
             "`instantiate` quantified fact",
@@ -2543,38 +2530,18 @@ impl<'a> Proof<'a> {
             InstanceArgument::Integer(_) => None,
         };
 
-        let checked = self.state
-            .apply_instantiate(lowered_quantified, argument, explicit_premises.as_deref())
+        let checked = self
+            .state
+            .apply_instantiate(lowered_quantified, argument)
             .map_err(|error| match error {
                 PropositionCloseError::NotProposition => {
                     self.step_error("`instantiate` requires a proposition goal")
-                }
-                PropositionCloseError::InstantiatePremiseUnavailable(index, premise) => {
-                    let written = surface_premises.get(index).map_or_else(
-                        || self.render_diagnostic_proposition(&premise),
-                        describe_click_proposition,
-                    );
-                    self.step_error(format!(
-                        "`instantiate using` premise {} `{written}` is not an available exact fact",
-                        index + 1
-                    ))
                 }
                 PropositionCloseError::InstantiateQuantifiedUnavailable => {
                     self.step_error(format!(
                         "`instantiate` quantified fact is not exactly available: {}",
                         describe_click_proposition(&surface_quantified)
                     ))
-                }
-                PropositionCloseError::InstantiateInvalid(
-                    crate::kernel::proof::fact_reasoning::ForallInstantiationError::MissingGuard(
-                        missing,
-                    ),
-                ) if bare => {
-                    self.step_error_with_requirement(
-                        "`instantiate` without `using` needs each instantiated guard as an exact fact; prove the missing guard first with `have`, or list the facts it follows from with `using { ... }`",
-                        None,
-                        Some(("missing exact guard", Box::new(missing), None)),
-                    )
                 }
                 PropositionCloseError::InstantiateInvalid(message) => self.step_error(format!(
                     "`instantiate` failed: {}",
@@ -2592,20 +2559,39 @@ impl<'a> Proof<'a> {
             && let ClickProposition::ForAll { name, body, .. } = &surface_quantified
             && let Some(surface_argument) = surface_argument
             && let [conclusion] = checked.state().checked_facts()
-            && let Ok(mut written) = substitute_click_proposition(
+            && let Ok(written) = substitute_click_proposition(
                 body,
                 &BTreeMap::from([(name.clone(), surface_argument)]),
             )
         {
-            while let ClickProposition::Implies(_, next) = written {
-                written = *next;
-            }
             let mut locals = checked.state().locals().clone();
             let mut spelled = locals.checked_lowerings.clone();
-            if spelled.record_lowering(&written, conclusion).is_ok() {
-                locals.checked_lowerings = spelled;
-                return Ok(checked.with_locals(locals));
+            let mut surface = &written;
+            let mut kernel = conclusion;
+            let facts = &checked
+                .state()
+                .open_branches()
+                .get(checked.focused_branch())
+                .expect("instantiation retains its open branch")
+                .state
+                .facts;
+            // Cache the most specific available suffix once. The full guarded
+            // instance remains in checked facts; this optional rewrite cache
+            // needs the exposed consequence when propagation has reached it.
+            while let (
+                ClickProposition::Implies(_, next_surface),
+                Proposition::Implies(_, next_kernel),
+            ) = (surface, kernel)
+            {
+                if !facts.pure_known_available(next_kernel) {
+                    break;
+                }
+                surface = next_surface;
+                kernel = next_kernel;
             }
+            let _ = spelled.record_lowering(surface, kernel);
+            locals.checked_lowerings = spelled;
+            return Ok(checked.with_locals(locals));
         }
         Ok(checked)
     }

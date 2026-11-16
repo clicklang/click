@@ -1111,7 +1111,7 @@ impl ProofFacts {
                 index_implicit_transport_context(implicit_transport_assumptions, fact.as_ref());
         }
         let reserved_variables = commit_reserved_variables(reserved_variables, pending_variables);
-        Self {
+        let mut result = Self {
             ordered,
             reserved_variables,
             reserved_states,
@@ -1136,7 +1136,15 @@ impl ProofFacts {
             assumptions,
             implicit_transport_assumptions,
             by_predicate,
+        };
+        let consequences = result
+            .assumptions
+            .propagation_consequences_since(&PureFactContext::new());
+        for consequence in consequences {
+            let assumptions = result.assumptions.clone();
+            result = result.with_indexed_fact(consequence.as_ref().clone(), assumptions);
         }
+        result
     }
 
     pub(crate) fn with_reserved_variables(
@@ -1233,6 +1241,22 @@ impl ProofFacts {
     }
 
     pub(in crate::kernel) fn with_fact(&self, fact: Proposition) -> Self {
+        if self.top_level_exact.contains(&fact) {
+            return self.clone();
+        }
+        let assumptions = self.assumptions.clone().assume_proposition(fact.clone());
+        let consequences = assumptions.propagation_consequences_since(&self.assumptions);
+        let mut result = self.with_indexed_fact(fact, assumptions);
+        for consequence in consequences {
+            let assumptions = result.assumptions.clone();
+            result = result.with_indexed_fact(consequence.as_ref().clone(), assumptions);
+        }
+        result
+    }
+
+    /// Publish a fact already constructed by admission, without asking the
+    /// fact store to derive or validate that same consequence again.
+    fn with_indexed_fact(&self, fact: Proposition, assumptions: PureFactContext) -> Self {
         if self.top_level_exact.contains(&fact) {
             return self.clone();
         }
@@ -1352,10 +1376,7 @@ impl ProofFacts {
             rewritten_load_evidence: self.rewritten_load_evidence.clone(),
             implications_by_consequent,
             implications_by_quantified_consequent,
-            assumptions: self
-                .assumptions
-                .clone()
-                .assume_proposition(fact.as_ref().clone()),
+            assumptions,
             implicit_transport_assumptions,
             by_predicate: index_predicate_fact(self.by_predicate.clone(), &fact),
         }
@@ -1896,6 +1917,18 @@ impl ProofFacts {
             successor = successor.with_fact(instance.clone());
             if successor.fact_count() != before {
                 introduced.push(instance);
+            }
+        }
+        let additions = successor
+            .ordered
+            .suffix_since(&ordered)
+            .expect("statement facts extend the ordered prefix");
+        let mut listed = facts.iter().cloned().collect::<BTreeSet<_>>();
+        introduced.clear();
+        for fact in additions {
+            introduced.push(fact.as_ref().clone());
+            if listed.insert(fact.as_ref().clone()) {
+                facts.push(fact.as_ref().clone());
             }
         }
         successor.ordered = ordered;
@@ -5426,5 +5459,39 @@ mod retained_match_root_tests {
             crate::kernel::KernelTermExport::machine_export_count(),
             exports
         );
+    }
+}
+
+#[cfg(test)]
+mod propagated_fact_publication_tests {
+    use super::*;
+    fn atom(name: &str) -> Proposition {
+        Proposition::Predicate {
+            name: name.into(),
+            arguments: vec![],
+        }
+    }
+    fn rule() -> Proposition {
+        Proposition::Implies(Box::new(atom("trigger")), Box::new(atom("result")))
+    }
+
+    #[test]
+    fn propagation_is_published_in_root_updates_and_statement_batches() {
+        let root = ProofFacts::from_ordered(&[rule()]);
+        assert!(!root.contains(&atom("result")));
+        for child in [
+            root.with_fact(atom("trigger")),
+            root.with_statement_facts(vec![atom("trigger")]),
+            ProofFacts::from_ordered(&[rule(), atom("trigger")]),
+        ] {
+            assert!(child.contains(&atom("result")));
+            assert!(child.propositions().any(|p| p == &atom("result")));
+            assert!(!root.contains(&atom("result")));
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/proof/facts/propagated_publication.rs");
     }
 }

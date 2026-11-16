@@ -107,10 +107,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                     have at(opened, occupied[k]) == 0 by {
                         instantiate(forall (k: int32) {
                             n <= k and k < end implies at(opened, occupied[k]) == 0
-                        }, k) using {
-                            n <= k;
-                            k < end;
-                        };
+                        }, k);
                         known();
                     }
                     have 0 < k;

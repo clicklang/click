@@ -12905,7 +12905,10 @@ fn quantified_outcome_solve_keeps_its_binder_on_the_checked_goal() {
         ContractProofClaim::Grouped,
     )
     .expect("the quantified outcome proof should expand");
-    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(
+        expanded.contains("intro();") || expanded.contains("enumerate();"),
+        "{expanded}"
+    );
     assert!(expanded.contains("instantiate("), "{expanded}");
     verify_c_sources(&expanded, &[("bounded.c", c_source)])
         .expect("the retained binder-aware certificate should check");
@@ -22787,4 +22790,64 @@ fn original_arena_pipeline_return_expands_without_transport_and_rechecks() {
         verify_c_sources(&expanded, &refs).map_err(|error| error.report())
     })
     .unwrap();
+}
+
+#[test]
+fn instantiation_expansion_proves_weakened_guards_with_ordinary_haves() {
+    let source = r#"
+        theorem specialize(x: int32, upper: int32) {
+            requires forall (i: int32) { 0 <= i implies i <= upper };
+            requires 0 < x;
+            ensures answer: x <= upper by {
+                have 0 <= x;
+                instantiate(forall (i: int32) { 0 <= i implies i <= upper }, x);
+                known();
+            }
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &[], "specialize.answer").unwrap();
+    assert!(expanded.contains("have 0 <= x"), "{expanded}");
+    assert!(expanded.contains("instantiate("), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
+    assert!(
+        expanded
+            .lines()
+            .filter(|line| line.contains("instantiate("))
+            .all(|line| !line.contains("using")),
+        "{expanded}"
+    );
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let missing = expanded.replace("requires 0 < x;", "");
+    assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+    let changed = expanded.replace("0 <= i implies", "1 < i implies");
+    assert!(without_implicit_solve(|| verify_click_theorems(&changed)).is_err());
+}
+
+#[test]
+fn refuted_match_arm_retains_its_bridge_proof_from_propagated_false() {
+    let (source, sources) = mdtest_sources(
+        "mdtests/a_refuted_match_arm_bridge_at_function_exit_uses_propagated_false.md",
+    );
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "id").unwrap();
+    let arm = expanded
+        .split_once("Tag::A => {")
+        .unwrap_or_else(|| panic!("{expanded}"))
+        .1;
+    assert!(arm.contains("have "), "{expanded}");
+    let bridge = arm
+        .split_once("by {")
+        .unwrap_or_else(|| panic!("{expanded}"))
+        .1;
+    let body = bridge.split_once('}').unwrap().0;
+    assert!(
+        body.contains("known();") || body.contains("contradiction("),
+        "{expanded}"
+    );
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    let reachable = expanded.replace("requires r.model != Tag::A;", "");
+    assert!(without_implicit_solve(|| verify_c_sources(&reachable, &sources)).is_err());
 }

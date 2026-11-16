@@ -150,31 +150,8 @@ int32 vector_copy(
             have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {
                 intro();
                 intro();
-                instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry, src[k]) == old(src[k]) }, k) using {
-                    0 <= k and k < length;
-                    at(region(3).entry, i) < at(region(3).entry, length);
-                    at(function.entry, 0) <= at(function.entry, length);
-                    at(function.entry, 0) <= at(function.entry, dst_capacity);
-                    at(function.entry, 0) <= at(function.entry, src_capacity);
-                    at(region(3).entry, 0) <= at(region(3).entry, i);
-                    at(function.entry, 1) <= at(function.entry, dst_capacity);
-                    at(function.entry, 1) <= at(function.entry, src_capacity);
-                    at(function.entry, length) <= at(function.entry, 1073741823);
-                    at(function.entry, length) <= at(function.entry, dst_capacity);
-                    at(function.entry, length) <= at(function.entry, src_capacity);
-                    at(function.entry, dst_capacity) <= at(function.entry, 1073741823);
-                    at(function.entry, src_capacity) <= at(function.entry, 1073741823);
-                    at(region(3).entry, i) <= at(region(3).entry, length);
-                    at(function.entry, (length as uint32)) <= at(function.entry, 1073741823u32);
-                    at(function.entry, (dst_capacity as uint32)) <= at(function.entry, 1073741823u32);
-                    at(function.entry, (src_capacity as uint32)) <= at(function.entry, 1073741823u32);
-                    little_endian();
-                    at(function.entry, viewable((src as (int32 *))[0..src_capacity]));
-                    at(function.entry, viewable((dst as (int32 *))[0..dst_capacity]));
-                    at(function.entry, separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity])));
-                    forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry,
-                        k) < at(region(3).entry, i) implies at(region(3).entry, dst[k]) == old(src[k]) };
-                };
+                have at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length);
+                instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry, src[k]) == old(src[k]) }, k);
                 have at(region(3).entry, src[k]) == src[k] by {
                     have k < src_capacity by { solve() using { k < length; length <= src_capacity; }; }
                     have contains(memory(dst[i]), memory(dst[i])) by { normalize(); }
@@ -223,9 +200,8 @@ int32 vector_copy(
                         intro();
                         solve() using { at(region(4).entry, k) < at(region(4).entry, (i as int32)); at(region(4).entry, k) == at(region(4).entry, (i as int32)); };
                     }
-                    instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k) using {
-                        0 <= k; k < at(region(3).entry, i);
-                    };
+                    have 0 <= k and k < i;
+                    instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k);
                     have at(region(3).entry, separate(memory(dst[k]), memory(dst[i]))) by {
                         apply(separation::separate_elements(dst, k, at(region(3).entry, i))) using { k != at(region(3).entry, i); };
                     }
@@ -249,44 +225,10 @@ int32 vector_copy(
                         solve() using { at(region(4).entry, k) <= at(region(4).entry, (i as int32)); not k < at(region(3).entry, i); };
                     }
                     rewrite(at(region(4).entry, k), at(region(4).entry, (i as int32)));
-                    instantiate(forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }, k) using {
-                        at(region(3).entry, i) < at(region(3).entry, length);
-                        not k < at(region(3).entry, i);
-                        k < i;
-                        at(function.entry, 0) <= at(function.entry, length);
-                        at(function.entry, 0) <= at(function.entry, dst_capacity);
-                        at(function.entry, 0) <= at(function.entry, src_capacity);
-                        at(region(3).entry, 0) <= at(region(3).entry, i);
-                        0 <= k;
-                        at(function.entry, 0) <= at(function.entry, i);
-                        at(function.entry, 1) <= at(function.entry, dst_capacity);
-                        at(function.entry, 1) <= at(function.entry, src_capacity);
-                        at(function.entry, length) <= at(function.entry, 1073741823);
-                        at(function.entry, length) <= at(function.entry, dst_capacity);
-                        at(function.entry, length) <= at(function.entry, src_capacity);
-                        at(function.entry, dst_capacity) <= at(function.entry, 1073741823);
-                        at(function.entry, src_capacity) <= at(function.entry, 1073741823);
-                        at(region(3).entry, i) <= at(region(3).entry, length);
-                        at(function.entry, i) <= at(function.entry, length);
-                        at(region(4).entry, k) == at(region(4).entry, (i as int32));
-                        at(function.entry, (length as uint32)) <= at(function.entry, 1073741823u32);
-                        at(function.entry, (dst_capacity as uint32)) <= at(function.entry, 1073741823u32);
-                        at(function.entry, (src_capacity as uint32)) <= at(function.entry, 1073741823u32);
-                        little_endian();
-                        at(function.entry, viewable((src as (int32 *))[0..src_capacity]));
-                        at(function.entry, viewable((dst as (int32 *))[0..dst_capacity]));
-                        at(function.entry, separate(memory(dst[0..dst_capacity]),
-                            memory(src[0..src_capacity])));
-                        forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and
-                            at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry,
-                            src[k]) == old(src[k]) };
-                        forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and
-                            at(region(3).entry, k) < at(region(3).entry, i) implies at(region(3).entry, dst[k])
-                            == old(src[k]) };
-                    };
-                    instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), at(region(3).entry, i)) using {
-                        0 <= at(region(3).entry, i); at(region(3).entry, i) < length;
-                    };
+                    have 0 <= k and k < length;
+                    instantiate(forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }, k);
+                    have 0 <= (at(region(3).entry, i)) and (at(region(3).entry, i)) < length;
+                    instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), at(region(3).entry, i));
                     known();
                 }
             }
@@ -327,15 +269,13 @@ int32 vector_copy(
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
         intro();
         intro();
-        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, k) using {
-            0 <= k and k < length;
-            i == length;
-        };
+        have at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i);
+        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, k);
         known();
     }
     have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {
         intro(); intro();
-        instantiate(at(loop(0).exit, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), k) using { 0 <= k and k < length; };
+        instantiate(at(loop(0).exit, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), k);
         known();
     }
     step();
@@ -430,10 +370,8 @@ int32 vector_grow(struct vector* owner) {
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
             intro();
             intro();
-            instantiate(forall (__click_q0: int32) { at(region(14).entry, 0) <= at(region(14).entry, __click_q0) and at(region(14).entry, __click_q0) < at(region(14).entry, owner->len) implies at(region(14).entry, new_data[__click_q0]) == at(region(14).entry, old_data[__click_q0]) }, k) using {
-                0 <= k and k < old(owner->len);
-                owner->data == owner->data;
-            };
+            have at(region(14).entry, 0) <= at(region(14).entry, k) and at(region(14).entry, k) < at(region(14).entry, owner->len);
+            instantiate(forall (__click_q0: int32) { at(region(14).entry, 0) <= at(region(14).entry, __click_q0) and at(region(14).entry, __click_q0) < at(region(14).entry, owner->len) implies at(region(14).entry, new_data[__click_q0]) == at(region(14).entry, old_data[__click_q0]) }, k);
             have &owner->data[k] == at(region(14).entry, &new_data[k]) by {
                 normalize() using { owner->data == at(region(14).entry, new_data); };
             }
@@ -849,10 +787,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                     rewrite(at(statement(3).entry, owner->len), old(owner->len));
                     known();
                 }
-                instantiate(forall (j: int32) { 0 <= j and j < at(statement(3).entry, owner->len) implies at(statement(3).exit, owner->data[j]) == at(statement(3).entry, owner->data[j]) }, k) using {
-                    0 <= k;
-                    k < at(statement(3).entry, owner->len);
-                };
+                instantiate(forall (j: int32) { 0 <= j and j < at(statement(3).entry, owner->len) implies at(statement(3).exit, owner->data[j]) == at(statement(3).entry, owner->data[j]) }, k);
                 have owner->data[k] == at(statement(3).entry, owner->data[k]) by {
                     normalize() using {
                         at(statement(3).exit, owner->data[k]) == at(statement(3).entry, owner->data[k]);

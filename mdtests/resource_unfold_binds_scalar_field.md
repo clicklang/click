@@ -86,10 +86,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                     have occupied[i] == 0 by {
                         instantiate(forall (k: int32) {
                             p <= k and k < capacity implies occupied[k] == 0
-                        }, i) using {
-                            p <= i;
-                            i < capacity;
-                        };
+                        }, i);
                         known();
                     }
                     have not (occupied[i] == 1) by {
@@ -125,10 +122,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             have occupied[i] == 1 by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < p implies occupied[k] == 1
-                }, i) using {
-                    0 <= i;
-                    i < p;
-                };
+                }, i);
                 known();
             }
             contradiction(occupied[i] == 1);
@@ -149,14 +143,13 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         have to_integer(k) < to_integer(p + 1);
         if k < p {
             have at(before_store, occupied[k]) == 1 by {
+                have at(before_store, 0) <= at(before_store, k) and
+                        at(before_store, k) < at(before_store, p);
                 instantiate(forall (j: int32) {
                     at(before_store, 0) <= at(before_store, j) and
                         at(before_store, j) < at(before_store, p) implies
                         at(before_store, occupied[j]) == at(before_store, 1)
-                }, k) using {
-                    0 <= k;
-                    k < p;
-                };
+                }, k);
                 known();
             }
             have k != p;
@@ -191,14 +184,13 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         have p < k;
         have p <= k;
         have at(before_store, occupied[k]) == 0 by {
+            have at(before_store, p) <= at(before_store, k) and
+                    at(before_store, k) < at(before_store, capacity);
             instantiate(forall (j: int32) {
                 at(before_store, p) <= at(before_store, j) and
                     at(before_store, j) < at(before_store, capacity) implies
                     at(before_store, occupied[j]) == at(before_store, 0)
-            }, k) using {
-                p <= k;
-                k < capacity;
-            };
+            }, k);
             known();
         }
         have i < k by {

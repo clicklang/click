@@ -4284,11 +4284,49 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             let selected =
                 selected.expect("the selected universal candidate should close through Proof");
             assert!(selected.is_complete());
-            // The instantiation adds the goal, so it closes it with no
-            // separate `known`.
+            // Propagation exposes the guarded consequence; known closes it.
             assert!(matches!(
                 selected.certificate().steps(),
-                [ProofStep::InstantiateUsing { .. }]
+                [ProofStep::Instantiate { .. }, ProofStep::Known]
+            ));
+            let stronger = ClickProposition::Comparison {
+                left: variable("x"),
+                operator: ComparisonOperator::LessThan,
+                right: value(7),
+            };
+            let stronger_kernel = lower(&stronger);
+            let stronger_available = [kernel_quantified.clone(), stronger_kernel.clone()];
+            let stronger_root = Proof::for_fixed_state_goal(
+                "derived instantiate guard",
+                0,
+                &stronger_available,
+                kernel_goal.clone(),
+                ParameterBinding::new(parsed_function.parameters(), &arguments),
+                &state,
+                &state,
+                &recorded_states,
+                &surface_propositions,
+                SpecDefinitions::new(&predicate_environment, &click_function_environment),
+                &theorem_environment,
+                &[],
+            );
+            let pairs = vec![
+                (kernel_quantified.clone(), quantified_surface.clone()),
+                (stronger_kernel, stronger),
+            ];
+            let planned = crate::kernel::search::ProofSearch::try_selected_forall_instantiation(
+                &stronger_root,
+                &kernel_goal,
+                &pairs,
+            )
+            .expect("a derived guard must become an ordinary have proof");
+            assert!(matches!(
+                planned.certificate().steps(),
+                [
+                    ProofStep::Have { .. },
+                    ProofStep::Instantiate { .. },
+                    ProofStep::Known
+                ]
             ));
         }
         let retained_root = root.clone();
@@ -4316,22 +4354,24 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
         assert!(selected.is_complete());
         assert!(matches!(
             selected.certificate().steps(),
-            [ProofStep::InstantiateUsing { .. }]
+            [ProofStep::Instantiate { .. }, ProofStep::Known]
         ));
 
-        let step = ProofStep::InstantiateUsing {
+        let step = ProofStep::Instantiate {
             quantified: quantified_surface.clone(),
             argument: value(7),
-            premises: Some(vec![premise.clone()]),
         };
-        let omitted = ProofStep::InstantiateUsing {
-            quantified: quantified_surface.clone(),
+        let unavailable = ProofStep::Instantiate {
+            quantified: ClickProposition::Comparison {
+                left: value(0),
+                operator: ComparisonOperator::Equal,
+                right: value(1),
+            },
             argument: value(7),
-            premises: Some(Vec::new()),
         };
         assert!(
-            root.driver().apply_step(omitted).is_err(),
-            "ambient availability must not discharge an omitted guard"
+            root.driver().apply_step(unavailable).is_err(),
+            "the selected universal must be available"
         );
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
@@ -4348,8 +4388,14 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             allocations <= allocation_bound,
             "size {size} instantiate allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
-        // The specialization is the goal, so the step that added it closed it.
-        assert!(instantiated.is_complete());
+        assert!(!instantiated.is_complete());
+        assert!(
+            instantiated
+                .driver()
+                .apply_step(ProofStep::Known)
+                .unwrap()
+                .is_complete()
+        );
         assert_eq!(
             instantiated.certificate().steps(),
             std::slice::from_ref(&step)
@@ -14559,16 +14605,21 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
             ))),
         ));
         let root = root.with_kernel_state(root.state.with_locals(locals));
-        let step = |argument| ProofStep::InstantiateUsing {
+        let step = |argument| ProofStep::Instantiate {
             quantified: quantified.clone(),
             argument,
-            premises: None,
         };
+        let guarded = root
+            .driver()
+            .apply_step(step(ContractExpression::Binding("right".into())))
+            .unwrap();
+        assert!(!guarded.is_complete());
         assert!(
-            root.driver()
-                .apply_step(step(ContractExpression::Binding("right".into())))
+            guarded
+                .driver()
+                .apply_step(ProofStep::Rewrite(surface.clone()))
                 .is_err(),
-            "an unstated guard is not supplied by the index"
+            "a conditional equality cannot authorize the rewrite without its guard"
         );
         let instantiated = root
             .driver()

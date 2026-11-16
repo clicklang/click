@@ -231,7 +231,7 @@ fn exact_propagation_preserves_models_of_nested_boolean_formulas() {
                     for model in 0..8 {
                         if premises.iter().all(|p| eval(p, model)) {
                             assert!(
-                                index.known.iter().all(|p| eval(p, model)),
+                                index.known.iter().all(|p| eval(&p.proposition, model)),
                                 "unsound consequence for {premises:?}, model {model}"
                             );
                         }
@@ -322,4 +322,157 @@ fn exact_propagation_does_not_use_equality_derived_guards() {
     assert_eq!(ctx.decide(&guard), Some(true));
     assert!(!ctx.contains_known(&result));
     assert!(ctx.assume_condition(guard, true).contains_known(&result));
+}
+
+#[test]
+fn exact_propagation_uses_only_intrinsic_literal_and_reflexive_truths() {
+    use crate::kernel::*;
+    let x = MachineTerm::Variable(Variable(782_010));
+    let result = atom("result");
+    for guard in [
+        ConditionTerm::equal(x.clone(), x.clone()),
+        ConditionTerm::signed_less_equal(MachineTerm::constant(0), MachineTerm::constant(7)),
+        ConditionTerm::integer_less_equal(
+            IntegerTerm::constant_i64(0),
+            IntegerTerm::constant_i64(7),
+        ),
+    ] {
+        assert!(
+            context(vec![implies(
+                Proposition::ConditionIs(guard.clone(), true),
+                result.clone()
+            )])
+            .contains_known(&result)
+        );
+        assert!(
+            !context(vec![implies(
+                Proposition::ConditionIs(guard, false),
+                result.clone()
+            )])
+            .contains_known(&result)
+        );
+    }
+}
+
+#[test]
+fn exact_propagation_matches_native_observation_guards_at_both_polarities() {
+    use crate::kernel::*;
+    let x = MachineTerm::Variable(Variable(782_020));
+    let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, x.clone()).unwrap();
+    let integer = ConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), observed.clone());
+    let native = ConditionTerm::signed_less_equal(MachineTerm::constant(0), x.clone());
+    let result = atom("result");
+    for (integer, native) in [
+        (integer, native),
+        (
+            ConditionTerm::integer_greater_equal(observed, IntegerTerm::constant_i64(0)),
+            ConditionTerm::signed_greater_equal(x, MachineTerm::constant(0)),
+        ),
+    ] {
+        for truth in [true, false] {
+            let original = Proposition::ConditionIs(integer.clone(), truth);
+            let propagated = context(vec![implies(atom("seed"), original.clone()), atom("seed")]);
+            assert!(
+                propagated.contains_assumed_exact(&original),
+                "propagation must retain the clause's source spelling"
+            );
+            let guard = Proposition::ConditionIs(integer.clone(), truth);
+            let fact = Proposition::ConditionIs(native.clone(), truth);
+            let rule = implies(guard, result.clone());
+            for facts in [vec![rule.clone(), fact.clone()], vec![fact, rule.clone()]] {
+                assert!(context(facts).contains_known(&result));
+            }
+            assert!(
+                !context(vec![rule, Proposition::ConditionIs(native.clone(), !truth)])
+                    .contains_known(&result)
+            );
+        }
+    }
+}
+
+#[test]
+fn exact_propagation_matches_value_preserving_observation_conversions() {
+    use crate::kernel::*;
+    use MachineIntegerType as M;
+    let x = MachineTerm::Variable(Variable(782_030));
+    let y = MachineTerm::Variable(Variable(782_031));
+    let widened = MachineTerm::machine_integer_cast(M::Int32, M::Int64, x.clone());
+    let guard = Proposition::ConditionIs(
+        ConditionTerm::integer_less_than(
+            IntegerTerm::from_machine(M::Int64, widened).unwrap(),
+            IntegerTerm::from_machine(M::Int32, y.clone()).unwrap(),
+        ),
+        true,
+    );
+    let fact =
+        Proposition::ConditionIs(ConditionTerm::signed_less_than(x.clone(), y.clone()), true);
+    let result = atom("converted_result");
+    assert!(context(vec![implies(guard, result.clone()), fact.clone()]).contains_known(&result));
+    let wrapping = MachineTerm::machine_integer_cast(M::Int32, M::UInt64, x);
+    let different = Proposition::ConditionIs(
+        ConditionTerm::integer_less_than(
+            IntegerTerm::from_machine(M::UInt64, wrapping).unwrap(),
+            IntegerTerm::from_machine(M::Int32, y).unwrap(),
+        ),
+        true,
+    );
+    assert!(!context(vec![implies(different, result.clone()), fact]).contains_known(&result));
+}
+
+#[test]
+fn exact_propagation_matches_retained_and_native_arithmetic_operands() {
+    use crate::kernel::*;
+    use MachineIntegerType as M;
+    let _session = VerificationSession::enter();
+    let variable = |id| MachineTerm::Variable(Variable(id));
+    let root = |id| KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(id));
+    let subtract = KernelTerm::machine_binary_shared(
+        M::Int32,
+        MachineBinaryOp::Subtract,
+        [root(782041), root(782042)],
+    );
+    let retained =
+        IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(M::Int32, subtract).unwrap());
+    let guard = Proposition::ConditionIs(
+        ConditionTerm::integer_less_than(
+            IntegerTerm::from_machine(M::Int32, variable(782040)).unwrap(),
+            retained,
+        ),
+        true,
+    );
+    let native = Proposition::ConditionIs(
+        ConditionTerm::signed_less_than(
+            variable(782040),
+            MachineTerm::machine_binary(
+                M::Int32,
+                MachineBinaryOp::Subtract,
+                variable(782041),
+                variable(782042),
+            ),
+        ),
+        true,
+    );
+    let result = atom("retained_result");
+    let rule = implies(guard, result.clone());
+    for facts in [
+        vec![rule.clone(), native.clone()],
+        vec![native.clone(), rule.clone()],
+    ] {
+        let ctx = context(facts);
+        assert!(ctx.contains_known(&result));
+        assert!(ctx.contains_assumed_exact(&native));
+    }
+    let different = Proposition::ConditionIs(
+        ConditionTerm::signed_less_than(
+            variable(782040),
+            MachineTerm::machine_binary(
+                M::Int32,
+                MachineBinaryOp::Add,
+                variable(782041),
+                variable(782042),
+            ),
+        ),
+        true,
+    );
+    assert!(!context(vec![rule, different]).contains_known(&result));
 }

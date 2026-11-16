@@ -1,6 +1,6 @@
 mod computation;
 mod intervals;
-pub(crate) use computation::computes_leaf;
+pub(crate) use computation::{computes_leaf, trivial_condition_value};
 
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
@@ -893,29 +893,6 @@ pub(crate) fn instantiate_universal(
         }
         _ => Err(ForallInstantiationError::ArgumentSort),
     }
-}
-
-/// The guard conjuncts of `quantified` at `argument` that do not hold on
-/// their own: what an `instantiate` without a premise list must find as facts.
-pub(crate) fn instantiated_guard_conjuncts(
-    quantified: &Proposition,
-    argument: &InstanceArgument,
-) -> Result<Vec<Proposition>, ForallInstantiationError> {
-    let instantiated = instantiate_universal(quantified, argument)?;
-    let mut guards = Vec::new();
-    let mut current = &instantiated;
-    while let Proposition::Implies(guard, body) = current {
-        let mut conjuncts = Vec::new();
-        atomic_conjuncts(guard, &mut conjuncts);
-        guards.extend(
-            conjuncts
-                .into_iter()
-                .filter(|conjunct| !normalizes_context_free(conjunct))
-                .cloned(),
-        );
-        current = body;
-    }
-    Ok(guards)
 }
 
 /// The conclusion of `quantified` at `argument` once `premises` discharge

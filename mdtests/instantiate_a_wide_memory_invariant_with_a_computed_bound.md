@@ -32,6 +32,7 @@ void f(int32* p, uint64 end, uint64 count, uint64 k) {
             have forall (x: uint64) { x < start implies p[x] == old(p[x]) } by {
                 intro(); intro();
                 instantiate(forall (j: uint64) { j < start implies p[j] == old(p[j]) }, x);
+                known();
             }
             step();
         }

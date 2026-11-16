@@ -254,11 +254,84 @@ fn contract_expression_for_instantiation_value(value: &MachineTerm) -> Option<Co
     ))
 }
 
-/// Plans an explicit universal-instantiation certificate: one listed
-/// universal premise, specialized at an explicit constant, proves the goal
-/// after its guards discharge from the remaining listed premises. The named
-/// `instantiate ... using` step adds the specialized fact and `known`
-/// closes the exact goal, matching independent proof-step check.
+/// Ordinary guard goals required by a planned specialization. The fast
+/// instantiate operation itself preserves these implications. Search proves
+/// only guards absent from the selected explicit premises, retaining each
+/// successful proof as an ordinary `have` certificate.
+pub(super) fn instantiation_guard_tactics(
+    quantified: &ClickProposition,
+    argument: &ContractExpression,
+    instance: &Proposition,
+    premises: &[(Proposition, ClickProposition)],
+) -> Option<Vec<ProofTactic>> {
+    let mut available = Vec::new();
+    for (premise, _) in premises {
+        atomic_conjuncts(premise, &mut available);
+    }
+    let guard_available = |guard: &Proposition| {
+        let mut conjuncts = Vec::new();
+        atomic_conjuncts(guard, &mut conjuncts);
+        conjuncts.iter().all(|guard| available.iter().any(|fact| fact == guard)
+            || matches!(guard, Proposition::ConditionIs(condition, expected)
+                if crate::kernel::proof::fact_reasoning::trivial_condition_value(condition) == Some(*expected)))
+    };
+    let mut remaining = instance;
+    while let Proposition::Implies(guard, conclusion) = remaining {
+        if !guard_available(guard) {
+            break;
+        }
+        remaining = conclusion;
+    }
+    // An existing guard needs no new spelling or proof. This also covers
+    // ordinary range/lambda spellings of a universal, without requiring its
+    // source to be written as an explicit forall.
+    if !matches!(remaining, Proposition::Implies(..)) {
+        return Some(Vec::new());
+    }
+    let (selector, quantified) = match quantified {
+        ClickProposition::At {
+            selector,
+            proposition,
+        } => (Some(selector), proposition.as_ref()),
+        other => (None, other),
+    };
+    let ClickProposition::ForAll { name, body, .. } = quantified else {
+        return None;
+    };
+    let mut written =
+        substitute_click_proposition(body, &BTreeMap::from([(name.clone(), argument.clone())]))
+            .ok()?;
+    let mut kernel = instance;
+    let evidence = premises
+        .iter()
+        .map(|(_, surface)| surface.clone())
+        .collect::<Vec<_>>();
+    let mut tactics = Vec::new();
+    while let Proposition::Implies(guard, conclusion) = kernel {
+        let ClickProposition::Implies(surface_guard, rest) = written else {
+            return None;
+        };
+        if !guard_available(guard) {
+            let proposition = match selector {
+                Some(selector) => ClickProposition::At {
+                    selector: selector.clone(),
+                    proposition: surface_guard,
+                },
+                None => *surface_guard,
+            };
+            tactics.push(ProofTactic::Have(ProofHave {
+                proposition,
+                proof: SourceProof::Script(vec![ProofTactic::SolveUsing(ProofSolveUsing {
+                    premises: evidence.clone(),
+                })]),
+            }));
+        }
+        written = *rest;
+        kernel = conclusion;
+    }
+    Some(tactics)
+}
+
 pub(super) fn plan_explicit_forall_instantiation(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
@@ -290,7 +363,8 @@ pub(super) fn plan_explicit_forall_instantiation(
                 continue;
             };
             let instantiated = substitute_int32_variable_in_proposition(body, *var, value.clone());
-            let Ok((_, conclusion)) = discharge_instantiated_guards(instantiated, &other_kernels)
+            let Ok((_, conclusion)) =
+                discharge_instantiated_guards(instantiated.clone(), &other_kernels)
             else {
                 continue;
             };
@@ -299,14 +373,18 @@ pub(super) fn plan_explicit_forall_instantiation(
             if conclusion != *goal {
                 continue;
             }
-            let tactics = vec![
-                ProofTactic::InstantiateUsing {
-                    quantified: surface.clone(),
-                    argument,
-                    premises: Some(other_surfaces.clone()),
-                },
-                ProofTactic::Known,
-            ];
+            let pairs = other_kernels
+                .iter()
+                .cloned()
+                .zip(other_surfaces.iter().cloned())
+                .collect::<Vec<_>>();
+            let mut tactics =
+                instantiation_guard_tactics(surface, &argument, &instantiated, &pairs)?;
+            tactics.push(ProofTactic::Instantiate {
+                quantified: surface.clone(),
+                argument,
+            });
+            tactics.push(ProofTactic::Known);
             return Some(tactics);
         }
     }
@@ -396,7 +474,8 @@ fn plan_explicit_universal_conclusion_discharge(
     };
     let instantiated =
         substitute_int32_variable_in_proposition(premise_body, *premise_var, argument_term);
-    let (_, conclusion) = discharge_instantiated_guards(instantiated, discharge_kernels).ok()?;
+    let (_, conclusion) =
+        discharge_instantiated_guards(instantiated.clone(), discharge_kernels).ok()?;
     let closes_by_known =
         conclusion == *goal_conclusion || conclusion.clone() == goal_conclusion.clone();
     // Constant-argument instances offer several instantiation candidates, so
@@ -452,11 +531,17 @@ fn plan_explicit_universal_conclusion_discharge(
         };
         Some((source, surface_goal_conclusion.clone()))
     };
-    let mut tactics = vec![ProofTactic::InstantiateUsing {
+    let pairs = discharge_kernels
+        .iter()
+        .cloned()
+        .zip(using_surfaces.iter().cloned())
+        .collect::<Vec<_>>();
+    let mut tactics =
+        instantiation_guard_tactics(premise_surface, argument_expression, &instantiated, &pairs)?;
+    tactics.push(ProofTactic::Instantiate {
         quantified: premise_surface.clone(),
         argument: argument_expression.clone(),
-        premises: Some(using_surfaces.to_vec()),
-    }];
+    });
     if let Some((source, target)) = transport_closure {
         if let Some((historical, current)) = comparison_state_expression_pair(&source, &target) {
             let reflexive = ClickProposition::Comparison {

@@ -86,14 +86,13 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                 if k < at(opened, i) {
                     have k < m by solve();
                     have at(opened, occupied[k]) == 1 by {
+                        have at(opened, start) <= at(opened, k) and
+                                at(opened, k) < at(opened, m);
                         instantiate(forall (j: int32) {
                             at(opened, start) <= at(opened, j) and
                                 at(opened, j) < at(opened, m) implies
                                 at(opened, occupied[j]) == at(opened, 1)
-                        }, k) using {
-                            start <= k;
-                            k < m;
-                        };
+                        }, k);
                         known();
                     }
                     have 0 <= k by solve();
@@ -163,10 +162,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
     have occupied[start] == 1 by {
         instantiate(forall (j: int32) {
             start <= j and j < n implies occupied[j] == 1
-        }, start) using {
-            start <= start;
-            start < n;
-        };
+        }, start);
         known();
     }
     have at(pre, occupied[start]) == 0 by solve();

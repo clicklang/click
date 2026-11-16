@@ -5835,12 +5835,10 @@ pub enum ProofTactic {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
-    /// `instantiate(F, value)`, with `premises` the written `using` list.
-    /// Without a list, each instantiated guard must itself be an exact fact.
-    InstantiateUsing {
+    /// Substitute one universal binder, preserving its whole body and guards.
+    Instantiate {
         quantified: ClickProposition,
         argument: ContractExpression,
-        premises: Option<Vec<ClickProposition>>,
     },
     Solve,
     /// The driver schedules ordinary `solve` for every remaining claim.
@@ -6292,11 +6290,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "instantiate-using",
-        syntax: "instantiate(F, value) using",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "solve",
         syntax: "solve()",
         class: "smart",
@@ -6481,7 +6474,7 @@ impl ProofTactic {
                 TacticClass::Smart(SmartSite::Elided(ElidedArgument::FrameEvidence))
             }
             Self::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
-            Self::InstantiateUsing { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
+            Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
             Self::SmartExecute | Self::ExecuteUntil(_) => {

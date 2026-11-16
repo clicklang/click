@@ -53,7 +53,7 @@ int32 failed_allocation_preserves_existing_loads(int32 data[], int32 length) {
             have data[k] == at(before_free, data[k]) by {
                 preserve(memory(data[k]), statement(3));
             }
-            instantiate(forall (k: int32) { 0 <= k and k < length implies at(before_free, data[k]) == old(data[k]) }, k) using { 0 <= k; k < length; };
+            instantiate(forall (k: int32) { 0 <= k and k < length implies at(before_free, data[k]) == old(data[k]) }, k);
             rewrite(data[k], at(before_free, data[k]));
             known();
         }

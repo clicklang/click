@@ -37,12 +37,10 @@ theorem walk_in_range(next: int32[], n: int32, from: int32, fuel: Nat) {
                 apply(ih(previous));
                 have 0 <= next[walk(next, from, previous)]
                     and next[walk(next, from, previous)] < n by {
+                    have 0 <= (walk(next, from, previous)) and (walk(next, from, previous)) < n;
                     instantiate(forall (k: int32) {
                         0 <= k and k < n implies 0 <= next[k] and next[k] < n
-                    }, walk(next, from, previous)) using {
-                        0 <= walk(next, from, previous);
-                        walk(next, from, previous) < n;
-                    };
+                    }, walk(next, from, previous));
                     known();
                 }
                 unfold(walk(next, from, Nat::Succ(previous)));
@@ -83,12 +81,10 @@ theorem walk_frame(a: int32[], b: int32[], n: int32, from: int32, fuel: Nat) {
                     };
                 };
                 have a[walk(a, from, previous)] == b[walk(a, from, previous)] by {
+                    have 0 <= (walk(a, from, previous)) and (walk(a, from, previous)) < n;
                     instantiate(forall (k: int32) {
                         0 <= k and k < n implies a[k] == b[k]
-                    }, walk(a, from, previous)) using {
-                        0 <= walk(a, from, previous);
-                        walk(a, from, previous) < n;
-                    };
+                    }, walk(a, from, previous));
                     known();
                 }
                 unfold(walk(a, from, Nat::Succ(previous)));

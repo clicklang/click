@@ -3188,7 +3188,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Contradiction(_)
             | ProofTactic::Preserve(_)
             | ProofTactic::Rewrite(_)
-            | ProofTactic::InstantiateUsing { .. }
+            | ProofTactic::Instantiate { .. }
             | ProofTactic::Witness(_)
             | ProofTactic::LetSatisfy(_)
             | ProofTactic::Choose(_)
@@ -3323,7 +3323,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Preserve(_) => "preserve",
         ProofTactic::Rewrite(_) => "rewrite",
         ProofTactic::Transport { .. } | ProofTactic::TransportUsing { .. } => "transport",
-        ProofTactic::InstantiateUsing { .. } => "instantiate",
+        ProofTactic::Instantiate { .. } => "instantiate",
         ProofTactic::Solve => "solve",
         ProofTactic::ImplicitSolve => "implicit tail",
         ProofTactic::SolveUsing(_) => "solve",

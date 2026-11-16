@@ -168,8 +168,8 @@ pub(crate) enum PropositionCloseError {
     ContradictionUnavailable {
         fact_held: bool,
     },
-    /// The explicit premise at this index of the `using` list is not held.
-    InstantiatePremiseUnavailable(usize, Proposition),
+    /// An explicit premise of a guarded induction application is not held.
+    InductionPremiseUnavailable(Proposition),
     InstantiateQuantifiedUnavailable,
     InstantiateInvalid(super::fact_reasoning::ForallInstantiationError),
 }
@@ -1657,43 +1657,53 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         &self,
         quantified: Proposition,
         argument: super::fact_reasoning::InstanceArgument,
-        explicit_premises: Option<&[Proposition]>,
     ) -> Result<Self, PropositionCloseError> {
         let (_, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
-        // Without a written list the premises are the instantiated guards
-        // themselves: one availability lookup per guard conjunct, no search.
-        let guard_premises;
-        let explicit_premises = match explicit_premises {
-            Some(premises) => premises,
-            None => {
-                guard_premises = super::fact_reasoning::instantiated_guard_conjuncts(
-                    facts
-                        .contains(&quantified)
-                        .then_some(&quantified)
-                        .or(facts.matching_quantified_fact(&quantified).as_ref())
-                        .ok_or(PropositionCloseError::InstantiateQuantifiedUnavailable)?,
-                    &argument,
-                )
-                .map_err(PropositionCloseError::InstantiateInvalid)?;
-                if let Some(missing) = guard_premises
-                    .iter()
-                    .find(|guard| !facts.listed_premise_available(guard, &[], true))
-                {
-                    return Err(PropositionCloseError::InstantiateInvalid(
-                        super::fact_reasoning::ForallInstantiationError::MissingGuard(
-                            missing.clone(),
-                        ),
-                    ));
-                }
-                &guard_premises
-            }
-        };
-        for (index, premise) in explicit_premises.iter().enumerate() {
+        let quantified =
+            if facts.contains(&quantified) || facts.assumptions().contains_known(&quantified) {
+                quantified
+            } else if let Some(available) = facts.matching_quantified_fact(&quantified) {
+                available
+            } else {
+                return Err(PropositionCloseError::InstantiateQuantifiedUnavailable);
+            };
+        let conclusion = super::fact_reasoning::instantiate_universal(&quantified, &argument)
+            .map_err(PropositionCloseError::InstantiateInvalid)?;
+        let added_facts = (!facts.contains_top_level(&conclusion))
+            .then(|| conclusion.clone())
+            .into_iter()
+            .collect::<Vec<_>>();
+        let facts = facts.with_fact(conclusion);
+        Ok(Self::new(
+            ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
+                locals: self.state.locals.clone(),
+                open_branches: self
+                    .state
+                    .open_branches
+                    .with_facts_at(self.focused_branch, facts),
+                checked_facts: Arc::new(added_facts.clone()),
+                added_facts: Arc::new(added_facts),
+            },
+            self.focused_branch,
+        ))
+    }
+
+    pub(crate) fn apply_induction_instance(
+        &self,
+        quantified: Proposition,
+        argument: super::fact_reasoning::InstanceArgument,
+        explicit_premises: &[Proposition],
+    ) -> Result<Self, PropositionCloseError> {
+        let (_, facts) = self
+            .focused_proposition()
+            .ok_or(PropositionCloseError::NotProposition)?;
+        for premise in explicit_premises {
             if !facts.listed_premise_available(premise, &[], true) {
-                return Err(PropositionCloseError::InstantiatePremiseUnavailable(
-                    index,
+                return Err(PropositionCloseError::InductionPremiseUnavailable(
                     premise.clone(),
                 ));
             }

@@ -173,7 +173,7 @@ void *fill_range(void *argument) {
                     have job->begin <= k;
                     instantiate(at(region(5).entry, forall (k: int32) {
                         job->begin <= k and k < index implies job->output[k] == job->value
-                    }), k) using { job->begin <= k; k < index; job->begin == at(iteration, job->begin); };
+                    }), k);
                     solve();
                 } else {
                     have k <= index;
@@ -202,9 +202,10 @@ void *fill_range(void *argument) {
                 have job->begin <= k;
                 have k < index;
                 have k <= at(iteration, index);
+                have job->begin <= k and k <= index;
                 instantiate(at(region(6).entry, forall (k: int32) {
                     job->begin <= k and k <= index implies job->output[k] == job->value
-                }), k) using { job->begin <= k; k <= at(iteration, index); job->begin == at(iteration, job->begin); };
+                }), k);
                 solve();
             }
             solve();
@@ -251,16 +252,22 @@ int fill_parallel(int output[4]) {
             intro();
             have 0 <= k by { rewrite(0, first_job.begin); known(); }
             have k < 2 by { rewrite(2, first_job.end); known(); }
-            instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k) using {
-                0 <= k; k < 2;
-            };
+            instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k);
             rewrite(first_job.output, output);
             rewrite(first_job.value, 11);
             known();
         }
         have range_filled(&first_job) by { unfold(range_filled(&first_job)); known(); }
-        have first_job.output[0] == first_job.value;
-        have first_job.output[1] == first_job.value;
+        have first_job.output[0] == first_job.value by {
+            have first_job.begin <= 0 and 0 < first_job.end;
+            instantiate(forall (j: int32) { first_job.begin <= j and j < first_job.end implies first_job.output[j] == first_job.value }, 0);
+            known();
+        }
+        have first_job.output[1] == first_job.value by {
+            have first_job.begin <= 1 and 1 < first_job.end;
+            instantiate(forall (j: int32) { first_job.begin <= j and j < first_job.end implies first_job.output[j] == first_job.value }, 1);
+            known();
+        }
         have output[0] == 11;
         have output[1] == 11;
         step_until(function.exit);
@@ -280,16 +287,22 @@ int fill_parallel(int output[4]) {
         intro();
         have 0 <= k by { rewrite(0, first_job.begin); known(); }
         have k < 2 by { rewrite(2, first_job.end); known(); }
-        instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k) using {
-            0 <= k; k < 2;
-        };
+        instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k);
         rewrite(first_job.output, output);
         rewrite(first_job.value, 11);
         known();
     }
     have range_filled(&first_job) by { unfold(range_filled(&first_job)); known(); }
-    have first_job.output[0] == first_job.value;
-    have first_job.output[1] == first_job.value;
+    have first_job.output[0] == first_job.value by {
+        have first_job.begin <= 0 and 0 < first_job.end;
+        instantiate(forall (j: int32) { first_job.begin <= j and j < first_job.end implies first_job.output[j] == first_job.value }, 0);
+        known();
+    }
+    have first_job.output[1] == first_job.value by {
+        have first_job.begin <= 1 and 1 < first_job.end;
+        instantiate(forall (j: int32) { first_job.begin <= j and j < first_job.end implies first_job.output[j] == first_job.value }, 1);
+        known();
+    }
     have output[0] == 11;
     have output[1] == 11;
     step();
@@ -298,8 +311,16 @@ int fill_parallel(int output[4]) {
     have forall (k: int32) {
         second_job.begin <= k and k < second_job.end implies second_job.output[k] == second_job.value
     } by { unfold(range_filled(&second_job)); known(); }
-    have second_job.output[2] == second_job.value;
-    have second_job.output[3] == second_job.value;
+    have second_job.output[2] == second_job.value by {
+        have second_job.begin <= 2 and 2 < second_job.end;
+        instantiate(forall (j: int32) { second_job.begin <= j and j < second_job.end implies second_job.output[j] == second_job.value }, 2);
+        known();
+    }
+    have second_job.output[3] == second_job.value by {
+        have second_job.begin <= 3 and 3 < second_job.end;
+        instantiate(forall (j: int32) { second_job.begin <= j and j < second_job.end implies second_job.output[j] == second_job.value }, 3);
+        known();
+    }
     have output[2] == 22;
     have output[3] == 22;
     step_until(function.exit);

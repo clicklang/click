@@ -100,19 +100,13 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 }
                 instantiate(forall (k: int32) {
                     n <= k and k < end implies occupied[k] == 0
-                }, k) using {
-                    n <= k;
-                    k < end;
-                };
+                }, k);
                 known();
             }
             have occupied[i] == 0 by {
                 instantiate(forall (k: int32) {
                     n <= k and k < end implies occupied[k] == 0
-                }, i) using {
-                    n <= i;
-                    i < end;
-                };
+                }, i);
                 known();
             }
             take(data[i..i + 1]);
@@ -131,10 +125,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 have at(opened, occupied[k]) == 0 by {
                     instantiate(forall (k: int32) {
                         to_integer(at(opened, i) + 1) <= to_integer(k) and k < end implies at(opened, occupied[k]) == 0
-                    }, k) using {
-                        to_integer(at(opened, i) + 1) <= to_integer(k);
-                        k < end;
-                    };
+                    }, k);
                     known();
                 }
                 have at(opened, i) < end;

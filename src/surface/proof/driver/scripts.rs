@@ -334,7 +334,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
-                    | ProofTactic::InstantiateUsing { .. }
+                    | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
                     | ProofTactic::TransportUsing { .. }
                     | ProofTactic::LetSatisfy(_)
@@ -707,7 +707,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
-                    | ProofTactic::InstantiateUsing { .. }
+                    | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
                     | ProofTactic::TransportUsing { .. }
                     | ProofTactic::LetSatisfy(_)
