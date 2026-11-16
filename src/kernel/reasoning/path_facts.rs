@@ -151,12 +151,14 @@ pub(in crate::kernel) fn wrap_path_context_with_introductions(
             Proposition::Implies(Box::new(obligation.proposition().clone()), Box::new(body))
         });
 
-    // Load definitions and producer-derived read equations are consequences
-    // of term evaluation, not additional hypotheses. Wrapping either as a
-    // premise would change the goal instead of retaining its read evidence.
+    // Certified outputs (including read equations and population bounds) are
+    // consequences of evaluation, not conditions selecting its path. Keep
+    // them in the fact stream, but never turn them into additional hypotheses.
+    // Uncertified branch facts and outstanding obligations still guard the goal.
     let retained = || {
         facts.fact_iter().filter(|fact| {
-            !fact.is_logical_read_equation()
+            !fact.is_certified()
+                && !fact.is_logical_read_equation()
                 && !crate::kernel::eval::is_load_variable_defining_fact(fact.proposition())
         })
     };
@@ -3082,6 +3084,32 @@ mod shared_reconstruction_tests {
 #[cfg(test)]
 mod certified_merge_tests {
     use super::*;
+
+    #[test]
+    fn certified_outputs_do_not_become_path_guards() {
+        let condition = |id| Proposition::ConditionIs(ConditionTerm::Variable(Variable(id)), true);
+        let branch = condition(991_010);
+        let produced = condition(991_011);
+        let required = condition(991_012);
+        let goal = condition(991_013);
+        let facts: ExecutionFacts = vec![
+            ExecutionPureFact::new(branch.clone()),
+            ExecutionPureFact::certified(produced.clone()),
+        ].into();
+        let obligations = vec![ProofObligation::verification_condition(required.clone())];
+        let (wrapped, introductions) =
+            wrap_path_context_with_introductions(goal.clone(), &facts, &obligations);
+        assert_eq!(wrapped, Proposition::Implies(Box::new(branch), Box::new(
+            Proposition::Implies(Box::new(required), Box::new(goal))
+        )));
+        assert_eq!(introductions, vec![
+            LoweringIntroduction::PathFactGuard,
+            LoweringIntroduction::ObligationGuard,
+        ]);
+        assert_eq!(facts[1].proposition(), &produced);
+        assert!(assumptions_with_path_context(&PureFactContext::new(), &facts, &[])
+            .proves_exact(&produced));
+    }
 
     #[test]
     fn certified_merge_keeps_already_known_facts_and_the_original_prefix() {
