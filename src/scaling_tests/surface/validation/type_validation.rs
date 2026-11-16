@@ -303,3 +303,84 @@ fn memory_lambda_validation_scales_with_reads_and_ignores_unrelated_bindings() {
         }
     }
 }
+
+#[test]
+fn callback_parameter_typing_scales_with_selected_body_and_ignores_other_functions() {
+    let parsed = parser::parse("function sample(x: Integer) -> Integer { x }").unwrap();
+    let mut callback = parsed.click_function_definitions()[0].parameters()[0].clone();
+    callback.name = "f".into();
+    callback.click_type = ClickType::Function {
+        parameters: vec![ClickType::Integer],
+        result: Box::new(ClickType::Integer),
+    };
+    let mut baseline = Vec::new();
+    for unrelated in [0, 64, 256, 1024] {
+        let mut costs = Vec::new();
+        let mut functions = BTreeMap::new();
+        for index in 0..unrelated {
+            functions.insert(
+                format!("other{index}"),
+                ClickFunctionType {
+                    value_parameter: false,
+                    type_parameters: Vec::new(),
+                    parameters: Vec::new(),
+                    return_type: ClickType::Integer,
+                },
+            );
+        }
+        for size in [8, 16, 32, 64] {
+            let mut nodes = (0..size)
+                .map(|_| ContractExpression::Apply {
+                    function: Box::new(ContractExpression::Binding("f".into())),
+                    arguments: vec![ContractExpression::Binding("x".into())],
+                })
+                .collect::<Vec<_>>();
+            while nodes.len() > 1 {
+                nodes = nodes
+                    .chunks_exact(2)
+                    .map(|pair| {
+                        ContractExpression::Add(
+                            Box::new(pair[0].clone()),
+                            Box::new(pair[1].clone()),
+                        )
+                    })
+                    .collect();
+            }
+            let body = nodes.pop().unwrap();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                with_function_parameter_types(
+                    std::slice::from_ref(&callback),
+                    &mut functions,
+                    |functions| {
+                        infer_scoped_spec_value_type(
+                            &body,
+                            &BTreeMap::new(),
+                            &BTreeSet::from(["x".into()]),
+                            functions,
+                            "callback scaling",
+                            true,
+                        )
+                    },
+                )
+            });
+            assert_eq!(result.unwrap(), SpecValueType::Integer);
+            assert!(work >= size);
+            assert!(!functions.contains_key("f"));
+            costs.push(work);
+        }
+        for pair in costs.windows(2) {
+            assert!(
+                pair[1] <= 3 * pair[0],
+                "callback body work must be near-linear: {costs:?}"
+            );
+        }
+        if unrelated == 0 {
+            baseline = costs;
+        } else {
+            assert_eq!(
+                costs, baseline,
+                "callback typing must not scan unrelated declarations"
+            );
+        }
+    }
+}

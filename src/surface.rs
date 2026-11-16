@@ -1711,6 +1711,7 @@ impl std::fmt::Display for ContractApplication {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickFunctionType {
+    value_parameter: bool,
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
     return_type: ClickType,
@@ -1740,10 +1741,6 @@ pub struct FunctionBlock {
     /// case each requirement counts as its own clause.
     requirement_source_clauses: Vec<usize>,
     decreases: Option<FunctionDecrease>,
-    /// Rust arguments pass through MIR temporaries. Rank numeric recursion
-    /// at the checked call rather than by the C body's direct `n - K` shape.
-    /// This is selected by the source language, not signature presentation.
-    call_ranked_numeric_recursion: bool,
     /// The other members of this function's recursive C component, supplied
     /// by the source frontend; empty outside a component of two or more.
     recursion_peers: Vec<String>,
@@ -5697,6 +5694,7 @@ pub enum SourceProof {
 #[doc(hidden)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertifiedStatementTransition {
+    pub(crate) native_step: std::sync::Arc<crate::kernel::SymbolicExecutionPath>,
     pub(crate) call_result: Option<ProgramValue>,
     /// The call's by-value aggregate parameters as it bound them, recorded
     /// as the call region's parameter point (`R.parameter(name)`).
@@ -8002,6 +8000,10 @@ fn memory_independent_click_functions(definitions: &[ClickFunctionDefinition]) -
         let Some(body) = definition.body() else {
             continue;
         };
+        if lambdas::has_function_parameters(definition) {
+            dependent.push(definition.name());
+            continue;
+        }
         let mut callees = Vec::new();
         let reads = contract_expression_reads_memory(body, &mut callees);
         let unknown_callee = callees

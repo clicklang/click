@@ -852,8 +852,42 @@ impl ExecutionProofState {
         surface_propositions: SurfacePropositionMap,
         branch_path: PersistentSequence<String>,
     ) -> Self {
-        Self::new(
+        Self::with_entry_core(
             ExecutionProofCore::at_entry(state, frontier),
+            recorded_states,
+            surface_propositions,
+            branch_path,
+        )
+    }
+
+    pub(in crate::surface::proof) fn at_entry_with_descent(
+        state: ExecutionState,
+        frontier: ExecutionFrontier,
+        recorded_states: RecordedStates,
+        surface_propositions: SurfacePropositionMap,
+        branch_path: PersistentSequence<String>,
+        function: &ProgramFunction,
+        environment: &ExecutionEnvironment,
+    ) -> Result<Self, ClickError> {
+        let core =
+            ExecutionProofCore::at_entry_with_descent(state, frontier, function, environment)
+                .map_err(ClickError::new)?;
+        Ok(Self::with_entry_core(
+            core,
+            recorded_states,
+            surface_propositions,
+            branch_path,
+        ))
+    }
+
+    fn with_entry_core(
+        core: ExecutionProofCore,
+        recorded_states: RecordedStates,
+        surface_propositions: SurfacePropositionMap,
+        branch_path: PersistentSequence<String>,
+    ) -> Self {
+        Self::new(
+            core,
             ExecutionProofPresentation {
                 loop_return_proofs: PersistentMap::default(),
                 recorded_states,

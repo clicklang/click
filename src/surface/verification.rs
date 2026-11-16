@@ -4333,22 +4333,6 @@ fn termination_refusal_report(
     }
 }
 
-pub(in crate::surface) fn termination_measure_name(
-    expression: &ContractExpression,
-    context: &str,
-) -> Result<String, ClickError> {
-    match expression {
-        ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            crate::kernel::BindingName::Named(name),
-        ))
-        | ContractExpression::CBinding(name) => Ok(name.clone()),
-        _ => Err(ClickError::new(format!(
-            "{context} must name one int32 C variable; compound ranking expressions are not yet supported"
-        ))),
-    }
-}
-
 /// The spelling a pure `decreases` component is named by.
 ///
 /// This is a rendering of the declared contract expression, not a lowering:
@@ -4549,86 +4533,16 @@ pub(in crate::surface) fn program_function_termination_plans(
                     "function-level `decreases` in `{}` was never classified; declared-resource expansion did not run",
                     function.signature().name()
                 ))),
-                // In a component of two or more, a binder measure is ranked at
-                // each call by the instance it passes, as an expression
-                // measure is: the body analysis below sees only self-calls.
-                FunctionDecrease::Binder(binder) if !function.recursion_peers().is_empty() => {
-                    Ok(crate::kernel::FunctionTerminationMeasure::Expression(
-                        binder.clone(),
-                    ))
-                }
+                // Every numeric or named structural measure is ranked by
+                // ordinary obligations at calls, using the entry authority
+                // captured on the function interface.
                 FunctionDecrease::Binder(binder) => {
-                    // `decreases t;` names one of this contract's own resource
-                    // binders. The kernel measure is an index into the entry
-                    // resource requirements, so find the clause that declares
-                    // the binder and count the resource requirements before it.
-                    let mut resource_index = 0;
-                    let mut matched = None;
-                    for requirement in function.requires() {
-                        let Requirement::Resource(required) = requirement else {
-                            continue;
-                        };
-                        if matches!(
-                            required,
-                            ResourceClause::Named { binding, .. } if &binding.name == binder
-                        ) {
-                            matched = Some(resource_index);
-                            break;
-                        }
-                        resource_index += 1;
-                    }
-                    let index = matched.ok_or_else(|| {
-                        ClickError::new(format!(
-                            "function-level `decreases {binder}` in `{}` must name an owned or viewed entry resource binder",
-                            function.signature().name()
-                        ))
-                    })?;
-                    Ok(crate::kernel::FunctionTerminationMeasure::ResourceRequirement(index))
+                    Ok(crate::kernel::FunctionTerminationMeasure::Expression(binder.clone()))
                 }
                 FunctionDecrease::Numeric(measure) => {
-                    // A bare C int32 parameter keeps its body-checked measure,
-                    // resolved to an index the termination
-                    // checker analyses the body for, and refused by the same
-                    // message when it names nothing this function has. A
-                    // compound expression is ranked by obligations at the
-                    // recursive calls instead, so the plan carries only the
-                    // declared spelling and the lowered measure travels on the
-                    // contract interface.
-                    let context = format!(
-                        "function-level `decreases` in `{}`",
-                        function.signature().name()
-                    );
-                    let Ok(name) = termination_measure_name(measure, &context) else {
-                        return Ok(crate::kernel::FunctionTerminationMeasure::Expression(
-                            termination_measure_source(measure),
-                        ));
-                    };
-                    let index = function
-                        .signature()
-                        .parameters()
-                        .iter()
-                        .position(|parameter| parameter.name() == name)
-                        .ok_or_else(|| {
-                            ClickError::new(format!(
-                                "function-level `decreases` in `{}` must name an int32 parameter, not `{name}`",
-                                function.signature().name()
-                            ))
-                        })?;
-                    // Rust call arguments use MIR temporaries, so check the
-                    // measure at the call, as for other expression measures.
-                    // A parameter of another numeric type has no body
-                    // analysis; it is an expression measure, ranked by
-                    // obligations at the self-calls as `decreases b + 0`
-                    // would be. Lowering decides whether its type is one a
-                    // measure may have.
-                    if function.call_ranked_numeric_recursion
-                        || function.signature().parameters()[index].interface_type() != InterfaceType::Int32
-                    {
-                        return Ok(crate::kernel::FunctionTerminationMeasure::Expression(
-                            termination_measure_source(measure),
-                        ));
-                    }
-                    Ok(crate::kernel::FunctionTerminationMeasure::NumericParameter(index))
+                    Ok(crate::kernel::FunctionTerminationMeasure::Expression(
+                        termination_measure_source(measure),
+                    ))
                 }
                 // A tuple is ranked by obligations at the self-calls, like
                 // any expression measure.
@@ -5595,11 +5509,7 @@ pub(in crate::surface) fn build_function_environment(
                 // ranks calls to, and a function without an expression measure ranks
                 // none.
                 let recursion_binder = match function_block.decreases() {
-                    Some(FunctionDecrease::Binder(binder))
-                        if !function_block.recursion_peers().is_empty() =>
-                    {
-                        Some(binder.clone())
-                    }
+                    Some(FunctionDecrease::Binder(binder)) => Some(binder.clone()),
                     _ => None,
                 };
                 if !recursion_measure.is_empty() || recursion_binder.is_some() {

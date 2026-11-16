@@ -21,5 +21,5 @@ int32 stuck(int32 n) {
 ```
 
 ```expect
-fail: recursive call to `stuck` must pass `"c_decreases_rejects_same_measure.c"::stuck.parameter(0) - K`
+fail: stuck recursion measure: `n` decreases at the recursive call
 ```

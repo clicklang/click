@@ -20467,6 +20467,10 @@ fn original_arena_free_expands_and_rechecks_without_implicit_search() {
         !loop_source[..loop_end].contains("transport("),
         "{expanded}"
     );
+    assert!(
+        !loop_source[loop_end..].contains("transport("),
+        "{expanded}"
+    );
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 

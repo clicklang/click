@@ -5,10 +5,12 @@ use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_con
 
 fn retained_cell_conversion(source: &ExecutionValue, value: ProgramValue) -> ExecutionValue {
     if source.shared().is_some_and(|root| {
-        root.ty() == &KernelType::Bool || matches!(root.ty(), KernelType::Algebraic(_))
+        root.ty() == &KernelType::Bool
+            || matches!(root.ty(), KernelType::Algebraic(_))
+            || FloatOperandView::from_shared(root).is_some()
     }) && value.program_type() == source.program_type()
     {
-        // Same-type cell conversion leaves Boolean and algebraic values unchanged.
+        // Same-type cell conversion leaves Boolean, algebraic and float values unchanged.
         source.clone()
     } else if source.shared().is_some() {
         source.retain_checked_pointer(value)
@@ -4223,7 +4225,9 @@ fn common_float_conversion_mentions_load(root: &KernelTerm) -> bool {
         }
         crate::instrumentation::record_deterministic_work(1);
         match term.node() {
-            KernelTermNode::FloatRead(_) | KernelTermNode::MemoryLoad { .. } => return true,
+            KernelTermNode::FloatRead(_)
+            | KernelTermNode::MemoryLoad { .. }
+            | KernelTermNode::FloatCall(_) => return true,
             KernelTermNode::Legacy(value) => {
                 let crate::kernel::PureFunctionArgument::Value(value) = value.value() else {
                     unreachable!("numeric conversion operand");
@@ -8991,6 +8995,61 @@ mod float_conversion_load_tests {
                 crate::kernel::KernelTermExport::machine_export_count(),
                 exports
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod float_memory_handoff_tests {
+    use super::*;
+
+    #[test]
+    fn float_cells_preserve_exact_bits_and_retained_load_roots() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let negative_zero = match format {
+                KernelFloatType::Float32 => MachineTerm::uint32_constant(0x80000000),
+                KernelFloatType::Float64 => MachineTerm::uint64_constant(0x8000000000000000),
+            };
+            let nan = match format {
+                KernelFloatType::Float32 => MachineTerm::uint32_constant(0x7fc00123),
+                KernelFloatType::Float64 => MachineTerm::uint64_constant(0x7ff8000000000123),
+            };
+            for root in [
+                KernelTermImport::default().float(format, &negative_zero),
+                KernelTermImport::default().float(format, &nan),
+                KernelTerm::float_call(format, "stored_float_call".into(), vec![]),
+            ] {
+                let value = ExecutionValue::Shared(root.clone());
+                let native = value.clone().into_native();
+                let address = Memory::local_pointer("float_cell");
+                let memory = Memory::new()
+                    .with_block(address.block.clone(), format.program_type().byte_width())
+                    .store_retained(address.clone(), value);
+                assert_eq!(
+                    memory.known_retained_value(&address).unwrap().shared(),
+                    Some(&root)
+                );
+                assert_eq!(memory.known_value(&address), Some(native.clone()));
+                let paths = evaluate_retained_memory_load_paths(
+                    &memory,
+                    address,
+                    format.program_type(),
+                    ExecutionFacts::new(),
+                    vec![],
+                    &PureFactContext::new(),
+                    false,
+                    false,
+                    None,
+                    None,
+                );
+                assert_eq!(paths.len(), 1);
+                let ExpressionOutcome::Value(loaded) = &paths[0].outcome else {
+                    panic!("stored float should load: {:?}", paths[0].outcome);
+                };
+                assert_eq!(loaded.shared(), Some(&root));
+                assert_eq!(loaded.clone().into_native(), native);
+            }
         }
     }
 }

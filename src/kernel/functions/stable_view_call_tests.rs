@@ -222,6 +222,7 @@ fn environment(function: &ProgramFunction) -> ExecutionEnvironment {
     ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
         pointer_result: None,
         function: function.clone(),
+        descent_completion: None,
         concrete_loop_exits: None,
         loop_semantics: LoopSemantics::Verify,
         checked_callees: None,
@@ -867,6 +868,7 @@ fn produced_composite_over_a_viewed_owner_is_refused() {
         ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: function.clone(),
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
@@ -1666,6 +1668,7 @@ fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
         .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: inner,
+            descent_completion: None,
             concrete_loop_exits: None,
             loop_semantics: LoopSemantics::Verify,
             checked_callees: None,

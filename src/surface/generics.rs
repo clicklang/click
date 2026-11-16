@@ -720,6 +720,16 @@ pub(super) fn syntactic_expression_type(
         return Some(cast_type);
     }
     match expression {
+        ContractExpression::Lambda {
+            parameters, result, ..
+        } => Some(lambdas::signature(parameters, result)),
+        ContractExpression::Apply { function, .. } => {
+            match syntactic_expression_type(function, variables)? {
+                ClickType::Function { result, .. } => Some(*result),
+                _ => None,
+            }
+        }
+
         ContractExpression::Resource(_) => Some(ClickType::Resource),
         ContractExpression::IntegerLiteral(_) | ContractExpression::Negate(_) => {
             default_numeral_click_type(expression)

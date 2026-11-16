@@ -20,7 +20,7 @@ mod algebraic_equality;
 mod float;
 mod machine;
 pub(crate) use float::FloatOperandView;
-pub use float::KernelFloatType;
+pub use float::{KernelFloatCall, KernelFloatType};
 #[allow(dead_code)]
 mod matches;
 pub(crate) use matches::KernelMatchArm;
@@ -69,6 +69,7 @@ pub enum KernelTermNode {
     Match(KernelMatch),
     Constructor(KernelConstructor),
     AlgebraicCall(KernelAlgebraicCall),
+    FloatCall(KernelFloatCall),
     AlgebraicIf {
         arguments: [KernelTerm; 3],
     },
@@ -427,6 +428,10 @@ impl NodeKey {
             KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_program_type(ty).is_some()) => {
                 true
             }
+            KernelTermNode::FloatCall(call) => call
+                .arguments
+                .iter()
+                .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::AlgebraicCall(call) => call
                 .arguments
                 .iter()
@@ -802,6 +807,7 @@ impl KernelTerm {
             KernelTermNode::Match(matched) => &matched.arguments,
             KernelTermNode::Constructor(constructor) => &constructor.fields,
             KernelTermNode::AlgebraicCall(call) => &call.arguments,
+            KernelTermNode::FloatCall(call) => &call.arguments,
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. }

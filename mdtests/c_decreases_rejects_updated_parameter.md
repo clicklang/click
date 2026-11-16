@@ -1,4 +1,4 @@
-# a recursive termination parameter cannot be changed by an update
+# incrementing the parameter does not decrease from its entry value
 
 The `n++` update happens before the recursive edge, so the apparent `n - 1`
 argument is not a decrease from the function's entry measure.
@@ -24,5 +24,5 @@ int32 updated_parameter(int32 n) {
 ```
 
 ```expect
-fail: termination measure `"c_decreases_rejects_updated_parameter.c"::updated_parameter.parameter(0)` is reassigned
+fail: updated_parameter recursion measure: `n` decreases at the recursive call
 ```

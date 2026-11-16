@@ -555,10 +555,32 @@ add them, without reopening a completed body's declaration interface. Independen
 termination APIs open the same inventory from their explicit inputs before
 executing termination proofs.
 
-Local descent execution consumes the captured authority. The remaining
-expression-recursion source/loop-anchor coverage walk and the numeric/structural
-body analyses are still proof execution, and have not yet migrated to call and
-summary producers.
+Call-ranked recursion also opens a descent cell for every entry case in the
+ordinary contract root. The execution core captures its recursion context before
+the body begins. Each native statement transition carries its own context beside
+its theorem and ordinary premises; the recorder consumes the opaque native path,
+so Surface cannot splice a context onto another theorem. Tactic application uses
+the same opened context. Loop opening retains its call footprint, and summary
+application answers for recursive peers as well as self-calls.
+
+The trace retains this descent context while its outcome obligations remain open.
+Ordinary outcome completion retires the captured descent cells; failed attempts
+publish nothing. A completed root packages native descent completion, which local
+termination consumes directly without a source/loop-anchor coverage walk.
+Independent termination inputs without an ordinary root retain their separate
+coverage analysis. Source numeric measures, including bare C parameters, and
+named structural resource binders all use call producers. A numeric call owes
+nonnegativity and strict descent from the immutable entry value; assigning the
+C parameter does not change that entry value. A structural call passes an
+instance whose model is strictly contained in the entry model.
+
+Anonymous resource measures (`decreases list(node)`) still use the legacy
+structural body analysis. Unlike a named modeled instance, an anonymous
+composite resource has no retained finite-witness identity. Moving that last
+path requires ownership of its structural witness through unfold, fold, and
+resource-return operations; ordinary resource containment is not a strict
+well-founded order. Independent termination plans can also explicitly request
+the legacy numeric-parameter or resource-requirement analyses.
 
 Concrete loop-exit coverage is fixed in the ordinary body's source namespace
 at opening. Loop/body source mismatch is refused before proof execution.

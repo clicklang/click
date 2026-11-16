@@ -1400,6 +1400,13 @@ the step number in `result`, the read is `Expression::CallResult`, and the
 lowering emits `ProgramStatement::CallResult`. A proof names its result
 `call(f, j).result`, among the function's calls.
 
+MIR builds a `for` loop's range in a temporary and moves it, often twice,
+into the loop's own iterator. `temporaries::collapse_iterator_moves` builds
+the range in the loop's iterator directly, so its state is the proof's
+`iter.start` and `iter.end` everywhere Click prints it. The blocks the
+iterator protocol splits from a `next` call come from the `for` statement,
+so their regions are named inside it.
+
 These still stay a temporary:
 
 - a call's result read more than once, so a `for` loop's `next` result is one

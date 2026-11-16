@@ -968,6 +968,7 @@ fn certified_transitions_from_execution(
                 let generated_load_source_events =
                     generated_load_source_events_from_facts(&execution_facts);
                 return Ok(CertifiedStatementTransition {
+                    native_step: Arc::new(path.clone()),
                 call_result: path.call_result().cloned().map(crate::kernel::StoredExecutionValue::into_native),
                 call_parameters: path.call_parameters().cloned(),
                     theorem: path.theorem().clone(),
@@ -992,6 +993,7 @@ fn certified_transitions_from_execution(
             let generated_load_source_events =
                 generated_load_source_events_from_facts(&execution_facts);
             Ok(CertifiedStatementTransition {
+                    native_step: Arc::new(path.clone()),
                 call_result: path.call_result().cloned().map(crate::kernel::StoredExecutionValue::into_native),
                 call_parameters: path.call_parameters().cloned(),
                 theorem: path.theorem().clone(),
