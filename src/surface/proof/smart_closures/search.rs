@@ -10,9 +10,9 @@ enum SurfaceSpellingPurpose {
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
-    /// Retain a computational `known` leaf when possible, otherwise the exact
-    /// legacy normalizer requested by this search route. Premise-restricted
-    /// routes use only goal-local computation to make this choice.
+    /// Retain a computational known leaf or an explicit Integer identity
+    /// certificate; other families use the requested legacy normalizer.
+    /// Premise-restricted routes select using only the goal's own terms.
     pub(in crate::surface::proof) fn apply_normalization_closure(
         search_input: &Proof<'a>,
         premises: Option<Vec<ClickProposition>>,
@@ -24,6 +24,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .is_some_and(crate::surface::planning::solve::computes_with_known)
         {
             ProofStep::Known
+        } else if let (Some(goal), Some(surface)) =
+            (search_input.goal(), search_input.surface_goal())
+            && let Some(claim) = integer_affine_claim(goal)
+            && claim.terms.is_empty()
+            && match claim.relation {
+                IntegerAffineRelation::Equal => claim.constant.is_zero(),
+                IntegerAffineRelation::LessEqual => claim.constant <= BigInt::zero(),
+            }
+        {
+            // The existing Integer checker owns coefficient collection.
+            // Retain its explicit evidence instead of a normalization leaf.
+            ProofStep::ArithmeticCertificate(ArithmeticCertificate::integer(IntegerCertificate {
+                nodes: vec![IntegerCertificateNode::Trivial {
+                    result: surface.clone(),
+                }],
+                conclusion: 0,
+            }))
         } else {
             match premises {
                 Some(premises) => ProofStep::NormalizeUsing(premises),
@@ -299,9 +316,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut budget = attempt::AttemptBudget::unbounded();
         let mut proof = search_input.clone();
         loop {
-            if let Some(closed) =
-                attempt::try_steps(&proof, &mut budget, direct_logical_candidates(proof.goal()))?
-            {
+            if let Some(closed) = attempt::try_steps(
+                &proof,
+                &mut budget,
+                direct_logical_candidates(proof.goal(), proof.surface_goal()),
+            )? {
                 scope.succeed();
                 return Ok(Some(closed));
             }
@@ -738,7 +757,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(closed) = attempt::try_steps(
             search_input,
             &mut budget,
-            direct_logical_candidates(search_input.goal()),
+            direct_logical_candidates(search_input.goal(), search_input.surface_goal()),
         )? {
             return Ok(Some(closed));
         }
