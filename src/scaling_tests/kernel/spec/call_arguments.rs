@@ -12,8 +12,11 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
                 [root.clone(), root],
             );
         }
-        let mut values = crate::persistent::PersistentMap::default();
-        values.insert("x".to_string(), root.clone());
+        let mut values: crate::persistent::PersistentMap<
+            crate::kernel::BindingName,
+            crate::kernel::KernelTerm,
+        > = crate::persistent::PersistentMap::default();
+        values.insert("x".into(), root.clone());
         let state = ExecutionState::new();
         let scope = SpecScope {
             values: Some(&values),

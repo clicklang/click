@@ -28,7 +28,7 @@ fn integer_theorem_argument_capture_scales_with_unused_bindings_and_applications
         }
         let array_refs = BTreeMap::new();
         let algebraic_values = BTreeMap::new();
-        let integer_values = crate::persistent::PersistentMap::default();
+        let integer_values = PersistentBinderMap::default();
         let retained_states = RecordedStates::default();
         let context = TheoremApplicationContext {
             parameters: ParameterBinding::default(),

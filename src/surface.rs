@@ -1179,7 +1179,7 @@ impl AlgebraicTypeApplication {
 pub struct AlgebraicMatchArm {
     type_name: String,
     variant: String,
-    bindings: Vec<String>,
+    bindings: Vec<SurfaceBinder>,
     body: ContractExpression,
 }
 
@@ -2065,7 +2065,7 @@ pub struct StructuralClauseData {
     /// proof `match` arm's bindings, `let { ... } = unfold(...)` names, call-result
     /// binders. The clause keeps its written spelling, which expansion
     /// prints; every lowering reads it through [`StructuralClause::resolved`].
-    scope: BTreeMap<String, ContractExpression>,
+    scope: BinderMap<ContractExpression>,
     /// Resource clauses declared beside the invariants. They give the region
     /// the write and read authority of a callee contract: the body executes
     /// owning exactly these resources, and the loop's write footprint is the
@@ -2218,7 +2218,7 @@ pub struct IteratedResourceClause {
     /// The resource definition whose body declares the clause.
     pub(crate) owner: String,
     /// The index binder, as written.
-    pub(crate) binder: String,
+    pub(crate) binder: SurfaceBinder,
     /// The `where` proposition bounding the index.
     pub(crate) range: ClickProposition,
     /// The optional `if` guard selecting which indices are held.
@@ -2346,7 +2346,7 @@ pub enum ClickProposition {
     ForAll {
         click_type: ClickType,
         /// The hygienic name used while lowering the body.
-        name: String,
+        name: SurfaceBinder,
         /// The source spelling retained when hygiene changes `name`.
         written_name: Option<String>,
         body: Box<ClickProposition>,
@@ -2354,7 +2354,7 @@ pub enum ClickProposition {
     Exists {
         click_type: ClickType,
         /// The hygienic name used while lowering the body.
-        name: String,
+        name: SurfaceBinder,
         /// The source spelling retained when hygiene changes `name`.
         written_name: Option<String>,
         body: Box<ClickProposition>,
@@ -2363,7 +2363,7 @@ pub enum ClickProposition {
         start: ContractExpression,
         end: ContractExpression,
         /// The hygienic name used while lowering the body.
-        item: String,
+        item: SurfaceBinder,
         /// The source spelling retained when hygiene changes `item`.
         written_item: Option<String>,
         body: Box<ClickProposition>,
@@ -2372,7 +2372,7 @@ pub enum ClickProposition {
         start: ContractExpression,
         end: ContractExpression,
         /// The hygienic name used while lowering the body.
-        item: String,
+        item: SurfaceBinder,
         /// The source spelling retained when hygiene changes `item`.
         written_item: Option<String>,
         body: Box<ClickProposition>,
@@ -2547,24 +2547,24 @@ pub(crate) fn clone_click_proposition_iteratively(
         BuildImplies,
         BuildForAll {
             click_type: ClickType,
-            name: String,
+            name: SurfaceBinder,
             written_name: Option<String>,
         },
         BuildExists {
             click_type: ClickType,
-            name: String,
+            name: SurfaceBinder,
             written_name: Option<String>,
         },
         BuildRangeAll {
             start: ContractExpression,
             end: ContractExpression,
-            item: String,
+            item: SurfaceBinder,
             written_item: Option<String>,
         },
         BuildRangeAny {
             start: ContractExpression,
             end: ContractExpression,
-            item: String,
+            item: SurfaceBinder,
             written_item: Option<String>,
         },
     }
@@ -2945,7 +2945,9 @@ fn collect_current_resource_clause_variables(
             if let Some(guard) = &clause.guard {
                 collect_current_proposition_variables(guard, &mut inner);
             }
-            inner.remove(&clause.binder);
+            if let Some(name) = clause.binder.written() {
+                inner.remove(name);
+            }
             names.extend(inner);
         }
     }
@@ -2985,6 +2987,10 @@ pub(crate) fn collect_current_contract_expression_variables(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            collect_current_contract_expression_variables(value, names)
+        }
+
         ContractExpression::Proposition(proposition) => {
             collect_current_proposition_variables(proposition, names)
         }
@@ -3000,7 +3006,9 @@ pub(crate) fn collect_current_contract_expression_variables(
             let mut captures = BTreeSet::new();
             collect_current_contract_expression_variables(body, &mut captures);
             for (name, _) in parameters {
-                captures.remove(name);
+                if let Some(name) = name.written() {
+                    captures.remove(name);
+                }
             }
             names.extend(captures);
         }
@@ -3016,7 +3024,9 @@ pub(crate) fn collect_current_contract_expression_variables(
 
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::AlgebraicVariable { name, .. } => {
-            names.insert(name.clone());
+            if let Some(name) = name.written() {
+                names.insert(name.to_owned());
+            }
         }
         ContractExpression::AlgebraicConstructor { arguments, .. } => {
             for argument in arguments {
@@ -3029,7 +3039,9 @@ pub(crate) fn collect_current_contract_expression_variables(
                 let mut arm_names = BTreeSet::new();
                 collect_current_contract_expression_variables(&arm.body, &mut arm_names);
                 for binding in &arm.bindings {
-                    arm_names.remove(binding);
+                    if let Some(name) = binding.written() {
+                        arm_names.remove(name);
+                    }
                 }
                 names.extend(arm_names);
             }
@@ -3197,6 +3209,10 @@ fn collect_current_proposition_variables(
 }
 
 /// Compatibility name while expression consumers migrate to `SurfaceTerm`.
+mod binders;
+pub use binders::SurfaceBinder;
+use binders::{BinderMap, BinderSet, PersistentBinderMap, ScopedBinders};
+
 pub type ContractExpression = SurfaceTerm;
 
 /// The library function a Rust subslice's length lowers through; its call
@@ -3211,6 +3227,8 @@ pub enum SurfaceTerm {
     /// same source spelling can denote a C literal or an exact Integer when
     /// its surrounding expression supplies that context.
     IntegerLiteral(String),
+    /// Mathematical Integer type context, written `(value : Integer)`.
+    IntegerContext(Box<SurfaceTerm>),
     /// A translation-unit-qualified C object. Retain its spelling for checked
     /// proof expansion while lowering its stable storage identity, not a local.
     QualifiedC {
@@ -3238,7 +3256,7 @@ pub enum SurfaceTerm {
     },
     /// A Click-native binder whose value is not a C object or scalar.
     AlgebraicVariable {
-        name: String,
+        name: SurfaceBinder,
         algebraic_type: AlgebraicTypeApplication,
         binder_index: usize,
     },
@@ -3352,7 +3370,7 @@ pub enum SurfaceTerm {
     Proposition(Box<ClickProposition>),
     /// A typed, lexically scoped specification function; reads use application state.
     Lambda {
-        parameters: Vec<(String, ClickType)>,
+        parameters: Vec<(SurfaceBinder, ClickType)>,
         result: ClickType,
         body: Box<ContractExpression>,
     },
@@ -3365,12 +3383,12 @@ pub enum SurfaceTerm {
         start: Box<ContractExpression>,
         end: Box<ContractExpression>,
         initial: Box<ContractExpression>,
-        accumulator: String,
-        item: String,
+        accumulator: SurfaceBinder,
+        item: SurfaceBinder,
         body: Box<ContractExpression>,
     },
     Let {
-        name: String,
+        name: SurfaceBinder,
         click_type: Option<ClickType>,
         value: Box<ContractExpression>,
         body: Box<ContractExpression>,
@@ -5351,10 +5369,10 @@ struct SpecArrayRef {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecElaborationContext {
-    values: PersistentMap<String, SpecExpression>,
-    integer_values: PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    algebraic_values: PersistentMap<String, SpecAlgebraicExpression>,
-    array_refs: PersistentMap<String, SpecArrayRef>,
+    values: PersistentBinderMap<SpecExpression>,
+    integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+    algebraic_values: PersistentBinderMap<SpecAlgebraicExpression>,
+    array_refs: PersistentBinderMap<SpecArrayRef>,
     /// The memory a bound array name reads in, when its binding names a state
     /// of its own. A theorem argument that names another state (`old(a)`,
     /// `at(mark, a)`) binds the parameter to that state's array reference, and
@@ -5362,7 +5380,7 @@ struct SpecElaborationContext {
     /// clause's indexing would read the application's current memory. Only a
     /// binding that names another state appears here, so an ordinary array
     /// name keeps reading through `current_memory` and carries no state.
-    array_memories: PersistentMap<String, SpecMemory>,
+    array_memories: PersistentBinderMap<SpecMemory>,
     current_memory: SpecMemory,
     current_loop_entry: Option<usize>,
     function_contract: bool,
@@ -5385,11 +5403,11 @@ struct SpecElaborationContext {
 impl Default for SpecElaborationContext {
     fn default() -> Self {
         Self {
-            values: PersistentMap::default(),
-            integer_values: PersistentMap::default(),
-            algebraic_values: PersistentMap::default(),
-            array_refs: PersistentMap::default(),
-            array_memories: PersistentMap::default(),
+            values: PersistentBinderMap::default(),
+            integer_values: PersistentBinderMap::default(),
+            algebraic_values: PersistentBinderMap::default(),
+            array_refs: PersistentBinderMap::default(),
+            array_memories: PersistentBinderMap::default(),
             current_memory: SpecMemory::Current,
             current_loop_entry: None,
             at_function_entry: false,
@@ -5416,7 +5434,7 @@ impl SpecElaborationContext {
     fn for_loop_invariant(loop_index: usize) -> Self {
         Self {
             current_loop_entry: Some(loop_index),
-            integer_values: PersistentMap::default().with_inserted(
+            integer_values: PersistentBinderMap::default().with_inserted(
                 LOOP_ITERATIONS_NAME.to_string(),
                 crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::var(
                     crate::kernel::LOOP_ITERATIONS_VARIABLE,
@@ -5443,8 +5461,8 @@ impl SpecElaborationContext {
                 values: self.values.clone(),
                 integer_values: self.integer_values.clone(),
                 algebraic_values: self.algebraic_values.clone(),
-                array_refs: PersistentMap::default(),
-                array_memories: PersistentMap::default(),
+                array_refs: PersistentBinderMap::default(),
+                array_memories: PersistentBinderMap::default(),
                 current_memory: SpecMemory::FunctionEntry,
                 current_loop_entry: None,
                 function_contract: true,
@@ -5458,7 +5476,7 @@ impl SpecElaborationContext {
         let mut values = entry_values
             .iter()
             .map(|(name, value)| (name.clone(), SpecExpression::Value(value.clone())))
-            .collect::<BTreeMap<_, _>>();
+            .collect::<BinderMap<_>>();
 
         // A `let` name the proof holds as an expression reads the same at
         // the entry. A name the entry records is a local, and a parameter's
@@ -5466,17 +5484,20 @@ impl SpecElaborationContext {
         // here read `old(n)` as the current `n` once the body had reassigned
         // it, while the contract's `old(n)` correctly read the argument.
         for (name, value) in &self.values {
-            if !values.contains_key(name) {
+            if !values.contains_key(&name) {
                 values.insert(name.clone(), value.clone());
             }
         }
 
         Ok(Self {
-            values: values.into_iter().collect(),
+            values: values
+                .iter()
+                .map(|(name, value)| (name, value.clone()))
+                .collect(),
             integer_values: self.integer_values.clone(),
             algebraic_values: self.algebraic_values.clone(),
-            array_refs: PersistentMap::default(),
-            array_memories: PersistentMap::default(),
+            array_refs: PersistentBinderMap::default(),
+            array_memories: PersistentBinderMap::default(),
             current_memory: SpecMemory::Fixed(entry_memory.clone()),
             current_loop_entry: None,
             function_contract: false,
@@ -5822,6 +5843,7 @@ pub enum ProofTactic {
     /// `intro() as name`: introduce a universal goal's variable under a
     /// name the proof chooses instead of the one the proposition wrote.
     IntroAs(String),
+    IntroBinder(SurfaceBinder),
     Enumerate,
     Contradiction(ClickProposition),
     CloseInvariants,
@@ -6473,7 +6495,9 @@ impl ProofTactic {
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
 
             Self::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),
-            Self::Intro | Self::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
+            Self::Intro | Self::IntroAs(_) | Self::IntroBinder(_) => {
+                TacticClass::Simple(SimpleTactic::Intro)
+            }
             Self::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
             Self::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
             Self::CloseInvariants => TacticClass::Smart(SmartSite::CloseInvariants),
@@ -7764,11 +7788,13 @@ struct ClickFunctionEnvironment {
 /// with that constructor, such a function is the field, by its definition.
 fn field_projection(definition: &ClickFunctionDefinition) -> Option<crate::kernel::PureProjection> {
     let names = |expression: &ContractExpression| match expression {
-        ContractExpression::Binding(name)
-        | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            crate::kernel::BindingName::Named(name),
-        )) => Some(name.clone()),
+        ContractExpression::Binding(name) => Some(SurfaceBinder::Written(name.clone())),
+        ContractExpression::AlgebraicVariable { name, .. } => Some(name.clone()),
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => match name {
+            crate::kernel::BindingName::Named(name) => Some(SurfaceBinder::Written(name.clone())),
+            crate::kernel::BindingName::Generated(id) => Some(SurfaceBinder::Generated(*id)),
+            _ => None,
+        },
         _ => None,
     };
     let ContractExpression::AlgebraicMatch { scrutinee, arms } = definition.body()? else {
@@ -7778,6 +7804,7 @@ fn field_projection(definition: &ClickFunctionDefinition) -> Option<crate::kerne
         return None;
     };
     let scrutinee = names(scrutinee)?;
+    let scrutinee = scrutinee.written()?;
     let selected = names(&arm.body)?;
     Some(crate::kernel::PureProjection::new(
         definition
@@ -7915,6 +7942,10 @@ fn contract_expression_reads_memory(
     callees: &mut Vec<String>,
 ) -> bool {
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            contract_expression_reads_memory(value, callees)
+        }
+
         ContractExpression::Proposition(proposition) => {
             click_proposition_reads_memory(proposition, callees)
         }
@@ -9912,10 +9943,10 @@ impl StructuralClause {
     /// This clause tagged with the proof locals it was written under.
     pub(in crate::surface) fn with_scope(
         &self,
-        scope: BTreeMap<String, ContractExpression>,
+        scope: impl Into<BinderMap<ContractExpression>>,
     ) -> Self {
         let mut clause = self.clone();
-        clause.scope = scope;
+        clause.scope = scope.into();
         clause
     }
 
@@ -9926,7 +9957,7 @@ impl StructuralClause {
             return Ok(self.clone());
         }
         let mut clause = self.with_substituted_bindings(&self.scope)?;
-        clause.scope = BTreeMap::new();
+        clause.scope = BinderMap::new();
         Ok(clause)
     }
 
@@ -9937,7 +9968,7 @@ impl StructuralClause {
     /// there. Memory segments are left as written; they name C places.
     pub(in crate::surface) fn with_substituted_bindings(
         &self,
-        substitutions: &BTreeMap<String, ContractExpression>,
+        substitutions: &BinderMap<ContractExpression>,
     ) -> Result<Self, String> {
         let mut clause = self.clone();
         clause.items = self
@@ -10000,7 +10031,7 @@ impl StructuralClause {
 /// terms; memory segments name C places and are left as written.
 fn substitute_resource_clause_bindings(
     resource: &ResourceClause,
-    substitutions: &BTreeMap<String, ContractExpression>,
+    substitutions: &BinderMap<ContractExpression>,
 ) -> Result<ResourceClause, String> {
     Ok(match resource {
         ResourceClause::Conditional {
@@ -10069,7 +10100,7 @@ fn substitute_resource_clause_bindings(
         ResourceClause::Iterated(clause) => ResourceClause::Iterated(Box::new(
             crate::surface::lowering::substitute_iterated_clause(
                 clause,
-                &crate::surface::lowering::ContractSubstitutions::new(substitutions),
+                &crate::surface::lowering::ContractSubstitutions::from(substitutions),
             )?,
         )),
     })

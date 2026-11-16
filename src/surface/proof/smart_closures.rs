@@ -143,6 +143,8 @@ fn collect_signed_surface_terms<'a>(
     while let Some(expression) = pending.pop() {
         terms.push(expression);
         match expression {
+            ContractExpression::IntegerContext(value) => pending.push(value),
+
             ContractExpression::Proposition(proposition) => {
                 collect_signed_surface_proposition_terms(proposition, terms)
             }
@@ -549,7 +551,8 @@ pub(super) fn observed_native_surface_comparison(
     // by that arithmetic; only an observation makes it Integer arithmetic.
     fn written_integer(operand: &ContractExpression) -> bool {
         match operand {
-            // Synthesis retains mathematical sort with this lexical alias.
+            ContractExpression::IntegerContext(_) => true,
+            // An authored Integer let can supply the same sort context.
             // Observing it again would place an Integer inside a machine cast.
             ContractExpression::Let {
                 name,

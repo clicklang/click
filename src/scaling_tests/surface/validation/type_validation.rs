@@ -7,8 +7,8 @@ fn typed_lambda_validation_scales_with_body_and_ignores_unrelated_bindings() {
     for unrelated in [0, 64, 256, 1024] {
         let mut costs = Vec::new();
         for size in [8, 16, 32, 64] {
-            let mut variables = BTreeMap::new();
-            let mut integers = BTreeSet::new();
+            let mut variables = BinderMap::new();
+            let mut integers = BinderSet::new();
             for index in 0..unrelated {
                 variables.insert(format!("unused{index}"), InterfaceType::Int32);
                 integers.insert(format!("unused_integer{index}"));
@@ -43,7 +43,7 @@ fn typed_lambda_validation_scales_with_body_and_ignores_unrelated_bindings() {
                     &expression,
                     &variables,
                     &integers,
-                    &BTreeMap::new(),
+                    &BinderMap::new(),
                     "lambda scaling",
                     false,
                 )
@@ -75,8 +75,8 @@ fn lambda_fold_typing_scales_with_captures_and_ignores_unrelated_bindings() {
     for unrelated in [0, 64, 256, 1024] {
         let mut costs = Vec::new();
         for size in [8, 16, 32, 64] {
-            let mut variables = BTreeMap::new();
-            let mut integers = BTreeSet::new();
+            let mut variables = BinderMap::new();
+            let mut integers = BinderSet::new();
             for index in 0..unrelated {
                 variables.insert(format!("unused{index}"), InterfaceType::Int32);
                 integers.insert(format!("unused_integer{index}"));
@@ -128,7 +128,7 @@ fn lambda_fold_typing_scales_with_captures_and_ignores_unrelated_bindings() {
                     &expression,
                     &variables,
                     &integers,
-                    &BTreeMap::new(),
+                    &BinderMap::new(),
                     "fold scaling",
                     true,
                 )
@@ -160,8 +160,8 @@ fn proposition_lambda_and_range_validation_ignore_unrelated_scopes() {
     for unrelated in [0, 64, 256, 1024] {
         let mut costs = Vec::new();
         for size in [8, 16, 32, 64] {
-            let mut variables = BTreeMap::new();
-            let mut integers = BTreeSet::new();
+            let mut variables = BinderMap::new();
+            let mut integers = BinderSet::new();
             for index in 0..unrelated {
                 variables.insert(format!("unused{index}"), InterfaceType::Int32);
                 integers.insert(format!("unused_integer{index}"));
@@ -205,7 +205,7 @@ fn proposition_lambda_and_range_validation_ignore_unrelated_scopes() {
                     &all,
                     &variables,
                     &integers,
-                    &BTreeMap::new(),
+                    &BinderMap::new(),
                     "proposition scaling",
                 )
             });
@@ -237,8 +237,8 @@ fn memory_lambda_validation_scales_with_reads_and_ignores_unrelated_bindings() {
     for unrelated in [0, 64, 256, 1024] {
         let mut costs = Vec::new();
         for size in [8, 16, 32, 64] {
-            let mut variables = BTreeMap::new();
-            let mut integers = BTreeSet::new();
+            let mut variables = BinderMap::new();
+            let mut integers = BinderSet::new();
             for index in 0..unrelated {
                 variables.insert(format!("unused{index}"), InterfaceType::Int32);
                 integers.insert(format!("unused_integer{index}"));
@@ -278,7 +278,7 @@ fn memory_lambda_validation_scales_with_reads_and_ignores_unrelated_bindings() {
                     &expression,
                     &variables,
                     &integers,
-                    &BTreeMap::new(),
+                    &BinderMap::new(),
                     "lambda scaling",
                     false,
                 )?;
@@ -286,7 +286,7 @@ fn memory_lambda_validation_scales_with_reads_and_ignores_unrelated_bindings() {
                     &[clause],
                     &variables,
                     &integers,
-                    &BTreeMap::new(),
+                    &BinderMap::new(),
                     "declaration scaling",
                 )?;
                 Ok::<_, ClickError>(result)
@@ -324,7 +324,7 @@ fn callback_parameter_typing_scales_with_selected_body_and_ignores_other_functio
     let mut baseline = Vec::new();
     for unrelated in [0, 64, 256, 1024] {
         let mut costs = Vec::new();
-        let mut functions = BTreeMap::new();
+        let mut functions = BinderMap::new();
         for index in 0..unrelated {
             functions.insert(
                 format!("other{index}"),
@@ -364,8 +364,8 @@ fn callback_parameter_typing_scales_with_selected_body_and_ignores_other_functio
                     |functions| {
                         infer_scoped_spec_value_type(
                             &body,
-                            &BTreeMap::new(),
-                            &BTreeSet::from(["x".into()]),
+                            &BinderMap::new(),
+                            &std::iter::once("x").collect::<BinderSet>(),
                             functions,
                             "callback scaling",
                             true,

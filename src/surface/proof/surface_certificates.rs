@@ -4978,6 +4978,10 @@ pub(super) fn contract_expression_mentions_program_local(
     parameter_names: &BTreeSet<&str>,
 ) -> bool {
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            contract_expression_mentions_program_local(value, parameter_names)
+        }
+
         ContractExpression::Proposition(_) => {
             let mut names = BTreeSet::new();
             collect_contract_expression_referenced_names(expression, &mut names);
@@ -5028,7 +5032,7 @@ pub(super) fn contract_expression_mentions_program_local(
             contract_expression_mentions_program_local(scrutinee, parameter_names)
                 || arms.iter().any(|arm| {
                     let mut arm_names = parameter_names.clone();
-                    arm_names.extend(arm.bindings.iter().map(String::as_str));
+                    arm_names.extend(arm.bindings.iter().filter_map(SurfaceBinder::written));
                     contract_expression_mentions_program_local(&arm.body, &arm_names)
                 })
         }

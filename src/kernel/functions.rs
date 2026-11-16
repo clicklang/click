@@ -8533,7 +8533,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             {
                 match (variable, value) {
                     (None, AlgebraicValue::Algebraic(value)) => {
-                        algebraic_bindings.insert(name.clone(), value.clone());
+                        algebraic_bindings.insert(name.clone().into(), value.clone());
                     }
                     (Some(variable), AlgebraicValue::Integer(value)) => {
                         integer_bindings.insert(*variable, value.clone());
@@ -14096,7 +14096,7 @@ fn lower_selected_resource_body_clauses(
     source: &[SpecProposition],
     arm: Option<&str>,
     integer_bindings: &BTreeMap<Variable, IntegerTerm>,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     body_assumptions: &PureFactContext,
     established_assumptions: Option<&PureFactContext>,
     budget: &mut ExecutionBudget,
@@ -14753,7 +14753,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     }
                 }
                 (AlgebraicValueType::Algebraic { .. }, None, AlgebraicValue::Algebraic(value)) => {
-                    algebraic_bindings.insert(name.clone(), value.clone());
+                    algebraic_bindings.insert(name.clone().into(), value.clone());
                 }
                 _ => return Err("resource match constructor binding type mismatch".into()),
             }

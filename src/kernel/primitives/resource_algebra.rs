@@ -1410,6 +1410,7 @@ fn collect_memory_load_work<'a>(
                     continue;
                 }
                 match term {
+                    MachineTerm::ThreadHandle(_) => {}
                     MachineTerm::MemoryLoad(memory, pointer, kind) => {
                         // The checked source state's cell gives the loaded
                         // scalar's ABI width, and the read is never narrower

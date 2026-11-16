@@ -2259,7 +2259,7 @@ fn current_index(base: &str, index: u32) -> ContractExpression {
 fn contract_substitution_renames_colliding_logical_binders() {
     let proposition = ClickProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: "i".to_string(),
+        name: "i".to_string().into(),
         written_name: None,
         body: Box::new(ClickProposition::Comparison {
             left: current_var("argument"),
@@ -2287,7 +2287,7 @@ fn contract_substitution_renames_colliding_logical_binders() {
         &ClickProposition::Comparison {
             left: current_var("i"),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CBinding(name),
+            right: name.reference(),
         }
     );
 }
@@ -2299,15 +2299,15 @@ fn contract_substitution_renames_colliding_range_fold_and_let_binders() {
         start: Box::new(current_int(0)),
         end: Box::new(current_int(3)),
         initial: Box::new(current_int(0)),
-        accumulator: "acc".to_string(),
-        item: "i".to_string(),
+        accumulator: "acc".to_string().into(),
+        item: "i".to_string().into(),
         body: Box::new(ContractExpression::Add(
             Box::new(current_var("argument")),
             Box::new(current_var("i")),
         )),
     };
     let let_expression = ContractExpression::Let {
-        name: "i".to_string(),
+        name: "i".to_string().into(),
         click_type: Some(ClickType::Program(InterfaceType::Int32)),
         value: Box::new(current_int(0)),
         body: Box::new(ContractExpression::Add(
@@ -2325,10 +2325,7 @@ fn contract_substitution_renames_colliding_range_fold_and_let_binders() {
     assert_ne!(item, "i");
     assert_eq!(
         body.as_ref(),
-        &ContractExpression::Add(
-            Box::new(current_var("i")),
-            Box::new(ContractExpression::CBinding(item.clone())),
-        )
+        &ContractExpression::Add(Box::new(current_var("i")), Box::new(item.reference()),)
     );
 
     let ContractExpression::Let { name, body, .. } =
@@ -2340,10 +2337,7 @@ fn contract_substitution_renames_colliding_range_fold_and_let_binders() {
     assert_ne!(name, "i");
     assert_eq!(
         body.as_ref(),
-        &ContractExpression::Add(
-            Box::new(current_var("i")),
-            Box::new(ContractExpression::CBinding(name)),
-        )
+        &ContractExpression::Add(Box::new(current_var("i")), Box::new(name.reference()),)
     );
 }
 

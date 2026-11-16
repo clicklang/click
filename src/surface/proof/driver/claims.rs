@@ -164,7 +164,7 @@ pub(in crate::surface) struct ClaimProofResult {
 type PendingPostExecutionTactic<'a> = (
     &'a DeferredPostExecutionTactic,
     usize,
-    Option<PersistentMap<String, ContractExpression>>,
+    Option<PersistentBinderMap<ContractExpression>>,
 );
 
 /// Visit one leaf at a time so each control node sees the checked facts left
@@ -179,7 +179,7 @@ fn next_checked_post_execution_tactic<'a>(
 ) -> Result<
     Option<(
         &'a DeferredPostExecutionTactic,
-        Option<PersistentMap<String, ContractExpression>>,
+        Option<PersistentBinderMap<ContractExpression>>,
     )>,
     ClickError,
 > {
@@ -3168,6 +3168,7 @@ fn opens_outcome_existence_proof(tactic: &ProofTactic) -> bool {
             | ProofTactic::Witness(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
+            | ProofTactic::IntroBinder(_)
     )
 }
 
@@ -4141,7 +4142,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let introduces_scope = opened.introduces_scope
                                     || matches!(
                                         tactic,
-                                        ProofTactic::Intro | ProofTactic::IntroAs(_)
+                                        ProofTactic::Intro
+                                            | ProofTactic::IntroAs(_)
+                                            | ProofTactic::IntroBinder(_)
                                     );
                                 opened_claim = Some(OpenedClaimProof {
                                     introduces_scope,

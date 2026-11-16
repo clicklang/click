@@ -40,7 +40,7 @@ pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
     /// `match` arm's bindings, `let { ... } = unfold(...)` names, call-result binders.
     /// The planners resolve them into the loop's written clauses before
     /// lowering, as a `have` goal at that point would.
-    pub(in crate::surface::proof) proof_locals: BTreeMap<String, ContractExpression>,
+    pub(in crate::surface::proof) proof_locals: BinderMap<ContractExpression>,
 }
 
 #[derive(Clone, Default)]
@@ -589,8 +589,12 @@ fn surface_program_condition_unresolved(
     pub(in crate::surface::proof) fn expression(
         expression: &ProgramExpression,
     ) -> ContractExpression {
-        substitute_program_expression_as_contract_with_numerals(expression, &BTreeMap::new(), true)
-            .expect("converting a C expression without substitutions cannot fail")
+        substitute_program_expression_as_contract_with_numerals(
+            expression,
+            &BTreeMap::<String, ContractExpression>::new(),
+            true,
+        )
+        .expect("converting a C expression without substitutions cannot fail")
     }
 
     let comparison =

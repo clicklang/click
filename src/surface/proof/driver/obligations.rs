@@ -524,7 +524,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             ),
                         )
                         .map(Arc::new),
-                        surface_bindings: PersistentMap::default(),
+                        surface_bindings: PersistentBinderMap::default(),
                         both_children,
                     ..PropositionPresentation::default()
                     };
