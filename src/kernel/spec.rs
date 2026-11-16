@@ -37,19 +37,27 @@ use algebraic_result::{AlgebraicFieldResult, AlgebraicResult};
 mod result;
 use result::{SpecCallArgument, SpecValue, call_arguments};
 
+/// One lowering path: a typed result plus its separately scoped facts and debts.
+/// Mapping the representation of a result does not evaluate or discharge either.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct SpecExpressionPath {
-    pub(super) value: SpecValue,
-    pub(super) facts: ExecutionFacts,
-    pub(super) obligations: Vec<ProofObligation>,
+pub(crate) struct LoweredTermPath<T = KernelTerm> {
+    pub(crate) value: T,
+    pub(crate) facts: ExecutionFacts,
+    pub(crate) obligations: Vec<ProofObligation>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct SpecIntegerPath {
-    pub(super) value: IntegerTerm,
-    pub(super) facts: ExecutionFacts,
-    pub(super) obligations: Vec<ProofObligation>,
+impl<T> LoweredTermPath<T> {
+    pub(crate) fn map_value<U>(self, map: impl FnOnce(T) -> U) -> LoweredTermPath<U> {
+        LoweredTermPath {
+            value: map(self.value),
+            facts: self.facts,
+            obligations: self.obligations,
+        }
+    }
 }
+
+pub(super) type SpecExpressionPath = LoweredTermPath<SpecValue>;
+pub(super) type SpecIntegerPath = LoweredTermPath<IntegerTerm>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecSequencePath {
@@ -58,12 +66,7 @@ struct SpecSequencePath {
     obligations: Vec<ProofObligation>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SpecAlgebraicPath {
-    value: AlgebraicResult,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-}
+type SpecAlgebraicPath = LoweredTermPath<AlgebraicResult>;
 
 /// The interpretation of specification reads is lexical: ordinary expressions
 /// denote logical values, while `defined(...)` explicitly asks for validity.
@@ -945,19 +948,9 @@ struct SpecAlgebraicCasePath {
     obligations: Vec<ProofObligation>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SpecAlgebraicValuePath {
-    value: AlgebraicFieldResult,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-}
+type SpecAlgebraicValuePath = LoweredTermPath<AlgebraicFieldResult>;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SpecPureFunctionArgumentPath {
-    value: SpecCallArgument,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-}
+type SpecPureFunctionArgumentPath = LoweredTermPath<SpecCallArgument>;
 
 fn lower_spec_proposition_at_state_with_loop_entry_in(
     state: &ExecutionState,
