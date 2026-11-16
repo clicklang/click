@@ -272,7 +272,7 @@ unchanged, including C Boolean conversion binders and exact zero-offset pointers
 
 Validation: native/shared declaration admission and refusal parity with zero
 machine exports; existing typed-ID, name-capture, nested-result and selected-body
-scaling regressions passed. All 1,851 Surface/scaling tests and quality checks
+scaling regressions passed. All 1,992 Surface, rewrite and scaling tests and quality checks
 passed. Algebraic Integer match fixtures passed with zero fact-stability differences.
 
 ## Chunk 3: machine-valued pure-function results
