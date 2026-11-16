@@ -10,7 +10,6 @@ fn nested_typed_uses_share_pointer_origin_analysis() {
                 name: "pointer_identity".to_string(),
                 result_type: ProgramType::Int32Pointer,
                 result_object_class: None,
-                projection: None,
                 pointer_result: Some(Arc::new(PurePointerResult {
                     classes: Default::default(),
                     arguments: BTreeSet::from([0]),

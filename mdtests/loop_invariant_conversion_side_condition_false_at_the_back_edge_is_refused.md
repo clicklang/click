@@ -41,5 +41,5 @@ int32 walk(int32 n) {
 ```
 
 ```expect
-fail: `((to_integer(("loop_invariant_conversion_side_condition_false_at_the_back_edge_is_refused.c"::walk.local(0) as int32)) + 1) : Integer) <= 2147483647` remained open
+fail: `((to_integer((i as int32)) + 1) : Integer) <= 2147483647` remained open
 ```

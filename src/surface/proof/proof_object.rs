@@ -1010,6 +1010,23 @@ impl LoopRuleEnvironment {
     }
 }
 
+/// A branch condition as Click source writes it. A C declaration whose
+/// spelling is unambiguous is written by that spelling whether the condition
+/// holds its typed identity (raised by the checker) or its name (parsed from
+/// a proof), so conditions that differ only that way are one condition.
+fn branch_condition_spelling(condition: &ClickProposition) -> String {
+    crate::surface::printing::source_click_proposition(condition)
+}
+
+/// Whether two branch conditions are the same Click condition; see
+/// [`branch_condition_spelling`].
+pub(in crate::surface::proof) fn same_branch_condition(
+    left: &ClickProposition,
+    right: &ClickProposition,
+) -> bool {
+    left == right || branch_condition_spelling(left) == branch_condition_spelling(right)
+}
+
 #[derive(Clone)]
 struct ExecutionBranchDecision {
     fingerprint: std::sync::OnceLock<u64>,
@@ -1053,7 +1070,7 @@ impl ExecutionBranchDecisions {
             }
         }
         let mut hasher = CountedHasher(std::collections::hash_map::DefaultHasher::new());
-        condition.hash(&mut hasher);
+        branch_condition_spelling(condition).hash(&mut hasher);
         hasher.finish()
     }
 
@@ -1065,7 +1082,8 @@ impl ExecutionBranchDecisions {
         // Fingerprints only select a bucket; exact syntax equality decides
         // membership and guards against hash collisions.
         if !bucket.iter().any(|existing| {
-            existing.condition == decision.condition && existing.value == decision.value
+            same_branch_condition(&existing.condition, &decision.condition)
+                && existing.value == decision.value
         }) {
             bucket.push(Arc::new(decision.clone()));
             self.by_condition = self.by_condition.with_inserted(key, bucket);
@@ -1086,7 +1104,7 @@ impl ExecutionBranchDecisions {
         let mut result = None;
         if let Some(bucket) = self.by_condition.get(&key) {
             for decision in bucket {
-                if &decision.condition != condition {
+                if !same_branch_condition(&decision.condition, condition) {
                     continue;
                 }
                 if result.is_some_and(|value| value != decision.value) {
@@ -1229,7 +1247,7 @@ impl ProofExecutionView<'_> {
         }) = current.last()
         {
             let selected_then = decisions
-                .find(|decision| decision.condition == *condition)?
+                .find(|decision| same_branch_condition(&decision.condition, condition))?
                 .value;
             path.push(selected_then);
             current = super::execution_state::through_single_arm_matches(if selected_then {
@@ -1279,7 +1297,9 @@ impl ProofExecutionView<'_> {
             let (selected, next) = match branch {
                 ProofTactic::If(proof_if) => {
                     let selected = decisions
-                        .find(|decision| decision.condition == proof_if.condition)?
+                        .find(|decision| {
+                            same_branch_condition(&decision.condition, &proof_if.condition)
+                        })?
                         .value;
                     (
                         selected,

@@ -45,6 +45,8 @@ const QUARANTINED: &[(&str, &str)] = &[];
 const NIGHTLY: &[&str] = &[
     "modeled_pthread_copied_handle.md", // 0.6s focused: forwarded handle and retained equality
     "modeled_pthread_copied_handle_join_twice.md", // forwarded handle must consume one right
+    "shared_loop_test_and_update.md",   // 1.2s focused: ranked pre/post-test call proofs
+    "shared_loop_post_test_ends_body_scope.md", // 0.8s focused: post-test after an expired body array
     "a_fixed_range_transfer_preserves_the_retained_tail.md", // 0.55s focused: typed byte-range call and return
     "consumed_scalar_transfer_mixes_with_a_borrowed_return.md", // 0.67s focused: two-parameter call and caller return
     "integer_migration_routes.md", // 0.9s: signed/native routes and rounding

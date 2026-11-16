@@ -3782,7 +3782,12 @@ fn modeled_pthread_create_workers(
                 pending.push(else_branch);
                 pending.push(then_branch);
             }
-            S::While { body, .. } | S::DoWhile { body, .. } => pending.push(body),
+            S::While { test, body, .. } | S::DoWhile { test, body, .. } => {
+                pending.push(body);
+                if let Some(test) = test {
+                    pending.push(test);
+                }
+            }
             S::For {
                 initializer,
                 step,
@@ -3886,10 +3891,15 @@ fn c_statement_calls_recording(
                 collect_function_pointer_names(then_branch, names);
                 collect_function_pointer_names(else_branch, names);
             }
-            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
+            syntax::CStatement::While { test, body, .. }
+            | syntax::CStatement::DoWhile { test, body, .. } => {
                 collect_function_pointer_names(body, names);
+                if let Some(test) = test {
+                    collect_function_pointer_names(test, names);
+                }
             }
             syntax::CStatement::For {
+                test,
                 initializer,
                 step,
                 body,
@@ -3898,6 +3908,9 @@ fn c_statement_calls_recording(
                 collect_function_pointer_names(initializer, names);
                 collect_function_pointer_names(body, names);
                 collect_function_pointer_names(step, names);
+                if let Some(test) = test {
+                    collect_function_pointer_names(test, names);
+                }
             }
             syntax::CStatement::Switch { cases, .. } => {
                 for case in cases {
@@ -4092,17 +4105,31 @@ fn c_statement_calls_recording(
                 visit(else_branch, calls, function_pointer_names, allocator);
             }
             syntax::CStatement::While {
-                condition, body, ..
+                test,
+                condition,
+                body,
+                ..
             }
             | syntax::CStatement::DoWhile {
-                condition, body, ..
+                test,
+                condition,
+                body,
+                ..
             } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
                 calls.push(dependencies);
+                let post_test = matches!(statement, syntax::CStatement::DoWhile { .. });
+                if !post_test && let Some(test) = test {
+                    visit(test, calls, function_pointer_names, allocator);
+                }
                 visit(body, calls, function_pointer_names, allocator);
+                if post_test && let Some(test) = test {
+                    visit(test, calls, function_pointer_names, allocator);
+                }
             }
             syntax::CStatement::For {
+                test,
                 initializer,
                 condition,
                 step,
@@ -4113,6 +4140,9 @@ fn c_statement_calls_recording(
                 collect_function_addresses(condition, &mut dependencies);
                 calls.push(dependencies);
                 visit(initializer, calls, function_pointer_names, allocator);
+                if let Some(test) = test {
+                    visit(test, calls, function_pointer_names, allocator);
+                }
                 visit(body, calls, function_pointer_names, allocator);
                 visit(step, calls, function_pointer_names, allocator);
             }
@@ -5218,16 +5248,23 @@ fn validate_modeled_pthread_calls(
             validate_modeled_pthread_calls(then_branch, source_path)?;
             validate_modeled_pthread_calls(else_branch, source_path)?;
         }
-        S::While { body, .. } | S::DoWhile { body, .. } => {
+        S::While { test, body, .. } | S::DoWhile { test, body, .. } => {
+            if let Some(test) = test {
+                validate_modeled_pthread_calls(test, source_path)?;
+            }
             validate_modeled_pthread_calls(body, source_path)?;
         }
         S::For {
+            test,
             initializer,
             step,
             body,
             ..
         } => {
             validate_modeled_pthread_calls(initializer, source_path)?;
+            if let Some(test) = test {
+                validate_modeled_pthread_calls(test, source_path)?;
+            }
             validate_modeled_pthread_calls(step, source_path)?;
             validate_modeled_pthread_calls(body, source_path)?;
         }

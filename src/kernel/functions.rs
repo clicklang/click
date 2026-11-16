@@ -8773,6 +8773,8 @@ pub(crate) fn establish_resource_derived_loop_frames(
                 rewrite(else_branch, ranges);
             }
             ProgramStatement::Loop {
+                test,
+                update,
                 effect_checks,
                 body,
                 ..
@@ -8783,13 +8785,19 @@ pub(crate) fn establish_resource_derived_loop_frames(
                     }
                 }
                 rewrite(body, ranges);
+                if let Some(test) = test {
+                    rewrite(std::sync::Arc::make_mut(&mut test.statement), ranges);
+                }
+                if let Some(update) = update {
+                    rewrite(std::sync::Arc::make_mut(update), ranges);
+                }
             }
             ProgramStatement::Switch { cases, .. } => {
                 for case in cases {
                     rewrite(&mut case.body, ranges);
                 }
             }
-            ProgramStatement::ForStep { step, .. } => rewrite(step, ranges),
+
             _ => {}
         }
     }
@@ -8819,6 +8827,8 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 ..
             } => has_inherited_loop_frame(then_branch) || has_inherited_loop_frame(else_branch),
             ProgramStatement::Loop {
+                test,
+                update,
                 effect_checks,
                 body,
                 ..
@@ -8827,11 +8837,17 @@ pub(crate) fn validate_resource_derived_loop_frames(
                     .iter()
                     .any(|check| check.origin() == LoopEffectOrigin::InheritedResourceDerived)
                     || has_inherited_loop_frame(body)
+                    || update
+                        .as_ref()
+                        .is_some_and(|update| has_inherited_loop_frame(update))
+                    || test
+                        .as_ref()
+                        .is_some_and(|test| has_inherited_loop_frame(&test.statement))
             }
             ProgramStatement::Switch { cases, .. } => cases
                 .iter()
                 .any(|case| has_inherited_loop_frame(&case.body)),
-            ProgramStatement::ForStep { step, .. } => has_inherited_loop_frame(step),
+
             _ => false,
         }
     }
@@ -8876,6 +8892,8 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 check_statement(else_branch)
             }
             ProgramStatement::Loop {
+                test,
+                update,
                 effect_checks,
                 body,
                 ..
@@ -8883,7 +8901,19 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 if let Err(error) = check(effect_checks)? {
                     return Ok(Err(error));
                 }
-                check_statement(body)
+                if let Err(error) = check_statement(body)? {
+                    return Ok(Err(error));
+                }
+                if let Some(update) = update
+                    && let Err(error) = check_statement(update)?
+                {
+                    return Ok(Err(error));
+                }
+                if let Some(test) = test {
+                    check_statement(&test.statement)
+                } else {
+                    Ok(Ok(()))
+                }
             }
             ProgramStatement::Switch { cases, .. } => {
                 for case in cases {
@@ -8893,7 +8923,7 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 }
                 Ok(Ok(()))
             }
-            ProgramStatement::ForStep { step, .. } => check_statement(step),
+
             _ => Ok(Ok(())),
         }
     }

@@ -1260,12 +1260,18 @@ pub(super) fn record_function_tables(
                 pending.push(else_branch);
                 pending.push(then_branch);
             }
-            syntax::CStatement::While { body, .. }
-            | syntax::CStatement::DoWhile { body, .. }
-            | syntax::CStatement::Label {
+            syntax::CStatement::While { test, body, .. }
+            | syntax::CStatement::DoWhile { test, body, .. } => {
+                pending.push(body);
+                if let Some(test) = test {
+                    pending.push(test);
+                }
+            }
+            syntax::CStatement::Label {
                 statement: body, ..
             } => pending.push(body),
             syntax::CStatement::For {
+                test,
                 initializer,
                 body,
                 step,
@@ -1274,6 +1280,9 @@ pub(super) fn record_function_tables(
                 pending.push(step);
                 pending.push(body);
                 pending.push(initializer);
+                if let Some(test) = test {
+                    pending.push(test);
+                }
             }
             syntax::CStatement::Switch { cases, .. } => {
                 pending.extend(cases.iter().map(syntax::CSwitchCase::body));

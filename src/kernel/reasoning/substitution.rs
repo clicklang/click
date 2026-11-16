@@ -954,15 +954,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             initializer: None, ..
         }
         | ProgramStatement::DeclareAggregate { .. } => statement.clone(),
-        ProgramStatement::ForStep {
-            step,
-            exited_locals,
-            continue_after,
-        } => ProgramStatement::ForStep {
-            exited_locals: exited_locals.clone(),
-            continue_after: *continue_after,
-            step: Box::new(walk_execution_statement(step, s)),
-        },
+
         ProgramStatement::Declare {
             initializer: Some(expression),
             ..
@@ -1163,6 +1155,8 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             else_branch: Box::new(walk_execution_statement(else_branch, s)),
         },
         ProgramStatement::Loop {
+            test,
+            update,
             condition,
             invariant,
             invariant_checks,
@@ -1175,6 +1169,13 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             backedge_target,
             natural_exit_target,
         } => ProgramStatement::Loop {
+            test: test.as_ref().map(|test| LoopTestRegion {
+                statement: std::sync::Arc::new(walk_execution_statement(&test.statement, s)),
+                position: test.position,
+            }),
+            update: update
+                .as_ref()
+                .map(|step| std::sync::Arc::new(walk_execution_statement(step, s))),
             structural_measure: structural_measure.clone(),
             condition: s.program_expression(condition),
             ranking_measures: ranking_measures
@@ -1975,6 +1976,8 @@ mod resource_frame_substitution_tests {
             ),
         );
         let statement = ProgramStatement::Loop {
+            test: None,
+            update: None,
             condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
@@ -2019,6 +2022,8 @@ mod resource_frame_substitution_tests {
             MachineTerm::constant(1),
         );
         let statement = ProgramStatement::Loop {
+            test: None,
+            update: None,
             condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
@@ -2756,9 +2761,7 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
             initializer: None, ..
         }
         | ProgramStatement::DeclareAggregate { .. } => {}
-        ProgramStatement::ForStep { step, .. } => {
-            collect_execution_statement_bound_variables(step, variables);
-        }
+
         ProgramStatement::Declare {
             initializer: Some(expression),
             ..
@@ -2827,6 +2830,8 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
             collect_execution_statement_bound_variables(else_branch, variables);
         }
         ProgramStatement::Loop {
+            test,
+            update,
             condition,
             invariant,
             invariant_checks,
@@ -2845,6 +2850,12 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
                 collect_loop_effect_bound_variables(check.effect(), variables);
             }
             collect_execution_statement_bound_variables(body, variables);
+            if let Some(test) = test {
+                collect_execution_statement_bound_variables(&test.statement, variables);
+            }
+            if let Some(update) = update {
+                collect_execution_statement_bound_variables(update, variables);
+            }
         }
         ProgramStatement::Switch { expression, cases } => {
             collect_program_expression_bound_variables(expression, variables);
@@ -7643,7 +7654,6 @@ fn substitute_pointer_variable_in_spec_expression(
             result_type,
             pointer_result,
             result_object_class,
-            projection,
         } => SpecExpression::PureFunctionApplication {
             name: name.clone(),
             arguments: arguments
@@ -7655,7 +7665,6 @@ fn substitute_pointer_variable_in_spec_expression(
             result_type: *result_type,
             pointer_result: pointer_result.clone(),
             result_object_class: result_object_class.clone(),
-            projection: projection.clone(),
         },
         SpecExpression::LoopEntryState(expression) => SpecExpression::LoopEntryState(Box::new(
             substitute_pointer_variable_in_spec_expression(expression, from, to),

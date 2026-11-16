@@ -30,5 +30,5 @@ int32 count(int32 n) {
 ```
 
 ```expect
-fail: unproved obligation: `1 <= ("recursive_call_precondition_refuses_a_decremented_lower_bound.c"::count.parameter(0) - 1) as int32`
+fail: unproved obligation: `1 <= (n - 1) as int32`
 ```

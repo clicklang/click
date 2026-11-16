@@ -337,6 +337,14 @@ established by checking, including when exact rewriting removed the last
 variable before the comparison was printed. This does not change literal
 arithmetic evaluation or the existing equality normal forms.
 
+Machine conditionals with closed 32/64-bit order guards retain their `if` node
+and guard during logical lowering. Their arm domains remain guarded, including
+unselected reads and invalid shifts. Checking selects the arm when needed.
+The comparison boundary recognizes a closed-guard conditional over literal or
+variable arms as a fixed-size native atom, retaining the comparison family
+without exporting arithmetic DAGs. Other result families retain their existing
+selected-arm behavior; literal Boolean and equality guards keep their normal forms.
+
 Generated comparison operands that are negative `int64` literals keep an explicit
 `as int64` cast, including under `old` and `at`. Their printed unary minus would
 otherwise reparse as mathematical Integer arithmetic and change the comparison

@@ -735,7 +735,6 @@ fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
             result_object_class: Some(crate::kernel::effective_type::CAccessClass::Struct(
                 crate::kernel::effective_type::CStructClass::opaque("node"),
             )),
-            projection: None,
         };
         let result = evaluate_spec_expression_paths_with_loop_entry_in(
             &ExecutionState::new(),
@@ -788,7 +787,6 @@ fn pure_function_application_is_not_eagerly_evaluated() {
         result_type: ProgramType::Int32,
         pointer_result: None,
         result_object_class: None,
-        projection: None,
     };
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
         &ExecutionState::new(),
@@ -828,7 +826,6 @@ fn pure_function_application_retains_symbolic_algebraic_argument() {
         result_type: ProgramType::Int32,
         pointer_result: None,
         result_object_class: None,
-        projection: None,
     };
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
         &ExecutionState::new(),
@@ -1135,71 +1132,6 @@ fn signed_match_is_fact_stable_and_retains_guarded_definedness() {
 }
 
 #[test]
-fn common_constructor_projection_preserves_fields_and_refusals() {
-    let pointer = PointerValue::new(
-        Pointer::symbolic(Variable(999650)),
-        ProgramType::Int32Pointer,
-    )
-    .with_pointee_constant(true);
-    let mut native = KernelMatch::test_scrutinee(vec![
-        AlgebraicValueType::Program(ProgramType::Int32),
-        AlgebraicValueType::Program(ProgramType::Int32Pointer),
-    ]);
-    native.node = AlgebraicTermNode::Constructor {
-        variant: "Arm".into(),
-        fields: vec![
-            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::add(
-                MachineTerm::Variable(Variable(999651)),
-                MachineTerm::constant(1),
-            ))),
-            AlgebraicValue::Program(ProgramValue::Pointer(pointer.clone())),
-        ],
-    };
-    let root = KernelTermImport::default().algebraic(&native);
-    let shared = [SpecCallArgument::Shared(root.clone())];
-    let native = [SpecCallArgument::Native(PureFunctionArgument::Algebraic(
-        native,
-    ))];
-    let exports = KernelTermExport::algebraic_export_count();
-    for (field, ty) in [(0, ProgramType::Int32), (1, ProgramType::Int32Pointer)] {
-        let projection = PureProjection {
-            argument: 0,
-            variant: "Arm".into(),
-            field,
-        };
-        let result = projected_field(&projection, &shared, ty, true).unwrap();
-        let expected = projected_field(&projection, &native, ty, true).unwrap();
-        assert_eq!(
-            format!("{:?}", result.into_native()),
-            format!("{:?}", expected.into_native())
-        );
-        assert_eq!(
-            projected_field(&projection, &shared, ty, false)
-                .unwrap()
-                .into_native(),
-            projected_field(&projection, &native, ty, false)
-                .unwrap()
-                .into_native()
-        );
-    }
-    for (argument, variant, field, ty) in [
-        (1, "Arm", 0, ProgramType::Int32),
-        (0, "Other", 0, ProgramType::Int32),
-        (0, "Arm", 2, ProgramType::Int32),
-        (0, "Arm", 0, ProgramType::UInt32),
-    ] {
-        let projection = PureProjection {
-            argument,
-            variant: variant.into(),
-            field,
-        };
-        assert!(projected_field(&projection, &shared, ty, true).is_none());
-        assert!(projected_field(&projection, &native, ty, true).is_none());
-    }
-    assert_eq!(KernelTermExport::algebraic_export_count(), exports);
-}
-
-#[test]
 fn algebraic_read_result_preserves_native_state_and_type() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = TypeParameterName::intern("SpecReadT").algebraic_type();
@@ -1436,7 +1368,6 @@ fn algebraic_program_call_results_retain_shared_arguments() {
         result_type: ProgramType::Parameter(TypeParameterName::of(&ty)),
         pointer_result: None,
         result_object_class: None,
-        projection: None,
     };
     let state = ExecutionState::new();
     let scope = SpecScope {

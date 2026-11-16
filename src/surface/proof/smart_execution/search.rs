@@ -1242,7 +1242,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             .map(|value| (name, value))
                     })
                     .collect();
-                let (_, guards) = capture_fixed_state_native_expression_with_guards(
+                let (_, guards) = capture_fixed_state_retained_expression_with_guards(
                     argument,
                     search_input.facts().assumptions(),
                     ContractEnvironment::new(context.values, context.array_refs),

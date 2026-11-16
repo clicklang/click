@@ -38,5 +38,5 @@ int32 read_back(int32 u, int32 v) {
 ```
 
 ```expect
-fail: case: [at(statement(2).exit, "a_read_back_across_a_store_no_fact_places_stays_unknown.c"::read_back.local(1)) != 0, 0 != v]
+fail: case: [at(statement(2).exit, buf) != 0, 0 != v]
 ```
