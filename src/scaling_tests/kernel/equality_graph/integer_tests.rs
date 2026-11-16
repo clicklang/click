@@ -125,3 +125,27 @@ fn retained_call_argument_congruence_is_linear_cold_and_constant_warm() {
         assert!(pair[1].1 <= pair[0].1 + 64, "warm: {costs:?}");
     }
 }
+
+#[test]
+fn literal_negation_work_scales_with_explicit_bits_and_shared_parents() {
+    for depth in [4usize, 16, 64] {
+        let mut samples = Vec::new();
+        for bits in [256usize, 1024, 4096] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let number = num_bigint::BigInt::from(1) << bits;
+            let mut raw: SharedIntegerTerm = I::Negate(I::Constant(number.clone()).into()).into();
+            let mut literal: SharedIntegerTerm = I::Constant(-number).into();
+            for _ in 0..depth {
+                raw = I::Add(raw.clone(), raw).into();
+                literal = I::Add(literal.clone(), literal).into();
+            }
+            let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                EqualityGraph::default().are_integer_equal(&raw, &literal)
+            });
+            assert!(equal);
+            assert!(work < 40 * (bits + depth + 1), "{bits}, {depth}: {work}");
+            samples.push(work);
+        }
+        assert!(samples.windows(2).all(|p| p[1] <= 5 * p[0]), "{samples:?}");
+    }
+}

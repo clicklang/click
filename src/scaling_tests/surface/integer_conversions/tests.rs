@@ -383,3 +383,39 @@ fn normalized_opposite_bound_certificates_scale_with_steps_and_unused_facts() {
         assert!(pair[1] <= pair[0] * 6, "{samples:?}");
     }
 }
+
+#[test]
+fn divisor_sign_applications_scale_with_explicit_steps_and_surrounding_facts() {
+    for related in [false, true] {
+        let mut measured = Vec::new();
+        for size in [2usize, 6, 18] {
+            let mut source = String::from(
+                "import click::integer; theorem sign(n: Integer, d: Integer, z: Integer) { requires d != 0; requires -d != 0; ",
+            );
+            for i in 1..=size {
+                source.push_str(&if related {
+                    format!("requires d <= {i}; ")
+                } else {
+                    format!("requires z <= {i}; ")
+                });
+            }
+            source.push_str("ensures truncating_quotient(n,d) == -truncating_quotient(n,-d) by { ");
+            for _ in 0..size {
+                source.push_str("have truncating_quotient(n,d) == -truncating_quotient(n,-d) by { apply(integer::quotient_negate_divisor(n,d)) using { d != 0; -d != 0; }; } ");
+                source.push_str("have truncating_remainder(n,d) == truncating_remainder(n,-d) by { apply(integer::remainder_negate_divisor(n,d)) using { d != 0; -d != 0; }; } ");
+            }
+            source.push_str("known(); } }");
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::surface::proof::without_implicit_solve(|| verify_c_sources(&source, &[]))
+            });
+            result.unwrap();
+            measured.push(work);
+        }
+        for pair in measured.windows(2) {
+            assert!(
+                pair[1] <= 5 * pair[0],
+                "divisor-sign checking scanned facts: {related}/{measured:?}"
+            );
+        }
+    }
+}

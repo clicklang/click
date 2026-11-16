@@ -142,6 +142,7 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
                 ))
             },
         )?;
+    let native_result = fixed_state.native_result();
     let application_context = TheoremApplicationContext {
         parameters: parameter_binding,
         values: &values,
@@ -149,7 +150,7 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
         algebraic_values,
         pre_state: fixed_state.pre_state,
         post_state: fixed_state.state,
-        result: fixed_state.result,
+        result: native_result.as_deref(),
         recorded_states: fixed_state.recorded_states,
         integer_values,
         pointer_element_widths: parameter_pointer_element_widths_named(parameter_binding, &names),

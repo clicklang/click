@@ -763,7 +763,7 @@ impl<'a> Proof<'a> {
             .filter(|data| data.core.is_exceptional)
             .map(|data| {
                 ContractExpression::ProgramExpression(ProgramExpression::Value(
-                    (*data.core.result).clone(),
+                    data.core.result.clone().into_native(),
                 ))
             });
         names

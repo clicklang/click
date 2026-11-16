@@ -1423,6 +1423,14 @@ statement the yielding outcome's own binding (`MirStatement::RangeNext`
 with `payload: Some(i)` and `option: None`), and the `Option` and its
 temporary are gone.
 
+A crate's own `Iterator::next` returns its `Option` through a call step.
+`user_iterators::test_user_next_results` turns the `match` on it into
+`MirTerminator::If` on `Expression::VariantIs`. `temporaries::call_steps`
+then makes the test read the result without ending it,
+`CallResult { keeps: true }`, which lowers to `StepResult { ends: false }`;
+the `Some` arm's payload read ends it. The loop's header holds the call, so
+it lowers as `while (1) { next; if (!is_some) break; body }`.
+
 These still stay a temporary:
 
 - a call's result read more than once, so a slice, chunk or `enumerate`

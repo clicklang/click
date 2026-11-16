@@ -583,12 +583,12 @@ impl ContractExitObligations {
         };
         let checked_outcome = if outcome.is_exceptional {
             FunctionOutcome::Throw {
-                value: outcome.result.as_ref().clone().into(),
+                value: outcome.result.clone(),
                 state: Box::new((*outcome.state).clone()),
             }
         } else {
             FunctionOutcome::Return {
-                value: outcome.result.as_ref().clone().into(),
+                value: outcome.result.clone(),
                 state: Box::new((*outcome.state).clone()),
             }
         };
@@ -720,7 +720,7 @@ impl ContractExitObligations {
             crate::kernel::functions::unreturned_allocation_with_checked_returned_resources(
                 &context.caller,
                 &outcome.state,
-                &outcome.result,
+                &outcome.result.native(),
                 &context.function,
                 &context.arguments,
                 &returned,
@@ -731,7 +731,7 @@ impl ContractExitObligations {
             crate::kernel::functions::unreturned_allocation_at_function_exit(
                 &context.caller,
                 &outcome.state,
-                &outcome.result,
+                &outcome.result.native(),
                 &context.function,
                 &context.arguments,
                 assumptions,

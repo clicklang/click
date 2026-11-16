@@ -2428,6 +2428,12 @@ pub(in crate::surface) fn collect_click_proposition_referenced_names(
 /// Lexical binders remove only named dependencies, never physical declarations.
 pub(in crate::surface) trait ReferencedBinding: Ord + From<String> {
     fn program(binding: &crate::kernel::BindingName) -> Option<Self>;
+    fn leave_scope(names: &mut BTreeSet<Self>, binder: &Self) -> bool
+    where
+        Self: Sized,
+    {
+        names.remove(binder)
+    }
     fn binder(binding: &SurfaceBinder) -> Option<Self> {
         Self::program(&binding.kernel_name())
     }
@@ -2440,6 +2446,24 @@ impl ReferencedBinding for String {
 impl ReferencedBinding for crate::kernel::BindingName {
     fn program(binding: &crate::kernel::BindingName) -> Option<Self> {
         Some(binding.clone())
+    }
+}
+
+/// All referenced lexical identities, including references under their binder.
+/// Used to choose deterministic capture-free local slots for beta elaboration.
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub(in crate::surface) struct LexicalBinding(pub crate::kernel::BindingName);
+impl From<String> for LexicalBinding {
+    fn from(name: String) -> Self {
+        Self(name.into())
+    }
+}
+impl ReferencedBinding for LexicalBinding {
+    fn program(binding: &crate::kernel::BindingName) -> Option<Self> {
+        Some(Self(binding.clone()))
+    }
+    fn leave_scope(_: &mut BTreeSet<Self>, _: &Self) -> bool {
+        false
     }
 }
 
@@ -2510,7 +2534,7 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
             let mut captures = BTreeSet::new();
             collect_contract_expression_referenced_bindings(body, &mut captures);
             for (name, _) in parameters {
-                let _ = N::binder(name).is_some_and(|name| captures.remove(&name));
+                let _ = N::binder(name).is_some_and(|name| N::leave_scope(&mut captures, &name));
             }
             names.extend(captures);
         }
@@ -2544,7 +2568,8 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
                 let mut arm_names = BTreeSet::new();
                 collect_contract_expression_referenced_bindings(&arm.body, &mut arm_names);
                 for binding in &arm.bindings {
-                    let _ = N::binder(binding).is_some_and(|name| arm_names.remove(&name));
+                    let _ = N::binder(binding)
+                        .is_some_and(|name| N::leave_scope(&mut arm_names, &name));
                 }
                 names.extend(arm_names);
             }
@@ -2623,17 +2648,18 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
             collect_contract_expression_referenced_bindings(initial, names);
             let mut body_names = BTreeSet::new();
             collect_contract_expression_referenced_bindings(body, &mut body_names);
-            let _ = N::binder(accumulator).is_some_and(|name| body_names.remove(&name));
-            let _ = N::binder(item).is_some_and(|name| body_names.remove(&name));
+            let _ =
+                N::binder(accumulator).is_some_and(|name| N::leave_scope(&mut body_names, &name));
+            let _ = N::binder(item).is_some_and(|name| N::leave_scope(&mut body_names, &name));
             names.extend(body_names);
         }
         ContractExpression::Let {
             name, value, body, ..
         } => {
             collect_contract_expression_referenced_bindings(value, names);
-            let previous = N::binder(name).is_some_and(|name| names.remove(&name));
+            let previous = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
             collect_contract_expression_referenced_bindings(body, names);
-            let _ = N::binder(name).is_some_and(|name| names.remove(&name));
+            let _ = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
             if previous {
                 if let Some(name) = N::binder(name) {
                     names.insert(name);
@@ -2773,9 +2799,9 @@ fn collect_click_proposition_referenced_bindings_one<N: ReferencedBinding>(
         ClickProposition::Not(body) => collect_click_proposition_referenced_bindings(body, names),
         ClickProposition::ForAll { name, body, .. }
         | ClickProposition::Exists { name, body, .. } => {
-            let previous = N::binder(name).is_some_and(|name| names.remove(&name));
+            let previous = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
             collect_click_proposition_referenced_bindings(body, names);
-            let _ = N::binder(name).is_some_and(|name| names.remove(&name));
+            let _ = N::binder(name).is_some_and(|name| N::leave_scope(names, &name));
             if previous {
                 if let Some(name) = N::binder(name) {
                     names.insert(name);
@@ -2798,9 +2824,9 @@ fn collect_click_proposition_referenced_bindings_one<N: ReferencedBinding>(
         } => {
             collect_contract_expression_referenced_bindings(start, names);
             collect_contract_expression_referenced_bindings(end, names);
-            let previous = N::binder(item).is_some_and(|name| names.remove(&name));
+            let previous = N::binder(item).is_some_and(|name| N::leave_scope(names, &name));
             collect_click_proposition_referenced_bindings(body, names);
-            let _ = N::binder(item).is_some_and(|name| names.remove(&name));
+            let _ = N::binder(item).is_some_and(|name| N::leave_scope(names, &name));
             if previous {
                 if let Some(name) = N::binder(item) {
                     names.insert(name);

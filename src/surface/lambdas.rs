@@ -323,7 +323,22 @@ pub(super) fn reduce_head(
                     arguments.len()
                 ));
             }
-            let fresh = SurfaceBinder::fresh;
+            // These are lexical slots, not generative authority. Re-elaborating
+            // the same application must preserve its contract identity. Exclude
+            // all referenced slots, including nested binders, to avoid capture.
+            let mut used = BTreeSet::<lowering::LexicalBinding>::new();
+            lowering::collect_contract_expression_referenced_bindings(body, &mut used);
+            for argument in arguments {
+                lowering::collect_contract_expression_referenced_bindings(argument, &mut used);
+            }
+            let mut next = 0;
+            let mut fresh = || loop {
+                let id = crate::kernel::GeneratedBinderId::from_spelling(next);
+                next += 1;
+                if used.insert(lowering::LexicalBinding(id.binding_name())) {
+                    break SurfaceBinder::Generated(id);
+                }
+            };
             let bindings = parameters
                 .iter()
                 .map(|(name, ty)| (name.clone(), fresh(), ty.clone()))

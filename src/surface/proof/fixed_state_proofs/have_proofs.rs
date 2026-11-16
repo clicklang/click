@@ -404,12 +404,13 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
     } = options;
     let integer_values = integer_values.unwrap_or(&no_integer_values);
     let obligation_assumptions = obligation_assumptions.unwrap_or(assumptions);
+    let native_result = fixed_state.native_result();
     let states = FixedStateLowering::for_proposition(
         proposition,
         contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
-        fixed_state.result,
+        native_result.as_deref(),
     );
     let spec = crate::surface::lowering::elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
         proposition,
@@ -421,7 +422,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
         states.current_values,
         algebraic_values.cloned().unwrap_or_default(),
         integer_values,
-        fixed_state.result,
+        native_result.as_deref(),
         fixed_state.recorded_states,
         spec_definitions,
         opaque_click_functions.cloned().unwrap_or_default(),
@@ -573,12 +574,13 @@ pub(in crate::surface) fn capture_fixed_state_native_expression_with_guards(
     let symbolic_load_assumptions =
         (!click_function_calls.is_empty()).then(|| assumptions.clone().keep_spec_loads_symbolic());
     let assumptions = symbolic_load_assumptions.as_ref().unwrap_or(assumptions);
+    let native_result = fixed_state.native_result();
     let states = FixedStateLowering::for_expression_values(
         expression,
         contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
-        fixed_state.result,
+        native_result.as_deref(),
     );
     let spec = crate::surface::lowering::elaborate_fixed_state_expression_with_algebraic_and_integer_values(
         expression,
@@ -588,7 +590,7 @@ pub(in crate::surface) fn capture_fixed_state_native_expression_with_guards(
         states.current_values,
         algebraic_values,
         integer_values,
-        fixed_state.result,
+        native_result.as_deref(),
         fixed_state.recorded_states,
         spec_definitions,
         opaque_click_functions.clone(),
@@ -657,12 +659,13 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
     spec_definitions: SpecDefinitions<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
 ) -> Result<(crate::kernel::IntegerTerm, Vec<Proposition>), String> {
+    let native_result = fixed_state.native_result();
     let states = FixedStateLowering::for_expression(
         expression,
         contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
-        fixed_state.result,
+        native_result.as_deref(),
     );
     let spec =
         crate::surface::lowering::elaborate_fixed_state_integer_expression_with_integer_values(
@@ -673,7 +676,7 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
             states.current_values,
             integer_values,
             algebraic_values,
-            fixed_state.result,
+            native_result.as_deref(),
             fixed_state.recorded_states,
             spec_definitions,
             BTreeSet::new(),
@@ -741,12 +744,13 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecAlgebraicExpression, String> {
+    let native_result = fixed_state.native_result();
     let states = FixedStateLowering::for_expression_values(
         expression,
         contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
-        fixed_state.result,
+        native_result.as_deref(),
     );
     crate::surface::lowering::elaborate_fixed_state_algebraic_expression(
         expression,
@@ -755,7 +759,7 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
         states.entry_values,
         states.current_values,
         algebraic_values,
-        fixed_state.result,
+        native_result.as_deref(),
         fixed_state.recorded_states,
         spec_definitions,
         BTreeSet::new(),

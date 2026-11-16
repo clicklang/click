@@ -2264,11 +2264,11 @@ fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
         .expect("the expansion naming the field should verify");
 }
 
-/// `arithmetic` on a `uint64` goal expands to the bridge steps it took,
-/// and the expansion verifies with no `arithmetic()` left to plan. A
+/// `solve() using` on a `uint64` goal expands to the bridge steps it took,
+/// and the expansion verifies with no `solve()` left to plan. A
 /// comparison and its observed reading are one fact, so an order premise is
-/// carried by `known()`; a type range is its explicit `type_range`
-/// certificate, and each sum its in-range identity from its two Integer
+/// carried by `known()`; type ranges and each sum's in-range identity use
+/// `known()` after the two exact-result Integer
 /// bounds, with no standard-library bridge theorem.
 #[test]
 fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
@@ -2278,9 +2278,8 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
         .expect("the uint64 arithmetic step expands");
     for step in [
         "have to_integer((i + 1u64)) < to_integer(length) by {\n            known();",
-        "have 0 <= to_integer(i) by {\n            normalize();",
+        "have 0 <= to_integer(i) by {\n            known();",
         "have to_integer((i + 2u64)) ==",
-        "normalize() using {",
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }

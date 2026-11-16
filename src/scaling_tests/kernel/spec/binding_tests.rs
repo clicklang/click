@@ -149,3 +149,24 @@ fn fold_binding_handoffs_keep_growing_accumulator_roots_without_exports() {
         assert_eq!(values.get(&BindingName::from("seed")), Some(&root));
     }
 }
+
+#[test]
+fn fold_slot_identity_lookup_does_not_scan_other_bindings() {
+    let mut work = Vec::new();
+    for size in [16, 64, 256] {
+        for _ in 0..size {
+            let name = GeneratedBinderId::fresh().binding_name();
+            spec_fold_bound_variable(&name, 0);
+        }
+        let selected = GeneratedBinderId::fresh().binding_name();
+        let expected = spec_fold_bound_variable(&selected, 1);
+        let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(spec_fold_bound_variable(&selected, 1), expected);
+        });
+        work.push(measured);
+    }
+    assert!(
+        work[0] > 0 && work.iter().all(|value| *value == work[0]),
+        "{work:?}"
+    );
+}

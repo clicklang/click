@@ -9640,24 +9640,25 @@ pub(super) const SPEC_FOLD_BINDER_VARIABLE_BASE: u64 = 1 << 43;
 pub(super) const SPEC_FOLD_BINDER_VARIABLE_CEILING: u64 = 1 << 44;
 
 pub(super) fn spec_fold_bound_variable(name: &BindingName, salt: u64) -> Variable {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64 ^ salt;
-    let bytes;
-    let name = match name {
-        BindingName::Named(name) => name.as_bytes(),
-        BindingName::Generated(id) => {
-            bytes = id.number().to_le_bytes();
-            &bytes
-        }
-        _ => unreachable!("fold binders are lexical values"),
-    };
-    for &byte in name {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x1000_0000_01b3);
+    type Bindings = (u64, BTreeMap<(BindingName, u64), Variable>);
+    static VARIABLES: std::sync::OnceLock<std::sync::Mutex<Bindings>> = std::sync::OnceLock::new();
+    crate::instrumentation::record_deterministic_work(1);
+    let mut bindings = VARIABLES
+        .get_or_init(|| std::sync::Mutex::new((SPEC_FOLD_BINDER_VARIABLE_BASE, BTreeMap::new())))
+        .lock()
+        .unwrap();
+    let key = (name.clone(), salt);
+    if let Some(variable) = bindings.1.get(&key) {
+        return *variable;
     }
-    Variable(
-        SPEC_FOLD_BINDER_VARIABLE_BASE
-            + (hash % (SPEC_FOLD_BINDER_VARIABLE_CEILING - SPEC_FOLD_BINDER_VARIABLE_BASE)),
-    )
+    assert!(
+        bindings.0 < SPEC_FOLD_BINDER_VARIABLE_CEILING,
+        "specification fold binder identity range exhausted"
+    );
+    let variable = Variable(bindings.0);
+    bindings.0 += 1;
+    bindings.1.insert(key, variable);
+    variable
 }
 
 pub(super) fn symbolic_spec_range_fold_value(

@@ -712,6 +712,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .map(|value| (name, value))
             })
             .collect();
+        let native_result = fixed_state.native_result();
         let application_context = TheoremApplicationContext {
             parameters: parameter_binding,
             values: &values,
@@ -719,7 +720,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             algebraic_values: &algebraic_values,
             pre_state: fixed_state.pre_state,
             post_state: fixed_state.state,
-            result: fixed_state.result,
+            result: native_result.as_deref(),
             recorded_states: fixed_state.recorded_states,
             integer_values: &integer_values,
             pointer_element_widths: parameter_pointer_element_widths(parameter_binding.parameters),

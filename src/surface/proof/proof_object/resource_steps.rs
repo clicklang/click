@@ -85,7 +85,7 @@ impl<'a> Proof<'a> {
         };
         let (state, result) = match self.focused_obligation() {
             Some(Obligation::FunctionOutcome(goal)) => {
-                (&*goal.data.core.state, Some(&*goal.data.core.result))
+                (&*goal.data.core.state, Some(goal.data.core.result.native()))
             }
             _ => (&*execution.core.state, None),
         };
@@ -94,7 +94,7 @@ impl<'a> Proof<'a> {
                 resource,
                 context.parameter_binding(),
                 state,
-                result,
+                &result,
             )
         } else {
             lower_resource_clause_at_state(resource, context.parameter_binding(), state)
@@ -452,7 +452,9 @@ impl<'a> Proof<'a> {
                 context.parameter_binding(),
                 pre_state,
                 before,
-                outcome.map(|goal| &*goal.data.core.result),
+                outcome
+                    .map(|goal| goal.data.core.result.native())
+                    .as_deref(),
                 self.facts().assumptions(),
             )?;
             let ResourceFact::Own(Resource::Composite { name, arguments }, _) = lowered else {
@@ -2653,7 +2655,7 @@ impl<'a> Proof<'a> {
             view.parameter_binding,
             view.fixed_state.pre_state,
             view.fixed_state.state,
-            view.fixed_state.result,
+            view.fixed_state.native_result().as_deref(),
             self.facts().assumptions(),
         )?;
         let range = required
@@ -3095,7 +3097,7 @@ impl<'a> Proof<'a> {
             &BTreeMap::from([(
                 "result".to_string(),
                 ContractExpression::ProgramExpression(ProgramExpression::Value(
-                    (*goal.data.core.result).clone(),
+                    goal.data.core.result.clone().into_native(),
                 )),
             )]),
         )
@@ -3228,7 +3230,7 @@ impl<'a> Proof<'a> {
             .frontier
             .execution_start_state(&execution.core.state);
         let outcome = FunctionOutcome::Return {
-            value: (*goal.data.core.result).clone().into(),
+            value: goal.data.core.result.clone(),
             state: Box::new((*goal.data.core.state).clone()),
         };
         let family_reaches_population = self.family_reaches_population(resource);
@@ -3324,7 +3326,7 @@ impl<'a> Proof<'a> {
             );
         }
         let mut data = (*goal.data).clone();
-        data.core.result = Arc::new(value.into_native());
+        data.core.result = value;
         data.core.state = (*state).into();
         let mut updated = goal.clone();
         updated.data = Arc::new(data);
@@ -3366,7 +3368,7 @@ impl<'a> Proof<'a> {
             .execution
             .as_deref()
             .ok_or_else(|| self.step_error("resource `construct` lost its execution state"))?;
-        let value = (*goal.data.core.result).clone();
+        let value = goal.data.core.result.native();
         let state = (*goal.data.core.state).clone();
         let fact = lower_resource_clause_at_state_with_result(
             resource,

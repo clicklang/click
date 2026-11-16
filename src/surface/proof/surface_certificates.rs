@@ -4065,7 +4065,7 @@ fn int32_definedness_by_integer_bounds(
         })
     };
     vec![
-        have(range.clone(), vec![ProofTactic::Normalize]),
+        have(range.clone(), vec![ProofTactic::Known]),
         have(
             less_equal(minimum, exact.clone()),
             vec![ProofTactic::ArithmeticUsing(listed.clone())],
