@@ -9683,12 +9683,6 @@ impl AnnotationLowerer<'_> {
                 .cloned()
                 .flatten(),
             result_object_class: definition.return_object_class().cloned(),
-            projection: self
-                .spec_definitions
-                .functions
-                .projections
-                .get(generic_instance_source_name(definition.name()))
-                .cloned(),
         })
     }
 
@@ -9802,22 +9796,7 @@ impl AnnotationLowerer<'_> {
                     Some(element_type) => element_type.to_kernel_type(),
                     None => self.contract_array_element_type(expression, environment),
                 };
-                let mut pointer =
-                    self.lower_contract_expression_to_spec(expression, environment)?;
-                // A read through a slice built at the call, such as a
-                // subslice, keeps the call it reads through, and with it
-                // its spelling `bytes[1..3][1]`.
-                if let ContractExpression::Call { arguments, .. } = expression
-                    && let SpecExpression::PureFunctionApplication { projection, .. } = &mut pointer
-                    && projection.as_ref().is_some_and(|projection| {
-                        matches!(
-                            arguments.get(projection.argument_index()),
-                            Some(ContractExpression::AlgebraicConstructor { .. })
-                        )
-                    })
-                {
-                    *projection = None;
-                }
+                let pointer = self.lower_contract_expression_to_spec(expression, environment)?;
                 Ok(SpecArrayRef {
                     memory: environment.current_memory.clone(),
                     pointer,

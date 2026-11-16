@@ -449,10 +449,8 @@ body of `half` unfolded, prints as its constructor at its element type,
 `Slice<u8>::Slice(&bytes[1], 2u64)`. In a theorem
 written in Click syntax, the library's calls print as calls,
 `slice::len(Slice<uint8>::Slice(p, n))`. `.len()` and `.as_ptr()` of a
-constructed slice, such as a subslice, reduce as they are read, so
-`bytes[k..].len()` is its length with no `unfold`; the same holds for a
-slice a theorem's parameter is bound to, so a library axiom over a slice
-applies to `Slice<u8>::Slice(bytes, bytes.len())`. A subslice,
+constructed slice, such as a subslice, stay the calls written; `unfold`
+opens one to the constructor's field, and `solve` opens it itself. A subslice,
 `bytes[a..b]`, `bytes[a..]` or `bytes[..b]` of a slice parameter or a slice
 value, is the slice value with data `bytes.as_ptr() + a` and length `b - a`
 (`b` defaults to the length). It has no memory effect: `bytes[1..3][0]` reads
