@@ -66,6 +66,7 @@ pub(in crate::kernel) mod step_effect;
 
 use crate::kernel::memory_provenance::with_extended_dag_bridging;
 pub(crate) use crate::kernel::primitives::ProgramPoint;
+use crate::kernel::primitives::program_point::{PathLink, ProgramPointId};
 use crate::kernel::primitives::*;
 use crate::kernel::unary_term;
 use crate::kernel::{MachineCastSpelling, cast_term};
@@ -524,6 +525,135 @@ impl Explanation {
     }
 }
 
+thread_local! {
+    static PATH_CELL_VERSION_MEMO: std::cell::RefCell<
+        std::collections::HashMap<(ProgramPointId, Pointer, u32), PathLink>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// The point on `at`'s own path that a read of `bytes` bytes at `pointer`,
+/// made at `at`, is named by: the oldest point back to which no step the path
+/// took could have changed those bytes. `None` for a point with no place on a
+/// path.
+///
+/// The walk goes from point to point. At each one it asks the step rules
+/// ([`step_effect::affects`], with the empty naming context, so the answer
+/// reads no facts) about the steps the path took to reach it, newest first,
+/// and stops at the first point one of them may have changed the cell at. A
+/// branch join is crossed only when both arms leave the cell alone back to
+/// the point where they split. A point reached with no recorded step is
+/// crossed only when its memory is its predecessor's. The answer is a point
+/// on this path by construction; the walk visits only the points between
+/// `at` and it, and answers are memoized per point and cell.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn cell_version_on_path(
+    at: &PathLink,
+    pointer: &Pointer,
+    bytes: u32,
+) -> Option<PathLink> {
+    at.id()?;
+    with_extended_dag_bridging(|| {
+        let assumptions = naming_context();
+        let evidence = step_effect::Evidence {
+            assumptions: &assumptions,
+            cross_loop_havoc: false,
+        };
+        let cell = TrackedResource::Cell { pointer, bytes };
+        let mut current = at.clone();
+        let mut visited = Vec::new();
+        let result = loop {
+            let Some(id) = current.id() else {
+                break current;
+            };
+            let key = (id, pointer.clone(), bytes);
+            if let Some(hit) = PATH_CELL_VERSION_MEMO.with(|memo| memo.borrow().get(&key).cloned())
+            {
+                break hit;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            visited.push(key);
+            let next = match current.predecessors() {
+                [] => None,
+                [_, _] => current.split().cloned().filter(|split| {
+                    current
+                        .predecessors()
+                        .iter()
+                        .all(|arm| arm_leaves_cell_back_to(arm, split, cell, &evidence))
+                }),
+                [only] => point_leaves_cell(&current, cell, &evidence).then(|| only.clone()),
+                _ => None,
+            };
+            match next {
+                Some(next) => current = next,
+                None => break current,
+            }
+        };
+        PATH_CELL_VERSION_MEMO.with(|memo| {
+            let mut memo = memo.borrow_mut();
+            if memo.len() >= 100_000 {
+                memo.clear();
+            }
+            for key in visited {
+                memo.insert(key, result.clone());
+            }
+        });
+        Some(result)
+    })
+}
+
+/// Whether none of the steps that reached `point` may have changed `cell`.
+fn point_leaves_cell(
+    point: &PathLink,
+    cell: TrackedResource<'_>,
+    evidence: &step_effect::Evidence<'_>,
+) -> bool {
+    match point.steps() {
+        Some(steps) => steps.newest_first().all(|(step, produced)| {
+            crate::instrumentation::record_deterministic_work(1);
+            matches!(
+                step_effect::affects(step, produced, cell, evidence),
+                step_effect::StepEffect::Separate(step_effect::Separation::Cell(_))
+            )
+        }),
+        // Reached with no recorded step: unchanged only if nothing changed.
+        None => point
+            .predecessors()
+            .iter()
+            .all(|predecessor| predecessor.memory() == point.memory()),
+    }
+}
+
+/// Whether every point from `from` back to `split`, the point a join's arms
+/// split at, leaves `cell` alone. A join inside the arm is crossed the same
+/// way, back to its own split.
+fn arm_leaves_cell_back_to(
+    from: &PathLink,
+    split: &PathLink,
+    cell: TrackedResource<'_>,
+    evidence: &step_effect::Evidence<'_>,
+) -> bool {
+    let mut current = from.clone();
+    loop {
+        crate::instrumentation::record_deterministic_work(1);
+        if current.id() == split.id() {
+            return true;
+        }
+        current = match current.predecessors() {
+            [only] if point_leaves_cell(&current, cell, evidence) => only.clone(),
+            [left, right] => match current.split() {
+                Some(inner)
+                    if arm_leaves_cell_back_to(left, inner, cell, evidence)
+                        && arm_leaves_cell_back_to(right, inner, cell, evidence) =>
+                {
+                    inner.clone()
+                }
+                _ => return false,
+            },
+            _ => return false,
+        };
+    }
+}
+
 /// The point a resource read at `at` is named by: the oldest point it is
 /// known to be the same at. This is the naming path — memoized, and the only
 /// tracker call on the hot path.
@@ -862,6 +992,7 @@ fn recorded_steps_between(from: &ProgramPoint, to: &ProgramPoint) -> usize {
 /// canonical-form caches (`VerificationSession`).
 pub(crate) fn clear_version_memos() {
     CELL_VERSION_MEMO.with(|memo| memo.borrow_mut().clear());
+    PATH_CELL_VERSION_MEMO.with(|memo| memo.borrow_mut().clear());
     BLOCK_VERSION_MEMO.with(|memo| memo.borrow_mut().clear());
     NAMING_CONTEXT.with(|context| context.borrow_mut().take());
 }
