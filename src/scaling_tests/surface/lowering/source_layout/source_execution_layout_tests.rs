@@ -97,3 +97,20 @@ fn construction_result_metadata_shares_fields_across_calls_and_uses_indexed_read
         assert_eq!(work, 1);
     }
 }
+
+#[test]
+fn construction_return_parameter_cleanup_scales_with_selected_parameters() {
+    let costs = [4, 16, 64, 256].map(|count| {
+        let function = record_parameter_return_function(count, true);
+        let (layout, work) = crate::instrumentation::measure_deterministic_work(|| {
+            SourceExecutionLayout::for_function(&function).unwrap()
+        });
+        assert_eq!(layout.automatic_exits(1, true).len(), count);
+        assert!(layout.automatic_exits(0, true).is_empty());
+        work
+    });
+    assert!(
+        costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= 4 * pair[0] + 32),
+        "{costs:?}"
+    );
+}

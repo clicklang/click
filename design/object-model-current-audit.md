@@ -320,9 +320,15 @@ storage writes outside an empty mutable footprint.
 This is a four-byte composition witness under the pinned little-endian profile.
 It does not establish Bitcoin cursor/serialization verification or broaden the
 word-representation rule to other storage or scalar types. The separate
-`pinned_writable_byte_span_by_value_preserves_pointer_state` witness for
-`as_writable_bytes` currently fails on both the saved pre-change binary and
-this implementation; its returned-pointer state path remains unresolved.
+`pinned_writable_byte_span_by_value_preserves_pointer_state` witness now proves
+both the returned pointer and the byte length for an unchanged by-value
+`as_writable_bytes` wrapper. Its explicit proof links the private parameter
+copy to the library result, then preserves both descriptor fields through the
+checked return and parameter retirement. Saved points name the private
+aggregate storage rather than the caller image; construction-return footprints
+include private parameter cleanup. Copy returns retain their source until
+materialization. The regression checks expansion, strict cold checking and
+retained replay with implicit solving disabled.
 
 ## Bitcoin read32 serialization composition
 
@@ -403,9 +409,10 @@ at 8/32/128/512 fields and call sites; exact separation lookup scales with
 unrelated facts, same-pair widths and alias history at the same sizes. The
 spelling regression round-trips byte, halfword, int32 and uint64 pointer fields.
 The existing writable-span composition still passes its complete proof modes
-and rejection controls. The separate by-value returned-pointer state
-identity failure above remains open. This selected composition is not evidence
-for restoring the archived universal object model.
+and rejection controls. The separate by-value returned-span witness also
+preserves pointer and length through parameter retirement, as described above.
+This selected composition is not evidence for restoring the archived universal
+object model.
 
 ## Native-interface evidence matrix
 

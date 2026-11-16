@@ -691,7 +691,27 @@ impl SourceExecutionLayout {
                 .collect::<Vec<_>>();
             layout.loop_paths.extend(loops);
         }
-        collect_kernel_automatic_exits(function.body(), &mut layout);
+        // A construction return already contains the completed result in the
+        // caller's destination. Retire private value parameters at its checked
+        // return boundary, so preservation names the same transition as the
+        // published outcome. Copy returns still need their source objects when
+        // the kernel materializes the returned copy.
+        let return_parameters = if function.contract_interface().aggregate_return_mode()
+            == crate::kernel::AggregateReturnMode::Construction
+        {
+            function
+                .parameters()
+                .iter()
+                .filter_map(|parameter| {
+                    parameter
+                        .aggregate_layout()
+                        .map(|_| parameter.binding_name().clone())
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        collect_kernel_automatic_exits(function.body(), return_parameters, &mut layout);
         Ok(Self {
             data: std::sync::Arc::new(layout),
         })
@@ -1821,6 +1841,7 @@ pub(in crate::surface) fn collect_program_expression_referenced_bindings<N: Refe
 /// here. Walking scope spines visits declarations once per containing scope.
 fn collect_kernel_automatic_exits(
     source: &ProgramStatement,
+    return_parameters: Vec<crate::kernel::BindingName>,
     layout: &mut SourceExecutionLayoutData,
 ) {
     fn declarations(s: &ProgramStatement, names: &mut Vec<crate::kernel::BindingName>) {
@@ -1847,11 +1868,12 @@ fn collect_kernel_automatic_exits(
         scopes: &mut Vec<(Vec<crate::kernel::BindingName>, Option<usize>)>,
         loop_head: Option<usize>,
         layout: &mut SourceExecutionLayoutData,
+        return_parameters: &[crate::kernel::BindingName],
     ) -> Vec<usize> {
         let mut names = Vec::new();
         declarations(s, &mut names);
         scopes.push((names, loop_head));
-        let tails = visit(s, index, scopes, layout);
+        let tails = visit(s, index, scopes, layout, return_parameters);
         let (names, _) = scopes.pop().unwrap();
         for tail in &tails {
             layout
@@ -1867,11 +1889,12 @@ fn collect_kernel_automatic_exits(
         index: &mut usize,
         scopes: &mut Vec<(Vec<crate::kernel::BindingName>, Option<usize>)>,
         layout: &mut SourceExecutionLayoutData,
+        return_parameters: &[crate::kernel::BindingName],
     ) -> Vec<usize> {
         if let ProgramStatement::Seq(statements) = s {
             let mut tails = Vec::new();
             for statement in statements.iter() {
-                tails = visit(statement, index, scopes, layout);
+                tails = visit(statement, index, scopes, layout, return_parameters);
             }
             return tails;
         }
@@ -1884,8 +1907,22 @@ fn collect_kernel_automatic_exits(
                 ..
             } => {
                 let mut tails = vec![head];
-                tails.extend(scope(then_branch, index, scopes, None, layout));
-                tails.extend(scope(else_branch, index, scopes, None, layout));
+                tails.extend(scope(
+                    then_branch,
+                    index,
+                    scopes,
+                    None,
+                    layout,
+                    return_parameters,
+                ));
+                tails.extend(scope(
+                    else_branch,
+                    index,
+                    scopes,
+                    None,
+                    layout,
+                    return_parameters,
+                ));
                 tails
             }
             ProgramStatement::TryCatchInt32 {
@@ -1896,15 +1933,29 @@ fn collect_kernel_automatic_exits(
             } => {
                 let mut tails = vec![head];
                 if *cleanup_unwind {
-                    tails.extend(visit(try_body, index, scopes, layout));
+                    tails.extend(visit(try_body, index, scopes, layout, return_parameters));
                 } else {
-                    tails.extend(scope(try_body, index, scopes, None, layout));
+                    tails.extend(scope(
+                        try_body,
+                        index,
+                        scopes,
+                        None,
+                        layout,
+                        return_parameters,
+                    ));
                 }
-                tails.extend(scope(handler, index, scopes, None, layout));
+                tails.extend(scope(
+                    handler,
+                    index,
+                    scopes,
+                    None,
+                    layout,
+                    return_parameters,
+                ));
                 tails
             }
             ProgramStatement::While { body, .. } => {
-                scope(body, index, scopes, Some(head), layout);
+                scope(body, index, scopes, Some(head), layout, return_parameters);
                 vec![head]
             }
             ProgramStatement::Break
@@ -1923,6 +1974,9 @@ fn collect_kernel_automatic_exits(
                         break;
                     }
                 }
+                if matches!(s, ProgramStatement::Return(_)) {
+                    names.extend(return_parameters.iter().cloned());
+                }
                 layout.automatic_abrupt_exits.insert(head, names);
                 vec![head]
             }
@@ -1931,7 +1985,7 @@ fn collect_kernel_automatic_exits(
             _ => vec![head],
         }
     }
-    visit(source, &mut 0, &mut Vec::new(), layout);
+    visit(source, &mut 0, &mut Vec::new(), layout, &return_parameters);
     for (at, head) in std::mem::take(&mut layout.automatic_break_heads) {
         let exited = layout
             .automatic_exits
@@ -2415,6 +2469,64 @@ mod source_execution_layout_tests {
                 vec![],
                 body,
             ))
+    }
+
+    fn record_parameter_return_function(
+        parameters: usize,
+        construction: bool,
+    ) -> crate::languages::interface::ImportedFunction {
+        use crate::kernel::*;
+        let record = AggregateLayout::new(
+            8,
+            8,
+            vec![AggregateField::new("value", 0, ProgramType::UInt64)],
+        );
+        let arguments = (0..parameters)
+            .map(|index| {
+                program_parameter_with_aggregate_layout(
+                    format!("arg_{index}"),
+                    ProgramType::VoidPointer,
+                    record.clone(),
+                )
+            })
+            .chain([program_parameter("raw", ProgramType::Int32Pointer)])
+            .collect();
+        let body = program_seq(
+            ProgramStatement::Goto {
+                target: ControlTargetId(1),
+            },
+            program_return(crate::kernel::program_expression::variable(CONTRACT_RESULT)),
+        );
+        let function = program_function(ProgramType::VoidPointer, "source", arguments, body);
+        let function = if construction {
+            function.with_construction_return(record)
+        } else {
+            function.with_return_aggregate_layout(record)
+        };
+        syntax::parse_function("void* source() { return 0; }")
+            .unwrap()
+            .with_prelowered_kernel_function(function)
+    }
+
+    #[test]
+    fn construction_returns_retire_record_parameters_but_copy_returns_and_gotos_do_not() {
+        for construction in [false, true] {
+            let function = record_parameter_return_function(2, construction);
+            let layout = SourceExecutionLayout::for_function(&function).unwrap();
+            assert!(
+                layout.automatic_exits(0, true).is_empty(),
+                "a goto stays in the function"
+            );
+            let retired = layout.automatic_exits(1, true);
+            if construction {
+                assert_eq!(retired, &["arg_0".into(), "arg_1".into()]);
+            } else {
+                assert!(
+                    retired.is_empty(),
+                    "a copied return may still read its source parameter"
+                );
+            }
+        }
     }
 
     #[test]

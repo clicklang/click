@@ -8558,6 +8558,20 @@ impl AnnotationLowerer<'_> {
                     .get(name)
                     .map(|value| value.clone().into_native())
                     .or_else(|| state.held_local_value(name))
+                    .or_else(|| {
+                        // Aggregates are address-backed places, not entries in
+                        // object_values. A recorded private parameter must
+                        // override the caller-image entry binding even after
+                        // the live parameter has left scope.
+                        let layout = state.locals().aggregate_layout(name)?;
+                        if matches!(layout.value_type(), Some(ProgramType::Parameter(_))) {
+                            return None;
+                        }
+                        Some(ProgramValue::typed_pointer(
+                            state.locals().aggregate_object_pointer(name)?.clone(),
+                            ProgramType::UInt8Pointer,
+                        ))
+                    })
                 {
                     values.insert(name.clone(), SpecExpression::Value(value));
                 }

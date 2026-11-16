@@ -1438,8 +1438,8 @@ fn pinned_writable_byte_span_reference_preserves_view_offline() {
     check_pinned_byte_proof(&root, &import, source);
 }
 
-// Keep the fixed by-value source and true claim for the documented state
-// proof gap. Restore the positive E/R check when that gap is repaired.
+// Explicit copying and return-frame links preserve the unchanged by-value
+// source and both its pointer and length claims through parameter retirement.
 #[test]
 #[ignore = "nightly: pinned C++ by-value span certificate round trip"]
 fn pinned_writable_byte_span_by_value_preserves_pointer_state() {
@@ -1452,8 +1452,77 @@ fn pinned_writable_byte_span_by_value_preserves_pointer_state() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_data(result) == old(std_span_data(span) as (uint8 *)); ensures std_span_size(result) == old(std_span_size(span)) * 4u64; }";
-    check_pinned_byte_proof(&root, &import, source);
+    let source = include_str!("fixtures/cpp-byte-output/span-return.click");
+    fs::write(root.join("byte.click"), source).unwrap();
+    let project = read_click_project(&root.join("byte.click"), source).unwrap();
+    let (session, verified) =
+        ProgramVerificationSession::new_program_prepared_project(&project, &import)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = click::surface::expand_verified_function_claim_source_by_label(
+        source,
+        &verified,
+        "probe.ensures_0",
+    )
+    .unwrap()
+    .unwrap();
+    let rewritten = project.with_entry_source(expanded.clone());
+    assert!(
+        project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&import))
+            .unwrap()
+            .is_empty()
+    );
+    let position = project_tactic_source_position(
+        &rewritten,
+        &ProgramInputs::program(&import),
+        "probe.ensures_0",
+        0,
+    )
+    .unwrap();
+    click::surface::without_implicit_solve(|| {
+        session.verify_at_project(&expanded, position.line, position.column)
+    })
+    .unwrap_or_else(|error| panic!("retained: {}", error.report()));
+    drop(session);
+    click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, &import))
+        .unwrap_or_else(|error| panic!("cold: {}", error.report()));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: copied span return rejects false pointer and length claims"]
+fn pinned_writable_byte_span_return_rejects_changed_fields() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "writable-byte-span-return-controls",
+        "#include <span.h>\nstd::span<std::byte> probe(std::span<int> span) noexcept { return std::as_writable_bytes(span); }\n",
+        &[
+            "sysroot/usr/include/c++/12/cstddef",
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+        ],
+    );
+    let source = include_str!("fixtures/cpp-byte-output/span-return.click");
+    for (from, to) in [
+        (
+            "ensures std_span_data(result) == old(std_span_data(span) as (uint8 *));",
+            "ensures std_span_data(result) == old(std_span_data(span) as (uint8 *)) + 1;",
+        ),
+        (
+            "ensures std_span_size(result) == old(std_span_size(span)) * 4u64;",
+            "ensures std_span_size(result) == old(std_span_size(span)) * 4u64 + 1u64;",
+        ),
+    ] {
+        let changed = source.replacen(from, to, 1);
+        assert_ne!(changed, source);
+        fs::write(root.join("byte.click"), &changed).unwrap();
+        let project = read_click_project(&root.join("byte.click"), &changed).unwrap();
+        let error = verify_program_prepared_project(&project, &import).expect_err(to);
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{}",
+            error.report()
+        );
+    }
     fs::remove_dir_all(root).unwrap();
 }
 

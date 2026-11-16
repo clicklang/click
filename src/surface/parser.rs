@@ -16632,6 +16632,21 @@ impl Parser {
                 explicit_qualification: false,
             };
             self.address_casts.insert(cast.clone());
+            // Preserve the canonical C form for ordinary names (alignment
+            // recognition and stored-origin inference use it). Historical and
+            // constructed operands retain their authoritative Surface operand.
+            if matches!(
+                &source_pointer,
+                ContractExpression::Binding(_)
+                    | ContractExpression::CBinding(_)
+                    | ContractExpression::ProgramExpression(_)
+                    | ContractExpression::QualifiedC { .. }
+            ) {
+                return Ok(crate::surface::lowering::contract_c_unary(
+                    source_pointer,
+                    cast,
+                ));
+            }
             return Ok(ContractExpression::CUnary {
                 operand: Box::new(source_pointer),
                 lowered: cast,
