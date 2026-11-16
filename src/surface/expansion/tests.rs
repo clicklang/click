@@ -4039,6 +4039,9 @@ fn c_declaration_references_raise_expand_and_recheck() {
     for (fixture, label) in [
         ("c_declaration_references", "identity.contract"),
         ("c_aggregate_declaration_references", "read_item.contract"),
+        ("c_static_declaration_references", "read.contract"),
+        ("c_static_declaration_references", "read_cell.contract"),
+        ("c_static_declaration_references", "file_read.contract"),
         (
             "nested_field_aliases_keep_post_call_scalar_reads",
             "cleanup.contract",
@@ -4052,6 +4055,8 @@ fn c_declaration_references_raise_expand_and_recheck() {
         verify_c_sources(source, &sources).expect("declaration reference proof");
         let expanded = expand_c_claim_source_by_label(source, &sources, label).unwrap();
         assert!(!expanded.contains("#scope"), "{expanded}");
+        assert!(!expanded.contains("#static"), "{expanded}");
+        assert!(!expanded.contains("#file-static"), "{expanded}");
         verify_c_sources(&expanded, &sources).expect("declaration reference expansion");
     }
 }

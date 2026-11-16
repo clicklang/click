@@ -1633,7 +1633,7 @@ fn external_descriptor(identity: u64) -> Pointer {
 fn materialized_pointer(source: &Memory, cell: &Pointer) -> ProgramValue {
     ProgramValue::Pointer(PointerValue::from_read(
         Pointer::loaded(&MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(source),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(source))),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
         ))

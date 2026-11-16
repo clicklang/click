@@ -1125,7 +1125,7 @@ mod condition_transition_tests {
         };
         let load = |pointer: Pointer| {
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             )

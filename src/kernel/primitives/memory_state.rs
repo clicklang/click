@@ -48,6 +48,13 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
 
 fn write_havoc_block(identity: &mut String, block: PointerBlock) {
     match block {
+        PointerBlock::AggregateReturn { frame } => {
+            let _ = write!(identity, "breturn{frame};");
+        }
+        PointerBlock::ContractResult => identity.push_str("br;"),
+        PointerBlock::StaticObject { binding } => {
+            write_havoc_string(identity, "bst", &binding.to_string())
+        }
         PointerBlock::AutomaticLocal { binding, instance } => {
             write_havoc_string(identity, "bl", &binding.to_string());
             let _ = write!(identity, "{instance:?};");
@@ -1303,7 +1310,9 @@ impl LocalEnvironment {
                 .and_then(|entries| entries.last())
                 .map(|(_, binding)| binding.clone())
                 .unwrap_or_else(|| name.clone()),
-            BindingName::Local(_) => name.clone(),
+            BindingName::Local(_) | BindingName::Static(_) | BindingName::ContractResult => {
+                name.clone()
+            }
         }
     }
     /// The source spelling of this active lexical binding, for source-name
@@ -1311,7 +1320,9 @@ impl LocalEnvironment {
     pub(crate) fn active_source_name<'a>(&self, name: &'a BindingName) -> Option<&'a str> {
         let source = match name {
             BindingName::Local(id) => id.spelling()?,
+            BindingName::Static(id) => id.spelling(),
             BindingName::Named(name) => name,
+            BindingName::ContractResult => return None,
         };
         (self.resolve_binding(&BindingName::from(source)) == *name).then_some(source)
     }
@@ -7537,7 +7548,11 @@ impl Memory {
                 binding,
                 instance: LocalStorageInstance::ValueParameter,
             },
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:value-parameter:{name}").into(),
+            BindingName::ContractResult => {
+                unreachable!("contract result is not an automatic declaration")
+            }
         };
         Pointer {
             block,
@@ -7552,7 +7567,9 @@ impl Memory {
                 binding,
                 instance: LocalStorageInstance::Implicit,
             },
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:{name}").into(),
+            BindingName::ContractResult => PointerBlock::ContractResult,
         };
         Pointer {
             block,
@@ -7570,7 +7587,11 @@ impl Memory {
                 binding,
                 instance: LocalStorageInstance::Lifetime(lifetime),
             },
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:lifetime:{lifetime}:{name}").into(),
+            BindingName::ContractResult => {
+                unreachable!("contract result is not an automatic declaration")
+            }
         };
         Pointer {
             block,
@@ -7578,13 +7599,16 @@ impl Memory {
         }
     }
 
-    pub(crate) fn global_pointer(name: &str) -> Pointer {
-        Self::global_pointer_named(name)
-    }
-
-    fn global_pointer_named(name: &str) -> Pointer {
+    pub(crate) fn global_pointer(name: impl Into<BindingName>) -> Pointer {
+        let block = match name.into() {
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
+            BindingName::Named(name) => format!("global:{name}").into(),
+            BindingName::Local(_) | BindingName::ContractResult => {
+                unreachable!("non-global binding used as a global")
+            }
+        };
         Pointer {
-            block: format!("global:{name}").into(),
+            block,
             offset: PointerOffsetTerm::Constant(0),
         }
     }
@@ -7599,9 +7623,24 @@ impl Memory {
         }
     }
 
-    pub(crate) fn static_pointer(function: &str, name: &str) -> Pointer {
+    pub(crate) fn static_pointer(function: &str, name: impl Into<BindingName>) -> Pointer {
+        let block = match name.into() {
+            BindingName::Static(binding) => PointerBlock::StaticObject { binding },
+            BindingName::Named(name) => format!("static:{function}:{name}").into(),
+            BindingName::Local(_) | BindingName::ContractResult => {
+                unreachable!("non-static binding used as a static")
+            }
+        };
         Pointer {
-            block: format!("static:{function}:{name}").into(),
+            block,
+            offset: PointerOffsetTerm::Constant(0),
+        }
+    }
+
+    /// Materialized return storage has a typed identity, never a C local name.
+    pub(in crate::kernel) fn aggregate_return_pointer(frame: u64) -> Pointer {
+        Pointer {
+            block: PointerBlock::AggregateReturn { frame },
             offset: PointerOffsetTerm::Constant(0),
         }
     }
@@ -7618,6 +7657,13 @@ impl Memory {
                 },
                 offset: PointerOffsetTerm::Constant(0),
             },
+            BindingName::Static(binding) => Pointer {
+                block: PointerBlock::StaticObject { binding },
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            BindingName::ContractResult => {
+                unreachable!("contract result is not a frame-local declaration")
+            }
             BindingName::Named(name) => Pointer {
                 block: format!("local:frame:{frame}:{name}").into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -7803,7 +7849,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Pointer) -> ProgramValue {
         int32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         ))
@@ -7821,7 +7867,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Pointer) -> ProgramValue {
         int16(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Int16,
         ))
@@ -7829,7 +7875,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Pointer) -> ProgramValue {
         uint8(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::UInt8,
         ))
@@ -7837,7 +7883,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Pointer) -> ProgramValue {
         uint16(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::UInt16,
         ))
@@ -7845,7 +7891,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Pointer) -> ProgramValue {
         uint32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::UInt32,
         ))
@@ -7853,7 +7899,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::Int64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         ))
@@ -7861,7 +7907,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::UInt64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         ))
@@ -7876,7 +7922,7 @@ impl Memory {
             return None;
         }
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::of_type(ty.program_type())?,
         );
@@ -7889,7 +7935,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::Float32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Float32,
         ))
@@ -7897,7 +7943,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::Float64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Float64,
         ))
@@ -7931,7 +7977,7 @@ impl Memory {
     ) -> ProgramValue {
         let retained_state = crate::kernel::intern_memory(self.clone());
         let value = Pointer::loaded(&MachineTerm::MemoryLoad(
-            retained_state.clone(),
+            ProgramPoint::at(&retained_state),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         ))
@@ -8912,7 +8958,7 @@ impl ExecutionState {
             components.push((
                 description.clone(),
                 Some(MachineTerm::MemoryLoad(
-                    intern_memory_ref(&self.memory),
+                    ProgramPoint::at(&(intern_memory_ref(&self.memory))),
                     Box::new(anchor.clone()),
                     LoadKind::Int32,
                 )),
@@ -9688,9 +9734,16 @@ impl ExecutionState {
         self.point = self.point.after();
     }
 
-    /// The point this state's path has reached.
-    pub(crate) fn reached_point(&self) -> &super::reached_point::ReachedPoint {
-        &self.point
+    /// The point this state stands at on its path.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn program_point(&self) -> super::ProgramPoint {
+        super::ProgramPoint::of_state(&self.memory, &self.point)
+    }
+
+    /// The identity of the point this state stands at, without interning its
+    /// memory.
+    pub(crate) fn program_point_id(&self) -> Option<super::program_point::ProgramPointId> {
+        self.point.id()
     }
 
     /// Replace memory without the resource invalidation of
@@ -9709,8 +9762,8 @@ impl ExecutionState {
     }
 
     /// Stand this state at a new point reached from both arms of a join.
-    pub(crate) fn join_reached_points(&mut self, left: &Self, right: &Self) {
-        self.point = super::reached_point::ReachedPoint::joining(&left.point, &right.point);
+    pub(crate) fn join_program_points(&mut self, left: &Self, right: &Self) {
+        self.point = super::program_point::PathLink::joining(&left.point, &right.point);
     }
 
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {

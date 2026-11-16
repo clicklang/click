@@ -862,7 +862,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                         Box::new(Proposition::ConditionIs(
                             ConditionTerm::equal(
                                 MachineTerm::MemoryLoad(
-                                    crate::kernel::intern_memory_ref(&memory),
+                                    ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                                     Box::new(data.offset_by_int32_elements(MachineTerm::Variable(
                                         fact_index,
                                     ))),
@@ -894,7 +894,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                         Box::new(Proposition::ConditionIs(
                             ConditionTerm::equal(
                                 MachineTerm::MemoryLoad(
-                                    crate::kernel::intern_memory_ref(&memory),
+                                    ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                                     Box::new(unrelated.offset_by_int32_elements(
                                         MachineTerm::Variable(unrelated_index),
                                     )),
@@ -993,7 +993,7 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
                     offset: PointerOffsetTerm::Constant(0),
                 };
                 let load = MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(Memory::new()),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
                     Box::new(cell),
                     crate::kernel::LoadKind::Int32,
                 );
@@ -1371,6 +1371,97 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
             assert_eq!(work, old);
         }
         prior = Some(work);
+    }
+}
+
+/// `(p + i) + 4 == p + (i + 4)` at a full-width unsigned index, from its
+/// one selected bound `to_integer(i) + 4 <= 18446744073709551615`. The
+/// guard is one exact lookup: the work stays the same as unrelated facts
+/// grow, and as bounds of the same shape on other indices grow, and the
+/// association is refused without its own bound.
+#[test]
+fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
+    let i = MachineTerm::Variable(Variable(198301));
+    let goal_condition = ConditionTerm::pointer_offset_equal(
+        PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::scale_int64(i.clone(), 1, true)),
+            Box::new(PointerOffsetTerm::Constant(4)),
+        ),
+        PointerOffsetTerm::scale_int64(
+            MachineTerm::uint64_add(i, MachineTerm::uint64_constant(4)),
+            1,
+            true,
+        ),
+    );
+    let goal = Proposition::ConditionIs(goal_condition.clone(), true);
+    let bound_of = |condition: &ConditionTerm| {
+        Proposition::ConditionIs(
+            condition
+                .pointer_offset_uint64_association_guard()
+                .expect("a full-width association has a guard"),
+            true,
+        )
+    };
+    let bound = bound_of(&goal_condition);
+    let other_bound = |n: u64| {
+        let j = MachineTerm::Variable(Variable(199500 + n));
+        bound_of(&ConditionTerm::pointer_offset_equal(
+            PointerOffsetTerm::Add(
+                Box::new(PointerOffsetTerm::scale_int64(j.clone(), 1, true)),
+                Box::new(PointerOffsetTerm::Constant(4)),
+            ),
+            PointerOffsetTerm::scale_int64(
+                MachineTerm::uint64_add(j, MachineTerm::uint64_constant(4)),
+                1,
+                true,
+            ),
+        ))
+    };
+    for related in [false, true] {
+        let mut prior = None;
+        for count in [0, 4, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut ambient = vec![bound.clone()];
+            ambient.extend((0..count).map(|n| {
+                if related {
+                    other_bound(n)
+                } else {
+                    Proposition::ConditionIs(
+                        ConditionTerm::equal(
+                            MachineTerm::Variable(Variable(199000 + n)),
+                            MachineTerm::constant(n as u32),
+                        ),
+                        true,
+                    )
+                }
+            }));
+            let facts = crate::kernel::proof::ProofFacts::from_ordered(&ambient);
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                    &goal,
+                    std::slice::from_ref(&bound),
+                    &facts,
+                )
+            });
+            assert!(result.is_ok(), "{related} {count}: {result:?}");
+            assert!(work > 0);
+            if let Some(old) = prior {
+                assert_eq!(work, old, "{related} {count}");
+            }
+            prior = Some(work);
+            // Another index's bound does not regroup this one.
+            if related && count > 0 {
+                let other = other_bound(0);
+                assert!(
+                    crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                        &goal,
+                        std::slice::from_ref(&other),
+                        &facts,
+                    )
+                    .is_err()
+                );
+            }
+        }
     }
 }
 

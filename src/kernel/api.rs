@@ -2914,7 +2914,7 @@ pub fn program_check_contract_clauses_lower(
         );
         exit_state
             .locals
-            .set_typed(C_CONTRACT_RESULT_NAME, result, function.return_type());
+            .set_typed(CONTRACT_RESULT, result, function.return_type());
     }
     for clause in function.contract_ensures() {
         program_lower_spec_proposition_at_state(
@@ -5012,7 +5012,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
             ));
             SymbolicExecutionPath {
                 call_parameters: path.call_parameters,
-                descent_step: crate::kernel::DescentStep::under(environment),
+                descent_step: crate::kernel::DescentStep::under_state(environment, &state),
                 completion_origin: None,
                 call_result: path.call_result,
                 assumptions: assumptions.clone(),

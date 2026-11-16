@@ -4063,8 +4063,8 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
 
 /// `defined(value - amount)` over `int32` by its two Integer bounds, which
 /// together are the definedness fact: each bound of the exact value is
-/// proved by Integer arithmetic from `premises` and the type-range bound of
-/// `value` it needs, stated by its explicit certificate.
+/// proved by ordinary Integer laws from `premises` and the normalized
+/// type-range bound of `value` it needs.
 fn int32_definedness_by_integer_bounds(
     value: ContractExpression,
     amount: ContractExpression,
@@ -4105,15 +4105,7 @@ fn int32_definedness_by_integer_bounds(
         })
     };
     vec![
-        have(
-            range.clone(),
-            vec![ProofTactic::ArithmeticCertificate(
-                ArithmeticCertificate::integer(IntegerCertificate {
-                    nodes: vec![IntegerCertificateNode::TypeRange { result: range }],
-                    conclusion: 0,
-                }),
-            )],
-        ),
+        have(range.clone(), vec![ProofTactic::Normalize]),
         have(
             less_equal(minimum, exact.clone()),
             vec![ProofTactic::ArithmeticUsing(listed.clone())],

@@ -75,7 +75,7 @@ pub(super) fn initialize_program_function_globals_owned(
             }
         }
         state.locals.set_global_with_all_qualifiers(
-            global.kernel_name().to_string(),
+            global.kernel_name().clone(),
             global.program_type(),
             slot.clone(),
             global.is_volatile(),
@@ -83,7 +83,9 @@ pub(super) fn initialize_program_function_globals_owned(
             global.is_constant(),
             global.pointee_is_constant(),
         );
-        if global.kernel_name() != global.name() && !state.locals.contains_name(global.name()) {
+        if global.kernel_name().named() != Some(global.name())
+            && !state.locals.contains_name(global.name())
+        {
             state.locals.set_global_with_all_qualifiers(
                 global.name().to_string(),
                 global.program_type(),
@@ -119,13 +121,13 @@ pub(super) fn initialize_program_function_globals_owned(
             }
         }
         state.locals.set_array_object_at_with_constant(
-            global_array.kernel_name().to_string(),
+            global_array.kernel_name().clone(),
             global_array.element_type(),
             global_array.length(),
             slot.clone(),
             global_array.is_constant(),
         );
-        if global_array.kernel_name() != global_array.name()
+        if global_array.kernel_name().named() != Some(global_array.name())
             && !state.locals.contains_name(global_array.name())
         {
             state.locals.set_array_object_at_with_constant(
@@ -161,12 +163,12 @@ pub(super) fn initialize_program_function_globals_owned(
             }
         }
         state.locals.set_aggregate_object_at_with_constant(
-            global_aggregate.kernel_name().to_string(),
+            global_aggregate.kernel_name().clone(),
             global_aggregate.layout().clone(),
             slot.clone(),
             global_aggregate.is_constant(),
         );
-        if global_aggregate.kernel_name() != global_aggregate.source_name()
+        if global_aggregate.kernel_name().named() != Some(global_aggregate.source_name())
             && !state.locals.contains_name(global_aggregate.source_name())
         {
             state.locals.set_aggregate_object_at_with_constant(
@@ -209,13 +211,14 @@ pub(super) fn initialize_program_function_globals_owned(
             }
         }
         state.locals.set_array_object_at_with_constant(
-            global_aggregate_array.kernel_name().to_string(),
+            global_aggregate_array.kernel_name().clone(),
             ProgramType::UInt8,
             bytes,
             slot.clone(),
             global_aggregate_array.is_constant(),
         );
-        if global_aggregate_array.kernel_name() != global_aggregate_array.source_name()
+        if global_aggregate_array.kernel_name().named()
+            != Some(global_aggregate_array.source_name())
             && !state
                 .locals
                 .contains_name(global_aggregate_array.source_name())
@@ -253,7 +256,7 @@ pub(super) fn initialize_program_function_globals_owned(
             }
         }
         state.locals.set_global_with_all_qualifiers(
-            static_local.kernel_name().to_string(),
+            static_local.kernel_name().clone(),
             static_local.program_type(),
             slot.clone(),
             static_local.is_volatile(),
@@ -265,7 +268,7 @@ pub(super) fn initialize_program_function_globals_owned(
         // have a kernel-only name to distinguish it from another object in a
         // sibling block; expose the spelling only when the callee has not
         // already installed a parameter or another visible binding with it.
-        if static_local.kernel_name() != static_local.source_name()
+        if static_local.kernel_name().named() != Some(static_local.source_name())
             && !state.locals.contains_name(static_local.source_name())
         {
             state.locals.set_global_with_all_qualifiers(
@@ -302,13 +305,13 @@ pub(super) fn initialize_program_function_globals_owned(
             }
         }
         state.locals.set_array_object_at_with_constant(
-            static_array.kernel_name().to_string(),
+            static_array.kernel_name().clone(),
             static_array.element_type(),
             static_array.length(),
             slot.clone(),
             static_array.is_constant(),
         );
-        if static_array.kernel_name() != static_array.source_name()
+        if static_array.kernel_name().named() != Some(static_array.source_name())
             && !state.locals.contains_name(static_array.source_name())
         {
             state.locals.set_array_object_at_with_constant(
@@ -343,12 +346,12 @@ pub(super) fn initialize_program_function_globals_owned(
             }
         }
         state.locals.set_aggregate_object_at_with_constant(
-            static_aggregate.kernel_name().to_string(),
+            static_aggregate.kernel_name().clone(),
             static_aggregate.layout().clone(),
             slot.clone(),
             static_aggregate.is_constant(),
         );
-        if static_aggregate.kernel_name() != static_aggregate.source_name()
+        if static_aggregate.kernel_name().named() != Some(static_aggregate.source_name())
             && !state.locals.contains_name(static_aggregate.source_name())
         {
             state.locals.set_aggregate_object_at_with_constant(
@@ -390,13 +393,14 @@ pub(super) fn initialize_program_function_globals_owned(
             }
         }
         state.locals.set_array_object_at_with_constant(
-            static_aggregate_array.kernel_name().to_string(),
+            static_aggregate_array.kernel_name().clone(),
             ProgramType::UInt8,
             bytes,
             slot.clone(),
             static_aggregate_array.is_constant(),
         );
-        if static_aggregate_array.kernel_name() != static_aggregate_array.source_name()
+        if static_aggregate_array.kernel_name().named()
+            != Some(static_aggregate_array.source_name())
             && !state
                 .locals
                 .contains_name(static_aggregate_array.source_name())

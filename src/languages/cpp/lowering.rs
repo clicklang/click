@@ -1474,9 +1474,7 @@ impl LoweringContext<'_> {
             } => {
                 let (prefix, arguments) = self.normalize_arguments(arguments)?;
                 let mut actual = vec![crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(
-                        crate::kernel::C_CONTRACT_RESULT_NAME,
-                    ),
+                    crate::kernel::program_expression::variable(crate::kernel::CONTRACT_RESULT),
                     ProgramType::Int32Pointer,
                 )];
                 actual.extend(arguments);
@@ -1485,7 +1483,7 @@ impl LoweringContext<'_> {
                     program_seq(
                         self.coerced(program_call(self.callee_name(callee)?, actual)),
                         program_return(crate::kernel::program_expression::variable(
-                            crate::kernel::C_CONTRACT_RESULT_NAME,
+                            crate::kernel::CONTRACT_RESULT,
                         )),
                     ),
                 ))
@@ -1498,12 +1496,12 @@ impl LoweringContext<'_> {
                     prefix,
                     program_seq(
                         self.coerced(program_call_construct(
-                            crate::kernel::C_CONTRACT_RESULT_NAME,
+                            crate::kernel::CONTRACT_RESULT,
                             self.callee_name(callee)?,
                             arguments,
                         )),
                         program_return(crate::kernel::program_expression::variable(
-                            crate::kernel::C_CONTRACT_RESULT_NAME,
+                            crate::kernel::CONTRACT_RESULT,
                         )),
                     ),
                 ))

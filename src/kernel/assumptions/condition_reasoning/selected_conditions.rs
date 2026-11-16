@@ -327,7 +327,7 @@ mod memory_condition_match_tests {
         let pointer = Pointer::symbolic(Variable(999_000));
         let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )

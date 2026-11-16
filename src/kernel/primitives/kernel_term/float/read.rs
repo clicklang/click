@@ -32,7 +32,7 @@ impl KernelTerm {
         let (memory, address) = read.parts();
         Some(self.0.machine_leaf.get_or_init(|| {
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(address.export().expect("float read address")),
                 format.load_kind(),
             )
@@ -63,7 +63,7 @@ mod tests {
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             for memory in [&first, &second] {
                 let source = MachineTerm::MemoryLoad(
-                    memory.clone(),
+                    ProgramPoint::at(&memory),
                     Box::new(pointer.clone()),
                     format.load_kind(),
                 );
@@ -92,7 +92,11 @@ mod tests {
         }
         // A malformed native carrier is preserved at its existing boundary,
         // rather than silently changing the written load kind during import.
-        let mismatch = MachineTerm::MemoryLoad(second, Box::new(pointer), LoadKind::Int32);
+        let mismatch = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&second),
+            Box::new(pointer),
+            LoadKind::Int32,
+        );
         let root = KernelTermImport::default().float(KernelFloatType::Float32, &mismatch);
         assert!(matches!(root.node(), KernelTermNode::Legacy(_)));
         assert_eq!(

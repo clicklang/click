@@ -18,6 +18,7 @@ impl ResourceContext {
             observable_projection: Default::default(),
             storage,
             loan_dependencies: self.loan_dependencies.clone(),
+            structural_witnesses: self.structural_witnesses.clone(),
         }
     }
 

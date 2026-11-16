@@ -114,7 +114,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
                 relation: CompareRelation::Equal,
                 left: Box::new(term(20_000 + index as u64)),
                 right: Box::new(MachineTerm::MemoryLoad(
-                    memory.clone(),
+                    ProgramPoint::at(&memory),
                     Box::new(Pointer {
                         block: "other".into(),
                         offset: PointerOffsetTerm::Constant(index as i64 * 4),
@@ -152,7 +152,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
             relation: CompareRelation::Equal,
             left: Box::new(term(90_000)),
             right: Box::new(MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(Pointer {
                     block: "other".into(),
                     offset: PointerOffsetTerm::Constant(0),
@@ -319,7 +319,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
         let mut reads = Vec::new();
         for index in 0..size {
             let read = MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(Pointer {
                     block: "buffer".into(),
                     offset: PointerOffsetTerm::Constant(index * 4),

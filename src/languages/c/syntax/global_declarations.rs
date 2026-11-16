@@ -91,7 +91,7 @@ impl Parser {
             let kernel_name = if is_file_static {
                 self.file_static_kernel_name(&name)
             } else {
-                name.clone()
+                name.clone().into()
             };
             if let Some((struct_name, layout)) = &aggregate_struct {
                 if self.peek() == Some(&Token::LBracket) {
@@ -278,7 +278,7 @@ impl Parser {
                 if parsed_type.is_constant {
                     self.variable_constants.insert((name.clone()).into());
                 }
-                if kernel_name != name {
+                if kernel_name.named() != Some(name.as_str()) {
                     self.variable_types
                         .insert((kernel_name.clone()).into(), record_value_type(layout));
                     self.variable_structs

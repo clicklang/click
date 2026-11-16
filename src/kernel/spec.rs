@@ -1456,46 +1456,6 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     match proposition {
-        SpecProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => {
-            let (SpecMemory::Fixed(before), SpecMemory::Fixed(after)) = (before, after) else {
-                return Ok(Vec::new());
-            };
-            let mut writes = Vec::with_capacity(resources.len());
-            let mut facts = ExecutionFacts::default();
-            let mut obligations = Vec::new();
-            for resource in resources {
-                let mut paths =
-                    evaluate_spec_resource_at_state_in(scope, resource, assumptions, budget)?;
-                if paths.len() != 1 {
-                    return Ok(Vec::new());
-                }
-                let (resource, path_facts, path_obligations) = paths.pop().unwrap();
-                let Resource::Memory(range) = resource else {
-                    return Ok(Vec::new());
-                };
-                let (pointer, bytes) = range.byte_footprint();
-                let Some(bytes) = bytes.as_const() else {
-                    return Ok(Vec::new());
-                };
-                writes.push((pointer, bytes));
-                facts.extend_shared(&path_facts);
-                obligations.extend(path_obligations);
-            }
-            Ok(vec![SpecPropositionPath {
-                proposition: Proposition::MemoryMutatesOnly {
-                    before: before.clone(),
-                    after: after.clone(),
-                    writes,
-                },
-                facts,
-                obligations,
-                introductions: Vec::new(),
-            }])
-        }
         SpecProposition::IntegerComparison {
             left,
             operator,
@@ -2910,7 +2870,7 @@ fn integer_carrier_in_bitvector(term: &MachineTerm, variable: Variable) -> bool 
     let Some(kind) = crate::kernel::eval::registered_load_kind_for_variable(load) else {
         return true;
     };
-    let selected_load = MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
+    let selected_load = MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer), kind);
     let mut pointer_variables = BTreeSet::new();
     collect_bitvector_integer_variables(&selected_load, &mut pointer_variables);
     if pointer_variables.contains(&variable) {
@@ -6827,16 +6787,26 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 );
                 retain_required_integer_obligation(&mut obligations, assumptions, lower_bound);
                 retain_required_integer_obligation(&mut obligations, assumptions, upper_bound);
-                let value = program_value_from_bitvector_term(
-                    destination.program_type(),
-                    MachineTerm::IntegerToMachine {
-                        value: path.value.into(),
-                        destination: *destination,
-                    },
-                )
-                .ok_or(ExecutionLimit::Paths)?;
+                let value: SpecValue = if budget.machine_result_production_disabled {
+                    program_value_from_bitvector_term(
+                        destination.program_type(),
+                        MachineTerm::IntegerToMachine {
+                            value: path.value.into(),
+                            destination: *destination,
+                        },
+                    )
+                    .ok_or(ExecutionLimit::Paths)?
+                    .into()
+                } else {
+                    KernelTerm::integer_to_machine(
+                        *destination,
+                        KernelTermImport::default().integer(&path.value.into()),
+                    )
+                    .expect("typed Integer conversion operand")
+                    .into()
+                };
                 paths.push(SpecExpressionPath {
-                    value: value.into(),
+                    value,
                     facts: path.facts,
                     obligations,
                 });
@@ -8524,7 +8494,7 @@ fn array_ref_argument_memory(memory: &Memory, pointer: &ProgramValue) -> Memory 
     let interned = crate::kernel::intern_memory(memory.clone());
     crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Block(&pointer.pointer().block),
-        &crate::kernel::resource_tracker::VersionPoint::at(&interned),
+        &crate::kernel::resource_tracker::ProgramPoint::at(&interned),
     )
     .map(|point| point.memory().clone())
     .unwrap_or_else(|| memory.clone())

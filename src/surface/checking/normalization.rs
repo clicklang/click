@@ -866,14 +866,14 @@ mod tests {
             &memory,
         );
         let (target_loaded, _) = crate::kernel::load_variable_for_term(&MachineTerm::MemoryLoad(
-            memory.clone(),
+            crate::kernel::ProgramPoint::at(&memory),
             Box::new(target.clone()),
             crate::kernel::LoadKind::Int32,
         ))
         .expect("the target read has a name");
         let read_through = |variable| {
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                crate::kernel::ProgramPoint::at(&memory),
                 Box::new(Pointer {
                     block: PointerBlock::Symbolic(variable),
                     offset: PointerOffsetTerm::Constant(8),
@@ -924,7 +924,7 @@ mod tests {
         };
         let field_load = |base: &Pointer, displacement| {
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                crate::kernel::ProgramPoint::at(&memory),
                 Box::new(Pointer {
                     block: base.block.clone(),
                     offset: PointerOffsetTerm::add(
@@ -1037,7 +1037,7 @@ mod tests {
         };
         let load = |offset| {
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer(offset)),
                 crate::kernel::LoadKind::Int32,
             )
@@ -1175,8 +1175,11 @@ mod tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let load =
-            MachineTerm::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
+        let load = MachineTerm::MemoryLoad(
+            crate::kernel::ProgramPoint::at(&memory),
+            Box::new(pointer),
+            crate::kernel::LoadKind::Int32,
+        );
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, load.clone())
             .expect("a symbolic int32 load is a mathematical observation");
         let goal = Proposition::ConditionIs(
@@ -1206,7 +1209,7 @@ mod tests {
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                crate::kernel::ProgramPoint::at(&memory),
                 Box::new(Pointer {
                     block: "fold".into(),
                     offset: PointerOffsetTerm::Constant(0),
@@ -1322,12 +1325,12 @@ mod tests {
             ));
         assert_ne!(first_memory, second_memory);
         let first_load = MachineTerm::MemoryLoad(
-            first_memory,
+            crate::kernel::ProgramPoint::at(&first_memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
         let second_load = MachineTerm::MemoryLoad(
-            second_memory,
+            crate::kernel::ProgramPoint::at(&second_memory),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );

@@ -109,8 +109,8 @@ pub(in crate::surface) struct SynthesisStructOwners {
     callback_sources: std::sync::Arc<BTreeMap<crate::kernel::BindingName, syntax::CExpression>>,
     /// The function's global and static arrays by kernel and source name: the source name and
     /// declared shape an element read is spelled with.
-    storage_arrays: BTreeMap<String, (String, Vec<u32>)>,
-    storage_scalars: BTreeMap<Pointer, (String, ProgramType)>,
+    storage_arrays: BTreeMap<crate::kernel::BindingName, (crate::kernel::BindingName, Vec<u32>)>,
+    storage_scalars: BTreeMap<Pointer, (crate::kernel::BindingName, ProgramType)>,
     /// Declaration spellings for kernel identifiers in retained C arguments.
     storage_source_names: BTreeMap<String, ContractExpression>,
 }
@@ -150,18 +150,18 @@ impl LocalStructLayoutScope {
             .global_arrays()
             .values()
             .filter_map(|array| {
-                let spelling = (array.name().to_string(), array.shape()?.to_vec());
+                let spelling = (array.kernel_name().clone(), array.shape()?.to_vec());
                 Some([
-                    (array.kernel_name().to_string(), spelling.clone()),
-                    (array.name().to_string(), spelling),
+                    (array.kernel_name().clone(), spelling.clone()),
+                    (array.name().into(), spelling),
                 ])
             })
             .flatten()
             .chain(function.static_arrays().values().flat_map(|array| {
-                let spelling = (array.name().to_string(), array.shape().to_vec());
+                let spelling = (array.kernel_name().clone(), array.shape().to_vec());
                 [
-                    (array.kernel_name().to_string(), spelling.clone()),
-                    (array.name().to_string(), spelling),
+                    (array.kernel_name().clone(), spelling.clone()),
+                    (array.name().into(), spelling),
                 ]
             }))
             .collect();
@@ -172,7 +172,7 @@ impl LocalStructLayoutScope {
                 (
                     Memory::global_pointer(global.kernel_name()),
                     (
-                        global.name().to_string(),
+                        global.kernel_name().clone(),
                         global.interface_type().to_kernel_type(),
                     ),
                 )
@@ -181,7 +181,7 @@ impl LocalStructLayoutScope {
                 (
                     Memory::static_pointer(function.name(), local.kernel_name()),
                     (
-                        local.name().to_string(),
+                        local.kernel_name().clone(),
                         local.interface_type().to_kernel_type(),
                     ),
                 )
@@ -227,13 +227,13 @@ impl LocalStructLayoutScope {
                     .values()
                     .map(|object| (object.kernel_name(), object.name())),
             )
-            .map(|(kernel, source)| {
-                (
-                    kernel.to_owned(),
+            .filter_map(|(kernel, source)| {
+                Some((
+                    kernel.named()?.to_owned(),
                     ContractExpression::ProgramExpression(ProgramExpression::Variable(
                         (source.to_owned()).into(),
                     )),
-                )
+                ))
             })
             .collect();
         let owners = SynthesisStructOwners {
@@ -682,9 +682,9 @@ fn recorded_point_of_load(
         let slot = slot.borrow();
         let points = slot.as_ref()?;
         points
-            .point_reading_memory(memory)
+            .point_reading_memory(memory.shared_memory())
             .into_iter()
-            .chain(points.points_near_memory(memory))
+            .chain(points.points_near_memory(memory.shared_memory()))
             .find_map(|(selector, state)| {
                 let load = scalar_read_in_state(read, state)?;
                 Some((selector.clone(), state.clone(), load))
@@ -1292,7 +1292,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. }))
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::ContractResult | PointerBlock::AggregateReturn { .. } | PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Value(value.clone()),
@@ -2418,7 +2418,7 @@ fn synthesize_surface_atomic_proposition(
     {
         return synthesize_load_defining_equation(
             variable,
-            memory,
+            memory.shared_memory(),
             pointer,
             parameter_binding,
             state,
@@ -3146,12 +3146,14 @@ pub(super) fn integer_typed_expression(value: ContractExpression) -> ContractExp
 /// `to_integer` around each observation and named truncating operations.
 /// Opaque specification applications retain their source boundary.
 fn synthesize_surface_integer(
-    term: &crate::kernel::IntegerTerm,
+    term: &crate::kernel::SharedIntegerTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
-    let term = crate::kernel::KernelTermImport::default().integer(&term.clone().into());
+    // Keep the carrier's bridge identity: a native clone and re-intern here
+    // discards the caller's shared handoff before reaching the common renderer.
+    let term = crate::kernel::KernelTermImport::default().integer(term);
     raise_kernel_term(&term, parameter_binding, state, bound_variables)
 }
 
@@ -3312,6 +3314,277 @@ pub(super) fn raise_kernel_term(
     raise_kernel_term_dispatch(term, parameter_binding, state, bound_variables)
 }
 
+// A comparison's presentation reads addresses and declared pointer types.
+// Keep producer qualifiers/evidence/extents on the root; do not export those
+// unrelated payloads merely to pass through a native condition constructor.
+fn raise_pointer_comparison(
+    term: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::{KernelPointerOffset, KernelTermNode as Node};
+    let (left, right) = match term.node() {
+        Node::PointerValueEqual(pair) => {
+            let operand = |value: &crate::kernel::SharedPointerValue| {
+                synthesize_pointer_equality_address(
+                    &value.node().address.export().ok()?,
+                    value.node().program_type,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )
+            };
+            (
+                operand(&pair.arguments()[0])?,
+                operand(&pair.arguments()[1])?,
+            )
+        }
+        Node::PointerEqual { arguments } => {
+            let left = arguments[0].export().ok()?;
+            let right = arguments[1].export().ok()?;
+            let pointer = if left == Pointer::null() || right == Pointer::null() {
+                synthesize_surface_pointer_expression
+            } else {
+                synthesize_surface_pointer_address
+            };
+            (
+                pointer(&left, parameter_binding, state, bound_variables)?,
+                pointer(&right, parameter_binding, state, bound_variables)?,
+            )
+        }
+        Node::PointerOffsetEqual { arguments } => (
+            synthesize_surface_pointer_offset(
+                &KernelPointerOffset::export(&arguments[0]).ok()?,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
+            synthesize_surface_pointer_offset(
+                &KernelPointerOffset::export(&arguments[1]).ok()?,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
+        ),
+        _ => return None,
+    };
+    proposition_bool_value(ClickProposition::Comparison {
+        left,
+        operator: ComparisonOperator::Equal,
+        right,
+    })
+    .ok()
+}
+
+// Definedness names the written operation, even when a local holds its
+// result. Keep its children shared and preserve the supported overflow profile.
+fn raise_shared_overflow(
+    format: MachineIntegerType,
+    operation: OverflowOperation,
+    arguments: &[crate::kernel::KernelTerm; 2],
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    if !matches!(
+        format,
+        MachineIntegerType::Int32 | MachineIntegerType::Int64
+    ) || !matches!(
+        operation,
+        OverflowOperation::Add | OverflowOperation::Subtract | OverflowOperation::Multiply
+    ) {
+        return None;
+    }
+    let left = Box::new(raise_kernel_term(
+        &arguments[0],
+        parameter_binding,
+        state,
+        bound_variables,
+    )?);
+    let right = Box::new(raise_kernel_term(
+        &arguments[1],
+        parameter_binding,
+        state,
+        bound_variables,
+    )?);
+    let expression = match operation {
+        OverflowOperation::Add => SurfaceTerm::Add(left, right),
+        OverflowOperation::Subtract => SurfaceTerm::Subtract(left, right),
+        OverflowOperation::Multiply => SurfaceTerm::Multiply(left, right),
+        _ => unreachable!("supported overflow operation"),
+    };
+    proposition_bool_value(ClickProposition::Not(Box::new(ClickProposition::Defined {
+        expression,
+    })))
+    .ok()
+}
+
+// Read spelling keeps the native boundary's selection order and state
+// equality, but compares the common address without exporting its index DAG.
+fn raise_algebraic_read(
+    term: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::{AlgebraicTermNode, KernelTermNode, KernelType, SharedPointerAddress};
+    let (KernelType::Algebraic(ty), KernelTermNode::AlgebraicRead(read)) = (term.ty(), term.node())
+    else {
+        return None;
+    };
+    let (memory, address) = read.parts();
+    let same_address =
+        |pointer: &Pointer| address.syntax_equal(&SharedPointerAddress::import(pointer));
+    if let Some((parameter, _)) = parameter_binding
+        .parameters
+        .iter()
+        .zip(parameter_binding.arguments)
+        .find(|(_, argument)| {
+            matches!(argument, ProgramExpression::Value(ProgramValue::Pointer(value))
+                if same_address(value.pointer()))
+        })
+    {
+        return Some(SurfaceTerm::ProgramExpression(ProgramExpression::Load(
+            Box::new(ProgramExpression::Variable(
+                parameter.name().to_string().into(),
+            )),
+        )));
+    }
+    let held_at = |state: &ExecutionState| {
+        let (name, _, _) = state.locals().held_value_locals().find(|(_, _, slot)| {
+            crate::instrumentation::record_deterministic_work(1);
+            same_address(slot)
+        })?;
+        let Some(ProgramValue::Parameter(held)) = state.held_local_value(name) else {
+            return None;
+        };
+        let AlgebraicTermNode::MemoryLoad {
+            memory: held_memory,
+            pointer,
+        } = &held.node
+        else {
+            return None;
+        };
+        (ty == &held.algebraic_type && memory == held_memory && same_address(pointer))
+            .then(|| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())))
+    };
+    held_at(state).or_else(|| {
+        SYNTHESIS_RECORDED_POINTS.with(|slot| {
+            let slot = slot.borrow();
+            let points = slot.as_ref()?;
+            points
+                .point_reading_memory(memory)
+                .into_iter()
+                .chain(points.points_near_memory(memory))
+                .find_map(|(selector, recorded)| {
+                    Some(SurfaceTerm::At {
+                        selector: selector.clone(),
+                        expression: Box::new(held_at(recorded)?),
+                    })
+                })
+        })
+    })
+}
+
+// Constructor fields retain their existing spelling policy independently of
+// call arguments: pointer fields can need a root-view cast, and non-int32
+// scalar fields currently require a named variable.
+fn raise_constructor_field(
+    term: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::{KernelTermNode as Node, KernelType};
+    let term = match term.node() {
+        Node::ProgramParameter { operand } => operand,
+        _ => term,
+    };
+    if matches!(term.ty(), KernelType::Algebraic(_)) {
+        // The native constructor-field boundary does not spell conditional
+        // algebraic fields. Keep that admission policy in this migration.
+        if matches!(term.node(), Node::AlgebraicIf { .. }) {
+            return None;
+        }
+        return raise_kernel_term(term, parameter_binding, state, bound_variables);
+    }
+    if let Some(ProgramValue::Pointer(pointer)) = term.pointer_native() {
+        return raise_constructor_pointer(pointer, parameter_binding, state, bound_variables);
+    }
+    if term.ty() == &KernelType::Program(ProgramType::Int32) {
+        return raise_kernel_term(term, parameter_binding, state, bound_variables);
+    }
+    let variable = match (term.ty(), term.node()) {
+        (
+            KernelType::Program(
+                ProgramType::Bool
+                | ProgramType::Int8
+                | ProgramType::UInt8
+                | ProgramType::Int16
+                | ProgramType::UInt16
+                | ProgramType::UInt32
+                | ProgramType::Int64
+                | ProgramType::UInt64,
+            ),
+            Node::Variable(variable),
+        ) => *variable,
+        _ => match term.boolean_native()? {
+            ProgramValue::Bool(MachineTerm::Variable(variable)) => *variable,
+            _ => return None,
+        },
+    };
+    bound_variables
+        .get(&variable)
+        .map(|name| {
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone().into()))
+        })
+        .or_else(|| {
+            synthesize_surface_bitvector(
+                &MachineTerm::Variable(variable),
+                parameter_binding,
+                state,
+                bound_variables,
+            )
+        })
+}
+
+fn raise_constructor_pointer(
+    pointer: &crate::kernel::PointerValue,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)
+        .or_else(|| synthesize_loaded_pointer_value(pointer, parameter_binding, state))
+        .map(|expression| {
+            // Constructors implicitly retag object pointers
+            // without widening their views. An explicit cast
+            // is needed only for a checked root view; adding
+            // it to a saved narrow view would change the value.
+            if pointer.program_type() == ProgramType::VoidPointer
+                && pointer.extent_is_known()
+                && pointer.extent().is_none()
+            {
+                ContractExpression::CUnary {
+                    lowered: ProgramExpression::Cast {
+                        expression: Box::new(ProgramExpression::Value(ProgramValue::Pointer(
+                            pointer.clone(),
+                        ))),
+                        target_type: ProgramType::VoidPointer,
+                        integer_mode: crate::kernel::IntegerCastMode::Standard,
+                        pointee_struct: None,
+                        pointee_volatile: false,
+                        pointee_constant: false,
+                        explicit_qualification: false,
+                    },
+                    operand: Box::new(expression),
+                }
+            } else {
+                expression
+            }
+        })
+}
+
 fn raise_integer_operation(
     operator: crate::kernel::KernelIntegerOperator,
     arguments: &[crate::kernel::KernelTerm],
@@ -3368,17 +3641,24 @@ fn raise_kernel_term_dispatch(
         Node::Match(matched) => {
             matches::raise_match(matched, parameter_binding, state, bound_variables)?
         }
-        Node::Constructor(_) | Node::AlgebraicRead(_) => {
-            let argument = crate::kernel::KernelTermExport::default()
-                .argument(term)
-                .ok()?;
-            synthesize_legacy_call_argument(&argument, parameter_binding, state, bound_variables)?
-        }
+        Node::Constructor(constructor) => SurfaceTerm::AlgebraicConstructor {
+            algebraic_type: surface_algebraic_type(&constructor.algebraic_type)?,
+            variant: constructor.variant.clone(),
+            arguments: constructor
+                .fields
+                .iter()
+                .map(|field| {
+                    raise_constructor_field(field, parameter_binding, state, bound_variables)
+                })
+                .collect::<Option<Vec<_>>>()?,
+        },
+        Node::AlgebraicRead(_) => raise_algebraic_read(term, parameter_binding, state)?,
         Node::Variable(_) if matches!(term.ty(), KernelType::Algebraic(_)) => {
-            let argument = crate::kernel::KernelTermExport::default()
-                .argument(term)
-                .ok()?;
-            synthesize_legacy_call_argument(&argument, parameter_binding, state, bound_variables)?
+            // Variable naming uses a bounded typed descriptor, not a tree export.
+            let ProgramValue::Parameter(variable) = term.algebraic_native_value()? else {
+                unreachable!("algebraic variable descriptor")
+            };
+            synthesize_surface_algebraic(variable, parameter_binding, state, bound_variables)?
         }
         Node::IntegerLiteral(value) if value.sign() == num_bigint::Sign::Minus => {
             SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral((-value).to_string())))
@@ -3498,15 +3778,45 @@ fn raise_kernel_term_dispatch(
         }
         // Offset spelling still uses its existing address context at the
         // explicit Surface boundary; no new standalone offset syntax.
-        Node::BoolRead(_)
-        | Node::AlgebraicEqual { .. }
-        | Node::BoolOverflow { .. }
-        | Node::PointerValueEqual(_)
+        Node::AlgebraicEqual { arguments } => {
+            proposition_bool_value(ClickProposition::Comparison {
+                left: recurse(&arguments[0])?,
+                operator: ComparisonOperator::Equal,
+                right: recurse(&arguments[1])?,
+            })
+            .ok()?
+        }
+        Node::BoolOverflow {
+            format,
+            operation,
+            arguments,
+        } => raise_shared_overflow(
+            *format,
+            *operation,
+            arguments,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
+        Node::BoolRead(_) => synthesize_surface_bool(
+            term.boolean_read_native()?,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
+        Node::LegacyBool(payload) => {
+            let crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(
+                MachineTerm::BoolCast { value, .. },
+            )) = payload.value()
+            else {
+                return None;
+            };
+            synthesize_surface_bool(value, parameter_binding, state, bound_variables)?
+        }
+        Node::PointerValueEqual(_)
         | Node::PointerEqual { .. }
-        | Node::PointerOffsetEqual { .. }
-        | Node::LegacyBool(_) => {
-            let condition = crate::kernel::KernelTermExport::condition(term).ok()?;
-            synthesize_surface_bool(&condition, parameter_binding, state, bound_variables)?
+        | Node::PointerOffsetEqual { .. } => {
+            raise_pointer_comparison(term, parameter_binding, state, bound_variables)?
         }
         Node::Variable(variable) if term.ty() == &KernelType::Bool => synthesize_surface_bool(
             &ConditionTerm::Variable(*variable),
@@ -3811,7 +4121,7 @@ fn synthesize_unsigned_comparison(
             .names_holding_integer(term)
             .find(|name| {
                 !name.is_named("result")
-                    && !name.is_named(crate::kernel::C_CONTRACT_RESULT_NAME)
+                    && *name != &crate::kernel::CONTRACT_RESULT
                     && state.locals().get(*name).is_some_and(|value| {
                         value.program_type() == crate::kernel::ProgramType::UInt32
                             && value
@@ -4285,7 +4595,13 @@ fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<Ma
     let memory = crate::kernel::intern_memory_ref(state.memory());
     let selected =
         crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
-    (selected == *read).then(|| MachineTerm::MemoryLoad(memory, pointer.clone(), *kind))
+    (selected == *read).then(|| {
+        MachineTerm::MemoryLoad(
+            crate::kernel::ProgramPoint::at(&memory),
+            pointer.clone(),
+            *kind,
+        )
+    })
 }
 
 // Unsigned division and remainder use the usual C conversion of both
@@ -4399,11 +4715,7 @@ fn synthesize_named_integer_local<'a>(
     mut holders: impl Iterator<Item = &'a crate::kernel::BindingName>,
 ) -> Option<SurfaceTerm> {
     if let Some(name) = holders.next() {
-        return Some(if name.is_named(crate::kernel::C_CONTRACT_RESULT_NAME) {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                ("result".to_string()).into(),
-            ))
-        } else if crate::surface::is_click_value_name(name) {
+        return Some(if crate::surface::is_click_value_name(name) {
             ContractExpression::CBinding(name.to_string())
         } else {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(surface_local_name(
@@ -4427,8 +4739,11 @@ fn synthesize_typed_word_read(
     let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
         return None;
     };
-    let read =
-        crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
+    let read = crate::kernel::canonical_form_of_load(
+        memory.shared_memory().clone(),
+        pointer.as_ref().clone(),
+        *kind,
+    );
     let at_state = |load: &MachineTerm, state: &ExecutionState| {
         let MachineTerm::MemoryLoad(_, pointer, _) = load else {
             return None;
@@ -4741,7 +5056,7 @@ fn synthesize_surface_bitvector(
         }
         MachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
             let read = crate::kernel::canonical_form_of_load(
-                memory.clone(),
+                memory.shared_memory().clone(),
                 kernel_pointer.as_ref().clone(),
                 *kind,
             );
@@ -5695,7 +6010,7 @@ fn synthesize_static_storage_array_element_load(
             if element_type.byte_width() != 4 || element_type.pointee_type().is_some() {
                 return None;
             }
-            let (source, shape) = name.named_in(&owners.storage_arrays)?;
+            let (source, shape) = owners.storage_arrays.get(name)?;
             let index = pointer.shared_element_index_from_base_with_width(slot, 4)?;
             let base = ProgramExpression::Variable((source.clone()).into());
             if shape.len() <= 1 {
@@ -6028,7 +6343,11 @@ fn synthesize_surface_pointer(
     }
     if matches!(
         pointer.block,
-        PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. }
+        PointerBlock::ContractResult
+            | PointerBlock::AggregateReturn { .. }
+            | PointerBlock::StringLiteral { .. }
+            | PointerBlock::AutomaticLocal { .. }
+            | PointerBlock::StaticObject { .. }
     ) {
         return Some(ProgramExpression::Value(ProgramValue::typed_pointer(
             pointer.clone(),
@@ -6311,12 +6630,24 @@ fn synthesize_pointer_equality_operand(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
-    let expression = synthesize_surface_pointer_expression(
+    synthesize_pointer_equality_address(
         value.pointer(),
+        value.program_type(),
         parameter_binding,
         state,
         bound_variables,
-    )?;
+    )
+}
+
+fn synthesize_pointer_equality_address(
+    pointer: &Pointer,
+    program_type: ProgramType,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let expression =
+        synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
     let mut inner = &expression;
     while let ContractExpression::At { expression, .. } | ContractExpression::Old(expression) =
         inner
@@ -6330,7 +6661,7 @@ fn synthesize_pointer_equality_operand(
         ) | ContractExpression::Add(..)
             | ContractExpression::Subtract(..)
     ) {
-        synthesize_observation_operand(expression, value.program_type())
+        synthesize_observation_operand(expression, program_type)
     } else {
         Some(expression)
     }
@@ -6618,7 +6949,8 @@ fn raise_float_read(
     // Float producers retain the raw state, rather than the integer load's
     // canonical selection. Spelling must reproduce that same producer input.
     let reads_state = |state: &ExecutionState| {
-        crate::kernel::intern_memory_ref(state.memory()).arena_id() == memory.arena_id()
+        crate::kernel::intern_memory_ref(state.memory()).arena_id()
+            == memory.shared_memory().arena_id()
     };
     if !reads_state(state) {
         if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
@@ -6634,7 +6966,7 @@ fn raise_float_read(
         let (selector, recorded) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
             let slot = slot.borrow();
             let points = slot.as_ref()?;
-            let (selector, recorded) = points.point_reading_memory(memory)?;
+            let (selector, recorded) = points.point_reading_memory(memory.shared_memory())?;
             reads_state(recorded).then(|| (selector.clone(), recorded.clone()))
         })?;
         return Some(SurfaceTerm::At {
@@ -6853,42 +7185,12 @@ fn synthesize_surface_algebraic(
                         bound_variables,
                     ),
                     crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
-                        synthesize_surface_pointer_expression(
+                        raise_constructor_pointer(
                             pointer,
                             parameter_binding,
                             state,
                             bound_variables,
                         )
-                        .or_else(|| {
-                            synthesize_loaded_pointer_value(pointer, parameter_binding, state)
-                        })
-                        .map(|expression| {
-                            // Constructors implicitly retag object pointers
-                            // without widening their views. An explicit cast
-                            // is needed only for a checked root view; adding
-                            // it to a saved narrow view would change the value.
-                            if pointer.program_type() == ProgramType::VoidPointer
-                                && pointer.extent_is_known()
-                                && pointer.extent().is_none()
-                            {
-                                ContractExpression::CUnary {
-                                    lowered: ProgramExpression::Cast {
-                                        expression: Box::new(ProgramExpression::Value(
-                                            ProgramValue::Pointer(pointer.clone()),
-                                        )),
-                                        target_type: ProgramType::VoidPointer,
-                                        integer_mode: crate::kernel::IntegerCastMode::Standard,
-                                        pointee_struct: None,
-                                        pointee_volatile: false,
-                                        pointee_constant: false,
-                                        explicit_qualification: false,
-                                    },
-                                    operand: Box::new(expression),
-                                }
-                            } else {
-                                expression
-                            }
-                        })
                     }
                     crate::kernel::AlgebraicValue::Program(ProgramValue::Int32(value)) => {
                         synthesize_surface_bitvector(

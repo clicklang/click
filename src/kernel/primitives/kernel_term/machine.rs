@@ -814,7 +814,11 @@ impl KernelTermExport {
                 memory,
                 address,
                 kind,
-            } => Old::MemoryLoad(memory.clone(), Box::new(address.export()?), *kind),
+            } => Old::MemoryLoad(
+                ProgramPoint::at(&memory),
+                Box::new(address.export()?),
+                *kind,
+            ),
             Node::BoolCast {
                 destination,
                 operand,

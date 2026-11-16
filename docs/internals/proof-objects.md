@@ -134,6 +134,13 @@ and result must agree. Outcome identity survives a claim scope's local branch ID
 Function-exit outcome fanout lets the kernel allocate one identity per checked
 returning path. A completed `have` scope publishes only its focused obligation,
 facts, and optional execution attachment through the kernel.
+Pure proofs retain each checked `have`'s written-to-kernel correspondence.
+An explicit citation can reuse that correspondence while its program state and
+referenced bindings are unchanged. Lookup requires a singleton source mapping
+and exact membership of the retained fact; it never scans historical mappings
+or grants authority to the spelling. Shadowed names, ambiguous mappings, and
+missing facts take the ordinary citation-lowering path. New goals and term
+construction keep their existing lowering rules.
 Structural loop-effect scopes may restore an already allocated retired cursor
 for provenance, but cannot invent a branch identity; the kernel also refuses
 to retire their frontier until its loop-effect goal is checked closed.
@@ -574,13 +581,31 @@ nonnegativity and strict descent from the immutable entry value; assigning the
 C parameter does not change that entry value. A structural call passes an
 instance whose model is strictly contained in the entry model.
 
-Anonymous resource measures (`decreases list(node)`) still use the legacy
-structural body analysis. Unlike a named modeled instance, an anonymous
-composite resource has no retained finite-witness identity. Moving that last
-path requires ownership of its structural witness through unfold, fold, and
-resource-return operations; ordinary resource containment is not a strict
-well-founded order. Independent termination plans can also explicitly request
-the legacy numeric-parameter or resource-requirement analyses.
+Anonymous resource measures (`decreases list(node)`) also use call producers.
+The opening captures the exact entry occurrence of the measured resource.
+Unfold and observe retain bounds for the owned children they produce, even
+when observation projects those children to views. Folding constructs a
+parent bound from its supplied children; a leaf uses only the branch's
+established lower bound on the entry witness's height. The bounds belong to
+opaque resource occurrences, so an unrelated returned resource cannot inherit
+descent merely because its resource term is equal. Calls consume this native
+evidence through ordinary descent obligations, and completed roots require
+no structural source-body walk. Explicit legacy standalone termination plans
+retain their compatibility analyses.
+
+Ordinary and independent termination inputs have separate constructors.
+`ContractBodyProof` retains `CompletedBodyTermination`, whose loop namespace
+and descent authority are nonoptional native outputs of the whole-contract
+root. Program obligation generation selects that typed input by its body
+owner; it never probes a reusable rule for missing evidence and then runs a
+legacy analysis. Completed-body local steps consume retained loop ranking
+and exit evidence directly. Legacy numeric/resource plans are refused when
+opening an ordinary program; standalone termination APIs retain their
+explicit independent adapter. Raw rule candidates already owned by a completed
+body are excluded before that adapter runs. Conservative call inventories are
+captured at body opening, so a missing execution trace does not cause a later
+source-body walk.
+
 
 Concrete loop-exit coverage is fixed in the ordinary body's source namespace
 at opening. Loop/body source mismatch is refused before proof execution.

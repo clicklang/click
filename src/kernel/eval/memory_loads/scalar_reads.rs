@@ -38,7 +38,7 @@ impl<'a> ScalarReadDescriptor<'a> {
         };
         Some(Self {
             term,
-            memory,
+            memory: memory.shared_memory(),
             pointer,
             kind: *kind,
             // A native byte/halfword keeps its width even when a wider
@@ -116,10 +116,11 @@ pub(super) fn select_comparison_identity(
     };
     let recorded_bytes = narrow_bytes
         .or_else(|| recorded_load_access_width(origin, original_pointer))
-        .or_else(|| recorded_load_access_width(&memory, &pointer))
+        .or_else(|| recorded_load_access_width(memory.shared_memory(), &pointer))
         .or_else(|| {
-            existing_read_access_width(origin, original_pointer, original_kind)
-                .max(existing_read_access_width(&memory, &pointer, kind))
+            existing_read_access_width(origin, original_pointer, original_kind).max(
+                existing_read_access_width(memory.shared_memory(), &pointer, kind),
+            )
         });
     let bytes = recorded_bytes.unwrap_or_else(|| kind.unrecorded_access_byte_width());
     let version = crate::kernel::resource_tracker::last_same_version_point(
@@ -127,9 +128,8 @@ pub(super) fn select_comparison_identity(
             pointer: &pointer,
             bytes,
         },
-        &crate::kernel::resource_tracker::VersionPoint::at(&memory),
+        &memory,
     )
-    .map(|point| point.shared_memory().clone())
     .unwrap_or(memory);
     (
         ScalarReadComparisonIdentity(MachineTerm::MemoryLoad(version, pointer, kind)),
@@ -148,8 +148,10 @@ pub(super) fn record_comparison_observation(
         unreachable!("selected scalar read identity");
     };
     let id = match observed_bytes {
-        Some(bytes) => read_observations::record(memory, pointer, *kind, origin, bytes),
-        None => read_observations::record_untyped(memory, pointer, *kind, origin),
+        Some(bytes) => {
+            read_observations::record(memory.shared_memory(), pointer, *kind, origin, bytes)
+        }
+        None => read_observations::record_untyped(memory.shared_memory(), pointer, *kind, origin),
     };
     read_observations::select(id);
 }

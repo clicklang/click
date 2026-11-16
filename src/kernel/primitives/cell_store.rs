@@ -795,11 +795,15 @@ pub(crate) fn cell_run_value(element_type: ProgramType, load: MachineTerm) -> Pr
                 definition
             {
                 crate::kernel::equality_graph::EqualityGraph::default()
-                    .register_pointer_read_definition(&value, &retained_state, &address);
+                    .register_pointer_read_definition(
+                        &value,
+                        retained_state.shared_memory(),
+                        &address,
+                    );
                 return ProgramValue::Pointer(crate::kernel::PointerValue::from_read(
                     value,
                     program_type,
-                    &retained_state,
+                    retained_state.shared_memory(),
                     &address,
                 ));
             }
@@ -1512,7 +1516,7 @@ impl CellStore {
                 }),
                 Bound::Unbounded,
             ))
-            .filter(|(key, _)| matches!(key.block, PointerBlock::AutomaticLocal { .. }));
+            .take_while(|(key, _)| matches!(key.block, PointerBlock::AutomaticLocal { .. }));
         let mut visited = 0usize;
         let rejected = local_cells
             .chain(automatic_cells)

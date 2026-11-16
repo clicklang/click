@@ -7039,7 +7039,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
         let goal = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: at(MachineTerm::MemoryLoad(
-                memory.into(),
+                crate::kernel::ProgramPoint::of_memory(&memory),
                 Box::new(index_cell.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -7087,7 +7087,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
     let memory = Memory::new();
     let load = |offset: PointerOffsetTerm| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&memory),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(Pointer {
                 block: "data".into(),
                 offset,

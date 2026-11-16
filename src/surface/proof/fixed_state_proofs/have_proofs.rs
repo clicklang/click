@@ -1232,7 +1232,7 @@ impl FixedStateLowering {
         let mut current_values = BTreeMap::new();
         for name in names {
             crate::instrumentation::record_deterministic_work(1);
-            if name.local_id().is_some() {
+            if name.named().is_none() {
                 if let Some(value) = contract_environment.parameter_value(&name) {
                     if !entry_state.locals().contains_name(&name) {
                         entry_state = entry_state.with_local(name.clone(), value.clone());
@@ -1294,7 +1294,7 @@ impl FixedStateLowering {
         }
         if let Some(result) = result {
             lowering_state =
-                lowering_state.with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone());
+                lowering_state.with_local(crate::kernel::CONTRACT_RESULT, result.clone());
         }
         Self {
             entry_state,
@@ -1326,7 +1326,7 @@ impl FixedStateLowering {
         let mut lowering_state = bound(state);
         if let Some(result) = result {
             lowering_state =
-                lowering_state.with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone());
+                lowering_state.with_local(crate::kernel::CONTRACT_RESULT, result.clone());
         }
         let mut element_types = contract_environment
             .array_refs

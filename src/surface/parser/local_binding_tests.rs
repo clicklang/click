@@ -121,3 +121,120 @@ fn parameter_declaration_references_keep_pointer_field_syntax() {
         }
     ));
 }
+
+#[test]
+fn function_statics_keep_types_and_exact_storage_spelling() {
+    let source = "struct pair { int padding; int value; int storage; }; int f(void) { static int a[2][3]; static struct pair p; return 0; }";
+    let array = parse_binding_expression("f.static(0)[1][2]", source).unwrap();
+    assert!(
+        matches!(array, ContractExpression::ArrayIndex { dimensions, .. } if dimensions == vec![2,3])
+    );
+    let field = parse_binding_expression("f.static(1).value", source).unwrap();
+    assert!(matches!(
+        field,
+        ContractExpression::Field {
+            offset_bytes: 4,
+            ..
+        }
+    ));
+    let field = parse_binding_expression("f.static(1).storage", source).unwrap();
+    assert!(matches!(
+        field,
+        ContractExpression::Field {
+            offset_bytes: 8,
+            ..
+        }
+    ));
+    let expression = parse_binding_expression("f.static(0).storage()", source).unwrap();
+    let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+        pointer,
+    ))) = expression
+    else {
+        panic!("static address");
+    };
+    assert!(matches!(
+        pointer.pointer().block,
+        crate::kernel::PointerBlock::StaticObject { .. }
+    ));
+    assert_eq!(
+        crate::surface::diagnostics::describe_pointer(
+            pointer.pointer(),
+            crate::surface::ParameterBinding::default()
+        ),
+        "\"bindings.c\"::f.static(0).storage()"
+    );
+    assert!(parse_binding_expression("f.static(2)", source).is_err());
+    assert!(parse_binding_expression("f.static(0).storage(frame, 1)", source).is_err());
+}
+
+#[test]
+fn contract_result_slot_has_an_exact_surface_spelling() {
+    let expression = parse_binding_expression("result.storage()", "int f(void) { return 0; }")
+        .expect("typed result slot parses without a C declaration");
+    let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+        pointer,
+    ))) = expression
+    else {
+        panic!("a typed result slot pointer")
+    };
+    assert_eq!(
+        pointer.pointer().block,
+        crate::kernel::PointerBlock::ContractResult
+    );
+    assert_eq!(pointer.pointer().block.to_string(), "result.storage()");
+    let text = crate::surface::diagnostics::describe_pointer(
+        pointer.pointer(),
+        crate::surface::ParameterBinding::default(),
+    );
+    assert_eq!(text, "result.storage()");
+    assert_eq!(
+        parse_binding_expression(&text, "int f(void) { return 0; }").unwrap(),
+        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+            pointer
+        )))
+    );
+}
+
+#[test]
+fn aggregate_return_storage_round_trips_the_full_frame_identity() {
+    let source = "int f(void) { return 0; }";
+    for frame in [0, 1, u32::MAX as u64 + 1, u64::MAX] {
+        let text = format!("result.storage(frame, {frame})");
+        let expression = parse_binding_expression(&text, source).unwrap();
+        let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+            pointer,
+        ))) = &expression
+        else {
+            panic!("typed return storage")
+        };
+        assert_eq!(
+            pointer.pointer().block,
+            crate::kernel::PointerBlock::AggregateReturn { frame }
+        );
+        assert_ne!(
+            pointer.pointer().block,
+            crate::kernel::PointerBlock::ContractResult
+        );
+        assert_eq!(pointer.pointer().block.to_string(), text);
+        let raised = crate::surface::diagnostics::describe_pointer(
+            pointer.pointer(),
+            crate::surface::ParameterBinding::default(),
+        );
+        assert_eq!(raised, text);
+        assert_eq!(
+            parse_binding_expression(&raised, source).unwrap(),
+            expression
+        );
+    }
+    for invalid in [
+        "result.storage(frame, -1)",
+        "result.storage(frame, 18446744073709551616)",
+        "result.storage(lifetime, 1)",
+        "result.storage(frame)",
+    ] {
+        assert!(
+            parse_binding_expression(invalid, source).is_err(),
+            "{invalid}"
+        );
+    }
+}

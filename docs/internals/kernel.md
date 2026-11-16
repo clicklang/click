@@ -1038,10 +1038,14 @@ Aggregate returns supplied by a pointer-backed whole-object expression have a
 small ABI boundary: Click's struct-pointer view is `int32*`, while the internal
 address-backed return slot is `uint8*`. The return transition accepts only
 those two modeled data-pointer views, retags the address at that boundary, and
-copies every modeled leaf into a fresh `__return` block. Consequently a
+copies every modeled leaf into a fresh typed
+`PointerBlock::AggregateReturn { frame }` block. Consequently a
 postcondition such as `result.inner.flag == source.inner.flag` compares the
 fresh result cell with the source state without turning the returned
 aggregate into an alias or weakening ordinary pointer-return type checks.
+The frame counter gives successive copies distinct identities, independent of
+source local names. Exact storage addresses spell `result.storage(frame, N)`;
+o string is decoded into a return-storage identity.
 
 Positional initializers for copyable struct-valued locals use the same
 address-backed boundary. The C parser walks fields in declaration order,
@@ -1667,11 +1671,19 @@ its own permission. Historical field reads resolve the object's address in the
 selected entry state. Materialized aggregate results belong to the caller
 and survive the callee's exit.
 
-The contract return value uses an internal binding that no C identifier can
-spell. Bare `result` lowers to it, while `c(result)` resolves the source C
-binding, including inside casts, field projections, and array indices.
-Kernel post-state reconstruction and fixed-state proof lowering use
-that separate return binding, preserving a same-named parameter's value.
+A contract's return value is `BindingName::ContractResult`, with Surface spelling
+`result`. It is distinct from all `Named`, automatic, and static bindings,
+including source C variables named `result`. Fixed-state elaboration carries its
+value in a dedicated context field rather than a string-keyed lexical map. Its
+value-only bookkeeping slot is `PointerBlock::ContractResult`, spelled
+`result.storage()` when an exact slot address is needed; this does not declare
+C storage or grant memory ownership. Aggregate results still bind their actual
+returned object address. No string is decoded into a contract-result identity.
+
+Bare `result` lowers to that typed binding, while `c(result)` resolves the
+source C binding, including inside casts, field projections, and array indices.
+Kernel post-state reconstruction and fixed-state proof lowering preserve a
+same-named parameter's value.
 
 The positive field, array, shallow-pointer, and aggregate-return checks are in
 `mdtests/aggregate_parameter_value_fields.md`. The output-pointer, explicit

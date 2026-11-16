@@ -522,7 +522,11 @@ impl MachineTerm {
         pointer: crate::kernel::Pointer,
         kind: crate::kernel::LoadKind,
     ) -> Self {
-        Self::MemoryLoad(memory, Box::new(pointer), kind)
+        Self::MemoryLoad(
+            crate::kernel::ProgramPoint::at(&memory),
+            Box::new(pointer),
+            kind,
+        )
     }
 
     /// The `signed char` value of the byte whose `unsigned char` value is

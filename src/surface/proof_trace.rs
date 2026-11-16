@@ -348,7 +348,7 @@ pub(super) fn pointer_definition(pointer: &Pointer) -> Option<MachineTerm> {
         let read = pointer.as_loaded_value()?;
         (read.displacement == crate::kernel::PointerOffsetTerm::Constant(0)).then(|| {
             MachineTerm::MemoryLoad(
-                read.defining_memory,
+                crate::kernel::ProgramPoint::at(&read.defining_memory),
                 Box::new(read.defining_address),
                 crate::kernel::LoadKind::Int32,
             )
@@ -1466,7 +1466,7 @@ mod tests {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     left: Box::new(MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(memory),
+                        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(pointer.clone()),
                         LoadKind::Bits64,
                     )),
@@ -1710,7 +1710,7 @@ mod tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let variable = crate::kernel::load_variable_for_term(&MachineTerm::MemoryLoad(
-            memory.clone(),
+            crate::kernel::ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         ))
@@ -1722,7 +1722,7 @@ mod tests {
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::Variable(variable)),
                 right: Box::new(MachineTerm::MemoryLoad(
-                    memory,
+                    crate::kernel::ProgramPoint::at(&memory),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 )),

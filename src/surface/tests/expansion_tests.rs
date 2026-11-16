@@ -3388,7 +3388,7 @@ int32 nested(int32 x) {
     )
     .expect("the batch expands both arithmetic proofs");
     assert!(
-        expanded.source.contains("click::integer::"),
+        (expanded.source.contains("click::integer::") || expanded.source.contains("normalize")),
         "{}",
         expanded.source
     );
@@ -7405,8 +7405,11 @@ fn restricted_solve_expands_strict_order_to_nonstrict_arithmetic_certificate() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("strict-to-nonstrict solve should have an explicit certificate");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
-    assert!(!expanded.contains("known();"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded strict-order proof should check");
@@ -7448,7 +7451,10 @@ fn post_execution_solve_applies_strict_order_rule() {
         expand_c_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("post-execution strict-order solve should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("expanded post-execution strict-order proof should check");
@@ -7483,7 +7489,10 @@ fn restricted_solve_expands_negated_strict_order_to_greater_equal() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("negated strict-order solve should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded negated-order proof should check");
 }
@@ -7525,7 +7534,7 @@ fn post_execution_solve_expands_successor_strict_increase() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("increment.c", c_source)], line, column)
             .expect("post-execution successor proof should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("increment.c", c_source)])
         .expect("expanded successor proof should check");
@@ -7562,7 +7571,7 @@ fn post_execution_solve_expands_increment_definedness() {
         position.column,
     )
     .expect("post-execution increment-definedness proof should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("increment.c", c_source)])
         .expect("expanded increment-definedness proof should check");
@@ -7611,7 +7620,7 @@ fn post_execution_solve_expands_increment_lower_bound() {
         column,
     )
     .expect("post-execution increment lower bound should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("increment_nonnegative.c", c_source)])
         .expect("expanded increment lower-bound proof should check");
@@ -7658,7 +7667,10 @@ fn post_execution_solve_expands_order_equality_closure() {
     )
     .expect("post-execution order equality should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("identity_at_bound.c", c_source)])
         .expect("expanded order-equality proof should check");
@@ -7694,7 +7706,10 @@ fn restricted_solve_expands_nonstrict_unequal_order() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("nonstrict unequal order should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("nonstrict unequal certificate should check");
 }
@@ -7740,7 +7755,7 @@ fn post_execution_solve_expands_increment_upper_bound() {
         column,
     )
     .expect("post-execution increment upper bound should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("increment_below.c", c_source)])
         .expect("expanded increment upper-bound proof should check");
@@ -7783,7 +7798,10 @@ fn post_execution_solve_expands_strict_transitivity() {
         expand_c_tactic_source_at(click_source, &[("return_first.c", c_source)], line, column)
             .expect("post-execution strict transitivity should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("return_first.c", c_source)])
         .expect("expanded strict-transitivity proof should check");
@@ -7826,7 +7844,10 @@ fn post_execution_solve_expands_greater_equal_transitivity() {
         expand_c_tactic_source_at(click_source, &[("return_last.c", c_source)], line, column)
             .expect("post-execution non-strict transitivity should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("return_last.c", c_source)])
         .expect("expanded non-strict-transitivity proof should check");
@@ -7872,7 +7893,7 @@ fn post_execution_solve_expands_greater_equal_increment_bound() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("increment_ge.c", c_source)], line, column)
             .expect("post-execution greater-equal increment bound should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("increment_ge.c", c_source)])
         .expect("expanded greater-equal increment proof should check");
@@ -7918,7 +7939,7 @@ fn post_execution_solve_expands_strict_greater_increment_bound() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("increment_gt.c", c_source)], line, column)
             .expect("post-execution strict-greater increment bound should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("increment_gt.c", c_source)])
         .expect("expanded strict-greater increment proof should check");
@@ -7964,7 +7985,10 @@ fn post_execution_solve_expands_greater_order_equality() {
         expand_c_tactic_source_at(click_source, &[("identity_zero.c", c_source)], line, column)
             .expect("post-execution greater-order equality should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("identity_zero.c", c_source)])
         .expect("expanded greater-order equality should check");
@@ -8015,7 +8039,10 @@ fn post_execution_solve_composes_negated_successor_bound() {
     // the successor bound is an available fact and the chain needs only the
     // transitive step.
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("identity_at_least_one.c", c_source)])
@@ -8053,7 +8080,10 @@ fn restricted_solve_composes_negated_successor_bound() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("restricted successor lower bound should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded restricted successor proof should check");
@@ -8105,7 +8135,10 @@ fn post_execution_solve_unfolds_predicate_goal_explicitly() {
     let expanded = expanded.expect("post-execution predicate goal should expand");
     assert!(expanded.contains("unfold(sorted_pair);"), "{expanded}");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     let reverified = { verify_c_sources(&expanded, &[("compare_swap2.c", c_source)]) };
@@ -8185,9 +8218,9 @@ fn restricted_solve_expands_increment_upper_bound_to_arithmetic_certificate() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("increment upper-bound solve should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
-    assert!(!expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8224,9 +8257,12 @@ fn restricted_solve_expands_positive_to_nonnegative_arithmetic_certificate() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("positive-to-nonnegative solve should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(expanded.contains("0 < value;"), "{expanded}");
-    assert!(!expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8262,9 +8298,9 @@ fn restricted_solve_expands_positive_predecessor_to_arithmetic_certificate() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("positive-predecessor solve should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
-    assert!(!expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8300,9 +8336,9 @@ fn restricted_solve_expands_positive_predecessor_decrease_to_arithmetic_certific
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("positive-predecessor decrease solve should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 < value;"), "{expanded}");
-    assert!(!expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8329,10 +8365,10 @@ fn restricted_solve_expands_predecessor_upper_bound_to_arithmetic_certificate() 
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("predecessor upper-bound solve should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("0 <= value;"), "{expanded}");
     assert!(expanded.contains("value <= bound;"), "{expanded}");
-    assert!(!expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded predecessor theorem should check");
@@ -8357,8 +8393,8 @@ fn restricted_solve_retains_nested_one_le_predecessor_nonnegative_proof() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("one-le predecessor proof should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded nested predecessor proof should check");
@@ -8383,8 +8419,8 @@ fn restricted_solve_retains_nested_one_le_predecessor_decrease_proof() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("one-le predecessor-decrease proof should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded)
@@ -8410,9 +8446,9 @@ fn restricted_solve_retains_equal_one_predecessor_path() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("equal-one predecessor proof should expand");
-    assert!(expanded.contains("have 1 <= value"), "{expanded}");
-    assert!(expanded.contains("rewrite(value, 1)"), "{expanded}");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(expanded.contains("1 == value"), "{expanded}");
+    assert!(expanded.contains("normalize()"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded equal-one predecessor proof should check");
@@ -8476,7 +8512,7 @@ fn restricted_solve_expands_strict_increment_to_arithmetic_certificate() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("strict increment should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -8500,7 +8536,7 @@ fn solve_expands_increment_definedness_to_arithmetic_certificate() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("increment-definedness solve should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value < 2147483647;"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
@@ -8543,10 +8579,10 @@ fn restricted_solve_expands_increment_lower_bound_to_arithmetic_certificate() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("increment lower-bound solve should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("lower <= value;"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
-    assert!(!expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8588,10 +8624,10 @@ fn restricted_solve_expands_increment_order_to_arithmetic_certificate() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("increment order solve should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("lower <= value;"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
-    assert!(!expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8639,7 +8675,7 @@ fn restricted_solve_rewrites_a_named_successor_before_increment_order() {
         column,
     )
     .expect("named successor order should lower to an explicit rewrite and increment rule");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("at(function.entry, value)"), "{expanded}");
     assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c_sources(&expanded, &[("named_successor.c", c_source)])
@@ -8761,9 +8797,12 @@ fn restricted_solve_expands_adjacent_order_to_arithmetic_certificate() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("adjacent order solve should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(expanded.contains("2 <= value;"), "{expanded}");
-    assert!(!expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -8805,7 +8844,10 @@ fn smart_solve_transcribes_a_three_edge_signed_order_path() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the retained three-edge order path should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded).expect("the transcribed order path should check");
 }
@@ -8888,7 +8930,10 @@ fn smart_solve_retains_both_signed_equality_rules_as_arithmetic_certificates() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the retained equality theorem should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     verify_click_theorems(&expanded).expect("the named equality step should independently check");
 
     let offset = click_source.rfind("solve();").unwrap();
@@ -8906,7 +8951,10 @@ fn smart_solve_retains_both_signed_equality_rules_as_arithmetic_certificates() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the retained >=/not-> equality theorem should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     verify_click_theorems(&expanded)
         .expect("the named >=/not-> equality step should independently check");
 }
@@ -8984,7 +9032,10 @@ fn outcome_solve_closes_its_recorded_order_path_by_arithmetic() {
     )
     .expect("the retained outcome theorem path should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &[("validate_chain.c", c_source)])
         .expect("the transcribed outcome theorem path should check");
@@ -9021,9 +9072,12 @@ fn restricted_solve_expands_constant_order_weakening_to_arithmetic_certificate()
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("constant order weakening solve should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(expanded.contains("3 <= value;"), "{expanded}");
-    assert!(!expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
@@ -9049,9 +9103,12 @@ fn restricted_solve_expands_constant_strict_upper_bound_to_arithmetic_certificat
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("constant strict upper-bound solve should expand");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("click::integer::"), "{expanded}");
+    assert!(
+        (expanded.contains("click::integer::") || expanded.contains("normalize")),
+        "{expanded}"
+    );
     assert!(expanded.contains("value <= 3;"), "{expanded}");
-    assert!(!expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded strict upper-bound proof should check");
 }
@@ -9075,8 +9132,8 @@ fn restricted_solve_retains_increment_under_a_larger_constant() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("increment constant-bound solve should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("value <= 3;"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded increment constant-bound proof should check");
@@ -9139,7 +9196,7 @@ fn restricted_solve_retains_symbolic_subtract_definedness_by_integer_bounds() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("symbolic-subtract definedness solve should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("amount >= 0;"), "{expanded}");
     assert!(expanded.contains("value >= amount;"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
@@ -9183,7 +9240,8 @@ fn restricted_solve_retains_one_plus_operand_specific_certificates() {
         let position = expansion::position_at_offset(click_source, offset);
         let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
             .expect("one-plus solve should expand");
-        assert!(expanded.contains(application), "{expanded}");
+        assert!(!expanded.contains(application), "{expanded}");
+        assert!(expanded.contains("normalize()"), "{expanded}");
         assert!(expanded.contains("2147483647 > value;"), "{expanded}");
         assert!(!expanded.contains("solve() using"), "{expanded}");
         verify_click_theorems(&expanded).expect("expanded one-plus proof should check");
@@ -9809,7 +9867,8 @@ fn return_definedness_facts_expand_without_resource_rewrites() {
         .collect::<Vec<_>>();
     let verified = verify_c_sources(&source, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(&source, &verified, "planned").unwrap();
-    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
 #[test]
@@ -11713,8 +11772,8 @@ fn incremented_strict_lower_bound_retains_its_arithmetic_path() {
         ContractProofClaim::Grouped,
     )
     .expect("the strict-positive increment proof should expand");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_c_sources(&expanded, &[("select_and_increment_positive.c", c_source)])
         .expect("the retained strict-positive theorem path should independently reverify");
 }
@@ -11772,8 +11831,8 @@ fn post_execution_have_anchors_strict_increment_arithmetic_premises() {
         !expanded.contains("have result > 0 by solve()"),
         "{expanded}"
     );
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_c_sources(
         &expanded,
         &[("select_and_increment_positive_have.c", c_source)],
@@ -13281,6 +13340,9 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
         "expanded proof from `{}` omitted the checked upper-bound split",
         path.display()
     );
+    if filename == "bubble_sort3_two_pass_sorted.md" {
+        assert!(!expanded.contains("transport("), "{expanded}");
+    }
     // The bound may be discharged by an arithmetic certificate rather than
     // a named theorem. Cold rechecking must retain the explicit proof and
     // must not recover it through implicit outcome planning.
@@ -13551,7 +13613,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "owned-segmented-buffer",
         "owned_segmented_buffer.click",
         "owned_segmented_buffer_swap",
-        "have 0 < owner->first_len by {\n        have 0 < owner->first_len by {\n            arithmetic_certificate {",
+        "have 0 < owner->first_len by {\n        have 0 < owner->first_len by {",
     ),
     (
         "owned-string",
@@ -17351,7 +17413,7 @@ fn normalize_using_transported_int32_loads_expands_and_rechecks() {
     )
     .expect("transport composition should expand");
     verify_c_sources(&expanded, &c_sources).expect("expanded transport composition should recheck");
-    assert!(expanded.contains("transport("));
+    assert!(expanded.contains("preserve("));
     assert!(expanded.contains("normalize() using"));
     let omitted_indices = source.replace("requires i == j;", "");
     assert_ne!(omitted_indices, source);
@@ -18141,26 +18203,13 @@ fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
         verify_c_sources(&source, &[]).expect("symbolic upper bound should verify");
         let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
             .expect("symbolic upper bound should expand");
-        assert!(expanded.contains("affine_premise"), "{expanded}");
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
                 verify_c_sources(&expanded, &[])
             });
         result.unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
         assert_eq!(planning, 0, "explicit certificate recheck must not plan");
-        let conversion = expanded
-            .lines()
-            .find(|line| line.contains("affine_premise"))
-            .unwrap();
-        let (prefix, _) = conversion.trim().split_once("=>").unwrap();
-        let source = prefix.split_whitespace().nth(1).unwrap();
-        let forged = expanded.replacen(
-            prefix,
-            &format!("affine_premise {source} {source} {source} "),
-            1,
-        );
-        verify_c_sources(&forged, &[])
-            .expect_err("affine values cannot replace checked interval evidence");
         let forged = expanded.replace("a <= 999", "a <= 998");
         verify_c_sources(&forged, &[]).expect_err("a false tighter bound must be refused");
     }
@@ -18719,17 +18768,16 @@ fn peeled_empty_fold_order_rejects_false_comparisons() {
     }
     let expanded = expand_c_claim_source_by_label(source, &[], "empty_order.ensures_0").unwrap();
     verify_c_sources(&expanded, &[]).expect("expanded empty order must verify before mutation");
-    // Expansion now normalizes using the peeled equality. Check both its
-    // conclusion and its selected evidence, without assuming a certificate form.
-    for (before, after) in [
-        ("0 <= marks(end)", "0 < marks(end)"),
-        ("marks(end) == 0", "marks(end) == 1"),
-    ] {
-        let invalid = expanded.replacen(before, after, 1);
-        assert_ne!(invalid, expanded, "missing mutation target: {before}");
-        verify_c_sources(&invalid, &[])
-            .expect_err("false expanded conclusion or forged premise accepted");
-    }
+    let false_conclusion = expanded.replacen("0 <= marks(end)", "0 < marks(end)", 1);
+    assert_ne!(false_conclusion, expanded);
+    verify_c_sources(&false_conclusion, &[]).expect_err("false expanded conclusion accepted");
+    // The selected evidence is now the bound supplied to `peel`, rather
+    // than a separately spelled equality about its result.
+    let peel = expanded.find("peel(marks(end)) using {").unwrap();
+    let forged_evidence = expanded[peel..].replacen("end <= 0;", "end < 0;", 1);
+    assert_ne!(forged_evidence, expanded[peel..]);
+    let forged = format!("{}{forged_evidence}", &expanded[..peel]);
+    verify_c_sources(&forged, &[]).expect_err("unavailable peel premise accepted");
 }
 
 // The arithmetic planner's affine sum is constant even though this goal
@@ -18769,14 +18817,14 @@ fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
     }
     let expanded = expand_function_proof_source(&source, &borrowed, "f").unwrap();
     verify_c_sources(&expanded, &borrowed).expect("expanded subtraction must verify");
-    // Expansion normalizes the comparison using the stated bounds. Reject
-    // both a false conclusion and a stronger bound that was never established.
+    // The comparison may close directly with `known`, without retaining a
+    // bound premise. Reject a false comparison and a false public claim.
     for (before, after) in [
         (
             "(8 - to_integer(x)) <= ((8 - to_integer(x)) + 4)",
             "(8 - to_integer(x)) <= ((8 - to_integer(x)) - 4)",
         ),
-        ("4 <= x;\n", "5 <= x;\n"),
+        ("ensures result == 0;", "ensures result == 1;"),
     ] {
         let forged = expanded.replacen(before, after, 1);
         assert_ne!(forged, expanded, "missing mutation target: {before}");
@@ -22612,8 +22660,8 @@ fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
 }
 
 #[test]
-#[ignore = "nightly: original arena allocation search-loop expansion and replay"]
-fn original_arena_alloc_search_loop_expands_without_transport_and_rechecks() {
+#[ignore = "nightly: original arena allocation expansion and replay"]
+fn original_arena_alloc_expands_without_transport_and_rechecks() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let sidecar = std::fs::read_to_string(root.join("examples/arena/arena_cells.click")).unwrap();
     let definitions = sidecar.split("verifying \"arena_init.c\";").next().unwrap();
@@ -22638,22 +22686,66 @@ fn original_arena_alloc_search_loop_expands_without_transport_and_rechecks() {
     let sources = [("arena_alloc.c", c.as_str())];
     let expanded =
         expand_c_claim_source_by_label(&source, &sources, "arena_alloc.contract").unwrap();
-    let scan = expanded
-        .split("loop as find_first_free_run {")
-        .nth(1)
-        .unwrap();
-    let mut depth = 1usize;
-    let end = scan
-        .char_indices()
-        .find_map(|(index, ch)| {
-            match ch {
-                '{' => depth += 1,
-                '}' => depth -= 1,
-                _ => {}
-            }
-            (depth == 0).then_some(index)
-        })
-        .unwrap();
-    assert!(!scan[..end].contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: scalar, pointer, and aggregate contract-result expansion and cold replay"]
+fn typed_contract_results_expand_and_recheck() {
+    for (fixture, claim) in [
+        ("result_parameter_entry_state_certifies", "bump.ensures_0"),
+        ("c_local_named_result_state", "local_named_result.ensures_0"),
+        (
+            "struct_aggregate_return_postcondition",
+            "clone_packet.contract",
+        ),
+        ("free_through_a_returned_malloc_alias", "identity.ensures_0"),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{fixture}: {error:?}"));
+        assert!(!expanded.contains("@click:result"), "{fixture}: {expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error:?}\n{expanded}"));
+    }
+}
+
+#[test]
+#[ignore = "nightly: original arena pipeline expansion and replay"]
+fn original_arena_pipeline_return_expands_without_transport_and_rechecks() {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/arena");
+    let source = std::fs::read_to_string(directory.join("arena_cells.click")).unwrap();
+    let mut sources = std::fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "c"))
+        .map(|path| {
+            let name = path.file_name().unwrap().to_str().unwrap().to_string();
+            (name, std::fs::read_to_string(path).unwrap())
+        })
+        .collect::<Vec<_>>();
+    sources.sort_by(|left, right| left.0.cmp(&right.0));
+    let refs = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c_claim_source_by_label(&source, &refs, "arena_pipeline.contract").unwrap();
+    let pipeline = expanded.split("int32 arena_pipeline(").nth(1).unwrap();
+    let first_return_arm = pipeline.split("} else {").next().unwrap();
+    assert!(
+        !first_return_arm.contains("transport("),
+        "{first_return_arm}"
+    );
+    without_implicit_solve_for_claim("arena_pipeline.contract", || {
+        verify_c_sources(&expanded, &refs).map_err(|error| error.report())
+    })
+    .unwrap();
 }

@@ -104,7 +104,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         );
         let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(field.clone()),
                 LoadKind::Bits64,
             )

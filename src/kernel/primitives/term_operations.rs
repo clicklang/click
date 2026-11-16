@@ -3032,6 +3032,97 @@ impl ConditionTerm {
         ])
     }
 
+    /// Regroup two exact pointer displacements by full-width unsigned
+    /// indices, `(p + a) + b` and `p + (a + b)`, only when the `uint64`
+    /// addition `a + b` does not wrap: the returned condition,
+    /// `to_integer(a) + to_integer(b) <= 18446744073709551615`, for the
+    /// sum the regrouped side holds. Each
+    /// displacement is one scaled unsigned 64-bit scalar or a nonnegative
+    /// representable constant, at one stride. A full-width displacement is
+    /// exact, so its byte offset is the index times the stride with no
+    /// wrap of its own. A shared pointer base may precede them; other
+    /// nested sums are refused.
+    pub(crate) fn pointer_offset_uint64_association_guard(&self) -> Option<ConditionTerm> {
+        fn scalar(offset: &PointerOffsetTerm, width: i64) -> Option<SharedMachineIntegerTerm> {
+            match offset {
+                PointerOffsetTerm::Int64Scaled {
+                    value,
+                    byte_width,
+                    unsigned: true,
+                } if *byte_width == width => Some(value.clone()),
+                PointerOffsetTerm::Constant(value) if *value >= 0 && value % width == 0 => {
+                    Some(SharedMachineIntegerTerm::index(
+                        MachineIntegerType::Int64,
+                        MachineTerm::uint64_constant((value / width) as u64),
+                    ))
+                }
+                _ => None,
+            }
+        }
+        let (left, right) = self.pointer_offset_sides()?;
+        for (expanded, indexed) in [(left, right), (right, left)] {
+            let PointerOffsetTerm::Add(left, right) = expanded else {
+                continue;
+            };
+            let (left, indexed) = match (left.as_ref(), indexed) {
+                (PointerOffsetTerm::Add(base, index), PointerOffsetTerm::Add(other_base, sum))
+                    if base == other_base =>
+                {
+                    (index.as_ref(), sum.as_ref())
+                }
+                _ => (left.as_ref(), indexed),
+            };
+            let PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned: true,
+            } = indexed
+            else {
+                continue;
+            };
+            if *byte_width <= 0 {
+                continue;
+            }
+            let (Some(left), Some(right)) = (scalar(left, *byte_width), scalar(right, *byte_width))
+            else {
+                continue;
+            };
+            let children = [left.operand_view(), right.operand_view()]
+                .map(|view| KernelTerm::retained_machine_operand(MachineIntegerType::UInt64, view));
+            let raw = KernelTerm::machine_binary_shared(
+                MachineIntegerType::UInt64,
+                MachineBinaryOp::Add,
+                children.clone(),
+            );
+            let Some(sum) = crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node(
+                &raw, &children,
+            ) else {
+                continue;
+            };
+            let expected = KernelTerm::retained_machine_operand(
+                MachineIntegerType::UInt64,
+                value.operand_view(),
+            );
+            if crate::kernel::shared_machine_syntax_equal(&sum, &expected) {
+                // `to_integer(a) + to_integer(b) <= 18446744073709551615`:
+                // the sum's integer value fits a `uint64`.
+                let integer = |term: &MachineTerm| {
+                    IntegerTerm::from_machine(MachineIntegerType::UInt64, term.clone())
+                        .map(SharedIntegerTerm::from)
+                };
+                return Some(Self::IntegerLessEqual(
+                    IntegerTerm::Add(
+                        integer(left.structural_value())?,
+                        integer(right.structural_value())?,
+                    )
+                    .into(),
+                    IntegerTerm::Constant(num_bigint::BigInt::from(u64::MAX)).into(),
+                ));
+            }
+        }
+        None
+    }
+
     /// Regroup two exact pointer displacements into one signed-word index
     /// only when that index addition does not wrap. Each displacement is one
     /// scaled scalar or a representable constant. A shared pointer base may
@@ -4880,8 +4971,11 @@ impl Pointer {
         if let Some(ProgramValue::Pointer(stored)) = memory.memory().known_value(address) {
             return stored.pointer().clone();
         }
-        let read =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(address.clone()),
+            LoadKind::Int32,
+        );
         match canonical_pointer_read(&read) {
             Some(named) => named_pointer_read(named),
             None => Self::loaded_value(memory, address),
@@ -4918,7 +5012,7 @@ impl Pointer {
             return None;
         };
         Some(Self::loaded_value(
-            &memory.unchanged_bytes_source(),
+            &memory.shared_memory().unchanged_bytes_source(),
             address,
         ))
     }
@@ -4981,8 +5075,11 @@ impl Pointer {
         }
         // Pointer values retain the selected read directly. Observation metadata
         // records the live source independently of the term's identity.
-        let bits =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
+        let bits = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(address.clone()),
+            LoadKind::Int32,
+        );
         Err(Self::loaded(&bits).expect("a pointer read has a structural descriptor"))
     }
 
@@ -6235,7 +6332,7 @@ fn named_pointer_read(read: MachineTerm) -> Pointer {
     let MachineTerm::MemoryLoad(memory, address, _) = &read else {
         unreachable!("selected pointer read");
     };
-    let value = Pointer::loaded_value(&memory.unchanged_bytes_source(), address);
+    let value = Pointer::loaded_value(&memory.shared_memory().unchanged_bytes_source(), address);
     if let PointerBlock::LoadedPointer(identity) = value.block {
         crate::kernel::eval::record_pointer_load_source(identity, &read);
     }

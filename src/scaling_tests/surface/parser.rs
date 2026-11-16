@@ -74,3 +74,49 @@ fn literal_reference_parsing_shares_the_source_index_as_other_literals_grow() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn static_declaration_preparation_is_linear_and_selector_lookup_is_indexed() {
+    for size in [1usize, 16, 256] {
+        let mut source = String::new();
+        for i in 0..size {
+            source.push_str(&format!("static int32 global_{i} = {i};\n"));
+        }
+        for i in 0..size {
+            source.push_str(&format!(
+                "int32 function_{i}(void) {{ static int32 local = {i}; return local; }}\n"
+            ));
+        }
+        let unit = syntax::parse_translation_unit_for_source(
+            &source,
+            "statics.c",
+            &crate::languages::c::source::ExpandedLineMap::empty(),
+        )
+        .unwrap();
+        let (layouts, preparation) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut layouts = ProgramLayouts::default();
+            layouts.register_file_static_bindings(&unit);
+            for function in &unit.functions {
+                layouts.register_local_bindings(function);
+            }
+            layouts
+        });
+        assert!(
+            preparation >= 2 * size && preparation <= 6 * size + 8,
+            "{size}: {preparation}"
+        );
+        let (expression, lookup) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut parser = Parser::new("\"statics.c\"::static(0)").unwrap();
+            parser.local_bindings = layouts.local_bindings.clone();
+            parser.parse_contract_expression().unwrap()
+        });
+        let ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Static(id),
+        )) = expression
+        else {
+            panic!("static selector");
+        };
+        assert_eq!(id.spelling(), "global_0");
+        assert_eq!(lookup, 9, "selector work changed at size {size}");
+    }
+}

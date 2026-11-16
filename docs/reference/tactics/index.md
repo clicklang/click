@@ -1247,6 +1247,16 @@ A bound on the low word or a signed comparison cannot establish this unsigned
 projection, and address equality grants no permission to access the backing
 storage. Conditional normalization does not enter binder bodies.
 
+Two displacements of one pointer by full-width unsigned indices regroup:
+`(p + a) + b == p + (a + b)` for `uint64` (or `usize`) `a` and `b` at one
+stride, when the sum does not wrap. The one fact read is
+`to_integer(a) + to_integer(b) <= 18446744073709551615`, found by exact
+lookup, and `normalize() using { ... }` can cite it. A loop that moves a
+cursor forward, `v = v + cs`, carries `v == b + k` across the pass this way
+([`full_width_pointer_cursor_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/full_width_pointer_cursor_loop.md),
+[`full_width_pointer_association.md`](https://github.com/clicklang/click/blob/master/mdtests/full_width_pointer_association.md),
+[`full_width_pointer_association_requires_its_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/full_width_pointer_association_requires_its_bound.md)).
+
 When a smart `have` needs memory permissions merely to lower its goal, its
 expanded proof retains the relevant viewability and order facts through
 explicit transports, rewrites, extracts, or named theorem applications. A
@@ -1358,11 +1368,12 @@ goal operand is used once a nested `solve` proves the guard: the closer extracts
 the consequent and rewrites the goal with an equality or closes from the new
 fact.
 
-An `int32` or `int64` definedness goal `defined(a + b)` or `defined(a - b)` is
-closed by the checked `int32_defined` or `int64_defined` certificate rule,
-citing the constant order and equality facts of that width indexed under each
-operand; the rule, not the selection, decides whether the operands' ranges
-exclude overflow.
+An `int32` or `int64` definedness goal `defined(a + b)` or `defined(a - b)`
+selects the constant order and equality facts of that width indexed under each
+operand. It states intrinsic operand ranges and proves both ordinary bounds on
+the exact result, using local interval normalization or Integer laws. Expansion
+retains those `have` proofs and closes the domain with `known()`; it emits no
+signed-definedness arithmetic certificate.
 
 A recursive specification function applied to a known constructor is
 evaluated: `solve` unfolds it, then keeps unfolding the recursive calls the
@@ -1393,8 +1404,8 @@ its bounds
 ([`solve_defined_count_after_a_zero_summand.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_defined_count_after_a_zero_summand.md)).
 
 When the goal also carries an operand's own definedness, such as a field read
-through a resource, `solve` proves `defined(operand)` as a `have` and cites it in
-the `int32_defined` step
+through a resource, `solve` proves `defined(operand)` as a `have`, separately
+from the exact-result bounds
 ([`solve_defined_read_through_a_produced_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_defined_read_through_a_produced_resource.md)).
 
 A goal that reads one cell at two version points, such as `owner->cell[0] ==
@@ -1463,12 +1474,12 @@ transition.
 
 A listed guarded equality whose definedness guard is not listed has the guard
 proved first, from the other listed facts when they suffice, and is then used as
-its consequent. An `int32` or `int64` definedness goal cites the listed premises
-that bound an operand by a constant in one `int32_defined` or `int64_defined`
-certificate. For an Integer goal observing a machine sum or difference,
+its consequent. An `int32` or `int64` definedness goal uses the listed operand
+bounds and intrinsic type ranges to prove the two exact-result bounds through
+ordinary normalization and Integer laws. For an Integer goal observing a machine sum or difference,
 listed bounds and the machine type's range can establish the in-range
 identity, such as `to_integer(x + 1) == to_integer(x) + 1`. Expansion writes
-the range proofs and an `integer_operation_identity` certificate. An
+the range proofs and an explicit normalization step. An
 unsigned operation is used this way only when those bounds prove it does not wrap.
 
 Available verified theorems are reasoning rules, not extra hypotheses. If the
@@ -1478,6 +1489,36 @@ determined by that conclusion; generic type arguments are inferred by ordinary
 application checking. The instantiated requirements and argument guards must
 be supplied by the listed facts under the existing `apply ... using` rules.
 An unconditional theorem can therefore close `solve() using {}`.
+
+Conclusion matching treats reversed `==` and `!=` operands and mirrored
+orders (`a > b` / `b < a`, `a >= b` / `b <= a`) as the same comparison.
+Both symmetric orientations remain available when theorem prerequisites
+must disambiguate the inferred arguments. Repeated parameters retain one
+consistent assignment across the whole conclusion. This adds no conversion
+between strict and non-strict orders or between negated and complementary
+float comparisons, where NaNs matter. Expansion still cites the original
+theorem with its inferred arguments.
+
+<!-- verified-example: mdtests/solve_using_equivalent_comparisons.md -->
+```click
+function fixed(x: Integer) -> Integer { 7 }
+
+theorem lower_bound(x: Integer) {
+    requires 0 <= x;
+    ensures fixed(x) >= 7 by { unfold(fixed(x)); solve(); }
+}
+
+theorem equality(x: Integer) {
+    requires 0 <= x;
+    ensures fixed(x) == 7 by { unfold(fixed(x)); solve(); }
+}
+
+theorem test(value: Integer) {
+    requires 0 <= value;
+    ensures 7 <= fixed(value) by { solve() using { 0 <= value; }; }
+    ensures 7 == fixed(value) by { solve() using { 0 <= value; }; }
+}
+```
 
 This first slice supports binder-free structural matching of comparisons,
 predicate calls, definedness, and proposition expressions, including ordinary
@@ -1535,9 +1576,13 @@ available when one of these holds:
 - It is a fact, or a leaf conjunct of a fact. An implication or quantified
   goal must be such a fact up to renaming of its bound variables.
 - It is another spelling of an available order claim, in every order family
-  (C machine types and `Integer`): `0 <= x` for `x >= 0`, and `not(y <= x)`,
+  (C machine integers and `Integer`): `0 <= x` for `x >= 0`, and `not(y <= x)`,
   `y > x` and `x < y` for one another. `x != y`, `not(x == y)`, and
   `y != x` are one claim.
+- A float comparison has its operands reversed with the matching relation:
+  `a > b` / `b < a`, `a >= b` / `b <= a`, and reversed `==` or `!=`.
+  Width and truth polarity stay fixed; negated float orders are not treated
+  as complementary orders, since NaNs would invalidate that rule.
 - The shared equality closure decides it. Equality is symmetric and
   transitive, and congruent through C and `Integer` operators, pure-function
   applications, and algebraic constructors: `x == y` gives `y == x`,
@@ -1717,9 +1762,12 @@ or quantifier, when evaluation makes it true:
 
 For explicit Integer normalization, `2 * x == x + x`,
 `3 * (x - y) == 3 * x - 3 * y`, and `(2 + 3) * x == 5 * x` also hold.
-Only constant coefficients distribute; a product of two symbolic terms, a
-call, a read, or a fold remains an opaque operand. The checker visits shared
-arithmetic nodes once and reads no facts. The computational `known()` leaf
+Products also normalize association and factor order within each monomial.
+One explicit symbolic distribution, `(a + b) * c == a * c + b * c`
+(or subtraction, or distribution on the other side), is a local primitive
+with opaque operands. Full polynomial expansion is search: `solve` writes
+individual distribution equalities and rewrites before normalization. Calls,
+reads, and folds remain opaque. Checking reads no facts. The computational `known()` leaf
 retains its narrower sum/difference rules. C machine multiplication also
 remains opaque; these exact Integer identities introduce no machine overflow
 or definedness facts.
@@ -1773,6 +1821,18 @@ arithmetic certificate. See
 [`integer_machine_bridge_normalization.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_machine_bridge_normalization.md)
 and its wrapping and false-corner refusal controls.
 
+The specialized selected rules also accept exact Integer division/remainder
+bounds from four ordered constant endpoints, multiplication order from an
+ordered pair and its factor's sign, quotient bounds from a scaled bound and
+a positive divisor, and a constant-divisor quotient shift from the two
+nonnegative operands. Pointer translation names its equality first and scalar
+bounds after it; tagged-word rules name their word equality first (when used)
+and then the alignment facts. One finite classification proves the matching
+reflexive IEEE comparison. These are fixed local rules over explicit inputs;
+none selects premises or expands a polynomial. Generated proofs use ordinary
+normalization steps; legacy `rules` certificates remain accepted as authored
+compatibility syntax.
+
 **Accepts** a goal that `normalize()` accepts after this reduction, when every
 cited premise is accepted:
 
@@ -1801,6 +1861,17 @@ cited premise is accepted:
   conditions on that term decide it, in every family, the 8- and 16-bit
   types included: `a <= 5` or `a < 5` gives `a <= 10`, and `n == 0` gives
   `n != 1`.
+- A signed `int32` operation's constant interval follows from the cited
+  endpoints of its opaque operands: addition, subtraction, multiplication,
+  constant remainder and shifts, a nonnegative constant bit mask, and an
+  in-range cast. Exact addition/subtraction over bounded machine observations
+  uses the same endpoint calculation without machine wrapping. Nested
+  operations need explicit intermediate bounds. A bounded nonnegative
+  remainder also transports through a stated constant addition when its
+  translated interval crosses no divisor boundary. No operand interval is
+  recursively searched. A separately stated exact domain can intersect an
+  operation's result with its signed type range
+  ([`signed_interval_normalization.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_interval_normalization.md)).
 - Two addresses in one block whose offsets differ, after their shared
   addends cancel, by two element indices on one side and one on the other at
   one element width are equal when a cited premise states the one index's
@@ -1886,9 +1957,10 @@ follows the selected expression and premises.
 **Specialized.** Write it only for a bound that follows from the goal's own
 terms, such as `(x & 255) <= 255`; it reads no fact. `solve() using {}` tries
 the engine this section describes after its other closers, over no premises.
-The engine plans and checks a bounded
-arithmetic certificate for the current comparison or equality, in the signed
-`int32` family or in the mathematical `Integer` linear family.
+The engine plans a bounded proof of the current comparison or equality over
+signed `int32` values or mathematical `Integer` expressions. Signed interval
+plans expand into ordinary `have` steps, normalization, and Integer law
+applications, with explicit operation domains and observation identities.
 
 The family is decided by the goal's own checked terms, never guessed from its
 spelling, and the two never coerce into each other. For `int32`, affine terms
@@ -1912,8 +1984,9 @@ unsupported operator, a possibly overflowing goal expression, or a
 nonconsequence fails locally.
 
 A goal recognized as `Integer` linear reports that fragment, not the `int32`
-precondition. The planner runs once and expansion retains its checked structural
-certificate.
+precondition. Expansion retains the ordinary checked operations selected by the
+plan. Specialized rule families that have not migrated may still emit explicit
+arithmetic certificates.
 
 **Checked examples:** [`pure_arithmetic_affine.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_arithmetic_affine.md), [`pure_arithmetic_bounded_operations.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_arithmetic_bounded_operations.md), [`arithmetic_on_an_unfold_refreshed_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_on_an_unfold_refreshed_goal.md)
 
@@ -2160,8 +2233,8 @@ An unavailable premise, unsupported rule, or mismatched endpoint fails locally.
 
 ### Arithmetic certificates
 
-Migration to ordinary arithmetic proofs has begun. These certificate rules
-have named laws, applied with explicit `using` premises:
+Arithmetic automation expands to ordinary proofs. The compatibility certificate
+rules correspond to named laws, applied with explicit `using` premises:
 
 | Certificate operation | Ordinary law |
 | --- | --- |
@@ -2186,14 +2259,17 @@ other refutations open a negated-goal scope with `intro` and close its contradic
 ranges normalize directly, as do constant-divisor quotient, shift, and
 remainder bounds. Rounding and endpoint exclusions use ordinary Integer laws.
 Machine operation and cast identities normalize from their explicit Integer
-bounds. Signed intervals and the other specialized rules still use the
-certificate forms below when needed. The [library reference](../library/index.md#foundational-integer-order-axioms)
+bounds. Signed intervals expand to ordinary bounds and observation identities;
+specialized selected rules normalize from explicit inputs, while polynomial
+search emits separate distribution and rewrite steps. All library proofs use
+ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
 states the named laws' exact guards.
 
 **Form:** `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }`
 
-**Expansion output.** `click expand` writes it; a person writes `solve()
-using` instead and lets expansion produce the certificate. Check a typed
+**Compatibility.** Existing authored certificates remain accepted. Integer
+composition, signed intervals, signed arithmetic domains, and the specialized
+rule family expand to ordinary tactics. Check a typed
 arithmetic-certificate envelope against the current goal; it closes the goal
 or refuses.
 
@@ -2249,6 +2325,10 @@ under these envelope rules common to the three forms:
 - A premise comparing exact observations of one machine type is also
   available from its native comparison, and an Integer bound of a signed
   result from the corresponding definedness fact.
+
+The explicit signed and signed-definedness forms remain readable for existing
+proofs. Current signed interval and add/subtract definedness search expands to
+ordinary tactics instead of emitting these certificate forms.
 
 **`signed_int32`** is checked signed-machine arithmetic over 32-bit words:
 
@@ -2359,9 +2439,9 @@ premise/node lists, and the first rejected node is named by index. An
 `int32_defined` or `int64_defined` refusal names the result range found. Explicit certificates never
 invoke planning or the legacy whole-goal checker. Machine families have no
 implicit coercion between signed, unsigned, pointer, and float terms: source
-conversions must be present and checked. Expansion emits the same certificate
-that `verify`, `profile`, and `audit` inspect, so all four tools agree on the
-checked proof.
+conversions must be present and checked. Expansion preserves authored compatibility
+certificates; generated arithmetic expands to ordinary tactics. `verify`,
+`profile`, and `audit` inspect the same checked proof.
 
 **Checked examples:** [`arithmetic_certificate_surface.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_certificate_surface.md), [`integer_certificate_refutation_and_rounding.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_certificate_refutation_and_rounding.md), [`signed_int32_arithmetic_certificate_surface.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_int32_arithmetic_certificate_surface.md), [`signed_int32_certificate_composition.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_int32_certificate_composition.md), [`aligned_explicit_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/aligned_explicit_arithmetic.md), [`tagged_pointer_explicit_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/tagged_pointer_explicit_arithmetic.md), [`int64_defined_from_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/int64_defined_from_bounds.md), [`int32_defined_from_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/int32_defined_from_bounds.md), [`integer_product_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_product_bounds.md), [`integer_division_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_division_bounds.md), [`integer_cast_identity_unsigned_subword_promotion.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_cast_identity_unsigned_subword_promotion.md), [`an_in_range_machine_difference_is_its_integer_difference.md`](https://github.com/clicklang/click/blob/master/mdtests/an_in_range_machine_difference_is_its_integer_difference.md)
 
@@ -3186,13 +3266,13 @@ without changing its execution frontier. `have P;` without a proof is `have P by
 solve();`, and a one-step proof may drop the braces: `have P by T(args);`. A
 `have` executes no C. On a linear `Integer` bound `solve`
 refutes the integer negation from the facts connected to `P` and applies the
-result as one `arithmetic_certificate`
+result as ordinary Integer law applications
 ([`have_by_solve_refutes_a_linear_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/have_by_solve_refutes_a_linear_bound.md)).
 
 Connected `int32`, `int64` and `uint64` order facts are carried to `Integer` by
 `known()`, since a comparison of observations is the native comparison,
-and `uint64` values get their type range from a `type_range` certificate; only
-the carried facts the certificate cites are kept
+and `uint64` values get their type range by normalization; only
+the selected carried facts are kept
 ([`solve_carries_machine_orders_to_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_carries_machine_orders_to_integer.md)).
 
 A `uint64` or `int64` order goal, or an `int32` `<=` goal, is proved through its
@@ -3207,12 +3287,12 @@ definedness fact
 ([`solve_proves_signed_addition_defined.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_signed_addition_defined.md)),
 and each `to_integer(a + b)` or `to_integer(a - b)` in the goal is observed term
 by term: a signed operation once it is defined, and a `uint64` one once it
-does not wrap, by an `integer_operation_identity` certificate citing both
+does not wrap, by normalization citing both
 constant bounds of its exact value
 ([`solve_observes_an_operation_term_by_term.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_observes_an_operation_term_by_term.md)).
 
 Machine equality facts are carried by rewriting, each observed value gets its
-type range from a `type_range` certificate, an `int32`, `int64` or `uint64`
+type range by normalization, an `int32`, `int64` or `uint64`
 equality goal is
 proved as its observed reading once both sides are shown defined, splitting an
 equality into its two bounds when needed, and a conjunction goal is split

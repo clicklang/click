@@ -2470,7 +2470,7 @@ fn verify_contract_refinement_theorem(
     let result = obligations
         .post()
         .locals()
-        .get_native(crate::kernel::C_CONTRACT_RESULT_NAME);
+        .get_native(crate::kernel::CONTRACT_RESULT);
     let root = Proof::for_contract_refinement_goal(
         claim_label,
         proof_goal,
@@ -3411,8 +3411,7 @@ pub(super) fn click_function_applications(
                     expression(argument, known_facts, applications);
                 }
             }
-            ClickProposition::ChangesOnly { .. }
-            | ClickProposition::Separate { .. }
+            ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => {}
