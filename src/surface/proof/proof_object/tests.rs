@@ -156,8 +156,9 @@ fn indexed_fact(index: u32) -> Proposition {
     )
 }
 
-/// Count ordinary operations and their explicit arguments/premises, rejecting
-/// certificates and unexpanded search throughout the proof. Allocation curves
+/// Count ordinary operations and their explicit arguments/premises, accepting
+/// single-node Integer arithmetic leaves but rejecting opaque multi-node
+/// certificates and unexpanded search. Allocation curves
 /// grow with this explicit input/output and logarithmically with ambient facts.
 fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
     let mut pending = steps.iter().collect::<Vec<_>>();
@@ -181,6 +182,12 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
                 pending.extend(then_proof.steps());
                 pending.extend(else_proof.steps());
             }
+            ProofStep::ArithmeticCertificate(certificate)
+                if matches!(&certificate.family, ArithmeticCertificateFamily::Integer(integer)
+                    if integer.conclusion == 0 && matches!(integer.nodes.as_slice(),
+                        [IntegerCertificateNode::Trivial { .. }
+                         | IntegerCertificateNode::TypeRange { .. }
+                         | IntegerCertificateNode::OperationBound { .. }])) => {}
             ProofStep::NormalizeUsing(premises) => count += premises.len(),
             ProofStep::ApplyTheoremUsing {
                 application,

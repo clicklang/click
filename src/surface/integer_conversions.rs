@@ -163,7 +163,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         let source = "theorem sum(a: Integer, b: Integer, c: Integer, d: Integer) { requires a <= b; requires c <= d; ensures a + c <= b + d by { solve() using { a <= b; c <= d; }; } }";
         let expanded = expand_c_claim_source_by_label(source, &[], "sum.ensures_0").unwrap();
         assert!(expanded.contains("integer::add_le"), "{expanded}");
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("normalize("), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
         crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
         // An ambient second bound cannot fill an explicitly omitted premise.

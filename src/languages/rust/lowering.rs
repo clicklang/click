@@ -215,9 +215,6 @@ fn scalar_type(t: &Type) -> Result<InterfaceType, String> {
             crate::kernel::TypeParameterName::intern(name),
         )),
         Type::Vec { element } => Ok(InterfaceType::Parameter(vec_type(element)?)),
-        // In the library-iterator model, the iterator is a value of the
-        // library's `ChunksExact<uint8>`.
-        Type::ChunkIterator => Ok(InterfaceType::Parameter(chunks_exact_type())),
         // A slice iterator passed to its library operations is a value of
         // the library's `SliceIter`.
         Type::SharedArrayIterator { element } => {
@@ -245,7 +242,6 @@ fn scalar_type(t: &Type) -> Result<InterfaceType, String> {
             Type::SharedArrayIterator { element } => {
                 Ok(InterfaceType::ParameterPointer(slice_iter_type(element)?))
             }
-            Type::ChunkIterator => Ok(InterfaceType::ParameterPointer(chunks_exact_type())),
             Type::Array { element, .. } => match element.as_ref() {
                 Type::I32 => Ok(InterfaceType::Int32Pointer),
                 Type::U8 => Ok(InterfaceType::UInt8Pointer),
@@ -280,14 +276,6 @@ fn slice_iter_type(element: &Type) -> Result<crate::kernel::TypeParameterName, S
             "SliceIter",
             &[AlgebraicValueType::Program(element)],
         ),
-    ))
-}
-/// The type of a `chunks_exact` iterator over bytes: the library's primitive
-/// `ChunksExact` at `uint8`.
-fn chunks_exact_type() -> crate::kernel::TypeParameterName {
-    crate::kernel::TypeParameterName::of(&crate::surface::primitive_instance_type(
-        "ChunksExact",
-        &[AlgebraicValueType::Program(ProgramType::UInt8)],
     ))
 }
 /// A function-pointer type's signature, as a sidecar's `fn(i32) -> i32`
@@ -528,11 +516,9 @@ fn lower_function(
                 | Type::OptionBox { .. }
         )
         // The library-iterator model's own external functions return the
-        // iterator value, and a chunk's or the remainder's data pointer.
+        // iterator value.
         || f.core_method.as_deref().is_some_and(|method| {
-            method.starts_with(super::standard_library::CHUNKS_EXACT)
-                || method.starts_with(super::standard_library::SLICE_ITER)
-                || method.starts_with(super::standard_library::SLICE_VALUE)
+            method.starts_with(super::standard_library::SLICE_ITER)
         }))
     {
         return Err("Rust reference/aggregate returns are not supported".into());
@@ -758,7 +744,6 @@ fn lower_function(
         library_slice_iterators: BTreeMap::new(),
         library_slice_options: BTreeMap::new(),
         library_next_options: BTreeMap::new(),
-        library_chunk_built: BTreeSet::new(),
         ranges: BTreeMap::new(),
         enumerated: BTreeSet::new(),
         shared_array_options: BTreeMap::new(),
@@ -844,9 +829,6 @@ struct Context<'a> {
     library_slice_options: BTreeMap<String, Type>,
     /// Each library slice iterator's `next()` result local.
     library_next_options: BTreeMap<String, String>,
-    /// The library `chunks_exact` iterators built in place, whose
-    /// `remainder(&it)` is read where they are built.
-    library_chunk_built: BTreeSet<String>,
     /// The range locals, with their element type.
     ranges: BTreeMap<String, (Type, bool)>,
     /// The enumerated slice iterators and their `Option` locals.
@@ -2069,8 +2051,8 @@ impl Context<'_> {
                 return Err("unknown Rust chunk iterator".into());
             }
             return Ok((
-                crate::kernel::program_expression::variable(format!("{iterator}_tail")),
-                crate::kernel::program_expression::variable(format!("{iterator}_tail_len")),
+                crate::kernel::program_expression::variable(format!("{iterator}_rem")),
+                crate::kernel::program_expression::variable(format!("{iterator}_rem_len")),
             ));
         }
         if let E::ArrayToSlice { array, mutable } = e {
