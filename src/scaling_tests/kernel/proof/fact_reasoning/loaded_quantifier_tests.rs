@@ -66,7 +66,7 @@ fn loaded_quantifier_matching_scales_with_selected_body() {
             };
             let leaf = body.clone();
             for _ in 1..size {
-                *body = Box::new(Proposition::And(body.clone(), leaf.clone()));
+                **body = Proposition::And(body.clone(), leaf.clone());
             }
             proposition
         };

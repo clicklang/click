@@ -98,7 +98,7 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
             unreachable!()
         };
         if change == 2 {
-            *right = Box::new(MachineTerm::constant(1));
+            **right = MachineTerm::constant(1);
         }
         let MachineTerm::MemoryLoad(_, pointer, kind) = left.as_mut() else {
             unreachable!()
