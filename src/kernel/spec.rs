@@ -7178,11 +7178,12 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let native_state = scope.native_expression_state(expression);
             let paths =
                 evaluate_expression_value_paths(&native_state, expression, assumptions, budget)?;
-            let retain_floats = !budget.machine_result_production_disabled;
+            let retain_results = !budget.machine_result_production_disabled;
             spec_execution_value_paths_in(
                 paths.into_iter().map(|path| {
                     path.map_value(|value| {
-                        if retain_floats && value.float().is_some() {
+                        if retain_results && (value.machine().is_some() || value.float().is_some())
+                        {
                             value
                         } else {
                             SpecValue::Native(value.into_native())
