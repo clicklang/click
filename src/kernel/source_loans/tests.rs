@@ -34,7 +34,6 @@ fn place(name: &str, value_type: Type) -> r::Place {
 
 fn export() -> r::RustExport {
     r::RustExport {
-        library_iterators: false,
         schema: r::SCHEMA,
         compiler_commit: "test".into(),
         target: r::TARGET.into(),

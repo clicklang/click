@@ -8,9 +8,9 @@ fn prepared_enumeration() -> click::languages::rust::PreparedRustImport {
     p.prepared().unwrap()
 }
 
-/// `slice.iter().enumerate()` is read through `iter.len()`: the index each
-/// iteration yields is how far it has advanced, `len - iter.len()`, and the
-/// element is the slice's there, with no cursor to state.
+/// `slice.iter().enumerate()` is `core`'s `Enumerate { iter, count }`: the
+/// index each iteration yields is `iter.count`, and the element is the one
+/// at `iter.as_slice()`.
 #[test]
 fn charon_enumerated_slice_loops_verify_from_their_count() {
     ProgramVerificationSession::new_program_prepared(SIDECAR, prepared_enumeration())
@@ -32,10 +32,10 @@ fn rejects_enumeration_mutation(before: &str, after: &str, function: &str) {
 
 #[test]
 fn charon_enumeration_rejects_shifted_yielded_index() {
-    // The index yielded is how far the iterator stood before the advance.
+    // The index yielded is the count before the element is counted.
     rejects_enumeration_mutation(
-        "        invariant iter.len() != bytes.len() implies last == bytes.len() - iter.len() - 1u64;\n",
-        "        invariant iter.len() != bytes.len() implies last == bytes.len() - iter.len();\n",
+        "        invariant iter.count != 0u64 implies last == iter.count - 1u64;\n",
+        "        invariant iter.count != 0u64 implies last == iter.count;\n",
         "last_index",
     );
 }

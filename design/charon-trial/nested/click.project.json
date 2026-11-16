@@ -4,8 +4,7 @@
       "language": "rust",
       "sources": {
         "nested.rs": {}
-      },
-      "iterators": "library"
+      }
     }
   }
 }

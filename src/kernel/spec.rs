@@ -37,19 +37,27 @@ use algebraic_result::{AlgebraicFieldResult, AlgebraicResult};
 mod result;
 use result::{SpecCallArgument, SpecValue, call_arguments};
 
+/// One lowering path: a typed result plus its separately scoped facts and debts.
+/// Mapping the representation of a result does not evaluate or discharge either.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct SpecExpressionPath {
-    pub(super) value: SpecValue,
-    pub(super) facts: ExecutionFacts,
-    pub(super) obligations: Vec<ProofObligation>,
+pub(crate) struct LoweredTermPath<T = KernelTerm> {
+    pub(crate) value: T,
+    pub(crate) facts: ExecutionFacts,
+    pub(crate) obligations: Vec<ProofObligation>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct SpecIntegerPath {
-    pub(super) value: IntegerTerm,
-    pub(super) facts: ExecutionFacts,
-    pub(super) obligations: Vec<ProofObligation>,
+impl<T> LoweredTermPath<T> {
+    pub(crate) fn map_value<U>(self, map: impl FnOnce(T) -> U) -> LoweredTermPath<U> {
+        LoweredTermPath {
+            value: map(self.value),
+            facts: self.facts,
+            obligations: self.obligations,
+        }
+    }
 }
+
+pub(super) type SpecExpressionPath = LoweredTermPath<SpecValue>;
+pub(super) type SpecIntegerPath = LoweredTermPath<IntegerTerm>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecSequencePath {
@@ -58,12 +66,7 @@ struct SpecSequencePath {
     obligations: Vec<ProofObligation>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SpecAlgebraicPath {
-    value: AlgebraicResult,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-}
+type SpecAlgebraicPath = LoweredTermPath<AlgebraicResult>;
 
 /// The interpretation of specification reads is lexical: ordinary expressions
 /// denote logical values, while `defined(...)` explicitly asks for validity.
@@ -945,19 +948,9 @@ struct SpecAlgebraicCasePath {
     obligations: Vec<ProofObligation>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SpecAlgebraicValuePath {
-    value: AlgebraicFieldResult,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-}
+type SpecAlgebraicValuePath = LoweredTermPath<AlgebraicFieldResult>;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SpecPureFunctionArgumentPath {
-    value: SpecCallArgument,
-    facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-}
+type SpecPureFunctionArgumentPath = LoweredTermPath<SpecCallArgument>;
 
 fn lower_spec_proposition_at_state_with_loop_entry_in(
     state: &ExecutionState,
@@ -6816,6 +6809,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     SpecValue::from(value.clone())
                         .retain_algebraic_result()
                         .retain_float_result()
+                        .retain_boolean_result()
                 },
                 facts: vec![].into(),
                 obligations: vec![],
@@ -6828,6 +6822,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 SpecValue::from(value.clone())
                     .retain_algebraic_result()
                     .retain_float_result()
+                    .retain_boolean_result()
             },
             facts: Vec::new().into(),
             obligations: Vec::new(),
@@ -7153,7 +7148,21 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             spec_execution_value_paths_in(
                 paths.into_iter().map(|path| {
                     path.map_value(|value| {
-                        if retain_results && (value.machine().is_some() || value.float().is_some())
+                        let value = if retain_results {
+                            value.retain_boolean_result()
+                        } else {
+                            value
+                        };
+                        if retain_results
+                            && (value.machine().is_some()
+                                || value.float().is_some()
+                                || value.shared().is_some_and(|root| {
+                                    matches!(root.ty(), KernelType::Bool | KernelType::Algebraic(_))
+                                        || matches!(
+                                            root.node(),
+                                            KernelTermNode::ProgramParameter { .. }
+                                        )
+                                }))
                         {
                             value
                         } else {
@@ -7904,7 +7913,10 @@ fn evaluate_spec_pure_function_application_paths_in(
                 value: if result_type.is_pointer() && !budget.machine_result_production_disabled {
                     value.retain_pointer_result()
                 } else if !budget.machine_result_production_disabled {
-                    value.retain_algebraic_result().retain_float_result()
+                    value
+                        .retain_algebraic_result()
+                        .retain_float_result()
+                        .retain_boolean_result()
                 } else {
                     value
                 },
@@ -8728,7 +8740,10 @@ fn spec_execution_value_paths_in(
                 value: if budget.machine_result_production_disabled {
                     value
                 } else {
-                    value.retain_algebraic_result().retain_float_result()
+                    value
+                        .retain_algebraic_result()
+                        .retain_float_result()
+                        .retain_boolean_result()
                 },
                 facts: path.facts,
                 obligations: path.obligations,

@@ -15597,6 +15597,8 @@ pub(super) fn expand_composite_resource_fact_with_children(
 /// Occurrences recorded while evaluating the body, before normalization.
 /// Normalization certifies their composition but never supplies their identity.
 struct CompositeBodyConstruction {
+    // Values chosen by this producer, retained by returned-body construction.
+    witnesses: Vec<ProgramValue>,
     expanded: ResourceContext,
     children: Vec<ResourceFact>,
     raw_children: Vec<ResourceFact>,
@@ -15607,6 +15609,7 @@ struct CompositeBodyConstruction {
 impl CompositeBodyConstruction {
     fn opaque(context: &ResourceContext) -> Self {
         Self {
+            witnesses: Vec::new(),
             expanded: context.clone(),
             children: Vec::new(),
             raw_children: Vec::new(),
@@ -15711,7 +15714,7 @@ fn construct_composite_resource_body(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    let witnesses = bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
     let mut budget = ExecutionBudget::beside_live_state();
     // Opening a held composite assumes the body its fold established
     // (`assume_entry_clause_extents`).
@@ -15768,7 +15771,15 @@ fn construct_composite_resource_body(
         name,
         "composite expansion",
         "composite child composition",
-        || ResourceContext::new().try_compose_with_facts(child_facts, assumptions),
+        || {
+            if selected.is_some() && !witnesses.is_empty() {
+                ResourceContext::new_with_equalities(assumptions)
+                    .try_compose_with_legacy_discovery_and_occurrences(child_facts, assumptions)
+                    .map(|(context, _)| context.normalized_without_discovery(assumptions))
+            } else {
+                ResourceContext::new().try_compose_with_facts(child_facts, assumptions)
+            }
+        },
     )
     .ok()?;
     let children = if composite.is_own() {
@@ -15844,6 +15855,7 @@ fn construct_composite_resource_body(
         }
     }
     Some(CompositeBodyConstruction {
+        witnesses,
         expanded,
         children,
         raw_children,

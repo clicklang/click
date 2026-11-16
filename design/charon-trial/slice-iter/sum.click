@@ -1,6 +1,5 @@
 import click::integer;
 import click::rust::slice;
-import click::rust::slice_iter;
 
 verifying "sum.rs";
 function prefix(bytes: &[u8], end: usize) -> Integer {
@@ -22,7 +21,7 @@ fn sum(bytes: &[u8]) -> i32 {
 } by {
     step_until(loop(0));
     have loop(0).iter.len() == bytes.len();
-    have loop(0).iter.as_slice().as_ptr() == bytes;
+    have loop(0).iter.as_slice() == bytes;
     have bytes.len() - loop(0).iter.len() == 0u64;
     have prefix(bytes, bytes.len() - loop(0).iter.len()) == 0 by {
         rewrite(bytes.len() - loop(0).iter.len(), 0u64);
@@ -37,7 +36,7 @@ fn sum(bytes: &[u8]) -> i32 {
         views bytes[0..bytes.len()];
         invariant bytes.len() <= 1000u64;
         invariant iter.len() <= bytes.len();
-        invariant iter.as_slice().as_ptr() == bytes + (bytes.len() - iter.len());
+        invariant iter.as_slice() == bytes + (bytes.len() - iter.len());
         invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer(bytes.len() - iter.len());
         invariant to_integer(total) == prefix(bytes, bytes.len() - iter.len());
         preserve by {
@@ -61,9 +60,9 @@ fn sum(bytes: &[u8]) -> i32 {
                 have to_integer((bytes.len() - iter.len()) + 1u64) == to_integer((bytes.len() - iter.len())) + 1;
                 step_until(assignment(byte, 0));
                 have iter.len() == at(iteration, iter.len()) - 1u64;
-                have iter.as_slice().as_ptr() == (bytes + (bytes.len() - at(iteration, iter.len()))) + 1u64;
+                have iter.as_slice() == (bytes + (bytes.len() - at(iteration, iter.len()))) + 1u64;
                 apply(pointer_association(bytes, bytes.len() - at(iteration, iter.len()), 1u64));
-                have iter.as_slice().as_ptr() == bytes + ((bytes.len() - at(iteration, iter.len())) + 1u64) by {
+                have iter.as_slice() == bytes + ((bytes.len() - at(iteration, iter.len())) + 1u64) by {
                     rewrite(bytes + ((bytes.len() - at(iteration, iter.len())) + 1u64), (bytes + (bytes.len() - at(iteration, iter.len()))) + 1u64);
                     known();
                 }
@@ -84,7 +83,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 step_until(assignment(total, 1)); step();
                 step_until(back_edge());
                 have iter.len() <= bytes.len();
-                have iter.as_slice().as_ptr() == bytes + (bytes.len() - iter.len()) by {
+                have iter.as_slice() == bytes + (bytes.len() - iter.len()) by {
                     rewrite((bytes.len() - iter.len()), (bytes.len() - at(iteration, iter.len())) + 1u64);
                     known();
                 }
