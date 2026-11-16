@@ -24,5 +24,5 @@ int32 run() { ensures result == 0; }
 ```
 
 ```expect
-fail: Cannot end local storage `"mutex_scope_break.c"::run.local(0)` while mutex_live(
+fail: Cannot end local storage `holder` while mutex_live(
 ```

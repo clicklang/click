@@ -1197,6 +1197,8 @@ fn resource_derived_loop_frame_rejects_wrapper_range_disagreement() {
         Some("loop 0 inherited owned resource frame".into()),
     );
     let body = ProgramStatement::Loop {
+        test: None,
+        update: None,
         condition: crate::kernel::program_expression::int32_literal(0),
         invariant: vec![],
         invariant_checks: vec![],
@@ -1369,6 +1371,8 @@ fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
         "reject_loop_surface_fallback",
         vec![program_parameter("p", ProgramType::Int32Pointer)],
         ProgramStatement::Loop {
+            test: None,
+            update: None,
             condition: crate::kernel::program_expression::int32_literal(0),
             invariant: vec![],
             invariant_checks: vec![],

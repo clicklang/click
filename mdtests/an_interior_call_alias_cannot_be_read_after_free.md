@@ -38,5 +38,5 @@ int32 probe() {
 ```
 
 ```expect
-fail: missing resource fact `views ((char *)"free_interior_alias_probe.c"::probe.local(1))[0..4]`
+fail: missing resource fact `views ((char *)q)[0..4]`
 ```

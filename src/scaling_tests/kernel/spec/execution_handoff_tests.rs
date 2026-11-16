@@ -282,7 +282,6 @@ fn mixed_call_assembly_keeps_growing_float_arguments_shared() {
                 result_type,
                 pointer_result: None,
                 result_object_class: None,
-                projection: None,
             };
             let exports = KernelTermExport::float_export_count();
             let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {

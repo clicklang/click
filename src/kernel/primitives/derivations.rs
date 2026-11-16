@@ -2008,7 +2008,7 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
                 initializer: None, ..
             }
             | ProgramStatement::DeclareAggregate { .. } => {}
-            ProgramStatement::ForStep { step, .. } => pending.push(step),
+
             ProgramStatement::Declare {
                 initializer: Some(expression),
                 ..
@@ -2086,10 +2086,20 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
                 pending.push(else_branch);
             }
             ProgramStatement::Loop {
-                condition, body, ..
+                test,
+                update,
+                condition,
+                body,
+                ..
             } => {
                 cost.add_expression(program_expression_source_steps(condition));
                 pending.push(body);
+                if let Some(test) = test {
+                    pending.push(&test.statement);
+                }
+                if let Some(update) = update {
+                    pending.push(update);
+                }
             }
             ProgramStatement::Switch { expression, cases } => {
                 cost.add_expression(program_expression_source_steps(expression));

@@ -471,7 +471,11 @@ pub(in crate::surface::proof) fn certificate_leaf_for_case_path(
                     // `preserve` arm is refused as a certificate that
                     // disagrees with its validation path.
                     let matched_case = case_path.get(*next_case).filter(|choice| {
-                        choice.match_arm.is_none() && choice.condition == proof_if.condition
+                        choice.match_arm.is_none()
+                            && super::super::proof_object::same_branch_condition(
+                                &choice.condition,
+                                &proof_if.condition,
+                            )
                     });
                     //
                     // The same holds for a proof `if` whose arms rejoined:
@@ -586,16 +590,21 @@ fn surface_program_condition_unresolved(
     condition: &ProgramExpression,
     state: &ExecutionState,
 ) -> ClickProposition {
-    pub(in crate::surface::proof) fn expression(
-        expression: &ProgramExpression,
-    ) -> ContractExpression {
+    let no_values = BTreeMap::new();
+    let source_names = crate::surface::lowering::ContractSubstitutions::with_source_names(
+        &no_values,
+        state.locals(),
+    );
+    // A local is written by its name where the condition's state resolves
+    // that name to it, as a proof that writes the condition reads it.
+    let expression = |expression: &ProgramExpression| -> ContractExpression {
         substitute_program_expression_as_contract_with_numerals(
             expression,
-            &BTreeMap::<String, ContractExpression>::new(),
+            source_names.clone(),
             true,
         )
         .expect("converting a C expression without substitutions cannot fail")
-    }
+    };
 
     let comparison =
         |left: &ProgramExpression, operator: ComparisonOperator, right: &ProgramExpression| {

@@ -111,18 +111,18 @@ impl<'a> Proof<'a> {
         };
         let source_condition = surface_program_condition(&condition, &current_state)?;
         let checked = surface_at_program_point(&source_condition, &entry_point)?;
-        if checked == *surface_condition {
+        if super::same_branch_condition(&checked, surface_condition) {
             return Ok(true);
         }
         // A current source condition follows the ordinary proof-if path.
         // Call results contain a region reference without being a condition
         // anchored at a different statement entry.
-        if source_condition == *surface_condition {
+        if super::same_branch_condition(&source_condition, surface_condition) {
             return Ok(false);
         }
         if proposition_contains_at_expression(surface_condition)
             && surface_at_program_point(surface_condition, &entry_point)
-                .is_ok_and(|reanchored| reanchored == checked)
+                .is_ok_and(|reanchored| super::same_branch_condition(&reanchored, &checked))
         {
             return Err(self.step_error(
                 "expanded execution branch condition does not match the checked C branch",
@@ -3312,9 +3312,9 @@ impl<'a> Proof<'a> {
                 kind: ProgramPointKind::Entry,
             },
         )?;
-        if surface_condition
-            .is_some_and(|surface_condition| surface_condition != &checked_condition)
-        {
+        if surface_condition.is_some_and(|surface_condition| {
+            !super::same_branch_condition(surface_condition, &checked_condition)
+        }) {
             return Err(self.step_error(
                 "expanded execution branch condition does not match the checked C branch",
             ));
