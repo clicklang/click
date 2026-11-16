@@ -409,6 +409,16 @@ correct-result controls without claiming a fast bound. These are admission
 measurements, not a complete source-call curve. See
 [early return-group evidence](../docs/internals/verification-efficiency.md#early-return-group-evidence).
 
+Executed-body returns now construct their group by consuming each output from
+the actual body's remaining ownership, then install that group in the captured
+caller frame. They no longer run early description-group admission or repeat
+the Boolean custody pass afterward. Folded-head post-memory boundary checks
+remain; summary-only and description-only admission still use their existing
+compatibility paths. Keep those paths separate when measuring the symbolic
+diagnostic above. The executed-body regressions cover alias/body/frame growth,
+selected splits and duplicate refusal; this does not close every raw-admission
+or consumption route.
+
 Hold one inserted owner and one relevant neighbor fixed. Independently grow
 same-block owners, owned blocks, coordinate origins and exact/offset aliases;
 use symbolic bounds and different origins, not just the indexed constant case.

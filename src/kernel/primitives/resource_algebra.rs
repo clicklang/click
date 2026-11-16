@@ -6034,6 +6034,29 @@ impl ResourceContext {
         (frame, transfer)
     }
 
+    /// Install outputs consumed jointly from an executed body's partition.
+    /// The producer retains the call's frame relationship; no overlap or
+    /// exclusive-identity discovery is repeated at publication.
+    pub(in crate::kernel) fn return_constructed_body(
+        transfer: crate::kernel::functions::ConstructedBodyReturn,
+        assumptions: &PureFactContext,
+    ) -> (Self, Vec<(ResourceFact, ResourceOccurrenceId)>) {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("constructed body return");
+        let (mut frame, outputs) = transfer.into_parts();
+        if frame.storage.facts.is_empty() {
+            frame.synchronize_memory_equalities(assumptions);
+        }
+        let mut inserted = Vec::new();
+        for fact in outputs.facts() {
+            let entry = frame.storage.next_entry_id;
+            frame.insert_fact(fact.clone());
+            inserted.push((fact.clone(), frame.occurrence(entry)));
+        }
+        frame.advance_prepared_memory_equalities(assumptions);
+        (frame, inserted)
+    }
+
     /// Apply allocator-established separation to one returned owned piece.
     /// Actual output custody remains checked at body exit; freshness removes
     /// only discovery of overlap with the caller's pre-allocation frame.

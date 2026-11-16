@@ -401,6 +401,73 @@ fn executed_allocator_returns_preserve_the_frame_and_check_actual_body_custody()
 }
 
 #[test]
+fn executed_body_return_constructs_splits_and_refuses_duplicate_custody() {
+    for duplicate in [false, true] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (caller, _, _, _) = allocated_call(16);
+        let mut specs = returned_specs(CONTRACT_RESULT, 1);
+        let second = if duplicate {
+            specs[0].clone()
+        } else {
+            ResourceSpec::owned_memory(
+                MemorySegment::new(
+                    variable(CONTRACT_RESULT),
+                    int32_literal(1),
+                    int32_literal(4),
+                )
+                .with_uninitialized(true),
+            )
+            .with_role(ResourceTransferRole::Produce)
+            .with_state_source(ResourceStateSource::Post)
+        };
+        specs.insert(1, second);
+        let function = allocating_function(1).with_resource_summary(vec![], specs);
+        let paths = execute_program_function_call_paths(
+            &caller,
+            &function,
+            &[],
+            &PureFactContext::new(),
+            ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        if duplicate {
+            assert!(
+                matches!(paths.as_slice(), [FunctionPath {
+                outcome: FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)), ..
+            }] if message.contains("joint returned resource units")),
+                "{paths:?}"
+            );
+        } else {
+            let [
+                FunctionPath {
+                    outcome: FunctionOutcome::Return { value, state },
+                    ..
+                },
+            ] = paths.as_slice()
+            else {
+                panic!("split return refused: {paths:?}");
+            };
+            let pointer = value.pointer().unwrap().pointer();
+            for (start, end) in [(0u32, 1u32), (1, 4)] {
+                assert!(state.resources().contains_exact_representation(
+                    &ResourceFact::own_memory(MemoryRange::new(
+                        pointer.clone(),
+                        start.into(),
+                        end.into()
+                    ))
+                ));
+            }
+            assert!(
+                state
+                    .resources()
+                    .contains_exact_representation(&caller.resources().facts()[0])
+            );
+        }
+    }
+}
+
+#[test]
 fn composite_children_use_only_actual_allocation_provenance() {
     let facts = PureFactContext::new();
     let (_, entry, post, pointer) = allocated_call(16);
