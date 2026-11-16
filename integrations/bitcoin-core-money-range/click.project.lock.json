@@ -264,7 +264,7 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
           "name": "clang"
         },
         "sources": {
@@ -272,9 +272,9 @@
             "artifact": {
               "bytes": 70768,
               "path": ".click/bitcoin/bitcoin-src/src/consensus/amount.h.click-cpp.json",
-              "sha256": "e39fd485c0d17781f7b22aad08cfd3703d25262748fa65ea9a9f7c0bebf3e858"
+              "sha256": "8324df166455315d21aeaa130aa06da67622021bc7cddd41a192ed6eebd4885a"
             },
-            "identity": "ac45f88c2e84809dd3650125cad030cad4614064e7bc41fc5f5e2d1f1da6e971",
+            "identity": "8938cbe8007ac41b0e253fe446f6285da5032a7dd2d52fb1164de27a60f67d0a",
             "inputs": {
               "$clang-resource/include/__stdarg___gnuc_va_list.h": "feca975bfdfb254d17458a8e3d51f8ad6d9bdc9fd6287727f0f8b2fb81fcb0b0",
               "$clang-resource/include/__stddef_header_macro.h": "4cf46e8fbb809df048eecbbd63686fa741da27afa8db4245bd1f61c1fb1611dc",
@@ -285,7 +285,7 @@
               "$clang-resource/include/__stddef_ptrdiff_t.h": "b4178a57f3711b7013cba747a72a2f178c29fa9364e77d75b2159754072ced43",
               "$clang-resource/include/__stddef_size_t.h": "d86ddc0238da09b385846ebef814ffc50a44e40cf85d4e3793f485952b7e73ad",
               "$clang-resource/include/__stddef_wchar_t.h": "1900d4998aef3698b06399ed686db0c21e26509b08638a25734fb97ae89b1001",
-              "$clang-resource/include/limits.h": "a7ef4c2d6cf10dc257685a7053c3e5762d497094a6a00c52d1ffb7f256d1d0fb",
+              "$clang-resource/include/limits.h": "55620ec210ddaa6e6142b0e7df4e643a942bee4d35f7b0cac82f9268c605946f",
               "$clang-resource/include/stdarg.h": "ce6e43d79dc89b50208ecf259b1ffd519f5a78cd3a2c7fcaac6386f376b89fef",
               "$clang-resource/include/stddef.h": "b3e62a046ddf28d09eedebe6eb9461cb7060e47cad2c69964b222c4eea10347e",
               "$clang-resource/include/stdint.h": "655616d8fcb2c92b38c039019685c658c2346b3dd0021aed4ea057b43f621247",
@@ -602,9 +602,9 @@
             "artifact": {
               "bytes": 77634,
               "path": ".click/bitcoin/bitcoin-src/src/serialize.h.click-cpp.json",
-              "sha256": "27ac3b4e1a858039303e397d6693afebbd91e6887da5f8e8f678149d11726092"
+              "sha256": "ecfb1936c134f748452a01861a682a6dd0c1a55a8568900d894acdebe4f44654"
             },
-            "identity": "d98d70f8bd14cea981a29f622a1b038bcfb5b702f154960010a86250ef9daebf",
+            "identity": "64a7321dbbf9fce8e0bfeaccba9acb93742271d1673220431255c49a7bd7bd87",
             "inputs": {
               "$clang-resource/include/__stdarg___gnuc_va_list.h": "feca975bfdfb254d17458a8e3d51f8ad6d9bdc9fd6287727f0f8b2fb81fcb0b0",
               "$clang-resource/include/__stddef_header_macro.h": "4cf46e8fbb809df048eecbbd63686fa741da27afa8db4245bd1f61c1fb1611dc",
@@ -615,7 +615,7 @@
               "$clang-resource/include/__stddef_ptrdiff_t.h": "b4178a57f3711b7013cba747a72a2f178c29fa9364e77d75b2159754072ced43",
               "$clang-resource/include/__stddef_size_t.h": "d86ddc0238da09b385846ebef814ffc50a44e40cf85d4e3793f485952b7e73ad",
               "$clang-resource/include/__stddef_wchar_t.h": "1900d4998aef3698b06399ed686db0c21e26509b08638a25734fb97ae89b1001",
-              "$clang-resource/include/limits.h": "a7ef4c2d6cf10dc257685a7053c3e5762d497094a6a00c52d1ffb7f256d1d0fb",
+              "$clang-resource/include/limits.h": "55620ec210ddaa6e6142b0e7df4e643a942bee4d35f7b0cac82f9268c605946f",
               "$clang-resource/include/stdarg.h": "ce6e43d79dc89b50208ecf259b1ffd519f5a78cd3a2c7fcaac6386f376b89fef",
               "$clang-resource/include/stddef.h": "b3e62a046ddf28d09eedebe6eb9461cb7060e47cad2c69964b222c4eea10347e",
               "$clang-resource/include/stdint.h": "655616d8fcb2c92b38c039019685c658c2346b3dd0021aed4ea057b43f621247",
@@ -932,9 +932,9 @@
             "artifact": {
               "bytes": 118098,
               "path": ".click/bitcoin/bitcoin-src/src/util/feefrac.h.click-cpp.json",
-              "sha256": "ec27542dd328a260b98dc1eab7c6ad7c5b0c3aef08f069657b2251c0cd8f7af3"
+              "sha256": "b2fa31b58409b0b10f5871ee32c4b37c675b5ccc7a42a4885a47abf0dc7bb69d"
             },
-            "identity": "47db5b86688343b3cf687ec7905646901bc3caa5311c847845ee24a4b363f772",
+            "identity": "ffffb609a0e4c823b3d82ad3d3ab650be0cb24d42c63071c17f3a544699f7b6a",
             "inputs": {
               "$clang-resource/include/__stdarg___gnuc_va_list.h": "feca975bfdfb254d17458a8e3d51f8ad6d9bdc9fd6287727f0f8b2fb81fcb0b0",
               "$clang-resource/include/__stddef_header_macro.h": "4cf46e8fbb809df048eecbbd63686fa741da27afa8db4245bd1f61c1fb1611dc",
@@ -945,7 +945,7 @@
               "$clang-resource/include/__stddef_ptrdiff_t.h": "b4178a57f3711b7013cba747a72a2f178c29fa9364e77d75b2159754072ced43",
               "$clang-resource/include/__stddef_size_t.h": "d86ddc0238da09b385846ebef814ffc50a44e40cf85d4e3793f485952b7e73ad",
               "$clang-resource/include/__stddef_wchar_t.h": "1900d4998aef3698b06399ed686db0c21e26509b08638a25734fb97ae89b1001",
-              "$clang-resource/include/limits.h": "a7ef4c2d6cf10dc257685a7053c3e5762d497094a6a00c52d1ffb7f256d1d0fb",
+              "$clang-resource/include/limits.h": "55620ec210ddaa6e6142b0e7df4e643a942bee4d35f7b0cac82f9268c605946f",
               "$clang-resource/include/stdarg.h": "ce6e43d79dc89b50208ecf259b1ffd519f5a78cd3a2c7fcaac6386f376b89fef",
               "$clang-resource/include/stddef.h": "b3e62a046ddf28d09eedebe6eb9461cb7060e47cad2c69964b222c4eea10347e",
               "$clang-resource/include/stdint.h": "655616d8fcb2c92b38c039019685c658c2346b3dd0021aed4ea057b43f621247",

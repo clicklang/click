@@ -132,7 +132,7 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
           "name": "clang"
         },
         "sources": {
@@ -140,9 +140,9 @@
             "artifact": {
               "bytes": 5758,
               "path": ".click/basic/increment.cpp.click-cpp.json",
-              "sha256": "d030a6ec6d5e5eaa961a72f82e9dc1315185c747c807cd557db56cc74e3dc50a"
+              "sha256": "c60d437606b8d24fbae286e04a8a78c551da424764bf350b073190977c66cd16"
             },
-            "identity": "54314327dc98a404ca044c3b9b9c606a3f3e077b24e2586c0086267f0a7b68df",
+            "identity": "f448345328b7a68c8084b6565e70201496b5798cd65db6d8fa0f1da77911c6ba",
             "inputs": {
               "$unit/increment.cpp": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332"
             }
@@ -151,9 +151,9 @@
             "artifact": {
               "bytes": 26009,
               "path": ".click/basic/with_restore.cpp.click-cpp.json",
-              "sha256": "90829f0c913653ec86622d3ed9b367fb2079008513f9baa99ff89f45d36f4635"
+              "sha256": "87f5011f9a35fea67c72b9156c3e465e023157d1e181ddadfb95d2187e1dc724"
             },
-            "identity": "04f3131003aeee6c03331ed3c059d81d226b9e7ebadc529093ea47934c3077c3",
+            "identity": "7eaad76ddc2284e06ee1be960ad8ebdb025306a35c0b08fcc7e487c373132187",
             "inputs": {
               "$unit/with_restore.cpp": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2"
             }
@@ -162,9 +162,9 @@
             "artifact": {
               "bytes": 32433,
               "path": ".click/basic/with_restore_caller.cpp.click-cpp.json",
-              "sha256": "764e09104f9bb38a823a6c22b151df49372dbaa6585e0ee8b5812b7b30ccbdb8"
+              "sha256": "e533c8398d4835b83386d1ceacd8cd3ed55fabfc41a8d26ef6531998dfb8c6aa"
             },
-            "identity": "99d7ce9378dddcff72a975ee3b186d123761261156f80c8ed25825410944f1b5",
+            "identity": "0c677827eefc78fe9f9d5e83dca3b7b6ce67b86d2f16b79d4b49f095a8f5c955",
             "inputs": {
               "$unit/with_restore_caller.cpp": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f"
             }
