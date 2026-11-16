@@ -143,3 +143,35 @@ fn boolean_lowering_keeps_growing_logical_results_shared() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn algebraic_program_field_wrapping_does_not_walk_retained_prefixes() {
+    let mut costs = Vec::new();
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut source = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Algebraic {
+            name: "MatchScope".into(),
+            arguments: vec![],
+        }]);
+        for _ in 0..size {
+            source = AlgebraicTerm {
+                algebraic_type: source.algebraic_type.clone(),
+                node: AlgebraicTermNode::Constructor {
+                    variant: "Arm".into(),
+                    fields: vec![AlgebraicValue::Algebraic(source)],
+                },
+            };
+        }
+        let root = KernelTermImport::default().algebraic(&source);
+        let exports = KernelTermExport::algebraic_export_count();
+        let (field, work) = crate::instrumentation::measure_deterministic_work(|| {
+            AlgebraicFieldResult::from_program(SpecValue::Shared(root.clone())).into_kernel()
+        });
+        assert!(
+            matches!(field.node(), KernelTermNode::ProgramParameter { operand } if operand == &root)
+        );
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        costs.push(work);
+    }
+    assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+}
