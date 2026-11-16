@@ -133,3 +133,32 @@ fn declared_alignment_follows_late_transitive_address_equality() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/storage_tests.rs");
 }
+
+#[test]
+fn automatic_declaration_storage_is_an_anchor_and_an_indexed_local_alias() {
+    let binding = crate::kernel::LocalBindingId::new(
+        crate::kernel::LocalFunctionId::new(Some("objects.c".into()), "f".into()),
+        false,
+        0,
+        Some("x".into()),
+    );
+    let storage = Pointer {
+        block: PointerBlock::AutomaticLocal {
+            binding,
+            instance: crate::kernel::LocalStorageInstance::Frame(3),
+        },
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let alias = Pointer::symbolic(Variable(896_999));
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(alias.clone(), storage.clone()),
+        true,
+    );
+    assert_eq!(facts.equality_graph.storage_address(&alias), storage);
+    assert!(
+        facts
+            .equality_graph
+            .local_slot_alias_blocks(&alias)
+            .contains(&storage.block)
+    );
+}

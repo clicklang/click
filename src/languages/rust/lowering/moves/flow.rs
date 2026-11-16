@@ -823,7 +823,9 @@ mod tests {
                         loops += 1;
                         pending.push(body);
                     }
-                    ProgramStatement::Assign { name, .. } if name == "marker" => assignments += 1,
+                    ProgramStatement::Assign { name, .. } if name.is_named("marker") => {
+                        assignments += 1
+                    }
                     _ => {}
                 }
             }

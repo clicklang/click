@@ -25,6 +25,6 @@ int32 f(struct buf* s) {
 ```
 
 ```expect
-fail: C operation: first(s->data, s->len)
-  call bindings: data = s->data, len = s->len
+fail: C operation: first("a_refused_call_names_its_operation_in_source_terms.c"::f.parameter(0)->data, "a_refused_call_names_its_operation_in_source_terms.c"::f.parameter(0)->len)
+  call bindings: data = "a_refused_call_names_its_operation_in_source_terms.c"::f.parameter(0)->data, len = "a_refused_call_names_its_operation_in_source_terms.c"::f.parameter(0)->len
 ```

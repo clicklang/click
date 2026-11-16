@@ -72,7 +72,7 @@ fn surface_suffix_append_borrows_steps_on_a_small_stack() {
                     for index in 0..depth {
                         let condition = ClickProposition::Comparison {
                             left: ContractExpression::ProgramExpression(
-                                ProgramExpression::Variable(format!("b{index}")),
+                                ProgramExpression::Variable(format!("b{index}").into()),
                             ),
                             operator: ComparisonOperator::Equal,
                             right: ContractExpression::ProgramExpression(ProgramExpression::Value(

@@ -253,8 +253,9 @@ fn actual_stack_declaration_grants_one_lifetime_creation_event() {
     assert!(!entry.population_storage_created_here(&slot));
     assert!(!declared.population_storage_created_here(&slot.offset_by_bytes(1)));
 
-    let ended = crate::kernel::eval::end_scope_automatic_lifetimes(declared, &["x".to_owned()])
-        .expect("scope exit");
+    let ended =
+        crate::kernel::eval::end_scope_automatic_lifetimes(declared, &[("x".to_owned()).into()])
+            .expect("scope exit");
     assert!(!ended.population_storage_created_here(&slot));
     let second = execute_execution_statement_paths(
         &ended,

@@ -11,7 +11,7 @@ fn declaration_error(function: &str, message: impl Into<String>) -> TerminationE
 enum DeclaredMeasure {
     Numeric {
         index: usize,
-        parameter: String,
+        parameter: BindingName,
     },
     Structural(usize),
     Expression {
@@ -37,7 +37,7 @@ pub(super) struct ExpressionRecursionAuthority {
 pub(super) struct RecursionAuthority {
     pub refusal: Option<TerminationRefusal>,
     pub parameter_indices: BTreeMap<String, usize>,
-    pub parameter: Option<String>,
+    pub parameter: Option<BindingName>,
     pub structural_requirement: Option<usize>,
     pub structural_callees: BTreeMap<String, usize>,
     pub expression: Option<ExpressionRecursionAuthority>,
@@ -87,7 +87,7 @@ impl RecursionDeclarations {
                     }
                     DeclaredMeasure::Numeric {
                         index: *index,
-                        parameter: parameter.name.clone(),
+                        parameter: parameter.binding_name().clone(),
                     }
                 }
                 FunctionTerminationMeasure::ResourceRequirement(index) => {

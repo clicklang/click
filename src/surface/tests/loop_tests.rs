@@ -1595,7 +1595,10 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
         expanded.contains("extract(at(loop(0).exit, i) <= at(loop(0).exit, n));"),
         "{expanded}"
     );
-    assert!(expanded.contains("not at(loop(0).exit, i) <"), "{expanded}");
+    assert!(
+        expanded.contains("not at(loop(0).exit, \"count_to_n.c\"::count_to_n.local(0)) <"),
+        "{expanded}"
+    );
     assert!(
         expanded.contains("click::integer::le_antisymmetric"),
         "{expanded}"

@@ -24,5 +24,5 @@ int32 probe(struct cell* root) {
 ```
 
 ```expect
-fail: the read requires `views cursor->right`, which is not available
+fail: the read requires `views "probe.c"::probe.local(0)->right`, which is not available
 ```

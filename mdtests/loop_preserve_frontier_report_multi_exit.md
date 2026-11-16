@@ -69,5 +69,5 @@ int32 scan(int32 n) {
 ```
 
 ```expect
-fail: stopped inside the loop body: the frontier is at statement 5, `if ((i == 5))`, after tactic 1 `step`; still ahead on this path: the body's end and 1 `continue`. Already complete: 1 at a `break`
+fail: stopped inside the loop body: the frontier is at statement 5, `if (("scan.c"::scan.local(0) == 5))`, after tactic 1 `step`; still ahead on this path: the body's end and 1 `continue`. Already complete: 1 at a `break`
 ```

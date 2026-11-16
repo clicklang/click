@@ -549,7 +549,7 @@ pub(in crate::kernel) fn apply_call_effect(
             assumptions,
         )
         .ok_or("protected helper state has no checked memory footprint")?;
-        next.memory = memory;
+        next.set_memory_directly(memory);
         Some(fresh)
     } else {
         None

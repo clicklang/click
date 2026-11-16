@@ -2162,8 +2162,8 @@ int32 compare_swap2(int32 p[2]) {
         .expect("the implicit tail should expand its branch from retained Proof steps");
     verify_c_sources(&expanded_tail, &[("compare_swap2.c", c_source)])
         .expect("the expanded implicit tail should verify normally");
-    let original_condition = "if at(region(1).entry, p[1]) < at(region(1).entry, p[0]) {";
-    let corrupted_condition = "if at(region(1).entry, p[1]) >= at(region(1).entry, p[0]) {";
+    let original_condition = "if at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[1]) < at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[0]) {";
+    let corrupted_condition = "if at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[1]) >= at(region(1).entry, \"compare_swap2.c\"::compare_swap2.parameter(0)[0]) {";
     let corrupted_tail = expanded_tail.replacen(original_condition, corrupted_condition, 1);
     assert_ne!(
         corrupted_tail, expanded_tail,
@@ -2188,7 +2188,7 @@ fn expanded_branch_condition_names_a_struct_pointer_field() {
     )
     .expect("a branch over a field should expand");
     assert!(
-        expanded.contains("if at(region(0).entry, p->second) > at(region(0).entry, 0) {"),
+        expanded.contains("if at(region(0).entry, \"pick.c\"::pick.parameter(0)->second) > at(region(0).entry, 0) {"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &[("pick.c", c_source)])
@@ -2228,8 +2228,14 @@ fn expanded_branch_condition_names_nested_and_pointer_fields() {
         0,
     )
     .expect("branches over nested fields should expand");
-    assert!(expanded.contains("p->in.y) > "), "{expanded}");
-    assert!(expanded.contains("p->next"), "{expanded}");
+    assert!(
+        expanded.contains("\"pick.c\"::pick.parameter(0)->in.y) > "),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("\"pick.c\"::pick.parameter(0)->next"),
+        "{expanded}"
+    );
     assert!(!expanded.contains("load_"), "{expanded}");
     verify_c_sources(&expanded, &[("pick.c", c_source)])
         .expect("the expansion naming the fields should verify");
@@ -2249,7 +2255,10 @@ fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
         0,
     )
     .expect("a branch over a field through a loaded pointer should expand");
-    assert!(expanded.contains("p->next->second) > "), "{expanded}");
+    assert!(
+        expanded.contains("\"pick.c\"::pick.parameter(0)->next->second) > "),
+        "{expanded}"
+    );
     assert!(!expanded.contains("load_"), "{expanded}");
     verify_c_sources(&expanded, &[("pick.c", c_source)])
         .expect("the expansion naming the field should verify");
@@ -4021,5 +4030,28 @@ fn string_literal_source_references_raise_expand_and_recheck() {
         let expanded = expand_c_claim_source_by_label(source, &sources, label).expect(label);
         assert!(!expanded.contains("__click_string_literal"), "{expanded}");
         verify_c_sources(&expanded, &sources).expect("literal source expansion");
+    }
+}
+
+#[test]
+#[ignore = "nightly: C declaration references expand and independently recheck"]
+fn c_declaration_references_raise_expand_and_recheck() {
+    for (fixture, label) in [
+        ("c_declaration_references", "identity.contract"),
+        ("c_aggregate_declaration_references", "read_item.contract"),
+        (
+            "nested_field_aliases_keep_post_call_scalar_reads",
+            "cleanup.contract",
+        ),
+    ] {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("mdtests/{fixture}.md"));
+        let fixture = crate::cli::read_mdtest(&path).unwrap();
+        let source = fixture.click_source.as_deref().unwrap();
+        let sources = crate::cli::source_refs(&fixture.c_sources);
+        verify_c_sources(source, &sources).expect("declaration reference proof");
+        let expanded = expand_c_claim_source_by_label(source, &sources, label).unwrap();
+        assert!(!expanded.contains("#scope"), "{expanded}");
+        verify_c_sources(&expanded, &sources).expect("declaration reference expansion");
     }
 }

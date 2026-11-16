@@ -598,7 +598,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
             surface,
             MachineTerm::Variable(*goal_var),
             &ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                binder_name.clone(),
+                (binder_name.clone()).into(),
             )),
             goal_conclusion,
             surface_goal_conclusion,
@@ -4990,7 +4990,7 @@ pub(super) fn lower_surface_candidate_in_state_with_assumptions(
     lower_fixed_state_proposition_through_kernel(
         candidate,
         &assumptions,
-        ContractEnvironment::new(&values, &array_refs),
+        ContractEnvironment::new(&values, &array_refs).with_parameters(parameter_binding),
         FixedStateFrame::new(
             view.old_reference_state(state),
             state,
@@ -5086,9 +5086,9 @@ pub(super) fn contract_expression_mentions_program_local(
             }),
             _ => false,
         },
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-            !parameter_names.contains(name.as_str())
-        }
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => name
+            .named()
+            .is_none_or(|name| !parameter_names.contains(name)),
         ContractExpression::QualifiedC { .. } | ContractExpression::ProgramExpression(_) => false,
         ContractExpression::ArrayIndex {
             base,

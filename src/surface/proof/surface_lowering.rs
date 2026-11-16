@@ -9,9 +9,9 @@ pub(super) fn promote_integer_expression(
     surface_bindings: &crate::persistent::PersistentMap<String, ContractExpression>,
 ) -> ContractExpression {
     match expression {
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
-            if integer_values.get(name).is_some() && surface_bindings.get(name).is_none() =>
-        {
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) if integer_values.get(name).is_some() && surface_bindings.get(name).is_none() => {
             ContractExpression::Binding(name.clone())
         }
         ContractExpression::Negate(inner) => ContractExpression::Negate(Box::new(

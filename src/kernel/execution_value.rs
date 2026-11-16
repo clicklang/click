@@ -345,7 +345,7 @@ impl From<ExpressionPath> for ExpressionPath<ExecutionValue> {
     }
 }
 
-/// A memory cell's common pointer or Boolean carrier. Its key is exactly the previous
+/// A memory cell's common pointer, Boolean, algebraic or float carrier. Its key is exactly the previous
 /// ProgramValue key, including for native numeric cells. Native observations
 /// are explicit and borrow the selected value's cached compatibility view.
 #[derive(Clone)]
@@ -360,6 +360,7 @@ impl StoredMemoryValue {
         self.0
             .native_payload()
             .or_else(|| self.0.shared()?.algebraic_native_value())
+            .or_else(|| self.0.shared()?.float_native_value())
             .expect("native cell or retained value")
     }
     pub(crate) fn value(&self) -> &ExecutionValue {
@@ -396,6 +397,7 @@ impl From<ExecutionValue> for StoredMemoryValue {
             root.pointer_payload().is_none()
                 && root.ty() != &KernelType::Bool
                 && !matches!(root.ty(), KernelType::Algebraic(_))
+                && FloatOperandView::from_shared(root).is_none()
         }) {
             Self(value.into_native().into())
         } else {
@@ -952,6 +954,54 @@ mod float_handoff_tests {
                 assert_eq!(stored.cmp(&expected), std::cmp::Ordering::Equal);
                 assert_eq!(hash(&stored), hash(&expected));
                 assert_eq!(ExecutionValue::retain_native(native).shared(), Some(&root));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod float_cell_key_tests {
+    use super::*;
+    #[test]
+    fn float_memory_keys_match_native_bits_and_ordering() {
+        let _session = crate::kernel::VerificationSession::enter();
+        fn hash(value: &impl std::hash::Hash) -> u64 {
+            use std::hash::Hasher;
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            value.hash(&mut hasher);
+            hasher.finish()
+        }
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let roots = [
+                KernelTerm::float_call(format, "float_cell_key".into(), vec![]),
+                KernelTermImport::default().float(
+                    format,
+                    &match format {
+                        KernelFloatType::Float32 => MachineTerm::uint32_constant(0x7fc00123),
+                        KernelFloatType::Float64 => {
+                            MachineTerm::uint64_constant(0x8000000000000000)
+                        }
+                    },
+                ),
+            ];
+            for root in roots {
+                let value = ExecutionValue::Shared(root.clone());
+                let native = value.clone().into_native();
+                let cell = StoredMemoryValue::from(value);
+                assert_eq!(cell.value().shared(), Some(&root));
+                assert_eq!(cell.native(), &native);
+                assert_eq!(hash(&cell), hash(&native));
+                for other in [
+                    ProgramValue::Void,
+                    native.clone(),
+                    ProgramValue::Float64(MachineTerm::uint64_constant(0)),
+                ] {
+                    let expected = native.cmp(&other);
+                    let other = StoredMemoryValue::from(other);
+                    assert_eq!(cell.cmp(&other), expected);
+                    assert_eq!(cell == other, expected == std::cmp::Ordering::Equal);
+                }
+                assert_eq!(cell.into_value().shared(), Some(&root));
             }
         }
     }

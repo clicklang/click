@@ -185,7 +185,7 @@ fn value_or_match(scrutinee: SpecAlgebraicExpression) -> SpecExpression {
                 bindings: vec!["value".to_string()],
                 binding_types: vec![AlgebraicValueType::Program(ProgramType::Int32)],
                 body: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                    "value".to_string(),
+                    ("value".to_string()).into(),
                 )),
             },
         ],
@@ -671,7 +671,7 @@ fn algebraic_result_match_on_symbolic_value_remains_one_term() {
                             variant: "Some".to_string(),
                             fields: vec![SpecAlgebraicValue::Program(
                                 SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                                    "value".to_string(),
+                                    ("value".to_string()).into(),
                                 )),
                             )],
                         },
@@ -933,7 +933,7 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
                 bindings: vec!["p".to_string()],
                 binding_types: vec![field_type.clone()],
                 body: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                    "p".to_string(),
+                    ("p".to_string()).into(),
                 )),
             }],
         };
@@ -972,7 +972,7 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
                             variant: "At".to_string(),
                             fields: vec![SpecAlgebraicValue::Program(
                                 SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                                    "p".to_string(),
+                                    ("p".to_string()).into(),
                                 )),
                             )],
                         },

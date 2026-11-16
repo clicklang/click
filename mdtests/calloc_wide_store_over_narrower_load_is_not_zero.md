@@ -26,5 +26,5 @@ int32 f() {
 ```
 
 ```expect
-fail: result == 0; left side evaluated to at(statement(4).exit, r), right side evaluated to 0
+fail: result == 0; left side evaluated to at(statement(4).exit, "calloc_wide_store_over_narrower_load_is_not_zero.c"::f.local(2)), right side evaluated to 0
 ```

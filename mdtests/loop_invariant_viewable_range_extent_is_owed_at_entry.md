@@ -50,5 +50,5 @@ int32 walk(int32 *a, int32 n, int32 s) {
 ```
 
 ```expect
-fail: loop 0 invariant 2 entry, owing `0 <= k`
+fail: loop 0 invariant 2 entry, owing `0 <= "loop_invariant_viewable_range_extent_is_owed_at_entry.c"::walk.local(0)`
 ```

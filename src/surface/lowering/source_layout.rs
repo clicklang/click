@@ -72,8 +72,8 @@ struct SourceExecutionLayoutData {
     /// Static stores to named locals, indexed once in executable preorder.
     assignments: BTreeMap<String, Vec<usize>>,
     reads: Vec<usize>,
-    automatic_exits: BTreeMap<usize, Vec<String>>,
-    automatic_abrupt_exits: BTreeMap<usize, Vec<String>>,
+    automatic_exits: BTreeMap<usize, Vec<crate::kernel::BindingName>>,
+    automatic_abrupt_exits: BTreeMap<usize, Vec<crate::kernel::BindingName>>,
     automatic_break_heads: BTreeMap<usize, usize>,
     loop_bodies: BTreeMap<usize, usize>,
     natural_loop_targets: BTreeMap<usize, crate::kernel::ControlTargetId>,
@@ -116,13 +116,13 @@ struct SourceExecutionLayoutData {
     /// target's prior value.
     step_regions: BTreeMap<u32, usize>,
     /// The local whose prior value each such assignment step keeps.
-    prior_steps: BTreeMap<u32, String>,
+    prior_steps: BTreeMap<u32, crate::kernel::BindingName>,
     /// The operator each operator `if` region decides.
     operator_regions: BTreeMap<usize, crate::kernel::OperatorKind>,
     /// The local each call region assigns its result to, for
     /// `<region>.result`, and the call region of each frontend result
     /// temporary, which no other name spells.
-    call_results: BTreeMap<usize, String>,
+    call_results: BTreeMap<usize, crate::kernel::BindingName>,
     allocation_regions: BTreeSet<usize>,
     /// The source path of the statement each region belongs to: the inverse
     /// of `source_statements`, for spelling a region by its statement.
@@ -567,7 +567,7 @@ impl SourceExecutionLayout {
                         ..
                     } = statement
                     {
-                        record_assignment(layout, name, statement_index);
+                        record_assignment(layout, name.source_name(), statement_index);
                     }
                     *next_statement_index += 1;
                     layout.statements.insert(
@@ -989,7 +989,7 @@ impl SourceExecutionLayout {
                         ..
                     } = statement
                     {
-                        record_assignment(layout, name, statement_index);
+                        record_assignment(layout, name.source_name(), statement_index);
                     }
                     *next_statement_index += 1;
                     layout.statements.insert(
@@ -1140,7 +1140,11 @@ impl SourceExecutionLayout {
             .map_or(&[], Vec::as_slice)
     }
 
-    pub(in crate::surface) fn automatic_exits(&self, index: usize, abrupt: bool) -> &[String] {
+    pub(in crate::surface) fn automatic_exits(
+        &self,
+        index: usize,
+        abrupt: bool,
+    ) -> &[crate::kernel::BindingName] {
         let exits = if abrupt {
             &self.data.automatic_abrupt_exits
         } else {
@@ -1187,8 +1191,11 @@ impl SourceExecutionLayout {
     /// `.assignment(x, j)` and `.read(j)` name one of the statement's own
     /// regions, counted in executable order.
     /// The local the call at `region` assigns its result to.
-    pub(in crate::surface) fn call_result_local(&self, region: usize) -> Option<&str> {
-        self.data.call_results.get(&region).map(String::as_str)
+    pub(in crate::surface) fn call_result_local(
+        &self,
+        region: usize,
+    ) -> Option<&crate::kernel::BindingName> {
+        self.data.call_results.get(&region)
     }
 
     /// The number of the call inside an expression that `region` is.
@@ -1215,13 +1222,19 @@ impl SourceExecutionLayout {
 
     /// The local whose prior value step `step` keeps, when it is an
     /// assignment step rather than a call.
-    pub(in crate::surface) fn prior_step_local(&self, step: u32) -> Option<&str> {
-        self.data.prior_steps.get(&step).map(String::as_str)
+    pub(in crate::surface) fn prior_step_local(
+        &self,
+        step: u32,
+    ) -> Option<&crate::kernel::BindingName> {
+        self.data.prior_steps.get(&step)
     }
 
     /// The local receiving a fresh allocation, rather than an arbitrary
     /// call result that may alias an allocation introduced elsewhere.
-    pub(in crate::surface) fn allocation_result_local(&self, region: usize) -> Option<&str> {
+    pub(in crate::surface) fn allocation_result_local(
+        &self,
+        region: usize,
+    ) -> Option<&crate::kernel::BindingName> {
         self.data
             .allocation_regions
             .contains(&region)
@@ -1664,27 +1677,36 @@ pub(in crate::surface) fn collect_program_expression_referenced_names(
     expression: &ProgramExpression,
     names: &mut BTreeSet<String>,
 ) {
+    collect_program_expression_referenced_bindings(expression, names);
+}
+
+pub(in crate::surface) fn collect_program_expression_referenced_bindings<N: ReferencedBinding>(
+    expression: &ProgramExpression,
+    names: &mut BTreeSet<N>,
+) {
     match expression {
         ProgramExpression::StringLiteral(_)
         | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Variable(name) => {
-            names.insert(name.clone());
+            if let Some(name) = N::program(name) {
+                names.insert(name);
+            }
         }
         ProgramExpression::Cast { expression, .. }
         | ProgramExpression::Negate(expression)
         | ProgramExpression::FloatNegate(expression) => {
-            collect_program_expression_referenced_names(expression, names);
+            collect_program_expression_referenced_bindings(expression, names);
         }
         ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
         } => {
-            collect_program_expression_referenced_names(condition, names);
-            collect_program_expression_referenced_names(then_branch, names);
-            collect_program_expression_referenced_names(else_branch, names);
+            collect_program_expression_referenced_bindings(condition, names);
+            collect_program_expression_referenced_bindings(then_branch, names);
+            collect_program_expression_referenced_bindings(else_branch, names);
         }
         ProgramExpression::FloatClassification { expression, .. }
         | ProgramExpression::EnumField {
@@ -1693,32 +1715,32 @@ pub(in crate::surface) fn collect_program_expression_referenced_names(
         | ProgramExpression::EnumIs {
             value: expression, ..
         } => {
-            collect_program_expression_referenced_names(expression, names);
+            collect_program_expression_referenced_bindings(expression, names);
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
-                collect_program_expression_referenced_names(field, names);
+                collect_program_expression_referenced_bindings(field, names);
             }
         }
         ProgramExpression::AddressOf(expression)
         | ProgramExpression::CheckedObjectAddress(expression)
         | ProgramExpression::Not(expression)
         | ProgramExpression::Load(expression) => {
-            collect_program_expression_referenced_names(expression, names);
+            collect_program_expression_referenced_bindings(expression, names);
         }
         ProgramExpression::PointerOffsetBytes { pointer, .. }
         | ProgramExpression::Subobject { pointer, .. } => {
-            collect_program_expression_referenced_names(pointer, names);
+            collect_program_expression_referenced_bindings(pointer, names);
         }
         ProgramExpression::TypedLoad { pointer, .. } => {
-            collect_program_expression_referenced_names(pointer, names);
+            collect_program_expression_referenced_bindings(pointer, names);
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            collect_program_expression_referenced_names(left, names);
-            collect_program_expression_referenced_names(right, names);
+            collect_program_expression_referenced_bindings(left, names);
+            collect_program_expression_referenced_bindings(right, names);
         }
         ProgramExpression::BitwiseNot(expression) => {
-            collect_program_expression_referenced_names(expression, names);
+            collect_program_expression_referenced_bindings(expression, names);
         }
     }
 }
@@ -1735,10 +1757,10 @@ fn collect_kernel_automatic_exits(
     source: &ProgramStatement,
     layout: &mut SourceExecutionLayoutData,
 ) {
-    fn declarations(s: &ProgramStatement, names: &mut Vec<String>) {
+    fn declarations(s: &ProgramStatement, names: &mut Vec<crate::kernel::BindingName>) {
         match s {
             ProgramStatement::Declare { name, .. }
-            | ProgramStatement::DeclareAggregate { name, .. } => names.push(name.clone()),
+            | ProgramStatement::DeclareAggregate { name, .. } => names.push(name.binding().clone()),
             ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     declarations(statement, names);
@@ -1756,7 +1778,7 @@ fn collect_kernel_automatic_exits(
     fn scope(
         s: &ProgramStatement,
         index: &mut usize,
-        scopes: &mut Vec<(Vec<String>, Option<usize>)>,
+        scopes: &mut Vec<(Vec<crate::kernel::BindingName>, Option<usize>)>,
         loop_head: Option<usize>,
         layout: &mut SourceExecutionLayoutData,
     ) -> Vec<usize> {
@@ -1777,7 +1799,7 @@ fn collect_kernel_automatic_exits(
     fn visit(
         s: &ProgramStatement,
         index: &mut usize,
-        scopes: &mut Vec<(Vec<String>, Option<usize>)>,
+        scopes: &mut Vec<(Vec<crate::kernel::BindingName>, Option<usize>)>,
         layout: &mut SourceExecutionLayoutData,
     ) -> Vec<usize> {
         if let ProgramStatement::Seq(statements) = s {
@@ -1860,10 +1882,10 @@ fn collect_kernel_automatic_exits(
 
 fn collect_automatic_exits(source: &syntax::CStatement, layout: &mut SourceExecutionLayoutData) {
     use syntax::CStatement as S;
-    fn declarations(s: &S, names: &mut Vec<String>) {
+    fn declarations(s: &S, names: &mut Vec<crate::kernel::BindingName>) {
         match s {
             S::Declare { name, .. } | S::DeclareStructValue { name, .. } => {
-                names.push(name.clone())
+                names.push(name.binding().clone())
             }
             S::Seq(a, b) => {
                 declarations(a, names);
@@ -1876,7 +1898,7 @@ fn collect_automatic_exits(source: &syntax::CStatement, layout: &mut SourceExecu
     fn scope(
         s: &S,
         index: &mut usize,
-        scopes: &mut Vec<(Vec<String>, Option<usize>)>,
+        scopes: &mut Vec<(Vec<crate::kernel::BindingName>, Option<usize>)>,
         loop_head: Option<usize>,
         layout: &mut SourceExecutionLayoutData,
     ) -> Vec<usize> {
@@ -1897,7 +1919,7 @@ fn collect_automatic_exits(source: &syntax::CStatement, layout: &mut SourceExecu
     fn visit(
         s: &S,
         index: &mut usize,
-        scopes: &mut Vec<(Vec<String>, Option<usize>)>,
+        scopes: &mut Vec<(Vec<crate::kernel::BindingName>, Option<usize>)>,
         layout: &mut SourceExecutionLayoutData,
     ) -> Vec<usize> {
         if let S::Seq(a, b) = s {
@@ -2081,7 +2103,7 @@ mod source_execution_layout_tests {
                     .data
                     .automatic_exits
                     .values()
-                    .all(|names| !names.iter().any(|name| name == "root"))
+                    .all(|names| !names.iter().any(|name| name.source_name() == "root"))
             );
         }
     }

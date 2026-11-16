@@ -11,7 +11,7 @@ fn statement_clone_uses_a_work_stack_for_nested_branches() {
                     ProgramStatement::Return(ProgramExpression::Value(crate::kernel::int32(1)));
                 for index in 0..depth {
                     statement = ProgramStatement::If {
-                        condition: ProgramExpression::Variable(format!("a{index}")),
+                        condition: ProgramExpression::Variable(format!("a{index}").into()),
                         then_branch: Box::new(statement),
                         else_branch: Box::new(ProgramStatement::Skip),
                     };

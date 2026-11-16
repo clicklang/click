@@ -178,9 +178,9 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         fn expression(term: &ContractExpression, values: &BTreeMap<String, BigInt>) -> BigInt {
             match term {
                 ContractExpression::Binding(name)
-                | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-                    values[name].clone()
-                }
+                | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    crate::kernel::BindingName::Named(name),
+                )) => values[name].clone(),
                 ContractExpression::IntegerLiteral(value) => value.parse().unwrap(),
                 ContractExpression::Add(a, b) => expression(a, values) + expression(b, values),
                 ContractExpression::Subtract(a, b) => expression(a, values) - expression(b, values),

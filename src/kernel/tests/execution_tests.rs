@@ -8,7 +8,7 @@ use std::sync::Arc;
 // Const construction must initialize once, freeze aliases, and retain declared storage identity.
 fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
     let _session = crate::kernel::VerificationSession::enter();
-    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".to_string()]));
+    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".into()]));
     let execute = |state: &ExecutionState, statement: &ProgramStatement| {
         execute_execution_statement_paths(
             state,
@@ -203,11 +203,11 @@ fn assert_loan_write_obligation_is_unprovable(path: &StatementExecutionPath) {
 #[test]
 fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store() {
     let _session = crate::kernel::VerificationSession::enter();
-    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".to_string()]));
+    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".into()]));
     let declared = execute_execution_statement_paths(
         &ExecutionState::new(),
         &ProgramStatement::Declare {
-            name: "x".to_string(),
+            name: ("x".to_string()).into(),
             program_type: ProgramType::Int32,
             volatile: false,
             pointee_volatile: false,
@@ -235,7 +235,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
         &state,
         &ProgramStatement::Assign {
             source: Default::default(),
-            name: "x".to_string(),
+            name: ("x".to_string()).into(),
             expression: crate::kernel::program_expression::int32_literal(1),
             prior_result: None,
         },
@@ -249,7 +249,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
     let reused = execute_execution_statement_paths(
         &state,
         &ProgramStatement::Declare {
-            name: "x".to_string(),
+            name: ("x".to_string()).into(),
             program_type: ProgramType::Int32,
             volatile: false,
             pointee_volatile: false,
@@ -287,7 +287,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
 #[test]
 fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
     let _session = crate::kernel::VerificationSession::enter();
-    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["p".to_string()]));
+    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["p".into()]));
     let execute = |state: &ExecutionState, statement: &ProgramStatement| {
         execute_execution_statement_paths(
             state,
@@ -342,7 +342,7 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
     let declared = execute_execution_statement_paths(
         &ExecutionState::new(),
         &ProgramStatement::Declare {
-            name: "a".to_string(),
+            name: ("a".to_string()).into(),
             program_type: ProgramType::Int32Array(2),
             volatile: false,
             pointee_volatile: false,
@@ -395,7 +395,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
         ProgramStatement::seq(
             std::sync::Arc::new(ProgramStatement::Assign {
                 source: Default::default(),
-                name: "value".to_string(),
+                name: ("value".to_string()).into(),
                 expression: crate::kernel::program_expression::int32_literal(8),
                 prior_result: None,
             }),
@@ -600,7 +600,7 @@ fn join_state_forgets_changed_scalars_and_memory() {
         .with_local("x", stable_x.clone())
         .with_local("y", int32(1))
         .with_memory(Memory::new().with_block("heap", 4).store(pointer, int32(1)));
-    let stable = BTreeMap::from([("x".to_string(), stable_x.clone())]);
+    let stable = BTreeMap::from([("x".into(), stable_x.clone())]);
 
     let abstract_zero =
         abstract_execution_state_for_join(&state_zero, &stable, 0).expect("join abstraction");

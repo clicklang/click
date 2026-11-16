@@ -70,5 +70,5 @@ int32 tree_spin(struct node* root) {
 ```
 
 ```expect
-fail: does not pass a direct contained child
+fail: tree_spin recursion measure `decreases t` does not descend
 ```

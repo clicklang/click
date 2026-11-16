@@ -11,7 +11,7 @@ impl Parser {
     /// stored, the unwritten ones with the zero initializer.
     pub(super) fn parse_local_array_initializer(
         &mut self,
-        name: &str,
+        name: &BindingName,
         interface_type: InterfaceType,
         array_shape: Option<&[u32]>,
         compact: bool,
@@ -41,13 +41,19 @@ impl Parser {
             .unwrap_or_else(|| vec![length]);
         let mut written = Vec::new();
         let mut next = 0u32;
-        self.parse_sparse_array_initializer_level(name, &dimensions, 0, &mut written, &mut next)?;
+        self.parse_sparse_array_initializer_level(
+            name.source_name(),
+            &dimensions,
+            0,
+            &mut written,
+            &mut next,
+        )?;
         for (_, value) in &mut written {
             convert_integer_constant(element_type, value);
         }
         let store = |index: u32, value: CExpression| CStatement::Store {
             pointer: CExpression::Add(
-                Box::new(CExpression::Variable(name.to_string())),
+                Box::new(CExpression::Variable(name.clone().into())),
                 Box::new(CExpression::Int32Literal(index)),
             ),
             value,
@@ -105,7 +111,7 @@ impl Parser {
     /// are not those zeros are stored after it.
     pub(super) fn parse_local_struct_array_initializer(
         &mut self,
-        name: &str,
+        name: &BindingName,
         struct_name: &str,
         array_shape: &[u32],
         compact: bool,
@@ -130,7 +136,7 @@ impl Parser {
                     element_width,
                     count,
                     &self.zero_struct_initializer_level(
-                        CExpression::Variable(name.to_string()),
+                        CExpression::Variable(name.clone().into()),
                         struct_name,
                     ),
                 )
@@ -139,7 +145,7 @@ impl Parser {
         let start = self.position;
         if let Some(zero_fill) = zero_fill {
             let stores = self.parse_embedded_struct_array_initializer_level(
-                CExpression::Variable(name.to_string()),
+                CExpression::Variable(name.clone().into()),
                 struct_name,
                 array_shape,
                 0,
@@ -159,7 +165,7 @@ impl Parser {
             self.position = start;
         }
         let stores = self.parse_embedded_struct_array_initializer_level(
-            CExpression::Variable(name.to_string()),
+            CExpression::Variable(name.clone().into()),
             struct_name,
             array_shape,
             0,
@@ -732,11 +738,11 @@ impl Parser {
 
     pub(super) fn parse_struct_value_initializer(
         &mut self,
-        target: &str,
+        target: &BindingName,
         struct_name: &str,
     ) -> Result<CStatement, CSyntaxError> {
         let stores = self.parse_struct_initializer_level(
-            CExpression::Variable(target.to_string()),
+            CExpression::Variable(target.clone().into()),
             struct_name,
         )?;
         Ok(balanced_statement_sequence(stores).unwrap_or(CStatement::Skip))

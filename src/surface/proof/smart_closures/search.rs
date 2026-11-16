@@ -612,7 +612,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ProofStep::InstantiateUsing {
                 quantified,
                 argument: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    binder,
+                    (binder).into(),
                 )),
                 premises: None,
             },
@@ -2076,7 +2076,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    choice_name.clone(),
+                    (choice_name.clone()).into(),
                 ))
             }
             ClickType::Parameter(_) => return Ok(None),
@@ -2129,7 +2129,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(witnessed) = attempt::candidate_outcome(chosen.driver().apply_step(
             ProofStep::Witness(ProofWitness::single(
                 witness_name,
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(choice_name)),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    (choice_name).into(),
+                )),
             )),
         ))?
         else {
@@ -2227,7 +2229,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     ProofStep::InstantiateUsing {
                         quantified: entry(conjunct),
                         argument: ContractExpression::ProgramExpression(
-                            ProgramExpression::Variable(name.clone()),
+                            ProgramExpression::Variable((name.clone()).into()),
                         ),
                         premises: Some(vec![guard.as_ref().clone()]),
                     },
@@ -4541,8 +4543,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let mut surface_names = BTreeSet::new();
             collect_current_proposition_variables(surface_goal, &mut surface_names);
             for name in surface_names {
-                let expression =
-                    ContractExpression::ProgramExpression(ProgramExpression::Variable(name));
+                let expression = ContractExpression::ProgramExpression(
+                    ProgramExpression::Variable((name).into()),
+                );
                 let probe = ClickProposition::Comparison {
                     left: expression.clone(),
                     operator: ComparisonOperator::Equal,
@@ -4819,8 +4822,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else_surfaces.push(equality.clone());
             let rewritten_surface_goal =
                 surface_strict_parts(&condition).and_then(|(left, right)| {
-                    let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) =
-                        left
+                    let ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        crate::kernel::BindingName::Named(name),
+                    )) = left
                     else {
                         return None;
                     };
@@ -6088,7 +6092,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     })
                 })
                 .map(|name| {
-                    ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        (name).into(),
+                    ))
                 })
         } else {
             search_input.premise_fixed_state_view().and_then(|view| {
@@ -8624,7 +8630,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     )) => Some((
                         value.clone(),
                         ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                            name.clone(),
+                            (name.clone()).into(),
                         )),
                     )),
                     _ => None,
@@ -8986,7 +8992,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 )
                                 .then(|| {
                                     ContractExpression::ProgramExpression(
-                                        ProgramExpression::Variable(name.clone()),
+                                        ProgramExpression::Variable((name.clone()).into()),
                                     )
                                 })
                             })

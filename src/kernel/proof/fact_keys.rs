@@ -1037,6 +1037,10 @@ enum AlphaPointerOffsetNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaPointerBlockKey {
+    AutomaticLocal(
+        crate::kernel::LocalBindingId,
+        crate::kernel::LocalStorageInstance,
+    ),
     Concrete(String),
     StringLiteral {
         identity: crate::kernel::StringLiteralId,
@@ -2140,6 +2144,9 @@ fn alpha_pointer_block_key<const ALLOW_LOADS: bool>(
                     })
                     .collect::<Option<Vec<_>>>()?,
             }
+        }
+        PointerBlock::AutomaticLocal { binding, instance } => {
+            AlphaPointerBlockKey::AutomaticLocal(binding.clone(), instance.clone())
         }
         PointerBlock::Concrete(name) => AlphaPointerBlockKey::Concrete(name.clone()),
         PointerBlock::StringLiteral { identity, bytes } => AlphaPointerBlockKey::StringLiteral {

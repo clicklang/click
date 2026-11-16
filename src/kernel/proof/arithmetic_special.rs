@@ -41,6 +41,7 @@ fn charge_payload(payload: usize) -> bool {
 
 fn pointer_block_payload(block: &PointerBlock) -> Option<usize> {
     let payload = match block {
+        PointerBlock::AutomaticLocal { .. } => 1,
         PointerBlock::Concrete(name) | PointerBlock::Function(name) => {
             1usize.checked_add(name.len())?
         }
@@ -271,7 +272,10 @@ fn pointer_block_equal(left: &PointerBlock, right: &PointerBlock) -> bool {
         | (PointerBlock::Symbolic(left), PointerBlock::Symbolic(right)) => left == right,
         (PointerBlock::ExternalArgument, PointerBlock::ExternalArgument)
         | (PointerBlock::Heap(_), PointerBlock::Heap(_))
-        | (PointerBlock::Temporary(_), PointerBlock::Temporary(_)) => left == right,
+        | (PointerBlock::Temporary(_), PointerBlock::Temporary(_))
+        | (PointerBlock::AutomaticLocal { .. }, PointerBlock::AutomaticLocal { .. }) => {
+            left == right
+        }
         _ => false,
     }
 }

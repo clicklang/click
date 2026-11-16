@@ -919,7 +919,7 @@ fn parses_checked_signature_and_contract_clauses() {
                 segment: ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
-                    base: ProgramExpression::Variable("p".to_string()),
+                    base: ProgramExpression::Variable(("p".to_string()).into()),
                     start: ProgramExpression::Value(int32(0)),
                     end: ProgramExpression::Value(int32(3)),
                     surface: ContractSegmentSurface::Range {
@@ -932,7 +932,7 @@ fn parses_checked_signature_and_contract_clauses() {
             Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: ProgramExpression::Variable("p".to_string()),
+                base: ProgramExpression::Variable(("p".to_string()).into()),
                 start: ProgramExpression::Value(int32(0)),
                 end: ProgramExpression::Value(int32(3)),
                 surface: ContractSegmentSurface::Range {
@@ -2627,7 +2627,7 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
         ClickProposition::PredicateCall {
             name: "valid_pool".to_string(),
             arguments: vec![ContractExpression::ProgramExpression(
-                ProgramExpression::Variable("pool".to_string(),)
+                ProgramExpression::Variable(("pool".to_string()).into(),)
             )],
         }
     );
@@ -2656,7 +2656,7 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
     };
     let state = Term::ExecutionState(Box::new(ExecutionState::new()));
     let m = vec![ContractExpression::ProgramExpression(
-        ProgramExpression::Variable("m".to_string()),
+        ProgramExpression::Variable(("m".to_string()).into()),
     )];
     assert_eq!(
         synthesize(
@@ -3263,9 +3263,9 @@ fn parses_loadable_segment_syntax() {
             segment: ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: ProgramExpression::Variable("p".to_string()),
+                base: ProgramExpression::Variable(("p".to_string()).into()),
                 start: ProgramExpression::Value(int32(0)),
-                end: ProgramExpression::Variable("n".to_string()),
+                end: ProgramExpression::Variable(("n".to_string()).into()),
                 surface: ContractSegmentSurface::Range {
                     base: current_var("p"),
                     start: current_int(0),
@@ -3318,11 +3318,11 @@ fn parses_loadable_segment_proposition() {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
                     base: ProgramExpression::Add(
-                        Box::new(ProgramExpression::Variable("p".to_string())),
+                        Box::new(ProgramExpression::Variable(("p".to_string()).into())),
                         Box::new(ProgramExpression::Value(int32(1))),
                     ),
                     start: ProgramExpression::Value(int32(0)),
-                    end: ProgramExpression::Variable("n".to_string()),
+                    end: ProgramExpression::Variable(("n".to_string()).into()),
                     surface: ContractSegmentSurface::Range {
                         base: ContractExpression::Add(
                             Box::new(current_var("p")),
@@ -3337,10 +3337,10 @@ fn parses_loadable_segment_proposition() {
                 name: "shifted_loadable".to_string(),
                 arguments: vec![
                     ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                        "p".to_string()
+                        ("p".to_string()).into()
                     )),
                     ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                        "n".to_string()
+                        ("n".to_string()).into()
                     )),
                 ],
             }),
@@ -3590,13 +3590,13 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
             segment: ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: ProgramExpression::Variable("obj".to_string()),
+                base: ProgramExpression::Variable(("obj".to_string()).into()),
                 start: ProgramExpression::Value(int32(0)),
                 end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Field {
                     value_bytes: None,
                     base: Some(Box::new(ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable("obj".to_string())
+                        ProgramExpression::Variable(("obj".to_string()).into())
                     ))),
                     name: "ref_count".to_string(),
                     element_width: None,
@@ -3834,13 +3834,13 @@ fn parses_pilot_struct_field_owned_segment() {
         &ContractSegment {
             uninitialized: false,
             state: ContractSegmentState::Current,
-            base: ProgramExpression::Variable("obj".to_string()),
+            base: ProgramExpression::Variable(("obj".to_string()).into()),
             start: ProgramExpression::Value(int32(0)),
             end: ProgramExpression::Value(int32(1)),
             surface: ContractSegmentSurface::Field {
                 value_bytes: None,
                 base: Some(Box::new(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable("obj".to_string())
+                    ProgramExpression::Variable(("obj".to_string()).into())
                 ))),
                 name: "ref_count".to_string(),
                 element_width: None,
