@@ -1732,8 +1732,18 @@ pub(super) fn declared_pointer_locals(
                 pending.push(then_branch);
                 pending.push(else_branch);
             }
-            ProgramStatement::Loop { body, .. } => pending.push(body),
-            ProgramStatement::ForStep { step, .. } => pending.push(step),
+            ProgramStatement::Loop {
+                test, update, body, ..
+            } => {
+                pending.push(body);
+                if let Some(test) = test {
+                    pending.push(&test.statement);
+                }
+                if let Some(update) = update {
+                    pending.push(update);
+                }
+            }
+
             ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => {

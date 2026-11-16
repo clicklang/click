@@ -2682,18 +2682,21 @@ pub enum CStatement {
         site: CSite,
     },
     While {
+        test: Option<Box<CStatement>>,
         condition: CExpression,
         body: Box<CStatement>,
         /// Where the source statement was written; see [`CSite`].
         site: CSite,
     },
     DoWhile {
+        test: Option<Box<CStatement>>,
         condition: CExpression,
         body: Box<CStatement>,
         /// Where the source statement was written; see [`CSite`].
         site: CSite,
     },
     For {
+        test: Option<Box<CStatement>>,
         initializer: Box<CStatement>,
         condition: CExpression,
         step: Box<CStatement>,
@@ -4350,19 +4353,36 @@ impl CStatement {
                 operand.to_kernel_expression(),
             ),
             Self::While {
-                condition, body, ..
+                test,
+                condition,
+                body,
+                ..
             } => crate::kernel::program_while(
                 condition.to_kernel_expression(),
                 Vec::new(),
                 body.to_kernel_statement_with_control_targets(targets),
+            )
+            .with_optional_loop_test(
+                test.as_ref()
+                    .map(|test| test.to_kernel_statement_with_control_targets(targets)),
+                crate::kernel::LoopTestPosition::BeforeBody,
             ),
             Self::DoWhile {
-                condition, body, ..
+                test,
+                condition,
+                body,
+                ..
             } => crate::kernel::program_do_while(
                 condition.to_kernel_expression(),
                 body.to_kernel_statement_with_control_targets(targets),
+            )
+            .with_optional_loop_test(
+                test.as_ref()
+                    .map(|test| test.to_kernel_statement_with_control_targets(targets)),
+                crate::kernel::LoopTestPosition::AfterBody,
             ),
             Self::For {
+                test,
                 initializer,
                 condition,
                 step,
@@ -4375,10 +4395,13 @@ impl CStatement {
                     crate::kernel::program_while(
                         condition.to_kernel_expression(),
                         Vec::new(),
-                        crate::kernel::program_for_body_with_step(
-                            body.to_kernel_statement_with_control_targets(targets),
-                            step,
-                        ),
+                        body.to_kernel_statement_with_control_targets(targets),
+                    )
+                    .with_loop_update(step)
+                    .with_optional_loop_test(
+                        test.as_ref()
+                            .map(|test| test.to_kernel_statement_with_control_targets(targets)),
+                        crate::kernel::LoopTestPosition::BeforeBody,
                     ),
                 )
             }
@@ -5053,9 +5076,14 @@ fn validate_function_returns(
             validate_function_returns(then_branch, return_type)?;
             validate_function_returns(else_branch, return_type)
         }
-        CStatement::While { body, .. }
-        | CStatement::DoWhile { body, .. }
-        | CStatement::For { body, .. } => validate_function_returns(body, return_type),
+        CStatement::While { test, body, .. }
+        | CStatement::DoWhile { test, body, .. }
+        | CStatement::For { test, body, .. } => {
+            if let Some(test) = test {
+                validate_function_returns(test, return_type)?;
+            }
+            validate_function_returns(body, return_type)
+        }
         CStatement::Switch { cases, .. } => cases
             .iter()
             .try_for_each(|case| validate_function_returns(&case.body, return_type)),
@@ -5111,10 +5139,14 @@ fn c_source_statement_width(statement: &CStatement) -> usize {
             else_branch,
             ..
         } => 1 + c_source_statement_width(then_branch) + c_source_statement_width(else_branch),
-        CStatement::While { body, .. } | CStatement::DoWhile { body, .. } => {
+        CStatement::While { test, body, .. } | CStatement::DoWhile { test, body, .. } => {
             1 + c_source_statement_width(body)
+                + test
+                    .as_ref()
+                    .map_or(0, |test| c_source_statement_width(test))
         }
         CStatement::For {
+            test,
             initializer,
             step,
             body,
@@ -5124,6 +5156,9 @@ fn c_source_statement_width(statement: &CStatement) -> usize {
                 + 1
                 + c_source_statement_width(body)
                 + c_source_statement_width(step)
+                + test
+                    .as_ref()
+                    .map_or(0, |test| c_source_statement_width(test))
         }
         // Switch is one source region in the current Surface layout. Goto
         // functions reject it below, but keeping the count aligned avoids a
@@ -5165,10 +5200,14 @@ fn validate_direct_forward_gotos(
                     pending.push(second);
                     pending.push(first);
                 }
-                CStatement::While { body, .. } | CStatement::DoWhile { body, .. } => {
+                CStatement::While { test, body, .. } | CStatement::DoWhile { test, body, .. } => {
                     pending.push(body);
+                    if let Some(test) = test {
+                        pending.push(test);
+                    }
                 }
                 CStatement::For {
+                    test,
                     initializer,
                     step,
                     body,
@@ -5177,6 +5216,9 @@ fn validate_direct_forward_gotos(
                     pending.push(step);
                     pending.push(body);
                     pending.push(initializer);
+                    if let Some(test) = test {
+                        pending.push(test);
+                    }
                 }
                 CStatement::Switch { cases, .. } => {
                     pending.extend(cases.iter().rev().map(|case| case.body()));
@@ -5534,9 +5576,14 @@ fn statement_contains_control_transfer(statement: &CStatement) -> bool {
             statement_contains_control_transfer(then_branch)
                 || statement_contains_control_transfer(else_branch)
         }
-        CStatement::While { body, .. }
-        | CStatement::DoWhile { body, .. }
-        | CStatement::For { body, .. } => statement_contains_control_transfer(body),
+        CStatement::While { test, body, .. }
+        | CStatement::DoWhile { test, body, .. }
+        | CStatement::For { test, body, .. } => {
+            statement_contains_control_transfer(body)
+                || test
+                    .as_ref()
+                    .is_some_and(|test| statement_contains_control_transfer(test))
+        }
         CStatement::Switch { cases, .. } => cases
             .iter()
             .any(|case| statement_contains_control_transfer(&case.body)),
@@ -11896,6 +11943,7 @@ impl Parser {
                     let body = Box::new(self.parse_controlled_statement("while")?);
                     self.loop_contexts.pop();
                     Ok(CStatement::While {
+                        test: None,
                         condition,
                         body,
                         site: CSite::NONE,
@@ -11933,6 +11981,7 @@ impl Parser {
                     self.expect(Token::RParen)?;
                     self.expect(Token::Semicolon)?;
                     Ok(CStatement::DoWhile {
+                        test: None,
                         condition,
                         body: Box::new(body),
                         site: CSite::NONE,
@@ -11964,6 +12013,7 @@ impl Parser {
                     self.loop_contexts.pop();
                     self.pop_for_scope();
                     Ok(CStatement::For {
+                        test: None,
                         initializer: Box::new(init),
                         condition,
                         step: Box::new(step),
@@ -14163,17 +14213,27 @@ impl Parser {
                     statements.push(else_branch);
                 }
                 CStatement::While {
-                    condition, body, ..
+                    test,
+                    condition,
+                    body,
+                    ..
                 }
                 | CStatement::DoWhile {
-                    condition, body, ..
+                    test,
+                    condition,
+                    body,
+                    ..
                 } => {
                     if self.expression_contains_lowerable_expression(condition) {
                         return true;
                     }
                     statements.push(body);
+                    if let Some(test) = test {
+                        statements.push(test);
+                    }
                 }
                 CStatement::For {
+                    test,
                     initializer,
                     condition,
                     step,
@@ -14186,6 +14246,9 @@ impl Parser {
                     statements.push(initializer);
                     statements.push(step);
                     statements.push(body);
+                    if let Some(test) = test {
+                        statements.push(test);
+                    }
                 }
                 CStatement::Switch {
                     expression, cases, ..
@@ -14573,6 +14636,7 @@ impl Parser {
                 ))
             }
             CStatement::While {
+                test,
                 condition,
                 body,
                 site,
@@ -14584,28 +14648,30 @@ impl Parser {
                     .drain(start..)
                     .collect::<Vec<_>>();
                 let body = self.lower_statement_calls(*body)?;
-                if !prefix.is_empty() {
-                    let guard = prepend_statements(
-                        prefix,
-                        CStatement::LoopTest {
-                            aggregate_steps: aggregate_steps.clone(),
-                            condition,
-                            site: site.clone(),
-                        },
-                    );
-                    return Ok(CStatement::While {
-                        condition: CExpression::Int32Literal(1),
-                        body: Box::new(CStatement::Seq(Box::new(guard), Box::new(body))),
-                        site,
-                    });
-                }
+                let (test, condition) = if prefix.is_empty() {
+                    (test, condition)
+                } else {
+                    (
+                        Some(Box::new(prepend_statements(
+                            prefix,
+                            CStatement::LoopTest {
+                                aggregate_steps,
+                                condition,
+                                site: site.clone(),
+                            },
+                        ))),
+                        CExpression::Int32Literal(1),
+                    )
+                };
                 Ok(CStatement::While {
+                    test,
                     condition,
                     body: Box::new(body),
                     site,
                 })
             }
             CStatement::DoWhile {
+                test,
                 condition,
                 body,
                 site,
@@ -14617,41 +14683,30 @@ impl Parser {
                     .drain(start..)
                     .collect::<Vec<_>>();
                 let body = self.lower_statement_calls(*body)?;
-                if prefix.is_empty() {
-                    return Ok(CStatement::DoWhile {
-                        condition,
-                        body: Box::new(body),
-                        site,
-                    });
-                }
-                // A do-while condition runs after the first body execution,
-                // and `continue` must also reach it. Use an unconditional
-                // while shell whose tail checks the lowered condition. A
-                // continue gets the same call-and-check sequence before
-                // returning to the shell head; nested loops keep their own
-                // continue targets.
-                let body = prepend_condition_check_before_loop_continues(
-                    body,
-                    &prefix,
-                    &condition,
-                    &site,
-                    &aggregate_steps,
-                )?;
-                let condition_check = prepend_statements(
-                    prefix,
-                    CStatement::LoopTest {
-                        aggregate_steps: aggregate_steps.clone(),
-                        condition,
-                        site: site.clone(),
-                    },
-                );
-                Ok(CStatement::While {
-                    condition: CExpression::Int32Literal(1),
-                    body: Box::new(CStatement::Seq(Box::new(body), Box::new(condition_check))),
+                let (test, condition) = if prefix.is_empty() {
+                    (test, condition)
+                } else {
+                    (
+                        Some(Box::new(prepend_statements(
+                            prefix,
+                            CStatement::LoopTest {
+                                aggregate_steps,
+                                condition,
+                                site: site.clone(),
+                            },
+                        ))),
+                        CExpression::Int32Literal(1),
+                    )
+                };
+                Ok(CStatement::DoWhile {
+                    test,
+                    condition,
+                    body: Box::new(body),
                     site,
                 })
             }
             CStatement::For {
+                test,
                 initializer,
                 condition,
                 step,
@@ -14667,24 +14722,23 @@ impl Parser {
                 let initializer = self.lower_statement_calls(*initializer)?;
                 let step = self.lower_statement_calls(*step)?;
                 let body = self.lower_statement_calls(*body)?;
-                if !prefix.is_empty() {
-                    let guard = prepend_statements(
-                        prefix,
-                        CStatement::LoopTest {
-                            aggregate_steps: aggregate_steps.clone(),
-                            condition,
-                            site: site.clone(),
-                        },
-                    );
-                    return Ok(CStatement::For {
-                        initializer: Box::new(initializer),
-                        condition: CExpression::Int32Literal(1),
-                        step: Box::new(step),
-                        body: Box::new(CStatement::Seq(Box::new(guard), Box::new(body))),
-                        site,
-                    });
-                }
+                let (test, condition) = if prefix.is_empty() {
+                    (test, condition)
+                } else {
+                    (
+                        Some(Box::new(prepend_statements(
+                            prefix,
+                            CStatement::LoopTest {
+                                aggregate_steps,
+                                condition,
+                                site: site.clone(),
+                            },
+                        ))),
+                        CExpression::Int32Literal(1),
+                    )
+                };
                 Ok(CStatement::For {
+                    test,
                     initializer: Box::new(initializer),
                     condition,
                     step: Box::new(step),
@@ -20264,10 +20318,14 @@ fn fill_missing_sites(statement: &mut CStatement, site: &CSite) {
                 pending.push(else_branch);
                 pending.push(then_branch);
             }
-            CStatement::While { body, .. } | CStatement::DoWhile { body, .. } => {
+            CStatement::While { test, body, .. } | CStatement::DoWhile { test, body, .. } => {
                 pending.push(body);
+                if let Some(test) = test {
+                    pending.push(test);
+                }
             }
             CStatement::For {
+                test,
                 initializer,
                 step,
                 body,
@@ -20276,6 +20334,9 @@ fn fill_missing_sites(statement: &mut CStatement, site: &CSite) {
                 pending.push(body);
                 pending.push(step);
                 pending.push(initializer);
+                if let Some(test) = test {
+                    pending.push(test);
+                }
             }
             CStatement::Switch { cases, .. } => {
                 pending.extend(cases.iter_mut().map(|case| case.body.as_mut()));
@@ -20318,162 +20379,6 @@ fn prefix_has_non_assertion(prefix: &[CStatement]) -> bool {
 ///
 /// An inner loop owns its own `continue`, so one nested inside a `while`,
 /// `do ... while`, or `for` does not belong to the enclosing loop.
-fn statement_continues_enclosing_loop(statement: &CStatement) -> bool {
-    match statement {
-        CStatement::Continue => true,
-        CStatement::Seq(first, second) => {
-            statement_continues_enclosing_loop(first) || statement_continues_enclosing_loop(second)
-        }
-        CStatement::If {
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            statement_continues_enclosing_loop(then_branch)
-                || statement_continues_enclosing_loop(else_branch)
-        }
-        CStatement::Switch { cases, .. } => cases
-            .iter()
-            .any(|case| statement_continues_enclosing_loop(&case.body)),
-        CStatement::Label { statement, .. } => statement_continues_enclosing_loop(statement),
-        CStatement::While { .. }
-        | CStatement::DoWhile { .. }
-        | CStatement::For { .. }
-        | CStatement::EndAggregateLifetimes { .. }
-        | CStatement::Skip
-        | CStatement::Break
-        | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
-        | CStatement::DeclareStructValue { .. }
-        | CStatement::Assign { .. }
-        | CStatement::Call { .. }
-        | CStatement::CallResult { .. }
-        | CStatement::IndirectCall { .. }
-        | CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::Return(_, _)
-        | CStatement::Store { .. }
-        | CStatement::SequentialStore { .. }
-        | CStatement::AggregateCopy { .. }
-        | CStatement::Update { .. }
-        | CStatement::Assert { .. }
-        | CStatement::StepValue { .. }
-        | CStatement::LoopTest { .. } => false,
-    }
-}
-
-fn prepend_condition_check_before_loop_continues(
-    statement: CStatement,
-    prefix: &[CStatement],
-    loop_condition: &CExpression,
-    loop_site: &CSite,
-    aggregate_steps: &[u32],
-) -> Result<CStatement, CSyntaxError> {
-    Ok(match statement {
-        // A `continue` in a `do ... while` goes to the loop's test, which
-        // runs the condition's calls first.
-        CStatement::Continue => prepend_statements(
-            prefix.to_vec(),
-            CStatement::Seq(
-                Box::new(CStatement::LoopTest {
-                    aggregate_steps: aggregate_steps.to_vec(),
-                    condition: loop_condition.clone(),
-                    site: loop_site.clone(),
-                }),
-                Box::new(CStatement::Continue),
-            ),
-        ),
-        CStatement::Seq(first, second) => CStatement::Seq(
-            Box::new(prepend_condition_check_before_loop_continues(
-                *first,
-                prefix,
-                loop_condition,
-                loop_site,
-                aggregate_steps,
-            )?),
-            Box::new(prepend_condition_check_before_loop_continues(
-                *second,
-                prefix,
-                loop_condition,
-                loop_site,
-                aggregate_steps,
-            )?),
-        ),
-        CStatement::If {
-            condition: if_condition,
-            then_branch,
-            else_branch,
-            site,
-            operator,
-        } => CStatement::If {
-            condition: if_condition.clone(),
-            then_branch: Box::new(prepend_condition_check_before_loop_continues(
-                *then_branch,
-                prefix,
-                loop_condition,
-                loop_site,
-                aggregate_steps,
-            )?),
-            else_branch: Box::new(prepend_condition_check_before_loop_continues(
-                *else_branch,
-                prefix,
-                loop_condition,
-                loop_site,
-                aggregate_steps,
-            )?),
-            site,
-            operator,
-        },
-        CStatement::Switch {
-            expression,
-            cases,
-            site,
-        } => {
-            // The rewrite ends a failing iteration with `break`, which a
-            // `switch` would capture as its own exit: the rest of the body
-            // would run and the loop would not end. The C AST has no node for
-            // "leave the loop" from inside a switch, so reject the shape
-            // rather than lower it to different control flow.
-            if cases
-                .iter()
-                .any(|case| statement_continues_enclosing_loop(&case.body))
-            {
-                return Err(CSyntaxError::new(
-                    "`continue` inside a `switch` is not supported in a `do ... while` whose condition contains a call",
-                ));
-            }
-            CStatement::Switch {
-                expression,
-                cases,
-                site,
-            }
-        }
-        statement @ (CStatement::While { .. }
-        | CStatement::DoWhile { .. }
-        | CStatement::For { .. }
-        | CStatement::EndAggregateLifetimes { .. }
-        | CStatement::Skip
-        | CStatement::Break
-        | CStatement::Goto { .. }
-        | CStatement::Label { .. }
-        | CStatement::Declare { .. }
-        | CStatement::DeclareStructValue { .. }
-        | CStatement::Assign { .. }
-        | CStatement::Call { .. }
-        | CStatement::CallResult { .. }
-        | CStatement::IndirectCall { .. }
-        | CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::Return(_, _)
-        | CStatement::Store { .. }
-        | CStatement::SequentialStore { .. }
-        | CStatement::AggregateCopy { .. }
-        | CStatement::Update { .. }
-        | CStatement::Assert { .. }
-        | CStatement::StepValue { .. }
-        | CStatement::LoopTest { .. }) => statement,
-    })
-}
 
 fn first_embedded_call_position(expression: &CExpression) -> Option<SourcePosition> {
     match expression {

@@ -2553,6 +2553,8 @@ fn checked_condition_evidence_rejects_a_different_source_condition() {
 fn a_summarized_loop_matches_only_a_less_annotated_source_loop() {
     fn loop_statement(invariant: Vec<Proposition>, body: ProgramStatement) -> ProgramStatement {
         ProgramStatement::Loop {
+            test: None,
+            update: None,
             condition: ProgramExpression::Variable(("c".to_string()).into()),
             invariant,
             invariant_checks: Vec::new(),

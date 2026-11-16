@@ -1,6 +1,6 @@
 # A `for` guard lowers to the same loop and keeps the same duty
 
-`for` is lowered to a `while` whose update clause is part of the continue
+`for` keeps its update in one shared continuation reached by continue
 transfer, so an unevaluable guard operand has to be refused there too. Dropping
 `p[0] != 0` here leaves `i == 0` as the exit assumption and proves
 `result == 0`, although the loop never runs when `p[0] == 0` and the function

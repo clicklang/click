@@ -831,6 +831,8 @@ fn execute_concrete_loop_head_step(
 
     execution.core.concrete_loop_execution = true;
     let ProgramStatement::Loop {
+        test,
+        update,
         condition,
         invariant,
         invariant_checks,
@@ -862,6 +864,8 @@ fn execute_concrete_loop_head_step(
     );
 
     let loop_head = ProgramStatement::Loop {
+        test: test.clone(),
+        update: update.clone(),
         condition: condition.clone(),
         invariant: invariant.clone(),
         invariant_checks: invariant_checks.clone(),
@@ -875,6 +879,16 @@ fn execute_concrete_loop_head_step(
         body: body.clone(),
     };
 
+    let body = Box::new(crate::kernel::program_loop_pass(
+        &body,
+        update.as_deref(),
+        test.as_ref(),
+    ));
+    let update = crate::kernel::program_loop_continuation(update.as_deref(), test.as_ref());
+    let update_index = proof_context
+        .constants
+        .source_layout
+        .loop_update_entry(loop_index);
     let state: &mut ExecutionState = &mut execution.core.state;
     execution.core.frontier.execution_start_state = Some(execution_start_state);
     *state = current_state.clone();
@@ -942,6 +956,10 @@ fn execute_concrete_loop_head_step(
             .frontier
             .continuations
             .push(ProofExecutionContinuation {
+                continue_region: update
+                    .as_ref()
+                    .zip(update_index)
+                    .map(|(update, index)| (update.clone(), index)),
                 remaining: Some(loop_head.into()),
                 next_statement_index: statement_index,
                 loop_exit_statement_index: continuation_node,
@@ -1024,6 +1042,10 @@ fn execute_concrete_loop_head_step(
             .frontier
             .continuations
             .push(ProofExecutionContinuation {
+                continue_region: update
+                    .as_ref()
+                    .zip(update_index)
+                    .map(|(update, index)| (update.clone(), index)),
                 remaining: Some(loop_head.into()),
                 next_statement_index: statement_index,
                 loop_exit_statement_index: continuation_node,
@@ -1816,6 +1838,7 @@ pub(super) fn prepare_call_outcome_split(
             .frontier
             .continuations
             .push(ProofExecutionContinuation {
+                continue_region: None,
                 remaining: remaining.map(Arc::new),
                 next_statement_index: after_try_statement_index,
                 loop_exit_statement_index: after_try_statement_index,
@@ -2318,6 +2341,7 @@ fn execute_step_from_frontier_position_selecting_path(
             .frontier
             .continuations
             .push(ProofExecutionContinuation {
+                continue_region: None,
                 remaining: remaining.map(Arc::new),
                 next_statement_index: after_try,
                 loop_exit_statement_index: after_try,
@@ -3382,10 +3406,17 @@ fn execute_step_from_frontier_position_selecting_path(
     }
     let mut outcome = outcome;
     let abrupt = !matches!(outcome, StatementOutcome::Normal(_));
-    let ended = proof_context
-        .constants
-        .source_layout
-        .automatic_exits(statement_index, abrupt);
+    let ended = if matches!(outcome, StatementOutcome::Continue(_)) {
+        proof_context
+            .constants
+            .source_layout
+            .automatic_continue_exits(statement_index)
+    } else {
+        proof_context
+            .constants
+            .source_layout
+            .automatic_exits(statement_index, abrupt)
+    };
     match &mut outcome {
         StatementOutcome::Normal(state)
         | StatementOutcome::Break(state)
@@ -4322,11 +4353,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         ProgramStatement::Continue => "continue".to_string(),
         ProgramStatement::Goto { target } => format!("goto target({})", target.0),
         ProgramStatement::EndAutomaticLifetimes { .. } => "automatic lifetime end".to_string(),
-        ProgramStatement::ForStep {
-            continue_after: true,
-            ..
-        } => "continue".to_string(),
-        ProgramStatement::ForStep { step, .. } => describe_statement_head(step),
+
         ProgramStatement::Declare { name, .. } => format!("declare {name}"),
         ProgramStatement::DeclareAggregate { name, .. } => format!("declare aggregate {name}"),
         ProgramStatement::Assign {
