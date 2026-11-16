@@ -10123,6 +10123,23 @@ impl ProofObligation {
             true
         }
         fn established(assumptions: &PureFactContext, goal: &Proposition) -> bool {
+            // Arithmetic domains are two ordinary bounds. Keep checking
+            // them independently, using direct fact membership and the same
+            // atomic query as the generic conjunction route below. No bound
+            // needs the ambient alpha-equivalence index to be built first.
+            if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
+                .is_some()
+            {
+                let Proposition::And(first, second) = goal else {
+                    unreachable!("ordinary arithmetic domains are pairs of bounds");
+                };
+                let established_bound = |bound: &Proposition| {
+                    assumptions
+                        .contains_assumed_exact(&crate::kernel::canonical_condition_fact(bound))
+                        || assumptions.proves_atomic_without_search(bound)
+                };
+                return established_bound(first) && established_bound(second);
+            }
             if assumptions.states_required_goal(goal) || reflexive_guard(goal) {
                 return true;
             }
