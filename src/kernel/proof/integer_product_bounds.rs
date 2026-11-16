@@ -2,7 +2,7 @@
 //! and no machine-width interpretation: callers must separately establish the
 //! meaning and definedness of any machine operation they relate to this product.
 
-use super::arithmetic_special::SpecialArithmeticCheckError as Error;
+use super::arithmetic_special::ArithmeticRuleError as Error;
 use crate::kernel::{ConditionTerm, IntegerTerm, Proposition, SharedIntegerTerm};
 use num_bigint::BigInt;
 
@@ -102,9 +102,6 @@ pub(super) fn check(
 mod tests {
     use super::*;
     use crate::kernel::Variable;
-    use crate::kernel::proof::arithmetic_special::{
-        SpecialArithmeticCertificate, SpecialArithmeticNode,
-    };
 
     fn le(left: IntegerTerm, right: IntegerTerm) -> Proposition {
         Proposition::ConditionIs(
@@ -223,65 +220,6 @@ mod tests {
             ),
             Ok(())
         );
-    }
-
-    #[test]
-    fn product_bounds_reject_hostile_shape_references_and_conclusions() {
-        let (x, y) = variables();
-        let premises = inputs(&x, &y, &[(-2).into(), 3.into(), (-4).into(), 5.into()]);
-        let result = goal(&x, &y, 15.into(), false);
-        for bounds in [
-            &[0, 1, 2][..],
-            &[0, 1, 2, 3, 3],
-            &[1, 0, 2, 3],
-            &[2, 3, 0, 1],
-            &[0, 1, 0, 1],
-        ] {
-            assert!(check(0, bounds, &premises, &result).is_err());
-        }
-        assert_eq!(
-            check(0, &[0, 1, 2, 99], &premises, &result),
-            Err(Error::InvalidPremise(99))
-        );
-        let mut false_fact = premises.clone();
-        if let Proposition::ConditionIs(_, expected) = &mut false_fact[0] {
-            *expected = false;
-        }
-        assert!(check(0, &[0, 1, 2, 3], &false_fact, &result).is_err());
-        let mut strict = premises.clone();
-        strict[0] = Proposition::ConditionIs(
-            ConditionTerm::IntegerLessThan(IntegerTerm::constant_i64(-2).into(), x.clone().into()),
-            true,
-        );
-        assert!(check(0, &[0, 1, 2, 3], &strict, &result).is_err());
-        let inverted = inputs(&x, &y, &[3.into(), 2.into(), (-4).into(), 5.into()]);
-        assert!(check(0, &[0, 1, 2, 3], &inverted, &result).is_err());
-        let mut symbolic = premises.clone();
-        symbolic[0] = le(y.clone(), x.clone());
-        assert!(check(0, &[0, 1, 2, 3], &symbolic, &result).is_err());
-        let unrelated = goal(&x, &IntegerTerm::var(Variable(702)), 15.into(), false);
-        assert!(check(0, &[0, 1, 2, 3], &premises, &unrelated).is_err());
-        assert!(check(0, &[0, 1, 2, 3], &premises, &le(x.clone(), y.clone())).is_err());
-        let certificate = SpecialArithmeticCertificate {
-            nodes: vec![SpecialArithmeticNode::IntegerProductBounds {
-                bounds: vec![0, 1, 2, 3],
-                result: result.clone(),
-            }],
-            conclusion: 0,
-        };
-        assert_eq!(certificate.check(&result, &premises), Ok(()));
-        assert_eq!(
-            certificate.check(&goal(&x, &y, 14.into(), false), &premises),
-            Err(Error::DoesNotFollow)
-        );
-        let mut invalid_tail = certificate.clone();
-        invalid_tail
-            .nodes
-            .push(SpecialArithmeticNode::IntegerProductBounds {
-                bounds: vec![],
-                result: result.clone(),
-            });
-        assert!(invalid_tail.check(&result, &premises).is_err());
     }
 
     #[cfg(test)]

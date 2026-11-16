@@ -93,7 +93,7 @@ when the default misses or when a proof must not search.
   arm or iteration proves; a proof `if` before the C splits the paths that
   return differently, each arm stepping to exit.
 - **Closing a proposition: `solve`, `known`, `normalize`,
-  `arithmetic_certificate`, `extract`.** Letting the script end, so that the
+  `extract`.** Letting the script end, so that the
   implicit closer closes the goal, is the default, and `solve()` closes the
   first open goal where a script continues after it. Write
   `solve() using { ... }` for a goal that follows from named facts, an
@@ -1108,7 +1108,6 @@ step is still checked.
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(separate(region.footprint, resource))` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
-| `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }` | simple | Expansion output | Check explicit arithmetic evidence. | [Reference](#arithmetic-certificates) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
 | `intro() as name` | simple | Specialized | Choose the name introduced into the proof. | [Reference](#naming-an-introduced-binder) |
@@ -1320,7 +1319,7 @@ to write a different tactic later.
 
 **Core. On a proposition goal, search ambient pure facts and bounded rules for
 a simple proof. A signed `int32` goal over variables is tried with one
-arithmetic certificate from the indexed bounds reachable from those variables (a
+ordinary arithmetic proof from the indexed bounds reachable from those variables (a
 bound `i < n` leads on to `n`'s bounds, up to eight variables), the same way in
 a pure theorem, before execution, mid-function, in a `branch` arm, and at
 function exit; a negated branch condition counts as a bound. Constant bounds on
@@ -1372,7 +1371,7 @@ selects the constant order and equality facts of that width indexed under each
 operand. It states intrinsic operand ranges and proves both ordinary bounds on
 the exact result, using local interval normalization or Integer laws. Expansion
 retains those `have` proofs and closes the domain with `known()`; it emits no
-signed-definedness arithmetic certificate.
+signed-definedness ordinary arithmetic proof.
 
 A recursive specification function applied to a known constructor is
 evaluated: `solve` unfolds it, then keeps unfolding the recursive calls the
@@ -1688,7 +1687,7 @@ after a closing `extract` are still checked, and they see all of `P`
 
 Each leaf conjunct of a fact is already an available fact, so `extract` of a
 leaf conjunct adds nothing; every tactic, including `known()` and an
-arithmetic certificate's premises, may cite it directly.
+ordinary arithmetic proof's premises, may cite it directly.
 
 Between execution steps and after execution, a bare `extract(P)` adds `P` to
 the current state exactly as `have P by { extract(P); }` does.
@@ -1781,7 +1780,7 @@ or definedness facts.
 - Distributing a symbolic product, such as `(x + y) * z == x * z + y * z`;
   an order claim between C machine sums, such as `x + 1 > x`; or an `Integer` order claim whose terms
   do not cancel, such as `to_integer(x) < to_integer(x) + to_integer(y)`: use
-  `solve() using { ... }` or an arithmetic certificate.
+  `solve() using { ... }` or an ordinary arithmetic proof.
 
 **Failure, checking, and tools:**
 
@@ -1816,7 +1815,7 @@ Integer product accepts exactly four bounds, the lower and upper range of
 the left operand, then those of the right operand; all four corner products
 must imply the stated bound. These are fixed intrinsic checks over the
 written goal and citations. They do not plan arithmetic or construct an
-arithmetic certificate. See
+ordinary arithmetic proof. See
 [`integer_machine_bridge_normalization.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_machine_bridge_normalization.md)
 and its wrapping and false-corner refusal controls.
 
@@ -1984,8 +1983,7 @@ nonconsequence fails locally.
 
 A goal recognized as `Integer` linear reports that fragment, not the `int32`
 precondition. Expansion retains the ordinary checked operations selected by the
-plan. Specialized rule families that have not migrated may still emit explicit
-arithmetic certificates.
+plan. All supported arithmetic families expand to ordinary proof steps.
 
 **Checked examples:** [`pure_arithmetic_affine.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_arithmetic_affine.md), [`pure_arithmetic_bounded_operations.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_arithmetic_bounded_operations.md), [`arithmetic_on_an_unfold_refreshed_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_on_an_unfold_refreshed_goal.md)
 
@@ -2074,8 +2072,8 @@ once both Integer bounds of its exact value are facts, which together are its
 definedness fact, so `known()` states it; a premise over a signed sum is
 carried only once that sum is defined.
 
-Expansion writes those steps out as `have` steps with their explicit
-arithmetic certificates; none cites a standard-library theorem.
+Expansion writes those steps as ordinary `have`, `apply(...) using`, and
+normalization steps with explicit premises.
 
 A disequality goal `a != b` (or `not (a == b)`) over machine or `Integer`
 operands, which no certificate family reads directly, is proved by refuting
@@ -2230,12 +2228,11 @@ An unavailable premise, unsupported rule, or mismatched endpoint fails locally.
 
 **Checked examples:** [`preserve_pointer_read.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_pointer_read.md), [`preserve_resource_field.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_resource_field.md).
 
-### Arithmetic certificates
+### Ordinary arithmetic proofs
 
-Arithmetic automation expands to ordinary proofs. The compatibility certificate
-rules correspond to named laws, applied with explicit `using` premises:
+Arithmetic automation expands to ordinary proofs. Arithmetic operations correspond to named laws, applied with explicit `using` premises:
 
-| Certificate operation | Ordinary law |
+| Arithmetic operation | Ordinary law |
 | --- | --- |
 | Add two non-strict Integer bounds | `integer::add_le(a, b, c, d)` |
 | Scale an inequality by a nonnegative factor | `integer::multiply_order_nonnegative(a, b, factor)` |
@@ -2263,186 +2260,6 @@ specialized selected rules normalize from explicit inputs, while polynomial
 search emits separate distribution and rewrite steps. All library proofs use
 ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
 states the named laws' exact guards.
-
-**Form:** `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }`
-
-**Compatibility.** Existing authored certificates remain accepted. Integer
-composition, signed intervals, signed arithmetic domains, and the specialized
-rule family expand to ordinary tactics. Check a typed
-arithmetic-certificate envelope against the current goal; it closes the goal
-or refuses.
-
-**Accepts** a certificate whose every line its family's checker recomputes,
-under these envelope rules common to the three forms:
-
-- Exactly one `conclusion N;` names a node by its position, counting from 0
-  in written order. Every node reference names an earlier node.
-- `premise i: P => R;` imports the cited proposition `P`, which must be
-  exactly available: a fact or leaf conjunct, or decided by the equality
-  closure, written in the fact's own direction. Premise indices are
-  contiguous from 0.
-- In the unsuffixed and `signed_int32` forms each `premise` line is itself a
-  node, and `R` states the claim it contributes. In `rules`, `premise` lines
-  are numbered separately, are not nodes, must repeat `P` token for token as
-  `R`, and nodes cite them by premise index (`bounds [i, j]`,
-  `premise i`).
-
-**The unsuffixed form** is the mathematical `Integer` family:
-
-- The goal is a linear comparison `<`, `<=`, `==`, `>=` or `>` over Integer
-  atoms (variables, products of atoms, pure-function applications, range
-  folds, and machine observations `to_integer(v)`), or a native machine
-  comparison, read through its operands' exact observations.
-- Each claim is normalized to `t <= 0` or `t == 0` with integer coefficients;
-  `a < b` is `a - b + 1 <= 0`. A node's `R` may use any spelling with that
-  normal form.
-- Nodes: `premise`; `scale i by c` (`c >= 0` for a bound, any constant for an
-  equality); `add i, j` of two claims of one relation; `less_equal_from_equal
-  i` and `less_equal_from_equal i reverse`; `equal_from_bounds i, j` from
-  opposite bounds, stated in node `i`'s orientation; `trivial` (a claim with
-  no atoms left, such as `x + 1 > x`); `type_range` (`MIN <= to_integer(v)` or
-  `to_integer(v) <= MAX` for a machine `v`); `operation_bound` (the bound a
-  quotient, shift, or remainder by a positive constant takes from its
-  operand: `c * to_integer(x / c) <= to_integer(x)`, `to_integer(x) <= c *
-  to_integer(x / c) + (c - 1)`, `to_integer(x % c) <= c - 1`, with `x >> k`
-  as `x / 2^k`; for a signed `x / c`, `c * to_integer(x / c) - (c - 1) <=
-  to_integer(x)` in place of the first, and `-(c - 1) <= to_integer(x % c)`);
-  `excluded_bound N: D` (premise `N`, a disequality `v != MIN` or `v != MAX`
-  of a machine `v`, as `MIN + 1 <= to_integer(v)` or `to_integer(v) <= MAX -
-  1`) ([`operation_and_excluded_bounds_in_an_arithmetic_certificate.md`](https://github.com/clicklang/click/blob/master/mdtests/operation_and_excluded_bounds_in_an_arithmetic_certificate.md),
-  [`an_operation_bound_must_be_the_exact_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/an_operation_bound_must_be_the_exact_bound.md));
-  `less_than_from_not_equal i, N: D` (node `i`, a non-strict bound `t <= 0`,
-  made strict, `t + 1 <= 0`, by premise `N`, a disequality `l != r` whose
-  difference `l - r` is `t` or `-t`; `solve` adds it only after the linear
-  facts leave a counterexample, at every format and over `Integer`,
-  [`a_bound_and_a_disequality_give_a_strict_64_bit_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/a_bound_and_a_disequality_give_a_strict_64_bit_bound.md)); `negated_goal` (the integer
-  negation of a bound goal); `divide i by g` (a non-strict bound by a positive
-  common factor of its coefficients, rounding its constant).
-- The conclusion node's claim equals the goal's, or is a contradiction such
-  as `1 <= 0`, which proves any supported goal
-  ([`integer_certificate_refutation_and_rounding.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_certificate_refutation_and_rounding.md)).
-- A premise comparing exact observations of one machine type is also
-  available from its native comparison, and an Integer bound of a signed
-  result from the corresponding definedness fact.
-
-The explicit signed and signed-definedness forms remain readable for existing
-proofs. Current signed interval and add/subtract definedness search expands to
-ordinary tactics instead of emitting these certificate forms.
-
-**`signed_int32`** is checked signed-machine arithmetic over 32-bit words:
-
-- Affine nodes `premise`, `scale`, `add`, `less_equal_from_equal`,
-  `equal_from_bounds`, `less_than_from_not_equal` (a non-strict bound and a
-  disequality on the same form give the strict bound), `trivial`, and
-  `int32_range` (an opaque atom's `int32` range).
-- Interval nodes that establish an operation's range and definedness:
-  `interval_from_affine`, `interval_from_affine_direct`, `interval_atom`,
-  `defined`, `interval_intersect`, `interval_add`, `interval_add_bounded`,
-  `interval_subtract`, `interval_multiply`, `interval_remainder`,
-  `interval_remainder_add`, `interval_shift_left`,
-  `interval_arithmetic_shift_right`, `interval_bitwise_and`,
-  `interval_compare` (whose `ult` and `ule` comparisons conclude a `uint32`
-  order from the operands' signed intervals once each has a known sign,
-  [`a_signed_certificate_concludes_a_uint32_order_from_intervals_of_known_sign.md`](https://github.com/clicklang/click/blob/master/mdtests/a_signed_certificate_concludes_a_uint32_order_from_intervals_of_known_sign.md)),
-  and `interval_narrowed_cast`,
-  which treats a C conversion into `int8`, `uint8`, `int16` or `uint16` of a
-  32-bit-word operand as that operand when the operand's checked interval
-  lies inside the destination range
-  ([`a_conversion_in_range_is_its_operand_in_a_signed_certificate.md`](https://github.com/clicklang/click/blob/master/mdtests/a_conversion_in_range_is_its_operand_in_a_signed_certificate.md)).
-- `affine_premise`, `affine_conclusion`, and `affine_conclusion_pair`, which
-  decompose an affine machine premise or goal with interval evidence for
-  every operation root.
-- The conclusion node's claim equals the goal's affine claim; two trivially
-  true constant comparisons on one carrier also match.
-
-**`rules`** checks one named rule per node, and the conclusion node's result
-must be the goal itself:
-
-- `pointer_translation`, `pointer_alignment`, `pointer_word_equality`, and
-  `pointer_word_from_alignment` for pointer translation, alignment and
-  tagged words; `float_reflexive` for a finite float; `unsigned_sum_bound`.
-- `int64_defined bounds [i, ...] => defined(a + b);` (or `a - b`) proves
-  `int64` definedness: each operand's range is the width range of its root
-  constructor (a constant, or a value widened from `int` or `unsigned int`;
-  any other `int64` term has the whole `int64` range), narrowed by the listed
-  premises, each a constant `int64` order or equality fact on an operand, and
-  the exact result range must stay inside `int64`. `int32_defined` is the
-  same checker at `int32`: a constant operand is itself and any other `int32`
-  term (including a promoted `char` or `short`) has the whole `int32` range,
-  and the listed premises are constant `int32` facts.
-- `integer_product_bounds bounds [i, j, k, l] => T <= x * y;` (or `x * y <=
-  T`) uses four constant-endpoint bounds in left-lower/upper then
-  right-lower/upper order; see the product-bound rule below.
-- `integer_division_bounds bounds [i, j, k, l] => T <=
-  truncating_quotient(n, d);` (or an upper bound, or `truncating_remainder`)
-  checks four explicit constant-endpoint numerator/divisor bounds and requires
-  the divisor interval to exclude zero; see [division
-  bounds](../../internals/mathematical-integers.md#truncating-division-bounds).
-- `integer_quotient_bound bounds [i, j] => b <= truncating_quotient(n, d);`
-  (or an upper bound) checks the exact scaled numerator bound followed by
-  `1 <= d`; see [scaled quotient
-  bounds](../../internals/mathematical-integers.md#scaled-positive-divisor-quotient-bounds).
-  `integer_bound_exclusion bounds [i] => x != c;` excludes a constant
-  strictly outside one named non-strict bound; see [bound
-  exclusion](../../internals/mathematical-integers.md#bounds-excluding-constants).
-- `integer_polynomial_identity bounds [] => L == R;` checks a bounded
-  mathematical Integer ring identity with non-ring roots opaque;
-  `integer_quotient_shift bounds [i, j] => truncating_quotient(x + d * k, d)
-  == truncating_quotient(x, d) + k;` requires a positive constant divisor and
-  exact named nonnegative bounds on `x` and `k`; see [polynomial and quotient
-  rules](../../internals/mathematical-integers.md#bounded-polynomial-identities-and-quotient-shifts).
-- `integer_relation_transport bounds [i, j] => P;` uses a named Integer
-  equality to replace one whole operand of a named equality or non-strict
-  bound; it checks relation kind, polarity, and operand identities without
-  recursive substitution.
-- `integer_cast_identity bounds [i, j] => to_integer(cast_value) ==
-  to_integer(source_value);` checks two named bounds against the typed cast
-  destination's range; see [the cast identity
-  rule](../../internals/mathematical-integers.md#range-checked-modulo-cast-identities).
-  Unsigned byte and 16-bit readbacks with canonical low-bit masks retain
-  their observations when promoted to a 32-bit word; both source bounds
-  remain explicit. The Integer-to-machine conversion is read the same way:
-  `integer_cast_identity bounds [i, j] => to_integer(to_T(z)) == z;` with
-  `z`'s two bounds inside `T`'s range, at every format, which `solve` plans
-  ([`an_integer_converted_to_a_machine_type_reads_back.md`](https://github.com/clicklang/click/blob/master/mdtests/an_integer_converted_to_a_machine_type_reads_back.md)).
-- `integer_operation_identity bounds [i, j] => to_integer(a + b) ==
-  to_integer(a) + to_integer(b);` (or `-`, `*`) checks two named constant
-  bounds on the Integer result against the range of the operation's format,
-  8 to 64 bits; see [in-range sums, differences and
-  products](../../internals/mathematical-integers.md#in-range-machine-sums-differences-and-products).
-
-**Outside it**, with what to write instead:
-
-- A premise that is not exactly available, including an `Integer` fact
-  cited in the opposite direction (`3 >= x` for the fact `x <= 3`): cite it
-  as the fact is spelled, or prove it with `have` first.
-- An `Integer`-family goal `x != c`: `integer_bound_exclusion` in `rules`.
-  `negated_goal` of an equality goal: two bound certificates and
-  `equal_from_bounds`.
-- A negative `scale` of a bound: scale the opposite bound, or derive it from
-  an equality.
-- A conclusion stronger or weaker than the goal (`a < b` for the goal
-  `a <= b`): add the remaining `trivial` and `add` nodes, since the claim must
-  equal the goal's.
-- A contradiction as the conclusion of a `signed_int32` or `rules`
-  certificate: only the unsuffixed form accepts one.
-- A node of another family, or a proposition at another point or inside a
-  conjunction: a separate `have` step for each family, and `at(...)` or
-  `extract(...)` steps for provenance; certificate families never coerce one
-  another's propositions.
-
-**Failure, checking, and tools:**
-
-Every result is recomputed, references are bounded by the explicit
-premise/node lists, and the first rejected node is named by index. An
-`int32_defined` or `int64_defined` refusal names the result range found. Explicit certificates never
-invoke planning or the legacy whole-goal checker. Machine families have no
-implicit coercion between signed, unsigned, pointer, and float terms: source
-conversions must be present and checked. Expansion preserves authored compatibility
-certificates; generated arithmetic expands to ordinary tactics. `verify`,
-`profile`, and `audit` inspect the same checked proof.
-
-**Checked examples:** [`arithmetic_certificate_surface.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_certificate_surface.md), [`integer_certificate_refutation_and_rounding.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_certificate_refutation_and_rounding.md), [`signed_int32_arithmetic_certificate_surface.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_int32_arithmetic_certificate_surface.md), [`signed_int32_certificate_composition.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_int32_certificate_composition.md), [`aligned_explicit_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/aligned_explicit_arithmetic.md), [`tagged_pointer_explicit_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/tagged_pointer_explicit_arithmetic.md), [`int64_defined_from_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/int64_defined_from_bounds.md), [`int32_defined_from_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/int32_defined_from_bounds.md), [`integer_product_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_product_bounds.md), [`integer_division_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_division_bounds.md), [`integer_cast_identity_unsigned_subword_promotion.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_cast_identity_unsigned_subword_promotion.md), [`an_in_range_machine_difference_is_its_integer_difference.md`](https://github.com/clicklang/click/blob/master/mdtests/an_in_range_machine_difference_is_its_integer_difference.md)
 
 ### Rewriting
 
@@ -3566,18 +3383,14 @@ step.
 
 ## Exact integer product bounds
 
-Inside `arithmetic_certificate rules`, the node
-`integer_product_bounds bounds [i, j, k, l] => x * y <= T;` checks one
-mathematical product bound. Its four references must name exactly available
-premises `L <= x`, `x <= U`, `M <= y`, and `y <= N`, in that order. Each
-endpoint and the result bound `T` must be a constant Integer, and each
-interval must have its lower endpoint at most its upper endpoint.
+Use `normalize() using { L <= x; x <= U; M <= y; y <= N; }` to check
+an exact bound on the mathematical product `x * y`. Each interval endpoint
+and the result bound must be constant, with ordered interval endpoints.
 
 The checker computes `L*M`, `L*N`, `U*M`, and `U*N` using exact integers.
 For an upper bound, all four must be at most `T`; for the result `T <= x * y`,
 all four must be at least `T`. The rule accepts negative, zero, and crossing
-intervals and bounds weaker than the exact endpoints. It selects four facts
-by index and does no premise search or implicit machine-range inference.
+intervals and bounds weaker than the exact endpoints. It reads the four selected facts and does no premise search or implicit machine-range inference.
 
 The result must contain an Integer multiplication at its root. Products
 already reduced to a constant or a single operand, such as `x * 0` or `x * 1`,

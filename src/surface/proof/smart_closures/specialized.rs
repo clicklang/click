@@ -76,7 +76,7 @@ pub(super) fn needs_distribution(goal: &ClickProposition) -> bool {
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn apply_specialized_composition(
         proof: &Proof<'a>,
-        plan: &SpecialArithmeticCertificate,
+        plan: &SpecializedCompositionPlan,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_specialized_composition");

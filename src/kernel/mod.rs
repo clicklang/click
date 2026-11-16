@@ -136,7 +136,7 @@ pub use spec::required_constructions::is_required_construction;
 pub(crate) use spec::{
     SpecCaptureRefusal, algebraic_argument_evaluation_guards, capture_spec_algebraic_value,
     capture_spec_integer_value, capture_spec_integer_value_with_guards,
-    refine_object_pointer_argument_using_facts, with_preserved_integer_comparisons,
+    refine_object_pointer_argument_using_facts,
 };
 mod termination;
 pub(crate) use termination::StatementProofInput;
@@ -181,6 +181,7 @@ pub(crate) use eval::proposition_mentions_load_variable;
 pub(crate) use eval::proposition_mentions_scalar_read;
 pub(crate) use eval::read_over_write_program_value;
 pub(crate) use eval::read_over_write_value;
+#[cfg(test)]
 #[cfg(test)]
 pub(crate) use eval::record_load_variable_defining_fact;
 pub(crate) use eval::registered_load_bytes_for_variable;

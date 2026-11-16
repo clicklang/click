@@ -1,8 +1,7 @@
 # An operation identity bound outside its type is refused
 
-`integer_operation_identity` needs both named bounds inside the operation's
-type. A lower bound of `-1` is one below `unsigned int`'s range, so the
-certificate does not show that the subtraction does not wrap.
+Arithmetic search expands to ordinary proof steps, with the selected premises
+stated explicitly in `solve() using { ... }`.
 
 ```c filename=an_operation_identity_bound_outside_its_type_is_refused.c
 unsigned decrement(unsigned x) { return x - 1u; }
@@ -16,15 +15,10 @@ uint32 decrement(uint32 x) {
     step_until(function.exit);
     have -1 <= to_integer(old(x)) - 1;
     have to_integer(old(x)) - 1 <= 4294967295;
-    arithmetic_certificate rules {
-        premise 0: -1 <= to_integer(old(x)) - 1 => -1 <= to_integer(old(x)) - 1;
-        premise 1: to_integer(old(x)) - 1 <= 4294967295 => to_integer(old(x)) - 1 <= 4294967295;
-        integer_operation_identity bounds [0, 1] => to_integer(result) == to_integer(old(x)) - 1;
-        conclusion 0;
-    }
+    solve() using { -1 <= to_integer(old(x)) - 1; to_integer(old(x)) - 1 <= 4294967295; };
 }
 ```
 
 ```expect
-fail: arithmetic_certificate
+fail: solve
 ```

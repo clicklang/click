@@ -66,7 +66,7 @@ fn charon_loop_phase_expands_by_label_over_the_prepared_program() {
             &sidecar, &prepared, &label,
         )
         .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
-        // Both phases now retain arithmetic certificates without adding an
+        // Both phases now retain ordinary arithmetic proofs without adding an
         // import. Keep checking that only the selected phase changes.
         let body = expanded.as_str();
         let insertion = sidecar.find("}\n}\n\nfn accumulate").unwrap();

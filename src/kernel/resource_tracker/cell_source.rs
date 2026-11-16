@@ -1365,13 +1365,13 @@ impl PointerInRangeEvidence {
             .shared_element_index_from_base_with_width(range.base(), range.element_width())?;
         let lower_condition = crate::kernel::assumptions::index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(&range.start()),
+            MachineOperandView::Legacy(range.start()),
             index.operand_view(),
         );
         let upper_condition = crate::kernel::assumptions::index_comparison(
             CompareRelation::LessThan,
             index.operand_view(),
-            MachineOperandView::Legacy(&range.end()),
+            MachineOperandView::Legacy(range.end()),
         );
         Some(Self::Indexed {
             index,
@@ -1469,7 +1469,7 @@ impl PointerInRangeEvidence {
         lower.checks(
             &crate::kernel::assumptions::index_comparison(
                 CompareRelation::LessEqual,
-                MachineOperandView::Legacy(&range.start()),
+                MachineOperandView::Legacy(range.start()),
                 index.operand_view(),
             ),
             assumptions,
@@ -1477,7 +1477,7 @@ impl PointerInRangeEvidence {
             &crate::kernel::assumptions::index_comparison(
                 CompareRelation::LessThan,
                 index.operand_view(),
-                MachineOperandView::Legacy(&range.end()),
+                MachineOperandView::Legacy(range.end()),
             ),
             assumptions,
         )

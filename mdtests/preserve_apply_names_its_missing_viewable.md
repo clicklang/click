@@ -290,9 +290,18 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             have next[walk(next, from, previous)] == next[at(iter, cur)] by {
                 solve() using { walk(next, from, previous) == at(iter, cur); };
             }
+            have walk(next, from, Nat::Succ(previous)) == cur by {
+                unfold(walk(next, from, Nat::Succ(previous)));
+                known();
+            }
+            apply(walk_in_range(next, n, from, Nat::Succ(previous)));
+            have 0 <= cur and cur < n by {
+                rewrite(cur, walk(next, from, Nat::Succ(previous)));
+                known();
+            }
             have exists (fuel: Nat) { walk(next, from, fuel) == cur } by {
                 witness { fuel: Nat::Succ(previous) };
-                unfold(walk(next, from, Nat::Succ(previous)));
+                known();
             }
         }
     }

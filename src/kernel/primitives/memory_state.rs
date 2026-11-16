@@ -52,6 +52,7 @@ fn write_havoc_block(identity: &mut String, block: PointerBlock) {
             let _ = write!(identity, "breturn{frame};");
         }
         PointerBlock::ContractResult => identity.push_str("br;"),
+        PointerBlock::ContractException => identity.push_str("bexception;"),
         PointerBlock::StaticObject { binding } => {
             write_havoc_string(identity, "bst", &binding.to_string())
         }
@@ -1198,6 +1199,33 @@ mod havoc_identity_tests {
     }
 
     #[test]
+    fn outcome_slot_havoc_identities_are_separate_from_program_storage() {
+        let identities = [
+            PointerBlock::ContractException,
+            PointerBlock::ContractResult,
+            PointerBlock::ExternalArgument,
+            PointerBlock::AggregateReturn { frame: 0 },
+            PointerBlock::from("local:exception"),
+            PointerBlock::from("local:__click_exception"),
+        ]
+        .map(|block| {
+            let range = MemoryRange::new(
+                Pointer {
+                    block,
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
+            );
+            memory_havoc_write_set_identity(&[range])
+        });
+        assert_eq!(
+            identities.iter().collect::<BTreeSet<_>>().len(),
+            identities.len()
+        );
+    }
+
+    #[test]
     fn havoc_write_set_identity_distinguishes_terms_below_the_old_depth_limit() {
         let first_range = range(80, 1);
         let second_range = range(80, 2);
@@ -1310,9 +1338,10 @@ impl LocalEnvironment {
                 .and_then(|entries| entries.last())
                 .map(|(_, binding)| binding.clone())
                 .unwrap_or_else(|| name.clone()),
-            BindingName::Local(_) | BindingName::Static(_) | BindingName::ContractResult => {
-                name.clone()
-            }
+            BindingName::Local(_)
+            | BindingName::Static(_)
+            | BindingName::ContractResult
+            | BindingName::ContractException => name.clone(),
         }
     }
     /// The source spelling of this active lexical binding, for source-name
@@ -1322,7 +1351,7 @@ impl LocalEnvironment {
             BindingName::Local(id) => id.spelling()?,
             BindingName::Static(id) => id.spelling(),
             BindingName::Named(name) => name,
-            BindingName::ContractResult => return None,
+            BindingName::ContractResult | BindingName::ContractException => return None,
         };
         (self.resolve_binding(&BindingName::from(source)) == *name).then_some(source)
     }
@@ -1550,6 +1579,7 @@ impl LocalEnvironment {
         );
     }
 
+    #[cfg(test)]
     pub(in crate::kernel) fn set_array_object_at(
         &mut self,
         name: impl Into<BindingName>,
@@ -6359,6 +6389,7 @@ impl Memory {
     /// (`design/effective-types.md`). Like the initialized bytes, the record
     /// changes with the cell under the one store edge, so the memory history
     /// stays connected.
+    #[cfg(test)]
     pub(in crate::kernel) fn store_classed_with_context(
         self,
         pointer: Pointer,
@@ -7550,8 +7581,8 @@ impl Memory {
             },
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:value-parameter:{name}").into(),
-            BindingName::ContractResult => {
-                unreachable!("contract result is not an automatic declaration")
+            BindingName::ContractResult | BindingName::ContractException => {
+                unreachable!("contract outcome is not an automatic declaration")
             }
         };
         Pointer {
@@ -7570,6 +7601,7 @@ impl Memory {
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:{name}").into(),
             BindingName::ContractResult => PointerBlock::ContractResult,
+            BindingName::ContractException => PointerBlock::ContractException,
         };
         Pointer {
             block,
@@ -7589,8 +7621,8 @@ impl Memory {
             },
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:lifetime:{lifetime}:{name}").into(),
-            BindingName::ContractResult => {
-                unreachable!("contract result is not an automatic declaration")
+            BindingName::ContractResult | BindingName::ContractException => {
+                unreachable!("contract outcome is not an automatic declaration")
             }
         };
         Pointer {
@@ -7603,7 +7635,9 @@ impl Memory {
         let block = match name.into() {
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("global:{name}").into(),
-            BindingName::Local(_) | BindingName::ContractResult => {
+            BindingName::Local(_)
+            | BindingName::ContractResult
+            | BindingName::ContractException => {
                 unreachable!("non-global binding used as a global")
             }
         };
@@ -7627,7 +7661,9 @@ impl Memory {
         let block = match name.into() {
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("static:{function}:{name}").into(),
-            BindingName::Local(_) | BindingName::ContractResult => {
+            BindingName::Local(_)
+            | BindingName::ContractResult
+            | BindingName::ContractException => {
                 unreachable!("non-static binding used as a static")
             }
         };
@@ -7661,8 +7697,8 @@ impl Memory {
                 block: PointerBlock::StaticObject { binding },
                 offset: PointerOffsetTerm::Constant(0),
             },
-            BindingName::ContractResult => {
-                unreachable!("contract result is not a frame-local declaration")
+            BindingName::ContractResult | BindingName::ContractException => {
+                unreachable!("contract outcome is not a frame-local declaration")
             }
             BindingName::Named(name) => Pointer {
                 block: format!("local:frame:{frame}:{name}").into(),
@@ -8021,6 +8057,7 @@ impl ExecutionState {
     /// diagnostic, or `None` when the states are equal. A differing resource
     /// context names a resource fact held on one side only; every other part
     /// is named by what it is.
+    #[cfg(test)]
     pub(crate) fn first_difference(&self, other: &ExecutionState) -> Option<String> {
         if self.resources != other.resources {
             let only_in = |left: &ResourceContext, right: &ResourceContext| {

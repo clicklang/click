@@ -31,7 +31,7 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
         rewrite(to_integer(product), to_integer(this->fee) * to_integer(at_size));
         known();
     }
-    step();
+    step_until(call(1));
     let { result: rounded } = step(FeeFrac::Div, { });
     step_until(function.exit);
     have @DIV_BOUND_1@;

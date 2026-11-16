@@ -28,80 +28,6 @@ impl ConditionTerm {
     }
 }
 
-#[cfg(test)]
-mod construction_tests {
-    use super::*;
-
-    #[test]
-    fn domain_construction_retains_symbolic_truths_for_obligation_discharge() {
-        let value = IntegerTerm::from_machine(
-            MachineIntegerType::Int64,
-            MachineTerm::Variable(Variable(987000)),
-        )
-        .unwrap();
-        // An already written symbolic bound stays a proposition. The domain
-        // builder's root-type rule below does not fold ordinary comparisons.
-        let domain = Proposition::And(
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::integer_less_equal(
-                    value.clone(),
-                    IntegerTerm::constant_i64(i64::MAX),
-                ),
-                true,
-            )),
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::integer_greater_equal(value, IntegerTerm::constant_i64(i64::MIN)),
-                true,
-            )),
-        );
-        // A machine value fits its type, but proving that is not construction.
-        let (retained, work) = crate::instrumentation::measure_deterministic_work(|| {
-            Proposition::arithmetic_domain([domain.clone()])
-        });
-        assert_eq!(retained, Some(domain));
-        assert_eq!(
-            work, 3,
-            "only the conjunction and its two conditions are visited"
-        );
-        assert_eq!(
-            Proposition::arithmetic_domain([
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
-                Proposition::ConditionIs(ConditionTerm::Constant(false), false),
-            ]),
-            None
-        );
-        let falsehood = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
-        assert_eq!(
-            Proposition::arithmetic_domain([falsehood.clone()]),
-            Some(falsehood)
-        );
-    }
-
-    #[test]
-    fn an_exact_machine_value_needs_a_range_only_for_a_noncontaining_type() {
-        use MachineIntegerType as Ty;
-        for (source, destination, fits) in [
-            (Ty::Int32, Ty::Int32, true),
-            (Ty::Int8, Ty::Int32, true),
-            (Ty::UInt32, Ty::Int64, true),
-            (Ty::Int32, Ty::Int8, false),
-            (Ty::UInt32, Ty::Int32, false),
-            (Ty::Int32, Ty::UInt32, false),
-        ] {
-            let value =
-                IntegerTerm::from_machine(source, MachineTerm::Variable(Variable(987001))).unwrap();
-            let range = Proposition::arithmetic_result_range(destination, value);
-            assert_eq!(
-                matches!(
-                    range,
-                    Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-                ),
-                fits
-            );
-        }
-    }
-}
-
 impl Proposition {
     pub(crate) fn signed_division_exclusion(
         format: MachineIntegerType,
@@ -214,8 +140,19 @@ impl Proposition {
         left: MachineOperandView<'_>,
         right: MachineOperandView<'_>,
     ) -> Self {
-        let a = left.observe(format).expect("arithmetic operand");
-        let b = right.observe(format).expect("arithmetic operand");
+        // A signed operation can retain an unsigned literal carrier after
+        // a bit-preserving rewrite. Interpret its bits for this domain only;
+        // changing the carrier itself would alter structural proof identity.
+        let observe = |operand: MachineOperandView<'_>| {
+            if format == MachineIntegerType::Int64
+                && let Some(uint64_constant!(bits)) = operand.literal()
+            {
+                return IntegerTerm::constant(i128::from(constant_u64(bits) as i64).into());
+            }
+            operand.observe(format).expect("arithmetic operand")
+        };
+        let a = observe(left);
+        let b = observe(right);
         let exact = match op {
             MachineBinaryOp::Add => IntegerTerm::add(a, b),
             MachineBinaryOp::Subtract => IntegerTerm::subtract(a, b),
@@ -339,5 +276,134 @@ impl ConditionTerm {
             masked,
         );
         Self::machine_compare(format, CompareRelation::LessEqual, left, bound)
+    }
+}
+
+#[cfg(test)]
+mod construction_tests {
+    use super::*;
+
+    #[test]
+    fn domain_construction_retains_symbolic_truths_for_obligation_discharge() {
+        let value = IntegerTerm::from_machine(
+            MachineIntegerType::Int64,
+            MachineTerm::Variable(Variable(987000)),
+        )
+        .unwrap();
+        // An already written symbolic bound stays a proposition. The domain
+        // builder's root-type rule below does not fold ordinary comparisons.
+        let domain = Proposition::And(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::integer_less_equal(
+                    value.clone(),
+                    IntegerTerm::constant_i64(i64::MAX),
+                ),
+                true,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::integer_greater_equal(value, IntegerTerm::constant_i64(i64::MIN)),
+                true,
+            )),
+        );
+        // A machine value fits its type, but proving that is not construction.
+        let (retained, work) = crate::instrumentation::measure_deterministic_work(|| {
+            Proposition::arithmetic_domain([domain.clone()])
+        });
+        assert_eq!(retained, Some(domain));
+        assert_eq!(
+            work, 3,
+            "only the conjunction and its two conditions are visited"
+        );
+        assert_eq!(
+            Proposition::arithmetic_domain([
+                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                Proposition::ConditionIs(ConditionTerm::Constant(false), false),
+            ]),
+            None
+        );
+        let falsehood = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+        assert_eq!(
+            Proposition::arithmetic_domain([falsehood.clone()]),
+            Some(falsehood)
+        );
+    }
+
+    #[test]
+    fn an_exact_machine_value_needs_a_range_only_for_a_noncontaining_type() {
+        use MachineIntegerType as Ty;
+        for (source, destination, fits) in [
+            (Ty::Int32, Ty::Int32, true),
+            (Ty::Int8, Ty::Int32, true),
+            (Ty::UInt32, Ty::Int64, true),
+            (Ty::Int32, Ty::Int8, false),
+            (Ty::UInt32, Ty::Int32, false),
+            (Ty::Int32, Ty::UInt32, false),
+        ] {
+            let value =
+                IntegerTerm::from_machine(source, MachineTerm::Variable(Variable(987001))).unwrap();
+            let range = Proposition::arithmetic_result_range(destination, value);
+            assert_eq!(
+                matches!(
+                    range,
+                    Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+                ),
+                fits
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signed_domains_read_unsigned_literal_bits_without_rewriting_the_carrier() {
+        let _session = crate::kernel::VerificationSession::enter();
+        use MachineIntegerType::{Int64, UInt64};
+        for bits in [0, 1, 7, i64::MAX as u64, 1u64 << 63, u64::MAX - 6, u64::MAX] {
+            let raw = MachineTerm::uint64_constant(bits);
+            let root = KernelTermImport::default().machine(Int64, &raw);
+            let signed = MachineTerm::int64_constant(bits as i64);
+            for op in [
+                MachineBinaryOp::Add,
+                MachineBinaryOp::Subtract,
+                MachineBinaryOp::Multiply,
+            ] {
+                for swapped in [false, true] {
+                    let other = MachineTerm::Variable(Variable(1_990_000));
+                    let (left, right) = if swapped {
+                        (
+                            MachineOperandView::Legacy(&other),
+                            MachineOperandView::Shared(&root),
+                        )
+                    } else {
+                        (
+                            MachineOperandView::Shared(&root),
+                            MachineOperandView::Legacy(&other),
+                        )
+                    };
+                    let expected = if swapped {
+                        Proposition::signed_arithmetic_domain(Int64, op, &other, &signed)
+                    } else {
+                        Proposition::signed_arithmetic_domain(Int64, op, &signed, &other)
+                    };
+                    assert_eq!(
+                        Proposition::signed_arithmetic_domain_views(Int64, op, left, right),
+                        expected
+                    );
+                }
+            }
+            assert_eq!(KernelTermExport::machine(&root).unwrap(), raw);
+            assert_eq!(
+                root.with_machine_observation_type(UInt64).node(),
+                root.node()
+            );
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/primitives/arithmetic_domains/literal_readings.rs");
     }
 }

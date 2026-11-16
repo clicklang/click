@@ -182,7 +182,7 @@ mod tests {
         assert!(
             root.finish()
                 .unwrap()
-                .into_rule()
+                .to_reusable_rule()
                 .unwrap()
                 .descent_completion
                 .is_some()

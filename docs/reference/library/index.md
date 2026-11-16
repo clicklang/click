@@ -33,8 +33,7 @@ how far it is trusted:
 - **The specification library** is checked Click: types, pure functions,
   predicates and theorems. A theorem is either proved or a kernel standard
   theorem whose declaration is checked against its kernel builder. The
-  `click::rust::vec` and `click::rust::chunks_exact` axioms are trusted, not
-  proved.
+  `click::rust::vec` axioms are trusted, not proved.
 
 ## Modules
 
@@ -54,7 +53,6 @@ how far it is trusted:
 | [`click::rust::i8` ... `click::rust::usize`](#clickrusti8-through-clickrustusize) | `import click::rust::u32;`; named by path in Rust core-method contracts | specification |
 | [`click::rust::vec`](#clickrustvec) | `import click::rust::vec;` | specification, with trusted axioms |
 | [`click::rust::slice`](#clickrustslice) | `import click::rust::slice;` | specification |
-| [`click::rust::chunks_exact`](#clickrustchunks_exact) | `import click::rust::chunks_exact;` | specification, with trusted axioms |
 | [Rust core models](#rust-core-models), `library/rust/core.click` (not a module) | when a Rust import calls one of its methods | Rust library model |
 | [`click::separation`](#clickseparation) | `import click::separation;` | specification |
 
@@ -10150,213 +10148,6 @@ every evaluation condition is, where Rust panics otherwise. A Rust sidecar's
 subslice `s[a..b]` is `Slice::Slice(s.as_ptr() + a, slice::subslice_len(a,
 b, s.len()))`, and prints as `s[a..b]`.
 
-## `click::rust::chunks_exact`
-
-Source: `library/rust/chunks_exact.click`, `import click::rust::chunks_exact;`.
-
-### Rust chunk iterators
-
-`click::rust::chunks_exact` declares `ChunksExact<T>`, the iterator Rust's
-`s.chunks_exact(n)` returns, as a primitive type like `Vec<T>`. An iterator
-value stands for the finite sequence of chunks it will still yield:
-`chunks_exact::len(it)` of them, the `k`-th being `chunks_exact::nth(it, k)`,
-a slice. `nth` is an observation that consumes nothing, not Rust's consuming
-`Iterator::nth`. The axioms say what `chunks_exact` builds and what one
-`next()` leaves; they are trusted, not proved. A value reads with its
-methods, `s.chunks_exact(4u64).nth(k).len()`
-([methods](../language/index.md#methods)). A Rust unit imports its `chunks_exact` iterators as values of this type
-([Rust](../rust.md#exact-chunk-iterators-and-remainder)); see
-`design/rust-iterators.md`.
-
-### `ChunksExact`
-
-```click
-type ChunksExact<T>;
-```
-
-Rust's `core::slice::ChunksExact<T>`, the iterator `s.chunks_exact(n)` returns, as a primitive type of the Click library. An iterator value stands for the finite sequence of items it will still yield: `len(it)` items, the `k`-th of them `nth(it, k)`. Its meaning is the functions below and the axioms that relate them (`design/rust-iterators.md`).  Each axiom is trusted, not proved. Rust's own `ChunksExact` satisfies all of them together, so they are consistent. `nth` here is an observation that consumes nothing, not Rust's consuming `Iterator::nth`.
-
-### `chunks_exact::chunks_exact`
-
-```click
-function chunks_exact<T>(s: Slice<T>, n: uint64) -> ChunksExact<T>;
-```
-
-The iterator `s.chunks_exact(n)`, for a chunk size `n` that is not zero, where Rust panics.
-
-### `chunks_exact::len`
-
-```click
-function len<T>(it: ChunksExact<T>) -> uint64;
-```
-
-The number of chunks `it` will still yield, Rust's `it.len()`.
-
-### `chunks_exact::nth`
-
-```click
-function nth<T>(it: ChunksExact<T>, k: uint64) -> Slice<T>;
-```
-
-The chunk the `k`-th following `next()` returns, for a `k` below `len(it)`. At any other index it names some slice the axioms say nothing about.
-
-### `chunks_exact::remainder`
-
-```click
-function remainder<T>(it: ChunksExact<T>) -> Slice<T>;
-```
-
-The elements the chunks leave over, Rust's `it.remainder()`.
-
-### `chunks_exact::after_next`
-
-```click
-function after_next<T>(it: ChunksExact<T>) -> ChunksExact<T>;
-```
-
-`it` after one `next()` that returned a chunk, for an `it` with `0 < len(it)`.
-
-### `chunks_exact::after`
-
-```click
-function after<T>(it: ChunksExact<T>, k: Integer) -> ChunksExact<T>;
-```
-
-`it` after `k` calls of `next()` that each returned a chunk, for a `k` from zero to `len(it)`. The count is a mathematical integer, so a loop states where its iterator stands by its pass count: `iter == start.after(iterations)`.
-
-### `chunks_exact::len_chunks_exact`
-
-```click
-axiom len_chunks_exact<T>(s: Slice<T>, n: uint64) {
-    requires n != 0u64;
-    ensures chunks_exact::len(chunks_exact::chunks_exact(s, n)) == slice::len(s) / n;
-}
-```
-
-**Axiom:** trusted, not proved.
-
-### `chunks_exact::nth_chunks_exact`
-
-```click
-axiom nth_chunks_exact(s: Slice<uint8>, n: uint64, k: uint64) {
-    requires n != 0u64;
-    requires k < slice::len(s) / n;
-    ensures slice::as_ptr(chunks_exact::nth(chunks_exact::chunks_exact(s, n), k))
-        == slice::as_ptr(s) + k * n;
-    ensures slice::len(chunks_exact::nth(chunks_exact::chunks_exact(s, n), k)) == n;
-}
-```
-
-Chunk `k` is the `n` elements from element `k * n`. Stated for bytes: an offset from a `T*` needs `T`'s size, which a generic axiom does not have. **Axiom:** trusted, not proved.
-
-### `chunks_exact::remainder_chunks_exact`
-
-```click
-axiom remainder_chunks_exact(s: Slice<uint8>, n: uint64) {
-    requires n != 0u64;
-    ensures slice::as_ptr(chunks_exact::remainder(chunks_exact::chunks_exact(s, n)))
-        == slice::as_ptr(s) + (slice::len(s) - slice::len(s) % n);
-    ensures slice::len(chunks_exact::remainder(chunks_exact::chunks_exact(s, n)))
-        == slice::len(s) % n;
-}
-```
-
-The remainder is the last `len(s) % n` elements. Stated for bytes, as `nth_chunks_exact` is. **Axiom:** trusted, not proved.
-
-### `chunks_exact::len_after_next`
-
-```click
-axiom len_after_next<T>(it: ChunksExact<T>) {
-    requires 0u64 < chunks_exact::len(it);
-    ensures chunks_exact::len(chunks_exact::after_next(it)) == chunks_exact::len(it) - 1u64;
-}
-```
-
-**Axiom:** trusted, not proved.
-
-### `chunks_exact::nth_after_next`
-
-```click
-axiom nth_after_next<T>(it: ChunksExact<T>, k: uint64) {
-    requires 0u64 < chunks_exact::len(it);
-    requires k < chunks_exact::len(it) - 1u64;
-    ensures chunks_exact::nth(chunks_exact::after_next(it), k)
-        == chunks_exact::nth(it, k + 1u64);
-}
-```
-
-**Axiom:** trusted, not proved.
-
-### `chunks_exact::remainder_after_next`
-
-```click
-axiom remainder_after_next<T>(it: ChunksExact<T>) {
-    requires 0u64 < chunks_exact::len(it);
-    ensures chunks_exact::remainder(chunks_exact::after_next(it)) == chunks_exact::remainder(it);
-}
-```
-
-`next()` leaves the remainder as it was. **Axiom:** trusted, not proved.
-
-### `chunks_exact::after_zero`
-
-```click
-axiom after_zero<T>(it: ChunksExact<T>) {
-    ensures chunks_exact::after(it, 0) == it;
-}
-```
-
-No call leaves the iterator as it was. **Axiom:** trusted, not proved.
-
-### `chunks_exact::after_next_after`
-
-```click
-axiom after_next_after<T>(it: ChunksExact<T>, k: Integer) {
-    requires 0 <= k;
-    requires k < to_integer(chunks_exact::len(it));
-    ensures chunks_exact::after_next(chunks_exact::after(it, k)) == chunks_exact::after(it, k + 1);
-}
-```
-
-One more `next()` is one more call. **Axiom:** trusted, not proved.
-
-### `chunks_exact::len_after`
-
-```click
-axiom len_after<T>(it: ChunksExact<T>, k: Integer) {
-    requires 0 <= k;
-    requires k <= to_integer(chunks_exact::len(it));
-    ensures to_integer(chunks_exact::len(chunks_exact::after(it, k)))
-        == to_integer(chunks_exact::len(it)) - k;
-}
-```
-
-**Axiom:** trusted, not proved.
-
-### `chunks_exact::nth_after`
-
-```click
-axiom nth_after<T>(it: ChunksExact<T>, k: Integer, j: uint64, m: uint64) {
-    requires 0 <= k;
-    requires to_integer(m) == k + to_integer(j);
-    requires m < chunks_exact::len(it);
-    ensures chunks_exact::nth(chunks_exact::after(it, k), j) == chunks_exact::nth(it, m);
-}
-```
-
-The chunks still to come are the ones `it` would have yielded from `k` on: chunk `j` of them is chunk `m` of `it`, where `m` is `k + j`. **Axiom:** trusted, not proved.
-
-### `chunks_exact::remainder_after`
-
-```click
-axiom remainder_after<T>(it: ChunksExact<T>, k: Integer) {
-    requires 0 <= k;
-    requires k <= to_integer(chunks_exact::len(it));
-    ensures chunks_exact::remainder(chunks_exact::after(it, k)) == chunks_exact::remainder(it);
-}
-```
-
-**Axiom:** trusted, not proved.
 
 ## `click::rust::slice_iter`
 
@@ -10539,27 +10330,6 @@ and is not passed. `unwrap_or` is the library's `option::unwrap_or` or
 
 **Verified use:** [`tests/rust_import/panics.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/panics.rs) verifies `unwrapped` and `expected` in [`design/charon-trial/panics/panics.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/panics/panics.rs) and refuses an unwrap not shown `Some`; [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `Result` `unwrap`, `expect` and `unwrap_or` in [`design/charon-trial/result-values/results.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/result-values/results.rs) in `charon_result_values_read_as_click_results`; [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `Option::unwrap_or` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs).
 
-### Slice value methods
-
-```click
-extern fn slice::as_ptr<T>(s: Slice<T>) -> &T {
-    ensures result == click::rust::slice::as_ptr(s);
-}
-extern fn slice::len<T>(s: Slice<T>) -> usize {
-    ensures result == click::rust::slice::len(s);
-}
-```
-
-**Meaning:** A slice the library-iterator model returns, a `chunks_exact`
-chunk or remainder, is one value of the library's
-[`Slice<T>`](#clickrustslice), and the body reads its data and length
-through Rust's `<[T]>::as_ptr` and `<[T]>::len`. The importer declares them
-at `u8`.
-
-**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
-
-**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies the `chunks_exact` loops of [`design/charon-trial/chunks/chunks.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/chunks/chunks.rs) in `charon_chunks_check_boundaries_authority_and_false_claims` (nightly), whose sidecar [`design/charon-trial/chunks/chunks.click`](https://github.com/clicklang/click/blob/master/design/charon-trial/chunks/chunks.click) reads each chunk through `as_ptr` and `len`.
-
 ### `SliceIter<T>` methods
 
 ```click
@@ -10592,59 +10362,6 @@ size, so it is stated here, at each element type, rather than as an axiom.
 
 **Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies the loop over `bytes.iter()` in [`design/charon-trial/slice-iter/sum.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/slice-iter/sum.rs) in `charon_slice_iter_sums_bytes_by_its_library_contract` (nightly), and `rust_empty_slice_iterator_needs_no_read_authority`.
 
-### `ChunksExact<T>` methods
-
-```click
-extern fn ChunksExact::new<T>(s: &[T], n: usize) -> ChunksExact<T> {
-    requires n != 0u64;
-    ensures result == click::rust::chunks_exact::chunks_exact(Slice<T>::Slice(s, s.len()), n);
-}
-extern fn ChunksExact::next<T>(it: &mut ChunksExact<T>) -> Option<&[T]> {
-    owns *it;
-    ensures click::rust::chunks_exact::len(old(*it)) == 0u64 implies result == Option<&[T]>::None;
-    ensures click::rust::chunks_exact::len(old(*it)) == 0u64 implies *it == old(*it);
-    ensures 0u64 < click::rust::chunks_exact::len(old(*it)) implies result == Option<&[T]>::Some(click::rust::chunks_exact::nth(old(*it), 0u64));
-    ensures 0u64 < click::rust::chunks_exact::len(old(*it)) implies *it == click::rust::chunks_exact::after_next(old(*it));
-}
-extern fn ChunksExact::remainder<T>(it: &ChunksExact<T>) -> Slice<T> {
-    views *it;
-    ensures result == click::rust::chunks_exact::remainder(old(*it));
-}
-extern fn ChunksExact::remainder_ptr<T>(it: ChunksExact<T>) -> &T {
-    ensures result == click::rust::slice::as_ptr(click::rust::chunks_exact::remainder(it));
-}
-extern fn ChunksExact::remainder_len<T>(it: ChunksExact<T>) -> usize {
-    ensures result == click::rust::slice::len(click::rust::chunks_exact::remainder(it));
-}
-extern fn ChunksExact::len<T>(it: ChunksExact<T>) -> usize {
-    ensures result == click::rust::chunks_exact::len(it);
-}
-extern fn ChunksExact::item_ptr<T>(it: ChunksExact<T>) -> &T {
-    requires 0u64 < click::rust::chunks_exact::len(it);
-    ensures result == click::rust::slice::as_ptr(click::rust::chunks_exact::nth(it, 0u64));
-}
-extern fn ChunksExact::item_len<T>(it: ChunksExact<T>) -> usize {
-    requires 0u64 < click::rust::chunks_exact::len(it);
-    ensures result == click::rust::slice::len(click::rust::chunks_exact::nth(it, 0u64));
-}
-extern fn ChunksExact::after_next<T>(it: ChunksExact<T>) -> ChunksExact<T> {
-    requires 0u64 < click::rust::chunks_exact::len(it);
-    ensures result == click::rust::chunks_exact::after_next(it);
-}
-```
-
-**Meaning:** `<[T]>::chunks_exact(n)` requires `n != 0`, as Rust panics
-otherwise, and builds the library's
-[`ChunksExact<T>`](#clickrustchunks_exact) of the slice. With the
-library-iterator model, `next` and `remainder` are Rust's own methods over
-that value. Without it, a loop and `remainder()` lower to the pointer and
-length operations `remainder_ptr` through `after_next`, each stated with the
-same library functions. The importer declares them at `u8`, the element
-type of the library's chunk axioms.
-
-**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
-
-**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `chunks_exact` loops and `remainder()` with the library-iterator model in `chunks_exact_is_proved_by_its_library_contract` and `charon_chunks_check_boundaries_authority_and_false_claims` (nightly, [`design/charon-trial/chunks/chunks.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/chunks/chunks.rs)), and without it in `rust_chunks_exact_remainder_metadata_and_bytes` and `rust_chunks_exact_loops_cover_input_and_preserve_bytes` (nightly), which refuse a zero chunk size not ruled out.
 
 ## Rust integer methods
 

@@ -51,9 +51,7 @@ theorem zlib_seeded_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
   };
   have to_integer(n + 1) * to_integer(a0) == to_integer(n) * to_integer(a0) + to_integer(a0) by {
    rewrite(to_integer(n + 1), to_integer(n) + to_integer(1));
-   arithmetic_certificate rules {
-    integer_polynomial_identity bounds [] => (to_integer(n) + 1) * to_integer(a0) == to_integer(n) * to_integer(a0) + to_integer(a0); conclusion 0;
-   }
+   solve() using {  };
   }
   have to_integer(b + (a + value as uint32 as uint64)) == to_integer(b0) + to_integer(n + 1) * to_integer(a0) + adler_weighted_sum(bytes, n + 1, n + 1) by solve() using {
    to_integer(b + (a + value as uint32 as uint64)) == to_integer(b) + to_integer(a + value as uint32 as uint64);
@@ -413,9 +411,7 @@ theorem zlib_scalar_seeded_component_step(bytes: uint8[], n: int32, a: uint64, b
   };
   have to_integer(n + 1) * to_integer(a0) == to_integer(n) * to_integer(a0) + to_integer(a0) by {
    rewrite(to_integer(n + 1), to_integer(n) + to_integer(1));
-   arithmetic_certificate rules {
-    integer_polynomial_identity bounds [] => (to_integer(n) + 1) * to_integer(a0) == to_integer(n) * to_integer(a0) + to_integer(a0); conclusion 0;
-   }
+   solve() using {  };
   }
   have to_integer(b + (a + value as uint32 as uint64)) == to_integer(b0) + to_integer(n + 1) * to_integer(a0) + adler_weighted_sum(bytes, n + 1, n + 1) by solve() using {
    to_integer(b + (a + value as uint32 as uint64)) == to_integer(b) + to_integer(a + value as uint32 as uint64);

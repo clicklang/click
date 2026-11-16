@@ -2514,6 +2514,7 @@ impl PointerValue {
                 pointer.block,
                 PointerBlock::AggregateReturn { .. }
                     | PointerBlock::ContractResult
+                    | PointerBlock::ContractException
                     | PointerBlock::StaticObject { .. }
                     | PointerBlock::AutomaticLocal { .. }
                     | PointerBlock::Concrete(_)
@@ -3040,6 +3041,8 @@ pub enum PointerBlock {
     AggregateReturn {
         frame: u64,
     },
+    /// Value-only bookkeeping slot for a thrown payload, never C storage.
+    ContractException,
 }
 
 impl std::hash::Hash for PointerBlock {
@@ -3053,6 +3056,7 @@ impl std::hash::Hash for PointerBlock {
                 frame.hash(state);
             }
             Self::ContractResult => 13u64.hash(state),
+            Self::ContractException => 15u64.hash(state),
             Self::StaticObject { binding } => {
                 12u64.hash(state);
                 binding.hash(state);
@@ -3183,7 +3187,7 @@ impl PointerBlock {
                     }
             }
             Self::AggregateReturn { .. } => prefix == "local:" || prefix == "local:frame:",
-            Self::ContractResult => prefix == "local:",
+            Self::ContractResult | Self::ContractException => prefix == "local:",
             Self::Concrete(name) => name.starts_with(prefix),
             Self::StringLiteral { .. } => prefix == "string:",
             _ => false,
@@ -3195,6 +3199,7 @@ impl PointerBlock {
             Self::Concrete(name) => name.strip_prefix(prefix),
             Self::AggregateReturn { .. }
             | Self::ContractResult
+            | Self::ContractException
             | Self::StaticObject { .. }
             | Self::AutomaticLocal { .. }
             | Self::StringLiteral { .. }
@@ -3306,6 +3311,7 @@ impl PointerBlock {
                     right,
                     Self::AggregateReturn { .. }
                         | Self::ContractResult
+                        | Self::ContractException
                         | Self::StaticObject { .. }
                         | Self::AutomaticLocal { .. }
                         | Self::Concrete(_)
@@ -3330,12 +3336,14 @@ impl PointerBlock {
                     self,
                     Self::AggregateReturn { .. }
                         | Self::ContractResult
+                        | Self::ContractException
                         | Self::AutomaticLocal { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(
                     other,
                     Self::AggregateReturn { .. }
                         | Self::ContractResult
+                        | Self::ContractException
                         | Self::AutomaticLocal { .. }
                         | Self::StaticObject { .. }
                         | Self::Concrete(_)
@@ -3344,6 +3352,7 @@ impl PointerBlock {
                     other,
                     Self::AggregateReturn { .. }
                         | Self::ContractResult
+                        | Self::ContractException
                         | Self::AutomaticLocal { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(self, Self::Concrete(_)))
@@ -3406,6 +3415,7 @@ impl std::fmt::Display for PointerBlock {
         match self {
             Self::AggregateReturn { frame } => write!(formatter, "result.storage(frame, {frame})"),
             Self::ContractResult => formatter.write_str("result.storage()"),
+            Self::ContractException => formatter.write_str("exception.storage()"),
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
             Self::AutomaticLocal { binding, instance } => {
                 write!(formatter, "{binding}.storage({instance})")
@@ -4797,7 +4807,7 @@ impl AlgebraicTermNode {
     /// address as it reaches a scalar load's.
     pub(crate) fn memory_load_carrier(memory: &SharedMemory, pointer: &Pointer) -> MachineTerm {
         MachineTerm::MemoryLoad(
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(memory),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         )
@@ -6906,10 +6916,8 @@ pub(crate) fn program_local_source_name(name: impl Into<BindingName>) -> Binding
     name.into()
 }
 
-/// Kernel-only binding used while lowering an exceptional postcondition.
-/// A future surface syntax may choose its own binder spelling and lower it to
-/// this name, just as ordinary postconditions lower their result binding.
-pub(crate) const C_EXCEPTIONAL_RESULT_NAME: &str = "__click_exception";
+/// The thrown payload is independent of every program/proof identifier.
+pub(crate) const CONTRACT_EXCEPTION: BindingName = BindingName::ContractException;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct FunctionSpecification {
@@ -14906,6 +14914,7 @@ pub struct ExecutionPureFact {
 /// and hashing remain proposition-oriented. Allocate the event list only for
 /// facts carrying source events; ordinary pure facts keep one optional pointer.
 #[derive(Clone, Debug, Default)]
+#[allow(clippy::box_collection)] // Pure facts retain only one optional provenance pointer.
 pub(crate) struct GeneratedLoadSourceEvents(Option<Box<Vec<GeneratedLoadSourceEvent>>>);
 
 impl GeneratedLoadSourceEvents {
@@ -15076,7 +15085,7 @@ pub struct ContractPathSet {
     /// is valid only when this records the conditional-effect selection error
     /// that caused the deferral.
     pub(super) deferred_contract_exit_errors: Vec<Option<RuntimeError>>,
-    /// Resource facts independently checked by the surface proof for each
+    /// Resource facts projected from native outcome completions for each
     /// path. Deferred exit resolution composes these facts into the body
     /// outcome before applying the remaining conditional boundary effect.
     pub(super) checked_returned_resources: Vec<ResourceContext>,
@@ -15184,7 +15193,7 @@ pub struct CheckedFunctionExecution {
     /// is valid only when this records the conditional-effect selection error
     /// that caused the deferral.
     pub(super) deferred_contract_exit_errors: Vec<Option<RuntimeError>>,
-    /// Resource facts independently checked by the surface proof for each
+    /// Resource facts projected from native outcome completions for each
     /// path. Deferred exit resolution composes these facts into the body
     /// outcome before applying the remaining conditional boundary effect.
     pub(super) checked_returned_resources: Vec<ResourceContext>,
@@ -15273,33 +15282,6 @@ impl FunctionContractExecution {
 }
 
 impl CheckedFunctionExecution {
-    pub(crate) fn with_checked_resource_claims(
-        &self,
-        checked_resource_claims: Vec<Vec<FunctionContractClaimKey>>,
-    ) -> Self {
-        let mut checked = self.clone();
-        checked.checked_resource_claims = checked_resource_claims;
-        checked
-    }
-
-    pub(crate) fn with_checked_resource_transitions(
-        &self,
-        checked_resource_transitions: Vec<bool>,
-    ) -> Self {
-        let mut checked = self.clone();
-        checked.checked_resource_transitions = checked_resource_transitions;
-        checked
-    }
-
-    pub(crate) fn with_checked_returned_resources(
-        &self,
-        checked_returned_resources: Vec<ResourceContext>,
-    ) -> Self {
-        let mut checked = self.clone();
-        checked.checked_returned_resources = checked_returned_resources;
-        checked
-    }
-
     pub fn paths(&self) -> &[SymbolicExecutionPath] {
         self.execution.paths()
     }
@@ -15318,16 +15300,6 @@ impl CheckedFunctionExecution {
 
     pub(crate) fn function_arguments(&self) -> &[ProgramExpression] {
         &self.arguments
-    }
-
-    /// A complete proof checked its returned resource units jointly on every path.
-    pub(crate) fn has_checked_resource_transitions(&self) -> bool {
-        !self.execution.paths.is_empty()
-            && self.checked_resource_transitions.len() == self.execution.paths.len()
-            && self
-                .checked_resource_transitions
-                .iter()
-                .all(|checked| *checked)
     }
 
     /// Allocation return accounting reads borrowed inputs in the immutable

@@ -125,11 +125,7 @@ fn load_equality_work(earlier: u32, between: u32, written: bool) -> usize {
     let bi = crate::kernel::intern_memory_ref(&before);
     let ai = crate::kernel::intern_memory_ref(&after);
     let load = |m: &SharedMemory| {
-        MachineTerm::MemoryLoad(
-            ProgramPoint::at(&m),
-            Box::new(base.clone()),
-            LoadKind::UInt8,
-        )
+        MachineTerm::MemoryLoad(ProgramPoint::at(m), Box::new(base.clone()), LoadKind::UInt8)
     };
     let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
         crate::kernel::explicit_atomic_equality_from_memory_derivations(

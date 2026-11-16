@@ -1005,8 +1005,7 @@ fn active_memory_loan_presence_cannot_scan_ledger_history_or_indices() {
     }
 }
 
-#[path = "../build_support/proof_search_boundary.rs"]
-mod proof_search_boundary;
+use boundary::proof_search_boundary;
 
 #[test]
 fn new_operation_search_edges_are_rejected_even_through_aliases_and_macros() {
@@ -1536,5 +1535,47 @@ fn join_must_keep_its_discovery_guard() {
             .iter()
             .any(|e| e.contains("must enter its no-discovery scope")),
         "{errors:?}"
+    );
+}
+
+#[test]
+fn ordinary_contracts_cannot_call_independent_termination_adapters() {
+    for path in [
+        "src/surface.rs",
+        "src/surface/verification.rs",
+        "src/kernel/termination/completion.rs",
+    ] {
+        for source in [
+            "fn complete() { program_verified_function_termination_rules(&rules); }",
+            "use crate::kernel::program_verified_function_termination_rules as fallback;",
+            "fn complete() { TerminationObligations::generate_independent(&rules); }",
+            "fn complete() { prepare_independent_loop_exits(&rules, &summaries); }",
+        ] {
+            assert!(
+                boundary::check_source(path, source).is_err(),
+                "accepted {path}: {source}"
+            );
+        }
+    }
+    assert!(
+        boundary::check_source(
+            "src/kernel/termination/inputs.rs",
+            "fn adapt() { prepare_independent_loop_exits(&rules, &summaries); }"
+        )
+        .is_ok()
+    );
+    assert!(
+        boundary::check_source(
+            "src/kernel/termination.rs",
+            "fn standalone() { TerminationObligations::generate_independent(&rules); }"
+        )
+        .is_ok()
+    );
+    assert!(
+        boundary::check_source(
+            "src/surface/verification.rs",
+            "fn early() { program.bootstrap_termination_rules(inputs); }"
+        )
+        .is_ok()
     );
 }

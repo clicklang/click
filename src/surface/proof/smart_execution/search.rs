@@ -713,6 +713,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             })
             .collect();
         let application_context = TheoremApplicationContext {
+            parameters: parameter_binding,
             values: &values,
             array_refs: &array_refs,
             algebraic_values: &algebraic_values,
@@ -1022,6 +1023,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             })
             .collect();
         let application_context = TheoremApplicationContext {
+            parameters: ParameterBinding::default(),
             values: &context.theorem_context.values,
             array_refs: &context.theorem_context.array_refs,
             algebraic_values: &algebraic_values,
@@ -1397,6 +1399,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     context.recorded_states,
                 ),
                 spec_definitions,
+                context.algebraic_values.clone(),
             )
             .map_err(|message| search_input.step_error(message))?;
             for guard in guards {

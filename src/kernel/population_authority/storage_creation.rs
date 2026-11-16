@@ -3376,6 +3376,18 @@ impl CreationEvents {
         }))
     }
 
+    /// Query the allocator's recorded creator for one selected storage block.
+    /// Call entry retains its creator scope, so returns never search aliases
+    /// or compare growing event histories to recover allocation freshness.
+    pub(in crate::kernel) fn storage_created_by(&self, scope: &Self, block: &PointerBlock) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        self.0.creators.get(block).copied() == Some(scope.0.invocation)
+    }
+
+    pub(in crate::kernel) fn same_invocation(&self, other: &Self) -> bool {
+        self.0.invocation == other.0.invocation
+    }
+
     pub(in crate::kernel) fn created_here(&self, block: &PointerBlock) -> bool {
         self.0.creators.get(block).copied() == Some(self.0.invocation)
     }

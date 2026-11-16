@@ -36,8 +36,7 @@ use crate::kernel::{
     program_function_contract_entry_state, program_function_contract_refinement_arguments,
     program_function_contract_refinement_context, program_function_entry_state,
     program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
-    program_seq, program_termination_height_plan, program_verified_function_termination_rules,
-    program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
+    program_seq, program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
     prove_owned_resource_quantity_nonnegative, prove_program_condition_fact_transport,
     prove_program_function_contract_refinement,
     prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget,
@@ -210,7 +209,6 @@ pub fn bound_diagnostic_message(message: String) -> String {
 pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "abstract",
     "address",
-    "add",
     "aligned",
     "all",
     "and",
@@ -237,7 +235,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "contains",
     "contract",
     "contradiction",
-    "conclusion",
     "count",
     "decreases",
     "defined",
@@ -247,10 +244,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "ensuring",
     "executes",
     "entry",
-    "equal_from_bounds",
-    "less_equal_from_equal",
-    "negated_goal",
-    "divide",
     "enum",
     "enumerate",
     "execute",
@@ -271,17 +264,13 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "if",
     "import",
     "implies",
-    "arithmetic_certificate",
     "peel",
-    "signed_int32",
-    "rules",
     "rust",
     "in",
     "induct",
     "initialize",
     "instantiate",
     "int32",
-    "int32_range",
     "intro",
     "invariant",
     "known",
@@ -291,7 +280,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "load_uint8",
     "load_uint8_pointer",
     "loop",
-    "less_than_from_not_equal",
     "mark",
     "match",
     "memory",
@@ -309,7 +297,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "predicate",
     "prop",
     "preserve",
-    "premise",
     "produces",
     "read",
     "read_event",
@@ -317,8 +304,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "resource",
     "region",
     "rewrite",
-    "reverse",
-    "scale",
     "same_object",
     "little_endian",
     "scatter",
@@ -336,7 +321,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "tactic",
     "take",
     "target",
-    "trivial",
     "theorem",
     "then",
     "transport",
@@ -463,7 +447,7 @@ fn library_module_path(identity: &str) -> String {
 /// `uint32` is to the kernel: each has no definition, only the library's
 /// bodyless functions over it and the axioms relating them. Only a library
 /// module declares one, and only one listed here.
-pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec", "ChunksExact", "SliceIter"];
+pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec", "SliceIter"];
 
 /// The name a loop's invariants and proof read its pass count by: the number
 /// of passes the loop has completed.
@@ -476,12 +460,24 @@ pub(crate) fn loop_iterations_spelling(index: usize) -> String {
 
 /// The Rust accessors a proof reads a loop's iterator through, as written
 /// after `iter.`: a call such as `len()` or a public field such as `start`.
-pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 6] =
-    ["len()", "as_slice()", "start", "end", "start()", "end()"];
+pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 11] = [
+    "len()",
+    "as_slice()",
+    "start",
+    "end",
+    "start()",
+    "end()",
+    "v",
+    "v.len()",
+    "rem",
+    "rem.len()",
+    "chunk_size",
+];
 
 /// The accessors of an iterator of `kind`, which are Rust's own:
 /// `ExactSizeIterator::len`, `slice::Iter::as_slice`, a `Range`'s `start`
-/// and `end` fields, and a `RangeInclusive`'s `start()` and `end()`.
+/// and `end` fields, a `RangeInclusive`'s `start()` and `end()`, and a
+/// `ChunksExact`'s fields `v`, `rem` and `chunk_size`.
 pub(crate) fn rust_iterator_accessors(
     kind: crate::languages::interface::RustIteratorKind,
 ) -> &'static [&'static str] {
@@ -490,8 +486,10 @@ pub(crate) fn rust_iterator_accessors(
         crate::languages::interface::RustIteratorKind::Enumerate => &["len()"],
         crate::languages::interface::RustIteratorKind::Range => &["start", "end", "len()"],
         crate::languages::interface::RustIteratorKind::RangeInclusive => &["start()", "end()"],
-        crate::languages::interface::RustIteratorKind::Chunks
-        | crate::languages::interface::RustIteratorKind::SliceLibrary(_) => &[],
+        crate::languages::interface::RustIteratorKind::Chunks => {
+            &["v", "v.len()", "rem", "rem.len()", "chunk_size", "len()"]
+        }
+        crate::languages::interface::RustIteratorKind::SliceLibrary(_) => &[],
     }
 }
 
@@ -503,28 +501,20 @@ pub(crate) fn rust_library_iterator(
 ) -> Option<&str> {
     matches!(
         iterator.kind,
-        crate::languages::interface::RustIteratorKind::Chunks
-            | crate::languages::interface::RustIteratorKind::SliceLibrary(_)
+        crate::languages::interface::RustIteratorKind::SliceLibrary(_)
     )
     .then_some(iterator.local.as_str())
 }
 
-/// The Click type of a library-valued loop iterator: `ChunksExact<uint8>`,
-/// or `SliceIter` at the slice's element type.
+/// The Click type of a library-valued loop iterator: `SliceIter` at the
+/// slice's element type.
 pub(crate) fn rust_library_iterator_type(
     iterator: &crate::languages::interface::RustLoopIterator,
 ) -> Option<ClickType> {
-    rust_library_iterator(iterator)?;
-    if let crate::languages::interface::RustIteratorKind::SliceLibrary(name) = iterator.kind {
-        return generics::primitive_instance_value_type(&ClickType::Program(
-            InterfaceType::Parameter(name),
-        ));
-    }
-    Some(ClickType::Algebraic(AlgebraicTypeApplication {
-        rigid: false,
-        name: "ChunksExact".to_string(),
-        arguments: vec![ClickType::Program(InterfaceType::UInt8)],
-    }))
+    let crate::languages::interface::RustIteratorKind::SliceLibrary(name) = iterator.kind else {
+        return None;
+    };
+    generics::primitive_instance_value_type(&ClickType::Program(InterfaceType::Parameter(name)))
 }
 
 /// `iter.<accessor>` of `iterator`, read from the state the importer keeps
@@ -554,6 +544,17 @@ pub(crate) fn rust_iterator_method(
         (K::Range, "len()") => {
             ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
         }
+        // A slice field reads as a slice parameter does: `iter.v` is its
+        // data and `iter.v.len()` its length.
+        (K::Chunks, "v") => variable("v"),
+        (K::Chunks, "v.len()") => variable("v_len"),
+        (K::Chunks, "rem") => variable("rem"),
+        (K::Chunks, "rem.len()") => variable("rem_len"),
+        (K::Chunks, "chunk_size") => variable("chunk_size"),
+        (K::Chunks, "len()") => ProgramExpression::Divide(
+            Box::new(variable("v_len")),
+            Box::new(variable("chunk_size")),
+        ),
         _ => {
             return Err(format!(
                 "`iter.{accessor}` is not an accessor of this loop's {} iterator{}",
@@ -766,10 +767,6 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/rust/slice.click",
         include_str!("../library/rust/slice.click"),
-    ),
-    (
-        "library/rust/chunks_exact.click",
-        include_str!("../library/rust/chunks_exact.click"),
     ),
     (
         "library/rust/slice_iter.click",
@@ -5894,7 +5891,7 @@ pub enum ProofTactic {
     /// This has no written spelling; explicit `solve()` selects one goal.
     ImplicitSolve,
     SolveUsing(ProofSolveUsing),
-    ArithmeticCertificate(ArithmeticCertificate),
+
     /// Dev-only proof hole. Closes the enclosing proof unit without checking
     /// anything. Parses only while `verification::with_allow_sorry` is active
     /// (set solely by `click verify --allow-sorry`); every other use is
@@ -5972,7 +5969,6 @@ pub enum SimpleTactic {
     Known,
     Extract,
     Normalize,
-    Arithmetic,
     Intro,
     Enumerate,
     Contradiction,
@@ -6301,16 +6297,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "arithmetic-certificate",
-        syntax: "arithmetic_certificate { premise ...; conclusion N; }",
-        class: "simple",
-    },
-    PublicTacticForm {
-        id: "arithmetic-certificate-signed-int32",
-        syntax: "arithmetic_certificate signed_int32 { ... }",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "intro",
         syntax: "intro()",
         class: "simple",
@@ -6528,7 +6514,7 @@ impl ProofTactic {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
-            Self::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
+
             Self::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),
             Self::Intro | Self::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
             Self::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
@@ -6916,26 +6902,11 @@ pub struct ProofSolveUsing {
     premises: Vec<ClickProposition>,
 }
 
-/// The public arithmetic-certificate envelope. The family tag is explicit in
-/// the in-memory proof object even while the source form remains compact; a
-/// future family can be added without another top-level proof tactic.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ArithmeticCertificate {
-    pub family: ArithmeticCertificateFamily,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ArithmeticCertificateFamily {
-    Integer(IntegerCertificate),
-    SignedInt32(SignedInt32Certificate),
-    Special(SpecialArithmeticCertificate),
-}
-
 /// The checked signed-int32 arithmetic rule family. Surface nodes retain
 /// source expressions so explicit certificates round-trip without erasing
 /// provenance before the kernel performs its independent validation.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SignedInt32Certificate {
+pub struct SignedIntervalPlan {
     pub nodes: Vec<SignedArithmeticStep>,
     pub conclusion: usize,
 }
@@ -7111,26 +7082,12 @@ pub enum SignedArithmeticStep {
     },
 }
 
-impl ArithmeticCertificate {
-    pub fn integer(certificate: IntegerCertificate) -> Self {
-        Self {
-            family: ArithmeticCertificateFamily::Integer(certificate),
-        }
-    }
-
-    pub fn special(certificate: SpecialArithmeticCertificate) -> Self {
-        Self {
-            family: ArithmeticCertificateFamily::Special(certificate),
-        }
-    }
-}
-
 /// Checked pointer and finite-float arithmetic rules. The premise vector is
 /// the exact source premise slice consumed by the certificate; node indices
 /// refer only to that vector and the flat node list as documented by the
 /// parser/printer.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SpecialArithmeticCertificate {
+pub struct SpecializedCompositionPlan {
     pub premises: Vec<ClickProposition>,
     pub nodes: Vec<SpecialArithmeticNode>,
     pub conclusion: usize,
@@ -7210,86 +7167,6 @@ pub enum SpecialArithmeticNode {
     SignedDefined {
         width: crate::kernel::SignedDefinedWidth,
         bounds: Vec<usize>,
-        result: ClickProposition,
-    },
-}
-
-/// The mathematical Integer rule family. Every node carries its source
-/// proposition for exact lowering and its claimed normalized result.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IntegerCertificate {
-    pub nodes: Vec<IntegerCertificateNode>,
-    pub conclusion: usize,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IntegerCertificateNode {
-    Premise {
-        index: usize,
-        proposition: ClickProposition,
-        result: ClickProposition,
-    },
-    Scale {
-        source: usize,
-        coefficient: ContractExpression,
-        result: ClickProposition,
-    },
-    Add {
-        left: usize,
-        right: usize,
-        result: ClickProposition,
-    },
-    EqualityToLessEqual {
-        source: usize,
-        reverse: bool,
-        result: ClickProposition,
-    },
-    EqualityFromBounds {
-        lower: usize,
-        upper: usize,
-        result: ClickProposition,
-    },
-    Trivial {
-        result: ClickProposition,
-    },
-    /// A machine value's type range: `MIN <= to_integer(v)` or
-    /// `to_integer(v) <= MAX`, with the type's exact endpoint.
-    TypeRange {
-        result: ClickProposition,
-    },
-    /// A bound an unsigned quotient, shift, or remainder by a constant
-    /// takes from its operand: `c * to_integer(x / c) <= to_integer(x)`,
-    /// `to_integer(x) <= c * to_integer(x / c) + (c - 1)`, or
-    /// `to_integer(x % c) <= c - 1`.
-    OperationBound {
-        result: ClickProposition,
-    },
-    /// A disequality with a machine type's endpoint, read as the bound it
-    /// gives: from premise `v != 0u64`, `1 <= to_integer(v)`.
-    ExcludedTypeBound {
-        index: usize,
-        proposition: ClickProposition,
-        result: ClickProposition,
-    },
-    /// A non-strict bound made strict by a disequality of the same
-    /// difference: from node `bound`, `l <= r`, and premise `index`,
-    /// `l != r` (either side first), `l < r`.
-    StrictFromDisequal {
-        bound: usize,
-        index: usize,
-        proposition: ClickProposition,
-        result: ClickProposition,
-    },
-    /// The integer negation of a non-strict or strict goal, assumed for a
-    /// refutation; the certificate then concludes with a contradiction.
-    NegatedGoal {
-        result: ClickProposition,
-    },
-    /// Divide a non-strict bound by a positive common factor of its
-    /// coefficients, rounding the constant.
-    Divide {
-        source: usize,
-        divisor: ContractExpression,
         result: ClickProposition,
     },
 }
@@ -8686,11 +8563,6 @@ pub(crate) fn note_ambient_source_tactic(claim_label: &str, source_index: usize)
             ambient.tactic = Some((claim_label.to_owned(), source_index));
         }
     });
-}
-
-/// Contract certification belongs to the declaration, not its last proof step.
-pub(crate) fn clear_ambient_source_tactic() {
-    AMBIENT_PROOF_SOURCE.with(|ambient| ambient.borrow_mut().tactic = None);
 }
 
 pub(crate) fn clear_ambient_proof_source() {

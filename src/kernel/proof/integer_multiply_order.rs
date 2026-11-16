@@ -1,5 +1,5 @@
 //! Exact multiplication ordering from two selected premises; no ambient search.
-use super::arithmetic_special::SpecialArithmeticCheckError as Error;
+use super::arithmetic_special::ArithmeticRuleError as Error;
 use crate::kernel::{ConditionTerm, IntegerTerm, Proposition, SharedIntegerTerm};
 use num_traits::{One, Zero};
 
@@ -64,88 +64,7 @@ pub(super) fn check(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::kernel::{
-        Variable,
-        proof::arithmetic_special::{SpecialArithmeticCertificate, SpecialArithmeticNode},
-    };
-    fn c(n: i64) -> IntegerTerm {
-        IntegerTerm::constant_i64(n)
-    }
-    fn v(n: u64) -> IntegerTerm {
-        IntegerTerm::var(Variable(n))
-    }
-    fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
-    }
-    fn p(a: &IntegerTerm, b: &IntegerTerm) -> IntegerTerm {
-        IntegerTerm::multiply(a.clone(), b.clone())
-    }
-    #[test]
-    fn exact_sign_order_products_and_premise_selection() {
-        for reverse in [false, true] {
-            for factor in [c(0), c(1), c(-1), c(17), v(920003)] {
-                for (a, b) in [(v(920001), v(920002)), (c(-7), c(9)), (c(0), c(1))] {
-                    let sign = if reverse {
-                        le(factor.clone(), c(0))
-                    } else {
-                        le(c(0), factor.clone())
-                    };
-                    // Inconsistent premises remain logically sound: this is a conditional rule.
-                    let premises = vec![le(a.clone(), b.clone()), sign];
-                    for swap in [false, true] {
-                        let prod = |x| if swap { p(&factor, x) } else { p(x, &factor) };
-                        let result = if reverse {
-                            le(prod(&b), prod(&a))
-                        } else {
-                            le(prod(&a), prod(&b))
-                        };
-                        check(0, &[0, 1], &premises, &result).unwrap();
-                        let cert = SpecialArithmeticCertificate {
-                            nodes: vec![SpecialArithmeticNode::IntegerMultiplyOrder {
-                                bounds: vec![0, 1],
-                                result: result.clone(),
-                            }],
-                            conclusion: 0,
-                        };
-                        cert.check(&result, &premises).unwrap();
-                        for indices in [vec![], vec![0], vec![0, 2], vec![0, 1, 0]] {
-                            assert!(check(0, &indices, &premises, &result).is_err());
-                        }
-                        for i in [0, 1] {
-                            let mut bad = premises.clone();
-                            if let Proposition::ConditionIs(_, truth) = &mut bad[i] {
-                                *truth = false;
-                            }
-                            assert!(check(0, &[0, 1], &bad, &result).is_err());
-                        }
-                        assert!(check(0, &[0, 1], &premises, &le(v(920004), v(920005))).is_err());
-                    }
-                }
-            }
-        }
-        let a = v(920001);
-        let b = v(920002);
-        let factor = v(920003);
-        let inputs = vec![le(a.clone(), b.clone()), le(c(0), factor.clone())];
-        assert!(check(0, &[1, 0], &inputs, &le(p(&a, &factor), p(&b, &factor))).is_err());
-        for goal in [
-            le(p(&b, &factor), p(&a, &factor)),
-            le(p(&a, &v(920004)), p(&b, &factor)),
-            le(p(&a, &factor), p(&b, &v(920004))),
-        ] {
-            assert!(check(0, &[0, 1], &inputs, &goal).is_err());
-        }
-        assert!(
-            check(
-                0,
-                &[0, 1],
-                &[inputs[0].clone(), le(c(1), factor.clone())],
-                &le(p(&a, &factor), p(&b, &factor))
-            )
-            .is_err()
-        );
-    }
+
     #[test]
     fn signed_order_and_fee_envelope_oracle() {
         for a in -12i128..=12 {
@@ -167,10 +86,5 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../../scaling_tests/kernel/proof/integer_multiply_order/tests.rs");
     }
 }

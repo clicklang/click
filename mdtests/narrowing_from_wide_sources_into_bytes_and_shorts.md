@@ -56,12 +56,7 @@ signed char sbyte_from_long(long value) {
     ensures to_integer(result) == to_integer(value);
 } by {
     step_until(function.exit);
-    arithmetic_certificate rules {
-        premise 0: -128 <= to_integer(old(value)) => -128 <= to_integer(old(value));
-        premise 1: to_integer(old(value)) <= 127 => to_integer(old(value)) <= 127;
-        integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(old(value));
-        conclusion 0;
-    }
+    solve() using { -128 <= to_integer(old(value)); to_integer(old(value)) <= 127; };
 }
 unsigned char byte_from_ulong(unsigned long value) {
     requires value <= 255u64;
@@ -70,12 +65,7 @@ unsigned char byte_from_ulong(unsigned long value) {
     ensures to_integer(result) == to_integer(value);
 } by {
     step_until(function.exit);
-    arithmetic_certificate rules {
-        premise 0: 0 <= to_integer(old(value)) => 0 <= to_integer(old(value));
-        premise 1: to_integer(old(value)) <= 255 => to_integer(old(value)) <= 255;
-        integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(old(value));
-        conclusion 0;
-    }
+    solve() using { 0 <= to_integer(old(value)); to_integer(old(value)) <= 255; };
 }
 short short_from_long(long value) {
     requires value >= -32768;
@@ -85,12 +75,7 @@ short short_from_long(long value) {
     ensures to_integer(result) == to_integer(value);
 } by {
     step_until(function.exit);
-    arithmetic_certificate rules {
-        premise 0: -32768 <= to_integer(old(value)) => -32768 <= to_integer(old(value));
-        premise 1: to_integer(old(value)) <= 32767 => to_integer(old(value)) <= 32767;
-        integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(old(value));
-        conclusion 0;
-    }
+    solve() using { -32768 <= to_integer(old(value)); to_integer(old(value)) <= 32767; };
 }
 unsigned short ushort_from_ulong(unsigned long value) {
     requires value <= 65535u64;
@@ -99,12 +84,7 @@ unsigned short ushort_from_ulong(unsigned long value) {
     ensures to_integer(result) == to_integer(value);
 } by {
     step_until(function.exit);
-    arithmetic_certificate rules {
-        premise 0: 0 <= to_integer(old(value)) => 0 <= to_integer(old(value));
-        premise 1: to_integer(old(value)) <= 65535 => to_integer(old(value)) <= 65535;
-        integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(old(value));
-        conclusion 0;
-    }
+    solve() using { 0 <= to_integer(old(value)); to_integer(old(value)) <= 65535; };
 }
 ```
 

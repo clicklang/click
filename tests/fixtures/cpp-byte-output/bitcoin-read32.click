@@ -66,26 +66,468 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have call(0).result == old(std_span_data(dst)) + 0 by { known(); }
     step();
     step() by { known(); }
-    have this->data == old(this->data) by { solve(); }
+    have separate(memory(at(call(0).exit, call(0).result)[0]), memory(this->data)) by { solve(); }
+    have separate(region(5).footprint, memory(this->data)) by {
+        normalize() using { separate(memory(at(call(0).exit, call(0).result)[0]), memory(this->data)); };
+    }
+    have at(region(5).exit, this->data) == at(region(5).entry, this->data) by {
+        preserve(separate(region(5).footprint, memory(this->data)));
+    }
+    have this->data == old(this->data) by { known(); }
+    have separate(memory(at(call(0).exit, call(0).result)[0]), memory(this->remaining)) by { solve(); }
+    have separate(region(5).footprint, memory(this->remaining)) by {
+        normalize() using { separate(memory(at(call(0).exit, call(0).result)[0]), memory(this->remaining)); };
+    }
+    have at(region(5).exit, this->remaining) == at(region(5).entry, this->remaining) by {
+        preserve(separate(region(5).footprint, memory(this->remaining)));
+    }
+    have this->remaining == old(this->remaining) by { solve(); }
+
+    have separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[0])) by { solve(); }
+    have separate(region(5).footprint, memory(old(this->data)[0])) by {
+        normalize() using { separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[0])); };
+    }
+    have at(region(5).exit, load_uint8(old(this->data) + 0)) == at(region(5).entry, load_uint8(old(this->data) + 0)) by {
+        preserve(separate(region(5).footprint, memory(old(this->data)[0])));
+    }
+    have load_uint8(old(this->data) + 0) == old(this->data[0]) by { solve(); }
+
+    have load_uint8(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
+
+    have separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[1])) by { solve(); }
+    have separate(region(5).footprint, memory(old(this->data)[1])) by {
+        normalize() using { separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[1])); };
+    }
+    have at(region(5).exit, load_uint8(old(this->data) + 1)) == at(region(5).entry, load_uint8(old(this->data) + 1)) by {
+        preserve(separate(region(5).footprint, memory(old(this->data)[1])));
+    }
+    have load_uint8(old(this->data) + 1) == old(this->data[1]) by { solve(); }
+
+    have separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[2])) by { solve(); }
+    have separate(region(5).footprint, memory(old(this->data)[2])) by {
+        normalize() using { separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[2])); };
+    }
+    have at(region(5).exit, load_uint8(old(this->data) + 2)) == at(region(5).entry, load_uint8(old(this->data) + 2)) by {
+        preserve(separate(region(5).footprint, memory(old(this->data)[2])));
+    }
+    have load_uint8(old(this->data) + 2) == old(this->data[2]) by { solve(); }
+
+    have separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[3])) by { solve(); }
+    have separate(region(5).footprint, memory(old(this->data)[3])) by {
+        normalize() using { separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[3])); };
+    }
+    have at(region(5).exit, load_uint8(old(this->data) + 3)) == at(region(5).entry, load_uint8(old(this->data) + 3)) by {
+        preserve(separate(region(5).footprint, memory(old(this->data)[3])));
+    }
+    have load_uint8(old(this->data) + 3) == old(this->data[3]) by { solve(); }
+
     step_until(call(1));
     step();
     have call(1).result == old(std_span_data(dst)) + 1 by { known(); }
     step();
     step() by { known(); }
-    have this->data == old(this->data) by { solve(); }
+    have separate(memory(at(call(1).exit, call(1).result)[0]), memory(this->data)) by { solve(); }
+    have separate(region(11).footprint, memory(this->data)) by {
+        normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(this->data)); };
+    }
+    have at(region(11).exit, this->data) == at(region(11).entry, this->data) by {
+        preserve(separate(region(11).footprint, memory(this->data)));
+    }
+    have this->data == old(this->data) by { known(); }
+    have separate(memory(at(call(1).exit, call(1).result)[0]), memory(this->remaining)) by { solve(); }
+    have separate(region(11).footprint, memory(this->remaining)) by {
+        normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(this->remaining)); };
+    }
+    have at(region(11).exit, this->remaining) == at(region(11).entry, this->remaining) by {
+        preserve(separate(region(11).footprint, memory(this->remaining)));
+    }
+    have this->remaining == old(this->remaining) by { solve(); }
+
+    have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[0])) by { solve(); }
+    have separate(region(11).footprint, memory(old(this->data)[0])) by {
+        normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[0])); };
+    }
+    have at(region(11).exit, load_uint8(old(this->data) + 0)) == at(region(11).entry, load_uint8(old(this->data) + 0)) by {
+        preserve(separate(region(11).footprint, memory(old(this->data)[0])));
+    }
+    have load_uint8(old(this->data) + 0) == old(this->data[0]) by { solve(); }
+
+    have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[1])) by { solve(); }
+    have separate(region(11).footprint, memory(old(this->data)[1])) by {
+        normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[1])); };
+    }
+    have at(region(11).exit, load_uint8(old(this->data) + 1)) == at(region(11).entry, load_uint8(old(this->data) + 1)) by {
+        preserve(separate(region(11).footprint, memory(old(this->data)[1])));
+    }
+    have load_uint8(old(this->data) + 1) == old(this->data[1]) by { solve(); }
+
+    have separate(memory(old(std_span_data(dst))[1]), memory(old(std_span_data(dst))[0])) by {
+        apply(click::separation::separate_elements(old(std_span_data(dst)), 1, 0)) using { 1 != 0; };
+    }
+    have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(std_span_data(dst))[0])) by { solve(); }
+    have separate(region(11).footprint, memory(old(std_span_data(dst))[0])) by {
+        normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(std_span_data(dst))[0])); };
+    }
+    have at(region(11).exit, load_uint8(old(std_span_data(dst)) + 0)) == at(region(11).entry, load_uint8(old(std_span_data(dst)) + 0)) by {
+        preserve(separate(region(11).footprint, memory(old(std_span_data(dst))[0])));
+    }
+    have load_uint8(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
+
+    have load_uint8(old(std_span_data(dst)) + 1) == old(this->data[1]) by { solve(); }
+
+    have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[2])) by { solve(); }
+    have separate(region(11).footprint, memory(old(this->data)[2])) by {
+        normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[2])); };
+    }
+    have at(region(11).exit, load_uint8(old(this->data) + 2)) == at(region(11).entry, load_uint8(old(this->data) + 2)) by {
+        preserve(separate(region(11).footprint, memory(old(this->data)[2])));
+    }
+    have load_uint8(old(this->data) + 2) == old(this->data[2]) by { solve(); }
+
+    have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[3])) by { solve(); }
+    have separate(region(11).footprint, memory(old(this->data)[3])) by {
+        normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[3])); };
+    }
+    have at(region(11).exit, load_uint8(old(this->data) + 3)) == at(region(11).entry, load_uint8(old(this->data) + 3)) by {
+        preserve(separate(region(11).footprint, memory(old(this->data)[3])));
+    }
+    have load_uint8(old(this->data) + 3) == old(this->data[3]) by { solve(); }
+
     step_until(call(2));
     step();
     have call(2).result == old(std_span_data(dst)) + 2 by { known(); }
     step();
     step() by { known(); }
-    have this->data == old(this->data) by { solve(); }
+    have separate(memory(at(call(2).exit, call(2).result)[0]), memory(this->data)) by { solve(); }
+    have separate(region(17).footprint, memory(this->data)) by {
+        normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(this->data)); };
+    }
+    have at(region(17).exit, this->data) == at(region(17).entry, this->data) by {
+        preserve(separate(region(17).footprint, memory(this->data)));
+    }
+    have this->data == old(this->data) by { known(); }
+    have separate(memory(at(call(2).exit, call(2).result)[0]), memory(this->remaining)) by { solve(); }
+    have separate(region(17).footprint, memory(this->remaining)) by {
+        normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(this->remaining)); };
+    }
+    have at(region(17).exit, this->remaining) == at(region(17).entry, this->remaining) by {
+        preserve(separate(region(17).footprint, memory(this->remaining)));
+    }
+    have this->remaining == old(this->remaining) by { solve(); }
+
+    have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[0])) by { solve(); }
+    have separate(region(17).footprint, memory(old(this->data)[0])) by {
+        normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[0])); };
+    }
+    have at(region(17).exit, load_uint8(old(this->data) + 0)) == at(region(17).entry, load_uint8(old(this->data) + 0)) by {
+        preserve(separate(region(17).footprint, memory(old(this->data)[0])));
+    }
+    have load_uint8(old(this->data) + 0) == old(this->data[0]) by { solve(); }
+
+    have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[1])) by { solve(); }
+    have separate(region(17).footprint, memory(old(this->data)[1])) by {
+        normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[1])); };
+    }
+    have at(region(17).exit, load_uint8(old(this->data) + 1)) == at(region(17).entry, load_uint8(old(this->data) + 1)) by {
+        preserve(separate(region(17).footprint, memory(old(this->data)[1])));
+    }
+    have load_uint8(old(this->data) + 1) == old(this->data[1]) by { solve(); }
+
+    have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[2])) by { solve(); }
+    have separate(region(17).footprint, memory(old(this->data)[2])) by {
+        normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[2])); };
+    }
+    have at(region(17).exit, load_uint8(old(this->data) + 2)) == at(region(17).entry, load_uint8(old(this->data) + 2)) by {
+        preserve(separate(region(17).footprint, memory(old(this->data)[2])));
+    }
+    have load_uint8(old(this->data) + 2) == old(this->data[2]) by { solve(); }
+
+    have separate(memory(old(std_span_data(dst))[2]), memory(old(std_span_data(dst))[0])) by {
+        apply(click::separation::separate_elements(old(std_span_data(dst)), 2, 0)) using { 2 != 0; };
+    }
+    have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(std_span_data(dst))[0])) by { solve(); }
+    have separate(region(17).footprint, memory(old(std_span_data(dst))[0])) by {
+        normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(std_span_data(dst))[0])); };
+    }
+    have at(region(17).exit, load_uint8(old(std_span_data(dst)) + 0)) == at(region(17).entry, load_uint8(old(std_span_data(dst)) + 0)) by {
+        preserve(separate(region(17).footprint, memory(old(std_span_data(dst))[0])));
+    }
+    have load_uint8(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
+
+    have separate(memory(old(std_span_data(dst))[2]), memory(old(std_span_data(dst))[1])) by {
+        apply(click::separation::separate_elements(old(std_span_data(dst)), 2, 1)) using { 2 != 1; };
+    }
+    have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(std_span_data(dst))[1])) by { solve(); }
+    have separate(region(17).footprint, memory(old(std_span_data(dst))[1])) by {
+        normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(std_span_data(dst))[1])); };
+    }
+    have at(region(17).exit, load_uint8(old(std_span_data(dst)) + 1)) == at(region(17).entry, load_uint8(old(std_span_data(dst)) + 1)) by {
+        preserve(separate(region(17).footprint, memory(old(std_span_data(dst))[1])));
+    }
+    have load_uint8(old(std_span_data(dst)) + 1) == old(this->data[1]) by { solve(); }
+
+    have load_uint8(old(std_span_data(dst)) + 2) == old(this->data[2]) by { solve(); }
+
+    have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[3])) by { solve(); }
+    have separate(region(17).footprint, memory(old(this->data)[3])) by {
+        normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[3])); };
+    }
+    have at(region(17).exit, load_uint8(old(this->data) + 3)) == at(region(17).entry, load_uint8(old(this->data) + 3)) by {
+        preserve(separate(region(17).footprint, memory(old(this->data)[3])));
+    }
+    have load_uint8(old(this->data) + 3) == old(this->data[3]) by { solve(); }
+
     step_until(call(3));
     step();
     have call(3).result == old(std_span_data(dst)) + 3 by { known(); }
     step();
     step() by { known(); }
-    have this->data == old(this->data) by { solve(); }
+    have separate(memory(at(call(3).exit, call(3).result)[0]), memory(this->data)) by { solve(); }
+    have separate(region(23).footprint, memory(this->data)) by {
+        normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(this->data)); };
+    }
+    have at(region(23).exit, this->data) == at(region(23).entry, this->data) by {
+        preserve(separate(region(23).footprint, memory(this->data)));
+    }
+    have this->data == old(this->data) by { known(); }
+    have separate(memory(at(call(3).exit, call(3).result)[0]), memory(this->remaining)) by { solve(); }
+    have separate(region(23).footprint, memory(this->remaining)) by {
+        normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(this->remaining)); };
+    }
+    have at(region(23).exit, this->remaining) == at(region(23).entry, this->remaining) by {
+        preserve(separate(region(23).footprint, memory(this->remaining)));
+    }
+    have this->remaining == old(this->remaining) by { solve(); }
+
+    have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[0])) by { solve(); }
+    have separate(region(23).footprint, memory(old(this->data)[0])) by {
+        normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[0])); };
+    }
+    have at(region(23).exit, load_uint8(old(this->data) + 0)) == at(region(23).entry, load_uint8(old(this->data) + 0)) by {
+        preserve(separate(region(23).footprint, memory(old(this->data)[0])));
+    }
+    have load_uint8(old(this->data) + 0) == old(this->data[0]) by { solve(); }
+
+    have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[1])) by { solve(); }
+    have separate(region(23).footprint, memory(old(this->data)[1])) by {
+        normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[1])); };
+    }
+    have at(region(23).exit, load_uint8(old(this->data) + 1)) == at(region(23).entry, load_uint8(old(this->data) + 1)) by {
+        preserve(separate(region(23).footprint, memory(old(this->data)[1])));
+    }
+    have load_uint8(old(this->data) + 1) == old(this->data[1]) by { solve(); }
+
+    have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[2])) by { solve(); }
+    have separate(region(23).footprint, memory(old(this->data)[2])) by {
+        normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[2])); };
+    }
+    have at(region(23).exit, load_uint8(old(this->data) + 2)) == at(region(23).entry, load_uint8(old(this->data) + 2)) by {
+        preserve(separate(region(23).footprint, memory(old(this->data)[2])));
+    }
+    have load_uint8(old(this->data) + 2) == old(this->data[2]) by { solve(); }
+
+    have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[3])) by { solve(); }
+    have separate(region(23).footprint, memory(old(this->data)[3])) by {
+        normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[3])); };
+    }
+    have at(region(23).exit, load_uint8(old(this->data) + 3)) == at(region(23).entry, load_uint8(old(this->data) + 3)) by {
+        preserve(separate(region(23).footprint, memory(old(this->data)[3])));
+    }
+    have load_uint8(old(this->data) + 3) == old(this->data[3]) by { solve(); }
+
+    have separate(memory(old(std_span_data(dst))[3]), memory(old(std_span_data(dst))[0])) by {
+        apply(click::separation::separate_elements(old(std_span_data(dst)), 3, 0)) using { 3 != 0; };
+    }
+    have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(std_span_data(dst))[0])) by { solve(); }
+    have separate(region(23).footprint, memory(old(std_span_data(dst))[0])) by {
+        normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(std_span_data(dst))[0])); };
+    }
+    have at(region(23).exit, load_uint8(old(std_span_data(dst)) + 0)) == at(region(23).entry, load_uint8(old(std_span_data(dst)) + 0)) by {
+        preserve(separate(region(23).footprint, memory(old(std_span_data(dst))[0])));
+    }
+    have load_uint8(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
+
+    have separate(memory(old(std_span_data(dst))[3]), memory(old(std_span_data(dst))[1])) by {
+        apply(click::separation::separate_elements(old(std_span_data(dst)), 3, 1)) using { 3 != 1; };
+    }
+    have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(std_span_data(dst))[1])) by { solve(); }
+    have separate(region(23).footprint, memory(old(std_span_data(dst))[1])) by {
+        normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(std_span_data(dst))[1])); };
+    }
+    have at(region(23).exit, load_uint8(old(std_span_data(dst)) + 1)) == at(region(23).entry, load_uint8(old(std_span_data(dst)) + 1)) by {
+        preserve(separate(region(23).footprint, memory(old(std_span_data(dst))[1])));
+    }
+    have load_uint8(old(std_span_data(dst)) + 1) == old(this->data[1]) by { solve(); }
+
+    have separate(memory(old(std_span_data(dst))[3]), memory(old(std_span_data(dst))[2])) by {
+        apply(click::separation::separate_elements(old(std_span_data(dst)), 3, 2)) using { 3 != 2; };
+    }
+    have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(std_span_data(dst))[2])) by { solve(); }
+    have separate(region(23).footprint, memory(old(std_span_data(dst))[2])) by {
+        normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(std_span_data(dst))[2])); };
+    }
+    have at(region(23).exit, load_uint8(old(std_span_data(dst)) + 2)) == at(region(23).entry, load_uint8(old(std_span_data(dst)) + 2)) by {
+        preserve(separate(region(23).footprint, memory(old(std_span_data(dst))[2])));
+    }
+    have load_uint8(old(std_span_data(dst)) + 2) == old(this->data[2]) by { solve(); }
+
+    have load_uint8(old(std_span_data(dst)) + 3) == old(this->data[3]) by { solve(); }
+
     step_until(function.exit);
+
+    have separate(memory(this->data), memory(old(std_span_data(dst))[0])) by { solve(); }
+    have separate(region(24).footprint, memory(old(std_span_data(dst))[0])) by {
+        normalize() using { separate(memory(this->data), memory(old(std_span_data(dst))[0])); };
+    }
+    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 0)) == at(region(24).entry, load_uint8(old(std_span_data(dst)) + 0)) by {
+        preserve(separate(region(24).footprint, memory(old(std_span_data(dst))[0])));
+    }
+    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 0)) == old(this->data[0]) by { solve(); }
+
+    have separate(memory(this->data), memory(old(std_span_data(dst))[1])) by { solve(); }
+    have separate(region(24).footprint, memory(old(std_span_data(dst))[1])) by {
+        normalize() using { separate(memory(this->data), memory(old(std_span_data(dst))[1])); };
+    }
+    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 1)) == at(region(24).entry, load_uint8(old(std_span_data(dst)) + 1)) by {
+        preserve(separate(region(24).footprint, memory(old(std_span_data(dst))[1])));
+    }
+    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 1)) == old(this->data[1]) by { solve(); }
+
+    have separate(memory(this->data), memory(old(std_span_data(dst))[2])) by { solve(); }
+    have separate(region(24).footprint, memory(old(std_span_data(dst))[2])) by {
+        normalize() using { separate(memory(this->data), memory(old(std_span_data(dst))[2])); };
+    }
+    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 2)) == at(region(24).entry, load_uint8(old(std_span_data(dst)) + 2)) by {
+        preserve(separate(region(24).footprint, memory(old(std_span_data(dst))[2])));
+    }
+    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 2)) == old(this->data[2]) by { solve(); }
+
+    have separate(memory(this->data), memory(old(std_span_data(dst))[3])) by { solve(); }
+    have separate(region(24).footprint, memory(old(std_span_data(dst))[3])) by {
+        normalize() using { separate(memory(this->data), memory(old(std_span_data(dst))[3])); };
+    }
+    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 3)) == at(region(24).entry, load_uint8(old(std_span_data(dst)) + 3)) by {
+        preserve(separate(region(24).footprint, memory(old(std_span_data(dst))[3])));
+    }
+    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 3)) == old(this->data[3]) by { solve(); }
+
+    have separate(memory(this->remaining), memory(old(std_span_data(dst))[0])) by { solve(); }
+    have separate(region(25).footprint, memory(old(std_span_data(dst))[0])) by {
+        normalize() using { separate(memory(this->remaining), memory(old(std_span_data(dst))[0])); };
+    }
+    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 0)) == at(region(25).entry, load_uint8(old(std_span_data(dst)) + 0)) by {
+        preserve(separate(region(25).footprint, memory(old(std_span_data(dst))[0])));
+    }
+    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 0)) == old(this->data[0]) by { solve(); }
+
+    have separate(memory(this->remaining), memory(old(std_span_data(dst))[1])) by { solve(); }
+    have separate(region(25).footprint, memory(old(std_span_data(dst))[1])) by {
+        normalize() using { separate(memory(this->remaining), memory(old(std_span_data(dst))[1])); };
+    }
+    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 1)) == at(region(25).entry, load_uint8(old(std_span_data(dst)) + 1)) by {
+        preserve(separate(region(25).footprint, memory(old(std_span_data(dst))[1])));
+    }
+    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 1)) == old(this->data[1]) by { solve(); }
+
+    have separate(memory(this->remaining), memory(old(std_span_data(dst))[2])) by { solve(); }
+    have separate(region(25).footprint, memory(old(std_span_data(dst))[2])) by {
+        normalize() using { separate(memory(this->remaining), memory(old(std_span_data(dst))[2])); };
+    }
+    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 2)) == at(region(25).entry, load_uint8(old(std_span_data(dst)) + 2)) by {
+        preserve(separate(region(25).footprint, memory(old(std_span_data(dst))[2])));
+    }
+    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 2)) == old(this->data[2]) by { solve(); }
+
+    have separate(memory(this->remaining), memory(old(std_span_data(dst))[3])) by { solve(); }
+    have separate(region(25).footprint, memory(old(std_span_data(dst))[3])) by {
+        normalize() using { separate(memory(this->remaining), memory(old(std_span_data(dst))[3])); };
+    }
+    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 3)) == at(region(25).entry, load_uint8(old(std_span_data(dst)) + 3)) by {
+        preserve(separate(region(25).footprint, memory(old(std_span_data(dst))[3])));
+    }
+    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 3)) == old(this->data[3]) by { solve(); }
+
+    have separate(memory(this->data), memory(old(this->data)[0])) by { solve(); }
+    have separate(region(24).footprint, memory(old(this->data)[0])) by {
+        normalize() using { separate(memory(this->data), memory(old(this->data)[0])); };
+    }
+    have at(region(24).exit, load_uint8(old(this->data) + 0)) == at(region(24).entry, load_uint8(old(this->data) + 0)) by {
+        preserve(separate(region(24).footprint, memory(old(this->data)[0])));
+    }
+    have at(region(24).exit, load_uint8(old(this->data) + 0)) == old(this->data[0]) by { solve(); }
+
+    have separate(memory(this->data), memory(old(this->data)[1])) by { solve(); }
+    have separate(region(24).footprint, memory(old(this->data)[1])) by {
+        normalize() using { separate(memory(this->data), memory(old(this->data)[1])); };
+    }
+    have at(region(24).exit, load_uint8(old(this->data) + 1)) == at(region(24).entry, load_uint8(old(this->data) + 1)) by {
+        preserve(separate(region(24).footprint, memory(old(this->data)[1])));
+    }
+    have at(region(24).exit, load_uint8(old(this->data) + 1)) == old(this->data[1]) by { solve(); }
+
+    have separate(memory(this->data), memory(old(this->data)[2])) by { solve(); }
+    have separate(region(24).footprint, memory(old(this->data)[2])) by {
+        normalize() using { separate(memory(this->data), memory(old(this->data)[2])); };
+    }
+    have at(region(24).exit, load_uint8(old(this->data) + 2)) == at(region(24).entry, load_uint8(old(this->data) + 2)) by {
+        preserve(separate(region(24).footprint, memory(old(this->data)[2])));
+    }
+    have at(region(24).exit, load_uint8(old(this->data) + 2)) == old(this->data[2]) by { solve(); }
+
+    have separate(memory(this->data), memory(old(this->data)[3])) by { solve(); }
+    have separate(region(24).footprint, memory(old(this->data)[3])) by {
+        normalize() using { separate(memory(this->data), memory(old(this->data)[3])); };
+    }
+    have at(region(24).exit, load_uint8(old(this->data) + 3)) == at(region(24).entry, load_uint8(old(this->data) + 3)) by {
+        preserve(separate(region(24).footprint, memory(old(this->data)[3])));
+    }
+    have at(region(24).exit, load_uint8(old(this->data) + 3)) == old(this->data[3]) by { solve(); }
+
+    have separate(memory(this->remaining), memory(old(this->data)[0])) by { solve(); }
+    have separate(region(25).footprint, memory(old(this->data)[0])) by {
+        normalize() using { separate(memory(this->remaining), memory(old(this->data)[0])); };
+    }
+    have at(region(25).exit, load_uint8(old(this->data) + 0)) == at(region(25).entry, load_uint8(old(this->data) + 0)) by {
+        preserve(separate(region(25).footprint, memory(old(this->data)[0])));
+    }
+    have at(region(25).exit, load_uint8(old(this->data) + 0)) == old(this->data[0]) by { solve(); }
+
+    have separate(memory(this->remaining), memory(old(this->data)[1])) by { solve(); }
+    have separate(region(25).footprint, memory(old(this->data)[1])) by {
+        normalize() using { separate(memory(this->remaining), memory(old(this->data)[1])); };
+    }
+    have at(region(25).exit, load_uint8(old(this->data) + 1)) == at(region(25).entry, load_uint8(old(this->data) + 1)) by {
+        preserve(separate(region(25).footprint, memory(old(this->data)[1])));
+    }
+    have at(region(25).exit, load_uint8(old(this->data) + 1)) == old(this->data[1]) by { solve(); }
+
+    have separate(memory(this->remaining), memory(old(this->data)[2])) by { solve(); }
+    have separate(region(25).footprint, memory(old(this->data)[2])) by {
+        normalize() using { separate(memory(this->remaining), memory(old(this->data)[2])); };
+    }
+    have at(region(25).exit, load_uint8(old(this->data) + 2)) == at(region(25).entry, load_uint8(old(this->data) + 2)) by {
+        preserve(separate(region(25).footprint, memory(old(this->data)[2])));
+    }
+    have at(region(25).exit, load_uint8(old(this->data) + 2)) == old(this->data[2]) by { solve(); }
+
+    have separate(memory(this->remaining), memory(old(this->data)[3])) by { solve(); }
+    have separate(region(25).footprint, memory(old(this->data)[3])) by {
+        normalize() using { separate(memory(this->remaining), memory(old(this->data)[3])); };
+    }
+    have at(region(25).exit, load_uint8(old(this->data) + 3)) == at(region(25).entry, load_uint8(old(this->data) + 3)) by {
+        preserve(separate(region(25).footprint, memory(old(this->data)[3])));
+    }
+    have at(region(25).exit, load_uint8(old(this->data) + 3)) == old(this->data[3]) by { solve(); }
+
+    have separate(memory(this->data), memory(this->remaining)) by { solve(); }
+    have separate(region(24).footprint, memory(this->remaining)) by {
+        normalize() using { separate(memory(this->data), memory(this->remaining)); };
+    }
+    have at(region(24).exit, this->remaining) == at(region(24).entry, this->remaining) by {
+        preserve(separate(region(24).footprint, memory(this->remaining)));
+    }
+    have at(region(24).exit, this->remaining) == old(this->remaining) by { solve(); }
+    have this->remaining == old(this->remaining) - 4u64 by { solve(); }
     solve();
 }
 
@@ -105,6 +547,28 @@ uint32 ser_readdata32<FixtureReader>(struct FixtureReader& s) {
     ensures result == 305419896u32;
     ensures s.data == old(s.data) + 4;
     ensures s.remaining == old(s.remaining) - 4u64;
+} by {
+    step_until(call(1));
+    step();
+    have std_span_size(call(1).parameter(__sp)) == 1u64 by { solve(); }
+    have std_span_data(call(1).parameter(__sp)) == &obj by { solve(); }
+    have std_span_size(call(1).result) == std_span_size(call(1).parameter(__sp)) * 4u64 by { known(); }
+    have std_span_size(call(1).result) == 4u64 by { solve(); }
+    have std_span_data(call(1).result) == ((&obj) as (uint8 *)) by { solve(); }
+    step_until(call(2));
+    step() {
+        requires std_span_size(call(2).parameter(dst)) == 4u64 by { solve(); }
+        requires 4u64 <= s.remaining by { solve(); }
+        requires separate(memory(at(call(2).entry, std_span_data(call(2).parameter(dst)))[0..4]), memory(s.data[0..4])) by { solve(); }
+    }
+    have std_span_data(call(2).parameter(dst)) == ((&obj) as (uint8 *)) by { solve(); }
+    have ((&obj) as (uint8 *))[0] == 120u8 by { solve(); }
+    have ((&obj) as (uint8 *))[1] == 86u8 by { solve(); }
+    have ((&obj) as (uint8 *))[2] == 52u8 by { solve(); }
+    have ((&obj) as (uint8 *))[3] == 18u8 by { solve(); }
+    have obj == 305419896u32 by { solve(); }
+    step_until(function.exit);
+    solve();
 }
 
 uint32 probe(struct FixtureReader& stream) {

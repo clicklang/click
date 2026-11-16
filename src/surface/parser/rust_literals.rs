@@ -219,22 +219,6 @@ impl IntegerLiteral {
         })
     }
 
-    pub(super) fn signed_i64(&self, negative: bool) -> Result<i64, String> {
-        if self.suffix.is_some() {
-            self.native_value(negative)?;
-        }
-        let magnitude = self
-            .digits
-            .parse::<u64>()
-            .map_err(|_| "integer literal does not fit i64".to_string())?;
-        if negative && magnitude == 1 << 63 {
-            return Ok(i64::MIN);
-        }
-        let value =
-            i64::try_from(magnitude).map_err(|_| "integer literal does not fit i64".to_string())?;
-        Ok(if negative { -value } else { value })
-    }
-
     pub(super) fn program_expression(&self, negative: bool) -> Result<CExpression, String> {
         let value = if self.suffix.is_some() {
             self.native_value(negative)?
@@ -390,9 +374,9 @@ mod tests {
         assert_eq!(parser("0x10usize").expect_number("selector").unwrap(), 16);
         assert_eq!(
             parser("-0x8000_0000_0000_0000isize")
-                .expect_signed_i64("bound")
+                .parse_ensure_expression()
                 .unwrap(),
-            i64::MIN
+            CExpression::Int64Literal(i64::MIN)
         );
         for invalid in ["0x8000_0000i32", "-(0x8000_0000i32 + 0)", "65536u16"] {
             assert!(

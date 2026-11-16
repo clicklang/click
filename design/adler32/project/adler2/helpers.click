@@ -8,12 +8,7 @@ theorem adler_helper_byte_observation(value: uint8) {
  ensures to_integer((value as u32)) == to_integer((value as i32)) by {
   have 0 <= (value as i32);
   have (value as i32) <= 255;
-  arithmetic_certificate rules {
-   premise 0: 0 <= to_integer((value as i32)) => 0 <= to_integer((value as i32));
-   premise 1: to_integer((value as i32)) <= 255 => to_integer((value as i32)) <= 255;
-   integer_cast_identity bounds [0, 1] => to_integer((value as u32)) == to_integer((value as i32));
-   conclusion 0;
-  }
+  solve() using { 0 <= to_integer((value as i32)); to_integer((value as i32)) <= 255; };
  }
 }
 

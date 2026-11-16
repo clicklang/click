@@ -22,33 +22,12 @@ theorem adler_lane_half_product_5551(n: Integer, divisor: Integer) {
         have 1 <= n + 1 by solve() using { 0 <= n; };
         have n + 1 <= 5552 by solve() using { n <= 5551; };
         have 0 <= n * (n + 1) by {
-            arithmetic_certificate rules {
-                premise 0: 0 <= n => 0 <= n;
-                premise 1: n <= 5551 => n <= 5551;
-                premise 2: 1 <= n + 1 => 1 <= n + 1;
-                premise 3: n + 1 <= 5552 => n + 1 <= 5552;
-                integer_product_bounds bounds [0, 1, 2, 3] => 0 <= n * (n + 1);
-                conclusion 0;
-            }
+            solve() using { 0 <= n; n <= 5551; 1 <= n + 1; n + 1 <= 5552; };
         }
         have n * (n + 1) <= 30819152 by {
-            arithmetic_certificate rules {
-                premise 0: 0 <= n => 0 <= n;
-                premise 1: n <= 5551 => n <= 5551;
-                premise 2: 1 <= n + 1 => 1 <= n + 1;
-                premise 3: n + 1 <= 5552 => n + 1 <= 5552;
-                integer_product_bounds bounds [0, 1, 2, 3] => n * (n + 1) <= 30819152;
-                conclusion 0;
-            }
+            solve() using { 0 <= n; n <= 5551; 1 <= n + 1; n + 1 <= 5552; };
         }
-        arithmetic_certificate rules {
-            premise 0: 0 <= n * (n + 1) => 0 <= n * (n + 1);
-            premise 1: n * (n + 1) <= 30819152 => n * (n + 1) <= 30819152;
-            premise 2: 2 <= divisor => 2 <= divisor;
-            premise 3: divisor <= 2 => divisor <= 2;
-            integer_division_bounds bounds [0, 1, 2, 3] => truncating_quotient(n * (n + 1), divisor) <= 15409576;
-            conclusion 0;
-        }
+        solve() using { 0 <= n * (n + 1); n * (n + 1) <= 30819152; 2 <= divisor; divisor <= 2; };
     }
 }
 
@@ -87,33 +66,12 @@ theorem adler_lane_half_product_5552(n: Integer, divisor: Integer) {
         have 1 <= n + 1 by solve() using { 0 <= n; };
         have n + 1 <= 5553 by solve() using { n <= 5552; };
         have 0 <= n * (n + 1) by {
-            arithmetic_certificate rules {
-                premise 0: 0 <= n => 0 <= n;
-                premise 1: n <= 5552 => n <= 5552;
-                premise 2: 1 <= n + 1 => 1 <= n + 1;
-                premise 3: n + 1 <= 5553 => n + 1 <= 5553;
-                integer_product_bounds bounds [0, 1, 2, 3] => 0 <= n * (n + 1);
-                conclusion 0;
-            }
+            solve() using { 0 <= n; n <= 5552; 1 <= n + 1; n + 1 <= 5553; };
         }
         have n * (n + 1) <= 30830256 by {
-            arithmetic_certificate rules {
-                premise 0: 0 <= n => 0 <= n;
-                premise 1: n <= 5552 => n <= 5552;
-                premise 2: 1 <= n + 1 => 1 <= n + 1;
-                premise 3: n + 1 <= 5553 => n + 1 <= 5553;
-                integer_product_bounds bounds [0, 1, 2, 3] => n * (n + 1) <= 30830256;
-                conclusion 0;
-            }
+            solve() using { 0 <= n; n <= 5552; 1 <= n + 1; n + 1 <= 5553; };
         }
-        arithmetic_certificate rules {
-            premise 0: 0 <= n * (n + 1) => 0 <= n * (n + 1);
-            premise 1: n * (n + 1) <= 30830256 => n * (n + 1) <= 30830256;
-            premise 2: 2 <= divisor => 2 <= divisor;
-            premise 3: divisor <= 2 => divisor <= 2;
-            integer_division_bounds bounds [0, 1, 2, 3] => truncating_quotient(n * (n + 1), divisor) <= 15415128;
-            conclusion 0;
-        }
+        solve() using { 0 <= n * (n + 1); n * (n + 1) <= 30830256; 2 <= divisor; divisor <= 2; };
     }
 }
 
@@ -163,14 +121,7 @@ theorem adler_lane_step_a(n: Integer, a: Integer, byte: Integer) {
     ensures a + byte <= 1481280 by {
         have n <= 5551 by solve() using { n < 5552; };
         have adler_lane_a_ceiling(n) <= 1481025 by apply(adler_lane_ceiling_5551(n)) using { 0 <= n; n <= 5551; };
-        arithmetic_certificate {
-            premise 0: a <= adler_lane_a_ceiling(n) => a <= adler_lane_a_ceiling(n);
-            premise 1: adler_lane_a_ceiling(n) <= 1481025 => adler_lane_a_ceiling(n) <= 1481025;
-            premise 2: byte <= 255 => byte <= 255;
-            add 0, 1 => a <= 1481025;
-            add 3, 2 => a + byte <= 1481280;
-            conclusion 4;
-        }
+        solve() using { a <= adler_lane_a_ceiling(n); adler_lane_a_ceiling(n) <= 1481025; byte <= 255; };
     }
 }
 
@@ -183,28 +134,14 @@ theorem adler_lane_step_b(n: Integer, a: Integer, b: Integer, byte: Integer) {
     requires b <= adler_lane_b_ceiling(n);
     requires 0 <= byte;
     requires byte <= 255;
-    ensures 0 <= b + (a + byte) by { arithmetic_certificate {
-        premise 0: 0 <= b => 0 <= b;
-        premise 1: 0 <= a => 0 <= a;
-        premise 2: 0 <= byte => 0 <= byte;
-        add 0, 1 => 0 <= b + a;
-        add 3, 2 => 0 <= b + (a + byte);
-        conclusion 4;
-    } }
+    ensures 0 <= b + (a + byte) by { solve() using { 0 <= b; 0 <= a; 0 <= byte; }; }
     ensures b + (a + byte) <= 4294690200 by {
         have n <= 5551 by solve() using { n < 5552; };
         have adler_lane_b_ceiling(n) <= 4293208920 by apply(adler_lane_ceiling_5551(n)) using { 0 <= n; n <= 5551; };
         have a + byte <= 1481280 by apply(adler_lane_step_a(n, a, byte)) using {
                 0 <= n; n < 5552; 0 <= a; a <= adler_lane_a_ceiling(n); 0 <= byte; byte <= 255;
             };
-        arithmetic_certificate {
-            premise 0: b <= adler_lane_b_ceiling(n) => b <= adler_lane_b_ceiling(n);
-            premise 1: adler_lane_b_ceiling(n) <= 4293208920 => adler_lane_b_ceiling(n) <= 4293208920;
-            premise 2: a + byte <= 1481280 => a + byte <= 1481280;
-            add 0, 1 => b <= 4293208920;
-            add 3, 2 => b + (a + byte) <= 4294690200;
-            conclusion 4;
-        }
+        solve() using { b <= adler_lane_b_ceiling(n); adler_lane_b_ceiling(n) <= 4293208920; a + byte <= 1481280; };
     }
 }
 
@@ -246,30 +183,15 @@ theorem adler_lane_triangle_successor(n: Integer) {
         have n + 1 <= 5552 by solve() using { n <= 5551; };
         have 0 <= n + 1 by solve() using { 0 <= n; };
         have 0 <= n * (n + 1) by {
-            arithmetic_certificate rules {
-                premise 0: 0 <= n => 0 <= n;
-                premise 1: n <= 5551 => n <= 5551;
-                premise 2: 1 <= n + 1 => 1 <= n + 1;
-                premise 3: n + 1 <= 5552 => n + 1 <= 5552;
-                integer_product_bounds bounds [0, 1, 2, 3] => 0 <= n * (n + 1);
-                conclusion 0;
-            }
+            solve() using { 0 <= n; n <= 5551; 1 <= n + 1; n + 1 <= 5552; };
         }
         have (n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1) by {
-            arithmetic_certificate rules {
-                integer_polynomial_identity bounds [] => (n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1);
-                conclusion 0;
-            }
+            solve() using {  };
         }
         unfold(adler_lane_triangle(n + 1));
         unfold(adler_lane_triangle(n));
         rewrite((n + 1) * ((n + 1) + 1), n * (n + 1) + 2 * (n + 1));
-        arithmetic_certificate rules {
-            premise 0: 0 <= n * (n + 1) => 0 <= n * (n + 1);
-            premise 1: 0 <= n + 1 => 0 <= n + 1;
-            integer_quotient_shift bounds [0, 1] => truncating_quotient(n * (n + 1) + 2 * (n + 1), 2) == truncating_quotient(n * (n + 1), 2) + (n + 1);
-            conclusion 0;
-        }
+        solve() using { 0 <= n * (n + 1); 0 <= n + 1; };
     }
 }
 
@@ -282,10 +204,7 @@ theorem adler_lane_b_ceiling_successor(n: Integer) {
         unfold(adler_lane_b_ceiling(n));
         unfold(adler_lane_a_ceiling(n + 1));
         rewrite(adler_lane_triangle(n + 1), adler_lane_triangle(n) + (n + 1));
-        arithmetic_certificate rules {
-            integer_polynomial_identity bounds [] => 65520 + 65520 * (n + 1) + 255 * (adler_lane_triangle(n) + (n + 1)) == (65520 + 65520 * n + 255 * adler_lane_triangle(n)) + (65520 + 255 * (n + 1));
-            conclusion 0;
-        }
+        solve() using {  };
     }
 }
 

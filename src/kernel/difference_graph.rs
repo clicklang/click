@@ -2047,7 +2047,7 @@ impl DifferenceGraph {
         };
         let (min, max) = domain.range();
         // Only the absence of overflow is answered. Proof terms that are
-        // not C (an arithmetic certificate's intermediate sums) are lowered
+        // not C (a generated proof's intermediate sums) are lowered
         // through the C evaluator and read an undecided overflow as a value;
         // see `docs/internals/verification-efficiency.md`.
         (low >= min && high <= max).then_some(false)
@@ -2607,7 +2607,7 @@ impl Residues {
     const DEPTH: u32 = 6;
 
     fn admission_key(&mut self, term: V<'_>) -> OperandKey {
-        let key = if let V::Legacy(written) = term {
+        if let V::Legacy(written) = term {
             if let Some(key) = self.native_keys.get(written) {
                 return key.clone();
             }
@@ -2622,8 +2622,7 @@ impl Residues {
         } else {
             self.has_shared_sources = true;
             OperandKey::for_format(MachineIntegerType::Int64, term)
-        };
-        key
+        }
     }
 
     fn query_key(&self, term: V<'_>) -> OperandKey {

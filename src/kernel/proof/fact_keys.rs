@@ -1039,6 +1039,7 @@ enum AlphaPointerOffsetNode {
 enum AlphaPointerBlockKey {
     AggregateReturn(u64),
     ContractResult,
+    ContractException,
     StaticObject(crate::kernel::StaticBindingId),
     AutomaticLocal(
         crate::kernel::LocalBindingId,
@@ -1575,6 +1576,7 @@ fn alpha_integer_key(
         bitvector_scope: 0,
         next_scope_id: 1,
         state_aware: false,
+        checked_state_binder: None,
         raw_state_load_seen: false,
         registered_load_stack: BTreeSet::new(),
         registered_load_memo: HashMap::new(),
@@ -1711,6 +1713,7 @@ struct AlphaBindings {
     bitvector_scope: u64,
     next_scope_id: u64,
     state_aware: bool,
+    checked_state_binder: Option<Variable>,
     raw_state_load_seen: bool,
     registered_load_stack: BTreeSet<Variable>,
     registered_load_memo: HashMap<(Variable, u64, u64, usize), (AlphaRegisteredLoadId, usize)>,
@@ -1719,6 +1722,28 @@ struct AlphaBindings {
         HashMap<(crate::kernel::PointerLoadId, u64, u64, usize), (AlphaRegisteredLoadId, usize)>,
     load_interner: Option<Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>>,
     work_units: usize,
+}
+
+fn alpha_retained_state_key(
+    memory: &SharedMemory,
+    bindings: &mut AlphaBindings,
+) -> Option<AlphaStateKey> {
+    if let Some(binder) = bindings.checked_state_binder {
+        // This selected fast path handles one machine binder. Nested scopes
+        // retain the existing structural matcher, including state substitution.
+        if bindings.bitvector.len() != 1
+            || !bindings.bitvector.contains_key(&binder)
+            || !bindings.integer.is_empty()
+            || !bindings.algebraic.is_empty()
+        {
+            return None;
+        }
+        alpha_work_checkpoint(bindings, 1)?;
+        if crate::kernel::reasoning::indexed_memory_contains_variable(memory, binder)? {
+            return None;
+        }
+    }
+    Some(AlphaStateKey::new(memory))
 }
 
 fn alpha_work_checkpoint(bindings: &mut AlphaBindings, units: usize) -> Option<()> {
@@ -1995,7 +2020,7 @@ fn alpha_registered_load_pointer_with_bindings<const ALLOW_LOADS: bool>(
     let result = (|| {
         let (memory, pointer) = crate::kernel::registered_load_for_variable(&variable)?;
         let kind = crate::kernel::registered_load_kind_for_variable(&variable)?;
-        let retained_state = AlphaStateKey::new(&memory);
+        let retained_state = alpha_retained_state_key(&memory, bindings)?;
         let pointer =
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(&pointer, bindings, next_binder)?;
         let interner = match bindings.load_interner.clone() {
@@ -2042,7 +2067,7 @@ fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
     }
     let result = (|| {
         let (memory, address) = crate::kernel::eval::registered_pointer_load(identity)?;
-        let retained_state = AlphaStateKey::new(&memory);
+        let retained_state = alpha_retained_state_key(&memory, bindings)?;
         let address =
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(&address, bindings, next_binder)?;
         let interner = match bindings.load_interner.clone() {
@@ -2131,6 +2156,7 @@ fn alpha_pointer_block_key<const ALLOW_LOADS: bool>(
     Some(match block {
         PointerBlock::AggregateReturn { frame } => AlphaPointerBlockKey::AggregateReturn(*frame),
         PointerBlock::ContractResult => AlphaPointerBlockKey::ContractResult,
+        PointerBlock::ContractException => AlphaPointerBlockKey::ContractException,
         // Keyed as the scalar and algebraic applications are, argument by
         // argument: a quantified fact is found only by its key, so a block
         // with none would hide every universal over a pointer result.
@@ -2412,7 +2438,7 @@ fn alpha_pure_function_argument_key_with_bindings<const ALLOW_LOADS: bool>(
             pointer,
             element_type,
         } => AlphaPureFunctionArgumentKey::ArrayRef {
-            memory: AlphaStateKey::new(&crate::kernel::intern_memory_ref(memory)),
+            memory: alpha_retained_state_key(&crate::kernel::intern_memory_ref(memory), bindings)?,
             pointer: alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                 pointer,
                 bindings,
@@ -2606,7 +2632,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
         }
         MachineTerm::MemoryLoad(memory, pointer, kind) if bindings.state_aware => {
             bindings.raw_state_load_seen = true;
-            let retained_state = AlphaStateKey::new(memory.shared_memory());
+            let retained_state = alpha_retained_state_key(memory.shared_memory(), bindings)?;
             let pointer =
                 alpha_pointer_key_with_bindings::<ALLOW_LOADS>(pointer, bindings, next_binder)?;
             let interner = match bindings.load_interner.clone() {
@@ -2720,6 +2746,7 @@ fn alpha_bitvector_key<const ALLOW_LOADS: bool>(
         bitvector_scope: 0,
         next_scope_id: 1,
         state_aware: false,
+        checked_state_binder: None,
         raw_state_load_seen: false,
         registered_load_stack: BTreeSet::new(),
         registered_load_memo: HashMap::new(),
@@ -2951,6 +2978,7 @@ fn alpha_proposition_key<const ALLOW_LOADS: bool>(
         bitvector_scope: 0,
         next_scope_id: 1,
         state_aware: false,
+        checked_state_binder: None,
         raw_state_load_seen: false,
         registered_load_stack: BTreeSet::new(),
         registered_load_memo: HashMap::new(),
@@ -3630,12 +3658,23 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                 .map(|argument| {
                     alpha_work_checkpoint(bindings, 1)?;
                     Some(match argument {
-                        Term::ExecutionState(state) => AlphaPredicateArgumentKey::StateMemory(
-                            AlphaStateKey::new(&crate::kernel::intern_memory_ref(state.memory())),
-                        ),
-                        Term::Memory(memory) => AlphaPredicateArgumentKey::Memory(
-                            AlphaStateKey::new(&crate::kernel::intern_memory_ref(memory)),
-                        ),
+                        Term::ExecutionState(_) if bindings.checked_state_binder.is_some() => {
+                            // The memory index does not describe variables in
+                            // the state's locals or resources.
+                            return None;
+                        }
+                        Term::ExecutionState(state) => {
+                            AlphaPredicateArgumentKey::StateMemory(alpha_retained_state_key(
+                                &crate::kernel::intern_memory_ref(state.memory()),
+                                bindings,
+                            )?)
+                        }
+                        Term::Memory(memory) => {
+                            AlphaPredicateArgumentKey::Memory(alpha_retained_state_key(
+                                &crate::kernel::intern_memory_ref(memory),
+                                bindings,
+                            )?)
+                        }
                         Term::ProgramValue(value) => AlphaPredicateArgumentKey::Value(
                             alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                                 value,
@@ -3711,7 +3750,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                 alpha_work_checkpoint(bindings, 1)?;
                 let retained_state = crate::kernel::intern_memory_ref(memory);
                 Some(AlphaPropositionKey::MemoryLoadable {
-                    memory: AlphaStateKey::new(&retained_state),
+                    memory: alpha_retained_state_key(&retained_state, bindings)?,
                     base: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
                         base,
                         bindings,
@@ -3922,6 +3961,42 @@ pub(crate) fn state_quantified_alpha_equivalent(
     let Some((right_key, right_work)) = state_alpha_proposition_key(right) else {
         return Some(false);
     };
+    if crate::instrumentation::deadline_exceeded_with_work(left_work.saturating_add(right_work)) {
+        return Some(false);
+    }
+    Some(left_key == right_key && predicate_states_share_storage(left, right))
+}
+
+/// Compare a selected machine-integer universal with exact retained memory identities.
+/// Bound occurrences in memory require the existing state substitution path;
+/// this route uses only indexed absence and one active machine binder. Nested
+/// loaded binders and unindexed states keep the existing structural matcher.
+pub(crate) fn selected_state_quantified_alpha_equivalent(
+    left: &Proposition,
+    right: &Proposition,
+) -> Option<bool> {
+    let key = |proposition: &Proposition| {
+        let Proposition::ForAll { var, sort, .. } = proposition else {
+            return None;
+        };
+        if !matches!(
+            sort.machine_integer_type(),
+            Some(
+                MachineIntegerType::Int32
+                    | MachineIntegerType::UInt32
+                    | MachineIntegerType::Int64
+                    | MachineIntegerType::UInt64
+            )
+        ) {
+            return None;
+        }
+        let mut bindings = fold_keys::bindings();
+        bindings.checked_state_binder = Some(*var);
+        let key = alpha_proposition_key_with_bindings::<true>(proposition, &mut bindings, &mut 0)?;
+        Some((key, bindings.work_units))
+    };
+    let (left_key, left_work) = key(left)?;
+    let (right_key, right_work) = key(right)?;
     if crate::instrumentation::deadline_exceeded_with_work(left_work.saturating_add(right_work)) {
         return Some(false);
     }
@@ -4349,7 +4424,7 @@ mod memory_state_alpha_tests {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::MemoryLoad(
-                crate::kernel::ProgramPoint::at(&memory),
+                crate::kernel::ProgramPoint::at(memory),
                 Box::new(Pointer {
                     block: "retained_state-alpha".into(),
                     offset: PointerOffsetTerm::Variable(item),

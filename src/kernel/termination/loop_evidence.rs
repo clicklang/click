@@ -882,7 +882,7 @@ pub(super) mod tests {
         let attempted = root.begin_attempt();
         completed_body(attempted.root(), execution, vec![]).publish(false);
         attempted.commit();
-        let rule = root.finish().unwrap().into_rule().unwrap();
+        let rule = root.finish().unwrap().to_reusable_rule().unwrap();
         assert!(rule.concrete_loop_exits.as_ref().unwrap().contains(&0));
         let heights = program_termination_height_plan(std::slice::from_ref(&rule), &[]);
         let verdicts = program_verified_function_termination_rules(
@@ -915,7 +915,7 @@ pub(super) mod tests {
                 concrete.commit();
                 summarized.commit();
             }
-            let rule = root.finish().unwrap().into_rule().unwrap();
+            let rule = root.finish().unwrap().to_reusable_rule().unwrap();
             assert!(!rule.concrete_loop_exits.as_ref().unwrap().contains(&0));
             let heights = program_termination_height_plan(std::slice::from_ref(&rule), &[]);
             let verdicts = program_verified_function_termination_rules(

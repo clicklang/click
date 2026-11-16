@@ -222,6 +222,7 @@ impl CheckedOrderBounds {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn signed_wide_interval(&self, term: &MachineTerm) -> Option<(i64, i64)> {
         self.signed_wide_interval_view(crate::kernel::MachineOperandView::Legacy(term))
     }
