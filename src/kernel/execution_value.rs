@@ -242,6 +242,20 @@ impl ExecutionValue {
         }
     }
 
+    /// Retain only the argument importer's exact logical Boolean carriers.
+    /// Raw C words, widths and variable carriers retain their native spelling.
+    pub(in crate::kernel) fn retain_boolean_result(self) -> Self {
+        let Self::Native(ProgramValue::Bool(_)) = &self else {
+            return self;
+        };
+        let root = self.common_operand();
+        if root.ty() == &KernelType::Bool {
+            Self::Shared(root)
+        } else {
+            self
+        }
+    }
+
     pub(in crate::kernel) fn retain_float_result(self) -> Self {
         match self {
             Self::Native(value) if FloatOperandView::from_value(&value).is_some() => {

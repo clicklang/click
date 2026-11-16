@@ -1323,3 +1323,97 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
         }
     }
 }
+
+#[test]
+fn existential_return_construction_scales_with_its_body_and_ignores_ambient_state() {
+    use super::existential_return_tests::{existential_definition, existential_outputs};
+    for axis in [
+        "unrelated owners",
+        "related owners",
+        "aliases",
+        "definitions",
+        "body",
+        "returns",
+    ] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let pointer = Pointer::symbolic(Variable(8_851_000));
+            let mut facts = PureFactContext::new();
+            let mut frame = ResourceContext::new();
+            let mut definitions = vec![existential_definition(if axis == "body" {
+                count
+            } else {
+                1
+            })];
+            for index in 0..count {
+                let other = Pointer::symbolic(Variable(8_851_100 + u64::from(index)));
+                match axis {
+                    "aliases" => {
+                        facts = facts.assume_condition(
+                            ConditionTerm::pointer_equal(pointer.clone(), other),
+                            true,
+                        )
+                    }
+                    "definitions" => definitions.push(CompositeResourceDefinition::new(
+                        format!("unrelated_{index:04}"),
+                        vec![],
+                        None,
+                        false,
+                        vec![],
+                        vec![],
+                    )),
+                    "unrelated owners" | "related owners" => {
+                        let base = if axis == "related owners" {
+                            pointer.clone()
+                        } else {
+                            other
+                        };
+                        frame =
+                            frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                                base,
+                                (index * 2 + 1000).into(),
+                                (index * 2 + 1001).into(),
+                            )));
+                    }
+                    _ => {}
+                }
+            }
+            let state = ExecutionState::new().with_resource_context(frame);
+            let evaluated =
+                existential_outputs(pointer, if axis == "returns" { count } else { 1 }, &facts);
+            let (bodies, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "single-witness return construction",
+                );
+                ConstructedReturnBodies::construct(&evaluated, &definitions, &state, &facts)
+            });
+            assert!(bodies.1.is_empty());
+            assert_eq!(
+                bodies.0.len(),
+                if axis == "returns" { count as usize } else { 1 }
+            );
+            for occurrence in &evaluated.occurrences {
+                let body = bodies.get(occurrence.source).unwrap();
+                assert_eq!(body.witnesses[&occurrence.source].len(), 1);
+                assert_eq!(
+                    body.expansion.len(),
+                    if axis == "body" {
+                        count as usize + 1
+                    } else {
+                        2
+                    }
+                );
+            }
+            samples.push(work);
+        }
+        if axis == "body" || axis == "returns" {
+            assert!(samples[2] <= samples[0] * 24 + 64, "{axis}: {samples:?}");
+        } else {
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 96),
+                "{axis}: {samples:?}"
+            );
+        }
+    }
+}

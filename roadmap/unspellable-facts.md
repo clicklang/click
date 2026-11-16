@@ -262,6 +262,74 @@ Validation: all 1,860 Surface/scaling tests and quality checks passed, including
 nested fold/match/call scope scaling. The alpha-equivalence fixture passed with
 zero fact-stability differences. Nightly was not run.
 
+### 9i common match declaration raising
+
+Shared match arms now read typed declaration IDs directly, without exporting
+binding vectors. Native and shared arms use one scope/arm renderer; stored legacy
+program declarations are borrowed through the existing bounded declaration reader.
+Program, Integer and algebraic namespaces, written names and native refusals stay
+unchanged, including C Boolean conversion binders and exact zero-offset pointers.
+
+Validation: native/shared declaration admission and refusal parity with zero
+machine exports; existing typed-ID, name-capture, nested-result and selected-body
+scaling regressions passed. All 1,992 Surface, rewrite and scaling tests and quality checks
+passed. Algebraic Integer match fixtures passed with zero fact-stability differences.
+
+### 9j common lowering result interface
+
+Scalar, Integer, algebraic, field and call-argument evaluator paths now share a
+typed result container with separately scoped facts and obligations. Mapping a
+result moves that context unchanged. The retained expression-capture API exposes
+a common root without exporting its tree; the native API remains an explicit
+compatibility output and now moves its selected result rather than cloning it.
+
+Validation: typed root/native value parity and exact preservation of conversion
+obligations and path facts; growing arithmetic capture has linear work and zero
+machine exports. All 2,000 API, specification and scaling tests and quality
+checks passed. Selected integer read-back and freed-pointer conversion fixtures
+passed with zero fact-stability differences.
+
+### 9k Integer comparison lowering
+
+Certificate comparisons now lower their operands directly into a typed common
+comparison root. The native condition is constructed only at the final proposition
+storage boundary. The intermediate `SpecIntegerExpression` result/export cycle is
+removed from this path. The compatibility helper remains for theorem, witness,
+search and deferred-expression consumers until those callers migrate.
+
+Validation: all six comparison operators retain the existing native fact shape;
+certificate work remains linear and independent of unrelated bindings. All 1,786
+annotation-lowering and scaling tests and quality checks passed. Integer
+certificate fixtures passed with zero fact-stability differences.
+
+### 9m Boolean lowering
+
+Specification values, resource fields, call results and C-expression handoffs now
+retain the existing admitted logical Boolean roots. They reuse the exact argument
+import policy: raw C words, widths, variable carriers and constant-cast syntax
+keep their native representation. Retention does not apply the nonzero truth
+conversion to those payloads. Facts and obligations remain separately scoped.
+
+Validation: logical roots and native carriers retain exact values, facts and
+obligations across enabled/disabled retention. Growing logical expressions have
+linear deterministic work. All 2,013 API, specification, execution-value and
+scaling tests and quality checks passed. Boolean fixtures passed with zero
+fact-stability differences; C expression admission remains unchanged.
+
+### 9n Algebraic lowering
+
+Program-carried algebraic constructor fields now retain the existing
+program-parameter envelope around their shared child. Logical algebraic fields
+remain bare roots. C-expression handoffs preserve shared algebraic results instead
+of exporting and reconstructing them. Native result mode remains available.
+
+Validation: field types, envelope identity, abstract types and native output agree
+with the prior boundary. Expression handoffs preserve roots, facts and obligations;
+wrapping growing retained constructor prefixes performs constant work and no
+algebraic exports. All 2,015 API, specification, execution-value and scaling tests
+passed after upstream integration. Quality and algebraic/Boolean fixtures passed
+with zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

@@ -89,7 +89,6 @@ import click::rust::u64;
 import click::rust::usize;
 import click::rust::vec;
 import click::rust::slice;
-import click::rust::slice_iter;
 
 theorem use_uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
@@ -1864,18 +1863,6 @@ theorem restricted_view(A: Resource, B: Resource) {
             viewable(A);
             contains(A, B);
         };
-    }
-}
-
-theorem use_slice_iter(s: Slice<uint8>, it: SliceIter<uint8>) {
-    ensures slice_iter::as_slice(slice_iter::iter(s)) == s by {
-        apply(slice_iter::as_slice_iter(s));
-    }
-    ensures slice_iter::len(it) == slice::len(slice_iter::as_slice(it)) by {
-        apply(slice_iter::len_as_slice(it));
-    }
-    ensures slice_iter::after_next(it) == slice_iter::after_next(it) by {
-        solve();
     }
 }
 

@@ -11422,84 +11422,6 @@ subslice `s[a..b]` is `Slice::Slice(s.as_ptr() + a, slice::subslice_len(a,
 b, s.len()))`, and prints as `s[a..b]`.
 
 
-## `click::rust::slice_iter`
-
-Source: `library/rust/slice_iter.click`, `import click::rust::slice_iter;`.
-
-### Rust slice iterators
-
-`click::rust::slice_iter` declares `SliceIter<T>`, the iterator Rust's
-`s.iter()` returns, as a primitive type like `Vec<T>`. An iterator value
-stands for the elements it will still yield, which are a slice:
-`slice_iter::as_slice(it)`, with `slice_iter::len(it)` elements. A value
-reads with its methods, `iter.as_slice().as_ptr()` and `iter.len()`
-([methods](../language/index.md#methods)). The two axioms are generic and
-trusted. What one `next()` leaves is stated by the contract of the call that
-makes it, at the element type it is made at, because an offset from a `T*`
-needs `T`'s size. A Rust unit with `"iterators": "library"` imports its slice
-iterators as values of this type ([Rust](../rust.md#slice-iterators-as-library-values));
-see `design/rust-iterators.md`.
-
-### `SliceIter`
-
-```click
-type SliceIter<T>;
-```
-
-Rust's `core::slice::Iter<T>`, the iterator `s.iter()` returns, as a primitive type of the Click library. An iterator value stands for the elements it will still yield, which are a slice: `as_slice(it)`, Rust's `it.as_slice()`.
-
-### `slice_iter::iter`
-
-```click
-function iter<T>(s: Slice<T>) -> SliceIter<T>;
-```
-
-The iterator `s.iter()`.
-
-### `slice_iter::as_slice`
-
-```click
-function as_slice<T>(it: SliceIter<T>) -> Slice<T>;
-```
-
-The elements `it` will still yield, Rust's `it.as_slice()`. The next `next()` returns a reference to its first element.
-
-### `slice_iter::len`
-
-```click
-function len<T>(it: SliceIter<T>) -> uint64;
-```
-
-The number of elements `it` will still yield, Rust's `it.len()`.
-
-### `slice_iter::after_next`
-
-```click
-function after_next<T>(it: SliceIter<T>) -> SliceIter<T>;
-```
-
-`it` after one `next()` that returned an element, for an `it` with `0 < len(it)`.
-
-### `slice_iter::as_slice_iter`
-
-```click
-axiom as_slice_iter<T>(s: Slice<T>) {
-    ensures slice_iter::as_slice(slice_iter::iter(s)) == s;
-}
-```
-
-**Axiom:** trusted, not proved. A new iterator will yield the whole slice.
-
-### `slice_iter::len_as_slice`
-
-```click
-axiom len_as_slice<T>(it: SliceIter<T>) {
-    ensures slice_iter::len(it) == slice::len(slice_iter::as_slice(it));
-}
-```
-
-**Axiom:** trusted, not proved. The count is the length of what is left.
-
 ## Rust core models
 
 Source: `library/rust/core.click`. This file is not a module: the Rust
@@ -11602,39 +11524,6 @@ and is not passed. `unwrap_or` is the library's `option::unwrap_or` or
 **Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
 
 **Verified use:** [`tests/rust_import/panics.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/panics.rs) verifies `unwrapped` and `expected` in [`design/charon-trial/panics/panics.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/panics/panics.rs) and refuses an unwrap not shown `Some`; [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `Result` `unwrap`, `expect` and `unwrap_or` in [`design/charon-trial/result-values/results.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/result-values/results.rs) in `charon_result_values_read_as_click_results`; [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `Option::unwrap_or` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs).
-
-### `SliceIter<T>` methods
-
-```click
-extern fn SliceIter::iter<T>(p: &T, n: usize) -> SliceIter<T> {
-    ensures result == click::rust::slice_iter::iter(Slice<T>::Slice(p, n));
-    ensures click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(result)) == p;
-    ensures click::rust::slice::len(click::rust::slice_iter::as_slice(result)) == n;
-    ensures click::rust::slice_iter::len(result) == n;
-}
-extern fn SliceIter::next<T>(it: &mut SliceIter<T>) -> Option<&T> {
-    owns *it;
-    ensures click::rust::slice_iter::len(old(*it)) == 0u64 implies result == Option<&T>::None;
-    ensures click::rust::slice_iter::len(old(*it)) == 0u64 implies *it == old(*it);
-    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies result == Option<&T>::Some(click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(old(*it))));
-    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies *it == click::rust::slice_iter::after_next(old(*it));
-    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(*it)) == click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(old(*it))) + 1u64;
-    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies click::rust::slice::len(click::rust::slice_iter::as_slice(*it)) == click::rust::slice::len(click::rust::slice_iter::as_slice(old(*it))) - 1u64;
-    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies click::rust::slice_iter::len(*it) == click::rust::slice_iter::len(old(*it)) - 1u64;
-}
-```
-
-**Meaning:** `<[T]>::iter` builds the library's
-[`SliceIter<T>`](#clickrustslice_iter) of the slice, and `Iterator::next`
-returns `None` with the iterator unchanged when nothing is left, and
-otherwise a reference to the first remaining element, leaving the
-iterator one element later and one shorter. The offset needs the element's
-size, so it is stated here, at each element type, rather than as an axiom.
-
-**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
-
-**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies the loop over `bytes.iter()` in [`design/charon-trial/slice-iter/sum.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/slice-iter/sum.rs) in `charon_slice_iter_sums_bytes_by_its_library_contract` (nightly), and `rust_empty_slice_iterator_needs_no_read_authority`.
-
 
 ## Rust integer methods
 

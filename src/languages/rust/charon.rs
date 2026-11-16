@@ -3962,7 +3962,6 @@ pub(super) fn decode_crate(
         records,
         enums,
         functions,
-        library_iterators: false,
     })
 }
 
@@ -4135,7 +4134,6 @@ mod tests {
                 _ => unreachable!(),
             }
             assert!(changed);
-            super::super::standard_library::declare_iterator_operations(&mut altered);
             let rejected = match super::super::import::prepared_for_test(altered) {
                 Err(_) => true,
                 Ok(prepared) => {
@@ -4331,8 +4329,6 @@ mod tests {
         .unwrap();
         let mut export = export;
         // The fixture's unit imports its iterators as library values.
-        export.library_iterators = true;
-        super::super::standard_library::declare_iterator_operations(&mut export);
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         ProgramVerificationSession::new_program_prepared(
             include_str!("../../../design/charon-trial/chunks/chunks.click"),
@@ -4584,45 +4580,21 @@ mod tests {
     }
 
     #[test]
-    fn charon_shared_iteration_rejects_uninitialized_and_consumed_state() {
-        for duplicate in [false, true] {
-            let mut export = decode(ITERATION_ARTIFACT, "iteration.rs", ITERATION_SOURCE).unwrap();
-            let name = if duplicate { "moved" } else { "signed" };
-            export.functions.retain(|f| f.name == name);
-            let mir = export.functions[0].mir.as_mut().unwrap();
-            if duplicate {
-                let block = mir
-                    .blocks
-                    .iter_mut()
-                    .find(|b| {
-                        b.statements
-                            .iter()
-                            .any(|s| matches!(s, S::SharedArrayMove { .. }))
-                    })
-                    .unwrap();
-                let index = block
-                    .statements
-                    .iter()
-                    .position(|s| matches!(s, S::SharedArrayMove { .. }))
-                    .unwrap();
-                block
-                    .statements
-                    .insert(index + 1, block.statements[index].clone());
-            } else {
-                for block in &mut mir.blocks {
-                    block
-                        .statements
-                        .retain(|s| !matches!(s, S::SharedArrayInitialize { .. }));
-                }
-            }
-            let prepared = super::super::import::prepared_for_test(export).unwrap();
-            let claim = if duplicate {
-                "verifying \"iteration.rs\"; fn moved(a: u32, b: u32) -> u32 { ensures result == (a ^ b); }"
-            } else {
-                "verifying \"iteration.rs\"; fn signed(words: &[i32; 4]) -> i32 { views words[0..4]; ensures result == old(words[0]); }"
-            };
-            assert!(ProgramVerificationSession::new_program_prepared(claim, &prepared).is_err());
+    fn charon_shared_iteration_rejects_uninitialized_state() {
+        // An iterator moves as a plain value, its fields; a move from a
+        // consumed iterator is the compiler's to reject, as it is for a
+        // range or a chunk iterator. One never built has no state to read.
+        let mut export = decode(ITERATION_ARTIFACT, "iteration.rs", ITERATION_SOURCE).unwrap();
+        export.functions.retain(|f| f.name == "signed");
+        let mir = export.functions[0].mir.as_mut().unwrap();
+        for block in &mut mir.blocks {
+            block
+                .statements
+                .retain(|s| !matches!(s, S::SharedArrayInitialize { .. }));
         }
+        let prepared = super::super::import::prepared_for_test(export).unwrap();
+        let claim = "verifying \"iteration.rs\"; fn signed(words: &[i32; 4]) -> i32 { views words[0..4]; ensures result == old(words[0]); }";
+        assert!(ProgramVerificationSession::new_program_prepared(claim, &prepared).is_err());
     }
 
     #[test]
@@ -5175,8 +5147,6 @@ mod tests {
                 }
             }
             // The fixture's unit imports its iterators as library values.
-            export.library_iterators = true;
-            super::super::standard_library::declare_iterator_operations(&mut export);
             let prepared = super::super::import::prepared_for_test(export).unwrap();
             // The repeated move reads the iterator once more, so the loop
             // body's first byte read is one read later.
