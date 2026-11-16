@@ -331,6 +331,7 @@ struct LibraryModule {
 pub(in crate::surface) struct LibrarySelection {
     file: ClickFile,
     theorem_index: BTreeMap<String, usize>,
+    theorem_conclusions: planning::theorems::TheoremConclusionIndex,
 }
 
 impl LibrarySelection {
@@ -346,6 +347,12 @@ impl LibrarySelection {
 
     pub(in crate::surface) fn theorem_index(&'static self) -> &'static BTreeMap<String, usize> {
         &self.theorem_index
+    }
+
+    pub(in crate::surface) fn theorem_conclusions(
+        &'static self,
+    ) -> &'static planning::theorems::TheoremConclusionIndex {
+        &self.theorem_conclusions
     }
 }
 
@@ -453,6 +460,13 @@ fn library_selection(mask: u64) -> Result<&'static LibrarySelection, ClickError>
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     Ok(*selections.entry(mask).or_insert_with(|| {
         Box::leak(Box::new(LibrarySelection {
+            theorem_conclusions: {
+                let mut index = planning::theorems::TheoremConclusionIndex::default();
+                for (ordinal, theorem) in file.theorem_definitions().iter().enumerate() {
+                    index.insert(theorem, ordinal);
+                }
+                index
+            },
             file,
             theorem_index,
         }))

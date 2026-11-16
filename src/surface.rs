@@ -8330,6 +8330,9 @@ struct TheoremEnvironment {
     /// The name index of the library selection `standard_library` is a
     /// prefix of.
     standard_library_index: &'static BTreeMap<String, usize>,
+    standard_library_conclusions: &'static planning::theorems::TheoremConclusionIndex,
+    discovery_library_end: usize,
+    definition_conclusions: planning::theorems::TheoremConclusionIndex,
     /// Theorems declared after `standard_library`, by identity. The parser
     /// resolved every citation to one: a library theorem's is qualified, so
     /// no file theorem shares it, and a file refuses a duplicate theorem.
@@ -8339,7 +8342,9 @@ struct TheoremEnvironment {
 impl TheoremEnvironment {
     fn new<'a>(definitions: impl IntoIterator<Item = &'a TheoremDefinition>) -> Self {
         static NO_LIBRARY: BTreeMap<String, usize> = BTreeMap::new();
-        Self::with_library_prefix(&[], &NO_LIBRARY, definitions)
+        static NO_CONCLUSIONS: std::sync::LazyLock<planning::theorems::TheoremConclusionIndex> =
+            std::sync::LazyLock::new(Default::default);
+        Self::with_library_prefix(&[], &NO_LIBRARY, &NO_CONCLUSIONS, definitions)
     }
 
     /// The whole Click library followed by `definitions`. Built-in tactics
@@ -8351,8 +8356,22 @@ impl TheoremEnvironment {
         Ok(Self::with_library_prefix(
             library.theorem_definitions(),
             library.theorem_index(),
+            library.theorem_conclusions(),
             definitions,
         ))
+    }
+
+    /// Discovery selects laws visible in the source, so expansion can cite
+    /// them without adding library imports.
+    fn with_discovery_library(mut self, file: &ClickFile) -> Result<Self, ClickError> {
+        let library = validation::file_library(file)?;
+        self.standard_library_conclusions = library.theorem_conclusions();
+        self.discovery_library_end = library.theorem_definitions().partition_point(|theorem| {
+            self.standard_library_index
+                .get(theorem.name())
+                .is_some_and(|ordinal| *ordinal < self.standard_library.len())
+        });
+        Ok(self)
     }
 
     /// The theorems of the whole Click library before position `end`,
@@ -8365,6 +8384,7 @@ impl TheoremEnvironment {
         Ok(Self::with_library_prefix(
             &library.theorem_definitions()[..end],
             library.theorem_index(),
+            library.theorem_conclusions(),
             definitions,
         ))
     }
@@ -8374,21 +8394,21 @@ impl TheoremEnvironment {
     fn with_library_prefix<'a>(
         standard_library: &'static [TheoremDefinition],
         standard_library_index: &'static BTreeMap<String, usize>,
+        standard_library_conclusions: &'static planning::theorems::TheoremConclusionIndex,
         definitions: impl IntoIterator<Item = &'a TheoremDefinition>,
     ) -> Self {
-        Self {
+        let mut environment = Self {
             standard_library,
             standard_library_index,
-            definitions: definitions
-                .into_iter()
-                .map(|definition| {
-                    (
-                        definition.name().to_string(),
-                        clone_theorem_definition_iteratively(definition),
-                    )
-                })
-                .collect(),
+            standard_library_conclusions,
+            discovery_library_end: standard_library.len(),
+            definition_conclusions: Default::default(),
+            definitions: BTreeMap::new(),
+        };
+        for definition in definitions {
+            environment.insert(clone_theorem_definition_iteratively(definition));
         }
+        environment
     }
 
     fn get(&self, name: &str) -> Option<&TheoremDefinition> {
@@ -8399,7 +8419,21 @@ impl TheoremEnvironment {
         })
     }
 
+    fn conclusion_candidates<'a>(
+        &'a self,
+        goal: &ClickProposition,
+    ) -> impl Iterator<Item = &'a planning::theorems::TheoremCandidate> {
+        self.definition_conclusions
+            .candidates(goal, usize::MAX)
+            .chain(
+                self.standard_library_conclusions
+                    .candidates(goal, self.discovery_library_end),
+            )
+    }
+
     fn insert(&mut self, definition: TheoremDefinition) {
+        self.definition_conclusions
+            .insert(&definition, self.definitions.len());
         self.definitions
             .insert(definition.name().to_string(), definition);
     }

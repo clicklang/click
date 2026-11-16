@@ -679,7 +679,7 @@ fn verify_click_file_theorems_with_environment(
         &combined_external_function_blocks(file)?,
     )?);
     verify_theorem_definitions(
-        TheoremEnvironment::with_standard_library(&[])?,
+        TheoremEnvironment::with_standard_library(&[])?.with_discovery_library(file)?,
         file.theorem_definitions(),
         SpecDefinitions::new(&predicate_environment, &click_function_environment)
             .with_struct_sizes(&file.struct_sizes),
@@ -864,7 +864,8 @@ fn verify_click_file_theorem_context(
         }
     }
     let theorem_environment =
-        TheoremEnvironment::with_standard_library(file.theorem_definitions())?;
+        TheoremEnvironment::with_standard_library(file.theorem_definitions())?
+            .with_discovery_library(&file)?;
     if theorem.executes.is_some() {
         let registry = std::sync::Arc::new(FunctionSourceRegistry::from_function_blocks(
             &external_and_user_function_blocks,
@@ -873,7 +874,8 @@ fn verify_click_file_theorem_context(
             file.theorem_definitions()
                 .iter()
                 .take_while(|definition| definition.name() != theorem_name),
-        )?;
+        )?
+        .with_discovery_library(&file)?;
         return verify_theorem_definitions(
             dependencies,
             std::slice::from_ref(theorem),
@@ -2375,7 +2377,8 @@ fn verify_program_in_context(
             .map(clone_theorem_definition_iteratively)
             .collect::<Vec<_>>();
         let theorem_dependencies =
-            TheoremEnvironment::with_standard_library(&unselected_theorem_definitions)?;
+            TheoremEnvironment::with_standard_library(&unselected_theorem_definitions)?
+                .with_discovery_library(&file)?;
         let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
             .with_contracts(file.contract_definitions(), &file.program_function_names);
         let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
@@ -2515,7 +2518,8 @@ fn verify_program_in_context(
             &mut theorem_certification_authorities,
         );
         let theorem_environment =
-            TheoremEnvironment::with_standard_library(file.theorem_definitions())?;
+            TheoremEnvironment::with_standard_library(file.theorem_definitions())?
+                .with_discovery_library(&file)?;
         check_verification_deadline()?;
         (
             predicate_environment,

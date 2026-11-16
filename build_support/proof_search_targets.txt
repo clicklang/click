@@ -230,3 +230,4 @@ try_history_indexed_equalities
 try_integer_composition_using
 apply_integer_composition
 try_recorded_footprint_preservation
+try_single_theorem_using
