@@ -978,6 +978,7 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
         return;
     }
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } => {}
         MachineTerm::Variable(variable) => {
             variables.program_values.insert(*variable);
@@ -6057,6 +6058,11 @@ impl<'a> TermRewrite<'a> {
             }
             let view = MachineOperandView::Legacy(native);
             match shared.node() {
+                KernelTermNode::ThreadHandle(id) => {
+                    if *native != MachineTerm::ThreadHandle(*id) {
+                        return false;
+                    }
+                }
                 KernelTermNode::Match(matched) => {
                     let MachineTerm::AlgebraicMatch { scrutinee, arms } = native else {
                         return false;
@@ -6319,7 +6325,9 @@ impl<'a> TermRewrite<'a> {
                 }
             }
 
-            MachineTerm::Constant { .. } | MachineTerm::Variable(_) => v.clone(),
+            MachineTerm::ThreadHandle(_)
+            | MachineTerm::Constant { .. }
+            | MachineTerm::Variable(_) => v.clone(),
             cast_term!(UInt32From64, v) => {
                 let value = self.bits(v);
                 if self.integer_exact.is_some() {

@@ -1004,6 +1004,7 @@ fn bitvector_term_exceeds_depth_limit(root: &MachineTerm) -> bool {
             return true;
         }
         match term {
+            MachineTerm::ThreadHandle(_) => {}
             crate::kernel::binary_machine_term!(left, right) => {
                 pending.push((left, depth + 1));
                 pending.push((right, depth + 1));
@@ -3947,7 +3948,7 @@ fn raise_kernel_term_dispatch(
             }
         }
         Node::MachineUnary { operand, .. } => SurfaceTerm::BitwiseNot(Box::new(recurse(operand)?)),
-        Node::PointerAddress { .. } => {
+        Node::PointerAddress { .. } | Node::ThreadHandle(_) => {
             let expression = synthesize_surface_bitvector(
                 term.machine_conversion_leaf()?,
                 parameter_binding,
@@ -4924,6 +4925,9 @@ fn synthesize_surface_bitvector(
         ))
     };
     match term {
+        MachineTerm::ThreadHandle(_) => {
+            unreachable!("a pthread handle must have a source value name at its introduction")
+        }
         // The 32-bit widening of a narrow value is written as the
         // conversion it is (`c as int32`, `c as uint32`).
         MachineTerm::Cast {

@@ -6820,3 +6820,48 @@ fn narrow_symbolic_comparisons_keep_their_existing_normal_forms() {
         }
     }
 }
+
+#[test]
+fn pthread_handle_words_use_c_names_and_retained_states() {
+    use crate::kernel::{KernelTermImport, ThreadHandleId};
+    let _session = crate::kernel::VerificationSession::enter();
+    let native = MachineTerm::ThreadHandle(ThreadHandleId(1008820));
+    let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
+    let saved = ExecutionState::new().with_local("h", ProgramValue::UInt64(native));
+    let now = saved
+        .clone()
+        .with_local("h", ProgramValue::UInt64(MachineTerm::uint64_constant(0)));
+    let current =
+        raise_kernel_term(&root, ParameterBinding::default(), &saved, &BTreeMap::new()).unwrap();
+    assert_eq!(diagnostics::describe_contract_expression(&current), "h");
+    let selector = ProgramPointSelector::Mark("created".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), saved);
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let retained =
+        raise_kernel_term(&root, ParameterBinding::default(), &now, &BTreeMap::new()).unwrap();
+    assert!(matches!(&retained, SurfaceTerm::At { selector: actual, .. } if *actual == selector));
+    let text = diagnostics::describe_contract_expression(&retained);
+    assert_eq!(text, "at(created, h)");
+    let parsed = parser::parse(&format!(
+        "theorem probe() {{ requires {text} == 0; ensures true; }}"
+    ))
+    .unwrap();
+    let Requirement::Proposition(claim) = &parsed.theorem_definitions()[0].requires()[0] else {
+        panic!("comparison")
+    };
+    let lowered = relower_written_proposition_with_states(claim, &now, &now, &points).unwrap();
+    let Proposition::ConditionIs(condition, true) = lowered else {
+        panic!("comparison")
+    };
+    let view =
+        crate::kernel::machine_integer::comparison::structural_comparison_view(&condition).unwrap();
+    assert_eq!(view.format, MachineIntegerType::Int64);
+    assert_eq!(
+        crate::kernel::KernelTerm::retained_machine_operand(
+            view.format,
+            view.operands[0].operand_view()
+        ),
+        root.with_machine_observation_type(view.format)
+    );
+}

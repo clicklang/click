@@ -960,3 +960,53 @@ fn narrow_comparison_spelling_scales_with_the_selected_proposition() {
         );
     }
 }
+
+#[test]
+fn pthread_handle_names_ignore_unrelated_live_and_recorded_handles() {
+    use crate::kernel::{KernelTermImport, ThreadHandleId};
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut state = ExecutionState::new();
+        let mut points = RecordedStates::new();
+        for id in 0..size {
+            state = state.with_local(
+                format!("other_{id}"),
+                ProgramValue::UInt64(MachineTerm::ThreadHandle(ThreadHandleId(id))),
+            );
+            points.insert(
+                ProgramPointSelector::Mark(format!("other_{id}")),
+                state.clone(),
+            );
+        }
+        let native = MachineTerm::ThreadHandle(ThreadHandleId(999002));
+        let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
+        state = state.with_local("h", ProgramValue::UInt64(native));
+        points.insert(ProgramPointSelector::Mark("created".into()), state.clone());
+        let now = state
+            .clone()
+            .with_local("h", ProgramValue::UInt64(MachineTerm::uint64_constant(0)));
+        let _points = SynthesisRecordedPointsScope::enter(&points);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (selected, expected) in [(&state, "h"), (&now, "at(created, h)")] {
+                let surface = raise_kernel_term(
+                    &root,
+                    ParameterBinding::default(),
+                    selected,
+                    &BTreeMap::new(),
+                )
+                .unwrap();
+                assert_eq!(
+                    diagnostics::describe_contract_expression(&surface),
+                    expected
+                );
+            }
+        });
+        samples.push(work);
+    }
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}

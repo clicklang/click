@@ -14,7 +14,10 @@ pub(super) struct Scope<'a> {
 }
 
 impl<'a> Scope<'a> {
-    pub(super) fn new<'n>(parent: SpecScope<'a>, names: impl IntoIterator<Item = &'n BindingName>) -> Self {
+    pub(super) fn new<'n>(
+        parent: SpecScope<'a>,
+        names: impl IntoIterator<Item = &'n BindingName>,
+    ) -> Self {
         Self {
             state: parent.state.clone(),
             algebraic: std::borrow::Cow::Borrowed(parent.algebraic_bindings),
@@ -41,7 +44,12 @@ impl<'a> Scope<'a> {
     pub(super) fn bind_native_field(&mut self, name: &BindingName, value: &AlgebraicValue) {
         match value {
             AlgebraicValue::Program(value) => {
-                bind_value(name, value.clone().into(), &mut self.state, &mut self.values);
+                bind_value(
+                    name,
+                    value.clone().into(),
+                    &mut self.state,
+                    &mut self.values,
+                );
             }
             AlgebraicValue::Algebraic(value) => {
                 self.algebraic

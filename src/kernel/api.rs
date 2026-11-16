@@ -8616,6 +8616,7 @@ fn rewrite_int32_term_by_exact_equality(
         )
     };
     match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             ..

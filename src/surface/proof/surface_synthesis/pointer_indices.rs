@@ -111,6 +111,7 @@ pub(super) fn load_free(root: V<'_>) -> bool {
                 _ => return false,
             },
             V::Legacy(term) => match term {
+                MachineTerm::ThreadHandle(_) => {}
                 MachineTerm::MemoryLoad(..) => return false,
                 MachineTerm::PointerAddress(pointer, _) => pending.extend(
                     pointer

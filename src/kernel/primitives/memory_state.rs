@@ -314,6 +314,9 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Bitvector(term) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match term {
+                    MachineTerm::ThreadHandle(id) => {
+                        let _ = write!(identity, "thread-handle:{id:?};");
+                    }
                     MachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         value,
@@ -2153,6 +2156,7 @@ fn held_term_atom(term: &MachineTerm, hasher: &mut impl std::hash::Hasher) {
         spelling.hash(hasher);
     }
     match term {
+        MachineTerm::ThreadHandle(id) => id.hash(hasher),
         MachineTerm::Variable(variable) => variable.hash(hasher),
         bits32_constant!(value) => constant_u32(*value).hash(hasher),
         MachineTerm::Binary { format, op, .. } => (format, op).hash(hasher),
@@ -2162,7 +2166,7 @@ fn held_term_atom(term: &MachineTerm, hasher: &mut impl std::hash::Hasher) {
 }
 
 /// A constant-time fingerprint of a term: its root's variant and, for a
-/// variable or constant, its payload, and for a format-carrying operator its
+/// variable, constant or opaque handle, its payload, and for a format-carrying operator its
 /// format and operator, and the same of a binary node's two
 /// operands. Equal terms share a fingerprint; a lookup compares the terms
 /// it finds, so a shared fingerprint costs only a comparison.
@@ -2194,6 +2198,7 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
         use KernelTermNode as N;
         let zero = || Box::new(MachineTerm::constant(0));
         let shape = match term.node() {
+            N::ThreadHandle(id) => MachineTerm::ThreadHandle(*id),
             N::MachineLiteral(value) => value.legacy_term(),
             N::Variable(value) => MachineTerm::Variable(*value),
             N::MachineBinary {

@@ -7919,6 +7919,7 @@ pub(super) fn describe_bitvector_with_context(
         return name;
     }
     match term {
+        MachineTerm::ThreadHandle(_) => format!("{term:?}"),
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,

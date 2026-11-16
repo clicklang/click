@@ -3217,8 +3217,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 schema,
                 budget,
             )?;
-            let mut body_scope =
-                bindings::Scope::new(scope, arm.bindings.iter());
+            let mut body_scope = bindings::Scope::new(scope, arm.bindings.iter());
             for (binding, value) in arm.bindings.iter().zip(&bindings) {
                 body_scope.bind_native_field(binding, value);
             }
@@ -4007,8 +4006,7 @@ fn evaluate_spec_algebraic_non_call_in(
                             schema,
                             budget,
                         )?;
-                        let mut body_scope =
-                            bindings::Scope::new(scope, arm.bindings.iter());
+                        let mut body_scope = bindings::Scope::new(scope, arm.bindings.iter());
                         for (binding, value) in arm.bindings.iter().zip(&bindings) {
                             body_scope.bind_native_field(binding, value);
                         }
@@ -4075,8 +4073,7 @@ fn evaluate_spec_algebraic_non_call_in(
                     if arm.bindings.len() != case.fields.len() {
                         return Err(ExecutionLimit::Paths);
                     }
-                    let mut body_scope =
-                        bindings::Scope::new(scope, arm.bindings.iter());
+                    let mut body_scope = bindings::Scope::new(scope, arm.bindings.iter());
                     for (binding, field) in arm.bindings.iter().zip(&case.fields) {
                         body_scope.bind_field(binding, field);
                     }
@@ -6825,8 +6822,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                 Ok(variable)
                             },
                         )?;
-                        let mut body_scope =
-                            bindings::Scope::new(scope, arm.bindings.iter());
+                        let mut body_scope = bindings::Scope::new(scope, arm.bindings.iter());
                         for (binding, value) in arm.bindings.iter().zip(&bindings) {
                             body_scope.bind_native_field(binding, value);
                         }
@@ -6982,8 +6978,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     if arm.bindings.len() != case.fields.len() {
                         return Err(ExecutionLimit::Paths);
                     }
-                    let mut body_scope =
-                        bindings::Scope::new(scope, arm.bindings.iter());
+                    let mut body_scope = bindings::Scope::new(scope, arm.bindings.iter());
                     for (binding, field) in arm.bindings.iter().zip(&case.fields) {
                         body_scope.bind_field(binding, field);
                     }

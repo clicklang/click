@@ -83,6 +83,7 @@ fn collect_offset_load_variables_from_term(
     load_variables: &mut BTreeSet<Variable>,
 ) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
         MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::PointerAddress(pointer, _) => {
             collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
@@ -158,6 +159,7 @@ fn assert_scaled_index_free_of_raw_loads(
     load_variables: &mut BTreeSet<Variable>,
 ) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } => {}
         MachineTerm::Variable(variable) => {
             if crate::kernel::is_load_variable(variable) {

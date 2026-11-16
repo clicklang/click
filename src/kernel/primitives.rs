@@ -19,6 +19,11 @@ pub use bindings::{
     LocalStorageInstance, StaticBindingId, StaticBindingMetadata, StaticBindingOwner,
 };
 
+/// Opaque creation identity carried by a modeled `pthread_t` word. Its ID is
+/// not the numeric C representation and carries no completion authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ThreadHandleId(pub(crate) u64);
+
 pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
 
 pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
@@ -869,12 +874,14 @@ pub enum MachineTerm {
     /// travels in a `ProgramValue::Bool` as its cast to `uint8`, the byte a `bool`
     /// cell holds; its truth is `value`. Built by
     /// [`MachineTerm::bool_cast`], which folds a constant. It follows
-    /// every other variant, so the derived order of the terms before it is
+    /// the preexisting variants, so the derived order of the terms before it is
     /// unchanged.
     BoolCast {
         to: MachineIntegerType,
         value: Box<ConditionTerm>,
     },
+    /// An opaque pthread word; never a symbolic variable or numeric literal.
+    ThreadHandle(ThreadHandleId),
 }
 
 /// The derived `Debug` spelling of every variant, except that a constant
@@ -885,6 +892,7 @@ pub enum MachineTerm {
 impl std::fmt::Debug for MachineTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::ThreadHandle(id) => f.debug_tuple("ThreadHandle").field(id).finish(),
             int32_constant!(bits) => f
                 .debug_tuple("Constant")
                 .field(&constant_u32(*bits))

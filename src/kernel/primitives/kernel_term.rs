@@ -64,6 +64,7 @@ pub enum KernelIntegerOperator {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum KernelTermNode {
+    ThreadHandle(ThreadHandleId),
     /// Scoped range iteration. Only the body is under its two binders.
     Fold(KernelFold),
     Match(KernelMatch),
@@ -503,6 +504,7 @@ impl NodeKey {
                 matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_program_type(*c).is_some())
             }
             KernelTermNode::MachineLiteral(_)
+            | KernelTermNode::ThreadHandle(_)
             | KernelTermNode::MemoryLoad { .. }
             | KernelTermNode::PointerAddress { .. } => true,
             KernelTermNode::FloatConvert { destination, .. } => {

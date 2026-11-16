@@ -119,7 +119,7 @@ fn fold_binding_handoffs_keep_growing_accumulator_roots_without_exports() {
         }
         let mut values = crate::persistent::PersistentMap::default();
         for index in 0..size {
-            values.insert(format!("other_{index}"), atom.clone());
+            values.insert(format!("other_{index}").into(), atom.clone());
         }
         values.insert("seed".into(), root.clone());
         values.insert("v".into(), atom.clone());
@@ -146,6 +146,6 @@ fn fold_binding_handoffs_keep_growing_accumulator_roots_without_exports() {
             assert_eq!(work, previous, "fold handoff must not walk the accumulator");
         }
         previous = Some(work);
-        assert_eq!(values.get(&"seed".to_owned()), Some(&root));
+        assert_eq!(values.get(&BindingName::from("seed")), Some(&root));
     }
 }

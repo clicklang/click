@@ -3493,6 +3493,7 @@ fn collect_bitvector_atoms(term: &MachineTerm, atoms: &mut BTreeSet<BitvectorEqu
         atoms.insert(atom);
     }
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         crate::kernel::binary_machine_term!(left, right) => {
             collect_bitvector_atoms(left, atoms);
             collect_bitvector_atoms(right, atoms);

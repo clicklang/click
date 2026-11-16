@@ -1936,7 +1936,7 @@ impl EqualityGraph {
                             };
                             pointers.push(address.as_ref().clone());
                         }
-                        N::MachineLiteral(_) => {}
+                        N::MachineLiteral(_) | N::ThreadHandle(_) => {}
                         // Native pointer discovery treats conditionals, Boolean
                         // casts and folds as opaque; do not inspect their children.
                         N::MachineIf { .. }
@@ -2006,6 +2006,18 @@ impl EqualityGraph {
             state.register_pointer_address(&pointer);
         }
         state.close(Vec::new());
+    }
+
+    /// Recover one typed handle witness from the selected word's equality
+    /// class. This is a value identity lookup; the thread ledger grants rights.
+    pub(in crate::kernel) fn thread_handle_for_word(
+        &self,
+        term: &MachineTerm,
+    ) -> Option<crate::kernel::ThreadHandleId> {
+        let term = exact_read_comparison_input(term);
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_machine_operands(&mut state, &term, &term);
+        state.terms.thread_handle(&term)
     }
 
     pub(in crate::kernel) fn are_uint64_equal(

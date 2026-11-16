@@ -3388,6 +3388,7 @@ fn collect_scoped_leaf_bound_variables(
 
 fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         bits32_constant!(_) | MachineTerm::Variable(_) => {}
         crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
@@ -5888,6 +5889,7 @@ pub(crate) fn substitute_bitvector_variable(
     to: &MachineTerm,
 ) -> MachineTerm {
     match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         MachineTerm::Constant { .. } => term.clone(),
         MachineTerm::Variable(variable) if *variable == from => to.clone(),
         MachineTerm::Variable(variable) => {
