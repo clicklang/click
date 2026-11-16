@@ -17,4 +17,14 @@ void FeeFrac::operator+=(const FeeFrac& other) {
     ensures this->size == old(this->size) + old(other.size);
     ensures other.fee == old(other.fee);
     ensures other.size == old(other.size);
+} by {
+    step();
+    have this->size == old(this->size) by { solve(); }
+    have other.size == old(other.size) by { solve(); }
+    have -1073741824 <= this->size by { solve(); }
+    have this->size <= 1073741823 by { solve(); }
+    have -1073741824 <= other.size by { solve(); }
+    have other.size <= 1073741823 by { solve(); }
+    step_until(function.exit);
+    solve();
 }

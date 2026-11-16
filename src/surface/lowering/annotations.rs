@@ -8463,7 +8463,7 @@ impl AnnotationLowerer<'_> {
                 // nominal record pointers use a different carrier and still
                 // require their physical layout metadata above.
                 let element_width = declared_width
-                    .or_else(|| match &base {
+                    .or(match &base {
                         SpecExpression::MemoryLoad { value_type, .. }
                         | SpecExpression::AggregateFieldValue { value_type, .. } => {
                             match value_type {

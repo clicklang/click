@@ -2099,9 +2099,8 @@ fn apply_post_execution_arithmetic_using<'a>(
                 {
                     return Ok(closed);
                 }
-                return Err(focused.step_error(
-                    "post-execution Integer arithmetic needs an ordinary composition",
-                ));
+                Err(focused
+                    .step_error("post-execution Integer arithmetic needs an ordinary composition"))
             }
             ArithmeticPlan::SignedInt32(plan) => {
                 let certificate = focused
