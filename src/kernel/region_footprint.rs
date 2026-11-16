@@ -265,11 +265,10 @@ pub(crate) fn separate_using(left: &Resource, right: &Resource, facts: &PureFact
                     left: Box::new(right),
                     right: Box::new(left),
                 };
-                // Parent/child restriction and alias rewriting are explicit
-                // preceding proof steps, not repeated searches per member.
-                if !facts.contains_assumed_exact(&forward)
-                    && !facts.contains_assumed_exact(&reverse)
-                {
+                // Parent/child restriction is explicit. Exact physical spans
+                // use the maintained address-class/extent index, never an
+                // alias or separation-fact search per member.
+                if !facts.contains_known(&forward) && !facts.contains_known(&reverse) {
                     return false;
                 }
             }

@@ -1430,8 +1430,8 @@ fn pinned_writable_byte_span_reference_preserves_view_offline() {
     check_pinned_byte_proof(&root, &import, source);
 }
 
-// Keep the fixed by-value source and true claim for the documented state
-// proof gap. Restore the positive E/R check when that gap is repaired.
+// Explicit copying and return-frame links preserve the unchanged by-value
+// source and both its pointer and length claims through parameter retirement.
 #[test]
 #[ignore = "nightly: pinned C++ by-value span certificate round trip"]
 fn pinned_writable_byte_span_by_value_preserves_pointer_state() {
@@ -1444,8 +1444,77 @@ fn pinned_writable_byte_span_by_value_preserves_pointer_state() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_data(result) == old(std_span_data(span) as (uint8 *)); ensures std_span_size(result) == old(std_span_size(span)) * 4u64; }";
-    check_pinned_byte_proof(&root, &import, source);
+    let source = include_str!("fixtures/cpp-byte-output/span-return.click");
+    fs::write(root.join("byte.click"), source).unwrap();
+    let project = read_click_project(&root.join("byte.click"), source).unwrap();
+    let (session, verified) =
+        ProgramVerificationSession::new_program_prepared_project(&project, &import)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = click::surface::expand_verified_function_claim_source_by_label(
+        source,
+        &verified,
+        "probe.ensures_0",
+    )
+    .unwrap()
+    .unwrap();
+    let rewritten = project.with_entry_source(expanded.clone());
+    assert!(
+        project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&import))
+            .unwrap()
+            .is_empty()
+    );
+    let position = project_tactic_source_position(
+        &rewritten,
+        &ProgramInputs::program(&import),
+        "probe.ensures_0",
+        0,
+    )
+    .unwrap();
+    click::surface::without_implicit_solve(|| {
+        session.verify_at_project(&expanded, position.line, position.column)
+    })
+    .unwrap_or_else(|error| panic!("retained: {}", error.report()));
+    drop(session);
+    click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, &import))
+        .unwrap_or_else(|error| panic!("cold: {}", error.report()));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: copied span return rejects false pointer and length claims"]
+fn pinned_writable_byte_span_return_rejects_changed_fields() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "writable-byte-span-return-controls",
+        "#include <span.h>\nstd::span<std::byte> probe(std::span<int> span) noexcept { return std::as_writable_bytes(span); }\n",
+        &[
+            "sysroot/usr/include/c++/12/cstddef",
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+        ],
+    );
+    let source = include_str!("fixtures/cpp-byte-output/span-return.click");
+    for (from, to) in [
+        (
+            "ensures std_span_data(result) == old(std_span_data(span) as (uint8 *));",
+            "ensures std_span_data(result) == old(std_span_data(span) as (uint8 *)) + 1;",
+        ),
+        (
+            "ensures std_span_size(result) == old(std_span_size(span)) * 4u64;",
+            "ensures std_span_size(result) == old(std_span_size(span)) * 4u64 + 1u64;",
+        ),
+    ] {
+        let changed = source.replacen(from, to, 1);
+        assert_ne!(changed, source);
+        fs::write(root.join("byte.click"), &changed).unwrap();
+        let project = read_click_project(&root.join("byte.click"), &changed).unwrap();
+        let error = verify_program_prepared_project(&project, &import).expect_err(to);
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{}",
+            error.report()
+        );
+    }
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -4796,15 +4865,13 @@ fn pinned_span_nested_parameter_precondition_expands_offline() {
 }
 
 // Bitcoin's serialization body and endian conversion are unchanged. The
-// fixture reader is selected for body verification; it does not model SpanReader.
-#[test]
-#[ignore = "nightly: pinned Bitcoin read32 cursor execution and remaining byte-value refusal"]
-fn pinned_bitcoin_read32_executes_cursor_but_byte_values_are_not_yet_verified_offline() {
+// fixture reader is verified separately from Bitcoin's throwing SpanReader.
+fn pinned_bitcoin_read32_fixture(name: &str) -> (PathBuf, PreparedCppImport, String) {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cpp-byte-output");
     let harness = fs::read_to_string(fixture.join("bitcoin-read32.cpp")).unwrap();
     let source = fs::read_to_string(fixture.join("bitcoin-read32.click")).unwrap();
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
-        "bitcoin-read32-composition",
+        name,
         &harness,
         &[
             "bitcoin-src/src/serialize.h",
@@ -4828,27 +4895,201 @@ fn pinned_bitcoin_read32_executes_cursor_but_byte_values_are_not_yet_verified_of
             .any(|function| { function.path == ["ser_readdata32<FixtureReader>"] })
     );
     fs::write(root.join("byte.click"), &source).unwrap();
+    (root, import, source)
+}
+
+fn bitcoin_read32_function(import: &PreparedCppImport, qualified: &str) -> String {
+    let function = import
+        .export()
+        .functions
+        .iter()
+        .chain(&import.export().reachable_functions)
+        .find(|function| function.path.join("::") == qualified)
+        .unwrap_or_else(|| panic!("missing source body {qualified}"));
+    click::languages::cpp::names::path_name(&function.path)
+}
+
+const BITCOIN_READ32_BODIES: [&str; 4] = [
+    "FixtureReader::read",
+    "le32toh_internal",
+    "ser_readdata32<FixtureReader>",
+    "probe",
+];
+
+#[test]
+#[ignore = "nightly: pinned Bitcoin read32 serialization proof"]
+fn pinned_bitcoin_read32_serialization_verifies_offline() {
+    let (root, import, source) = pinned_bitcoin_read32_fixture("bitcoin-read32-ordinary");
     let project = read_click_project(&root.join("byte.click"), &source).unwrap();
-    // All four byte stores and both cursor updates execute. The strong
-    // byte-value postconditions remain open; this is not serialization coverage.
-    // In particular this must never regress to an uninitialized source read.
-    let error = verify_program_prepared_project(&project, &import)
-        .expect_err("promote to ordinary/expanded/cold/retained verification when repaired");
-    assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
-    let report = error.report();
-    assert!(report.contains("FixtureReader"), "{report}");
+    verify_program_prepared_project(&project, &import)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: all four Bitcoin read32 source certificates generated for freshness"]
+fn pinned_bitcoin_read32_serialization_expands_all_bodies() {
+    let (root, import, source) = pinned_bitcoin_read32_fixture("bitcoin-read32-expanded");
+    let project = read_click_project(&root.join("byte.click"), &source).unwrap();
+    let verified = verify_program_prepared_project(&project, &import)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let mut expanded = source;
+    // Certificates retain original source positions. Editing backwards keeps
+    // every earlier declaration and proof position unchanged.
+    for qualified in BITCOIN_READ32_BODIES.into_iter().rev() {
+        let label = format!("{}.ensures_0", bitcoin_read32_function(&import, qualified));
+        expanded = click::surface::expand_verified_function_claim_source_by_label(
+            &expanded, &verified, &label,
+        )
+        .unwrap_or_else(|error| panic!("{qualified}: {}", error.report()))
+        .unwrap_or_else(|| panic!("missing certificate for {qualified}"));
+    }
+    fs::write(root.join("expanded.click"), &expanded).unwrap();
     assert!(
-        !report.contains("read of uninitialized storage"),
-        "{report}"
-    );
-    assert!(report.contains("verification budget exhausted"), "{report}");
-    assert!(
-        report.contains("statement 26"),
-        "reader must reach its exit: {report}"
-    );
-    assert!(
-        report.contains("goal:") && report.contains("2))"),
-        "third byte's value remains open: {report}"
+        expanded == BITCOIN_READ32_EXPANDED,
+        "expanded fixture is stale; generated source: {}",
+        root.join("expanded.click").display()
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+// Generated by the preceding freshness test; cold replay is separate so neither
+// phase combines two complete verifications under one test's containment limit.
+const BITCOIN_READ32_EXPANDED: &str =
+    include_str!("fixtures/cpp-byte-output/bitcoin-read32-expanded.click");
+
+#[test]
+#[ignore = "nightly: all four expanded Bitcoin read32 bodies checked strictly cold"]
+fn pinned_bitcoin_read32_serialization_expanded_source_checks_strict_cold() {
+    let (root, import, _) = pinned_bitcoin_read32_fixture("bitcoin-read32-cold");
+    fs::write(root.join("byte.click"), BITCOIN_READ32_EXPANDED).unwrap();
+    let project = read_click_project(&root.join("byte.click"), BITCOIN_READ32_EXPANDED).unwrap();
+    assert!(
+        project_smart_tactic_source_sites(&project, &ProgramInputs::program(&import))
+            .unwrap()
+            .is_empty(),
+        "every source body must be fully expanded"
+    );
+    click::surface::without_implicit_solve(|| verify_program_prepared_project(&project, &import))
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    fs::remove_dir_all(root).unwrap();
+}
+
+fn check_bitcoin_read32_retained(name: &str, qualified: &str) {
+    let (root, import, source) = pinned_bitcoin_read32_fixture(name);
+    let project = read_click_project(&root.join("byte.click"), &source).unwrap();
+    let label = format!("{}.ensures_0", bitcoin_read32_function(&import, qualified));
+    // Printing a retained certificate does not reverify or reset the kernel
+    // epoch. Replay exactly one proof edit against the session's baseline.
+    let (session, verified) =
+        ProgramVerificationSession::new_program_prepared_project(&project, &import)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded =
+        click::surface::expand_verified_function_claim_source_by_label(&source, &verified, &label)
+            .unwrap_or_else(|error| panic!("{qualified}: {}", error.report()))
+            .unwrap();
+    let rewritten = project.with_entry_source(expanded.clone());
+    let position =
+        project_tactic_source_position(&rewritten, &ProgramInputs::program(&import), &label, 0)
+            .unwrap();
+    click::surface::without_implicit_solve(|| {
+        session.verify_at_project(&expanded, position.line, position.column)
+    })
+    .unwrap_or_else(|error| panic!("{qualified}: {}", error.report()));
+    fs::remove_dir_all(root).unwrap();
+}
+
+macro_rules! bitcoin_read32_retained_case {
+    ($name:ident, $qualified:literal) => {
+        #[test]
+        #[ignore = "nightly: one Bitcoin read32 body certificate replayed in a retained session"]
+        fn $name() {
+            check_bitcoin_read32_retained(stringify!($name), $qualified);
+        }
+    };
+}
+bitcoin_read32_retained_case!(
+    pinned_bitcoin_read32_reader_certificate_retained,
+    "FixtureReader::read"
+);
+bitcoin_read32_retained_case!(
+    pinned_bitcoin_read32_serializer_certificate_retained,
+    "ser_readdata32<FixtureReader>"
+);
+bitcoin_read32_retained_case!(
+    pinned_bitcoin_read32_endian_certificate_retained,
+    "le32toh_internal"
+);
+bitcoin_read32_retained_case!(pinned_bitcoin_read32_wrapper_certificate_retained, "probe");
+
+fn check_bitcoin_read32_control(name: &str, qualified: &str, from: &str, to: &str) {
+    let (root, import, source) = pinned_bitcoin_read32_fixture(name);
+    let changed = source.replacen(from, to, 1);
+    assert_ne!(changed, source, "{name} must change its contract");
+    let project = read_click_project(&root.join("byte.click"), &changed).unwrap();
+    let error = click::surface::verify_project_functions(
+        &project,
+        &ProgramInputs::program(&import),
+        [bitcoin_read32_function(&import, qualified)],
+    )
+    .expect_err(name);
+    assert_eq!(
+        error.kind(),
+        click::surface::ClickErrorKind::Proof,
+        "{name}: {}",
+        error.report()
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+macro_rules! bitcoin_read32_control_case {
+    ($name:ident, $qualified:literal, $from:literal, $to:literal) => {
+        #[test]
+        #[ignore = "nightly: Bitcoin serialization composition rejection control"]
+        fn $name() {
+            check_bitcoin_read32_control(stringify!($name), $qualified, $from, $to);
+        }
+    };
+}
+bitcoin_read32_control_case!(
+    pinned_bitcoin_read32_rejects_missing_source_view,
+    "ser_readdata32<FixtureReader>",
+    "    views s.data[0..4];\n",
+    ""
+);
+bitcoin_read32_control_case!(
+    pinned_bitcoin_read32_rejects_short_source_view,
+    "ser_readdata32<FixtureReader>",
+    "    views s.data[0..4];",
+    "    views s.data[0..3];"
+);
+bitcoin_read32_control_case!(
+    pinned_bitcoin_read32_rejects_missing_output_permission,
+    "FixtureReader::read",
+    "    consumes uninitialized(std_span_data(dst)[0..4]);\n",
+    ""
+);
+bitcoin_read32_control_case!(
+    pinned_bitcoin_read32_rejects_short_output_span,
+    "FixtureReader::read",
+    "requires std_span_size(dst) == 4u64;",
+    "requires std_span_size(dst) == 3u64;"
+);
+bitcoin_read32_control_case!(
+    pinned_bitcoin_read32_rejects_wrong_source_byte,
+    "ser_readdata32<FixtureReader>",
+    "requires s.data[2] == 52u8;",
+    "requires s.data[2] == 53u8;"
+);
+bitcoin_read32_control_case!(
+    pinned_bitcoin_read32_rejects_wrong_serialized_word,
+    "ser_readdata32<FixtureReader>",
+    "ensures result == 305419896u32;",
+    "ensures result == 305419897u32;"
+);
+bitcoin_read32_control_case!(
+    pinned_bitcoin_read32_rejects_wrong_cursor_advance,
+    "probe",
+    "ensures stream.data == old(stream.data) + 4;",
+    "ensures stream.data == old(stream.data) + 3;"
+);

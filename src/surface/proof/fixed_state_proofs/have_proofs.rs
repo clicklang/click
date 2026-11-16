@@ -416,6 +416,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
         states.element_types,
         bound_array_memories.cloned().unwrap_or_default(),
         &states.entry_state,
+        &states.lowering_state,
         states.entry_values,
         states.current_values,
         algebraic_values.cloned().unwrap_or_default(),

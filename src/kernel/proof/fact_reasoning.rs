@@ -196,6 +196,9 @@ pub(crate) fn normalize_using_conditions(
             || matches!(right.as_ref(), Resource::Footprint(_)))
     {
         let mut selected = PureFactContext::new();
+        // Keep the checked address congruence used by ordinary normalization.
+        // Resource authority below still comes only from the written premises.
+        selected.equality_graph = facts.assumptions().equality_graph.clone();
         for (index, premise) in premises.iter().enumerate() {
             if !facts.available(premise) && !crate::kernel::proposition_holds_without_facts(premise)
             {
@@ -2117,6 +2120,79 @@ mod tests {
         Memory, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm, ProgramValue, Resource,
         Variable, intern_memory, load_variable_for_cell_with_origin,
     };
+
+    fn footprint_alias_fixture() -> (Proposition, Proposition, Proposition) {
+        use crate::kernel::{ExecutionPureFact, ExecutionState};
+        let actual = Pointer::symbolic(Variable(96_140));
+        let named = Pointer::symbolic(Variable(96_141));
+        let kept = Pointer::symbolic(Variable(96_142));
+        let before = ExecutionState::new();
+        let after = before.clone().with_memory(
+            before
+                .memory()
+                .clone()
+                .store(actual.clone(), crate::kernel::uint8(1u32)),
+        );
+        let effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
+            before: before.memory().clone(),
+            after: after.memory().clone(),
+            writes: vec![(actual.clone(), 1)],
+        });
+        let footprint = Resource::Footprint(crate::kernel::RegionFootprint::transition(
+            "byte store".into(),
+            &before,
+            &after,
+            &vec![effect],
+        ));
+        let range = |pointer, bytes: u32| {
+            Resource::Memory(MemoryRange::new_with_element_width(
+                pointer,
+                0u32.into(),
+                bytes.into(),
+                1,
+            ))
+        };
+        let separation = Proposition::ResourceSeparate {
+            left: Box::new(range(named.clone(), 1)),
+            right: Box::new(range(kept.clone(), 8)),
+        };
+        let goal = Proposition::ResourceSeparate {
+            left: Box::new(footprint),
+            right: Box::new(range(kept, 8)),
+        };
+        (
+            goal,
+            separation,
+            Proposition::ConditionIs(ConditionTerm::pointer_equal(actual, named), true),
+        )
+    }
+
+    #[test]
+    fn footprint_normalization_uses_scoped_addresses_but_only_selected_separation() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (goal, separation, alias) = footprint_alias_fixture();
+        let parent = ProofFacts::from_ordered(std::slice::from_ref(&separation));
+        let branch = parent.with_fact(alias);
+        assert!(
+            normalize_using_conditions(&goal, std::slice::from_ref(&separation), &branch).is_ok()
+        );
+        assert!(normalize_using_conditions(&goal, &[], &branch).is_err());
+        assert!(
+            normalize_using_conditions(&goal, std::slice::from_ref(&separation), &parent).is_err()
+        );
+        let mut short = separation.clone();
+        let Proposition::ResourceSeparate { right, .. } = &mut short else {
+            unreachable!()
+        };
+        **right = Resource::Memory(MemoryRange::new_with_element_width(
+            Pointer::symbolic(Variable(96_142)),
+            0u32.into(),
+            4u32.into(),
+            1,
+        ));
+        let branch = branch.with_fact(short.clone());
+        assert!(normalize_using_conditions(&goal, &[short], &branch).is_err());
+    }
 
     #[test]
     fn context_free_normalization_checks_uint64_constant_disequality() {

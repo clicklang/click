@@ -77,6 +77,59 @@ fn old_aggregate_binding_uses_only_the_selected_entry_place() {
     assert!(lower_name(&state, "input", false).is_err());
 }
 
+fn lower_recorded_input(state: &ExecutionState) -> (SpecExpression, usize) {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let mut retained_states = RecordedStates::new();
+    let point = ProgramPointSelector::Mark("inside".into());
+    retained_states.insert(point.clone(), state.clone());
+    let caller_image = ProgramValue::typed_pointer(
+        crate::kernel::Pointer::symbolic(Variable(71_001)),
+        ProgramType::UInt8Pointer,
+    );
+    let (mut lowerer, context) = fixed_state_elaboration(
+        BTreeMap::new(),
+        BTreeMap::new(),
+        state,
+        BTreeMap::from([("input".into(), caller_image.clone())]),
+        BTreeMap::from([("input".into(), caller_image)]),
+        None,
+        &retained_states,
+        SpecDefinitions::new(&predicates, &functions),
+        BTreeSet::new(),
+        BTreeMap::new(),
+    );
+    lowerer.capture_referenced_names = Some(BTreeSet::from(["input".into()]));
+    // Build the retained environment once; measure only selected-point lookup
+    // and lowering, not the fixture's initial context construction.
+    crate::instrumentation::measure_deterministic_work(|| {
+        let captured = lowerer
+            .point_environment(&point, &context)
+            .unwrap()
+            .unwrap();
+        lowerer
+            .lower_program_binding_to_spec("input", &captured)
+            .unwrap()
+    })
+}
+
+#[test]
+fn a_recorded_aggregate_place_overrides_the_caller_image() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = entry_state();
+    assert_eq!(
+        lower_recorded_input(&state).0,
+        SpecExpression::Value(ProgramValue::typed_pointer(
+            state
+                .locals()
+                .aggregate_object_pointer("input")
+                .unwrap()
+                .clone(),
+            ProgramType::UInt8Pointer,
+        ))
+    );
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/surface/lowering/annotations/old_aggregate_tests.rs");
