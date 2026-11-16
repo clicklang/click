@@ -3967,7 +3967,7 @@ pub(crate) fn state_quantified_alpha_equivalent(
     Some(left_key == right_key && predicate_states_share_storage(left, right))
 }
 
-/// Compare a selected int32 universal with exact retained memory identities.
+/// Compare a selected machine-integer universal with exact retained memory identities.
 /// Bound occurrences in memory require the existing state substitution path;
 /// this route uses only indexed absence and one active machine binder. Nested
 /// loaded binders and unindexed states keep the existing structural matcher.
@@ -3976,14 +3976,20 @@ pub(crate) fn selected_state_quantified_alpha_equivalent(
     right: &Proposition,
 ) -> Option<bool> {
     let key = |proposition: &Proposition| {
-        let Proposition::ForAll {
-            var,
-            sort: Sort::ProgramInt32,
-            ..
-        } = proposition
-        else {
+        let Proposition::ForAll { var, sort, .. } = proposition else {
             return None;
         };
+        if !matches!(
+            sort.machine_integer_type(),
+            Some(
+                MachineIntegerType::Int32
+                    | MachineIntegerType::UInt32
+                    | MachineIntegerType::Int64
+                    | MachineIntegerType::UInt64
+            )
+        ) {
+            return None;
+        }
         let mut bindings = fold_keys::bindings();
         bindings.checked_state_binder = Some(*var);
         let key = alpha_proposition_key_with_bindings::<true>(proposition, &mut bindings, &mut 0)?;

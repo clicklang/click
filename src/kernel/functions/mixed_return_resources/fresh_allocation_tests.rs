@@ -320,7 +320,7 @@ fn composite_children_use_only_actual_allocation_provenance() {
     ] {
         let bodies = ConstructedReturnBodies::try_construct(
             &evaluated,
-            &[definition.clone()],
+            std::slice::from_ref(&definition),
             &post,
             ReturnResourceComposition::BodyAllocations {
                 consumed: None,

@@ -1761,78 +1761,78 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
     {
         return equivalent;
     }
-    match (left, right) {
+    let (left_var, left_sort, left_body, right_var, right_sort, right_body) = match (left, right) {
         (
             Proposition::ForAll {
-                var: left_var,
-                sort: left_sort,
-                body: left_body,
+                var: lv,
+                sort: ls,
+                body: lb,
                 ..
             },
             Proposition::ForAll {
-                var: right_var,
-                sort: right_sort,
-                body: right_body,
+                var: rv,
+                sort: rs,
+                body: rb,
                 ..
             },
-        ) => {
-            left_sort == right_sort
-                && match left_sort {
-                    Sort::Algebraic(ty) => {
-                        crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
-                            left_body,
-                            *left_var,
-                            &AlgebraicTerm {
-                                algebraic_type: ty.clone(),
-                                node: AlgebraicTermNode::Variable(*right_var),
-                            },
-                        ) == **right_body
-                    }
-                    _ => {
-                        substitute_int32_variable_in_proposition(
-                            left_body,
-                            *left_var,
-                            MachineTerm::Variable(*right_var),
-                        ) == **right_body
-                    }
-                }
-        }
-        (
+        )
+        | (
             Proposition::Exists {
-                var: left_var,
-                sort: left_sort,
-                body: left_body,
+                var: lv,
+                sort: ls,
+                body: lb,
                 ..
             },
             Proposition::Exists {
-                var: right_var,
-                sort: right_sort,
-                body: right_body,
+                var: rv,
+                sort: rs,
+                body: rb,
                 ..
             },
-        ) => {
-            left_sort == right_sort
-                && match left_sort {
-                    Sort::Algebraic(ty) => {
-                        crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
-                            left_body,
-                            *left_var,
-                            &AlgebraicTerm {
-                                algebraic_type: ty.clone(),
-                                node: AlgebraicTermNode::Variable(*right_var),
-                            },
-                        ) == **right_body
-                    }
-                    _ => {
-                        substitute_int32_variable_in_proposition(
-                            left_body,
-                            *left_var,
-                            MachineTerm::Variable(*right_var),
-                        ) == **right_body
-                    }
-                }
+        ) => (*lv, ls, lb.as_ref(), *rv, rs, rb.as_ref()),
+        _ => return false,
+    };
+    if left_sort != right_sort {
+        return false;
+    }
+    if left_var == right_var {
+        return left_body == right_body;
+    }
+    // Neither binder name is necessarily fresh in the other body: it can
+    // already occur freely inside a retained memory state. Compare both
+    // substitutions at a name absent from both bodies and their binders.
+    // This legacy path retains its state traversal; indexed fast paths above
+    // do not collect variables or substitute retained states.
+    let mut reserved = crate::kernel::proposition_variables(left);
+    reserved.extend(crate::kernel::proposition_variables(right));
+    let fresh = KernelVariableGenerator::fresh_for(0, reserved).next();
+    match left_sort {
+        Sort::Algebraic(ty) => {
+            let replacement = AlgebraicTerm {
+                algebraic_type: ty.clone(),
+                node: AlgebraicTermNode::Variable(fresh),
+            };
+            crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
+                left_body,
+                left_var,
+                &replacement,
+            ) == crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
+                right_body,
+                right_var,
+                &replacement,
+            )
         }
-        _ => false,
+        _ => {
+            substitute_int32_variable_in_proposition(
+                left_body,
+                left_var,
+                MachineTerm::Variable(fresh),
+            ) == substitute_int32_variable_in_proposition(
+                right_body,
+                right_var,
+                MachineTerm::Variable(fresh),
+            )
+        }
     }
 }
 

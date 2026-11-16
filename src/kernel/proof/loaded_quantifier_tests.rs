@@ -3,26 +3,31 @@ use crate::kernel::proof::ProofFacts;
 use crate::kernel::{LoadKind, Memory, Pointer, PointerOffsetTerm, ProgramValue, intern_memory};
 
 fn loaded_fact(memory: &SharedMemory, binder: Variable, shared: bool) -> Proposition {
+    loaded_fact_of_format(memory, binder, shared, MachineIntegerType::Int32)
+}
+
+fn loaded_fact_of_format(
+    memory: &SharedMemory,
+    binder: Variable,
+    shared: bool,
+    format: MachineIntegerType,
+) -> Proposition {
     crate::kernel::reasoning::prepare_memory_variable_index(memory.as_ref());
     let left = MachineTerm::Variable(binder);
     let right = MachineTerm::Binary {
-        format: MachineIntegerType::Int32,
+        format,
         op: MachineBinaryOp::Subtract,
         left: Box::new(MachineTerm::Variable(Variable(910_001))),
         right: Box::new(MachineTerm::Variable(Variable(910_002))),
     };
     let guard = if shared {
         ConditionTerm::IntegerLessThan(
-            IntegerTerm::from_machine(MachineIntegerType::Int32, left)
-                .unwrap()
-                .into(),
-            IntegerTerm::from_machine(MachineIntegerType::Int32, right)
-                .unwrap()
-                .into(),
+            IntegerTerm::from_machine(format, left).unwrap().into(),
+            IntegerTerm::from_machine(format, right).unwrap().into(),
         )
     } else {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format,
             relation: CompareRelation::LessThan,
             left: Box::new(left),
             right: Box::new(right),
@@ -32,14 +37,27 @@ fn loaded_fact(memory: &SharedMemory, binder: Variable, shared: bool) -> Proposi
         ProgramPoint::at(memory),
         Box::new(Pointer {
             block: "loaded-quantifier".into(),
-            offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(binder), 4),
+            offset: match format {
+                MachineIntegerType::Int32 => {
+                    PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(binder), 4)
+                }
+                MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
+                    PointerOffsetTerm::scaled_int64_node(
+                        MachineTerm::Variable(binder),
+                        4,
+                        format == MachineIntegerType::UInt64,
+                    )
+                }
+                MachineIntegerType::UInt32 => PointerOffsetTerm::Constant(0),
+                _ => unreachable!(),
+            },
         }),
         LoadKind::Int32,
     );
     Proposition::ForAll {
         name: Default::default(),
         var: binder,
-        sort: Sort::ProgramInt32,
+        sort: Sort::machine_integer(format),
         body: Box::new(Proposition::Implies(
             Box::new(Proposition::ConditionIs(guard, true)),
             Box::new(Proposition::ConditionIs(
@@ -98,7 +116,7 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
             unreachable!()
         };
         if change == 2 {
-            *right = Box::new(MachineTerm::constant(1));
+            **right = MachineTerm::constant(1);
         }
         let MachineTerm::MemoryLoad(_, pointer, kind) = left.as_mut() else {
             unreachable!()
@@ -142,6 +160,109 @@ fn loaded_quantifier_shared_guard_does_not_rename_a_variable_inside_state() {
         assert!(!quantified_binder_equivalent(source, requested));
         let facts = ProofFacts::from_ordered(std::slice::from_ref(source));
         assert!(facts.matching_quantified_fact(requested).is_none());
+    }
+}
+
+#[test]
+fn loaded_quantifier_native_guard_does_not_capture_a_variable_inside_state() {
+    for existential in [false, true] {
+        for shared in [false, true] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let a = Variable(920_001);
+            let b = Variable(920_002);
+            let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64).store(
+                Pointer {
+                    block: "loaded-quantifier".into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                ProgramValue::Int32(MachineTerm::Variable(a)),
+            ));
+            let quantify = |binder| {
+                let fact = loaded_fact(&memory, binder, shared);
+                if existential {
+                    let Proposition::ForAll {
+                        var, sort, body, ..
+                    } = fact
+                    else {
+                        unreachable!()
+                    };
+                    Proposition::Exists {
+                        name: Default::default(),
+                        var,
+                        sort,
+                        body,
+                    }
+                } else {
+                    fact
+                }
+            };
+            let first = quantify(a);
+            let second = quantify(b);
+            for (source, requested) in [(&first, &second), (&second, &first)] {
+                assert!(!quantified_binder_equivalent(source, requested));
+                let facts = ProofFacts::from_ordered(std::slice::from_ref(source));
+                assert!(facts.matching_quantified_fact(requested).is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn loaded_quantifier_matching_renames_both_state_binders_without_swapping_free_variables() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let a = Variable(970_001);
+    let b = Variable(970_002);
+    let fact = |binder, stored| {
+        let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64).store(
+            Pointer {
+                block: "loaded-quantifier".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            ProgramValue::Int32(MachineTerm::Variable(stored)),
+        ));
+        loaded_fact(&memory, binder, false)
+    };
+    let left = fact(a, a);
+    let right = fact(b, b);
+    assert!(quantified_binder_equivalent(&left, &right));
+    assert!(quantified_binder_equivalent(&right, &left));
+    // Swapping both a bound and a free name is not alpha equivalence.
+    let left = fact(a, b);
+    let right = fact(b, a);
+    assert!(!quantified_binder_equivalent(&left, &right));
+    assert!(!quantified_binder_equivalent(&right, &left));
+}
+
+#[test]
+fn loaded_quantifier_guard_matching_preserves_machine_binder_width() {
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64));
+        let native = loaded_fact_of_format(&memory, Variable(940_001), false, format);
+        let shared = loaded_fact_of_format(&memory, Variable(940_002), true, format);
+        for (source, requested) in [(&native, &shared), (&shared, &native)] {
+            let facts = ProofFacts::from_ordered(std::slice::from_ref(source));
+            assert_eq!(
+                facts.matching_quantified_fact(requested),
+                Some(source.clone()),
+                "{format:?}"
+            );
+            let mut wrong_sort = requested.clone();
+            let Proposition::ForAll { sort, .. } = &mut wrong_sort else {
+                unreachable!()
+            };
+            *sort = Sort::machine_integer(if format == MachineIntegerType::UInt64 {
+                MachineIntegerType::Int32
+            } else {
+                MachineIntegerType::UInt64
+            });
+            assert!(facts.matching_quantified_fact(&wrong_sort).is_none());
+        }
     }
 }
 
