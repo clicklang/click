@@ -16793,6 +16793,14 @@ impl Parser {
                 if let Some(field) = self.names.resource_fields.get(&name) {
                     return Ok(ContractExpression::ResourceField(field.clone()));
                 }
+                // Inside a loop, `iter` is the loop's iterator, read through
+                // its accessors, even where the function has a local of
+                // that name, which is `rust(iter)`.
+                if name == "iter"
+                    && let Some(expression) = self.take_rust_iterator_method(&name, None)?
+                {
+                    return Ok(expression);
+                }
                 if self.names.contains_any(NameKind::VALUES, &name) || self.specification_binding_kind(&name).is_some()
                 {
                     Ok(ContractExpression::Binding(name))

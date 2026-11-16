@@ -92,18 +92,6 @@ extern fn Result::unwrap_or<T, E>(r: Result<T, E>, d: T) -> T {
     ensures result == click::result::unwrap_or(r, d);
 }
 
-// A slice the library-iterator model returns, a chunk or a remainder, is one
-// value of the library's `Slice<T>` (`library/rust/slice.click`); the body
-// reads its data and length through Rust's own `<[T]>::as_ptr` and
-// `<[T]>::len`.
-extern fn slice::as_ptr<T>(s: Slice<T>) -> &T {
-    ensures result == click::rust::slice::as_ptr(s);
-}
-
-extern fn slice::len<T>(s: Slice<T>) -> usize {
-    ensures result == click::rust::slice::len(s);
-}
-
 // A slice iterator over the library's `SliceIter<T>`
 // (`library/rust/slice_iter.click`): `<[T]>::iter` builds the library value
 // of the slice, and `Iterator::next` is the next law over `old(*it)` and
@@ -126,59 +114,4 @@ extern fn SliceIter::next<T>(it: &mut SliceIter<T>) -> Option<&T> {
     ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(*it)) == click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(old(*it))) + 1u64;
     ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies click::rust::slice::len(click::rust::slice_iter::as_slice(*it)) == click::rust::slice::len(click::rust::slice_iter::as_slice(old(*it))) - 1u64;
     ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies click::rust::slice_iter::len(*it) == click::rust::slice_iter::len(old(*it)) - 1u64;
-}
-
-// `<[T]>::chunks_exact` over the library's `ChunksExact<T>`
-// (`library/rust/chunks_exact.click`). The importer declares these at `u8`
-// only, the element type the library's chunk axioms state. Rust panics on a
-// zero chunk size.
-extern fn ChunksExact::new<T>(s: &[T], n: usize) -> ChunksExact<T> {
-    requires n != 0u64;
-    ensures result == click::rust::chunks_exact::chunks_exact(Slice<T>::Slice(s, s.len()), n);
-}
-
-// Rust's `Iterator::next` over the library value: the first chunk still to
-// come, and the iterator after it. A loop over the iterator calls it in the
-// library-iterator model.
-extern fn ChunksExact::next<T>(it: &mut ChunksExact<T>) -> Option<&[T]> {
-    owns *it;
-    ensures click::rust::chunks_exact::len(old(*it)) == 0u64 implies result == Option<&[T]>::None;
-    ensures click::rust::chunks_exact::len(old(*it)) == 0u64 implies *it == old(*it);
-    ensures 0u64 < click::rust::chunks_exact::len(old(*it)) implies result == Option<&[T]>::Some(click::rust::chunks_exact::nth(old(*it), 0u64));
-    ensures 0u64 < click::rust::chunks_exact::len(old(*it)) implies *it == click::rust::chunks_exact::after_next(old(*it));
-}
-
-extern fn ChunksExact::remainder<T>(it: &ChunksExact<T>) -> Slice<T> {
-    views *it;
-    ensures result == click::rust::chunks_exact::remainder(old(*it));
-}
-
-// Without the library-iterator model, a slice is still a pointer and a
-// length, and the iterator a value its operations take and return: a chunk
-// and the remainder are each read as their data and their length.
-extern fn ChunksExact::remainder_ptr<T>(it: ChunksExact<T>) -> &T {
-    ensures result == click::rust::slice::as_ptr(click::rust::chunks_exact::remainder(it));
-}
-
-extern fn ChunksExact::remainder_len<T>(it: ChunksExact<T>) -> usize {
-    ensures result == click::rust::slice::len(click::rust::chunks_exact::remainder(it));
-}
-
-extern fn ChunksExact::len<T>(it: ChunksExact<T>) -> usize {
-    ensures result == click::rust::chunks_exact::len(it);
-}
-
-extern fn ChunksExact::item_ptr<T>(it: ChunksExact<T>) -> &T {
-    requires 0u64 < click::rust::chunks_exact::len(it);
-    ensures result == click::rust::slice::as_ptr(click::rust::chunks_exact::nth(it, 0u64));
-}
-
-extern fn ChunksExact::item_len<T>(it: ChunksExact<T>) -> usize {
-    requires 0u64 < click::rust::chunks_exact::len(it);
-    ensures result == click::rust::slice::len(click::rust::chunks_exact::nth(it, 0u64));
-}
-
-extern fn ChunksExact::after_next<T>(it: ChunksExact<T>) -> ChunksExact<T> {
-    requires 0u64 < click::rust::chunks_exact::len(it);
-    ensures result == click::rust::chunks_exact::after_next(it);
 }

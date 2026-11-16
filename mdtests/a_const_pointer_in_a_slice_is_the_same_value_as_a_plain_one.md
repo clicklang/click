@@ -18,20 +18,20 @@ unsigned long walk(const unsigned char *p, unsigned long n) {
 
 ```click
 import click::rust::slice;
-import click::rust::chunks_exact;
+import click::rust::slice_iter;
 verifying "walk.c";
 
 unsigned long walk(const unsigned char *p, unsigned long n) {
-    requires forall (j: uint64) { j < n implies chunks_exact::nth(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, n), 4u64), j).as_ptr() == p + j };
+    requires forall (j: uint64) { j < n implies slice_iter::as_slice(slice_iter::after_next(slice_iter::iter(Slice<uint8>::Slice(p + j, n)))).as_ptr() == p + j };
     ensures result == n;
 } by {
     step_until(loop(0));
     loop {
         decreases n - i;
         invariant i <= n;
-        invariant forall (j: uint64) { j < n implies chunks_exact::nth(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, n), 4u64), j).as_ptr() == p + j };
+        invariant forall (j: uint64) { j < n implies slice_iter::as_slice(slice_iter::after_next(slice_iter::iter(Slice<uint8>::Slice(p + j, n)))).as_ptr() == p + j };
         initialize by {
-            have forall (j: uint64) { j < n implies chunks_exact::nth(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, n), 4u64), j).as_ptr() == p + j };
+            have forall (j: uint64) { j < n implies slice_iter::as_slice(slice_iter::after_next(slice_iter::iter(Slice<uint8>::Slice(p + j, n)))).as_ptr() == p + j };
             solve();
         }
     }
