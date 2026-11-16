@@ -92,7 +92,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 6 | Folds, binders and algebraic matches | Implemented as 6a–6n below. Common fold and numeric/algebraic match results retain scoped children; remaining native consumers are named compatibility boundaries. |
 | 7 | Complete pointers and read addresses | Implemented as 7a–7u below, one PR per slice. Supported pointer producers and execution/storage handoffs retain common roots; checking and Surface consumers preserve metadata, state identity and existing rules. |
 | 8 | Remaining Boolean and opaque expression payloads | Implemented through 8ad, ending in [PR #2920](https://github.com/clicklang/click/pull/2920); remaining native boundaries are enumerated below. |
-| 9 | Unified raising/lowering and certificate boundaries | Authorized as 9a–9z below; inventory recorded, implementation pending. |
+| 9 | Unified raising/lowering and certificate boundaries | Authorized as 9a–9z below; 9a inventory delivered and 9b common entry implemented. Remaining slices are open. |
 | 10 | Duplicate storage removal and final closure | Open |
 
 ## Chunk 9: unified Surface and certificate boundaries
@@ -141,7 +141,7 @@ Delivered in [PR #2930](https://github.com/clicklang/click/pull/2930).
 | `src/surface/proof/surface_synthesis.rs`: `raise_kernel_term`, `raise_kernel_term_dispatch` | Existing common dispatcher and bounded integer recursion are the foundation for 9b. Constructor/read/variable argument exports belong to 9c–9d; condition exports to 9e–9f. Existing numeric and float operation renderers stay shared. |
 | Same file: `raise_call_argument`, `synthesize_legacy_call_argument`, `synthesize_surface_call` | 9g consolidates call consumers. Complete pointer arguments require the exact proof-local source name; generic pointer synthesis is not an interchangeable fallback. Leaf literal views are distinct from whole-tree export. |
 | `src/surface/proof/surface_synthesis/{folds,matches}.rs` | 9h–9i consolidate scoped readers; preserve existing binders and fold evaluation/spelling. |
-| `src/surface/lowering/annotations.rs` and `src/kernel/spec/{result,paths}.rs` | 9j–9p cover typed result handoffs and remaining export/import adapters. Unevaluated Surface syntax remains distinct from evaluated Kernel roots; obligations retain their scope. |
+| `src/surface/lowering/annotations.rs` and `src/kernel/spec.rs` and `src/kernel/spec/result.rs` | 9j–9p cover typed result handoffs and remaining export/import adapters. Unevaluated Surface syntax remains distinct from evaluated Kernel roots; obligations retain their scope. |
 | `src/kernel/spec.rs`, `src/kernel/spec/result.rs`: `SpecCallArgument::into_payload`, `into_typed_call_operand` | 9q covers mixed argument assembly, including program-parameter envelopes versus logical algebraic arguments. 9r covers scoped fold/match handoffs. |
 | `src/kernel/api/contract_certification/retained_syntax.rs` | 9s–9u consolidate native/shared comparison readers. Existing refusal/admission rules and exact pointer evidence remain unchanged. |
 | `src/kernel/api/contract_certification/contract_claims.rs`, `contract_claims/publication.rs` | 9v–9w cover native input conversion and published result conversion. |
