@@ -9419,9 +9419,6 @@ mod integer_range_fold_substitution_tests {
             &pointer,
             crate::kernel::LoadKind::Int32,
         );
-        let (source_memory_state, _) =
-            crate::kernel::eval::registered_load_for_variable(&load_variable)
-                .expect("the source load must be registered");
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::Variable(load_variable),
@@ -9447,7 +9444,9 @@ mod integer_range_fold_substitution_tests {
                 .unwrap()
                 .1
         );
-        assert_eq!(retained_state, &source_memory_state);
+        // A new address retains the producer's live memory, rather than
+        // reusing the original address's empty version point.
+        assert_eq!(retained_state, &memory);
         assert_eq!(pointer.offset, PointerOffsetTerm::Constant(0));
     }
 
@@ -9470,9 +9469,6 @@ mod integer_range_fold_substitution_tests {
             &pointer,
             crate::kernel::LoadKind::Int32,
         );
-        let (source_memory_state, _) =
-            crate::kernel::eval::registered_load_for_variable(&load_variable)
-                .expect("the source load must be registered");
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::Variable(load_variable),
@@ -9498,7 +9494,9 @@ mod integer_range_fold_substitution_tests {
                 .unwrap()
                 .1
         );
-        assert_eq!(retained_state, &source_memory_state);
+        // A new address retains the producer's live memory, rather than
+        // reusing the original address's empty version point.
+        assert_eq!(retained_state, &memory);
         assert_eq!(pointer.offset, PointerOffsetTerm::Constant(4));
     }
 

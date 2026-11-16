@@ -1354,9 +1354,10 @@ for `x <= 100` false), so `a and b implies c` closes where the curried
 
 A goal that is one conjunct of an implication's consequent, `c == 2` from
 `a != 0` and `a != 0 implies (b == 1 and c == 2)`, is closed once the
-antecedent is an available fact: expansion applies the implication with
-`apply(fact) using { ... }`, retains its whole conclusion, and closes the
-selected conjunct with `known()`
+antecedent is an exact available fact: unit propagation publishes the whole
+conclusion, and expansion can close the selected conjunct with `known()`.
+When the guard needs proving first, expansion may retain an explicit
+`apply(fact) using { ... }`
 ([`solve_closes_a_conjunct_of_a_discharged_consequent.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_closes_a_conjunct_of_a_discharged_consequent.md)).
 
 A comparison held only under a definedness guard (`defined(e) implies a == b`,
@@ -1571,6 +1572,14 @@ available when one of these holds:
 
 - It is a fact, or a leaf conjunct of a fact. An implication or quantified
   goal must be such a fact up to renaming of its bound variables.
+- It follows by exact Boolean unit propagation. Admitting `A or B` and
+  `not A` makes `B` available; admitting `A implies B` and `A` makes `B`
+  available. Either admission order works, and consequences propagate through
+  chains and conjunctive guards. Matching preserves proposition syntax, types,
+  and memory states; it does not search for equivalent guards. Each clause
+  occurrence is processed at most once per proof-context lineage, and
+  `known()` reads the resulting ordinary fact indexes. See
+  [`exact_proposition_propagation.md`](https://github.com/clicklang/click/blob/master/mdtests/exact_proposition_propagation.md).
 - It is another spelling of an available order claim, in every order family
   (C machine integers and `Integer`): `0 <= x` for `x >= 0`, and `not(y <= x)`,
   `y > x` and `x < y` for one another. `x != y`, `not(x == y)`, and
@@ -1647,9 +1656,9 @@ and a cell owned beside it. `split()`, `left()` and `right()` were folded into t
 are refused with that advice.
 
 Lookup also accepts certified identity of a resource separation. It performs
-no function unfolding, implication extraction, or fact transport across
-effects. Expansion leaves the step unchanged, and profiling charges one
-simple leaf.
+no function unfolding, implication search, or fact transport across effects.
+Exact propagated consequences are already available facts. Expansion leaves
+this step unchanged, and profiling charges one simple leaf.
 
 **Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`known_computes_fast_leaves.md`](https://github.com/clicklang/click/blob/master/mdtests/known_computes_fast_leaves.md), [`known_closes_an_evaluated_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/known_closes_an_evaluated_goal.md)
 

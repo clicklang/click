@@ -4938,12 +4938,16 @@ fn collect_invariant_check_obligations_with_mode(
                     );
                 }
                 if obligations.len() > before {
-                    guards.push(ProofObligation::new(path.proposition));
+                    guards.push(ProofObligation::new(path.proposition.clone()));
                     changed_obligations.push(before);
                     if without_search && obligations[before].is_assumable() {
                         crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
-                        obligation_assumptions = obligation_assumptions
-                            .assume_proposition(obligations[before].proposition().clone());
+                        // All preceding members are hypotheses of this prepared
+                        // path. Admit the new bare member, as the guard list
+                        // above does, rather than regenerating its implication
+                        // prefix and every partially discharged suffix.
+                        obligation_assumptions =
+                            obligation_assumptions.assume_proposition(path.proposition);
                     }
                 }
                 if without_search {

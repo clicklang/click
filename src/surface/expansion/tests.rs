@@ -4012,7 +4012,7 @@ fn solve_expands_disjunction_projection_to_cases_without_extract() {
 }
 
 #[test]
-fn solve_expands_partial_implication_with_explicit_fact_application() {
+fn solve_expands_propagated_partial_implication_to_known() {
     let source = r#"
         theorem demo(x: int32, y: int32, z: int32) {
             requires x > 0;
@@ -4022,7 +4022,7 @@ fn solve_expands_partial_implication_with_explicit_fact_application() {
     "#;
     verify_click_theorems(source).unwrap();
     let expanded = expand_pure_theorem_source(source, &[], "demo", 0).unwrap();
-    assert!(expanded.contains("apply("), "{expanded}");
+    assert!(expanded.contains("known()"), "{expanded}");
     assert!(!expanded.contains("extract("), "{expanded}");
     assert!(!expanded.contains("solve()"), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
@@ -4268,4 +4268,27 @@ theorem fold_case(end: int32) {
     let expanded = expand_c_claim_source_by_label(source, &[], "fold_case.ensures_0").unwrap();
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
         .expect("both checked branches replay with ordinary unfolds");
+}
+
+#[test]
+fn exact_proposition_propagation_replays_without_search() {
+    let source = r#"
+        theorem propagated(a: int32, b: int32) {
+            requires a == 0 or b == 0;
+            requires not (a == 0);
+            ensures b == 0 by solve();
+        }
+    "#;
+    verify_click_theorems(source).expect("solver uses propagated fact");
+    let expanded = expand_pure_theorem_source(source, &[], "propagated", 0)
+        .expect("propagated closure expands");
+    assert!(expanded.contains("known()"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded))
+        .expect("exact propagation needs no solver");
+    for invalid in [
+        expanded.replace("requires a == 0 or b == 0;", ""),
+        expanded.replace("requires not (a == 0);", ""),
+    ] {
+        assert!(without_implicit_solve(|| verify_click_theorems(&invalid)).is_err());
+    }
 }

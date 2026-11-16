@@ -34,13 +34,14 @@ fn refuted_disjunction_requires_the_source_and_every_exact_negation() {
     for case in &cases {
         context = context.assume_proposition(Proposition::Not(Box::new(case.clone())));
     }
-    // Inserting an opposite condition ordinarily replaces its polarity.
-    // This witness checks the contradiction without rebuilding case contexts.
+    // Propagation may add intermediate disjunctions, their remaining arm,
+    // and checked falsehood. The certificate must still reject every context
+    // missing one of the original supports.
     let goal = Proposition::Equal(Term::ProgramValue(int32(0)), Term::ProgramValue(int32(1)));
     let derivation = crate::kernel::search::ProofSearch::derive_proposition(&(context), &goal)
         .expect("all arms are refuted");
     assert!(derivation.check(&context));
-    assert_eq!(derivation.context_premises().len(), 4);
+    assert!(derivation.context_premises().contains(&disjunction));
     let negations = cases
         .iter()
         .fold(PureFactContext::new(), |negations, case| {
@@ -2056,7 +2057,7 @@ fn signed_less_equal_and_inequality_derive_strict_order() {
 }
 
 #[test]
-fn condition_search_skips_irrelevant_implication_antecedents() {
+fn propagated_implications_need_no_antecedent_search() {
     let target_condition = ConditionTerm::signed_less_than(
         MachineTerm::Variable(Variable(9_001)),
         MachineTerm::Variable(Variable(9_002)),
@@ -2083,8 +2084,8 @@ fn condition_search_skips_irrelevant_implication_antecedents() {
     ));
     assert_eq!(
         PureFactContext::condition_implication_antecedent_checks(),
-        1,
-        "only an implication whose conclusion can establish the target should inspect its antecedent"
+        0,
+        "exact propagation already admitted the target before the query"
     );
 }
 
@@ -3996,15 +3997,13 @@ fn finite_forall_order_fact_needs_an_explicit_instantiation() {
     ));
 }
 
-/// A bound available only under a guarded implication needs the explicit
-/// step that introduces it.
+/// A guarded bound becomes an ordinary order fact when its exact guard holds.
 ///
-/// The guard is exactly available, so the old collection discharged it with
-/// the general prover and harvested the conclusion as an order fact. The
-/// theory now sees only `condition_facts`, and the conclusion joins the
-/// transitive path once an explicit `intro`/`have` step has added it.
+/// The guard is exactly available, so unit propagation admits its conclusion
+/// as an ordinary condition fact. The order theory can use that fact without
+/// searching implication antecedents during its query.
 #[test]
-fn guarded_implication_bound_needs_an_explicit_extraction() {
+fn guarded_implication_bound_propagates_to_order_facts() {
     let a = MachineTerm::Variable(Variable(97_001));
     let b = MachineTerm::Variable(Variable(97_002));
     let c = MachineTerm::Variable(Variable(97_003));
@@ -4024,8 +4023,8 @@ fn guarded_implication_bound_needs_an_explicit_extraction() {
 
     let goal = Proposition::ConditionIs(ConditionTerm::signed_less_equal(a, c), true);
     assert!(
-        !crate::kernel::search::ProofSearch::proves(&(assumptions), &goal),
-        "a guarded bound is not an order fact until the proof extracts it"
+        crate::kernel::search::ProofSearch::proves(&(assumptions), &goal),
+        "an exactly satisfied guard publishes the bound to the order theory"
     );
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions.assume_proposition(a_le_b)),

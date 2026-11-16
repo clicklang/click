@@ -1,0 +1,325 @@
+use super::*;
+
+fn atom(name: &str) -> Proposition {
+    Proposition::Predicate {
+        name: name.into(),
+        arguments: vec![],
+    }
+}
+fn not(p: Proposition) -> Proposition {
+    Proposition::Not(Box::new(p))
+}
+fn or(a: Proposition, b: Proposition) -> Proposition {
+    Proposition::Or(Box::new(a), Box::new(b))
+}
+fn and(a: Proposition, b: Proposition) -> Proposition {
+    Proposition::And(Box::new(a), Box::new(b))
+}
+fn implies(a: Proposition, b: Proposition) -> Proposition {
+    Proposition::Implies(Box::new(a), Box::new(b))
+}
+fn context(facts: Vec<Proposition>) -> PureFactContext {
+    facts
+        .into_iter()
+        .fold(PureFactContext::new(), PureFactContext::assume_proposition)
+}
+
+#[test]
+fn exact_propagation_handles_both_admission_orders_and_polarities() {
+    let (a, b, c) = (atom("a"), atom("b"), atom("c"));
+    for (rule, trigger, result) in [
+        (or(a.clone(), b.clone()), not(a.clone()), b.clone()),
+        (or(a.clone(), b.clone()), not(b.clone()), a.clone()),
+        (implies(a.clone(), b.clone()), a.clone(), b.clone()),
+        (
+            implies(a.clone(), b.clone()),
+            not(b.clone()),
+            not(a.clone()),
+        ),
+        (
+            or(not(a.clone()), not(b.clone())),
+            a.clone(),
+            not(b.clone()),
+        ),
+    ] {
+        for facts in [
+            vec![rule.clone(), trigger.clone()],
+            vec![trigger.clone(), rule.clone()],
+        ] {
+            let ctx = context(facts);
+            assert!(ctx.contains_known(&result), "{rule:?}, {trigger:?}");
+            assert!(!ctx.contains_known(&c));
+        }
+        assert!(!context(vec![rule]).contains_known(&result));
+    }
+}
+
+#[test]
+fn exact_propagation_chains_conjunctive_guards_and_multiple_disjuncts() {
+    let (a, b, c, d) = (atom("a"), atom("b"), atom("c"), atom("d"));
+    let parent = context(vec![
+        implies(and(a.clone(), b.clone()), c.clone()),
+        or(not(c.clone()), d.clone()),
+        a.clone(),
+    ]);
+    assert!(!parent.contains_known(&c));
+    assert!(!parent.contains_known(&d));
+    let child = parent.clone().assume_proposition(b.clone());
+    assert!(child.contains_known(&c));
+    assert!(child.contains_known(&d));
+    assert!(!parent.contains_known(&c));
+    assert!(!parent.contains_known(&d));
+    for facts in [
+        vec![
+            or(or(a.clone(), b.clone()), c.clone()),
+            not(a.clone()),
+            not(b.clone()),
+        ],
+        vec![
+            not(b.clone()),
+            not(a.clone()),
+            or(a.clone(), or(b.clone(), c.clone())),
+        ],
+    ] {
+        assert!(context(facts).contains_known(&c));
+    }
+    let restored = child
+        .pure_facts()
+        .into_iter()
+        .fold(PureFactContext::new(), PureFactContext::assume_proposition);
+    assert!(restored.contains_known(&d));
+    assert!(
+        !child
+            .restricted_to_facts(&[], &[implies(a.clone(), b.clone())])
+            .contains_known(&b)
+    );
+    assert!(
+        child
+            .restricted_to_facts(&[], &[implies(a.clone(), b.clone()), a])
+            .contains_known(&b)
+    );
+}
+
+#[test]
+fn exact_propagation_is_idempotent_and_does_not_fire_cycles_without_a_seed() {
+    let (a, b) = (atom("a"), atom("b"));
+    let parent = context(vec![
+        implies(a.clone(), b.clone()),
+        implies(b.clone(), a.clone()),
+    ]);
+    assert!(!parent.contains_known(&a));
+    assert!(!parent.contains_known(&b));
+    let child = parent.clone().assume_proposition(a.clone());
+    assert!(child.contains_known(&b));
+    let repeated = child.clone().assume_proposition(a);
+    assert_eq!(
+        child.exact_propagation.next_clause,
+        repeated.exact_propagation.next_clause
+    );
+    assert!(!parent.contains_known(&b));
+    assert!(context(vec![or(b.clone(), b.clone())]).contains_known(&b));
+}
+
+#[test]
+fn exact_propagation_keeps_condition_polarity_and_restriction_support() {
+    let a = ConditionTerm::Variable(crate::kernel::Variable(780_000));
+    let b = atom("result");
+    let rule = or(Proposition::ConditionIs(a.clone(), true), b.clone());
+    let parent = context(vec![rule.clone()]);
+    let child = parent.clone().assume_condition(a.clone(), false);
+    assert!(child.contains_known(&b));
+    assert!(!parent.contains_known(&b));
+    assert!(
+        !child
+            .restricted_to_facts(&[(a.clone(), true)], &[rule.clone()])
+            .contains_known(&b)
+    );
+    assert!(
+        child
+            .restricted_to_facts(&[(a, false)], &[rule])
+            .contains_known(&b)
+    );
+}
+
+#[test]
+fn exact_propagation_does_not_match_different_memory_states_or_types() {
+    use crate::kernel::*;
+    let pointer = Pointer {
+        block: "propagation-cell".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let before = Memory::new().with_block("propagation-cell", 4).store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::Variable(Variable(781_000))),
+    );
+    let after = before.clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::Variable(Variable(781_001))),
+    );
+    let read = |memory| {
+        Proposition::ConditionIs(
+            ConditionTerm::equal(
+                MachineTerm::MemoryLoad(
+                    ProgramPoint::at(&intern_memory(memory)),
+                    Box::new(pointer.clone()),
+                    LoadKind::Int32,
+                ),
+                MachineTerm::constant(0),
+            ),
+            true,
+        )
+    };
+    let goal = atom("goal");
+    let rule = implies(read(before.clone()), goal.clone());
+    assert!(!context(vec![rule.clone(), read(after)]).contains_known(&goal));
+    assert!(context(vec![rule, read(before)]).contains_known(&goal));
+}
+
+mod scaling_tests {
+    use super::*;
+    include!("../../../scaling_tests/kernel/assumptions/exact_propagation.rs");
+}
+
+#[test]
+fn exact_propagation_preserves_models_of_nested_boolean_formulas() {
+    fn eval(p: &Proposition, assignment: usize) -> bool {
+        match p {
+            Proposition::Predicate { name, .. } => {
+                assignment & (1 << name.parse::<usize>().unwrap()) != 0
+            }
+            Proposition::ConditionIs(ConditionTerm::Constant(a), b) => a == b,
+            Proposition::Not(p) => !eval(p, assignment),
+            Proposition::And(a, b) => eval(a, assignment) && eval(b, assignment),
+            Proposition::Or(a, b) => eval(a, assignment) || eval(b, assignment),
+            Proposition::Implies(a, b) => !eval(a, assignment) || eval(b, assignment),
+            _ => panic!("unexpected proposition"),
+        }
+    }
+    let (a, b, c) = (atom("0"), atom("1"), atom("2"));
+    let pieces = [
+        a.clone(),
+        not(a.clone()),
+        and(a.clone(), b.clone()),
+        or(a.clone(), b.clone()),
+        implies(a.clone(), b.clone()),
+    ];
+    for left in &pieces {
+        for right in &pieces {
+            for source in [
+                and(left.clone(), right.clone()),
+                or(left.clone(), right.clone()),
+                implies(left.clone(), right.clone()),
+                not(implies(left.clone(), right.clone())),
+                implies(and(left.clone(), b.clone()), c.clone()),
+            ] {
+                for mask in 0..27 {
+                    let mut encoded = mask;
+                    let mut premises = vec![source.clone()];
+                    for name in ["0", "1", "2"] {
+                        match encoded % 3 {
+                            1 => premises.push(atom(name)),
+                            2 => premises.push(not(atom(name))),
+                            _ => {}
+                        }
+                        encoded /= 3;
+                    }
+                    let mut index = Index::default();
+                    let mut pending = premises.clone();
+                    while let Some(fact) = pending.pop() {
+                        pending.extend(index.admit(fact));
+                    }
+                    for model in 0..8 {
+                        if premises.iter().all(|p| eval(p, model)) {
+                            assert!(
+                                index.known.iter().all(|p| eval(p, model)),
+                                "unsound consequence for {premises:?}, model {model}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn exact_propagation_publishes_whole_composite_conclusions() {
+    let (a, b, c) = (atom("a"), atom("b"), atom("c"));
+    for result in [or(b.clone(), c.clone()), implies(b.clone(), c.clone())] {
+        for source in [
+            implies(a.clone(), result.clone()),
+            or(not(a.clone()), result.clone()),
+        ] {
+            let ctx = context(vec![source, a.clone()]);
+            assert!(
+                ctx.contains_known(&result),
+                "lost whole conclusion: {result:?}"
+            );
+            assert!(!ctx.contains_known(&b));
+            assert!(!ctx.contains_known(&c));
+        }
+    }
+}
+
+#[test]
+fn exact_propagation_does_not_match_distinct_numeric_carriers() {
+    use crate::kernel::*;
+    let narrow = Proposition::Predicate {
+        name: "typed".into(),
+        arguments: vec![Term::ProgramValue(ProgramValue::Int32(
+            MachineTerm::constant(0),
+        ))],
+    };
+    let wide = Proposition::Predicate {
+        name: "typed".into(),
+        arguments: vec![Term::ProgramValue(ProgramValue::UInt64(
+            MachineTerm::uint64_constant(0),
+        ))],
+    };
+    let result = atom("result");
+    let rule = implies(narrow.clone(), result.clone());
+    assert!(!context(vec![rule.clone(), wide]).contains_known(&result));
+    assert!(context(vec![rule, narrow]).contains_known(&result));
+}
+
+#[test]
+fn exact_propagation_forks_with_pending_work_do_not_inherit_the_drain_guard() {
+    let (a, b, c) = (atom("a"), atom("b"), atom("c"));
+    let mut parent = context(vec![implies(a.clone(), b.clone())]);
+    // Model a context fork inside an admission helper while the outer queue
+    // is still being drained. The admitted fact is already in the fact store.
+    parent.exact_propagation.draining = true;
+    parent = parent.assume_proposition(a);
+    let child = parent.clone().assume_proposition(c);
+    assert!(child.contains_known(&b));
+    assert!(!parent.contains_known(&b));
+}
+
+#[test]
+fn exact_propagation_records_conflicts_without_contaminating_siblings() {
+    let a = atom("a");
+    let root = context(vec![a.clone()]);
+    let child = root.clone().assume_proposition(not(a));
+    assert!(child.is_inconsistent());
+    assert!(!root.is_inconsistent());
+    assert!(!root.restricted_to_facts(&[], &[]).is_inconsistent());
+}
+
+#[test]
+fn exact_propagation_does_not_use_equality_derived_guards() {
+    use crate::kernel::*;
+    let a = MachineTerm::Variable(Variable(782_000));
+    let b = MachineTerm::Variable(Variable(782_001));
+    let guard = ConditionTerm::equal(b.clone(), MachineTerm::constant(0));
+    let result = atom("result");
+    let ctx = PureFactContext::new()
+        .assume_condition(ConditionTerm::equal(a.clone(), b), true)
+        .assume_condition(ConditionTerm::equal(a, MachineTerm::constant(0)), true)
+        .assume_proposition(implies(
+            Proposition::ConditionIs(guard.clone(), true),
+            result.clone(),
+        ));
+    assert_eq!(ctx.decide(&guard), Some(true));
+    assert!(!ctx.contains_known(&result));
+    assert!(ctx.assume_condition(guard, true).contains_known(&result));
+}

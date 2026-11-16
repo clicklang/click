@@ -14704,6 +14704,8 @@ pub struct PureFactContext {
     /// each lowering path and planning probe, so an extension must copy
     /// only a search path, not the whole set.
     pub(super) prop_facts: super::fact_collections::FactSet<Proposition>,
+    /// Persistent exact Boolean propagation, maintained only at fact admission.
+    pub(super) exact_propagation: super::assumptions::exact_propagation::Index,
     pub(super) comparison_views: PersistentMap<
         super::assumptions::observation_comparisons::PropositionKey,
         crate::persistent::PersistentSet<Proposition>,

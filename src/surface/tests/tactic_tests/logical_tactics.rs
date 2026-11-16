@@ -369,7 +369,7 @@ fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_02")]
-fn known_computes_leaves_but_does_not_extract_implications() {
+fn known_computes_leaves_and_uses_exact_propagation() {
     let c_source = r#"
         int32 keep(int32 x, int32 y) {
             x = x;
@@ -400,8 +400,11 @@ fn known_computes_leaves_but_does_not_extract_implications() {
         "apply(x == 0 implies y == 0) using { x == 0; };",
         "known();",
     );
-    let error = verify_c_sources(&implicit_extract, &[("keep.c", c_source)])
-        .expect_err("known must not discharge an implication");
+    verify_c_sources(&implicit_extract, &[("keep.c", c_source)])
+        .expect("known sees the exactly propagated consequence");
+    let missing_guard = implicit_extract.replace("requires x == 0;", "");
+    let error = verify_c_sources(&missing_guard, &[("keep.c", c_source)])
+        .expect_err("propagation must not invent a missing guard");
     assert!(
         error
             .message()
@@ -3458,7 +3461,7 @@ test_batches! {
     ],
     logical_tactics_batch_02: [
         failed_fixed_state_normalize_does_not_dump_internal_memory,
-        known_computes_leaves_but_does_not_extract_implications,
+        known_computes_leaves_and_uses_exact_propagation,
         parses_local_have_proof_tactic,
         contract_lets_do_not_capture_later_quantifier_binders,
     ],

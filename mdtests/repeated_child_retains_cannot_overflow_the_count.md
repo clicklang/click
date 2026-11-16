@@ -70,5 +70,5 @@ void retain_many(struct child* obj) {
 ```
 
 ```expect
-fail: could not instantiate the checked returned resource bodies
+fail: precondition clause 1 of `child_retain`
 ```
