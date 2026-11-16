@@ -143,7 +143,18 @@ impl ContractExecutionOwner {
             .as_ref()
             .map(|progress| progress.finish_outcome(index, identity, claims, closing))
             .transpose()?;
+        self.execution.checked_resource_claims[index].clear();
+        self.execution.checked_returned_resources[index] = ResourceContext::new();
+        self.execution.checked_resource_transitions[index] = false;
         if let (Some(closing), Some(publication)) = (closing, publication) {
+            if let Some(claims) = claims {
+                let path = publication.path();
+                let (keys, returned) = claims.resource_projection(
+                    path.post_assumptions.as_ref().unwrap_or(&path.assumptions),
+                );
+                self.execution.checked_resource_claims[index] = keys;
+                self.execution.checked_returned_resources[index] = returned;
+            }
             let exit = closing.completed_exit(publication.path());
             self.execution.execution.paths[index] = publication.path().clone();
             self.execution.published_outcomes[index] = publication.clone();

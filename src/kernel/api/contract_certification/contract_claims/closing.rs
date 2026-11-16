@@ -467,10 +467,6 @@ impl ContractExitObligations {
         Ok(proved)
     }
 
-    pub(crate) fn completes_boundary(&self) -> bool {
-        self.context.complete_boundary
-    }
-
     /// The ordinary outcome operation has already closed every goal.
     pub(in crate::kernel) fn completed_exit(
         &self,

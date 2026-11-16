@@ -312,3 +312,47 @@ fn owned_outcome_completion_is_indexed_and_does_not_copy_sibling_facts() {
         }
     }
 }
+
+#[test]
+fn resource_projection_visits_selected_claims_not_the_ambient_fact_frame() {
+    for fact_count in [1usize, 16, 64, 256, 1024] {
+        let mut assumptions = crate::kernel::PureFactContext::new();
+        for index in 0..fact_count {
+            assumptions = assumptions.assume_proposition(Proposition::Predicate {
+                name: format!("frame{index}"),
+                arguments: vec![],
+            });
+        }
+        for claim_count in [1, 8, 64] {
+            let outcome = outcome();
+            let mut claims = OutcomeClaimGoals::open(
+                (0..claim_count).map(|index| {
+                    (
+                        FunctionContractClaimKey::Ensure(index),
+                        Some(Target::EnsureResource(index)),
+                    )
+                }),
+                false,
+            );
+            for index in 0..claim_count {
+                claims = claims
+                    .close(
+                        &FunctionContractClaimKey::Ensure(index),
+                        receipt(),
+                        &outcome.identity,
+                    )
+                    .unwrap();
+            }
+            let ((keys, resources), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    claims.resource_projection(&assumptions)
+                });
+            assert_eq!(keys.len(), claim_count);
+            assert!(resources.facts().is_empty());
+            assert!(
+                work <= 4 * claim_count + 8,
+                "{fact_count} frame facts, {claim_count} claims: {work}"
+            );
+        }
+    }
+}

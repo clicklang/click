@@ -9415,7 +9415,7 @@ int32 relay(int32 __click_exception, int32 value) throws int32 {
     .unwrap();
     verify_program_prepared_project(
         &parsed.with_entry_source(expanded),
-        &load_import(&project.config()).unwrap(),
+        load_import(&project.config()).unwrap(),
     )
     .unwrap();
     let (before, after) = source.rsplit_once("exception == 7").unwrap();
