@@ -265,3 +265,93 @@ fn mirrored_float_orders_do_not_complement_nan_comparisons() {
             .is_none()
     );
 }
+
+#[test]
+fn discovery_failures_explain_missing_listed_prerequisites() {
+    let source = format!(
+        "{SHIFT} {BOUND} theorem test(value: Integer) {{ requires 0 <= value; ensures 7 <= shifted(value) by {{ solve() using {{}}; }} }}"
+    );
+    let error = verify_click_theorems(&source).unwrap_err();
+    let report = error.report().to_string();
+    assert!(
+        report.contains("theorem discovery [MissingPrerequisite]"),
+        "{report}"
+    );
+    assert!(
+        report.contains("theorem `shifted_bound` needs listed prerequisite `0 <= value`"),
+        "{report}"
+    );
+    assert!(!report.contains("[NoMatch]"), "{report}");
+
+    let source = format!(
+        "verifying \"noop.c\"; {SHIFT} {BOUND} void noop(int32 x) {{ requires 0 <= to_integer(x); ensures 7 <= shifted(to_integer(x)); }} by {{ step_until(function.exit); solve() using {{}}; }}"
+    );
+    let report = verify_c_sources(&source, &[("noop.c", "void noop(int32 x) {}")])
+        .unwrap_err()
+        .report()
+        .to_string();
+    assert!(
+        report.contains("theorem discovery [MissingPrerequisite]"),
+        "{report}"
+    );
+    assert!(
+        report.contains("needs listed prerequisite `0 <= to_integer(x)`"),
+        "{report}"
+    );
+    assert!(!report.contains("[NoMatch]"), "{report}");
+}
+
+#[test]
+fn discovery_failures_identify_undetermined_arguments() {
+    let source = format!(
+        "{SHIFT} theorem hidden(x: Integer, witness: Integer) {{ requires 0 <= witness; requires x == witness; ensures 7 <= shifted(x) by {{ unfold(shifted(x)); solve(); }} }} theorem test(value: Integer) {{ requires 0 <= value; ensures 7 <= shifted(value) by {{ solve() using {{ 0 <= value; }}; }} }}"
+    );
+    let report = verify_click_theorems(&source)
+        .unwrap_err()
+        .report()
+        .to_string();
+    assert!(
+        report.contains("theorem discovery [UndeterminedArgument]"),
+        "{report}"
+    );
+    assert!(
+        report.contains("theorem `hidden`: argument `witness` cannot be inferred from the goal"),
+        "{report}"
+    );
+    assert!(report.contains("explicit apply(...) using"), "{report}");
+    assert!(!report.contains("[NoMatch]"), "{report}");
+}
+
+#[test]
+fn discovery_failures_report_structural_misses_without_claiming_nonexistence() {
+    // Both an empty bucket and a candidate whose constant does not match.
+    for library in ["", BOUND] {
+        let source = format!(
+            "{SHIFT} {library} theorem test(value: Integer) {{ requires 1 <= value; ensures 8 <= shifted(value) by {{ solve() using {{ 1 <= value; }}; }} }}"
+        );
+        let report = verify_click_theorems(&source)
+            .unwrap_err()
+            .report()
+            .to_string();
+        assert!(report.contains("theorem discovery [NoMatch]"), "{report}");
+        assert!(report.contains("supported structural fragment"), "{report}");
+        assert!(!report.contains("[MissingPrerequisite]"), "{report}");
+    }
+}
+
+#[test]
+fn matcher_reports_exhaustion_once_instead_of_a_structural_miss() {
+    let file = parser::parse("theorem law(x: Integer) { ensures x < 7; }").unwrap();
+    let theorem = &file.theorem_definitions()[0];
+    let Ensure::Proposition(goal) = theorem.ensures()[0].ensure() else {
+        panic!()
+    };
+    crate::instrumentation::with_run_work_limit(0, || {
+        let mut outcomes = theorem_conclusion_matches(theorem, 0, goal);
+        assert!(matches!(
+            outcomes.next(),
+            Some(TheoremConclusionMatch::Exhausted)
+        ));
+        assert!(outcomes.next().is_none());
+    });
+}
