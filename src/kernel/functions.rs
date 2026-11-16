@@ -23,6 +23,7 @@ mod construction_return;
 mod literal_objects;
 mod mixed_return_resources;
 mod produced_argument_supply;
+mod return_loan_backing;
 use mixed_return_resources::{
     ConstructedReturnBodies, ConsumedCellReturns, EvaluatedReturnResources, FreshAllocationReturn,
     ProducedBorrowingPiece, ProjectedReturnResource, ReturnOwnershipOrigin,
@@ -857,40 +858,17 @@ fn recover_candidate_stable_view_resources(
     let mut rebound_heads =
         BTreeMap::<ResourceOccurrenceId, (ResourceFact, LoanViewBinding)>::new();
     let mut escaped_occurrences = BTreeSet::new();
-    // A loan backs a piece when one of its permitted descriptions denotes
-    // the piece's resource under the certified output facts: the piece was
-    // evaluated at the post-state, where the composite's fields are fresh
-    // loads the ensures relate to the lent arguments.
-    let loan_backs_piece = |loan: LoanId, piece: &ResourceFact| {
-        plan.ledger
-            .permitted_descriptions(loan)
-            .iter()
-            .any(|permitted| {
-                permitted.is_view()
-                    && super::memory_provenance::resources_directly_match(
-                        permitted.resource(),
-                        piece.resource(),
-                        output_assumptions,
-                    )
-            })
-    };
+    let backing_sources =
+        return_loan_backing::ReturnLoanBackings::from_plan(plan, output_assumptions);
     for produced in &transfer.produced_borrowing_pieces {
         let head = &produced.support.head;
         let piece = &produced.piece;
-        let mut backing_loans = std::collections::BTreeSet::new();
-        let mut entering = None;
-        for stable_view in plan.stable_views() {
-            if loan_backs_piece(stable_view.loan, piece) {
-                backing_loans.insert(stable_view.loan);
-            }
-        }
-        for (_, binding) in &plan.transferred_holds {
-            if loan_backs_piece(binding.loan, piece) {
-                backing_loans.insert(binding.loan);
-                entering = Some(binding.clone());
-            }
-        }
-        match (backing_loans.len(), entering) {
+        let selected = backing_sources.select(head, piece, &plan.ledger, output_assumptions);
+        let (backing_count, entering, selected_loan) = match selected {
+            Ok(source) => (1, source.entering, Some(source.loan)),
+            Err(ambiguous) => (if ambiguous { 2 } else { 0 }, None, None),
+        };
+        match (backing_count, entering) {
             (0, _) => {
                 return Err(RuntimeError::FunctionContract(format!(
                     "produced borrowing composite `{}` packages a view `{}` that no viewed input of this call backs",
@@ -913,10 +891,7 @@ fn recover_candidate_stable_view_resources(
                     .or_insert_with(|| (head.clone(), binding));
             }
             (1, None) => {
-                let loan = backing_loans
-                    .into_iter()
-                    .next()
-                    .expect("one backing loan was counted");
+                let loan = selected_loan.expect("the producer selected one backing loan");
                 if escaped_occurrences.insert((loan, produced.support.occurrence)) {
                     escaping
                         .entry(loan)
@@ -15871,7 +15846,7 @@ fn construct_composite_resource_body(
         "composite expansion",
         "composite child composition",
         || {
-            if selected.is_some() && (!witnesses.is_empty() || definition.is_recursive()) {
+            if selected.is_some() {
                 ResourceContext::new_with_equalities(assumptions)
                     .try_compose_with_legacy_discovery_and_occurrences(child_facts, assumptions)
                     .map(|(context, _)| context.normalized_without_discovery(assumptions))

@@ -1650,8 +1650,16 @@ permitted stores or a transition that drops the fact:
   consuming one equal-looking owner cannot release another's hold. Repackaging
   a borrowing head retains its selected input hold by ID even when the returned
   head's name changes; further returned owners receive additional holds.
-  Loan backing
-  selection still uses the existing call-plan compatibility checks.
+  Return loan backing is selected once from an index of the call's emitted
+  loan frontiers and transferred hold bindings. Each nominee retains its loan
+  and backing occurrence; recovery uses that selection for the returned owner.
+  Canonical memory keys detect known alias ambiguity without a loan census.
+  Inherited loans maintain exact-resource and singleton-family permission
+  indexes at creation/projection; a selected return never scans their growing
+  projection histories. A failed nominee is final. Whole-range permissions
+  may back separate contained pieces, so keeping descriptions unmerged does
+  not drop their holds. Adapter lends retain the producer-selected support
+  occurrence rather than recovering an equal-looking head from the residual.
   Pointer-witness existential bodies may contain multiple witnesses and nested
   supported composite children, also under ordinary owned or viewed parents.
   The body producer retains the actual witness values keyed by the opened
@@ -1666,8 +1674,9 @@ permitted stores or a transition that drops the fact:
   normalization reads written endpoints/exact resource keys, selecting one
   neighbour per key without enumerating aliases or endpoint classes. A missed
   merge retains both facts. Internal composition still checks ownership using
-  the full assumptions through incremental admission. Ordinary body producers
-  retain their existing normalization. Guarded direct recursive bodies without
+  the full assumptions through incremental admission. Ordinary constructed
+  returns use the same bounded normalization: a merge requiring discovery is
+  skipped, preserving valid pieces and their recorded view occurrences. Guarded direct recursive bodies without
   named fields construct a finite frontier: open the selected
   body once and retain each recursive child with its emitted occurrence ID.
   Known deeper guards do not trigger further opening; an undecided root stays

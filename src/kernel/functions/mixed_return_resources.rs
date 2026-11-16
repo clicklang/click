@@ -778,13 +778,8 @@ impl ConstructedReturnBodies {
         )?;
         // Normalize descriptions only after the transfer producer has finished.
         // Source/parent identities remain the actual pre-normalization IDs.
-        let normalize = |context: ResourceContext| {
-            if witnesses.is_empty() && folded.is_empty() {
-                context.normalized(assumptions)
-            } else {
-                context.normalized_without_discovery(assumptions)
-            }
-        };
+        let normalize =
+            |context: ResourceContext| context.normalized_without_discovery(assumptions);
         let boundary = normalize(
             ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
                 transfers

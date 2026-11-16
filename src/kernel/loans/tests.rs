@@ -842,7 +842,7 @@ fn a_reborrow_of_a_memory_view_protects_exactly_the_viewed_bytes() {
         vec![viewed_piece.memory_range().unwrap().clone()],
         "the child protects the viewed range, not the parent's other pieces"
     );
-    assert_eq!(child_record.permitted, vec![viewed]);
+    assert_eq!(child_record.permitted, vec![viewed].into());
     for range in [
         viewed_piece.memory_range().unwrap(),
         other_piece.memory_range().unwrap(),

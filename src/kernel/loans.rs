@@ -11,10 +11,12 @@ mod exclusive_calls;
 mod local_references;
 pub(crate) mod mutex_calls;
 
+mod return_backing;
 use crate::kernel::{bits32_constant, constant_u32};
 use exclusive_calls::{ExclusiveCallBinding, ExclusiveCallId, ExclusiveCallRecord};
 use local_references::{LocalReferenceBinding, LocalReferenceRecord};
 pub(in crate::kernel) use local_references::{LocalReferenceId, LocalScalarReference};
+use return_backing::PermittedDescriptions;
 
 use super::functions::CheckedResourceFact;
 use super::primitives::{
@@ -691,15 +693,42 @@ fn protected_ranges_constant_overlap(query: &MemoryRange, protected: &MemoryRang
     Some(query_start < end && start < query_end)
 }
 
+/// Check the new relationship between one selected loan permission and one
+/// returned piece. A whole permitted memory view can back smaller pieces even
+/// when bounded normalization keeps their descriptions separate.
+pub(crate) fn returned_permission_covers(
+    permission: &ResourceFact,
+    required: &ResourceFact,
+    assumptions: &PureFactContext,
+) -> bool {
+    if !permission.is_view() || !required.is_view() {
+        return false;
+    }
+    if permission == required {
+        return true;
+    }
+    if permission.memory_range().is_some() && required.memory_range().is_some() {
+        return ResourceContext::new_with_equalities(assumptions)
+            .unchecked_with_fact(permission.clone())
+            .satisfies_fact(required, assumptions);
+    }
+    crate::kernel::memory_provenance::resources_directly_match(
+        permission.resource(),
+        required.resource(),
+        assumptions,
+    )
+}
+
 /// Whether an active loan protects memory: any byte-backed loan, and any
 /// loan of a composite head, whose body is memory whether or not the
 /// one-level frontier enumerated any of it. The fail-closed barriers
 /// (unknown loop write sets, branch joins) consult this count.
-fn loan_protects_memory(memory_backing: &[MemoryRange], permitted: &[ResourceFact]) -> bool {
+fn loan_protects_memory<'a>(
+    memory_backing: &[MemoryRange],
+    mut permitted: impl Iterator<Item = &'a ResourceFact>,
+) -> bool {
     !memory_backing.is_empty()
-        || permitted
-            .iter()
-            .any(|fact| matches!(fact.resource(), Resource::Composite { .. }))
+        || permitted.any(|fact| matches!(fact.resource(), Resource::Composite { .. }))
 }
 
 /// The authority a reborrow inherits from its parent loan. One description,
@@ -817,7 +846,7 @@ struct LoanRecord {
     /// Every checked viewed projection authorized by this loan.  A composite
     /// loan keeps its folded head plus all primitive body views here so a
     /// child binding cannot be minted from the head alone.
-    permitted: Vec<ResourceFact>,
+    permitted: PermittedDescriptions,
     origin: LoanOrigin,
     recovered: bool,
     /// Primitive body pieces whose memory remains protected while a
@@ -1755,12 +1784,6 @@ impl CompositeLoanBacking {
             adapted,
             restored,
         })
-    }
-
-    /// Whether this backing was checked to permit `description` beside its
-    /// own head.
-    pub(crate) fn adapts(&self, description: &ResourceFact) -> bool {
-        self.adapted.contains(description)
     }
 }
 
@@ -3139,16 +3162,24 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         LoanViewBinding,
         (ResourceOccurrenceId, Vec<(usize, CheckedResourceFact)>),
     >::new();
-    // The checked adapter entry that permits a viewed composite beside a
-    // different escrowed head (docs/internals/stable-views.md). Only a backing the caller
-    // built at the kernel's expansion boundary can answer here, and only for
-    // the exact description it was checked against, so this is one indexed
-    // lookup over this call's own backings rather than a search.
+    // Retain the actual backing support selected by the adapter producer.
+    // Ambiguous descriptions do not nominate an arbitrary occurrence.
+    let mut adapter_sources = BTreeMap::<ResourceFact, Option<ResourceOccurrenceId>>::new();
+    for (support, backing) in composite_backings {
+        for adapted in &backing.adapted {
+            adapter_sources
+                .entry(adapted.clone())
+                .and_modify(|source| {
+                    if *source != Some(*support) {
+                        *source = None;
+                    }
+                })
+                .or_insert(Some(*support));
+        }
+    }
     let adapter_support = |required: &ResourceFact| {
-        composite_backings
-            .iter()
-            .find(|(support, backing)| backing.support == **support && backing.adapts(required))
-            .map(|(support, backing)| (*support, backing.head.clone()))
+        let support = adapter_sources.get(required).copied().flatten()?;
+        Some((support, composite_backings.get(&support)?.head.clone()))
     };
     // Owner occurrences that must back a view whose byte bounds are not
     // concrete.  The concrete sweep below cannot order such a range, so the
@@ -3460,25 +3491,22 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 // The adapter's head is a different composite from the
                 // clause, so select it by the checked backing and then take
                 // the residual's own occurrence of that head.
-                let head = adapter_support(required)
-                    .map(|(_, head)| head)
-                    .unwrap_or_else(|| required.clone());
-                let (support, owned) = residual_for_selection
-                    .directly_supporting_owned_entry(&head, assumptions)
-                    .ok_or_else(|| StableViewPlanError::ConflictingRequirement(required.clone()))?;
-                if matches!(owned.resource(), Resource::Composite { .. })
-                    && residual_for_selection
-                        .owned_occurrences_for_fact(owned)
-                        .len()
-                        != 1
-                {
-                    return Err(StableViewPlanError::ConflictingRequirement(owned.clone()));
-                }
-                let Some(backing) = composite_backings.get(&support) else {
-                    return Err(StableViewPlanError::Loan(LoanRefusal::UnsupportedResource));
+                let (support, owned) = if let Some((support, _)) = adapter_support(required) {
+                    let owned = residual_for_selection
+                        .owned_fact_for_occurrence(support)
+                        .ok_or_else(|| {
+                            StableViewPlanError::ConflictingRequirement(required.clone())
+                        })?;
+                    (support, owned)
+                } else {
+                    residual_for_selection
+                        .directly_supporting_owned_entry(required, assumptions)
+                        .ok_or_else(|| {
+                            StableViewPlanError::ConflictingRequirement(required.clone())
+                        })?
                 };
-                if backing.support != support || backing.head != *owned {
-                    return Err(StableViewPlanError::InvalidResidual);
+                if !composite_backings.contains_key(&support) {
+                    return Err(StableViewPlanError::Loan(LoanRefusal::UnsupportedResource));
                 }
                 owned.clone()
             } else {
@@ -5336,8 +5364,25 @@ impl LoanLedger {
                         .get(&record.scope)
                         .is_some_and(|scope| scope.active)
             })
-            .map(|record| record.permitted.clone())
+            .map(|record| record.permitted.iter().cloned().collect())
             .unwrap_or_default()
+    }
+
+    /// Read one producer-indexed permission of the selected loan. A failed
+    /// nominee is final; neither permission buckets nor pointer aliases are searched.
+    pub(crate) fn selected_return_permission(
+        &self,
+        loan: LoanId,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceFact> {
+        let data = &self.storage.data;
+        let record = data.loans.get(&loan)?;
+        if record.recovered || !data.scopes.get(&record.scope)?.active {
+            return None;
+        }
+        let candidate = record.permitted.candidate(required)?;
+        returned_permission_covers(candidate, required, assumptions).then(|| candidate.clone())
     }
 
     /// The scope a live hold restricts, if the hold exists.
@@ -6199,7 +6244,8 @@ impl LoanLedger {
                             Vec::new()
                         } else {
                             vec![ResourceFact::View(escrow.resource().clone())]
-                        },
+                        }
+                        .into(),
                         origin: LoanOrigin::Escrowed(*lender),
                         recovered: false,
                         memory_backing: memory_backing.clone(),
@@ -6416,7 +6462,7 @@ impl LoanLedger {
                         assumed_mutex: Some(initialization.description(mutex)),
                         assumed_mutex_protected: protected.clone(),
                         escrow: None,
-                        permitted: Vec::new(),
+                        permitted: Vec::new().into(),
                         origin: LoanOrigin::BorrowedContractInput,
                         recovered: false,
                         memory_backing: Vec::new(),
@@ -6479,7 +6525,7 @@ impl LoanLedger {
                     .filter_map(ResourceFact::memory_range)
                     .cloned()
                     .collect::<Vec<_>>();
-                let protects_memory = loan_protects_memory(&memory_backing, &permitted);
+                let protects_memory = loan_protects_memory(&memory_backing, permitted.iter());
                 data.next_scope = data
                     .next_scope
                     .checked_add(1)
@@ -6514,7 +6560,7 @@ impl LoanLedger {
                         assumed_mutex_protected: None,
                         support: *support,
                         escrow: None,
-                        permitted,
+                        permitted: permitted.into(),
                         origin: local
                             .as_ref()
                             .map_or(LoanOrigin::BorrowedContractInput, |(lender, _)| {
@@ -6652,7 +6698,7 @@ impl LoanLedger {
                         assumed_mutex_protected: None,
                         support: parent.support,
                         escrow: None,
-                        permitted: permitted.clone(),
+                        permitted: permitted.clone().into(),
                         origin: LoanOrigin::Reborrowed,
                         recovered: false,
                         memory_backing: memory_backing.clone(),
@@ -6677,7 +6723,7 @@ impl LoanLedger {
                 // Counted by the same predicate `End` decrements with, over
                 // the narrowed authority this child actually holds, so a
                 // reborrow of a byte-less composite loan is conserved.
-                if loan_protects_memory(&memory_backing, &permitted) {
+                if loan_protects_memory(&memory_backing, permitted.iter()) {
                     data.active_memory_loans = data
                         .active_memory_loans
                         .checked_add(1)
@@ -6918,7 +6964,7 @@ impl LoanLedger {
                     for range in &record.memory_backing {
                         update_indexed_memory_range(&mut data, range, scope_record.loan, false)?;
                     }
-                    if loan_protects_memory(&record.memory_backing, &record.permitted) {
+                    if loan_protects_memory(&record.memory_backing, record.permitted.iter()) {
                         data.active_memory_loans = data
                             .active_memory_loans
                             .checked_sub(1)
@@ -7129,7 +7175,7 @@ impl LoanLedger {
                 data.scopes
                     .get(&loan.scope)
                     .is_some_and(|scope| scope.active)
-                    && loan_protects_memory(&loan.memory_backing, &loan.permitted)
+                    && loan_protects_memory(&loan.memory_backing, loan.permitted.iter())
             })
             .count();
         if data.active_memory_loans != expected_active_memory_loans {

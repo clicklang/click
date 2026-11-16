@@ -1869,3 +1869,58 @@ fn multiple_returned_witnesses_and_nested_children_scale_with_the_selected_body(
         }
     }
 }
+
+#[test]
+fn ordinary_return_construction_and_normalization_ignore_alias_history() {
+    for grow_body in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let p = Pointer::symbolic(Variable(8_914_000));
+            let mut facts = PureFactContext::new();
+            for index in 0..count {
+                facts = facts.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        p.clone(),
+                        Pointer::symbolic(Variable(8_914_100 + u64::from(index))),
+                    ),
+                    true,
+                );
+            }
+            let definition = super::tests::flat_body_definition(
+                "ordinary",
+                &p,
+                if grow_body { count } else { 2 },
+            );
+            let outputs = EvaluatedReturnResources::new(&facts)
+                .admit(
+                    ResourceFact::own_composite("ordinary".into(), vec![]),
+                    ReturnOwnershipOrigin::Description,
+                    &facts,
+                )
+                .unwrap();
+            let state = ExecutionState::new();
+            let (bodies, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "ordinary returned body producer",
+                );
+                ConstructedReturnBodies::construct(&outputs, &[definition], &state, &facts)
+            });
+            let body = bodies.get(outputs.occurrences[0].source).unwrap();
+            assert_eq!(body.viewed_children.len(), 1);
+            assert_eq!(
+                body.transfers.len(),
+                if grow_body { count as usize + 1 } else { 3 }
+            );
+            samples.push(work);
+        }
+        if grow_body {
+            assert!(samples[2] <= samples[0] * 24 + 128, "{samples:?}");
+        } else {
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 64),
+                "{samples:?}"
+            );
+        }
+    }
+}
