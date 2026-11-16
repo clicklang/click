@@ -1659,10 +1659,11 @@ retirement. This includes a `for` initializer's scope. The saved loop-exit
 state still names its final index for proof provenance; the subsequent
 execution state has retired its storage.
 
-A lowered `ForStep` ends the body locals before evaluating the update clause,
-including on `continue`. A normal fallthrough update keeps its normal outcome;
-a continue update resumes the loop head. Nested loops keep their own control
-edges. A non-inline function also retires its body locals before postconditions
+A loop owns one shared update and, for an effectful condition, one shared test
+region. Body locals end before fallthrough or `continue` reaches the update or
+post-test. A continuing update resumes the loop head; a false post-test exits
+without a back edge. Nested loops keep their own control edges. A non-inline
+function also retires its body locals before postconditions
 are read, so exporting an address through a field or output parameter does not
 extend its lifetime. Address-backed scalar parameters expire too. Aggregate
 parameter storage expires before postconditions and returned resources are read.

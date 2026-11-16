@@ -442,10 +442,10 @@ are owed only when that continuation actually reaches the back edge; a false
 post-test exits the loop instead. The update and test each have one source
 region, including when a continue comes from inside a switch.
 
-A `continue` reaches the back edge through that continuation. Everything the body's end owes is
-owed there: the loop's binders are bound again on the state the `continue`
-reached, the invariants are closed there by `solve()` once the `continue` is
-stepped, and a declared measure must have descended there.
+A `continue` reaches the back edge through that continuation. Everything the
+body's end owes is owed there: the loop's binders are bound again on the state
+after the continuation, the invariants are closed there by `solve()`, and a
+declared measure must have descended there.
 
 <!-- verified-example: mdtests/loop_body_continue_back_edge.md -->
 ```click

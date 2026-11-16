@@ -6173,8 +6173,9 @@ pub(crate) struct ProofExecutionContinuation {
     pub(crate) remaining: Option<Arc<ProgramStatement>>,
     pub(crate) next_statement_index: usize,
     /// The source statement index immediately after the loop. A `break`
-    /// consumes the loop continuation and resumes here; `continue` resumes
-    /// at `next_statement_index`, the loop head itself.
+    /// consumes the loop continuation and resumes here; `continue` first
+    /// enters `continue_region`, if present, then resumes at the loop head's
+    /// `next_statement_index`.
     pub(crate) loop_exit_statement_index: usize,
     /// The exceptional successor of an entered `try` body. On a `Throw`
     /// outcome while this continuation is on top, the path abandons its

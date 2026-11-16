@@ -18,7 +18,7 @@ before or after the body. A pure condition stays directly on the loop.
 execution; `program_loop_continuation` selects the update and post-test owed
 by a continuing edge. Normal body completion and `continue` leave the body
 scopes before entering that continuation. A `break` or function exit skips it.
-The evaluator and proof frontier follow the same regions; invariant and ranking
+The evaluator and execution frontier follow the same regions; invariant and ranking
 obligations close only after the continuation reaches the backedge. A false
 post-test instead supplies a loop exit with its own state and facts.
 
