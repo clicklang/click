@@ -68,5 +68,5 @@ int f() {
 ```
 
 ```expect
-fail: a 1-byte load at `((char *)"pointer_byte_read.c"::f.local(2))[8]` did not fit the cell's value
+fail: a 1-byte load at `((char *)buf)[8]` did not fit the cell's value
 ```
