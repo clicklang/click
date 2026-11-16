@@ -197,31 +197,4 @@ impl AlgebraicFieldResult {
             _ => None,
         }
     }
-    pub(super) fn bind(
-        &self,
-        name: &str,
-        state: &mut ExecutionState,
-        algebraic: &mut BTreeMap<String, AlgebraicTerm>,
-        values: &mut crate::persistent::PersistentMap<String, KernelTerm>,
-    ) {
-        match self {
-            Self::Shared(root) if matches!(root.node(), KernelTermNode::Legacy(_)) => self
-                .clone()
-                .into_native_result()
-                .bind(name, state, algebraic, values),
-            Self::Shared(root) if root.ty() != &KernelType::Integer => {
-                values.insert(name.to_owned(), root.clone());
-            }
-            Self::Shared(_) | Self::Native(AlgebraicValue::Integer(_)) => {}
-            Self::Native(AlgebraicValue::Program(value)) => {
-                state.locals.set(name.to_owned(), value.clone());
-            }
-            Self::Native(AlgebraicValue::Algebraic(value)) => {
-                algebraic.insert(name.to_owned(), value.clone());
-            }
-        }
-    }
-    fn into_native_result(self) -> Self {
-        Self::Native(self.into_native())
-    }
 }

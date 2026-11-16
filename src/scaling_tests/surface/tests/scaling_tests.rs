@@ -313,7 +313,7 @@ fn expanded_loop_claims_preserve_the_audit_work_bound() {
     for (fixture, claim) in [
         ("c_decreases_recursive_in_loop", "recursive_loop.contract"),
         ("later_loop_preserve", "later_loop_preserve.contract"),
-        ("loop_exit_state", "count_from_to.contract"),
+        ("loop_exit_program_point", "count_from_to.contract"),
         ("nested_loop_preserve", "nested_loop_preserve.contract"),
     ] {
         let path =
