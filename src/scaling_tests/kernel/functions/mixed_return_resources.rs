@@ -1100,7 +1100,7 @@ fn selected_view_child_expansion_ignores_equal_head_occurrences_and_bindings() {
                     &context,
                     &head,
                     &definitions,
-                    &memory,
+                    &crate::kernel::ProgramPoint::of_memory(&memory),
                     &facts,
                     Some(selected),
                 )

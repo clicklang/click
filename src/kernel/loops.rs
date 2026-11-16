@@ -6622,7 +6622,7 @@ fn with_owner_read_authority_rederived(
                     .unchecked_with_fact(owner.clone()),
                 owner,
                 definitions,
-                head.memory(),
+                &head.program_point(),
                 assumptions,
             )
             .map(|(_, children, _)| {
