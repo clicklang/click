@@ -607,6 +607,22 @@ captured at body opening, so a missing execution trace does not cause a later
 source-body walk.
 
 
+Ordinary program opening declares a body cell for every selected contract,
+including startup, source-only and diverging contracts. Only the captured native
+body producer retires that cell. A body whose entry was never opened remains
+pending; neither a recursive hypothesis nor a reused rule can substitute for it.
+Selected-function runs retain their explicit assumptions for unselected functions.
+
+Modeled pthread creation has an auxiliary termination bootstrap before body
+execution. It uses typed native inputs for bodies already completed and explicit
+independent inputs for other code. Its termination rules cannot retire body cells
+or seal the program. This preserves nested thread creation without treating an
+auxiliary termination proof as a completed ordinary contract. Synthetic one-call
+theorem proofs likewise use fresh entry sessions without a program owner; their
+extracted rules cannot close the enclosing program's body cells. Build-time guards
+keep Source and ordinary program orchestration off the standalone termination API
+and confine legacy loop preparation to the explicit input adapter.
+
 Concrete loop-exit coverage is fixed in the ordinary body's source namespace
 at opening. Loop/body source mismatch is refused before proof execution.
 Successful `ApplyVerifiedRules` execution publishes coverage for loops it ran

@@ -289,6 +289,7 @@ mod tests {
             &BTreeSet::new(),
             &[&function],
             &[expression_plan("f")],
+            BTreeSet::from(["f".into()]),
         );
         assert!(
             matches!(result, Err(error) if error.message.contains("carries no declared measure"))
