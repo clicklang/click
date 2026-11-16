@@ -5,6 +5,9 @@ imported from a contract can be a subrange of the caller's memory, so nothing
 separates the released allocation from the array. The fact must not carry
 across it.
 
+This checks a nonempty fold: an empty fold can be freshly proved after a
+release without carrying any old memory contents.
+
 ```c filename=array_fact_does_not_survive_freeing_the_array.c
 int32 discard(int32 a[], int32 n) {
     free(a);
@@ -26,6 +29,7 @@ function icount(p: int32[], lo: int32, hi: int32) -> Integer {
 }
 
 int32 discard(int32 a[], int32 n) {
+    requires a[0] == 5;
     requires 1 <= n;
     requires n <= 536870911;
     consumes allocated_int32s(a, n);
@@ -36,8 +40,13 @@ int32 discard(int32 a[], int32 n) {
         peel(icount(a, 0, 0)) using { 0 <= 0; };
         normalize();
     }
+    have to_integer(a[0]) == 5 by { solve() using { a[0] == 5; }; }
+    have icount(a, 0, 1) == 5 by {
+        peel(icount(a, 0, 1)) using { 0 <= 0; 0 < 2147483647; };
+        solve() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; };
+    }
     step_until(function.exit);
-    have icount(a, 0, 0) == 0;
+    have icount(a, 0, 1) == 5;
     solve();
 }
 ```

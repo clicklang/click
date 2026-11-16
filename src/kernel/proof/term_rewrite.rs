@@ -2346,15 +2346,10 @@ impl<'a> TermRewrite<'a> {
             self.changed |= rewritten != variable;
             return Some(rewritten);
         }
-        // A pointer equality can expose another cell. Its observed state,
-        // rather than a projected identity for the original cell, is the same
-        // source used by native pointer rewriting. Fold substitution keeps its
-        // existing defining-state semantics.
-        let origin = (self.pointer_variable.is_some()
-            || self.pointer_exact.is_some()
-            || self.pointer_offset_exact.is_some())
-        .then(|| crate::kernel::registered_load_origin_for_variable(&variable))
-        .flatten();
+        // Substitution can expose another cell even when it changes only
+        // a fold's bound index. Its producer state, rather than the old
+        // address's projected value state, owns that new read.
+        let origin = crate::kernel::registered_load_origin_for_variable(&variable);
         let Some((memory, pointer)) =
             origin.or_else(|| crate::kernel::eval::registered_load_for_variable(&variable))
         else {
@@ -6489,13 +6484,10 @@ impl<'a> TermRewrite<'a> {
                 if rewritten == **pointer {
                     return v.clone();
                 }
-                // Pointer substitution uses the producer's live memory, which
-                // may retain cells absent from the read's projected state.
-                // Binder substitution continues to use the exact stored state.
-                let use_origin = self.resolve_registered_loads
-                    && (self.pointer_variable.is_some()
-                        || self.pointer_exact.is_some()
-                        || self.pointer_offset_exact.is_some());
+                // A changed bound index, like a changed pointer, must read
+                // its new cell in the producer state. A projected version
+                // only describes the original address.
+                let use_origin = self.resolve_registered_loads;
                 let observation =
                     crate::kernel::eval::scalar_read_observation(MachineOperandView::Legacy(v));
                 let bytes = observation
@@ -6543,6 +6535,21 @@ impl<'a> TermRewrite<'a> {
                     self.changed = true;
                     return value;
                 }
+                // Re-project the producer at the new address, retaining its
+                // effect markers. A version selection for the symbolic
+                // intermediate address can forget an effect before a later
+                // substitution finishes instantiating that address.
+                let memory = if use_origin
+                    && self.pointer_variable.is_none()
+                    && self.pointer_exact.is_none()
+                    && self.pointer_offset_exact.is_none()
+                {
+                    crate::kernel::memory_provenance::canonical_projected_load_memory(
+                        &memory, &rewritten,
+                    )
+                } else {
+                    memory
+                };
                 crate::kernel::eval::scalar_read_for_exact_cell(&memory, &rewritten, *kind, bytes)
             }
             MachineTerm::PointerAddress(pointer, class) => {

@@ -7751,6 +7751,32 @@ pub fn substitute_integer_term_in_proposition(
     changed.then_some(rewritten)
 }
 
+/// The append law's predecessor-range guard, constructed without touching
+/// its body. Ordinary unfold can select a written guard before instantiating
+/// that law; all of its guards still become ordinary checked obligations.
+pub(crate) fn integer_range_fold_predecessor_guard(
+    index: &IntegerRangeFoldIndex,
+) -> Option<ConditionTerm> {
+    let (prior, _) = integer_range_fold_predecessor_index(index)?;
+    Some(match prior {
+        IntegerRangeFoldIndex::Int32 { start, end } => fold_endpoint_order(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            &start,
+            &end,
+        ),
+        IntegerRangeFoldIndex::UInt64 { start, end } => fold_endpoint_order(
+            MachineIntegerType::UInt64,
+            CompareRelation::LessEqual,
+            &start,
+            &end,
+        ),
+        IntegerRangeFoldIndex::Integer { start, end } => {
+            ConditionTerm::integer_less_equal(start.as_ref().clone(), end.as_ref().clone())
+        }
+    })
+}
+
 /// The opaque application `f(args)` with the int32 or uint64 argument at `position`
 /// replaced by its predecessor, or an already specialized fold with its end
 /// replaced by its predecessor, for restating a range fold one endpoint

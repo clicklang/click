@@ -1512,12 +1512,26 @@ impl<'a> Proof<'a> {
         } else {
             None
         };
-        if let Some(derived) = fold_equation {
+        if let Some((derived, predecessor_equation)) = fold_equation {
             let mut facts = self.facts().clone();
-            let added = (!facts.contains_top_level(&derived))
-                .then(|| derived.clone())
-                .into_iter()
-                .collect::<Vec<_>>();
+            let mut added = Vec::new();
+            if premises.is_none() {
+                // The fold law consumes these checked definition instances.
+                // Keep them available too, so equivalent functions retain
+                // their common body rather than becoming unrelated opaque
+                // predecessor calls after unfolding.
+                for definition_equation in
+                    std::iter::once(equality.clone()).chain(predecessor_equation)
+                {
+                    if !facts.contains_top_level(&definition_equation) {
+                        added.push(definition_equation.clone());
+                    }
+                    facts = facts.with_kernel_checked_fact(definition_equation);
+                }
+            }
+            if !facts.contains_top_level(&derived) {
+                added.push(derived.clone());
+            }
             facts = facts.with_kernel_checked_fact(derived.clone());
             let branch = match self.focused_obligation() {
                 Some(Obligation::Proposition(goal)) => {
@@ -1811,7 +1825,7 @@ impl<'a> Proof<'a> {
         fixed_state: FixedStateFrame<'_>,
         spec_definitions: SpecDefinitions<'_>,
         parameter_pointer_element_widths: &BTreeMap<String, u32>,
-    ) -> Result<Option<Proposition>, ClickError> {
+    ) -> Result<Option<(Proposition, Option<Proposition>)>, ClickError> {
         let name = &application.name;
         let lower =
             |proposition: &ClickProposition, what: &str| -> Result<Proposition, ClickError> {
@@ -1869,7 +1883,7 @@ impl<'a> Proof<'a> {
             // are constants, so the fold is its initial value or one step.
             // The defining equation is then the law itself, with no guard
             // left to discharge.
-            return Ok(Some(equality.clone()));
+            return Ok(Some((equality.clone(), None)));
         };
 
         let empty = crate::kernel::prove_integer_range_fold_over_equal_terms(
@@ -1900,7 +1914,19 @@ impl<'a> Proof<'a> {
             };
             match self.facts().assumptions().decide(condition) {
                 Some(value) => Some(value == *expected),
-                None => return Ok(None),
+                None => {
+                    // A written predecessor guard also selects the append
+                    // case. Inspect only that guard, without instantiating
+                    // a body whose range case is still unknown.
+                    let guard = crate::kernel::integer_range_fold_predecessor_guard(index)
+                        .map(|condition| Proposition::ConditionIs(condition, true));
+                    if !guard.as_ref().is_some_and(|guard| {
+                        self.facts().listed_premise_available(guard, &[], false)
+                    }) {
+                        return Ok(None);
+                    }
+                    Some(false)
+                }
             }
         } else {
             None
@@ -1916,7 +1942,7 @@ impl<'a> Proof<'a> {
                     self.require_function_fold_guard(premise)?;
                 }
             }
-            return Ok(Some(conclusion.as_ref().clone()));
+            return Ok(Some((conclusion.as_ref().clone(), None)));
         }
         let mut empty_missing = Vec::new();
         if premises.is_some() && discharge_restated_fold_law(&empty, &available, &mut empty_missing)
@@ -1926,11 +1952,11 @@ impl<'a> Proof<'a> {
                     self.step_error("the Integer fold law did not produce a guarded theorem")
                 );
             };
-            return Ok(Some(conclusion.as_ref().clone()));
+            return Ok(Some((conclusion.as_ref().clone(), None)));
         }
 
         if premises.is_none() {
-            // Folds that capture their end, or do not have a machine endpoint
+            // Folds that capture their end, or do not have an endpoint
             // parameter, still admit their ordinary defining equation. Check
             // this source shape explicitly; do not hide a failed kernel law.
             let fold_body = definition
@@ -1951,10 +1977,9 @@ impl<'a> Proof<'a> {
             let Some(end_parameter) = fold_end_parameter_name(end) else {
                 return Ok(None);
             };
-            if matches!(index, crate::kernel::IntegerRangeFoldIndex::Integer { .. })
-                || [start.as_ref(), initial.as_ref(), body.as_ref()]
-                    .into_iter()
-                    .any(|part| contract_expression_reads_binding(part, end_parameter))
+            if [start.as_ref(), initial.as_ref(), body.as_ref()]
+                .into_iter()
+                .any(|part| contract_expression_reads_binding(part, end_parameter))
             {
                 return Ok(None);
             }
@@ -1985,7 +2010,7 @@ impl<'a> Proof<'a> {
         // predecessor application, and publish it beside the conclusion.
         let mut required = Vec::new();
         collect_conjunctive_premises(append_guard, &mut required);
-        let mut predecessor_equality = false;
+        let mut predecessor_equality = None;
         let mut append_missing = Vec::new();
         for premise in required {
             if premise == equality {
@@ -1996,7 +2021,7 @@ impl<'a> Proof<'a> {
                 && left.as_ref() == &prior
                 && matches!(right.as_ref(), IntegerTerm::RangeFold { .. })
             {
-                predecessor_equality = true;
+                predecessor_equality = Some(premise.clone());
                 continue;
             }
             if premises.is_none() {
@@ -2018,12 +2043,15 @@ impl<'a> Proof<'a> {
                 describe_missing_fold_guards(&append_missing, &mut labels)
             )));
         }
-        if !predecessor_equality {
+        if predecessor_equality.is_none() {
             return Err(self.step_error(format!(
                 "the Integer fold append law over `{name}` did not state its predecessor endpoint"
             )));
         }
-        Ok(Some(append_conclusion.as_ref().clone()))
+        Ok(Some((
+            append_conclusion.as_ref().clone(),
+            predecessor_equality,
+        )))
     }
 
     /// One explicit law guard, checked from its exact fact key or emitted
