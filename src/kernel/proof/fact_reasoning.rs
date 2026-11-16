@@ -924,7 +924,66 @@ pub(crate) fn condition_polarity_forms(proposition: &Proposition) -> Vec<Proposi
 /// other spelling) probe an exact index for these; the planners and
 /// availability paths keep [`condition_polarity_forms`].
 pub(crate) fn order_claim_forms(proposition: &Proposition) -> Vec<Proposition> {
-    polarity_forms_by(proposition, canonical_order_claim)
+    let mut forms = polarity_forms_by(proposition, canonical_order_claim);
+    if let Some((wide, operator, left, right, value)) = float_comparison_parts(proposition) {
+        crate::instrumentation::record_deterministic_work(1);
+        let comparison = FloatCondition::Comparison {
+            operator: mirrored_float_operator(operator),
+            left: Box::new(right.clone()),
+            right: Box::new(left.clone()),
+        };
+        let condition = if wide {
+            ConditionTerm::Float64(comparison)
+        } else {
+            ConditionTerm::Float32(comparison)
+        };
+        forms.push(Proposition::ConditionIs(condition.clone(), value));
+        forms.push(Proposition::Not(Box::new(Proposition::ConditionIs(
+            condition, !value,
+        ))));
+    }
+    forms
+}
+
+/// Float orders have mirrored spellings, but NaNs forbid complementing an
+/// order when its truth polarity changes. Keep width and polarity exact.
+fn float_comparison_parts(
+    mut proposition: &Proposition,
+) -> Option<(bool, ComparisonOperator, &MachineTerm, &MachineTerm, bool)> {
+    let mut negated = false;
+    while let Proposition::Not(body) = proposition {
+        proposition = body;
+        negated = !negated;
+    }
+    let Proposition::ConditionIs(condition, value) = proposition else {
+        return None;
+    };
+    let (wide, comparison) = match condition {
+        ConditionTerm::Float32(comparison) => (false, comparison),
+        ConditionTerm::Float64(comparison) => (true, comparison),
+        _ => return None,
+    };
+    let FloatCondition::Comparison {
+        operator,
+        left,
+        right,
+    } = comparison
+    else {
+        return None;
+    };
+    Some((wide, *operator, left, right, *value ^ negated))
+}
+
+fn mirrored_float_operator(operator: ComparisonOperator) -> ComparisonOperator {
+    use ComparisonOperator::*;
+    match operator {
+        Equal => Equal,
+        NotEqual => NotEqual,
+        LessThan => GreaterThan,
+        LessEqual => GreaterEqual,
+        GreaterThan => LessThan,
+        GreaterEqual => LessEqual,
+    }
 }
 
 fn polarity_forms_by(
@@ -1272,7 +1331,15 @@ pub(crate) fn condition_polarity_equivalent(left: &Proposition, right: &Proposit
 /// lowers to: 32-bit and 64-bit machine orders and the `Integer` order. Each
 /// side is normalized once and the results compared; nothing is searched.
 pub(crate) fn order_claim_equivalent(left: &Proposition, right: &Proposition) -> bool {
-    polarity_equivalent_by(left, right, canonical_order_claim)
+    if polarity_equivalent_by(left, right, canonical_order_claim) {
+        return true;
+    }
+    match (float_comparison_parts(left), float_comparison_parts(right)) {
+        (Some((lw, lo, ll, lr, lv)), Some((rw, ro, rl, rr, rv))) => {
+            lw == rw && lv == rv && mirrored_float_operator(lo) == ro && ll == rr && lr == rl
+        }
+        _ => false,
+    }
 }
 
 fn polarity_equivalent_by(
@@ -2738,6 +2805,7 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/fact_reasoning/tests.rs");
+        include!("../../scaling_tests/kernel/proof/fact_reasoning/float_comparison_spellings.rs");
     }
 }
 

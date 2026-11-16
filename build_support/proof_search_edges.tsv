@@ -672,4 +672,4 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomi
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_recorded_footprint_preservation	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_recorded_footprint_preservation	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure	try_single_theorem_using	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_single_theorem_using	driver	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_single_theorem_using	driver	2

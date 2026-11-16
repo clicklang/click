@@ -57,6 +57,31 @@ fn expression_head(expression: &ContractExpression) -> ExpressionHead {
     })
 }
 
+/// Operand reversal preserves float comparisons too, including NaNs. Do not
+/// turn negated orders into complementary relations here.
+fn comparison_view<'a>(
+    left: &'a ContractExpression,
+    operator: ComparisonOperator,
+    right: &'a ContractExpression,
+) -> (
+    ComparisonOperator,
+    &'a ContractExpression,
+    &'a ContractExpression,
+) {
+    match operator {
+        ComparisonOperator::GreaterThan => (ComparisonOperator::LessThan, right, left),
+        ComparisonOperator::GreaterEqual => (ComparisonOperator::LessEqual, right, left),
+        _ => (operator, left, right),
+    }
+}
+
+fn symmetric_comparison(operator: ComparisonOperator) -> bool {
+    matches!(
+        operator,
+        ComparisonOperator::Equal | ComparisonOperator::NotEqual
+    )
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum ConclusionHead {
     Comparison(u8, Option<ExpressionHead>, Option<ExpressionHead>),
@@ -82,7 +107,10 @@ fn conclusion_head(
             left,
             operator,
             right,
-        } => ConclusionHead::Comparison(*operator as u8, head(left), head(right)),
+        } => {
+            let (operator, left, right) = comparison_view(left, *operator, right);
+            ConclusionHead::Comparison(operator as u8, head(left), head(right))
+        }
         ClickProposition::PredicateCall { name, .. } => ConclusionHead::Predicate(name.clone()),
         ClickProposition::Defined { expression } => ConclusionHead::Defined(head(expression)),
         ClickProposition::Value(expression) => ConclusionHead::Value(head(expression)),
@@ -148,18 +176,36 @@ impl TheoremConclusionIndex {
         end: usize,
     ) -> impl Iterator<Item = &'a TheoremCandidate> {
         let mut keys = Vec::new();
-        if let Some(key) = conclusion_head(goal, &BTreeSet::new()) {
-            match &key {
-                ConclusionHead::Comparison(operator, left, right) => {
-                    keys.push(ConclusionHead::Comparison(*operator, None, right.clone()));
-                    keys.push(ConclusionHead::Comparison(*operator, left.clone(), None));
-                    keys.push(ConclusionHead::Comparison(*operator, None, None));
-                }
-                ConclusionHead::Defined(_) => keys.push(ConclusionHead::Defined(None)),
-                ConclusionHead::Value(_) => keys.push(ConclusionHead::Value(None)),
-                _ => {}
+        let mut add = |key| {
+            if !keys.contains(&key) {
+                keys.push(key);
             }
-            keys.insert(0, key);
+        };
+        if let Some(key) = conclusion_head(goal, &BTreeSet::new()) {
+            let mut heads = vec![key];
+            if let ConclusionHead::Comparison(operator, left, right) = &heads[0]
+                && (*operator == ComparisonOperator::Equal as u8
+                    || *operator == ComparisonOperator::NotEqual as u8)
+            {
+                heads.push(ConclusionHead::Comparison(
+                    *operator,
+                    right.clone(),
+                    left.clone(),
+                ));
+            }
+            for key in heads {
+                add(key.clone());
+                match key {
+                    ConclusionHead::Comparison(operator, left, right) => {
+                        add(ConclusionHead::Comparison(operator, None, right));
+                        add(ConclusionHead::Comparison(operator, left, None));
+                        add(ConclusionHead::Comparison(operator, None, None));
+                    }
+                    ConclusionHead::Defined(_) => add(ConclusionHead::Defined(None)),
+                    ConclusionHead::Value(_) => add(ConclusionHead::Value(None)),
+                    _ => {}
+                }
+            }
         }
         let buckets = keys
             .into_iter()
@@ -180,185 +226,237 @@ impl TheoremConclusionIndex {
     }
 }
 
-/// Binder-free structural matching. Repeated parameters must have the same
-/// source argument; arbitrary equivalence and argument synthesis are deferred.
-pub(in crate::surface) fn match_theorem_conclusion(
-    theorem: &TheoremDefinition,
+/// Lazy structural matches, including both orientations of symmetric
+/// comparisons. Keep alternatives so later occurrences and listed theorem
+/// prerequisites can disambiguate the argument assignment.
+pub(in crate::surface) fn match_theorem_conclusion<'a>(
+    theorem: &'a TheoremDefinition,
     ensure: usize,
-    goal: &ClickProposition,
-) -> Option<TheoremApplication> {
+    goal: &'a ClickProposition,
+) -> impl Iterator<Item = TheoremApplication> + 'a {
     use ClickProposition as P;
     use ContractExpression as E;
+    #[derive(Clone, Copy)]
     enum Pair<'a> {
         Expression(&'a E, &'a E),
         Proposition(&'a P, &'a P),
     }
-    let Ensure::Proposition(conclusion) = theorem.ensures().get(ensure)?.ensure() else {
-        return None;
-    };
+    let conclusion = theorem
+        .ensures()
+        .get(ensure)
+        .and_then(|clause| match clause.ensure() {
+            Ensure::Proposition(conclusion) => Some(conclusion),
+            _ => None,
+        });
     let parameters = theorem
         .parameters()
         .iter()
         .map(FunctionParameter::name)
         .collect::<BTreeSet<_>>();
-    let mut arguments = BTreeMap::<&str, ContractExpression>::new();
-    let mut pending = vec![Pair::Proposition(conclusion, goal)];
-    while let Some(pair) = pending.pop() {
-        if crate::instrumentation::deadline_exceeded_with_work(1) {
-            return None;
-        }
-        match pair {
-            Pair::Proposition(pattern, actual) => match (pattern, actual) {
-                (
-                    P::Comparison {
-                        left: pl,
-                        operator: po,
-                        right: pr,
-                    },
-                    P::Comparison {
-                        left: al,
-                        operator: ao,
-                        right: ar,
-                    },
-                ) if po == ao => {
-                    pending.extend([Pair::Expression(pl, al), Pair::Expression(pr, ar)]);
+    let mut alternatives = conclusion
+        .into_iter()
+        .map(|conclusion| {
+            (
+                BTreeMap::<&str, &ContractExpression>::new(),
+                vec![Pair::Proposition(conclusion, goal)],
+            )
+        })
+        .collect::<Vec<_>>();
+    std::iter::from_fn(move || {
+        'alternative: while let Some((mut arguments, mut pending)) = alternatives.pop() {
+            while let Some(pair) = pending.pop() {
+                if crate::instrumentation::deadline_exceeded_with_work(1) {
+                    alternatives.clear();
+                    return None;
                 }
-                (
-                    P::PredicateCall {
-                        name: pn,
-                        arguments: pa,
-                    },
-                    P::PredicateCall {
-                        name: an,
-                        arguments: aa,
-                    },
-                ) if pn == an && pa.len() == aa.len() => {
-                    pending.extend(pa.iter().zip(aa).map(|(p, a)| Pair::Expression(p, a)));
-                }
-                (P::Defined { expression: p }, P::Defined { expression: a })
-                | (P::Value(p), P::Value(a)) => pending.push(Pair::Expression(p, a)),
-                (P::And(pl, pr), P::And(al, ar))
-                | (P::Or(pl, pr), P::Or(al, ar))
-                | (P::Implies(pl, pr), P::Implies(al, ar)) => {
-                    pending.extend([Pair::Proposition(pl, al), Pair::Proposition(pr, ar)]);
-                }
-                (P::Not(p), P::Not(a)) => pending.push(Pair::Proposition(p, a)),
-                _ if pattern == actual => {}
-                _ => return None,
-            },
-            Pair::Expression(pattern, actual) => {
-                if let Some(name) = parameter_name(pattern).filter(|name| parameters.contains(name))
-                {
-                    if let Some(prior) = arguments.get(name) {
-                        if prior != actual {
-                            return None;
+                match pair {
+                    Pair::Proposition(pattern, actual) => match (pattern, actual) {
+                        (
+                            P::Comparison {
+                                left: pl,
+                                operator: po,
+                                right: pr,
+                            },
+                            P::Comparison {
+                                left: al,
+                                operator: ao,
+                                right: ar,
+                            },
+                        ) => {
+                            let (po, pl, pr) = comparison_view(pl, *po, pr);
+                            let (ao, al, ar) = comparison_view(al, *ao, ar);
+                            if po != ao {
+                                continue 'alternative;
+                            }
+                            if symmetric_comparison(po) && pl != pr && al != ar {
+                                if crate::instrumentation::deadline_exceeded_with_work(
+                                    arguments.len() + pending.len() + 1,
+                                ) {
+                                    alternatives.clear();
+                                    return None;
+                                }
+                                let mut reversed = pending.clone();
+                                reversed
+                                    .extend([Pair::Expression(pl, ar), Pair::Expression(pr, al)]);
+                                alternatives.push((arguments.clone(), reversed));
+                            }
+                            pending.extend([Pair::Expression(pl, al), Pair::Expression(pr, ar)]);
                         }
-                    } else {
-                        arguments.insert(name, actual.clone());
+                        (
+                            P::PredicateCall {
+                                name: pn,
+                                arguments: pa,
+                            },
+                            P::PredicateCall {
+                                name: an,
+                                arguments: aa,
+                            },
+                        ) if pn == an && pa.len() == aa.len() => {
+                            pending.extend(pa.iter().zip(aa).map(|(p, a)| Pair::Expression(p, a)));
+                        }
+                        (P::Defined { expression: p }, P::Defined { expression: a })
+                        | (P::Value(p), P::Value(a)) => pending.push(Pair::Expression(p, a)),
+                        (P::And(pl, pr), P::And(al, ar))
+                        | (P::Or(pl, pr), P::Or(al, ar))
+                        | (P::Implies(pl, pr), P::Implies(al, ar)) => {
+                            pending.extend([Pair::Proposition(pl, al), Pair::Proposition(pr, ar)]);
+                        }
+                        (P::Not(p), P::Not(a)) => pending.push(Pair::Proposition(p, a)),
+                        _ if pattern == actual => {}
+                        _ => continue 'alternative,
+                    },
+                    Pair::Expression(pattern, actual) => {
+                        if let Some(name) =
+                            parameter_name(pattern).filter(|name| parameters.contains(name))
+                        {
+                            if let Some(prior) = arguments.get(name) {
+                                if *prior != actual {
+                                    continue 'alternative;
+                                }
+                            } else {
+                                arguments.insert(name, actual);
+                            }
+                            continue;
+                        }
+                        match (pattern, actual) {
+                            (
+                                binary_contract_expression!(pl, pr),
+                                binary_contract_expression!(al, ar),
+                            ) if std::mem::discriminant(pattern)
+                                == std::mem::discriminant(actual) =>
+                            {
+                                pending
+                                    .extend([Pair::Expression(pl, al), Pair::Expression(pr, ar)]);
+                            }
+                            (E::Negate(p), E::Negate(a))
+                            | (E::BitwiseNot(p), E::BitwiseNot(a))
+                            | (E::Old(p), E::Old(a)) => pending.push(Pair::Expression(p, a)),
+                            (
+                                E::At {
+                                    selector: ps,
+                                    expression: p,
+                                },
+                                E::At {
+                                    selector: as_,
+                                    expression: a,
+                                },
+                            ) if ps == as_ => pending.push(Pair::Expression(p, a)),
+                            (
+                                E::Call {
+                                    name: pn,
+                                    arguments: pa,
+                                },
+                                E::Call {
+                                    name: an,
+                                    arguments: aa,
+                                },
+                            ) if pn == an && pa.len() == aa.len() => {
+                                pending
+                                    .extend(pa.iter().zip(aa).map(|(p, a)| Pair::Expression(p, a)));
+                            }
+                            (
+                                E::AlgebraicConstructor {
+                                    algebraic_type: pt,
+                                    variant: pv,
+                                    arguments: pa,
+                                },
+                                E::AlgebraicConstructor {
+                                    algebraic_type: at,
+                                    variant: av,
+                                    arguments: aa,
+                                },
+                            ) if pt.name == at.name && pv == av && pa.len() == aa.len() => {
+                                pending
+                                    .extend(pa.iter().zip(aa).map(|(p, a)| Pair::Expression(p, a)));
+                            }
+                            (
+                                E::CUnary {
+                                    operand: p,
+                                    lowered: pl,
+                                },
+                                E::CUnary {
+                                    operand: a,
+                                    lowered: al,
+                                },
+                            ) if pl == al => pending.push(Pair::Expression(p, a)),
+                            (
+                                E::Field {
+                                    base: p,
+                                    field: pf,
+                                    offset_bytes: po,
+                                    ..
+                                },
+                                E::Field {
+                                    base: a,
+                                    field: af,
+                                    offset_bytes: ao,
+                                    ..
+                                },
+                            ) if pf == af && po == ao => pending.push(Pair::Expression(p, a)),
+                            (E::Proposition(p), E::Proposition(a)) => {
+                                pending.push(Pair::Proposition(p, a))
+                            }
+                            (
+                                E::If {
+                                    condition: pc,
+                                    then_branch: pt,
+                                    else_branch: pe,
+                                },
+                                E::If {
+                                    condition: ac,
+                                    then_branch: at,
+                                    else_branch: ae,
+                                },
+                            ) => {
+                                pending.extend([
+                                    Pair::Proposition(pc, ac),
+                                    Pair::Expression(pt, at),
+                                    Pair::Expression(pe, ae),
+                                ]);
+                            }
+                            _ if pattern == actual => {}
+                            _ => continue 'alternative,
+                        }
                     }
-                    continue;
-                }
-                match (pattern, actual) {
-                    (binary_contract_expression!(pl, pr), binary_contract_expression!(al, ar))
-                        if std::mem::discriminant(pattern) == std::mem::discriminant(actual) =>
-                    {
-                        pending.extend([Pair::Expression(pl, al), Pair::Expression(pr, ar)]);
-                    }
-                    (E::Negate(p), E::Negate(a))
-                    | (E::BitwiseNot(p), E::BitwiseNot(a))
-                    | (E::Old(p), E::Old(a)) => pending.push(Pair::Expression(p, a)),
-                    (
-                        E::At {
-                            selector: ps,
-                            expression: p,
-                        },
-                        E::At {
-                            selector: as_,
-                            expression: a,
-                        },
-                    ) if ps == as_ => pending.push(Pair::Expression(p, a)),
-                    (
-                        E::Call {
-                            name: pn,
-                            arguments: pa,
-                        },
-                        E::Call {
-                            name: an,
-                            arguments: aa,
-                        },
-                    ) if pn == an && pa.len() == aa.len() => {
-                        pending.extend(pa.iter().zip(aa).map(|(p, a)| Pair::Expression(p, a)));
-                    }
-                    (
-                        E::AlgebraicConstructor {
-                            algebraic_type: pt,
-                            variant: pv,
-                            arguments: pa,
-                        },
-                        E::AlgebraicConstructor {
-                            algebraic_type: at,
-                            variant: av,
-                            arguments: aa,
-                        },
-                    ) if pt.name == at.name && pv == av && pa.len() == aa.len() => {
-                        pending.extend(pa.iter().zip(aa).map(|(p, a)| Pair::Expression(p, a)));
-                    }
-                    (
-                        E::CUnary {
-                            operand: p,
-                            lowered: pl,
-                        },
-                        E::CUnary {
-                            operand: a,
-                            lowered: al,
-                        },
-                    ) if pl == al => pending.push(Pair::Expression(p, a)),
-                    (
-                        E::Field {
-                            base: p,
-                            field: pf,
-                            offset_bytes: po,
-                            ..
-                        },
-                        E::Field {
-                            base: a,
-                            field: af,
-                            offset_bytes: ao,
-                            ..
-                        },
-                    ) if pf == af && po == ao => pending.push(Pair::Expression(p, a)),
-                    (E::Proposition(p), E::Proposition(a)) => pending.push(Pair::Proposition(p, a)),
-                    (
-                        E::If {
-                            condition: pc,
-                            then_branch: pt,
-                            else_branch: pe,
-                        },
-                        E::If {
-                            condition: ac,
-                            then_branch: at,
-                            else_branch: ae,
-                        },
-                    ) => {
-                        pending.extend([
-                            Pair::Proposition(pc, ac),
-                            Pair::Expression(pt, at),
-                            Pair::Expression(pe, ae),
-                        ]);
-                    }
-                    _ if pattern == actual => {}
-                    _ => return None,
                 }
             }
+            if let Some(arguments) = theorem
+                .parameters()
+                .iter()
+                .map(|parameter| {
+                    arguments
+                        .get(parameter.name())
+                        .map(|expression| (*expression).clone())
+                })
+                .collect::<Option<Vec<_>>>()
+            {
+                return Some(TheoremApplication {
+                    name: theorem.name().into(),
+                    arguments,
+                });
+            }
         }
-    }
-    Some(TheoremApplication {
-        name: theorem.name().into(),
-        arguments: theorem
-            .parameters()
-            .iter()
-            .map(|parameter| arguments.get(parameter.name()).cloned())
-            .collect::<Option<_>>()?,
+        None
     })
 }
 
