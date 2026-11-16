@@ -3767,8 +3767,9 @@ fn c_parses_standalone_calls() {
                 else_branch,
                 ..
             } => contains_call(then_branch) || contains_call(else_branch),
-            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
-                contains_call(body)
+            syntax::CStatement::While { test, body, .. }
+            | syntax::CStatement::DoWhile { test, body, .. } => {
+                contains_call(body) || test.as_ref().is_some_and(|test| contains_call(test))
             }
             _ => false,
         }
@@ -3938,17 +3939,19 @@ fn c_typeof_preserves_pointer_tags_and_const_qualification() {
             } => {
                 find_declaration(then_branch, name).or_else(|| find_declaration(else_branch, name))
             }
-            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
-                find_declaration(body, name)
-            }
+            syntax::CStatement::While { test, body, .. }
+            | syntax::CStatement::DoWhile { test, body, .. } => find_declaration(body, name)
+                .or_else(|| test.as_ref().and_then(|test| find_declaration(test, name))),
             syntax::CStatement::For {
+                test,
                 initializer,
                 step,
                 body,
                 ..
             } => find_declaration(initializer, name)
                 .or_else(|| find_declaration(step, name))
-                .or_else(|| find_declaration(body, name)),
+                .or_else(|| find_declaration(body, name))
+                .or_else(|| test.as_ref().and_then(|test| find_declaration(test, name))),
             syntax::CStatement::Switch { cases, .. } => cases
                 .iter()
                 .find_map(|case| find_declaration(case.body(), name)),
@@ -4530,8 +4533,9 @@ fn c_syntax_accepts_continue_in_for_loop() {
                 else_branch,
                 ..
             } => contains_for(then_branch) || contains_for(else_branch),
-            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
-                contains_for(body)
+            syntax::CStatement::While { test, body, .. }
+            | syntax::CStatement::DoWhile { test, body, .. } => {
+                contains_for(body) || test.as_ref().is_some_and(|test| contains_for(test))
             }
             syntax::CStatement::Switch { cases, .. } => {
                 cases.iter().any(|case| contains_for(case.body()))
@@ -4640,7 +4644,9 @@ fn c_syntax_accepts_a_do_while_loop_with_an_unbraced_body() {
                 else_branch,
                 ..
             } => contains_do_while(then_branch) || contains_do_while(else_branch),
-            syntax::CStatement::While { body, .. } => contains_do_while(body),
+            syntax::CStatement::While { test, body, .. } => {
+                contains_do_while(body) || test.as_ref().is_some_and(|test| contains_do_while(test))
+            }
             syntax::CStatement::Switch { cases, .. } => {
                 cases.iter().any(|case| contains_do_while(case.body()))
             }
@@ -4690,8 +4696,12 @@ fn c_syntax_accepts_break_and_continue_in_while_bodies() {
                 let (more_breaks, more_continues) = count_controls(else_branch);
                 (breaks + more_breaks, continues + more_continues)
             }
-            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
-                count_controls(body)
+            syntax::CStatement::While { test, body, .. }
+            | syntax::CStatement::DoWhile { test, body, .. } => {
+                let (breaks, continues) = count_controls(body);
+                let (test_breaks, test_continues) =
+                    test.as_ref().map_or((0, 0), |test| count_controls(test));
+                (breaks + test_breaks, continues + test_continues)
             }
             syntax::CStatement::Switch { cases, .. } => {
                 cases.iter().map(|case| count_controls(case.body())).fold(
@@ -4745,7 +4755,12 @@ fn c_syntax_accepts_break_and_continue_in_do_while_bodies() {
                 let (more_breaks, more_continues) = count_controls(else_branch);
                 (breaks + more_breaks, continues + more_continues)
             }
-            syntax::CStatement::DoWhile { body, .. } => count_controls(body),
+            syntax::CStatement::DoWhile { test, body, .. } => {
+                let (breaks, continues) = count_controls(body);
+                let (test_breaks, test_continues) =
+                    test.as_ref().map_or((0, 0), |test| count_controls(test));
+                (breaks + test_breaks, continues + test_continues)
+            }
             _ => (0, 0),
         }
     }
@@ -4789,8 +4804,9 @@ fn c_syntax_accepts_switch_cases_and_nested_loop_control() {
                 else_branch,
                 ..
             } => find_switch(then_branch).or_else(|| find_switch(else_branch)),
-            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
-                find_switch(body)
+            syntax::CStatement::While { test, body, .. }
+            | syntax::CStatement::DoWhile { test, body, .. } => {
+                find_switch(body).or_else(|| test.as_ref().and_then(|test| find_switch(test)))
             }
             _ => None,
         }
@@ -5012,8 +5028,12 @@ fn c_syntax_accepts_memory_lvalue_updates() {
                 update_targets(then_branch, targets);
                 update_targets(else_branch, targets);
             }
-            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
-                update_targets(body, targets)
+            syntax::CStatement::While { test, body, .. }
+            | syntax::CStatement::DoWhile { test, body, .. } => {
+                update_targets(body, targets);
+                if let Some(test) = test {
+                    update_targets(test, targets);
+                }
             }
             _ => {}
         }
@@ -5246,15 +5266,22 @@ fn c_syntax_models_missing_else_and_empty_statements_as_skip() {
                 else_branch,
                 ..
             } => contains_skip(then_branch) || contains_skip(else_branch),
-            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
-                contains_skip(body)
+            syntax::CStatement::While { test, body, .. }
+            | syntax::CStatement::DoWhile { test, body, .. } => {
+                contains_skip(body) || test.as_ref().is_some_and(|test| contains_skip(test))
             }
             syntax::CStatement::For {
+                test,
                 initializer,
                 body,
                 step,
                 ..
-            } => contains_skip(initializer) || contains_skip(body) || contains_skip(step),
+            } => {
+                contains_skip(initializer)
+                    || contains_skip(body)
+                    || contains_skip(step)
+                    || test.as_ref().is_some_and(|test| contains_skip(test))
+            }
             syntax::CStatement::Switch { cases, .. } => {
                 cases.iter().any(|case| contains_skip(case.body()))
             }
@@ -6510,9 +6537,9 @@ fn c_syntax_lowers_calloc_to_zeroed_runtime_allocation() {
                 else_branch,
                 ..
             } => find_allocation(then_branch).or_else(|| find_allocation(else_branch)),
-            syntax::CStatement::While { body, .. } | syntax::CStatement::DoWhile { body, .. } => {
-                find_allocation(body)
-            }
+            syntax::CStatement::While { test, body, .. }
+            | syntax::CStatement::DoWhile { test, body, .. } => find_allocation(body)
+                .or_else(|| test.as_ref().and_then(|test| find_allocation(test))),
             _ => None,
         }
     }
@@ -11377,19 +11404,19 @@ fn c_syntax_lowers_calls_in_reevaluated_loop_conditions() {
         }
         "#,
     )
-    .expect("calls in loop conditions should be reevaluated in the loop body");
+    .expect("calls in loop conditions have shared test regions");
     let debug = format!("{:?}", function.body());
     assert!(
-        debug.matches("CallResult {").count() >= 3,
-        "each loop iteration has a checked condition call"
+        debug.matches("CallResult {").count() == 3,
+        "each loop owns one checked condition call, including the continued do-while"
     );
     assert!(
         debug.matches("Int32Literal(1)").count() >= 3,
         "all call-bearing loop conditions become unconditional iteration shells"
     );
     assert!(
-        !debug.contains("DoWhile"),
-        "do-while conditions move their checked call into the loop body"
+        debug.contains("DoWhile"),
+        "the do-while keeps its post-test placement instead of rewriting its continues"
     );
 }
 
@@ -15062,6 +15089,57 @@ fn library_function_declarations_must_match_the_library_prototype() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/languages/c/tests.rs");
+}
+
+#[test]
+fn memory_library_arguments_use_implicit_byte_views_only_for_library_declarations() {
+    fn call_arguments(statement: &syntax::CStatement) -> Option<&[syntax::CExpression]> {
+        match statement {
+            syntax::CStatement::Seq(left, right) => {
+                call_arguments(left).or_else(|| call_arguments(right))
+            }
+            syntax::CStatement::Call { arguments, .. } => Some(arguments),
+            _ => None,
+        }
+    }
+    for (declaration, adapted) in [
+        (
+            "void *memcpy(void *d, const void *s, unsigned long n);",
+            true,
+        ),
+        (
+            "static void *memcpy(void *d, const void *s, unsigned long n) { return d; }",
+            false,
+        ),
+    ] {
+        let source = format!(
+            "{declaration} unsigned int copy(unsigned int value) {{ \
+             unsigned int out; memcpy(&out, &value, sizeof(out)); return out; }}"
+        );
+        let functions = syntax::parse_functions(&source).unwrap();
+        let arguments = call_arguments(functions.last().unwrap().body()).unwrap();
+        for (index, argument) in arguments[..2].iter().enumerate() {
+            if adapted {
+                assert!(
+                    matches!(
+                        argument,
+                        syntax::CExpression::Cast {
+                            interface_type: crate::languages::interface::InterfaceType::UInt8Pointer,
+                            pointee_constant,
+                            explicit_qualification: false,
+                            ..
+                        } if *pointee_constant == (index == 1)
+                    ),
+                    "{argument:?}"
+                );
+            } else {
+                assert!(
+                    matches!(argument, syntax::CExpression::AddressOf(_)),
+                    "{argument:?}"
+                );
+            }
+        }
+    }
 }
 
 #[test]

@@ -121,12 +121,21 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
                 statements.extend([then_branch.as_ref(), else_branch.as_ref()]);
             }
             ProgramStatement::Loop {
-                condition, body, ..
+                test,
+                update,
+                condition,
+                body,
+                ..
             } => {
                 expressions.push((condition, false));
                 statements.push(body);
+                if let Some(test) = test {
+                    statements.push(&test.statement);
+                }
+                if let Some(update) = update {
+                    statements.push(update);
+                }
             }
-            ProgramStatement::ForStep { step, .. } => statements.push(step),
         }
     }
     while let Some((expression, addressed)) = expressions.pop() {
