@@ -1037,6 +1037,7 @@ enum AlphaPointerOffsetNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaPointerBlockKey {
+    ContractResult,
     StaticObject(crate::kernel::StaticBindingId),
     AutomaticLocal(
         crate::kernel::LocalBindingId,
@@ -2127,6 +2128,7 @@ fn alpha_pointer_block_key<const ALLOW_LOADS: bool>(
     next_binder: &mut usize,
 ) -> Option<AlphaPointerBlockKey> {
     Some(match block {
+        PointerBlock::ContractResult => AlphaPointerBlockKey::ContractResult,
         // Keyed as the scalar and algebraic applications are, argument by
         // argument: a quantified fact is found only by its key, so a block
         // with none would hide every universal over a pointer result.

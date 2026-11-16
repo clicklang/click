@@ -5439,6 +5439,8 @@ struct SpecElaborationContext {
     /// Bare `result` names the internal contract-return binding here;
     /// explicit C bindings keep their source identifier and value.
     contract_result_in_scope: bool,
+    /// A fixed return value, separate from all lexical bindings.
+    contract_result: Option<std::sync::Arc<SpecExpression>>,
     /// Preserve native address checks inside an explicit `defined(...)`.
     checking_definedness: bool,
 }
@@ -5457,6 +5459,7 @@ impl Default for SpecElaborationContext {
             function_contract: false,
             reference_state: None,
             contract_result_in_scope: false,
+            contract_result: None,
             checking_definedness: false,
         }
     }
@@ -5511,6 +5514,7 @@ impl SpecElaborationContext {
                 at_function_entry: true,
                 reference_state: None,
                 contract_result_in_scope: false,
+                contract_result: None,
                 checking_definedness: self.checking_definedness,
             });
         }
@@ -5544,6 +5548,7 @@ impl SpecElaborationContext {
             // The return value is a logical proof binding, like `let`.
             // Historical C reads still use their own entry bindings.
             contract_result_in_scope: self.contract_result_in_scope,
+            contract_result: self.contract_result.clone(),
             checking_definedness: self.checking_definedness,
         })
     }

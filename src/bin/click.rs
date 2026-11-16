@@ -2237,8 +2237,9 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         fs::remove_dir_all(&directory).unwrap();
+        assert!(error.starts_with("proof error:\n"), "{error}");
         assert!(
-            error.starts_with("proof error in `release` during contract certification:"),
+            error.contains("could not open contract entry for `release.body_safety`"),
             "{error}"
         );
         assert!(

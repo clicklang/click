@@ -1829,7 +1829,7 @@ fn interface(index: usize) -> FunctionContract {
         vec![],
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                C_CONTRACT_RESULT_NAME,
+                CONTRACT_RESULT,
             )),
             operator: ComparisonOperator::GreaterEqual,
             right: SpecExpression::Value(int32((-(index as i32)) as u32)),

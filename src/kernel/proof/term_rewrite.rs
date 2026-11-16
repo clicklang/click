@@ -5792,6 +5792,19 @@ impl<'a> TermRewrite<'a> {
                 return ConditionTerm::Constant(true);
             }
         }
+        if let Some(guard) = result.pointer_offset_uint64_association_guard() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.push(guard.clone());
+            }
+            // One exact lookup, keyed by the guard the regrouped sum spells.
+            if guard == ConditionTerm::Constant(true)
+                || self
+                    .conditions
+                    .is_some_and(|conditions| conditions.get(&guard) == Some(&true))
+            {
+                return ConditionTerm::Constant(true);
+            }
+        }
         if let ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,

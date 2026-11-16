@@ -200,7 +200,9 @@ impl SourceBindingIndex {
         match binding {
             crate::kernel::BindingName::Local(id) => self.declarations.get(id),
             crate::kernel::BindingName::Static(id) => self.statics.get(id),
-            crate::kernel::BindingName::Named(_) => None,
+            crate::kernel::BindingName::Named(_) | crate::kernel::BindingName::ContractResult => {
+                None
+            }
         }
     }
 }
@@ -14435,6 +14437,11 @@ impl Parser {
     /// still reads the surrounding state.
     fn binding_struct_name(&self, binding: &crate::kernel::BindingName) -> Option<&String> {
         match binding {
+            crate::kernel::BindingName::ContractResult => self
+                .names
+                .struct_params
+                .get("result")
+                .or_else(|| self.names.aggregate_objects.get("result")),
             crate::kernel::BindingName::Static(id) => {
                 self.local_bindings.statics.get(id)?.struct_name.as_ref()
             }
@@ -14457,6 +14464,9 @@ impl Parser {
     }
     fn binding_is_aggregate(&self, binding: &crate::kernel::BindingName) -> bool {
         match binding {
+            crate::kernel::BindingName::ContractResult => {
+                self.names.aggregate_objects.contains_key("result")
+            }
             crate::kernel::BindingName::Static(id) => self
                 .local_bindings
                 .statics
@@ -16367,6 +16377,26 @@ impl Parser {
 
     #[inline(never)]
     fn parse_contract_non_match_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        // An exact name for the value-only result slot. This grants no C
+        // object storage or access rights.
+        if self.peek_ident() == Some("result")
+            && self.tokens.get(self.position + 1) == Some(&Token::Dot)
+            && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(name)) if name == "storage")
+            && self.tokens.get(self.position + 3) == Some(&Token::LParen)
+            && self.tokens.get(self.position + 4) == Some(&Token::RParen)
+        {
+            self.position += 5;
+            return Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(ProgramValue::typed_pointer(
+                    crate::kernel::Pointer {
+                        block: crate::kernel::PointerBlock::ContractResult,
+                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                    },
+                    ProgramType::UInt8Pointer,
+                )),
+            ));
+        }
+
         if self.peek_next() == Some(&Token::LParen) {
             match self.peek_ident() {
                 Some("float32_from_bits") => return self.parse_float_bits(32),

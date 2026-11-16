@@ -48,6 +48,7 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
 
 fn write_havoc_block(identity: &mut String, block: PointerBlock) {
     match block {
+        PointerBlock::ContractResult => identity.push_str("br;"),
         PointerBlock::StaticObject { binding } => {
             write_havoc_string(identity, "bst", &binding.to_string())
         }
@@ -1306,7 +1307,9 @@ impl LocalEnvironment {
                 .and_then(|entries| entries.last())
                 .map(|(_, binding)| binding.clone())
                 .unwrap_or_else(|| name.clone()),
-            BindingName::Local(_) | BindingName::Static(_) => name.clone(),
+            BindingName::Local(_) | BindingName::Static(_) | BindingName::ContractResult => {
+                name.clone()
+            }
         }
     }
     /// The source spelling of this active lexical binding, for source-name
@@ -1316,6 +1319,7 @@ impl LocalEnvironment {
             BindingName::Local(id) => id.spelling()?,
             BindingName::Static(id) => id.spelling(),
             BindingName::Named(name) => name,
+            BindingName::ContractResult => return None,
         };
         (self.resolve_binding(&BindingName::from(source)) == *name).then_some(source)
     }
@@ -7543,6 +7547,9 @@ impl Memory {
             },
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:value-parameter:{name}").into(),
+            BindingName::ContractResult => {
+                unreachable!("contract result is not an automatic declaration")
+            }
         };
         Pointer {
             block,
@@ -7559,6 +7566,7 @@ impl Memory {
             },
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:{name}").into(),
+            BindingName::ContractResult => PointerBlock::ContractResult,
         };
         Pointer {
             block,
@@ -7578,6 +7586,9 @@ impl Memory {
             },
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:lifetime:{lifetime}:{name}").into(),
+            BindingName::ContractResult => {
+                unreachable!("contract result is not an automatic declaration")
+            }
         };
         Pointer {
             block,
@@ -7589,7 +7600,9 @@ impl Memory {
         let block = match name.into() {
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("global:{name}").into(),
-            BindingName::Local(_) => unreachable!("automatic declaration used as a global"),
+            BindingName::Local(_) | BindingName::ContractResult => {
+                unreachable!("non-global binding used as a global")
+            }
         };
         Pointer {
             block,
@@ -7611,7 +7624,9 @@ impl Memory {
         let block = match name.into() {
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("static:{function}:{name}").into(),
-            BindingName::Local(_) => unreachable!("automatic declaration used as a static"),
+            BindingName::Local(_) | BindingName::ContractResult => {
+                unreachable!("non-static binding used as a static")
+            }
         };
         Pointer {
             block,
@@ -7635,6 +7650,9 @@ impl Memory {
                 block: PointerBlock::StaticObject { binding },
                 offset: PointerOffsetTerm::Constant(0),
             },
+            BindingName::ContractResult => {
+                unreachable!("contract result is not a frame-local declaration")
+            }
             BindingName::Named(name) => Pointer {
                 block: format!("local:frame:{frame}:{name}").into(),
                 offset: PointerOffsetTerm::Constant(0),

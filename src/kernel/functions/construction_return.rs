@@ -147,7 +147,7 @@ pub(super) fn bind(
     if interface
         .parameters()
         .iter()
-        .any(|parameter| parameter.name() == C_CONTRACT_RESULT_NAME)
+        .any(|parameter| parameter.binding_name() == &CONTRACT_RESULT)
     {
         return None;
     }
@@ -183,7 +183,7 @@ pub(super) fn bind(
     callee.aggregate_destination = selected_state.aggregate_destination.clone();
     if interface.construction_parameter().is_none() {
         callee.locals.set_aggregate_object_at(
-            C_CONTRACT_RESULT_NAME,
+            CONTRACT_RESULT,
             selected.layout.clone(),
             selected.pointer.clone(),
         );
@@ -201,10 +201,7 @@ pub(super) fn complete(
         return Err(AggregateReturnRefusal::InvalidValue);
     };
     if pointer.pointer() != &selected.pointer
-        || state
-            .locals
-            .aggregate_object_pointer(C_CONTRACT_RESULT_NAME)
-            != Some(&selected.pointer)
+        || state.locals.aggregate_object_pointer(CONTRACT_RESULT) != Some(&selected.pointer)
     {
         return Err(AggregateReturnRefusal::InvalidValue);
     }

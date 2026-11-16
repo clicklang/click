@@ -2512,7 +2512,8 @@ impl PointerValue {
         let known_root = is_function
             || matches!(
                 pointer.block,
-                PointerBlock::StaticObject { .. }
+                PointerBlock::ContractResult
+                    | PointerBlock::StaticObject { .. }
                     | PointerBlock::AutomaticLocal { .. }
                     | PointerBlock::Concrete(_)
                     | PointerBlock::Heap(_)
@@ -3031,6 +3032,8 @@ pub enum PointerBlock {
     StaticObject {
         binding: StaticBindingId,
     },
+    /// Value-only bookkeeping slot for the contract result, never C storage.
+    ContractResult,
 }
 
 impl std::hash::Hash for PointerBlock {
@@ -3039,6 +3042,7 @@ impl std::hash::Hash for PointerBlock {
         // Pointer hashes feed deterministic load-variable identities, so
         // inserting a new enum variant must not renumber existing blocks.
         match self {
+            Self::ContractResult => 13u64.hash(state),
             Self::StaticObject { binding } => {
                 12u64.hash(state);
                 binding.hash(state);
@@ -3168,6 +3172,7 @@ impl PointerBlock {
                         LocalStorageInstance::Implicit => false,
                     }
             }
+            Self::ContractResult => prefix == "local:",
             Self::Concrete(name) => name.starts_with(prefix),
             Self::StringLiteral { .. } => prefix == "string:",
             _ => false,
@@ -3177,7 +3182,8 @@ impl PointerBlock {
     pub(crate) fn strip_prefix<'a>(&'a self, prefix: &str) -> Option<&'a str> {
         match self {
             Self::Concrete(name) => name.strip_prefix(prefix),
-            Self::StaticObject { .. }
+            Self::ContractResult
+            | Self::StaticObject { .. }
             | Self::AutomaticLocal { .. }
             | Self::StringLiteral { .. }
             | Self::Function(_)
@@ -3286,7 +3292,8 @@ impl PointerBlock {
             matches!(left, Self::StringLiteral { .. })
                 && matches!(
                     right,
-                    Self::StaticObject { .. }
+                    Self::ContractResult
+                        | Self::StaticObject { .. }
                         | Self::AutomaticLocal { .. }
                         | Self::Concrete(_)
                         | Self::Function(_)
@@ -3308,14 +3315,17 @@ impl PointerBlock {
                 )
                 || (matches!(
                     self,
-                    Self::AutomaticLocal { .. } | Self::StaticObject { .. }
+                    Self::ContractResult | Self::AutomaticLocal { .. } | Self::StaticObject { .. }
                 ) && matches!(
                     other,
-                    Self::AutomaticLocal { .. } | Self::StaticObject { .. } | Self::Concrete(_)
+                    Self::ContractResult
+                        | Self::AutomaticLocal { .. }
+                        | Self::StaticObject { .. }
+                        | Self::Concrete(_)
                 ))
                 || (matches!(
                     other,
-                    Self::AutomaticLocal { .. } | Self::StaticObject { .. }
+                    Self::ContractResult | Self::AutomaticLocal { .. } | Self::StaticObject { .. }
                 ) && matches!(self, Self::Concrete(_)))
                 || literal_versus_declared(self, other)
                 || literal_versus_declared(other, self)
@@ -3374,6 +3384,7 @@ impl From<&str> for PointerBlock {
 impl std::fmt::Display for PointerBlock {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::ContractResult => formatter.write_str("result.storage()"),
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
             Self::AutomaticLocal { binding, instance } => {
                 write!(formatter, "{binding}.storage({instance})")
@@ -6799,17 +6810,12 @@ pub enum FunctionContractClaimTarget {
     ExceptionalEnsureProposition(usize),
 }
 
-/// Contract return value, separate from every source C identifier.
-pub(crate) const C_CONTRACT_RESULT_NAME: &str = "@click:result";
+/// The contract return value is independent of every program/proof identifier.
+pub(crate) const CONTRACT_RESULT: BindingName = BindingName::ContractResult;
 
-/// The Click spelling of the C local `name`: the contract result's internal
-/// local is `result`; every other local is its own name.
+/// Preserve typed identities when raising a program binding to Surface.
 pub(crate) fn program_local_source_name(name: impl Into<BindingName>) -> BindingName {
-    let name = name.into();
-    match &name {
-        BindingName::Named(name) if name == C_CONTRACT_RESULT_NAME => "result".into(),
-        _ => name.clone(),
-    }
+    name.into()
 }
 
 /// Kernel-only binding used while lowering an exceptional postcondition.

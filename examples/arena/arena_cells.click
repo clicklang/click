@@ -4861,8 +4861,18 @@ int32 arena_pipeline(
     }
     mark a1;
     let { outcome: o1 } = step(arena_alloc, { st: s0 });
+    mark after_first_alloc;
     step();
+    have separate(memory(allocated), memory(first->arena)) by { solve(); }
+    have separate(statement(7).assignment(allocated, 0).footprint, memory(first->arena)) by {
+        normalize() using { separate(memory(allocated), memory(first->arena)); };
+    }
+    have first->arena == at(after_first_alloc, first->arena) by {
+        preserve(separate(statement(7).assignment(allocated, 0).footprint, memory(first->arena)));
+    }
     have allocated == 1 implies first->arena == arena by {
+        intro();
+        extract(at(after_first_alloc, first->arena) == arena);
         known();
     }
     have arena->capacity == at(a1, arena->capacity) by {
@@ -5029,8 +5039,18 @@ int32 arena_pipeline(
     have first->arena == at(a2, first->arena) by {
         preserve(separate(statement(9).call(0).footprint, memory(first->arena)));
     }
+    mark after_second_alloc;
     step();
+    have separate(memory(allocated), memory(second->arena)) by { solve(); }
+    have separate(statement(9).assignment(allocated, 0).footprint, memory(second->arena)) by {
+        normalize() using { separate(memory(allocated), memory(second->arena)); };
+    }
+    have second->arena == at(after_second_alloc, second->arena) by {
+        preserve(separate(statement(9).assignment(allocated, 0).footprint, memory(second->arena)));
+    }
     have allocated == 1 implies second->arena == arena by {
+        intro();
+        extract(at(after_second_alloc, second->arena) == arena);
         known();
     }
     have arena->capacity == at(a2, arena->capacity) by {
@@ -6677,8 +6697,18 @@ int32 arena_pipeline(
     }
     mark a3;
     let { outcome: o3 } = step(arena_alloc, { st: g3 });
+    mark after_combined_alloc;
     step();
+    have separate(memory(allocated), memory(combined->arena)) by { solve(); }
+    have separate(statement(18).assignment(allocated, 0).footprint, memory(combined->arena)) by {
+        normalize() using { separate(memory(allocated), memory(combined->arena)); };
+    }
+    have combined->arena == at(after_combined_alloc, combined->arena) by {
+        preserve(separate(statement(18).assignment(allocated, 0).footprint, memory(combined->arena)));
+    }
     have allocated == 1 implies combined->arena == arena by {
+        intro();
+        extract(at(after_combined_alloc, combined->arena) == arena);
         known();
     }
     have arena->capacity == at(a3, arena->capacity) by {

@@ -5844,7 +5844,7 @@ fn with_closure_instance(
     let parameters = contract.interface().value_parameters().to_vec();
     let mut arguments = vec![SpecPredicateArgument::Value(
         SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            crate::kernel::C_CONTRACT_RESULT_NAME,
+            crate::kernel::CONTRACT_RESULT,
         )),
     )];
     arguments.extend(parameters.iter().map(|parameter| {
@@ -5993,7 +5993,7 @@ pub(in crate::surface) fn function_resource_summary(
         let result_binding = BTreeMap::from([(
             "result".to_string(),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
+                crate::kernel::CONTRACT_RESULT,
             )),
         )]);
         let result_substitutions = ContractSubstitutions::for_contract_result(&result_binding);
@@ -6090,7 +6090,7 @@ pub(in crate::surface) fn function_resource_constructors(
             let result_binding = BTreeMap::from([(
                 "result".to_string(),
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
+                    crate::kernel::CONTRACT_RESULT,
                 )),
             )]);
             let resource = substitute_resource_clause_for_summary_in(

@@ -92,7 +92,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 6 | Folds, binders and algebraic matches | Implemented as 6a–6n below. Common fold and numeric/algebraic match results retain scoped children; remaining native consumers are named compatibility boundaries. |
 | 7 | Complete pointers and read addresses | Implemented as 7a–7u below, one PR per slice. Supported pointer producers and execution/storage handoffs retain common roots; checking and Surface consumers preserve metadata, state identity and existing rules. |
 | 8 | Remaining Boolean and opaque expression payloads | Implemented through 8ad, ending in [PR #2920](https://github.com/clicklang/click/pull/2920); remaining native boundaries are enumerated below. |
-| 9 | Unified raising/lowering and certificate boundaries | Authorized as 9a–9z below; inventory recorded, implementation pending. |
+| 9 | Unified raising/lowering and certificate boundaries | In progress as the authorized 9a–9z sequence below; per-slice delivery and validation evidence follows. |
 | 10 | Duplicate storage removal and final closure | Open |
 
 ## Chunk 9: unified Surface and certificate boundaries
@@ -134,12 +134,14 @@ Already-shared numeric/float operations and fold/match producers are reused.
 
 ### 9a live boundary inventory
 
+Delivered in [PR #2930](https://github.com/clicklang/click/pull/2930).
+
 | Location / entry point | Live boundary and assigned work |
 | --- | --- |
 | `src/surface/proof/surface_synthesis.rs`: `raise_kernel_term`, `raise_kernel_term_dispatch` | Existing common dispatcher and bounded integer recursion are the foundation for 9b. Constructor/read/variable argument exports belong to 9c–9d; condition exports to 9e–9f. Existing numeric and float operation renderers stay shared. |
 | Same file: `raise_call_argument`, `synthesize_legacy_call_argument`, `synthesize_surface_call` | 9g consolidates call consumers. Complete pointer arguments require the exact proof-local source name; generic pointer synthesis is not an interchangeable fallback. Leaf literal views are distinct from whole-tree export. |
 | `src/surface/proof/surface_synthesis/{folds,matches}.rs` | 9h–9i consolidate scoped readers; preserve existing binders and fold evaluation/spelling. |
-| `src/surface/lowering/annotations.rs` and `src/kernel/spec/{result,paths}.rs` | 9j–9p cover typed result handoffs and remaining export/import adapters. Unevaluated Surface syntax remains distinct from evaluated Kernel roots; obligations retain their scope. |
+| `src/surface/lowering/annotations.rs` and `src/kernel/spec.rs` and `src/kernel/spec/result.rs` | 9j–9p cover typed result handoffs and remaining export/import adapters. Unevaluated Surface syntax remains distinct from evaluated Kernel roots; obligations retain their scope. |
 | `src/kernel/spec.rs`, `src/kernel/spec/result.rs`: `SpecCallArgument::into_payload`, `into_typed_call_operand` | 9q covers mixed argument assembly, including program-parameter envelopes versus logical algebraic arguments. 9r covers scoped fold/match handoffs. |
 | `src/kernel/api/contract_certification/retained_syntax.rs` | 9s–9u consolidate native/shared comparison readers. Existing refusal/admission rules and exact pointer evidence remain unchanged. |
 | `src/kernel/api/contract_certification/contract_claims.rs`, `contract_claims/publication.rs` | 9v–9w cover native input conversion and published result conversion. |
@@ -159,6 +161,55 @@ include deterministic scaling coverage and run all scaling tests. Preserve
 exact producer metadata separately from observation equality, historical memory
 identity, float bits, lexical binding and existing source spellings. The closure
 audit collects this evidence; it does not defer testing until 9z.
+
+### 9b common raising entry point
+
+Delivered in [PR #2934](https://github.com/clicklang/click/pull/2934).
+
+The shared dispatcher already handles supported numeric and float operations;
+this slice removes the native root clone/re-intern from its Integer adapter.
+Integer comparison operands and legacy call arguments now pass their existing
+`SharedIntegerTerm` carrier into the session-aware importer, then use
+`raise_kernel_term`. Family-specific leaf policies remain explicit for the
+following slices. No source spelling, proof rule or budget changes.
+
+Validation: 1,837 selected Surface synthesis and scaling tests passed;
+`scripts/check.sh --ci-quality` passed.
+
+### 9c direct constructor raising
+
+Delivered in [PR #2936](https://github.com/clicklang/click/pull/2936).
+
+Shared constructors now raise their ordered fields directly instead of exporting
+an algebraic tree and walking it again. Program-parameter envelopes retain their
+algebraic spelling; int32 expressions use the shared dispatcher. Named scalar
+fields and existing refusals retain the native boundary's policy. Pointer fields
+reuse the same root-view cast logic as native constructors, without changing
+saved narrow views. Variable/read leaves remain assigned to 9d.
+
+Native/shared scalar spelling and refusal comparisons cover the field policy.
+Deterministic flat and nested constructor cases cover increasing size and assert
+that constructor trees are not exported (the nested case permits the remaining
+named-variable leaf adapter). The algebraic fixture fact-stability audit reports
+zero differences. Run work-measurement scaling tests without the audit environment:
+the audit performs extra lowering and changes those measurements.
+
+Validation on the integrated binding-ID base: 1,845 Surface/scaling tests,
+`scripts/check.sh --ci-quality`, and the algebraic fixture filter passed;
+the separate fact-stability report contains zero differences.
+
+### 9d algebraic read and variable boundaries
+
+Algebraic conditionals already raise their shared branches through the common
+dispatcher. Reads now compare their retained address directly when selecting
+parameter, held-local and recorded-state spellings. The existing selection order,
+type comparison and memory identity checks are unchanged. Variable naming uses
+its bounded typed descriptor, avoiding the general algebraic export walker.
+
+Validation: native/shared read and variable spelling parity with no tree exports;
+the nested constructor scaling regression now requires zero exports including
+its named leaf. All 1,846 Surface/scaling tests, quality checks and the algebraic
+fixture filter passed; its separate fact-stability report has zero differences.
 
 ## Chunk 3: machine-valued pure-function results
 

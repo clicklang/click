@@ -5088,7 +5088,9 @@ pub(in crate::surface) fn describe_pointer(
 ) -> String {
     if matches!(
         pointer.block,
-        PointerBlock::AutomaticLocal { .. } | PointerBlock::StaticObject { .. }
+        PointerBlock::ContractResult
+            | PointerBlock::AutomaticLocal { .. }
+            | PointerBlock::StaticObject { .. }
     ) {
         return if pointer.offset == PointerOffsetTerm::Constant(0) {
             pointer.block.to_string()
@@ -5714,7 +5716,8 @@ pub(super) fn describe_program_value(
         ProgramValue::Pointer(pointer)
             if matches!(
                 pointer.pointer().block,
-                PointerBlock::StringLiteral { .. }
+                PointerBlock::ContractResult
+                    | PointerBlock::StringLiteral { .. }
                     | PointerBlock::AutomaticLocal { .. }
                     | PointerBlock::StaticObject { .. }
             ) =>

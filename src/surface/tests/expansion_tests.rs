@@ -13610,7 +13610,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "owned-segmented-buffer",
         "owned_segmented_buffer.click",
         "owned_segmented_buffer_swap",
-        "have 0 < owner->first_len by {\n        have 0 < owner->first_len by {\n            arithmetic_certificate {",
+        "have 0 < owner->first_len by {\n        have 0 < owner->first_len by {",
     ),
     (
         "owned-string",
@@ -22705,4 +22705,31 @@ fn original_arena_alloc_loops_expand_without_transport_and_recheck() {
         );
     }
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: scalar, pointer, and aggregate contract-result expansion and cold replay"]
+fn typed_contract_results_expand_and_recheck() {
+    for (fixture, claim) in [
+        ("result_parameter_entry_state_certifies", "bump.ensures_0"),
+        ("c_local_named_result_state", "local_named_result.ensures_0"),
+        (
+            "struct_aggregate_return_postcondition",
+            "clone_packet.contract",
+        ),
+        ("free_through_a_returned_malloc_alias", "identity.ensures_0"),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{fixture}: {error:?}"));
+        assert!(!expanded.contains("@click:result"), "{fixture}: {expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error:?}\n{expanded}"));
+    }
 }
