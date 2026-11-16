@@ -2394,6 +2394,9 @@ impl Renderer<'_> {
         }
         self.push("pointer(");
         match &p.block {
+            crate::kernel::PointerBlock::AggregateReturn { frame } => {
+                self.fmt(format_args!("result.storage(frame, {frame})"))
+            }
             crate::kernel::PointerBlock::ContractResult => self.push("result.storage()"),
             crate::kernel::PointerBlock::StaticObject { binding } => {
                 self.fmt(format_args!("{binding}.storage()"))

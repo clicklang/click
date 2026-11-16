@@ -1292,7 +1292,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::ContractResult | PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::StaticObject { .. }))
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::ContractResult | PointerBlock::AggregateReturn { .. } | PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Value(value.clone()),
@@ -6208,6 +6208,7 @@ fn synthesize_surface_pointer(
     if matches!(
         pointer.block,
         PointerBlock::ContractResult
+            | PointerBlock::AggregateReturn { .. }
             | PointerBlock::StringLiteral { .. }
             | PointerBlock::AutomaticLocal { .. }
             | PointerBlock::StaticObject { .. }

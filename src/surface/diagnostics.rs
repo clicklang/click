@@ -4962,7 +4962,7 @@ pub(super) fn describe_memory_block(
         // A block's spelling carries where the storage lives, which is the
         // verifier's business; the reader wrote only the name. `local:` covers
         // the re-declaration and call-frame forms too (`local:lifetime:2:q`,
-        // `local:frame:3:__return`), whose last segment is that name.
+        // `local:frame:3:parameter`), whose last segment is that name.
         PointerBlock::Concrete(name) => Some(
             name.strip_prefix("global:")
                 .or_else(|| {
@@ -5089,6 +5089,7 @@ pub(in crate::surface) fn describe_pointer(
     if matches!(
         pointer.block,
         PointerBlock::ContractResult
+            | PointerBlock::AggregateReturn { .. }
             | PointerBlock::AutomaticLocal { .. }
             | PointerBlock::StaticObject { .. }
     ) {
@@ -5717,6 +5718,7 @@ pub(super) fn describe_program_value(
             if matches!(
                 pointer.pointer().block,
                 PointerBlock::ContractResult
+                    | PointerBlock::AggregateReturn { .. }
                     | PointerBlock::StringLiteral { .. }
                     | PointerBlock::AutomaticLocal { .. }
                     | PointerBlock::StaticObject { .. }

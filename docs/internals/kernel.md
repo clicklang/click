@@ -1038,10 +1038,14 @@ Aggregate returns supplied by a pointer-backed whole-object expression have a
 small ABI boundary: Click's struct-pointer view is `int32*`, while the internal
 address-backed return slot is `uint8*`. The return transition accepts only
 those two modeled data-pointer views, retags the address at that boundary, and
-copies every modeled leaf into a fresh `__return` block. Consequently a
+copies every modeled leaf into a fresh typed
+`PointerBlock::AggregateReturn { frame }` block. Consequently a
 postcondition such as `result.inner.flag == source.inner.flag` compares the
 fresh result cell with the source state without turning the returned
 aggregate into an alias or weakening ordinary pointer-return type checks.
+The frame counter gives successive copies distinct identities, independent of
+source local names. Exact storage addresses spell `result.storage(frame, N)`;
+o string is decoded into a return-storage identity.
 
 Positional initializers for copyable struct-valued locals use the same
 address-backed boundary. The C parser walks fields in declaration order,
