@@ -7437,7 +7437,7 @@ pub enum SmartTactic {
 pub(in crate::surface) struct FixedStateFrame<'a> {
     pub(in crate::surface) pre_state: &'a ExecutionState,
     pub(in crate::surface) state: &'a ExecutionState,
-    pub(in crate::surface) result: Option<&'a ProgramValue>,
+    pub(in crate::surface) result: Option<FixedStateResult<'a>>,
     pub(in crate::surface) recorded_states: &'a RecordedStates,
 }
 
@@ -7451,10 +7451,31 @@ impl<'a> FixedStateFrame<'a> {
         Self {
             pre_state,
             state,
-            result,
+            result: result.map(FixedStateResult::Native),
             recorded_states,
         }
     }
+    pub(in crate::surface) fn with_retained_result(
+        mut self,
+        result: &'a crate::kernel::StoredExecutionValue,
+    ) -> Self {
+        self.result = Some(FixedStateResult::Retained(result));
+        self
+    }
+
+    pub(in crate::surface) fn native_result(self) -> Option<std::borrow::Cow<'a, ProgramValue>> {
+        self.result.map(|result| match result {
+            FixedStateResult::Native(value) => std::borrow::Cow::Borrowed(value),
+            FixedStateResult::Retained(value) => value.native(),
+        })
+    }
+}
+
+/// Borrow the published carrier; only a selected native consumer materializes it.
+#[derive(Clone, Copy)]
+pub(in crate::surface) enum FixedStateResult<'a> {
+    Native(&'a ProgramValue),
+    Retained(&'a crate::kernel::StoredExecutionValue),
 }
 
 /// A C function's parameters and the argument expressions bound to them,
@@ -11360,3 +11381,11 @@ impl Eq for ClickError {}
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod retained_frame_tests {
+    use super::*;
+    mod scaling_tests {
+        include!("scaling_tests/surface/retained_frame_tests.rs");
+    }
+}

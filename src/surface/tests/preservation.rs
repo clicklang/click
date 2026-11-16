@@ -1812,3 +1812,28 @@ fn branching_graph_preservation_expands_and_replays() {
     })
     .unwrap();
 }
+
+#[test]
+#[ignore = "nightly: complete sweep migration expansion and cold replay"]
+fn sweep_prefix_preservation_migration_expands_and_replays() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/sweep_maintains_a_zero_unmarked_count.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    assert!(!source.contains("transport("));
+    let inputs = crate::cli::prepare_mdtest_inputs(&fixture).unwrap();
+    let project = crate::cli::read_mdtest_project_if_needed(&path, source, &inputs)
+        .unwrap()
+        .expect("the sweep imports its existing count lemmas");
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    verify_c_project(&project, &sources).unwrap();
+    let expanded =
+        expand_project_claim_source_by_label(&project, &inputs.program_inputs(), "sweep.contract")
+            .unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("sweep.contract", || {
+        verify_c_project(&project.with_entry_source(expanded), &sources)
+            .map_err(|error| error.report())
+    })
+    .unwrap();
+}

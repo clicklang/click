@@ -37,5 +37,5 @@ int32 spin(int32 n) {
 ```
 
 ```expect
-fail: termination measure `"c_decreases_rejects_address_escaped_loop_measure.c"::spin.local(0)` in `spin` has its address taken
+fail: termination measure `i` in `spin` has its address taken
 ```

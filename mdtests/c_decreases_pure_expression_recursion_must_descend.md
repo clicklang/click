@@ -44,5 +44,5 @@ int32 drain(int32 n) {
 ```
 
 ```expect
-fail: unproved obligation: `level("c_decreases_pure_expression_recursion_must_descend.c"::drain.parameter(0)) < level("c_decreases_pure_expression_recursion_must_descend.c"::drain.parameter(0))`
+fail: unproved obligation: `level(n) < level(n)`
 ```

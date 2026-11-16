@@ -180,7 +180,7 @@ pub(crate) fn program_checked_function_proposition_with_reason(
             _ => return false,
         };
         completed.is_exceptional == exceptional
-            && value.matches_native(completed.result.as_ref())
+            && value == &completed.result
             && memories_match_up_to_cached_reads(completed.state.memory(), state.memory())
             && completed.state.locals() == state.locals()
             && completed.state.aggregate_destination == state.aggregate_destination
@@ -322,7 +322,7 @@ mod cached_read_completion_tests {
                             OutcomeProofCore {
                                 publication: None,
                                 identity: OutcomeIdentity::fresh(),
-                                result: Arc::new(int32(0)),
+                                result: int32(0).into(),
                                 state: ExecutionState::new().with_memory(memory).into(),
                                 store_consequences_available: false,
                                 is_exceptional: false,
@@ -4244,7 +4244,7 @@ mod claim_requirement_tests {
                 OutcomeProofCore {
                     publication: None,
                     identity: OutcomeIdentity::fresh(),
-                    result: Arc::new(int32(0)),
+                    result: int32(0).into(),
                     state: ExecutionState::new().into(),
                     store_consequences_available: false,
                     is_exceptional,

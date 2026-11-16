@@ -441,15 +441,25 @@ pub(crate) fn child_statements<'a>(
             statements.push(else_branch);
         }
         CStatement::While {
-            condition, body, ..
+            test,
+            condition,
+            body,
+            ..
         }
         | CStatement::DoWhile {
-            condition, body, ..
+            test,
+            condition,
+            body,
+            ..
         } => {
             expressions.push(condition);
             statements.push(body);
+            if let Some(test) = test {
+                statements.push(test);
+            }
         }
         CStatement::For {
+            test,
             initializer,
             condition,
             step,
@@ -460,6 +470,9 @@ pub(crate) fn child_statements<'a>(
             expressions.push(condition);
             statements.push(step);
             statements.push(body);
+            if let Some(test) = test {
+                statements.push(test);
+            }
         }
         CStatement::Switch {
             expression, cases, ..

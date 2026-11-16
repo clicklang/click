@@ -3311,11 +3311,7 @@ fn count_leaves(leaves: &[Proof<'_>], control: LoopControlExit) -> usize {
 fn remaining_body_exits(statement: &ProgramStatement) -> (usize, usize) {
     match statement {
         ProgramStatement::Break => (1, 0),
-        ProgramStatement::Continue
-        | ProgramStatement::ForStep {
-            continue_after: true,
-            ..
-        } => (0, 1),
+        ProgramStatement::Continue => (0, 1),
         ProgramStatement::Seq(statements) => {
             statements
                 .iter()

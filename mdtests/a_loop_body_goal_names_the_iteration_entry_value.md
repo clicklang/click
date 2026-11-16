@@ -42,5 +42,5 @@ int32 walk(int32 n) {
 ```
 
 ```expect
-fail: goal: to_integer(at(statement(2).statement(0).entry, "a_loop_body_goal_names_the_iteration_entry_value.c"::walk.local(0)) + 1) <= "a_loop_body_goal_names_the_iteration_entry_value.c"::walk.parameter(0)
+fail: goal: to_integer(at(statement(2).statement(0).entry, i) + 1) <= n
 ```

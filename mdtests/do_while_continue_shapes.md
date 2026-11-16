@@ -1,9 +1,8 @@
-# the supported `do ... while` `continue` shapes still lower
+# Plain and effectful do-while tests share continue routing
 
-The companion to `do_while_switch_continue_rejected.md`. Only the combination
-of a `switch`-enclosed `continue` and a condition containing a call is
-rejected; each half on its own keeps working, and both results match what a C
-compiler computes.
+These retain the original cases beside `do_while_switch_continue.md`: a plain
+test with a switch-enclosed continue, and an effectful test with a direct
+continue. Each test executes at the loop's post-test destination.
 
 ```c filename=do_while_continue_shapes.c
 int32 stop_now() {

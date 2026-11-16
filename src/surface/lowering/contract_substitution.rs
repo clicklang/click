@@ -3319,6 +3319,13 @@ pub(in crate::surface) struct ContractSubstitutions<'a> {
     // cannot capture existing names; markers deliberately remain in scope
     // while their binder declarations and occurrences are renamed together.
     fresh_synthesis_binders: bool,
+    /// When set, a C declaration is written by its source name wherever that
+    /// name resolves to it in these locals and no binder here shadows it, as
+    /// the parser reads a proof that writes the name.
+    source_names: Option<(
+        &'a crate::kernel::LocalEnvironment,
+        Cow<'a, BTreeSet<String>>,
+    )>,
 }
 
 impl<'a> ContractSubstitutions<'a> {
@@ -3332,7 +3339,27 @@ impl<'a> ContractSubstitutions<'a> {
             contract_result_only: false,
             current_program_values: false,
             fresh_synthesis_binders: false,
+            source_names: None,
         }
+    }
+
+    /// No value substitutions; each C declaration is written by its source
+    /// name where that name resolves to it in `locals`.
+    pub(in crate::surface) fn with_source_names(
+        values: &'a BTreeMap<String, ContractExpression>,
+        locals: &'a crate::kernel::LocalEnvironment,
+    ) -> Self {
+        Self {
+            source_names: Some((locals, Cow::Owned(BTreeSet::new()))),
+            ..Self::new(values)
+        }
+    }
+
+    /// The source name `name` is written as here, if any.
+    fn source_name(&self, name: &crate::kernel::BindingName) -> Option<String> {
+        let (locals, bound) = self.source_names.as_ref()?;
+        let source = locals.active_source_name(name)?;
+        (!bound.contains(source)).then(|| source.to_owned())
     }
 
     /// Bind the postcondition return value without changing source C bindings
@@ -3388,6 +3415,7 @@ impl<'a> ContractSubstitutions<'a> {
             contract_result_only: false,
             current_program_values: false,
             fresh_synthesis_binders: false,
+            source_names: None,
         }
     }
 
@@ -3463,6 +3491,11 @@ impl<'a> ContractSubstitutions<'a> {
         if instance_renames.contains_key(name) {
             instance_renames.to_mut().remove(name);
         }
+        let source_names = self.source_names.as_ref().map(|(locals, bound)| {
+            let mut bound = bound.clone();
+            bound.to_mut().insert(name.to_owned());
+            (*locals, bound)
+        });
         ContractSubstitutions {
             values: Cow::Owned(values),
             instance_renames,
@@ -3471,6 +3504,7 @@ impl<'a> ContractSubstitutions<'a> {
             contract_result_only: self.contract_result_only,
             current_program_values: self.current_program_values,
             fresh_synthesis_binders: self.fresh_synthesis_binders,
+            source_names,
         }
     }
 }
@@ -4414,6 +4448,13 @@ fn substitute_program_expression_as_contract_with_numerals_in(
             .named()
             .and_then(|name| substitutions.value(name))
             .cloned()
+            .or_else(|| {
+                substitutions.source_name(name).map(|source| {
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        source.into(),
+                    ))
+                })
+            })
             .unwrap_or_else(|| ContractExpression::ProgramExpression(expression.clone()))),
         ProgramExpression::Add(left, right) => Ok(ContractExpression::Add(
             Box::new(substitute_program_expression_as_contract_with_numerals_in(
@@ -4638,7 +4679,10 @@ pub(in crate::surface) fn substitute_program_expression_in(
         | ProgramExpression::StepResult { .. } => Ok(expression.clone()),
         ProgramExpression::Variable(name) => {
             let Some(substitution) = name.named().and_then(|name| substitutions.value(name)) else {
-                return Ok(expression.clone());
+                return Ok(substitutions.source_name(name).map_or_else(
+                    || expression.clone(),
+                    |source| ProgramExpression::Variable(source.into()),
+                ));
             };
             contract_expression_as_program_expression(substitution).ok_or_else(|| {
                 format!(
