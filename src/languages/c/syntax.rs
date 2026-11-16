@@ -1000,9 +1000,7 @@ fn pointer_array_element(
     })
 }
 
-/// The element pointer type of a pointer array; `rank` is the `long`/`long
-/// long` rank of a 64-bit integer pointee, which the kernel element erases.
-
+/// A literal initializer's kernel value at its declared interface type.
 fn kernel_integer_literal_value(
     interface_type: InterfaceType,
     initializer: &CExpression,
@@ -20810,8 +20808,6 @@ fn is_ident_start(ch: char) -> bool {
 fn is_ident_continue(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
 }
-
-/// The locals `body` declares with pointer type in every declaration.
 
 #[cfg(test)]
 mod scope_metadata_tests {
