@@ -277,7 +277,7 @@ fn reading_matching(proposition: &Proposition, claim: &IntegerAffineClaim) -> Op
     })
 }
 
-fn canonical_surface(surface: &ClickProposition) -> Option<ClickProposition> {
+pub(super) fn canonical_surface(surface: &ClickProposition) -> Option<ClickProposition> {
     let anchored = surface_comparison_with_anchored_operands(surface);
     let mut surface = &anchored;
     let mut negative = false;

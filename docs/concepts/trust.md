@@ -171,6 +171,14 @@ fields and runs `core`'s code over them. Another is `integer::uint32_difference_
 as integers, because neither `bound - value` nor `(bound - 1) - value`
 wraps.
 
+Two elementary Integer multiplication axioms in `library/integer.click`,
+`multiply_commutative` and `multiply_negate`, state `a * b == b * a` and
+`a * -b == -(a * b)`. They expose these mathematical identities as named
+library applications. Product interval bounds and multiplication order for
+nonpositive factors are proved from these equations and the existing order
+laws. The independent BigInt oracle checks the new declarations across
+negative, zero, positive, and large operands.
+
 Five foundational Integer order axioms in `library/integer.click` expose
 rules that ordinary arithmetic proofs already used: `add_le` adds two
 inequalities; `multiply_order_nonnegative` preserves order when scaling by a

@@ -19,6 +19,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_normalization_closure");
+        if let Some(premises) = &premises
+            && let Some(closed) = Self::try_product_bound_using(search_input, premises)?
+        {
+            return Ok(closed);
+        }
         let step = if search_input
             .goal()
             .is_some_and(crate::surface::planning::solve::computes_with_known)
@@ -31,6 +36,189 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         };
         search_input.driver().apply_step(step)
+    }
+
+    /// Construct an interval-product proof over the explicitly selected facts.
+    /// Selection is slow work; replay names the four bounds and four corners.
+    pub(in crate::surface::proof) fn try_product_bound_using(
+        search_input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_product_bound_using");
+        use crate::kernel::IntegerTerm;
+        fn has_product(goal: &Proposition) -> bool {
+            match goal {
+                Proposition::Not(inner) => has_product(inner),
+                Proposition::ConditionIs(
+                    ConditionTerm::IntegerLessEqual(a, b)
+                    | ConditionTerm::IntegerGreaterEqual(a, b)
+                    | ConditionTerm::IntegerLessThan(a, b)
+                    | ConditionTerm::IntegerGreaterThan(a, b),
+                    _,
+                ) => {
+                    matches!(a.as_ref(), IntegerTerm::Multiply(..))
+                        || matches!(b.as_ref(), IntegerTerm::Multiply(..))
+                }
+                _ => false,
+            }
+        }
+        if !search_input.goal().is_some_and(has_product) {
+            return Ok(None);
+        }
+        let Some(surface) = search_input.surface_goal() else {
+            return Ok(None);
+        };
+        let Some(canonical) = super::integer_composition::canonical_surface(surface) else {
+            return Ok(None);
+        };
+        let Some((_, ComparisonOperator::LessEqual, _)) = integer_surface_ordered_parts(&canonical)
+        else {
+            return Ok(None);
+        };
+        let kernel = search_input.lower_integer_surface_proposition(&canonical, "product bound")?;
+        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) = &kernel else {
+            return Ok(None);
+        };
+        let (product, target, lower) = if let Some(target) = a.as_const() {
+            (b, target, true)
+        } else if let Some(target) = b.as_const() {
+            (a, target, false)
+        } else {
+            return Ok(None);
+        };
+        let IntegerTerm::Multiply(x, y) = product.as_ref() else {
+            return Ok(None);
+        };
+        // The cited bound supplies its operand's exact spelling, even when
+        // the goal names the complete product through an Integer let binding.
+        let mut selected: [Option<(BigInt, ClickProposition, ContractExpression)>; 4] =
+            std::array::from_fn(|_| None);
+        for surface in premises {
+            let written = super::integer_composition::canonical_surface(surface)
+                .unwrap_or_else(|| surface.clone());
+            let Some((written_left, _, written_right)) = integer_surface_ordered_parts(&written)
+            else {
+                continue;
+            };
+            let premise =
+                search_input.lower_integer_surface_proposition(&written, "product interval")?;
+            let readings = if matches!(
+                premise,
+                Proposition::ConditionIs(ConditionTerm::Compare { .. }, _)
+            ) {
+                crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+                    &premise,
+                )
+            } else {
+                vec![premise]
+            };
+            for premise in readings {
+                let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) = premise
+                else {
+                    continue;
+                };
+                for (i, operand) in [x, y].into_iter().enumerate() {
+                    for (upper, bounded, endpoint) in [(false, &b, &a), (true, &a, &b)] {
+                        if bounded.value_read() != operand.value_read() {
+                            continue;
+                        }
+                        let Some(value) = endpoint.as_const() else {
+                            continue;
+                        };
+                        let index = i * 2 + usize::from(upper);
+                        if selected[index]
+                            .as_ref()
+                            .is_none_or(|(old, _, _)| if upper { value < old } else { value > old })
+                        {
+                            selected[index] = Some((
+                                value.clone(),
+                                surface.clone(),
+                                if upper {
+                                    written_left.clone()
+                                } else {
+                                    written_right.clone()
+                                },
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        let [
+            Some((lo_x, p0, written_x)),
+            Some((hi_x, p1, _)),
+            Some((lo_y, p2, written_y)),
+            Some((hi_y, p3, _)),
+        ] = selected
+        else {
+            return Ok(None);
+        };
+        if lo_x > hi_x || lo_y > hi_y {
+            return Ok(None);
+        }
+        let mut corners = Vec::with_capacity(4);
+        for x in [&lo_x, &hi_x] {
+            for y in [&lo_y, &hi_y] {
+                let work = (x.bits() as usize + 1)
+                    .saturating_mul(y.bits() as usize + 1)
+                    .saturating_add(target.bits() as usize + 1);
+                if crate::instrumentation::deadline_exceeded_with_work(work) {
+                    return Ok(None);
+                }
+                let value = x * y;
+                if if lower {
+                    target > &value
+                } else {
+                    &value > target
+                } {
+                    return Ok(None);
+                }
+                let product = ContractExpression::Multiply(
+                    Box::new(surface_signed_integer_literal(x)),
+                    Box::new(surface_signed_integer_literal(y)),
+                );
+                let (left, right) = if lower {
+                    (surface_signed_integer_literal(target), product)
+                } else {
+                    (product, surface_signed_integer_literal(target))
+                };
+                corners.push(ClickProposition::Comparison {
+                    left: super::super::surface_synthesis::integer_typed_expression(left),
+                    operator: ComparisonOperator::LessEqual,
+                    right,
+                });
+            }
+        }
+        let mut proof = search_input.clone();
+        for corner in &corners {
+            let scope = proof.driver().open_have(corner.clone())?;
+            let closed = scope.driver().apply_step(ProofStep::Known)?;
+            proof = closed.join()?;
+        }
+        let mut cited = vec![p0, p1, p2, p3];
+        cited.extend(corners);
+        let arguments = vec![
+            written_x,
+            written_y,
+            surface_signed_integer_literal(&lo_x),
+            surface_signed_integer_literal(&hi_x),
+            surface_signed_integer_literal(&lo_y),
+            surface_signed_integer_literal(&hi_y),
+            surface_signed_integer_literal(target),
+        ];
+        Ok(Some(proof.driver().apply_step(
+            ProofStep::ApplyTheoremUsing {
+                application: TheoremApplication {
+                    name: format!(
+                        "click::integer::product_{}_bound",
+                        if lower { "lower" } else { "upper" }
+                    ),
+                    arguments,
+                },
+                premises: cited,
+            },
+        )?))
     }
 
     /// Strategy dispatch for the smart arithmetic step. Keep the same selected
@@ -90,6 +278,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_signed_interval_using");
+        if let Some(closed) = Self::try_product_bound_using(search_input, premises)? {
+            return Ok(Some(closed));
+        }
         let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
         else {
             return Ok(None);
@@ -1917,7 +2108,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// A bound `target <= a * b` (`lower`) or `a * b <= target` on a product
     /// of two machine observations, from the operands' type ranges:
     /// each operand's two range bounds as a `have`, then the product bound
-    /// by normalization using those four explicit premises,
+    /// by explicit library application using those four premises,
     /// the shape `click expand` writes. The four corner products of the
     /// ranges are compared with `target` first, so a range that cannot give
     /// the bound costs no step. Reads no fact and no other premise: the work
@@ -1982,8 +2173,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         let scope = proof.driver().open_have(bound.clone())?;
-        let step = ProofStep::NormalizeUsing(premises);
-        let Ok(closed) = scope.driver().apply_step(step) else {
+        let closed = scope.driver().try_product_bound_using(&premises)?;
+        let Some(closed) = closed else {
             return Ok(None);
         };
         Ok(Some(closed.join()?))

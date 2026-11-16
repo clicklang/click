@@ -1986,6 +1986,49 @@ theorem composition_differences(a: Integer, b: Integer) {
         apply(integer::difference_le(a, b, a - b)) using { a - b <= 0; a - b == a - b; };
     }
 }
+
+theorem check_integer_multiplication_equations(a: Integer, b: Integer) {
+    ensures a * b == b * a by { apply(integer::multiply_commutative(a, b)); }
+    ensures a * -b == -(a * b) by { apply(integer::multiply_negate(a, b)); }
+}
+
+theorem check_integer_order_composition(a: Integer, b: Integer, c: Integer) {
+    requires a <= b;
+    requires b <= c;
+    ensures a <= c by {
+        apply(integer::le_transitive(a, b, c)) using { a <= b; b <= c; };
+    }
+    ensures -b <= -a by {
+        apply(integer::negate_order(a, b)) using { a <= b; };
+    }
+}
+
+theorem check_integer_strict_weakening(a: Integer, b: Integer) {
+    requires a < b;
+    ensures a <= b by { apply(integer::lt_le(a, b)) using { a < b; }; }
+}
+
+theorem check_integer_product_interval(x: Integer, y: Integer) {
+    requires -2 <= x;
+    requires x <= 3;
+    requires -4 <= y;
+    requires y <= 5;
+    ensures -12 <= x * y by {
+        apply(integer::product_lower_bound(x, y, -2, 3, -4, 5, -12)) using {
+            -2 <= x; x <= 3; -4 <= y; y <= 5;
+            -12 <= (-2 * -4); -12 <= (-2 * 5);
+            -12 <= (3 * -4); -12 <= (3 * 5);
+        };
+    }
+    ensures x * y <= 15 by {
+        apply(integer::product_upper_bound(x, y, -2, 3, -4, 5, 15)) using {
+            -2 <= x; x <= 3; -4 <= y; y <= 5;
+            (-2 * -4) <= 15; (-2 * 5) <= 15;
+            (3 * -4) <= 15; (3 * 5) <= 15;
+        };
+    }
+}
+
 ```
 
 ```expect

@@ -237,3 +237,4 @@ apply_signed_interval_composition
 apply_specialized_composition
 prepare_integer_read_domain
 try_single_theorem_using
+try_product_bound_using

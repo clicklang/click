@@ -3383,11 +3383,19 @@ step.
 
 ## Exact integer product bounds
 
-Use `normalize() using { L <= x; x <= U; M <= y; y <= N; }` to check
+Use `solve() using { L <= x; x <= U; M <= y; y <= N; }` to prove
 an exact bound on the mathematical product `x * y`. Each interval endpoint
 and the result bound must be constant, with ordered interval endpoints.
+Expansion writes four numerical corner checks with `known()`, followed by
+`apply(integer::product_lower_bound(...)) using { ... }` or
+`apply(integer::product_upper_bound(...)) using { ... }`. The library proofs
+split on signs and apply multiplication order and transitivity explicitly;
+their dependencies contain no `normalize()`. No ambient fact is selected
+when replaying these applications. The same proof construction supplies
+product bounds from machine operands' stated type ranges.
 
-The checker computes `L*M`, `L*N`, `U*M`, and `U*N` using exact integers.
+The authored `normalize() using` compatibility form still checks this rule.
+Its checker computes `L*M`, `L*N`, `U*M`, and `U*N` using exact integers.
 For an upper bound, all four must be at most `T`; for the result `T <= x * y`,
 all four must be at least `T`. The rule accepts negative, zero, and crossing
 intervals and bounds weaker than the exact endpoints. It reads the four selected facts and does no premise search or implicit machine-range inference.

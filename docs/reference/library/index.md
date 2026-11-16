@@ -6803,7 +6803,267 @@ theorem multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
     requires a <= b;
     requires factor <= 0;
     ensures b * factor <= a * factor by {
-        normalize() using { a <= b; factor <= 0; };
+        have 0 <= -factor by {
+            have factor + -factor <= 0 + -factor by {
+                apply(integer::add_le(factor, 0, -factor, -factor)) using {
+                    factor <= 0; -factor <= -factor;
+                };
+            }
+            have 0 == factor + -factor by { known(); }
+            have -factor == 0 + -factor by { known(); }
+            rewrite(0, factor + -factor);
+            rewrite(-factor, 0 + -factor);
+            known();
+        }
+        have a * -factor <= b * -factor by {
+            apply(integer::multiply_order_nonnegative(a, b, -factor)) using {
+                a <= b; 0 <= -factor;
+            };
+        }
+        have -(b * -factor) <= -(a * -factor) by {
+            apply(integer::negate_order(a * -factor, b * -factor)) using {
+                a * -factor <= b * -factor;
+            };
+        }
+        have b * -factor == -(b * factor) by { apply(integer::multiply_negate(b, factor)); }
+        have a * -factor == -(a * factor) by { apply(integer::multiply_negate(a, factor)); }
+        have b * factor == -(-(b * factor)) by { known(); }
+        have a * factor == -(-(a * factor)) by { known(); }
+        rewrite(b * factor, -(-(b * factor)));
+        rewrite(a * factor, -(-(a * factor)));
+        rewrite(-(b * factor), b * -factor);
+        rewrite(-(a * factor), a * -factor);
+        known();
+    }
+}
+```
+
+### `integer::multiply_commutative`
+
+```click
+axiom multiply_commutative(a: Integer, b: Integer) {
+    ensures a * b == b * a;
+}
+```
+
+### `integer::multiply_negate`
+
+```click
+axiom multiply_negate(a: Integer, b: Integer) {
+    ensures a * -b == -(a * b);
+}
+```
+
+### `integer::negate_order`
+
+```click
+theorem negate_order(a: Integer, b: Integer) {
+    requires a <= b;
+    ensures -b <= -a by {
+        have a + (-a + -b) <= b + (-a + -b) by {
+            apply(integer::add_le(a, b, -a + -b, -a + -b)) using {
+                a <= b; -a + -b <= -a + -b;
+            };
+        }
+        have -b == a + (-a + -b) by { known(); }
+        have -a == b + (-a + -b) by { known(); }
+        rewrite(-b, a + (-a + -b));
+        rewrite(-a, b + (-a + -b));
+        known();
+    }
+}
+```
+
+### `integer::le_transitive`
+
+```click
+theorem le_transitive(a: Integer, b: Integer, c: Integer) {
+    requires a <= b;
+    requires b <= c;
+    ensures a <= c by {
+        have a + b <= b + c by {
+            apply(integer::add_le(a, b, b, c)) using { a <= b; b <= c; };
+        }
+        have (a + b) + -b <= (b + c) + -b by {
+            apply(integer::add_le(a + b, b + c, -b, -b)) using {
+                a + b <= b + c; -b <= -b;
+            };
+        }
+        have a == (a + b) + -b by { known(); }
+        have c == (b + c) + -b by { known(); }
+        rewrite(a, (a + b) + -b);
+        rewrite(c, (b + c) + -b);
+        known();
+    }
+}
+```
+
+### `integer::product_lower_bound`
+
+```click
+theorem product_lower_bound(x: Integer, y: Integer, lo_x: Integer, hi_x: Integer, lo_y: Integer, hi_y: Integer, bound: Integer) {
+    requires lo_x <= x;
+    requires x <= hi_x;
+    requires lo_y <= y;
+    requires y <= hi_y;
+    requires bound <= lo_x * lo_y;
+    requires bound <= lo_x * hi_y;
+    requires bound <= hi_x * lo_y;
+    requires bound <= hi_x * hi_y;
+    ensures bound <= x * y by {
+        have x * y == y * x by { apply(integer::multiply_commutative(x, y)); }
+        if 0 <= x {
+            have lo_y * x <= y * x by {
+                apply(integer::multiply_order_nonnegative(lo_y, y, x)) using { lo_y <= y; 0 <= x; };
+            }
+            if 0 <= lo_y {
+                have lo_x * lo_y <= x * lo_y by {
+                    apply(integer::multiply_order_nonnegative(lo_x, x, lo_y)) using { lo_x <= x; 0 <= lo_y; };
+                }
+                have x * lo_y == lo_y * x by { apply(integer::multiply_commutative(x, lo_y)); }
+                have bound <= lo_y * x by {
+                    rewrite(lo_y * x, x * lo_y);
+                    apply(integer::le_transitive(bound, lo_x * lo_y, x * lo_y)) using { bound <= lo_x * lo_y; lo_x * lo_y <= x * lo_y; };
+                }
+                rewrite(x * y, y * x);
+                apply(integer::le_transitive(bound, lo_y * x, y * x)) using { bound <= lo_y * x; lo_y * x <= y * x; };
+            } else {
+                have lo_y < 0 by { known(); }
+                have lo_y <= 0 by {
+                    apply(integer::lt_le(lo_y, 0)) using { lo_y < 0; };
+                }
+                have hi_x * lo_y <= x * lo_y by {
+                    apply(integer::multiply_order_nonpositive(x, hi_x, lo_y)) using { x <= hi_x; lo_y <= 0; };
+                }
+                have x * lo_y == lo_y * x by { apply(integer::multiply_commutative(x, lo_y)); }
+                have bound <= lo_y * x by {
+                    rewrite(lo_y * x, x * lo_y);
+                    apply(integer::le_transitive(bound, hi_x * lo_y, x * lo_y)) using { bound <= hi_x * lo_y; hi_x * lo_y <= x * lo_y; };
+                }
+                rewrite(x * y, y * x);
+                apply(integer::le_transitive(bound, lo_y * x, y * x)) using { bound <= lo_y * x; lo_y * x <= y * x; };
+            }
+        } else {
+            have x < 0 by { known(); }
+                have x <= 0 by {
+                    apply(integer::lt_le(x, 0)) using { x < 0; };
+                }
+            have hi_y * x <= y * x by {
+                apply(integer::multiply_order_nonpositive(y, hi_y, x)) using { y <= hi_y; x <= 0; };
+            }
+            if 0 <= hi_y {
+                have lo_x * hi_y <= x * hi_y by {
+                    apply(integer::multiply_order_nonnegative(lo_x, x, hi_y)) using { lo_x <= x; 0 <= hi_y; };
+                }
+                have x * hi_y == hi_y * x by { apply(integer::multiply_commutative(x, hi_y)); }
+                have bound <= hi_y * x by {
+                    rewrite(hi_y * x, x * hi_y);
+                    apply(integer::le_transitive(bound, lo_x * hi_y, x * hi_y)) using { bound <= lo_x * hi_y; lo_x * hi_y <= x * hi_y; };
+                }
+                rewrite(x * y, y * x);
+                apply(integer::le_transitive(bound, hi_y * x, y * x)) using { bound <= hi_y * x; hi_y * x <= y * x; };
+            } else {
+                have hi_y < 0 by { known(); }
+                have hi_y <= 0 by {
+                    apply(integer::lt_le(hi_y, 0)) using { hi_y < 0; };
+                }
+                have hi_x * hi_y <= x * hi_y by {
+                    apply(integer::multiply_order_nonpositive(x, hi_x, hi_y)) using { x <= hi_x; hi_y <= 0; };
+                }
+                have x * hi_y == hi_y * x by { apply(integer::multiply_commutative(x, hi_y)); }
+                have bound <= hi_y * x by {
+                    rewrite(hi_y * x, x * hi_y);
+                    apply(integer::le_transitive(bound, hi_x * hi_y, x * hi_y)) using { bound <= hi_x * hi_y; hi_x * hi_y <= x * hi_y; };
+                }
+                rewrite(x * y, y * x);
+                apply(integer::le_transitive(bound, hi_y * x, y * x)) using { bound <= hi_y * x; hi_y * x <= y * x; };
+            }
+        }
+    }
+}
+```
+
+### `integer::product_upper_bound`
+
+```click
+theorem product_upper_bound(x: Integer, y: Integer, lo_x: Integer, hi_x: Integer, lo_y: Integer, hi_y: Integer, bound: Integer) {
+    requires lo_x <= x;
+    requires x <= hi_x;
+    requires lo_y <= y;
+    requires y <= hi_y;
+    requires lo_x * lo_y <= bound;
+    requires lo_x * hi_y <= bound;
+    requires hi_x * lo_y <= bound;
+    requires hi_x * hi_y <= bound;
+    ensures x * y <= bound by {
+        have x * y == y * x by { apply(integer::multiply_commutative(x, y)); }
+        if 0 <= x {
+            have y * x <= hi_y * x by {
+                apply(integer::multiply_order_nonnegative(y, hi_y, x)) using { y <= hi_y; 0 <= x; };
+            }
+            if 0 <= hi_y {
+                have x * hi_y <= hi_x * hi_y by {
+                    apply(integer::multiply_order_nonnegative(x, hi_x, hi_y)) using { x <= hi_x; 0 <= hi_y; };
+                }
+                have x * hi_y == hi_y * x by { apply(integer::multiply_commutative(x, hi_y)); }
+                have hi_y * x <= bound by {
+                    rewrite(hi_y * x, x * hi_y);
+                    apply(integer::le_transitive(x * hi_y, hi_x * hi_y, bound)) using { x * hi_y <= hi_x * hi_y; hi_x * hi_y <= bound; };
+                }
+                rewrite(x * y, y * x);
+                apply(integer::le_transitive(y * x, hi_y * x, bound)) using { y * x <= hi_y * x; hi_y * x <= bound; };
+            } else {
+                have hi_y < 0 by { known(); }
+                have hi_y <= 0 by {
+                    apply(integer::lt_le(hi_y, 0)) using { hi_y < 0; };
+                }
+                have x * hi_y <= lo_x * hi_y by {
+                    apply(integer::multiply_order_nonpositive(lo_x, x, hi_y)) using { lo_x <= x; hi_y <= 0; };
+                }
+                have x * hi_y == hi_y * x by { apply(integer::multiply_commutative(x, hi_y)); }
+                have hi_y * x <= bound by {
+                    rewrite(hi_y * x, x * hi_y);
+                    apply(integer::le_transitive(x * hi_y, lo_x * hi_y, bound)) using { x * hi_y <= lo_x * hi_y; lo_x * hi_y <= bound; };
+                }
+                rewrite(x * y, y * x);
+                apply(integer::le_transitive(y * x, hi_y * x, bound)) using { y * x <= hi_y * x; hi_y * x <= bound; };
+            }
+        } else {
+            have x < 0 by { known(); }
+                have x <= 0 by {
+                    apply(integer::lt_le(x, 0)) using { x < 0; };
+                }
+            have y * x <= lo_y * x by {
+                apply(integer::multiply_order_nonpositive(lo_y, y, x)) using { lo_y <= y; x <= 0; };
+            }
+            if 0 <= lo_y {
+                have x * lo_y <= hi_x * lo_y by {
+                    apply(integer::multiply_order_nonnegative(x, hi_x, lo_y)) using { x <= hi_x; 0 <= lo_y; };
+                }
+                have x * lo_y == lo_y * x by { apply(integer::multiply_commutative(x, lo_y)); }
+                have lo_y * x <= bound by {
+                    rewrite(lo_y * x, x * lo_y);
+                    apply(integer::le_transitive(x * lo_y, hi_x * lo_y, bound)) using { x * lo_y <= hi_x * lo_y; hi_x * lo_y <= bound; };
+                }
+                rewrite(x * y, y * x);
+                apply(integer::le_transitive(y * x, lo_y * x, bound)) using { y * x <= lo_y * x; lo_y * x <= bound; };
+            } else {
+                have lo_y < 0 by { known(); }
+                have lo_y <= 0 by {
+                    apply(integer::lt_le(lo_y, 0)) using { lo_y < 0; };
+                }
+                have x * lo_y <= lo_x * lo_y by {
+                    apply(integer::multiply_order_nonpositive(lo_x, x, lo_y)) using { lo_x <= x; lo_y <= 0; };
+                }
+                have x * lo_y == lo_y * x by { apply(integer::multiply_commutative(x, lo_y)); }
+                have lo_y * x <= bound by {
+                    rewrite(lo_y * x, x * lo_y);
+                    apply(integer::le_transitive(x * lo_y, lo_x * lo_y, bound)) using { x * lo_y <= lo_x * lo_y; lo_x * lo_y <= bound; };
+                }
+                rewrite(x * y, y * x);
+                apply(integer::le_transitive(y * x, lo_y * x, bound)) using { y * x <= lo_y * x; lo_y * x <= bound; };
+            }
+        }
     }
 }
 ```
@@ -10816,3 +11076,18 @@ permission. Application requires both explicit ordering premises and does not
 inspect memory history or search for ranges.
 
 **Verified use:** [`mdtests/separation_adjacent_ranges.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_adjacent_ranges.md).
+
+### `integer::lt_le`
+
+```click
+theorem lt_le(a: Integer, b: Integer) {
+    requires a < b;
+    ensures a <= b by {
+        have a + 1 <= b by {
+            apply(integer::lt_step_le(a, b)) using { a < b; };
+        }
+        have a <= a + 1 by { known(); }
+        apply(integer::le_transitive(a, a + 1, b)) using { a <= a + 1; a + 1 <= b; };
+    }
+}
+```

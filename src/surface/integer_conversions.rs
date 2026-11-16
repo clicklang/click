@@ -104,6 +104,91 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[ignore = "nightly: expansion and replay across interval sign quadrants"]
+    fn product_bounds_expand_to_explicit_library_applications() {
+        check_product_bound_refusals();
+        let library = include_str!("../../library/integer.click");
+        let order = &library[library.find("theorem negate_order(").unwrap()
+            ..library.find("theorem scaled_product_bounds(").unwrap()];
+        let products = &library[library.find("theorem product_lower_bound(").unwrap()
+            ..library
+                .find("// Unsigned 32-bit product and remainder laws")
+                .unwrap()];
+        let ordinary = format!("import click::integer;\n{order}\n{products}");
+        crate::surface::proof::without_implicit_solve(|| verify_c_sources(&ordinary, &[])).unwrap();
+        for (lo_x, hi_x, lo_y, hi_y) in [
+            (2, 3, 4, 5),
+            (-3, -2, 4, 5),
+            (2, 3, -5, -4),
+            (-3, -2, -5, -4),
+            (-2, 3, -4, 5),
+            (0, 0, -4, 5),
+        ] {
+            let corners = [lo_x * lo_y, lo_x * hi_y, hi_x * lo_y, hi_x * hi_y];
+            for (lower, target) in [
+                (true, *corners.iter().min().unwrap()),
+                (false, *corners.iter().max().unwrap()),
+                (true, *corners.iter().min().unwrap() - 1),
+                (false, *corners.iter().max().unwrap() + 1),
+            ] {
+                let product = if lo_x < 0 { "named_product" } else { "x * y" };
+                let goal = if lower {
+                    format!("{target} <= {product}")
+                } else {
+                    format!("{product} <= {target}")
+                };
+                let binding = if lo_x < 0 {
+                    "let named_product: Integer = x * y;"
+                } else {
+                    ""
+                };
+                let premises = format!("{lo_x} <= x; x <= {hi_x}; {lo_y} <= y; y <= {hi_y};");
+                let source = format!(
+                    "theorem bound(x: Integer, y: Integer) {{
+                    requires {lo_x} <= x; requires x <= {hi_x};
+                    requires {lo_y} <= y; requires y <= {hi_y};
+                    {binding}
+                    ensures {goal} by {{ solve() using {{ {premises} }}; }}
+                }}"
+                );
+                verify_c_sources(&source, &[]).unwrap();
+                let expanded =
+                    expand_c_claim_source_by_label(&source, &[], "bound.ensures_0").unwrap();
+                assert!(
+                    expanded.contains(if lower {
+                        "::product_lower_bound("
+                    } else {
+                        "::product_upper_bound("
+                    }),
+                    "{expanded}"
+                );
+                assert!(!expanded.contains("normalize("), "{expanded}");
+                crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+                    .unwrap();
+            }
+        }
+    }
+
+    fn check_product_bound_refusals() {
+        let source = "theorem bound(x: Integer, y: Integer) {
+            requires -2 <= x; requires x <= 3; requires -4 <= y; requires y <= 5;
+            ensures x * y <= 15 by {
+                solve() using { -2 <= x; x <= 3; -4 <= y; y <= 5; };
+            }
+        }";
+        verify_c_sources(source, &[]).unwrap();
+        for premise in ["-2 <= x;", "x <= 3;", "-4 <= y;", "y <= 5;"] {
+            // Keep the omitted premise in the ambient context. Restricted
+            // solve must use only its remaining selected intervals.
+            let selected = source.rfind(premise).unwrap();
+            let mut omitted = source.to_owned();
+            omitted.replace_range(selected..selected + premise.len(), "");
+            assert!(verify_c_sources(&omitted, &[]).is_err(), "{premise}");
+        }
+        assert!(verify_c_sources(&source.replace("<= 15 by", "<= 14 by"), &[]).is_err());
+    }
+
+    #[test]
     fn integer_order_axioms_refuse_missing_guards_and_unrelated_conclusions() {
         for (name, parameters, arguments, premises, goal) in [
             (
@@ -213,6 +298,8 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         for name in [
             "add_le",
             "multiply_order_nonnegative",
+            "multiply_commutative",
+            "multiply_negate",
             "round_down_le",
             "le_antisymmetric",
             "lt_step_le",

@@ -710,3 +710,8 @@ src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_s
 src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	driver	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	driver	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	try_solve_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_product_bound_using	driver	3
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_product_bound_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	try_product_bound_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_product_bound_from_ranges	try_product_bound_using	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_product_bound_using	try_product_bound_using	1

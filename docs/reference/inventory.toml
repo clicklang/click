@@ -4944,3 +4944,32 @@ path = "reference/language/grammar.md#proposition-valued-lambdas"
 [[item]]
 id = "language.proposition-value"
 path = "reference/language/grammar.md#proposition-valued-lambdas"
+
+[[item]]
+id = "library.theorem.integer::multiply_commutative"
+path = "reference/library/index.md#integermultiply_commutative"
+
+[[item]]
+id = "library.theorem.integer::multiply_negate"
+path = "reference/library/index.md#integermultiply_negate"
+
+[[item]]
+id = "library.theorem.integer::negate_order"
+path = "reference/library/index.md#integernegate_order"
+
+[[item]]
+id = "library.theorem.integer::le_transitive"
+path = "reference/library/index.md#integerle_transitive"
+
+[[item]]
+id = "library.theorem.integer::product_lower_bound"
+path = "reference/library/index.md#integerproduct_lower_bound"
+
+[[item]]
+id = "library.theorem.integer::product_upper_bound"
+path = "reference/library/index.md#integerproduct_upper_bound"
+
+
+[[item]]
+id = "library.theorem.integer::lt_le"
+path = "reference/library/index.md#integerlt_le"
