@@ -1639,6 +1639,7 @@ fn collect_spec_program_variables(
                         return Visit::Stop("a subslice's bounds requirement");
                     }
                     SpecExpression::RangeFold { .. } => return Visit::Stop("a range fold"),
+                    SpecExpression::ObjectAddress(_) => return Visit::Stop("an object address"),
                     SpecExpression::Let { .. } => return Visit::Stop("a `let` expression"),
                     SpecExpression::LoopEntryState(_) => {
                         return Visit::Stop("a loop-entry state");

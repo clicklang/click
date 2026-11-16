@@ -328,6 +328,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             // current and the entry projection lower through
             // `resource_instance_at_path` against the state the caller supplies;
             // a projection the state cannot answer refuses the refinement there.
+            SpecExpression::ObjectAddress(_) => Visit::Descend,
             SpecExpression::ResourceField { .. } | SpecExpression::Value(_) => Visit::Skip,
             SpecExpression::IntegerToMachine { .. } => Visit::Stop(()),
             SpecExpression::ProgramExpression(expression) => {

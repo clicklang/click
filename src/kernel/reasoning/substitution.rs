@@ -7371,6 +7371,11 @@ fn substitute_pointer_variable_in_spec_expression(
     to: &Pointer,
 ) -> SpecExpression {
     match expression {
+        SpecExpression::ObjectAddress(address) => {
+            SpecExpression::ObjectAddress(Box::new(address.with_base(
+                substitute_pointer_variable_in_spec_expression(&address.base, from, to),
+            )))
+        }
         SpecExpression::ResourceField { .. } => expression.clone(),
         SpecExpression::IntegerToMachine { value, destination } => {
             SpecExpression::IntegerToMachine {

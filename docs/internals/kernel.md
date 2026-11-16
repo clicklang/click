@@ -1671,6 +1671,16 @@ its own permission. Historical field reads resolve the object's address in the
 selected entry state. Materialized aggregate results belong to the caller
 and survive the callee's exit.
 
+Specification addresses such as `&p->field` lower to
+`SpecExpression::ObjectAddress`. Its base is a specification expression, so a
+saved-state pointer read stays in the selected memory. Typed, outside-in
+`SpecAddressStep` projections retain C byte offsets and subobject selection;
+the evaluated base feeds the ordinary C address operation, preserving its
+member designation, extent, qualifiers, and checked-address obligations.
+Evaluation introduces no execution local or lexical binder. The Surface form
+remains the original address expression, including `old(...)`/`at(...)` state
+selectors; no generated operand name or replacement syntax is required.
+
 A contract's return value is `BindingName::ContractResult`, with Surface spelling
 `result`. It is distinct from all `Named`, automatic, and static bindings,
 including source C variables named `result`. Fixed-state elaboration carries its

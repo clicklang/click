@@ -384,6 +384,7 @@ impl Names {
         self.visit();
         use SpecExpression::*;
         match expression {
+            ObjectAddress(address) => self.expression(&mut address.base),
             // Instance identities are not lexical C parameter names.
             Value(_) | ResourceField { .. } => {}
             IntegerToMachine { value, .. } => self.integer(value),

@@ -4214,6 +4214,77 @@ pub enum SpecExpression {
         requirement: Box<SpecProposition>,
         value: Box<SpecExpression>,
     },
+    /// Address a C place whose base is evaluated by the specification's state.
+    /// No lexical binding or execution local is introduced.
+    ObjectAddress(Box<SpecObjectAddress>),
+}
+
+/// The C place operations around a specification-evaluated address base.
+/// Steps are stored outside-in, preserving C subobject designation formation.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum SpecAddressStep {
+    Subobject { width: u32 },
+    OffsetBytes { bytes: u32 },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct SpecObjectAddress {
+    pub base: Box<SpecExpression>,
+    pub steps: Vec<SpecAddressStep>,
+    pub value_type: ProgramType,
+    pub volatile: bool,
+    pub pointee_constant: bool,
+    pub access_class: Option<crate::kernel::effective_type::CAccessClass>,
+    pub source: ExpressionLoadSource,
+    pub checked: bool,
+}
+
+impl SpecObjectAddress {
+    /// Rebuild only this node's metadata while a spec traversal maps its base.
+    pub(crate) fn with_base(&self, base: SpecExpression) -> Self {
+        Self {
+            base: Box::new(base),
+            steps: self.steps.clone(),
+            value_type: self.value_type,
+            volatile: self.volatile,
+            pointee_constant: self.pointee_constant,
+            access_class: self.access_class.clone(),
+            source: self.source.clone(),
+            checked: self.checked,
+        }
+    }
+
+    /// Feed the selected base value to the ordinary C address operation.
+    /// All place steps remain syntax, so member designation is formed by the
+    /// same checked transition as a program address, without a fake variable.
+    pub(crate) fn program_expression(&self, base: ProgramValue) -> ProgramExpression {
+        let mut pointer = ProgramExpression::Value(base);
+        for step in self.steps.iter().rev() {
+            pointer = match step {
+                SpecAddressStep::Subobject { width } => ProgramExpression::Subobject {
+                    pointer: Box::new(pointer),
+                    width: *width,
+                },
+                SpecAddressStep::OffsetBytes { bytes } => ProgramExpression::PointerOffsetBytes {
+                    pointer: Box::new(pointer),
+                    bytes: *bytes,
+                },
+            };
+        }
+        let target = Box::new(ProgramExpression::TypedLoad {
+            pointer: Box::new(pointer),
+            value_type: self.value_type,
+            volatile: self.volatile,
+            pointee_constant: self.pointee_constant,
+            access_class: self.access_class.clone(),
+            source: self.source.clone(),
+        });
+        if self.checked {
+            ProgramExpression::CheckedObjectAddress(target)
+        } else {
+            ProgramExpression::AddressOf(target)
+        }
+    }
 }
 
 impl SpecExpression {
