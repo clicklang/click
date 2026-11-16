@@ -1123,6 +1123,8 @@ pub(super) fn project_return_resource_cores(
 #[cfg(test)]
 mod existential_return_tests;
 #[cfg(test)]
+mod fallback_inventory_tests;
+#[cfg(test)]
 mod fresh_allocation_tests;
 #[cfg(test)]
 mod recursive_return_tests;
