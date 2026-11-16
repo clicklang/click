@@ -31,8 +31,8 @@ void fill(uint8* dst) {
 
 ```expect
 fail: quantified frame: a leaf was not carried: a read in it was not shown unchanged between its two states by the steps between them and this context's facts
-  leaf it had: defined(at(statement(1).entry, "fill.c"::fill.parameter(0)[k]))
-  leaf it wanted: defined("fill.c"::fill.parameter(0)[k])
+  leaf it had: defined(at(statement(1).entry, dst[k]))
+  leaf it wanted: defined(dst[k])
   this is the refusal with the source as the only premise, which is all a bare `transport` cites
   this is a search miss, not a refusal; if the target holds, list the facts that carry the source in `transport(P, Q) using { ... }`, stating any that is not available with `have` first
 ```

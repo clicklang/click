@@ -46,6 +46,8 @@ const NIGHTLY: &[&str] = &[
     "aliased_packaged_views_keep_their_selected_whole_loan.md", // selected call/hold recovery integration control
     "multiple_witnesses_survive_checked_calls.md", // 1.07s focused: repeated calls with two recorded witnesses
     "symbolic_return_boundary_uses_explicit_bounds.md", // 0.78s focused: symbolic return beside retained memory
+    "shared_loop_test_and_update.md", // 1.2s focused: ranked pre/post-test call proofs
+    "shared_loop_post_test_ends_body_scope.md", // 0.8s focused: post-test after an expired body array
     "a_fixed_range_transfer_preserves_the_retained_tail.md", // 0.55s focused: typed byte-range call and return
     "consumed_scalar_transfer_mixes_with_a_borrowed_return.md", // 0.67s focused: two-parameter call and caller return
     "integer_migration_routes.md", // 0.9s: signed/native routes and rounding

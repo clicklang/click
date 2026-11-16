@@ -37,7 +37,7 @@ void walk(int32 *a, int32 *b, int32 n) {
 ```expect
 fail: missing resource fact `owns b[1]`
   note: held `owns b[0..n]` covers `b[1]` only when `2 <= n`
-  C operation: *("a_store_refusal_lists_the_contracts_requires.c"::walk.parameter(1) + 1) = 1
+  C operation: *(b + 1) = 1
   C statement at a_store_refusal_lists_the_contracts_requires.c:2:5: `b[1] = 1;`
 proof context:
   pure facts: [0 <= n, 1 <= n, n <= 1073741823, n as uint32 <= 1073741823u32, little_endian(), viewable(a[0..n]), viewable(b[0..n]), separate(b[0..n], a[0..n]), forall (k: int32) { 0 <= k and k < n implies defined(old(a[k])) }, forall (k: int32) { 0 <= k and k < n implies defined(old(b[k])) }]

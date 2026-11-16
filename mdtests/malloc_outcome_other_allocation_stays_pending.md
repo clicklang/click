@@ -29,5 +29,5 @@ int f() {
 ```
 
 ```expect
-fail: missing resource fact `owns ((char *)"other_pending.c"::f.local(1))[0..4]`
+fail: missing resource fact `owns ((char *)q)[0..4]`
 ```

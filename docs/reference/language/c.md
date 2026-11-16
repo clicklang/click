@@ -1667,6 +1667,12 @@ automatic locals throughout the body. These references remain unambiguous when
 the source reuses a spelling. Qualify an ambiguous function with its source,
 for example `"file.c"::f.local(0)`, or a declared source alias.
 
+Diagnostics, traces, and `click expand` write a declaration by its source name
+when that name is unambiguous: no other parameter, automatic or `static` local
+of the function, and no file-scope object declared before it, has the same
+spelling, and the name is not a Click word such as `result` or `old`. Otherwise
+they write the canonical `"file.c"::f.local(i)` or `"file.c"::f.parameter(i)`.
+
 A declaration is distinct from each execution instance of its storage. Loop
 re-entry and recursive calls allocate distinct instances. Raised pointer
 addresses can name an exact instance with `f.local(i).storage(implicit)`,

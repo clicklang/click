@@ -312,7 +312,7 @@ fn decode(
     c: &Config,
     files: &super::crate_inputs::SourceFiles,
 ) -> Result<RustExport, String> {
-    let mut export = if c.crate_config.is_some() {
+    let export = if c.crate_config.is_some() {
         super::charon::decode_crate(
             bytes,
             &c.source,

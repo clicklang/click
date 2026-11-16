@@ -15,6 +15,8 @@ enum ShapeHead {
     Sequence(usize),
     If(ProgramExpression),
     Loop {
+        has_update: bool,
+        test_position: Option<LoopTestPosition>,
         condition: ProgramExpression,
         do_while: bool,
         backedge_target: Option<ControlTargetId>,
@@ -22,7 +24,6 @@ enum ShapeHead {
     },
     Switch(ProgramExpression, Vec<Option<u32>>),
     Try(String, bool),
-    Step(Vec<BindingName>, bool),
     Leaf(ProgramStatement),
 }
 
@@ -33,12 +34,16 @@ impl ShapeHead {
             ProgramStatement::Seq(statements) => Self::Sequence(statements.len()),
             ProgramStatement::If { condition, .. } => Self::If(condition.clone()),
             ProgramStatement::Loop {
+                test,
+                update,
                 condition,
                 do_while,
                 backedge_target,
                 natural_exit_target,
                 ..
             } => Self::Loop {
+                has_update: update.is_some(),
+                test_position: test.as_ref().map(|test| test.position),
                 condition: condition.clone(),
                 do_while: *do_while,
                 backedge_target: *backedge_target,
@@ -53,11 +58,7 @@ impl ShapeHead {
                 cleanup_unwind,
                 ..
             } => Self::Try(binding.clone(), *cleanup_unwind),
-            ProgramStatement::ForStep {
-                exited_locals,
-                continue_after,
-                ..
-            } => Self::Step(exited_locals.clone(), *continue_after),
+
             _ => Self::Leaf(statement.clone()),
         }
     }
@@ -69,7 +70,9 @@ fn children_all(
     mut visit: impl FnMut(&ProgramStatement) -> bool,
 ) -> bool {
     match statement {
-        ProgramStatement::Loop { body, .. } => visit(body),
+        ProgramStatement::Loop {
+            test, update, body, ..
+        } => program_loop_regions(body, update.as_deref(), test.as_ref()).all(visit),
         ProgramStatement::Seq(statements) => statements.iter().all(|child| visit(child)),
         ProgramStatement::If {
             then_branch,
@@ -80,7 +83,7 @@ fn children_all(
         ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => visit(try_body) && visit(handler),
-        ProgramStatement::ForStep { step, .. } => visit(step),
+
         ProgramStatement::Skip
         | ProgramStatement::EndScalarReference(_)
         | ProgramStatement::ScalarReferenceScope(_)
@@ -124,6 +127,8 @@ impl LoopSourceIndex {
         if let Some((target, exit)) = natural {
             index.loops.push(0..0);
             index.shape.push(ShapeHead::Loop {
+                has_update: false,
+                test_position: None,
                 condition: crate::kernel::program_expression::int32_literal(1),
                 do_while: false,
                 backedge_target: Some(target),

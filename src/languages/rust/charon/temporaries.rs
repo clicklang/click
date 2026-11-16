@@ -535,6 +535,33 @@ pub(super) fn call_steps(
             }
         }
     }
+    // Each local's mentions apart from storage markers and the call that
+    // defines it: a tested-then-read result has exactly its test and its read.
+    let mut mentions = BTreeMap::<String, usize>::new();
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            if matches!(statement, S::BeginStorage { .. } | S::EndStorage { .. }) {
+                continue;
+            }
+            for name in mentioned_locals(statement) {
+                *mentions.entry(name).or_default() += 1;
+            }
+        }
+        let mut terminator_reads = BTreeMap::new();
+        let mut terminator_named = BTreeSet::new();
+        terminator_uses(
+            &block.terminator,
+            &mut terminator_reads,
+            &mut terminator_named,
+        );
+        terminator_named.extend(terminator_reads.into_keys());
+        if let Some(destination) = call_destination(&block.terminator) {
+            terminator_named.remove(destination);
+        }
+        for name in terminator_named {
+            *mentions.entry(name).or_default() += 1;
+        }
+    }
     let scalar = |name: &str| {
         locals.iter().any(|local| {
             local.name == name
@@ -558,6 +585,44 @@ pub(super) fn call_steps(
             continue;
         };
         let (function, destination, target) = (function.clone(), destination.clone(), *target);
+        // A result its successor tests for a variant, then reads once in the
+        // arm that variant takes, as a `for` loop's `match` on `next()` does:
+        // the test keeps the result and the arm's read ends it.
+        if temporaries.contains(&destination)
+            && assigned.get(&destination) == Some(&1)
+            && mentions.get(&destination) == Some(&2)
+            && target != index
+            && predecessors.get(target) == Some(&1)
+            && let Some((arm, position)) =
+                tested_then_read(blocks, &destination, target, &predecessors)
+        {
+            let call = next_step;
+            let result = |keeps| E::CallResult {
+                call,
+                function: function.clone(),
+                keeps,
+            };
+            if let T::If {
+                condition: E::VariantIs { value, .. },
+                ..
+            } = &mut blocks[target].terminator
+            {
+                **value = result(true);
+            }
+            if let S::Assign {
+                value: E::EnumField { base, .. },
+                ..
+            } = &mut blocks[arm].statements[position]
+            {
+                **base = result(false);
+            }
+            if let T::Call { result, .. } = &mut blocks[index].terminator {
+                *result = Some(call);
+            }
+            next_step += 1;
+            removed.insert(destination);
+            continue;
+        }
         if !temporaries.contains(&destination)
             || named.contains(&destination)
             || reads.get(&destination) != Some(&1)
@@ -569,7 +634,14 @@ pub(super) fn call_steps(
             continue;
         }
         let call = next_step;
-        let mut values = BTreeMap::from([(destination.clone(), E::CallResult { call, function })]);
+        let mut values = BTreeMap::from([(
+            destination.clone(),
+            E::CallResult {
+                call,
+                function,
+                keeps: false,
+            },
+        )]);
         let mut pending = Pending {
             values: &mut values,
             refused: Vec::new(),
@@ -603,6 +675,57 @@ pub(super) fn call_steps(
         });
     }
     locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// The arm a test of `destination`'s variant takes when it holds, and the
+/// position there of the arm's one read of it, its payload: `(arm, i)` when
+/// `dispatch` only tests `destination` and the arm, entered only from that
+/// test, reads its field first.
+fn tested_then_read(
+    blocks: &[MirBlock],
+    destination: &str,
+    dispatch: usize,
+    predecessors: &[usize],
+) -> Option<(usize, usize)> {
+    let transparent = |statement: &S| {
+        matches!(
+            statement,
+            S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
+        )
+    };
+    let block = blocks.get(dispatch)?;
+    let T::If {
+        condition: E::VariantIs { value, variant },
+        then_target,
+        ..
+    } = &block.terminator
+    else {
+        return None;
+    };
+    if !matches!(value.as_ref(), E::Local { name } if name == destination)
+        || !block.statements.iter().all(transparent)
+        || predecessors.get(*then_target) != Some(&1)
+    {
+        return None;
+    }
+    let arm = blocks.get(*then_target)?;
+    let position = arm
+        .statements
+        .iter()
+        .position(|statement| !transparent(statement))?;
+    let S::Assign {
+        value: E::EnumField {
+            base,
+            variant: read,
+            ..
+        },
+        ..
+    } = &arm.statements[position]
+    else {
+        return None;
+    };
+    (matches!(base.as_ref(), E::Local { name } if name == destination) && read == variant)
+        .then_some((*then_target, position))
 }
 
 fn successors(terminator: &T) -> Vec<usize> {
@@ -670,6 +793,8 @@ fn pure(value: &E) -> bool {
         | E::ChunkOptionSlice { .. }
         | E::ChunkOptionTag { .. }
         | E::ChunkRemainder { .. } => false,
+        // The test reads its value as a pure scalar test does.
+        E::VariantIs { value, .. } => pure(value),
     }
 }
 
@@ -963,6 +1088,7 @@ fn children(expression: &E) -> Vec<&E> {
         E::Borrow { place, .. } => vec![place],
         E::Deref { reference, .. } => vec![reference],
         E::Field { base, .. } | E::EnumField { base, .. } => vec![base],
+        E::VariantIs { value, .. } => vec![value],
         E::Call { arguments, .. } => arguments.iter().collect(),
         E::EnumConstruct { fields, .. } => fields.iter().collect(),
         E::ClosureInstance { captures, .. } => captures.iter().collect(),
@@ -1002,6 +1128,7 @@ fn children_mut(expression: &mut E) -> Vec<&mut E> {
         E::Borrow { place, .. } => vec![place],
         E::Deref { reference, .. } => vec![reference],
         E::Field { base, .. } | E::EnumField { base, .. } => vec![base],
+        E::VariantIs { value, .. } => vec![value],
         E::Call { arguments, .. } => arguments.iter_mut().collect(),
         E::EnumConstruct { fields, .. } => fields.iter_mut().collect(),
         E::ClosureInstance { captures, .. } => captures.iter_mut().collect(),
@@ -1249,7 +1376,7 @@ mod tests {
         assert!(matches!(
             blocks[1].statements.as_slice(),
             [S::Assign { value: E::Binary { left, .. }, .. }]
-                if matches!(left.as_ref(), E::CallResult { call: 0, function } if function == "f")
+                if matches!(left.as_ref(), E::CallResult { call: 0, function, .. } if function == "f")
         ));
     }
 

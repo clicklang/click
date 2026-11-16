@@ -3316,24 +3316,6 @@ mod tests {
                 StatementOutcome::RuntimeError(RuntimeError::MutexStorageScopeEnd { .. })
             ));
         }
-        for continue_after in [false, true] {
-            let paths = eval::execute_execution_statement_paths(
-                &state,
-                &ProgramStatement::ForStep {
-                    step: Box::new(ProgramStatement::Skip),
-                    exited_locals: vec!["holder".into()],
-                    continue_after,
-                },
-                &PureFactContext::new(),
-                ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
-                &mut ExecutionBudget::new(),
-            )
-            .unwrap();
-            assert!(matches!(
-                paths[0].outcome,
-                StatementOutcome::RuntimeError(RuntimeError::MutexStorageScopeEnd { .. })
-            ));
-        }
     }
 
     #[test]

@@ -26,7 +26,7 @@ pub(super) use have_proofs::{
     reverse_surface_equality,
 };
 pub(in crate::surface) use have_proofs::{
-    FixedStateLoweringOptions, capture_fixed_state_native_expression_with_guards,
+    FixedStateLoweringOptions, capture_fixed_state_retained_expression_with_guards,
     evaluate_fixed_state_array_ref_through_kernel, evaluate_fixed_state_expression_through_kernel,
     evaluate_fixed_state_expression_through_kernel_with_algebraic_and_integer_values,
     evaluate_fixed_state_expression_through_kernel_with_algebraic_values,

@@ -16,6 +16,7 @@ of them are fast and which search, and what each may cost.
 - [Surface Click and Kernel Click](../concepts/surface-and-kernel.md)
 - [Proof landscape](../concepts/proof-landscape.md)
 - [Proof objects](proof-objects.md)
+- [Pure fact store (design)](pure-fact-store.md)
 - [Kernel implementation](kernel.md)
 - [Separation logic](separation-logic.md)
 - [Stable views](stable-views.md)

@@ -34,5 +34,5 @@ int32 both_positive(int32 x, int32 y) {
 ```
 
 ```expect
-fail: its condition `(("branch_names_the_condition_paths_it_cannot_join.c"::both_positive.parameter(0) > 0) && ("branch_names_the_condition_paths_it_cannot_join.c"::both_positive.parameter(1) > 0))` is false along 2 checked paths, and `branch` has one arm per truth value
+fail: its condition `((x > 0) && (y > 0))` is false along 2 checked paths, and `branch` has one arm per truth value
 ```
