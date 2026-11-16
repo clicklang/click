@@ -1270,10 +1270,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     }
                 }
                 have viewable(arena->occupied[0..arena->capacity]) by {
-                    transport(at(find_first_free_run.entry, viewable(arena->occupied[0..arena->capacity])), viewable(arena->occupied[0..arena->capacity])) using {
-                        at(find_first_free_run.entry,
-                            viewable(arena->occupied[0..arena->capacity]));
-                    };
+                    observe(at(find_first_free_run.entry, arena->occupied)[0..at(find_first_free_run.entry, arena->capacity)]);
                 }
                 let run = fold(arena_scan(arena->data, arena->occupied, arena->capacity), { lo: lo, hi: i });
                 have run.hi == i by {
@@ -1369,12 +1366,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             k < arena->capacity;
                         };
                     }
-                    transport(at(iteration, arena->occupied[k]) == at(find_first_free_run.entry, arena->occupied[k]), arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k])) using {
-                        at(iteration, arena->occupied[k]) == at(find_first_free_run.entry,
-                            arena->occupied[k]);
-                        0 <= k;
-                        k < arena->capacity;
-                    };
+                    known();
                 }
                 have arena->data == old(arena->data) by {
                     normalize();
@@ -1447,10 +1439,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     }
                 }
                 have viewable(arena->occupied[0..arena->capacity]) by {
-                    transport(at(find_first_free_run.entry, viewable(arena->occupied[0..arena->capacity])), viewable(arena->occupied[0..arena->capacity])) using {
-                        at(find_first_free_run.entry,
-                            viewable(arena->occupied[0..arena->capacity]));
-                    };
+                    observe(at(find_first_free_run.entry, arena->occupied)[0..at(find_first_free_run.entry, arena->capacity)]);
                 }
                 let run = fold(arena_scan(arena->data, arena->occupied, arena->capacity), { lo: i, hi: i });
                 have 0 <= at(iteration, i) by {
@@ -1540,12 +1529,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             k < arena->capacity;
                         };
                     }
-                    transport(at(iteration, arena->occupied[k]) == at(find_first_free_run.entry, arena->occupied[k]), arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k])) using {
-                        at(iteration, arena->occupied[k]) == at(find_first_free_run.entry,
-                            arena->occupied[k]);
-                        0 <= k;
-                        k < arena->capacity;
-                    };
+                    known();
                 }
                 have run.hi == i by {
                     normalize();
