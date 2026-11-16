@@ -46,7 +46,7 @@ fn pointee_const_return_symbolic_result_and_binding_preserve_qualifier() {
         Some(&parameter)
     );
     assert!(
-        matches!(state.locals.binding(C_CONTRACT_RESULT_NAME), Some(LocalBinding::Object {
+        matches!(state.locals.binding(CONTRACT_RESULT), Some(LocalBinding::Object {
             value, pointee_constant: true, ..
         }) if value.pointer().is_some_and(|pointer| pointer.pointee_constant()))
     );

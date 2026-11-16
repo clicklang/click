@@ -1293,7 +1293,7 @@ impl FixedStateLowering {
         }
         if let Some(result) = result {
             lowering_state =
-                lowering_state.with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone());
+                lowering_state.with_local(crate::kernel::CONTRACT_RESULT, result.clone());
         }
         Self {
             entry_state,
@@ -1325,7 +1325,7 @@ impl FixedStateLowering {
         let mut lowering_state = bound(state);
         if let Some(result) = result {
             lowering_state =
-                lowering_state.with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone());
+                lowering_state.with_local(crate::kernel::CONTRACT_RESULT, result.clone());
         }
         let mut element_types = contract_environment
             .array_refs

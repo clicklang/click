@@ -26,7 +26,7 @@ pub(in crate::surface) fn construction_result_resource(
     }
     Ok(Some(ResourceSpec::owned_memory(
         MemorySegment::new(
-            crate::kernel::program_expression::variable(crate::kernel::C_CONTRACT_RESULT_NAME),
+            crate::kernel::program_expression::variable(crate::kernel::CONTRACT_RESULT),
             crate::kernel::program_expression::int32_literal(0),
             crate::kernel::program_expression::int32_literal(layout.size_bytes()),
         )
@@ -536,7 +536,7 @@ pub(in crate::surface) fn initial_call_state(
         // Resource preparation evaluates the implicit contract segment before
         // the checked function-entry binder installs its aggregate local.
         state = state.with_local(
-            crate::kernel::C_CONTRACT_RESULT_NAME,
+            crate::kernel::CONTRACT_RESULT,
             ProgramValue::typed_pointer(destination.clone(), function.return_type()),
         );
         let storage = ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -3602,7 +3602,7 @@ pub(in crate::surface) fn contract_segment_element_width_for_result_type(
         return element_width;
     }
     if matches!(&segment.base, ProgramExpression::Variable(name)
-        if name.is_named(crate::kernel::C_CONTRACT_RESULT_NAME)
+        if name == &crate::kernel::CONTRACT_RESULT
             || (name.is_named("result") && !matches!(&segment.surface,
                 ContractSegmentSurface::Range { base: ContractExpression::CBinding(_), .. })))
         && let Some(element_width) = result_type
@@ -3644,7 +3644,7 @@ pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
     if segment.field_element_width().is_some()
         || contract_expression_element_width(parameters, &segment.base).is_some()
         || matches!(&segment.base, ProgramExpression::Variable(name)
-            if name.is_named(crate::kernel::C_CONTRACT_RESULT_NAME)
+            if name == &crate::kernel::CONTRACT_RESULT
                 || (name.is_named("result") && !matches!(&segment.surface,
                     ContractSegmentSurface::Range { base: ContractExpression::CBinding(_), .. })))
     {

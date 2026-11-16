@@ -2155,15 +2155,10 @@ fn fixed_state_elaboration<'a>(
         array_memories: bound_array_memories.into_iter().collect(),
         ..SpecElaborationContext::default()
     };
-    if let Some(result) = result {
-        context.values.insert(
-            crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
-            SpecExpression::Value(result.clone()),
-        );
-    }
-    context.contract_result_in_scope = context
-        .values
-        .contains_key(&crate::kernel::C_CONTRACT_RESULT_NAME.to_string());
+    context.contract_result = result
+        .cloned()
+        .map(|value| std::sync::Arc::new(SpecExpression::Value(value)));
+    context.contract_result_in_scope = context.contract_result.is_some();
     (lowerer, context)
 }
 
@@ -2781,9 +2776,7 @@ pub(in crate::surface) fn function_contract_summary(
 
     let mut exceptional_ensures = Vec::new();
     let mut exceptional_context = context.clone();
-    exceptional_context
-        .values
-        .remove(&crate::kernel::C_CONTRACT_RESULT_NAME.to_string());
+    exceptional_context.contract_result = None;
     exceptional_context.values.insert(
         "exception".to_string(),
         SpecExpression::ProgramExpression(ProgramExpression::Variable(
@@ -3665,6 +3658,12 @@ impl AnnotationLowerer<'_> {
         name: impl Into<crate::kernel::BindingName>,
     ) -> Option<ProgramType> {
         let name = self.source_binding(name.into());
+        if name == crate::kernel::CONTRACT_RESULT {
+            return self
+                .result_type
+                .pointee_type()
+                .or_else(|| self.result_type.array_element_type());
+        }
         if name.named().is_none() {
             return name
                 .program_type()
@@ -5551,6 +5550,9 @@ impl AnnotationLowerer<'_> {
     /// its typed entry value or the live declaration state.
     fn c_variable_type(&self, name: impl Into<crate::kernel::BindingName>) -> Option<ProgramType> {
         let name = self.source_binding(name.into());
+        if name == crate::kernel::CONTRACT_RESULT {
+            return Some(self.result_type);
+        }
         if name.named().is_none() {
             return name.program_type();
         }
@@ -6589,7 +6591,7 @@ impl AnnotationLowerer<'_> {
                             BTreeMap::from([(
                                 "result".to_string(),
                                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                                    (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
+                                    crate::kernel::CONTRACT_RESULT,
                                 )),
                             )])
                         } else {
@@ -7371,6 +7373,9 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<ProgramType> {
         let name = self.source_binding(name.into());
+        if name == crate::kernel::CONTRACT_RESULT {
+            return Some(self.result_type);
+        }
         if name.named().is_none() {
             return name.program_type();
         }
@@ -8632,6 +8637,7 @@ impl AnnotationLowerer<'_> {
             at_function_entry: false,
             reference_state: Some(state.clone()),
             contract_result_in_scope: environment.contract_result_in_scope,
+            contract_result: environment.contract_result.clone(),
             checking_definedness: environment.checking_definedness,
         }))
     }
@@ -9062,6 +9068,11 @@ impl AnnotationLowerer<'_> {
         {
             return Ok(SpecExpression::Value(value));
         }
+        if name == crate::kernel::CONTRACT_RESULT
+            && let Some(value) = &environment.contract_result
+        {
+            return Ok(value.as_ref().clone());
+        }
         match name.named_in(&environment.values) {
             Some(value) => Ok(value.clone()),
             None if environment
@@ -9140,7 +9151,7 @@ impl AnnotationLowerer<'_> {
                 })
             }
             None if matches!(environment.current_memory, SpecMemory::Fixed(_)) => {
-                if name.is_named(crate::kernel::C_CONTRACT_RESULT_NAME) {
+                if name == crate::kernel::CONTRACT_RESULT {
                     Err("`result` is not available inside `old(...)`".to_string())
                 } else {
                     Err(format!("unknown old-state variable `{name}`"))
@@ -9301,7 +9312,7 @@ impl AnnotationLowerer<'_> {
             ProgramExpression::Value(value) => Ok(SpecExpression::Value(value.clone())),
             ProgramExpression::Variable(name) => self.lower_program_binding_to_spec(
                 if name.is_named("result") && environment.contract_result_in_scope {
-                    crate::kernel::BindingName::from(crate::kernel::C_CONTRACT_RESULT_NAME)
+                    crate::kernel::CONTRACT_RESULT
                 } else {
                     name.clone()
                 },
@@ -9538,7 +9549,7 @@ impl AnnotationLowerer<'_> {
                         &ContractSubstitutions::for_contract_result(&BTreeMap::from([(
                             "result".to_string(),
                             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                                (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
+                                crate::kernel::CONTRACT_RESULT,
                             )),
                         )])),
                     )?
@@ -9790,17 +9801,19 @@ impl AnnotationLowerer<'_> {
         name: &str,
         environment: &SpecElaborationContext,
     ) -> ProgramType {
-        let name = if name == "result" && environment.contract_result_in_scope {
-            crate::kernel::C_CONTRACT_RESULT_NAME
-        } else {
-            name
-        };
+        if name == "result" && environment.contract_result_in_scope {
+            return self
+                .result_type
+                .pointee_type()
+                .or_else(|| match environment.contract_result.as_deref() {
+                    Some(SpecExpression::Value(ProgramValue::Pointer(pointer))) => {
+                        pointer.program_type().pointee_type()
+                    }
+                    _ => None,
+                })
+                .unwrap_or(ProgramType::Int32);
+        }
         self.declared_pointer_element_type(name)
-            .or_else(|| {
-                (name == crate::kernel::C_CONTRACT_RESULT_NAME)
-                    .then(|| self.result_type.pointee_type())
-                    .flatten()
-            })
             .or_else(|| self.entry_state.global_array_element_type(name))
             .or_else(|| {
                 environment.values.get(name).and_then(|value| match value {
@@ -10029,9 +10042,7 @@ impl AnnotationLowerer<'_> {
             && environment.contract_result_in_scope
         {
             return self.program_expression_array_element_type(
-                &ProgramExpression::Variable(
-                    (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
-                ),
+                &ProgramExpression::Variable(crate::kernel::CONTRACT_RESULT),
                 environment,
             );
         }
@@ -10051,7 +10062,7 @@ impl AnnotationLowerer<'_> {
                 .map(|array_ref| array_ref.element_type)
                 .or_else(|| self.declared_pointer_element_type(name))
                 .or_else(|| {
-                    (name.is_named(crate::kernel::C_CONTRACT_RESULT_NAME))
+                    (name == &crate::kernel::CONTRACT_RESULT)
                         .then(|| self.result_type.pointee_type())
                         .flatten()
                 })
@@ -10109,9 +10120,7 @@ impl AnnotationLowerer<'_> {
             && environment.contract_result_in_scope
         {
             return self.program_expression_array_element_width(
-                &ProgramExpression::Variable(
-                    (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
-                ),
+                &ProgramExpression::Variable(crate::kernel::CONTRACT_RESULT),
                 environment,
             );
         }
@@ -10152,7 +10161,7 @@ impl AnnotationLowerer<'_> {
                         .map(|ty| ty.byte_width())
                 })
                 .or_else(|| {
-                    (name.is_named(crate::kernel::C_CONTRACT_RESULT_NAME))
+                    (name == &crate::kernel::CONTRACT_RESULT)
                         .then(|| self.result_type.pointee_type())
                         .flatten()
                         .map(ProgramType::byte_width)

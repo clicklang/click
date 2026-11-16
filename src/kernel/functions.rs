@@ -16070,7 +16070,7 @@ pub(super) fn function_return_resources_definitionally_established(
     post_state.population_effects = return_state.population_effects.clone();
     if function.return_type() != ProgramType::Void {
         post_state.locals.set_typed(
-            C_CONTRACT_RESULT_NAME.to_string(),
+            CONTRACT_RESULT,
             value.clone().into_native(),
             function.return_type(),
         );

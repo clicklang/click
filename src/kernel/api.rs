@@ -2914,7 +2914,7 @@ pub fn program_check_contract_clauses_lower(
         );
         exit_state
             .locals
-            .set_typed(C_CONTRACT_RESULT_NAME, result, function.return_type());
+            .set_typed(CONTRACT_RESULT, result, function.return_type());
     }
     for clause in function.contract_ensures() {
         program_lower_spec_proposition_at_state(

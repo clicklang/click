@@ -34,19 +34,19 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_program_names
     for (base, expected, in_scope, operand_name) in [
         (
             ContractExpression::ProgramExpression(ProgramExpression::Variable("result".into())),
-            crate::kernel::C_CONTRACT_RESULT_NAME,
+            crate::kernel::CONTRACT_RESULT,
             true,
             "result",
         ),
         (
             ContractExpression::CBinding("result".into()),
-            "result",
+            crate::kernel::BindingName::from("result"),
             true,
             "result",
         ),
         (
             ContractExpression::ProgramExpression(ProgramExpression::Variable("bound".into())),
-            "bound",
+            crate::kernel::BindingName::from("bound"),
             false,
             "bound",
         ),
@@ -71,7 +71,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_program_names
             SpecExpression::Let {
                 name: "<spec-address-operand>".into(),
                 value: Box::new(SpecExpression::ProgramExpression(
-                    ProgramExpression::Variable(expected.into())
+                    ProgramExpression::Variable(expected)
                 )),
                 body: Box::new(SpecExpression::ProgramExpression(
                     ProgramExpression::AddressOf(Box::new(member("<spec-address-operand>")))
@@ -460,5 +460,53 @@ fn ordinary_integer_arithmetic_retains_structure_and_deferred_domain_checks() {
             deferred,
             Spec::TruncatingQuotient(..) | Spec::TruncatingRemainder(..)
         ));
+    }
+}
+
+#[test]
+fn fixed_contract_result_is_separate_from_lexical_result_in_old_states() {
+    let state = ExecutionState::new();
+    let retained_states = RecordedStates::new();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let result = int32(11);
+    let (mut lowerer, context) = fixed_state_elaboration(
+        BTreeMap::new(),
+        BTreeMap::new(),
+        &state,
+        BTreeMap::from([("result".into(), int32(3))]),
+        BTreeMap::from([("result".into(), int32(7))]),
+        Some(&result),
+        &retained_states,
+        SpecDefinitions::new(&predicates, &functions),
+        BTreeSet::new(),
+        BTreeMap::new(),
+    );
+    let old_context = context
+        .old_state(&lowerer.entry_values, state.memory())
+        .unwrap();
+    for (context, lexical) in [(&context, 7), (&old_context, 3)] {
+        for expression in [
+            ContractExpression::Binding("result".into()),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::CONTRACT_RESULT,
+            )),
+        ] {
+            assert_eq!(
+                lowerer
+                    .lower_contract_expression_to_spec(&expression, context)
+                    .unwrap(),
+                SpecExpression::Value(result.clone())
+            );
+        }
+        assert_eq!(
+            lowerer
+                .lower_contract_expression_to_spec(
+                    &ContractExpression::CBinding("result".into()),
+                    context
+                )
+                .unwrap(),
+            SpecExpression::Value(int32(lexical))
+        );
     }
 }

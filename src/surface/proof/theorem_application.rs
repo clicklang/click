@@ -1806,7 +1806,9 @@ theorem nested_count(value: int32) {
                 7,
             ),
             (
-                ContractExpression::Binding(crate::kernel::C_CONTRACT_RESULT_NAME.into()),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    crate::kernel::CONTRACT_RESULT,
+                )),
                 11,
             ),
         ] {

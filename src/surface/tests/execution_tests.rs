@@ -1525,7 +1525,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                     }],
                     vec![SpecProposition::Comparison {
                         left: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                            (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
+                            crate::kernel::CONTRACT_RESULT,
                         )),
                         operator: KernelComparisonOperator::Equal,
                         right: SpecExpression::Value(int32(2)),
