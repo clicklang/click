@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn closed_conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
+fn order_conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, ProgramType};
     let mut baseline = None;
     for size in [16, 64, 256, 1024] {
@@ -10,8 +10,6 @@ fn closed_conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
         let literal = |n| {
             KernelTerm::retained_native_machine_operand(format, &MachineTerm::uint64_constant(n))
         };
-        let guard =
-            KernelTerm::boolean_comparison_raw(format, R::LessThan, [literal(9), literal(8)]);
         let variable =
             KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(999740));
         let mut arithmetic = variable.clone();
@@ -22,15 +20,34 @@ fn closed_conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
                 [arithmetic, literal(1)],
             );
         }
-        let hit = KernelTerm::machine_if_shared(format, [guard.clone(), variable, literal(3)]);
-        let miss = KernelTerm::machine_if_shared(format, [guard, arithmetic, literal(3)]);
+        let guard_operands = [
+            [literal(9), literal(8)],
+            [variable.clone(), literal(8)],
+            [literal(8), variable.clone()],
+            [variable.clone(), variable.clone()],
+            [arithmetic.clone(), literal(8)],
+            [literal(8), arithmetic.clone()],
+        ];
+        let cases = guard_operands
+            .into_iter()
+            .enumerate()
+            .map(|(index, operands)| {
+                let guard = KernelTerm::boolean_comparison_raw(format, R::LessThan, operands);
+                let hit = KernelTerm::machine_if_shared(
+                    format,
+                    [guard.clone(), variable.clone(), literal(3)],
+                );
+                let miss =
+                    KernelTerm::machine_if_shared(format, [guard, arithmetic.clone(), literal(3)]);
+                (hit, miss, index < 4)
+            })
+            .collect::<Vec<_>>();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            assert!(matches!(
-                closed_order_conditional_atom(&hit),
-                Some(MachineTerm::If { .. })
-            ));
-            assert!(closed_order_conditional_atom(&miss).is_none());
+            for (hit, miss, expected) in &cases {
+                assert_eq!(order_conditional_atom(hit).is_some(), *expected);
+                assert!(order_conditional_atom(miss).is_none());
+            }
         });
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert_eq!(
