@@ -33,6 +33,52 @@ impl KernelTerm {
 }
 
 impl<'a> FloatOperandView<'a> {
+    /// The native conversion producer's literal reading, without exporting a
+    /// shared arithmetic prefix. Numeric operations reuse the same bit helpers.
+    pub(crate) fn constant_bits(self) -> Option<u64> {
+        crate::instrumentation::record_deterministic_work(1);
+        let format = self.format();
+        if matches!(self, Self::Shared(root) if matches!(root.node(),
+            KernelTermNode::Variable(_) | KernelTermNode::FloatRead(_)
+            | KernelTermNode::FloatCall(_) | KernelTermNode::FloatConvert { .. }))
+        {
+            return None;
+        }
+        if let Some(native) = self.native_compat() {
+            return match format {
+                KernelFloatType::Float32 => native.float32_as_const().map(u64::from),
+                KernelFloatType::Float64 => native.float64_as_const(),
+            };
+        }
+        if let Some(operand) = self.negate() {
+            let bits = operand.constant_bits()?;
+            return Some(
+                bits ^ match format {
+                    KernelFloatType::Float32 => 0x8000_0000,
+                    KernelFloatType::Float64 => 0x8000_0000_0000_0000,
+                },
+            );
+        }
+        let (operator, [left, right]) = self.binary()?;
+        let left = left.constant_bits()?;
+        let right = right.constant_bits()?;
+        match format {
+            KernelFloatType::Float32 => MachineTerm::float32_binary(
+                MachineTerm::constant(left as u32),
+                MachineTerm::constant(right as u32),
+                operator,
+            )
+            .float32_as_const()
+            .map(u64::from),
+            KernelFloatType::Float64 => MachineTerm::float64_binary(
+                MachineTerm::uint64_constant(left),
+                MachineTerm::uint64_constant(right),
+                operator,
+            )
+            .float64_as_const(),
+        }
+    }
+
     pub(crate) fn negate(self) -> Option<Self> {
         match self {
             Self::Native(KernelFloatType::Float32, MachineTerm::Float32Negate(value)) => {

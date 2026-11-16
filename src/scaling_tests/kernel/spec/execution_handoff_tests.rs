@@ -215,3 +215,44 @@ fn pointer_field_qualifier_changes_keep_growing_indices_shared() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn float_lowering_conversions_keep_growing_operands_shared() {
+    let mut costs = Vec::new();
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut value = MachineTerm::Variable(Variable(999970));
+        for _ in 0..size {
+            value = MachineTerm::Float32Binary {
+                operator: FloatBinaryOperator::Add,
+                left: Box::new(value),
+                right: Box::new(MachineTerm::constant(0x3f80_0000)),
+            };
+        }
+        let expression = SpecExpression::Cast(
+            Box::new(SpecExpression::Value(ProgramValue::Float32(value))),
+            ProgramType::Float64,
+        );
+        let exports = KernelTermExport::float_export_count();
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_spec_expression_paths_with_loop_entry(
+                &ExecutionState::new(),
+                &expression,
+                None,
+                &PureFactContext::new(),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+        });
+        assert!(matches!(
+            paths[0].value.shared().unwrap().node(),
+            KernelTermNode::FloatConvert { .. }
+        ));
+        assert_eq!(KernelTermExport::float_export_count(), exports);
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs[1] <= 5 * costs[0] && costs[2] <= 5 * costs[1],
+        "{costs:?}"
+    );
+}
