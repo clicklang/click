@@ -15073,6 +15073,7 @@ pub(super) struct CertifiedMemoryStore {
     pub(super) value: ProgramValue,
     pub(super) authorized_range: Option<MemoryRange>,
     pub(super) source: super::StatementStoreSource,
+    pub(super) value_equation: Option<Proposition>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
