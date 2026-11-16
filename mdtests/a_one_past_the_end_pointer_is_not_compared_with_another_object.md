@@ -20,5 +20,5 @@ int32 f(int32 x) {
 
 ```expect
 fail: one-past-the-end pointer with the start of another object: whether the two objects are adjacent is unspecified
-  operation: `("a_one_past_the_end_pointer_is_not_compared_with_another_object.c"::f.local(0) + 2) != "a_one_past_the_end_pointer_is_not_compared_with_another_object.c"::f.local(1)`
+  operation: `(a + 2) != b`
 ```

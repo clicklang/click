@@ -72,6 +72,7 @@
 - [Surface Click and Kernel Click](concepts/surface-and-kernel.md)
 - [Proof landscape](concepts/proof-landscape.md)
 - [Proof objects](internals/proof-objects.md)
+- [Pure fact store (design)](internals/pure-fact-store.md)
 - [Kernel](internals/kernel.md)
 - [Verification efficiency](internals/verification-efficiency.md)
 - [Separation logic](internals/separation-logic.md)

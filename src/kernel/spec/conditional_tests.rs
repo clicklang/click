@@ -314,3 +314,60 @@ fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
         );
     }
 }
+
+fn closed_order_if(
+    then_branch: SpecExpression,
+    else_branch: SpecExpression,
+    truth: bool,
+) -> SpecExpression {
+    SpecExpression::If {
+        condition: Box::new(SpecProposition::Comparison {
+            left: SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(9))),
+            operator: ComparisonOperator::LessThan,
+            right: SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(
+                if truth { 10 } else { 8 },
+            ))),
+        }),
+        then_branch: Box::new(then_branch),
+        else_branch: Box::new(else_branch),
+    }
+}
+
+fn lower_closed_order_if(
+    expression: &SpecExpression,
+    facts: &PureFactContext,
+) -> SpecExpressionPath {
+    let state = ExecutionState::new();
+    let mut execution = ExecutionBudget::new();
+    evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        SpecScope::unbound(&state, None),
+        expression,
+        facts,
+        &mut SpecEvaluation::logical(&mut execution),
+    )
+    .unwrap()
+    .remove(0)
+}
+
+#[test]
+fn closed_order_guard_stays_in_the_lowered_machine_value() {
+    let _session = VerificationSession::enter();
+    let value = |n| SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(n)));
+    for truth in [true, false] {
+        let path = lower_closed_order_if(
+            &closed_order_if(value(9), value(3), truth),
+            &PureFactContext::new(),
+        );
+        let SpecValue::Shared(root) = path.value else {
+            panic!("a retained machine value")
+        };
+        let KernelTermNode::MachineIf { arguments } = root.node() else {
+            panic!("conditional must remain")
+        };
+        assert!(matches!(
+            arguments[0].node(),
+            KernelTermNode::BoolCompare { .. }
+        ));
+        assert!(path.obligations.is_empty());
+    }
+}

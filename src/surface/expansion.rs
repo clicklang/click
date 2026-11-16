@@ -2160,8 +2160,14 @@ fn returning_then_arms(statement: &ProgramStatement) -> BTreeSet<usize> {
                 }
                 then_returns.zip(else_returns).map(|(a, b)| a && b)
             }
-            ProgramStatement::Loop { body, .. } => {
-                visit(body, index, returns, catches_exceptions);
+            ProgramStatement::Loop {
+                test, update, body, ..
+            } => {
+                for region in
+                    crate::kernel::program_loop_regions(body, update.as_deref(), test.as_ref())
+                {
+                    visit(region, index, returns, catches_exceptions);
+                }
                 None
             }
             ProgramStatement::TryCatchInt32 {
@@ -2188,7 +2194,6 @@ fn returning_then_arms(statement: &ProgramStatement) -> BTreeSet<usize> {
             | ProgramStatement::Goto { .. }
             | ProgramStatement::Throw(_)
             | ProgramStatement::Switch { .. }
-            | ProgramStatement::ForStep { .. }
             | ProgramStatement::ScalarReferenceScope(_) => None,
             _ => Some(false),
         }

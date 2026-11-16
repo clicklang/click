@@ -8972,12 +8972,21 @@ fn evaluate_spec_if_paths_in(
             &condition_path.facts,
             &condition_path.obligations,
         );
-        // Logical expressions must have the same shape at declaration and
-        // application sites. Ambient proof facts justify explicit reductions,
-        // not a different expression during lowering. The only branch this
-        // lowering decides is one a literally constant condition folds away;
-        // every other condition lowers both branches.
-        let condition_truth = constant_spec_condition_value(&condition_path.proposition);
+        // A retained order guard is part of the conditional's syntax even
+        // when its two literal operands determine its truth. Checking may
+        // select an arm; logical lowering retains both guarded values.
+        let retained_order = !budget.machine_result_production_disabled
+            && matches!(&condition_path.proposition,
+                Proposition::ConditionIs(ConditionTerm::Compare { format, relation, left, right }, _)
+                if *relation != CompareRelation::Equal
+                    && matches!(format, MachineIntegerType::Int32 | MachineIntegerType::UInt32 | MachineIntegerType::Int64 | MachineIntegerType::UInt64)
+                    && format.constant_from_term(left).is_some()
+                    && format.constant_from_term(right).is_some());
+        let condition_truth = if retained_order {
+            None
+        } else {
+            constant_spec_condition_value(&condition_path.proposition)
+        };
 
         let branch_paths = match condition_truth {
             Some(true) => evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -9000,56 +9009,98 @@ fn evaluate_spec_if_paths_in(
                 // same assumptions, so their terms do not depend on the guard.
                 let condition = &condition_path.proposition;
                 let negated_condition = negated_lowered_condition(condition);
-                let then_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    scope,
-                    then_branch,
-                    &branch_assumptions,
-                    budget,
-                )?;
-                let else_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                    scope,
-                    else_branch,
-                    &branch_assumptions,
-                    budget,
-                )?;
-                let mut branch_paths = Vec::new();
-                for then_path in then_paths {
-                    let then_obligations =
-                        obligations_owed_under(&then_path.obligations, condition, |guard, owed| {
-                            Proposition::Implies(Box::new(guard), Box::new(owed))
-                        });
-                    for else_path in &else_paths {
-                        let else_obligations = obligations_owed_under(
-                            &else_path.obligations,
-                            &negated_condition,
-                            |_, owed| Proposition::Or(Box::new(condition.clone()), Box::new(owed)),
-                        );
-                        let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                            &then_path.facts,
-                            &then_obligations,
-                            &else_path.facts,
-                            &else_obligations,
-                            &branch_assumptions,
-                        ) else {
-                            continue;
-                        };
-                        let Some(value) = SpecValue::conditional(
-                            &condition_path.proposition,
-                            &then_path.value,
-                            &else_path.value,
-                            !budget.machine_result_production_disabled,
-                        )?
-                        else {
-                            continue;
-                        };
-                        branch_paths.push(SpecExpressionPath {
-                            value,
-                            facts,
-                            obligations,
-                        });
+                let scalar = |path: &SpecExpressionPath| {
+                    path.value.machine().is_some_and(|(format, _)| {
+                        matches!(
+                            format,
+                            MachineIntegerType::Int32
+                                | MachineIntegerType::UInt32
+                                | MachineIntegerType::Int64
+                                | MachineIntegerType::UInt64
+                        )
+                    }) || path.value.boolean().is_some()
+                };
+                let mut evaluate = |expression| {
+                    evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                        scope,
+                        expression,
+                        &branch_assumptions,
+                        budget,
+                    )
+                };
+                let (then_paths, else_paths) = if retained_order
+                    && let Some(truth) = constant_spec_condition_value(condition)
+                {
+                    let selected = evaluate(if truth { then_branch } else { else_branch })?;
+                    // Other result families keep their existing selected-arm
+                    // representation. Do not evaluate their unselected arm.
+                    let other = if selected.first().is_some_and(scalar) {
+                        evaluate(if truth { else_branch } else { then_branch })?
+                    } else {
+                        Vec::new()
+                    };
+                    if truth {
+                        (selected, other)
+                    } else {
+                        (other, selected)
                     }
+                } else {
+                    (evaluate(then_branch)?, evaluate(else_branch)?)
+                };
+                let scalar_arms = then_paths
+                    .first()
+                    .zip(else_paths.first())
+                    .is_some_and(|(left, right)| scalar(left) && scalar(right));
+                if retained_order
+                    && !scalar_arms
+                    && let Some(truth) = constant_spec_condition_value(condition)
+                {
+                    if truth { then_paths } else { else_paths }
+                } else {
+                    let mut branch_paths = Vec::new();
+                    for then_path in then_paths {
+                        let then_obligations = obligations_owed_under(
+                            &then_path.obligations,
+                            condition,
+                            |guard, owed| Proposition::Implies(Box::new(guard), Box::new(owed)),
+                        );
+                        for else_path in &else_paths {
+                            let else_obligations = obligations_owed_under(
+                                &else_path.obligations,
+                                &negated_condition,
+                                |_, owed| {
+                                    Proposition::Or(Box::new(condition.clone()), Box::new(owed))
+                                },
+                            );
+                            let Some((facts, obligations)) =
+                                merge_execution_pure_facts_and_obligations(
+                                    &then_path.facts,
+                                    &then_obligations,
+                                    &else_path.facts,
+                                    &else_obligations,
+                                    &branch_assumptions,
+                                )
+                            else {
+                                continue;
+                            };
+                            let Some(value) = SpecValue::conditional(
+                                &condition_path.proposition,
+                                &then_path.value,
+                                &else_path.value,
+                                !budget.machine_result_production_disabled,
+                            )?
+                            else {
+                                continue;
+                            };
+                            branch_paths.push(SpecExpressionPath {
+                                value,
+                                facts,
+                                obligations,
+                            });
+                        }
+                    }
+                    branch_paths
                 }
-                branch_paths
             }
         };
 

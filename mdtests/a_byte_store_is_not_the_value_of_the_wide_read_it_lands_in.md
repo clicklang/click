@@ -53,5 +53,5 @@ int32 caller(int32* q) {
 ```
 
 ```expect
-fail: unproved obligation: `"a_byte_store_is_not_the_value_of_the_wide_read_it_lands_in.c"::caller.local(1) == 7`
+fail: unproved obligation: `d == 7`
 ```

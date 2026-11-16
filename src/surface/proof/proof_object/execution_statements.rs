@@ -159,7 +159,10 @@ fn program_branch_condition_at_frontier(
     else {
         return Ok(None);
     };
-    if surface_program_condition(&source, &execution.core.state)? != *condition {
+    if !super::same_branch_condition(
+        &surface_program_condition(&source, &execution.core.state)?,
+        condition,
+    ) {
         return Ok(None);
     }
     Ok(Some(surface_at_program_point(

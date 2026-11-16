@@ -6146,6 +6146,8 @@ pub(crate) struct ExecutionFrontier {
     /// belongs to that loop, which no continuation of this frontier holds:
     /// the enclosing loop rule consumes it at the region boundary.
     pub(crate) in_loop_body: bool,
+    /// The loop-owned update, shared by all continuing edges of this region.
+    pub(crate) loop_update: Option<(Arc<ProgramStatement>, usize)>,
     /// How this path reached the loop body's boundary, once it has.
     pub(crate) loop_control: LoopControlExit,
     /// A proof-only natural cycle's source back edge, when this frontier is
@@ -6166,6 +6168,7 @@ impl ExecutionFrontier {
             && self.entry_member_prefix == other.entry_member_prefix
             && self.next_statement_index == other.next_statement_index
             && self.in_loop_body == other.in_loop_body
+            && self.loop_update == other.loop_update
             && self.loop_control == other.loop_control
             && self.natural_backedge_target == other.natural_backedge_target
             && self.natural_exit_target == other.natural_exit_target
@@ -6195,11 +6198,13 @@ pub(crate) struct EvidenceTryFrame {
 
 #[derive(Clone)]
 pub(crate) struct ProofExecutionContinuation {
+    pub(crate) continue_region: Option<(Arc<ProgramStatement>, usize)>,
     pub(crate) remaining: Option<Arc<ProgramStatement>>,
     pub(crate) next_statement_index: usize,
     /// The source statement index immediately after the loop. A `break`
-    /// consumes the loop continuation and resumes here; `continue` resumes
-    /// at `next_statement_index`, the loop head itself.
+    /// consumes the loop continuation and resumes here; `continue` first
+    /// enters `continue_region`, if present, then resumes at the loop head's
+    /// `next_statement_index`.
     pub(crate) loop_exit_statement_index: usize,
     /// The exceptional successor of an entered `try` body. On a `Throw`
     /// outcome while this continuation is on top, the path abandons its
@@ -6848,17 +6853,24 @@ fn statements_have_same_source(left: &ProgramStatement, right: &ProgramStatement
         }
         (
             ProgramStatement::Loop {
+                test: left_test,
+                update: left_update,
                 condition: left_condition,
                 body: left_body,
                 ..
             },
             ProgramStatement::Loop {
+                test: right_test,
+                update: right_update,
                 condition: right_condition,
                 body: right_body,
                 ..
             },
         ) => {
-            left_condition == right_condition && statements_have_same_source(left_body, right_body)
+            left_condition == right_condition
+                && left_test == right_test
+                && left_update == right_update
+                && statements_have_same_source(left_body, right_body)
         }
         (left, right) => left == right,
     }
@@ -6944,12 +6956,16 @@ fn checked_source_statement_matches(proved: &ProgramStatement, source: &ProgramS
     }
     let (
         ProgramStatement::Loop {
+            test: proved_test,
+            update: proved_update,
             condition: proved_condition,
             do_while: proved_do_while,
             body: proved_body,
             ..
         },
         ProgramStatement::Loop {
+            test: source_test,
+            update: source_update,
             condition: source_condition,
             invariant,
             invariant_checks,
@@ -6971,6 +6987,8 @@ fn checked_source_statement_matches(proved: &ProgramStatement, source: &ProgramS
         && resource_specs.is_empty()
         && ranking_measures.is_empty()
         && structural_measure.is_none()
+        && proved_test == source_test
+        && proved_update == source_update
         && proved_condition == source_condition
         && proved_do_while == source_do_while
         && proved_body == source_body
@@ -7028,6 +7046,8 @@ fn checked_condition_event(
             }
         }
         ProgramStatement::Loop {
+            test,
+            update,
             condition,
             invariant,
             invariant_checks,
@@ -7040,6 +7060,8 @@ fn checked_condition_event(
         } if &condition == proved_condition => {
             if value {
                 let loop_head = ProgramStatement::Loop {
+                    test: test.clone(),
+                    update: update.clone(),
                     condition,
                     invariant,
                     invariant_checks,
@@ -7052,7 +7074,10 @@ fn checked_condition_event(
                     natural_exit_target: None,
                     body: body.clone(),
                 };
-                prepend_checked_evidence_statement(*body, Some(loop_head))
+                prepend_checked_evidence_statement(
+                    crate::kernel::program_loop_pass(&body, update.as_deref(), test.as_ref()),
+                    Some(loop_head),
+                )
             } else {
                 ProgramStatement::Skip
             }
@@ -8605,6 +8630,19 @@ impl ExecutionProofCore {
                 self.evidence_completed = true;
                 self.record_completed_path_context();
             }
+            StatementOutcome::Continue(state)
+                if region_loop_control.is_some() && self.frontier.loop_update.is_some() =>
+            {
+                let (update, index) = self.frontier.loop_update.take().expect("checked update");
+                self.frontier.position = FrontierPosition::StatementEntry {
+                    remaining: update.clone(),
+                };
+                self.frontier.next_statement_index = index;
+                self.frontier.loop_control = LoopControlExit::Continue;
+                self.evidence_source = Some(update);
+                self.evidence_state = Some(*state);
+                self.evidence_completed = false;
+            }
             StatementOutcome::Break(state) | StatementOutcome::Continue(state)
                 if region_loop_control.is_some() =>
             {
@@ -8698,7 +8736,7 @@ impl ExecutionProofCore {
             .continuations
             .pop()
             .ok_or_else(|| EvidenceRefusal::from("loop control has no enclosing loop"))?;
-        let Some(loop_source) = continuation.remaining else {
+        let Some(loop_source) = continuation.remaining.clone() else {
             return Err(EvidenceRefusal::from(
                 "loop control has an empty enclosing-loop continuation",
             ));
@@ -8711,10 +8749,19 @@ impl ExecutionProofCore {
             // tail as the next frontier statement.
             let source_after =
                 loop_head_source(validated_source_after, &loop_head).or(Some(loop_source.clone()));
-            self.frontier.position = FrontierPosition::StatementEntry {
-                remaining: loop_source.clone(),
-            };
-            (continuation.next_statement_index, source_after)
+            if let Some((update, index)) = continuation.continue_region.clone() {
+                let source_after = prepend_shared_source(update.clone(), source_after);
+                // Finishing the update resumes the existing loop head with
+                // its own index, rather than the update's lexical successor.
+                self.frontier.continuations.push(continuation);
+                self.frontier.position = FrontierPosition::StatementEntry { remaining: update };
+                (index, Some(source_after))
+            } else {
+                self.frontier.position = FrontierPosition::StatementEntry {
+                    remaining: loop_source.clone(),
+                };
+                (continuation.next_statement_index, source_after)
+            }
         } else {
             // A `break` leaves the loop: the source after it is what follows
             // this loop head in the validated tail. The continuation's own
@@ -9476,6 +9523,8 @@ impl ExecutionProofCore {
                 };
                 let do_while_initial_body = match &*next {
                     ProgramStatement::Loop {
+                        test,
+                        update,
                         condition,
                         invariant,
                         invariant_checks,
@@ -9488,7 +9537,12 @@ impl ExecutionProofCore {
                         natural_exit_target: None,
                         body,
                     } if !matches!(&**proved_statement, ProgramStatement::Loop { .. }) => {
-                        let (body_head, body_tail) = split_shared_source(body);
+                        let pass = crate::kernel::program_loop_pass(
+                            body,
+                            update.as_deref(),
+                            test.as_ref(),
+                        );
+                        let (body_head, body_tail) = split_shared_source(&pass);
                         if !statements_have_same_source(&body_head, proved_statement) {
                             return Err(EvidenceRefusal {
                                 reason: "statement evidence does not prove the frontier's next source statement",
@@ -9498,6 +9552,8 @@ impl ExecutionProofCore {
                             });
                         }
                         let loop_head = ProgramStatement::Loop {
+                            test: test.clone(),
+                            update: update.clone(),
                             condition: condition.clone(),
                             invariant: invariant.clone(),
                             invariant_checks: invariant_checks.clone(),
@@ -9572,6 +9628,8 @@ impl ExecutionProofCore {
         // statement, never to the loop: the source is the body followed by
         // an ordinary loop head, as for a statement theorem.
         while let ProgramStatement::Loop {
+            test,
+            update,
             condition,
             invariant,
             invariant_checks,
@@ -9594,6 +9652,8 @@ impl ExecutionProofCore {
                 });
             }
             let loop_head = ProgramStatement::Loop {
+                test: test.clone(),
+                update: update.clone(),
                 condition: condition.clone(),
                 invariant: invariant.clone(),
                 invariant_checks: invariant_checks.clone(),
@@ -9607,7 +9667,11 @@ impl ExecutionProofCore {
                 body: body.clone(),
             };
             let unrolled = prepend_shared_source(
-                Arc::new((**body).clone()),
+                Arc::new(crate::kernel::program_loop_pass(
+                    body,
+                    update.as_deref(),
+                    test.as_ref(),
+                )),
                 Some(prepend_shared_source(Arc::new(loop_head), tail)),
             );
             let (mut head, mut rest) = split_shared_source(&unrolled);
@@ -9659,6 +9723,8 @@ impl ExecutionProofCore {
                 }
             }
             ProgramStatement::Loop {
+                test,
+                update,
                 condition,
                 invariant,
                 invariant_checks,
@@ -9671,6 +9737,8 @@ impl ExecutionProofCore {
             } => {
                 if value {
                     let loop_head = ProgramStatement::Loop {
+                        test: test.clone(),
+                        update: update.clone(),
                         condition: condition.clone(),
                         invariant: invariant.clone(),
                         invariant_checks: invariant_checks.clone(),
@@ -9683,10 +9751,10 @@ impl ExecutionProofCore {
                         natural_exit_target: None,
                         body: body.clone(),
                     };
-                    let body_then_head = Arc::new(ProgramStatement::seq(
-                        Arc::new((**body).clone()),
-                        Arc::new(loop_head),
-                    ));
+                    let pass =
+                        crate::kernel::program_loop_pass(body, update.as_deref(), test.as_ref());
+                    let body_then_head =
+                        Arc::new(ProgramStatement::seq(Arc::new(pass), Arc::new(loop_head)));
                     Some(prepend_shared_source(body_then_head, tail))
                 } else {
                     tail

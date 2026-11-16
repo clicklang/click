@@ -29,5 +29,5 @@ int32 sign(int32 x) {
 ```
 
 ```expect
-fail: could not prove that the next C `if` condition `("step_refuses_an_undecided_c_if.c"::sign.parameter(0) > 3)` is one exact truth value; got 2 feasible condition paths
+fail: could not prove that the next C `if` condition `(x > 3)` is one exact truth value; got 2 feasible condition paths
 ```

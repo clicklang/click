@@ -6845,20 +6845,7 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         ProgramStatement::Continue => "continue;".to_string(),
         ProgramStatement::Goto { target } => format!("goto target({});", target.0),
         ProgramStatement::EndAutomaticLifetimes { .. } => "automatic lifetime end".to_string(),
-        ProgramStatement::ForStep {
-            step,
-            continue_after,
-            ..
-        } => {
-            if *continue_after {
-                format!(
-                    "continue; (with {})",
-                    describe_execution_statement_head(step)
-                )
-            } else {
-                describe_execution_statement_head(step)
-            }
-        }
+
         ProgramStatement::Declare { name, .. } => format!("declaration of `{name}`"),
         ProgramStatement::DeclareAggregate { name, .. } => {
             format!("aggregate declaration of `{name}`")

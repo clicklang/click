@@ -272,3 +272,22 @@ the insertion and its two wrappers on merged master `d6e2b0979`.
 The C, three original function contracts, both callbacks, existing tree
 resources, and verifier are unchanged by this proof repair. Other sidecars
 and the full-directory audit still leave this report open.
+
+## Context double rotation with an arbitrary far subtree
+
+All four selected proofs in
+`rbtree_size_insert_context_double_far_rotation.click` now verify at default
+limits, including the inorder-preservation theorem and both insertion wrappers.
+The far subtree and its cached count remain arbitrary. The proof retains its
+owned resource and incoming link through the rotations, alongside complete
+parent tags and the other unchanged child links. It explicitly executes the
+local declaration and pivot load, refolds empty children at null, and exposes
+the first callback child's identity before retaining that link through the
+outer parent update. The existing count and overflow arguments are retained.
+
+Expansion, cold-replay, and fixed-point checks pass all 30 audit sites on
+merged master `857116880`.
+
+The C, original contracts and theorem, both callbacks, existing tree resources,
+and verifier are unchanged by this repair. Other sidecars and the full-directory
+audit still leave this report open.

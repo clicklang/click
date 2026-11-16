@@ -67,6 +67,23 @@ The table above records the earlier unchanged-proof frontiers. This sidecar is
 no longer an unresolved proof repair; the other named sidecars and this report's
 broader acceptance criteria remain open.
 
+## Far-subtree context double rotation proof repair
+
+`rbtree_size_insert_context_double_far_rotation.click` now verifies all four
+selected proofs after a proof-only repair. The far subtree remains arbitrary;
+its ownership and incoming link are retained across both rotations and callbacks.
+Complete parent tags and unchanged links are retained in owned resources,
+empty children are refolded at null, and the missing declaration and pivot load
+are executed explicitly. The original count and overflow arguments, C, contracts,
+and verifier are unchanged by this repair.
+
+All 30 expansion, cold-replay, and fixed-point audit sites pass on merged
+master `857116880`.
+
+Both insertion sidecars in the historical table above now verify after their
+proof repairs. The erase reproduction and this report's remaining acceptance
+criteria still leave it open.
+
 ## Original violated invariant
 
 A read of a pointer field that no step writes has one name before and after a

@@ -30,5 +30,5 @@ int32 caller(int32 n) {
 ```
 
 ```expect
-fail: unproved obligation: `("call_precondition_refuses_a_decremented_upper_bound_too_tight.c"::caller.parameter(0) - 1) as int32 <= 98`
+fail: unproved obligation: `(n - 1) as int32 <= 98`
 ```
