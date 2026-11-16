@@ -565,8 +565,15 @@ pub enum MirStatement {
     /// enum `option_type`.
     RangeNext {
         iterator: String,
-        option: String,
+        /// The local the `Option` `next` returns is built in; `None` once
+        /// the `for` loop reads only its payload, which `payload` binds.
+        option: Option<String>,
         option_type: String,
+        /// The local the yielded value is bound to, the `for` loop's own
+        /// variable, when the `Some` arm's first statement binds it: the
+        /// yielding arm assigns it directly and builds no `Option`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<String>,
         /// Whether the range yields, when its `for` header's test already
         /// decided it: the statement is then that arm alone. An inclusive
         /// range's arm that yields is `if start < end { start += 1 } else

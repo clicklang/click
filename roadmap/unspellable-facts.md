@@ -784,6 +784,36 @@ and completion runs. The broad run passed 1,939 before the existing conjunction
 selection transport test hit its 30-second limit; it passed unchanged in
 isolation in 12.792s, and the remaining 57 checks passed separately.
 
+8ac imports mixed Boolean, algebraic, float, complete-pointer and array-reference
+arguments through the common structural importer in Integer, machine, Boolean,
+pointer, float and algebraic calls. A `ProgramParameter` node retains an
+algebraic operand while preserving its distinct `Value(Parameter)` argument
+form. Canonical Boolean literals and raw C Boolean variables preserve their
+original carrier forms. Other raw C Boolean words and noncanonical carriers
+remain exact native inputs. Shared application payloads retain their prepared children within one
+thread and verification-session generation, preserving repeated-import identity without
+mixing producer metadata with observation equality.
+
+Pointer observation keys retain their existing native metadata policy; variable
+readers retain the distinct program-parameter and logical-algebraic policies.
+Selected native call-output, certification and observation adapters remain
+explicit boundaries for package 9. Complete pointer-to-integer records keep
+the package-7 native descriptor rather than being reduced to their numeric
+projection. Tests cover exact mixed argument round trips, all variable-reader
+modes, thread/session isolation and construction around growing shared prefixes.
+All 2,196 selected representation, reader, Surface and scaling tests passed;
+10 final focused checks also passed. Float, algebraic and pure-function fixtures
+passed with zero fact-stability differences. The generic filter passed 25/27
+fixtures; its two nightly C++ failures reproduced with identical diagnostics
+on the merged baseline and are not claimed green. CI also exposed a real
+pointer-call spelling regression: shared arguments attempted general pointer
+synthesis where native arguments require an exact proof-local name. The common
+call renderer now preserves that name policy for all call result families.
+Native/shared parity and both pointer-body-fact fixtures pass, including the
+expected negative refusal, without changing search or budgets. Its measured
+negative-case work is about 1.16 million units versus 415,000 on the baseline;
+the unchanged limit is 2 million.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes

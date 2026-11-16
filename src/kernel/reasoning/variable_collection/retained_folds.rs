@@ -253,6 +253,12 @@ pub(super) fn common_variables(
             continue;
         }
         if mode == FoldVariableRead::IntegerFree
+            && matches!(term.node(), KernelTermNode::ProgramParameter { .. })
+        {
+            summaries.insert(term.id(), Variables::default());
+            continue;
+        }
+        if mode == FoldVariableRead::IntegerFree
             && matches!(
                 term.node(),
                 KernelTermNode::Constructor(_)
@@ -1472,6 +1478,81 @@ mod float_call_tests {
                     .copied()
                     .collect::<BTreeSet<_>>();
                 assert_eq!(actual, expected, "mode={mode:?} connection={connection}");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod mixed_argument_tests {
+    use super::*;
+    #[test]
+    fn mixed_arguments_keep_all_native_variable_reader_policies() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = TypeParameterName::intern("MixedVariableT").algebraic_type();
+        let value = AlgebraicTerm {
+            algebraic_type: ty,
+            node: AlgebraicTermNode::PureFunctionApplication {
+                name: "mixed_variables".into(),
+                arguments: vec![
+                    PureFunctionArgument::Integer(IntegerTerm::Variable(Variable(1008510)).into()),
+                    PureFunctionArgument::Value(ProgramValue::Float64(MachineTerm::Variable(
+                        Variable(1008511),
+                    ))),
+                ],
+            },
+        };
+        let pointer = ProgramValue::Pointer(PointerValue::new(
+            Pointer::symbolic(Variable(1008512)),
+            ProgramType::Int32Pointer,
+        ));
+        let arguments = [
+            PureFunctionArgument::Algebraic(value.clone()),
+            PureFunctionArgument::Value(ProgramValue::Parameter(Box::new(value))),
+            PureFunctionArgument::Value(pointer.clone()),
+            PureFunctionArgument::ArrayRef {
+                memory: Memory::new(),
+                pointer,
+                element_type: ProgramType::Int32,
+            },
+            PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::bool_cast(
+                MachineIntegerType::UInt8,
+                ConditionTerm::bool_application(
+                    "bool_variables",
+                    vec![PureFunctionArgument::Integer(
+                        IntegerTerm::Variable(Variable(1008513)).into(),
+                    )],
+                ),
+            ))),
+        ];
+        for connection in [false, true] {
+            struct Restore(bool);
+            impl Drop for Restore {
+                fn drop(&mut self) {
+                    CONNECTION_VARIABLES.with(|flag| flag.set(self.0));
+                }
+            }
+            let _restore = Restore(CONNECTION_VARIABLES.with(|flag| flag.replace(connection)));
+            for argument in &arguments {
+                let root = crate::kernel::KernelTermImport::default().argument(argument);
+                for mode in [
+                    FoldVariableRead::IntegerFree,
+                    FoldVariableRead::ExpressionFree,
+                    FoldVariableRead::MachineCapture,
+                    FoldVariableRead::IntegerBinders,
+                    FoldVariableRead::MachineBinders,
+                ] {
+                    let mut expected = BTreeSet::new();
+                    collect_argument(argument, mode, &mut expected, &mut SeenTerms::default());
+                    let actual = common_variables(&root, mode, &mut Default::default())
+                        .iter()
+                        .copied()
+                        .collect::<BTreeSet<_>>();
+                    assert_eq!(
+                        actual, expected,
+                        "mode={mode:?} connection={connection} argument={argument:?}"
+                    );
+                }
             }
         }
     }

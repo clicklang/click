@@ -29,8 +29,6 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
                 scope,
                 &argument,
                 &PureFactContext::new(),
-                false,
-                false,
                 &mut SpecEvaluation::logical(&mut execution),
             )
             .unwrap()
@@ -163,4 +161,50 @@ fn retained_constant_call_arguments_keep_existing_decision_identity() {
     );
     let facts = PureFactContext::new().assume_condition(known, true);
     assert_eq!(facts.decide(&required), Some(true));
+}
+
+#[test]
+fn mixed_typed_call_arguments_keep_growing_roots_without_exports() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = TypeParameterName::intern("MixedGrowingT").algebraic_type();
+        let mut algebraic =
+            KernelTerm::variable(KernelType::Algebraic(ty.clone()), Variable(1008503));
+        let mut float =
+            KernelTerm::variable(KernelType::Program(ProgramType::Float64), Variable(1008504));
+        for _ in 0..size {
+            algebraic = KernelTerm::algebraic_call(
+                ty.clone(),
+                "grow".into(),
+                vec![(algebraic.clone(), None), (algebraic, None)],
+            );
+            float = KernelTerm::float_call(
+                KernelFloatType::Float64,
+                "grow_float".into(),
+                vec![(float.clone(), None), (float, None)],
+            );
+        }
+        let float_exports = KernelTermExport::float_export_count();
+        let algebraic_exports = KernelTermExport::algebraic_export_count();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let arguments = [algebraic.clone(), float.clone()]
+                .into_iter()
+                .map(|root| {
+                    SpecCallArgument::from_value(SpecValue::Shared(root)).into_typed_call_operand()
+                })
+                .collect();
+            let call = KernelTerm::float_call(KernelFloatType::Float64, "mixed".into(), arguments);
+            let KernelTermNode::ProgramParameter { operand } = call.children()[0].node() else {
+                panic!("program argument form");
+            };
+            assert_eq!(operand, &algebraic);
+            assert_eq!(&call.children()[1], &float);
+        });
+        assert!(work < 128, "size={size} work={work}");
+        assert_eq!(KernelTermExport::float_export_count(), float_exports);
+        assert_eq!(
+            KernelTermExport::algebraic_export_count(),
+            algebraic_exports
+        );
+    }
 }

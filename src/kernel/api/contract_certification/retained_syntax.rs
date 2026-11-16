@@ -405,6 +405,22 @@ impl Comparison {
         {
             return self.call_argument(left, Native(value.value()));
         }
+        // These argument carriers retain their established native admission
+        // policy (including parameter-value refusal) at this selected boundary.
+        if let Shared(root) = left
+            && let Some(argument) = root
+                .pointer_argument_native()
+                .or_else(|| root.boolean_argument_native())
+        {
+            return self.call_argument(Native(argument), right);
+        }
+        if let Shared(root) = right
+            && let Some(argument) = root
+                .pointer_argument_native()
+                .or_else(|| root.boolean_argument_native())
+        {
+            return self.call_argument(left, Native(argument));
+        }
         match (left, right) {
             (Native(a), Native(b)) => self.argument(a, b),
             (Shared(a), Shared(b)) if matches!(a.ty(), KernelType::Algebraic(_)) => {
@@ -644,7 +660,9 @@ mod tests {
         };
         let left = algebraic_call(variable.clone(), "wrap");
         let right = algebraic_call(variable.clone(), "wrap");
-        assert_ne!(left, right);
+        // Structural argument imports now reuse the same call root; no fresh
+        // generic argument wrapper separates these identical producers.
+        assert_eq!(left, right);
         let claim = |value: AlgebraicTerm| {
             Proposition::Equal(Term::Algebraic(value), Term::Algebraic(variable.clone()))
         };
@@ -908,6 +926,12 @@ mod float_call_tests {
     fn float_calls_keep_native_certification_admission_without_exports() {
         let _session = crate::kernel::VerificationSession::enter();
         for argument in [
+            A::Value(ProgramValue::Bool(MachineTerm::Variable(Variable(1008213)))),
+            A::Value(ProgramValue::Bool(MachineTerm::Constant {
+                format: MachineIntegerType::UInt8,
+                bits: 1,
+            })),
+            A::Value(ProgramValue::Bool(MachineTerm::uint32_constant(1))),
             A::Value(ProgramValue::Float32(MachineTerm::Variable(Variable(
                 1008210,
             )))),

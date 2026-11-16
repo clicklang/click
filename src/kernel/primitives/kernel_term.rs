@@ -135,6 +135,10 @@ pub enum KernelTermNode {
     LegacyBool(KernelLegacyTerm),
     IntegerLiteral(BigInt),
     MachineLiteral(KernelMachineLiteral),
+    /// A program-carried abstract value, distinct from a logical algebraic argument.
+    ProgramParameter {
+        operand: KernelTerm,
+    },
     FloatConvert {
         source: ProgramType,
         destination: ProgramType,
@@ -409,7 +413,12 @@ impl NodeKey {
                 .arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
-            KernelTermNode::MemoryLoad { .. }
+            KernelTermNode::PointerValue(_)
+            | KernelTermNode::PointerRead { .. }
+            | KernelTermNode::PointerArithmetic { .. }
+            | KernelTermNode::PointerCall { .. }
+            | KernelTermNode::ArrayReference { .. }
+            | KernelTermNode::MemoryLoad { .. }
             | KernelTermNode::PointerAddress { .. }
             | KernelTermNode::PointerOffsetEqual { .. }
             | KernelTermNode::PointerEqual { .. }
@@ -463,6 +472,7 @@ impl NodeKey {
                 .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::IntegerIf { .. } => false,
             KernelTermNode::BoolCast { operand, .. }
+            | KernelTermNode::ProgramParameter { operand }
             | KernelTermNode::FloatConvert { operand, .. }
             | KernelTermNode::FloatNegate { operand }
             | KernelTermNode::FloatClassify { operand, .. }
@@ -823,6 +833,7 @@ impl KernelTerm {
             | KernelTermNode::IntegerIf { arguments }
             | KernelTermNode::MachineIf { arguments } => arguments,
             KernelTermNode::BoolCast { operand, .. }
+            | KernelTermNode::ProgramParameter { operand }
             | KernelTermNode::FloatConvert { operand, .. }
             | KernelTermNode::FloatNegate { operand }
             | KernelTermNode::FloatClassify { operand, .. }
@@ -1125,6 +1136,34 @@ impl KernelTermImport {
                     view.native_compat().expect("native float argument"),
                 )
             }
+            PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Constant {
+                format: MachineIntegerType::UInt8,
+                bits,
+            })) if *bits <= 1 => self.condition(&ConditionTerm::Constant(*bits != 0)),
+            PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Variable(variable))) => {
+                KernelTerm::variable(KernelType::Program(ProgramType::Bool), *variable)
+            }
+            PureFunctionArgument::Value(ProgramValue::Bool(word))
+                if matches!(word, MachineTerm::BoolCast { to: MachineIntegerType::UInt8, value }
+                    if !matches!(value.as_ref(), ConditionTerm::Constant(_))) =>
+            {
+                self.condition(word.bool_cast_operand().unwrap())
+            }
+            PureFunctionArgument::Value(ProgramValue::Parameter(value)) => {
+                KernelTerm::program_parameter(self.algebraic(value))
+            }
+            PureFunctionArgument::Value(ProgramValue::Pointer(value)) => {
+                KernelTerm::shared_pointer_value(SharedPointerValue::import(value))
+            }
+            PureFunctionArgument::ArrayRef {
+                memory,
+                pointer: ProgramValue::Pointer(pointer),
+                element_type,
+            } => KernelTerm::shared_array_reference(
+                intern_memory(memory.clone()),
+                KernelTerm::shared_pointer_value(SharedPointerValue::import(pointer)),
+                *element_type,
+            ),
             _ => KernelTerm::legacy(value.clone()),
         }
     }
@@ -1175,14 +1214,15 @@ impl KernelTermImport {
                     .arguments()
                     .iter()
                     .enumerate()
-                    .map(|(index, arg)| match arg {
-                        PureFunctionArgument::Integer(value) => self.integer(value),
-                        PureFunctionArgument::Value(integer_c_value!(_))
-                        | PureFunctionArgument::SharedMachine(_) => self.argument(arg),
-                        _ => KernelTerm::legacy_at(
-                            arg.clone(),
-                            LegacyIdentity::ApplicationArgument(application.clone(), index),
-                        ),
+                    .map(|(index, arg)| {
+                        if let Some(root) = application.common_argument(index) {
+                            root
+                        } else {
+                            KernelTerm::legacy_at(
+                                arg.clone(),
+                                LegacyIdentity::ApplicationArgument(application.clone(), index),
+                            )
+                        }
                     })
                     .collect();
                 KernelTerm::checked_call(KernelType::Integer, application.name().into(), arguments)
@@ -1562,6 +1602,11 @@ impl KernelTermExport {
         // Reading it does not invoke an expression-tree exporter.
         if let KernelTermNode::Variable(variable) = term.node() {
             match term.ty() {
+                KernelType::Program(ProgramType::Bool) => {
+                    return Ok(PureFunctionArgument::Value(ProgramValue::Bool(
+                        MachineTerm::Variable(*variable),
+                    )));
+                }
                 KernelType::Program(ty) => {
                     if let Some(format) = MachineIntegerType::from_program_type(*ty) {
                         crate::instrumentation::record_deterministic_work(1);
@@ -1633,6 +1678,9 @@ impl KernelTermExport {
             KernelTermNode::ArrayReference { .. } => {
                 term.pointer_argument_native().unwrap().clone()
             }
+            KernelTermNode::ProgramParameter { operand } => PureFunctionArgument::Value(
+                ProgramValue::Parameter(Box::new(self.algebraic(operand)?)),
+            ),
             KernelTermNode::Legacy(value) => value.value().clone(),
             KernelTermNode::IntegerLiteral(value) => {
                 PureFunctionArgument::Integer(IntegerTerm::Constant(value.clone()).into())
@@ -1714,3 +1762,6 @@ impl KernelTermExport {
         }
     }
 }
+
+#[cfg(test)]
+mod mixed_arguments;
