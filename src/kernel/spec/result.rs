@@ -247,13 +247,8 @@ impl SpecCallArgument {
     pub(super) fn from_value(value: SpecValue) -> Self {
         match value {
             SpecValue::Native(value) => Self::Native(PureFunctionArgument::Value(value)),
-            SpecValue::Shared(root)
-                if matches!(root.ty(), KernelType::Algebraic(_))
-                    || FloatOperandView::from_shared(&root).is_some() =>
-            {
-                Self::Native(PureFunctionArgument::Value(
-                    SpecValue::Shared(root).into_native(),
-                ))
+            SpecValue::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => {
+                Self::Shared(KernelTerm::program_parameter(root))
             }
             SpecValue::Shared(value)
                 if matches!(value.node(), KernelTermNode::PointerAddress { .. }) =>
@@ -287,12 +282,6 @@ impl SpecCallArgument {
 
     pub(super) fn into_typed_call_operand(self) -> (KernelTerm, Option<SharedMachineIntegerTerm>) {
         match self {
-            Self::Shared(root)
-                if matches!(root.ty(), KernelType::Algebraic(_))
-                    || FloatOperandView::from_shared(&root).is_some() =>
-            {
-                (root, None)
-            }
             Self::Shared(root) if matches!(root.ty(), KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some()) =>
             {
                 let KernelType::Program(ty) = root.ty() else {
@@ -303,8 +292,7 @@ impl SpecCallArgument {
                     .expect("retained argument");
                 (root, Some(carrier))
             }
-            // Mixed-family descriptor adapters retain their existing exact forms
-            // until their shared argument migration.
+            Self::Shared(root) => (root, None),
             value => {
                 let argument = value.into_payload();
                 let shared = match &argument {
@@ -320,6 +308,11 @@ impl SpecCallArgument {
         match self {
             Self::Native(value) => value,
             Self::Shared(value) => {
+                if matches!(value.node(), KernelTermNode::ProgramParameter { .. }) {
+                    return KernelTermExport::default()
+                        .argument(&value)
+                        .expect("program parameter argument");
+                }
                 if FloatOperandView::from_shared(&value).is_some() {
                     return PureFunctionArgument::Value(
                         KernelTermExport::float(&value).expect("selected float argument boundary"),
@@ -364,7 +357,7 @@ pub(super) fn call_arguments(arguments: Vec<SpecCallArgument>) -> Vec<PureFuncti
 mod pointer_observation_tests {
     use super::*;
     #[test]
-    fn shared_float_atoms_keep_native_mixed_call_descriptors() {
+    fn shared_float_atoms_keep_mixed_call_roots() {
         let _session = crate::kernel::VerificationSession::enter();
         for value in [
             ProgramValue::Float32(MachineTerm::uint32_constant(0x7f800123)),
@@ -375,7 +368,8 @@ mod pointer_observation_tests {
             let shared = SpecValue::Shared(root.clone());
             assert_eq!(shared.clone().into_native(), value);
             let argument = SpecCallArgument::from_value(shared);
-            assert_eq!(argument.native_descriptor(), Some(&expected));
+            assert!(matches!(&argument, SpecCallArgument::Shared(selected) if selected == &root));
+            assert_eq!(call_arguments(vec![argument.clone()]), vec![expected]);
             let (restored, carrier) = argument.into_typed_call_operand();
             assert_eq!(restored, root);
             assert!(carrier.is_none());

@@ -479,23 +479,19 @@ impl KernelTermImport {
             .zip(retained)
             .enumerate()
             .map(|(index, (argument, retained))| {
-                retained.unwrap_or_else(|| match argument {
-                    PureFunctionArgument::Value(ProgramValue::Pointer(pointer)) => {
-                        KernelTerm::shared_pointer_value(SharedPointerValue::import_produced(
-                            pointer,
-                        ))
+                retained.unwrap_or_else(|| {
+                    if let Some(root) = application.common_argument(index) {
+                        root
+                    } else {
+                        KernelTerm::legacy_at(
+                            argument.clone(),
+                            LegacyIdentity::ExactApplicationArgument {
+                                application: application.clone(),
+                                payload: application.payload_id(),
+                                index,
+                            },
+                        )
                     }
-                    PureFunctionArgument::Integer(_)
-                    | PureFunctionArgument::SharedMachine(_)
-                    | PureFunctionArgument::Value(integer_c_value!(_)) => self.argument(argument),
-                    _ => KernelTerm::legacy_at(
-                        argument.clone(),
-                        LegacyIdentity::ExactApplicationArgument {
-                            application: application.clone(),
-                            payload: application.payload_id(),
-                            index,
-                        },
-                    ),
                 })
             })
             .collect();

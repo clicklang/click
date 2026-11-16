@@ -606,18 +606,19 @@ impl KernelTermImport {
             .arguments()
             .iter()
             .enumerate()
-            .map(|(index, argument)| match argument {
-                PureFunctionArgument::Integer(_)
-                | PureFunctionArgument::SharedMachine(_)
-                | PureFunctionArgument::Value(integer_c_value!(_)) => self.argument(argument),
-                _ => KernelTerm::legacy_at(
-                    argument.clone(),
-                    LegacyIdentity::ExactApplicationArgument {
-                        application: application.clone(),
-                        payload: application.payload_id(),
-                        index,
-                    },
-                ),
+            .map(|(index, argument)| {
+                if let Some(root) = application.common_argument(index) {
+                    root
+                } else {
+                    KernelTerm::legacy_at(
+                        argument.clone(),
+                        LegacyIdentity::ExactApplicationArgument {
+                            application: application.clone(),
+                            payload: application.payload_id(),
+                            index,
+                        },
+                    )
+                }
             })
             .collect();
         let root = KernelTerm::checked_call(
