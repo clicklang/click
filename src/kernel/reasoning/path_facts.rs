@@ -3105,20 +3105,30 @@ mod certified_merge_tests {
         let facts: ExecutionFacts = vec![
             ExecutionPureFact::new(branch.clone()),
             ExecutionPureFact::certified(produced.clone()),
-        ].into();
+        ]
+        .into();
         let obligations = vec![ProofObligation::verification_condition(required.clone())];
         let (wrapped, introductions) =
             wrap_path_context_with_introductions(goal.clone(), &facts, &obligations);
-        assert_eq!(wrapped, Proposition::Implies(Box::new(branch), Box::new(
-            Proposition::Implies(Box::new(required), Box::new(goal))
-        )));
-        assert_eq!(introductions, vec![
-            LoweringIntroduction::PathFactGuard,
-            LoweringIntroduction::ObligationGuard,
-        ]);
+        assert_eq!(
+            wrapped,
+            Proposition::Implies(
+                Box::new(branch),
+                Box::new(Proposition::Implies(Box::new(required), Box::new(goal)))
+            )
+        );
+        assert_eq!(
+            introductions,
+            vec![
+                LoweringIntroduction::PathFactGuard,
+                LoweringIntroduction::ObligationGuard,
+            ]
+        );
         assert_eq!(facts[1].proposition(), &produced);
-        assert!(assumptions_with_path_context(&PureFactContext::new(), &facts, &[])
-            .proves_exact(&produced));
+        assert!(
+            assumptions_with_path_context(&PureFactContext::new(), &facts, &[])
+                .proves_exact(&produced)
+        );
     }
 
     #[test]
