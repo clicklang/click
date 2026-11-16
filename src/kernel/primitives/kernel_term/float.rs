@@ -135,7 +135,7 @@ impl KernelTermImport {
         {
             return KernelTerm::float_read(
                 format,
-                memory.clone(),
+                memory.shared_memory().clone(),
                 SharedPointerAddress::import(pointer),
             );
         }

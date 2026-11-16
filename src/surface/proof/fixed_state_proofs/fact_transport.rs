@@ -963,7 +963,7 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
     fn erase_term(term: &MachineTerm) -> MachineTerm {
         match term {
             MachineTerm::MemoryLoad(_, pointer, kind) => MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(Memory::default()),
+                crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::default()))),
                 Box::new(Pointer {
                     block: pointer.block.clone(),
                     offset: erase_offset(&pointer.offset),

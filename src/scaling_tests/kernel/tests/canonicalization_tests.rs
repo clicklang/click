@@ -56,7 +56,11 @@ fn variable_collection_after_a_store_costs_the_store() {
         crate::kernel::reasoning::variable_collection::clear_shared_memory_variables();
         let mut variables = BTreeSet::new();
         crate::kernel::reasoning::collect_bitvector_variables(
-            &MachineTerm::MemoryLoad(before, Box::new(at(0)), crate::kernel::LoadKind::Int32),
+            &MachineTerm::MemoryLoad(
+                ProgramPoint::at(&before),
+                Box::new(at(0)),
+                crate::kernel::LoadKind::Int32,
+            ),
             &mut variables,
         );
         assert_eq!(variables.len(), cells);
@@ -65,7 +69,7 @@ fn variable_collection_after_a_store_costs_the_store() {
             ProgramValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
         );
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(after),
+            ProgramPoint::at(&(crate::kernel::intern_memory(after))),
             Box::new(at(4)),
             crate::kernel::LoadKind::Int32,
         );

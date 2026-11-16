@@ -148,8 +148,11 @@ fn wide_storage_refuses_wrong_load_kind_and_typed_reinterpretation() {
         (MachineIntegerType::UInt128, LoadKind::Int128),
         (MachineIntegerType::Int128, LoadKind::Bits64),
     ] {
-        let raw =
-            MachineTerm::MemoryLoad(intern_memory(memory.clone()), Box::new(address(0)), wrong);
+        let raw = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&(intern_memory(memory.clone()))),
+            Box::new(address(0)),
+            wrong,
+        );
         assert!(!machine.accepts_wide_term(&raw));
         assert!(IntegerTerm::from_machine(machine, raw.clone()).is_none());
         let wrapped = if machine == MachineIntegerType::Int128 {
@@ -207,7 +210,7 @@ fn wide_storage_frame_transport_uses_all_sixteen_bytes() {
     let condition = |memory: &Memory| {
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                intern_memory(memory.clone()),
+                ProgramPoint::at(&(intern_memory(memory.clone()))),
                 Box::new(address(0)),
                 LoadKind::Int128,
             ),
@@ -251,7 +254,7 @@ fn wide_order_frame_transport_matches_across_a_disjoint_store() {
     let condition = |memory: &Memory| {
         ConditionTerm::uint64_less_than(
             MachineTerm::MemoryLoad(
-                intern_memory(memory.clone()),
+                ProgramPoint::at(&(intern_memory(memory.clone()))),
                 Box::new(address(0)),
                 LoadKind::Bits64,
             ),

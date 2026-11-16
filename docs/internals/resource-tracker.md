@@ -16,12 +16,13 @@ proof fails with two terms that spell alike.
   cell, a memory block as a pure function reads it through an array argument,
   and one model field of a resource instance. A byte
   range, a struct extent and a local are the kinds that come next.
-- **program point** — the surface location or proof mark passed to `at`.
-  `RecordedStates` associates it with a symbolic execution state on this path.
-- **version point** — a position identified by an interned memory state,
-  represented by `VersionPoint`. The assumption-free version walk selects
-  one for the resource being named. Distinct program points can select the
-  same version point for one cell.
+- **program point** — a node a proof path reached, named by the location or
+  proof mark passed to `at`. The kernel represents it with `ProgramPoint`,
+  for now identified by the interned memory state there. `RecordedStates`
+  associates a named point with a symbolic execution state on this path.
+- **version point** — the point a read is lowered to. The assumption-free
+  version walk selects one for the resource being named. Reads at distinct
+  points can share one version point for one cell.
 - **state point** — a borrowed `StatePoint` handle to an `ExecutionState`,
   used to compare model fields whose versions are symbolic values.
 - **same** — the two points are known to hold one version of the resource.
@@ -37,11 +38,11 @@ failures and get different words.
 `src/kernel/resource_tracker/mod.rs`:
 
 ```rust
-last_same(resource, at: &VersionPoint) -> Option<LastSame>   // { point, stopped_by: Stop }
-same(resource, left: &VersionPoint, right: &VersionPoint) -> Sameness
+last_same(resource, at: &ProgramPoint) -> Option<LastSame>   // { point, stopped_by: Stop }
+same(resource, left: &ProgramPoint, right: &ProgramPoint) -> Sameness
 explain(resource, here, there) -> Explanation
 explain_last_same(resource, here) -> Explanation
-last_same_version_point(resource, at) -> Option<VersionPoint>        // the naming path
+last_same_version_point(resource, at) -> Option<ProgramPoint>        // the naming path
 cell_value_on_path(at, pointer, bytes, facts) -> Option<ProgramValue> // a C read, on one path
 ```
 

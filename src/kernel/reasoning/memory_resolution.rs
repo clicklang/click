@@ -2284,7 +2284,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     }
     if let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Int32) = left
         && let Some(ProgramValue::Int32(value)) =
-            stored_value_at_equal_pointer(memory, pointer, assumptions)
+            stored_value_at_equal_pointer(memory.memory(), pointer, assumptions)
         && &value != left
         && bitvector_terms_proven_equal_for_memory_resolution(&value, right, assumptions)
     {
@@ -2292,7 +2292,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     }
     if let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Int32) = right
         && let Some(ProgramValue::Int32(value)) =
-            stored_value_at_equal_pointer(memory, pointer, assumptions)
+            stored_value_at_equal_pointer(memory.memory(), pointer, assumptions)
         && &value != right
         && bitvector_terms_proven_equal_for_memory_resolution(left, &value, assumptions)
     {
@@ -2348,15 +2348,15 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
                     assumptions,
                 )
                 && !loads_lack_recorded_equality(
-                    left_memory,
-                    right_memory,
+                    left_memory.shared_memory(),
+                    right_memory.shared_memory(),
                     left_pointer,
                     *left_kind,
                     assumptions,
                 )
                 && memory_states_match_for_resolution(
-                    left_memory,
-                    right_memory,
+                    left_memory.shared_memory(),
+                    right_memory.shared_memory(),
                     left_pointer,
                     assumptions,
                 )
@@ -2703,7 +2703,12 @@ pub(in crate::kernel) fn memory_load_terms_equal_for_fact_transport(
             || left_pointer.block == right_pointer.block
                 && assumptions
                     .has_pointer_offset_state_fact(&left_pointer.offset, &right_pointer.offset))
-        && memory_states_match_for_resolution(left_memory, right_memory, left_pointer, assumptions)
+        && memory_states_match_for_resolution(
+            left_memory.shared_memory(),
+            right_memory.shared_memory(),
+            left_pointer,
+            assumptions,
+        )
 }
 
 /// Structural state equality needs positive evidence that the selected
@@ -2764,8 +2769,8 @@ pub(in crate::kernel) fn load_equality_lacks_recorded_evidence(
     left_pointer != right_pointer
         || left_kind != right_kind
         || loads_lack_recorded_equality(
-            &left_memory,
-            &right_memory,
+            left_memory.shared_memory(),
+            right_memory.shared_memory(),
             &left_pointer,
             left_kind,
             assumptions,
@@ -3031,7 +3036,7 @@ fn memory_has_materialized_load_from(
     // this address only when the read is no wider.
     crate::kernel::load_access_width_at_address_or_widest(pointer) <= 4
         && pointers_proven_equal_for_memory_resolution(&load_pointer, pointer, assumptions)
-        && memory_states_match_for_resolution(source, &retained_state, pointer, assumptions)
+        && memory_states_match_for_resolution(source, retained_state.memory(), pointer, assumptions)
 }
 
 pub(in crate::kernel) fn pointer_offsets_with_common_base_proven_distinct(
@@ -3554,7 +3559,7 @@ fn unrelated_forgotten_states_do_not_prove_their_loads_equal() {
 
     let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -3571,7 +3576,7 @@ fn unrelated_states_do_not_erase_object_or_heap_state_visible_to_the_load() {
     let loads_proven_equal = |left: &Memory, right: &Memory, pointer: &Pointer| {
         let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -5192,7 +5197,8 @@ fn materialized_cell_source(cell_pointer: &Pointer, value: &ProgramValue) -> Opt
     // The cell is the load only when it holds the load of its own kind: a
     // narrower or differently signed read stored in it is another value
     // than a read of the cell returns.
-    (source_pointer.as_ref() == cell_pointer && kind.reads_value(value)).then_some(source)
+    (source_pointer.as_ref() == cell_pointer && kind.reads_value(value))
+        .then_some(source.into_shared_memory())
 }
 
 /// The bounded-alias-only form of
@@ -5568,7 +5574,7 @@ mod retained_endpoint_tests {
         let one = MachineTerm::constant(1);
         let p = Pointer::symbolic(Variable(993813));
         let before = crate::kernel::intern_memory(Memory::new());
-        let load = MachineTerm::MemoryLoad(before, Box::new(p), LoadKind::Int32);
+        let load = MachineTerm::MemoryLoad(ProgramPoint::at(&before), Box::new(p), LoadKind::Int32);
         let terms = [
             x.clone(),
             y.clone(),

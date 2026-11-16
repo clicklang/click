@@ -352,7 +352,7 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
 fn unresolved_canonicalization_test_load() -> MachineTerm {
     let memory = Memory::new().with_block("canonical-shapes", 8);
     MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(Pointer {
             block: "canonical-shapes".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -568,12 +568,12 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
     // a block this load cannot observe.
     let drifted = base.clone().with_block("unrelated", 4);
     let load_at_base = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(base.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(base.clone()))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let load_at_drifted = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(drifted),
+        ProgramPoint::at(&(crate::kernel::intern_memory(drifted))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -594,7 +594,7 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
         ProgramValue::Int32(MachineTerm::constant(7)),
     );
     let resolved = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(stored),
+        ProgramPoint::at(&(crate::kernel::intern_memory(stored))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -615,7 +615,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
         ProgramValue::Int32(MachineTerm::constant(7)),
     );
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -668,12 +668,12 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
     let base = Memory::new().with_block("deep-cells", 4);
     let drifted = base.clone().with_block("unrelated", 4);
     let mut left = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(base),
+        ProgramPoint::at(&(crate::kernel::intern_memory(base))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let mut right = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(drifted),
+        ProgramPoint::at(&(crate::kernel::intern_memory(drifted))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -721,7 +721,7 @@ fn shared_offsets_retain_state_identity_through_canonicalization() {
     let scaled = |memory: Memory| {
         PointerOffsetTerm::scaled_int32_node(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -743,7 +743,7 @@ fn shared_offsets_retain_state_identity_through_canonicalization() {
     };
     let other_scaled = PointerOffsetTerm::scaled_int32_node(
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(base.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(base.clone()))),
             Box::new(other),
             crate::kernel::LoadKind::Int32,
         ),
@@ -806,7 +806,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     let memory = crate::kernel::intern_memory(Memory::new().with_block("data", 8));
     let index = MachineTerm::Variable(Variable(7));
     let indexed = MachineTerm::MemoryLoad(
-        memory.clone(),
+        ProgramPoint::at(&memory),
         Box::new(Pointer {
             block: "data".into(),
             offset: PointerOffsetTerm::scaled_int32_node(index.clone(), 4),
@@ -814,7 +814,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         crate::kernel::LoadKind::Int32,
     );
     let first = MachineTerm::MemoryLoad(
-        memory.clone(),
+        ProgramPoint::at(&memory),
         Box::new(Pointer {
             block: "data".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -868,7 +868,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         None,
     ));
     let other_epoch_load = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-        other_epoch,
+        ProgramPoint::at(&other_epoch),
         Box::new(Pointer {
             block: "data".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -888,7 +888,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     );
 
     let other_block_load = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-        memory,
+        ProgramPoint::at(&memory),
         Box::new(Pointer {
             block: "other-data".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -918,7 +918,7 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
     let bound = Variable(3_000_000);
     let cell = |offset: PointerOffsetTerm| {
         MachineTerm::MemoryLoad(
-            memory.clone(),
+            ProgramPoint::at(&memory),
             Box::new(Pointer {
                 block: "p".into(),
                 offset,
@@ -959,7 +959,7 @@ fn load_variables_compare_as_loads_under_bounds_pinned_indices() {
     let j = MachineTerm::Variable(Variable(7));
     let cell = |offset: PointerOffsetTerm| {
         crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-            memory.clone(),
+            ProgramPoint::at(&memory),
             Box::new(Pointer {
                 block: "p".into(),
                 offset,
@@ -1002,7 +1002,7 @@ fn load_variable_free_variables_include_its_state_cells() {
         ProgramValue::Int32(MachineTerm::constant(5)),
     );
     let load_variable = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(written),
+        ProgramPoint::at(&(crate::kernel::intern_memory(written))),
         Box::new(Pointer {
             block: "p".into(),
             offset: PointerOffsetTerm::Constant(8),
@@ -1085,7 +1085,7 @@ fn nested_state_load_named(depth: usize, name: impl Fn(MachineTerm) -> MachineTe
     for level in 0..depth {
         let offset = 8 * level as i64;
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(at(offset)),
             crate::kernel::LoadKind::Int32,
         );
@@ -1096,7 +1096,7 @@ fn nested_state_load_named(depth: usize, name: impl Fn(MachineTerm) -> MachineTe
         ]));
     }
     MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(at(8 * depth as i64)),
         crate::kernel::LoadKind::Int32,
     )

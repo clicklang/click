@@ -477,7 +477,7 @@ mod tests {
         assert_eq!(
             key,
             written(&MachineTerm::MemoryLoad(
-                memory,
+                crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer),
                 LoadKind::Int32
             ))

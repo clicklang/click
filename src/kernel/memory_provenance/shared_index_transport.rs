@@ -312,7 +312,7 @@ mod tests {
         let application = SharedPureApplication::intern(
             "state_call".into(),
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::MemoryLoad(before.clone(), address.into(), LoadKind::Int32),
+                MachineTerm::MemoryLoad(ProgramPoint::at(&before), address.into(), LoadKind::Int32),
             ))],
         );
         for format in [
@@ -606,7 +606,7 @@ mod tests {
             ProgramValue::Int32(MachineTerm::constant(7)),
         );
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(before.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
@@ -652,7 +652,7 @@ mod tests {
         };
         let before = Memory::new().with_block("registered-index", 16);
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(before.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
@@ -900,7 +900,7 @@ mod tests {
         ] {
             for kind in [LoadKind::Int32, LoadKind::UInt32, LoadKind::UInt8] {
                 let load = MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(memory.clone()),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
                     Box::new(pointer.clone()),
                     kind,
                 );
@@ -927,8 +927,10 @@ mod tests {
             offset: PointerOffsetTerm::scaled_int32_node(index.clone(), 4),
         };
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(
-                initial.store(pointer, ProgramValue::Int32(MachineTerm::constant(5))),
+            ProgramPoint::at(
+                &(crate::kernel::intern_memory(
+                    initial.store(pointer, ProgramValue::Int32(MachineTerm::constant(5))),
+                )),
             ),
             Box::new(query),
             LoadKind::Int32,

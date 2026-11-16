@@ -1702,7 +1702,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         let mut reads = Vec::new();
         for index in 0..size {
             let load = MachineTerm::MemoryLoad(
-                memory.clone(),
+                crate::kernel::ProgramPoint::at(&memory),
                 Box::new(Pointer {
                     block: "rewrite_reads".into(),
                     offset: PointerOffsetTerm::Constant(index as i64 * 4),
@@ -2069,7 +2069,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             );
             memory = memory.store(pointer.clone(), ProgramValue::UInt32(stored.clone()));
             let load = MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(&memory),
+                crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             );

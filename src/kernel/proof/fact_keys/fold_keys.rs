@@ -201,7 +201,7 @@ mod tests {
                 81,
                 82,
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory_ref(memory),
+                    crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,
                 ),

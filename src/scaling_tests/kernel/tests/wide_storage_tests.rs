@@ -25,7 +25,7 @@ fn wide_storage_exact_load_and_validation_work_ignore_unrelated_memory() {
             );
         }
         let raw = MachineTerm::MemoryLoad(
-            intern_memory(memory.clone()),
+            ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(address(0)),
             LoadKind::UInt128,
         );

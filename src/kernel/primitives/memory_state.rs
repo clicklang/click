@@ -7801,7 +7801,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Pointer) -> ProgramValue {
         int32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         ))
@@ -7819,7 +7819,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Pointer) -> ProgramValue {
         int16(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Int16,
         ))
@@ -7827,7 +7827,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Pointer) -> ProgramValue {
         uint8(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::UInt8,
         ))
@@ -7835,7 +7835,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Pointer) -> ProgramValue {
         uint16(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::UInt16,
         ))
@@ -7843,7 +7843,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Pointer) -> ProgramValue {
         uint32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::UInt32,
         ))
@@ -7851,7 +7851,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::Int64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         ))
@@ -7859,7 +7859,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::UInt64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         ))
@@ -7874,7 +7874,7 @@ impl Memory {
             return None;
         }
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::of_type(ty.program_type())?,
         );
@@ -7887,7 +7887,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::Float32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Float32,
         ))
@@ -7895,7 +7895,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::Float64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(self.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Float64,
         ))
@@ -7929,7 +7929,7 @@ impl Memory {
     ) -> ProgramValue {
         let retained_state = crate::kernel::intern_memory(self.clone());
         let value = Pointer::loaded(&MachineTerm::MemoryLoad(
-            retained_state.clone(),
+            ProgramPoint::at(&retained_state),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         ))
@@ -8910,7 +8910,7 @@ impl ExecutionState {
             components.push((
                 description.clone(),
                 Some(MachineTerm::MemoryLoad(
-                    intern_memory_ref(&self.memory),
+                    ProgramPoint::at(&(intern_memory_ref(&self.memory))),
                     Box::new(anchor.clone()),
                     LoadKind::Int32,
                 )),

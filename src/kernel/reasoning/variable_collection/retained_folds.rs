@@ -639,7 +639,7 @@ mod tests {
             crate::kernel::KernelFloatType::Float64,
         ] {
             let argument = PureFunctionArgument::Value(format.value(MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(pointer.clone()),
                 format.load_kind(),
             )));
@@ -672,7 +672,7 @@ mod tests {
         ] {
             let left = Box::new(MachineTerm::Variable(Variable(999933)));
             let right = Box::new(MachineTerm::MemoryLoad(
-                intern_memory(Memory::new()),
+                ProgramPoint::at(&(intern_memory(Memory::new()))),
                 Box::new(Pointer::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
@@ -721,7 +721,7 @@ mod tests {
         ] {
             let left = Box::new(MachineTerm::Variable(Variable(999933)));
             let right = Box::new(MachineTerm::MemoryLoad(
-                intern_memory(Memory::new()),
+                ProgramPoint::at(&(intern_memory(Memory::new()))),
                 Box::new(Pointer::symbolic(Variable(999934))),
                 format.load_kind(),
             ));

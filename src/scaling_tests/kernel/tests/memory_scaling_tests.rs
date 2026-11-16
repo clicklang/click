@@ -1151,7 +1151,7 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
                     .with_heap_allocation_claim(data(call + 1), HeapExtent::int32(bytes.clone()))
                     .expect("a fresh claim");
                 let point =
-                    crate::kernel::resource_tracker::VersionPoint::at(&intern_memory_ref(&next));
+                    crate::kernel::resource_tracker::ProgramPoint::at(&intern_memory_ref(&next));
                 for cell in [&field, &data(call + 1)] {
                     crate::kernel::resource_tracker::last_same_version_point(
                         crate::kernel::resource_tracker::TrackedResource::Cell {
@@ -1179,7 +1179,7 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
                 pointer: &field,
                 bytes: 4,
             },
-            &crate::kernel::resource_tracker::VersionPoint::at(&intern_memory_ref(&memory)),
+            &crate::kernel::resource_tracker::ProgramPoint::at(&intern_memory_ref(&memory)),
         )
         .expect("the walk has an answer");
         assert!(
@@ -2079,7 +2079,7 @@ fn wide_range_observer_transport_ignores_unrelated_equalities() {
             );
             let load = |memory| {
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(pointer.clone()),
                     LoadKind::Bits64,
                 )

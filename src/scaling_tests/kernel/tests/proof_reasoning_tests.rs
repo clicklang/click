@@ -862,7 +862,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                         Box::new(Proposition::ConditionIs(
                             ConditionTerm::equal(
                                 MachineTerm::MemoryLoad(
-                                    crate::kernel::intern_memory_ref(&memory),
+                                    ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                                     Box::new(data.offset_by_int32_elements(MachineTerm::Variable(
                                         fact_index,
                                     ))),
@@ -894,7 +894,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                         Box::new(Proposition::ConditionIs(
                             ConditionTerm::equal(
                                 MachineTerm::MemoryLoad(
-                                    crate::kernel::intern_memory_ref(&memory),
+                                    ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                                     Box::new(unrelated.offset_by_int32_elements(
                                         MachineTerm::Variable(unrelated_index),
                                     )),
@@ -993,7 +993,7 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
                     offset: PointerOffsetTerm::Constant(0),
                 };
                 let load = MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(Memory::new()),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
                     Box::new(cell),
                     crate::kernel::LoadKind::Int32,
                 );

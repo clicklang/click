@@ -5957,7 +5957,7 @@ void child_release(struct child* obj) {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                retained_state,
+                crate::kernel::ProgramPoint::at(&retained_state),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -6461,7 +6461,7 @@ mod declared_scalar_field_observation_tests {
             "a pointer field must not be cached as an integer prefix"
         );
         let expected = Pointer::loaded(&MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(memory),
+            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(base.clone()),
             crate::kernel::LoadKind::Int32,
         ))

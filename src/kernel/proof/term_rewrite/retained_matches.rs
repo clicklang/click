@@ -557,7 +557,7 @@ mod tests {
         let bound = Variable(2);
         let read = |variable| {
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(Pointer::symbolic(variable)),
                 LoadKind::Int32,
             )

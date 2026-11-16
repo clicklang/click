@@ -24,9 +24,16 @@ fn computation_refusal_is_independent_of_memory_history() {
             after = after.store(other.clone(), ProgramValue::Int32(MachineTerm::constant(7)));
         }
         let after = crate::kernel::intern_memory(after);
-        let left =
-            MachineTerm::MemoryLoad(before.clone(), Box::new(pointer.clone()), LoadKind::Int32);
-        let right = MachineTerm::MemoryLoad(after, Box::new(pointer.clone()), LoadKind::Int32);
+        let left = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&before),
+            Box::new(pointer.clone()),
+            LoadKind::Int32,
+        );
+        let right = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&after),
+            Box::new(pointer.clone()),
+            LoadKind::Int32,
+        );
         let read_equality =
             Proposition::ConditionIs(ConditionTerm::equal(left.clone(), right), true);
         let add = |left, right| MachineTerm::Binary {

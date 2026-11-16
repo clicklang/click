@@ -3235,7 +3235,7 @@ impl PureFactContext {
         let mut forms = vec![term.as_ref().clone()];
         if let MachineTerm::MemoryLoad(memory, pointer, kind) = term.as_ref() {
             let named = crate::kernel::canonical_form_of_load(
-                memory.clone(),
+                memory.shared_memory().clone(),
                 pointer.as_ref().clone(),
                 *kind,
             );

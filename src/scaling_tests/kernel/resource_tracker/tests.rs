@@ -428,8 +428,11 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(crate::kernel::Variable(1081601));
         let memory = intern_memory(Memory::new().store(address.clone(), one()));
-        let read =
-            MachineTerm::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Int32);
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(address),
+            crate::kernel::LoadKind::Int32,
+        );
         let mut root =
             KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Legacy(&read));
         for _ in 0..size {
@@ -472,7 +475,11 @@ fn shared_conditional_guard_reads_keep_state_identity_in_linear_work() {
         let pointer = at(block("global:g"), 0);
         crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 4);
         let guard = ConditionTerm::equal(
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32),
+            MachineTerm::MemoryLoad(
+                ProgramPoint::at(&memory),
+                Box::new(pointer.clone()),
+                LoadKind::Int32,
+            ),
             MachineTerm::constant(0),
         );
         let guard = KernelTermImport::default().condition(&guard);
@@ -491,7 +498,7 @@ fn shared_conditional_guard_reads_keep_state_identity_in_linear_work() {
         });
         assert_eq!(reads.len(), 1);
         assert_eq!(reads[0].resource, OwnedResource::Cell { pointer, bytes: 4 });
-        assert_eq!(reads[0].point, VersionPoint::at(&memory));
+        assert_eq!(reads[0].point, ProgramPoint::at(&memory));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert!(work <= size * 32 + 16, "size={size}, work={work}");
     }

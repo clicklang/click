@@ -5187,9 +5187,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         // The cell as the current state reads it.
         let current = crate::kernel::intern_memory_ref(view.fixed_state.state.memory());
-        let current_side = if right_memory == current {
+        let current_side = if right_memory == crate::kernel::ProgramPoint::at(&current) {
             right
-        } else if left_memory == current {
+        } else if left_memory == crate::kernel::ProgramPoint::at(&current) {
             left
         } else {
             return Ok(None);

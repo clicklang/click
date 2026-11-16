@@ -81,8 +81,11 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
                 .store(write_alias, ProgramValue::UInt64(value.clone())),
         );
         let projected = canonical_projected_load_memory(&source, &wide_address);
-        let wide_read =
-            MachineTerm::MemoryLoad(projected, Box::new(wide_address), LoadKind::Bits64);
+        let wide_read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&projected),
+            Box::new(wide_address),
+            LoadKind::Bits64,
+        );
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
             wide_read_has_recorded_value(&wide_read, &wanted, &context)
         });
@@ -235,7 +238,7 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
         }
         let legacy = |memory: &SharedMemory| {
             Pointer::loaded(&MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(field.clone()),
                 LoadKind::Int32,
             ))
@@ -296,8 +299,11 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             );
         }
         let before = intern_memory(memory);
-        let bits =
-            MachineTerm::MemoryLoad(before.clone(), Box::new(field.clone()), LoadKind::Bits64);
+        let bits = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&before),
+            Box::new(field.clone()),
+            LoadKind::Bits64,
+        );
         let value = PointerValue::from_read(
             Pointer::integer_address(bits),
             ProgramType::VoidPointer,
@@ -393,8 +399,11 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
         }
         let value = MachineTerm::narrow_constant(MachineIntegerType::UInt8, 129);
         memory = memory.store(pointer.clone(), ProgramValue::UInt8(value.clone()));
-        let load =
-            MachineTerm::MemoryLoad(intern_memory(memory), Box::new(pointer), LoadKind::UInt8);
+        let load = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&(intern_memory(memory))),
+            Box::new(pointer),
+            LoadKind::UInt8,
+        );
         let cast = |value| MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::UInt8,

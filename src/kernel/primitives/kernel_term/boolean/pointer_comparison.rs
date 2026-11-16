@@ -244,8 +244,8 @@ mod tests {
                     Box::new(Pointer::null()),
                 )
             };
-            let a = condition(memory_a.clone());
-            let b = condition(memory_b.clone());
+            let a = condition(ProgramPoint::at(&memory_a));
+            let b = condition(ProgramPoint::at(&memory_b));
             let ar = KernelTermImport::default().condition(&a);
             let br = KernelTermImport::default().condition(&b);
             for allowed in [false, true] {

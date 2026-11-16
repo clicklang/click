@@ -62,12 +62,12 @@ fn context_free_disjoint_store_transport_stays_closed() {
     };
     let after = before.clone().store(written, int32(7));
     let old_load = MachineTerm::MemoryLoad(
-        click::kernel::intern_memory(before),
+        ProgramPoint::at(&click::kernel::intern_memory(before)),
         Box::new(preserved.clone()),
         LoadKind::Int32,
     );
     let new_load = MachineTerm::MemoryLoad(
-        click::kernel::intern_memory(after),
+        ProgramPoint::at(&click::kernel::intern_memory(after)),
         Box::new(preserved),
         LoadKind::Int32,
     );

@@ -2166,7 +2166,7 @@ impl Renderer<'_> {
             } else {
                 self.push("load(");
             }
-            self.memory(retained_state.as_ref());
+            self.memory(retained_state.shared_memory().as_ref());
             self.push(", pointer=");
             self.pointer(pointer);
             self.push(")");

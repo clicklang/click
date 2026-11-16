@@ -278,7 +278,7 @@ fn iterated_element_selection_checks_pointer_reads_across_states() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scaled_int32_node(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory.clone()),
+                ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
                 Box::new(address.clone()),
                 LoadKind::of_type(ProgramType::Int32Pointer).unwrap(),
             ),

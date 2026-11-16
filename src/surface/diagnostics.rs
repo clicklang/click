@@ -3425,7 +3425,7 @@ pub(super) fn describe_unseparated_write(
             pointer: &load,
             bytes: crate::kernel::load_access_width_or_widest(&memory, &load),
         },
-        &resource_tracker::VersionPoint::at(&memory),
+        &resource_tracker::ProgramPoint::at(&memory),
     );
     describe_resource_version_mismatch(
         &explanation,
@@ -3683,8 +3683,8 @@ pub(super) fn describe_two_sided_version_mismatch(
             pointer: &left_load,
             bytes: crate::kernel::load_access_width_or_widest(&left_memory, &left_load),
         },
-        &resource_tracker::VersionPoint::at(&left_memory),
-        &resource_tracker::VersionPoint::at(&right_memory),
+        &resource_tracker::ProgramPoint::at(&left_memory),
+        &resource_tracker::ProgramPoint::at(&right_memory),
     );
     // Both labels name real program points, so the sentence is written
     // against the earlier of the two: that is the one the value may have
@@ -4001,7 +4001,7 @@ struct AccessWidths {
 /// the whole byte question, so it is read back off the recorded edge the walk
 /// stopped below — the same edge the tracker classified. `None` for every
 /// other step, and for a point that records no edge at all.
-fn recorded_store_byte_width(at: Option<&resource_tracker::VersionPoint>) -> Option<u32> {
+fn recorded_store_byte_width(at: Option<&resource_tracker::ProgramPoint>) -> Option<u32> {
     match at?.shared_memory().derivation()?.as_ref() {
         crate::kernel::MemoryDerivation::Store { value, .. } => {
             Some(value.program_type().byte_width())

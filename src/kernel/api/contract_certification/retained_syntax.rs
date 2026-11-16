@@ -293,7 +293,10 @@ impl Comparison {
                     ]);
                 }
                 (MachineTerm::MemoryLoad(am, ap, ak), MachineTerm::MemoryLoad(bm, bp, bk)) => {
-                    if am.arena_id() != bm.arena_id() || ak != bk || !self.pointer(ap, bp) {
+                    if am.shared_memory().arena_id() != bm.shared_memory().arena_id()
+                        || ak != bk
+                        || !self.pointer(ap, bp)
+                    {
                         return false;
                     }
                 }
@@ -742,7 +745,7 @@ mod tests {
         );
         let read = |memory: &crate::kernel::Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(crate::kernel::Pointer::null()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -841,7 +844,9 @@ mod tests {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             MachineTerm::MemoryLoad(
-                                crate::kernel::intern_memory_ref(retained_state),
+                                ProgramPoint::at(
+                                    &(crate::kernel::intern_memory_ref(retained_state)),
+                                ),
                                 Box::new(Pointer::symbolic(Variable(712))),
                                 LoadKind::Int32,
                             ),

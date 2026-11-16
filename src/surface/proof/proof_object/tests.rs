@@ -1080,7 +1080,7 @@ fn both_and_preserves_exact_binders_and_saved_states() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    memory.clone().into(),
+                    crate::kernel::ProgramPoint::of_memory(&memory),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -11812,7 +11812,7 @@ fn generated_load_source_event_fixture(
             retained_state: crate::kernel::MemoryStateIdentity::of(&Memory::new()),
             pointer: pointer.clone(),
             load: MachineTerm::MemoryLoad(
-                Memory::new().into(),
+                crate::kernel::ProgramPoint::of_memory(&Memory::new()),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             ),

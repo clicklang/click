@@ -679,7 +679,7 @@ impl SharedMachineIntegerTerm {
                 root.machine_read_leaf()
             {
                 matches!(&mapped, MachineTerm::MemoryLoad(other, pointer, other_kind)
-                    if memory.arena_id() == other.arena_id() && address == pointer && kind == other_kind)
+                    if memory.shared_memory().arena_id() == other.shared_memory().arena_id() && address == pointer && kind == other_kind)
             } else {
                 !root.has_machine_reads()
                     && !root.has_machine_conversions()

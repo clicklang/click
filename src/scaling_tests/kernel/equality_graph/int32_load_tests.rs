@@ -104,7 +104,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
         );
         let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
-                intern_memory_ref(memory),
+                ProgramPoint::at(&(intern_memory_ref(memory))),
                 Box::new(field.clone()),
                 crate::kernel::LoadKind::Int32,
             )

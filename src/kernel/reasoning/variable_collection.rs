@@ -3325,15 +3325,15 @@ pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BT
             }
         }
         MachineTerm::MemoryLoad(memory, pointer, _) => {
-            collect_shared_memory_bitvector_variables(memory, variables);
+            collect_shared_memory_bitvector_variables(memory.shared_memory(), variables);
             collect_pointer_bitvector_variables(pointer, variables);
-            collect_stored_load_connection_variables(memory, pointer, variables);
+            collect_stored_load_connection_variables(memory.shared_memory(), pointer, variables);
             if COLLECTING_HAVOC_RANGES.with(std::cell::Cell::get)
                 && let Some(origin) = crate::kernel::eval::scalar_read_observation(
                     crate::kernel::MachineOperandView::Legacy(term),
                 )
                 .and_then(|read| read.origin)
-                && origin != *memory
+                && origin != *memory.shared_memory()
             {
                 // Like a named read, a structural version can precede the
                 // live DAG whose changed ranges the framing query needs.
@@ -6815,7 +6815,7 @@ mod shared_read_walker_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let native = MachineTerm::MemoryLoad(
-            intern_memory(Memory::new()),
+            ProgramPoint::at(&(intern_memory(Memory::new()))),
             Box::new(pointer),
             LoadKind::Int32,
         );
@@ -6843,7 +6843,7 @@ mod shared_read_walker_tests {
             ),
         };
         let raw = MachineTerm::MemoryLoad(
-            intern_memory(Memory::new()),
+            ProgramPoint::at(&(intern_memory(Memory::new()))),
             Box::new(pointer),
             LoadKind::Int32,
         );

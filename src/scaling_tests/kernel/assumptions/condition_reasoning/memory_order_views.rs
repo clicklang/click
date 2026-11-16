@@ -65,7 +65,11 @@ fn shared_read_order_bucket_ignores_unrelated_addresses() {
             let memory = crate::kernel::intern_memory(
                 Memory::new().with_block(format!("order-retained_state-{index}"), 0),
             );
-            let read = MachineTerm::MemoryLoad(memory, Box::new(address), LoadKind::Int32);
+            let read = MachineTerm::MemoryLoad(
+                ProgramPoint::at(&memory),
+                Box::new(address),
+                LoadKind::Int32,
+            );
             let shared = KernelTermImport::default()
                 .machine_arithmetic(MachineIntegerType::Int32, &read)
                 .unwrap();

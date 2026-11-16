@@ -1119,7 +1119,7 @@ fn thread_guarantees_are_withheld_until_join() {
     let postcondition = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
-                intern_memory_ref(spawned.parent().memory()),
+                ProgramPoint::at(&(intern_memory_ref(spawned.parent().memory()))),
                 Box::new(pointer(0)),
                 crate::kernel::LoadKind::Int32,
             ),
