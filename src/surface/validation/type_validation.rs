@@ -95,12 +95,6 @@ fn validate_proposition_expression_types_one(
         ClickProposition::Value(expression) => require_proposition_value_type(
             infer_spec_value_type(expression, variables, click_functions, context)?,
         ),
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                validate_resource_subject_expression_types(r, variables, click_functions, context)?;
-            }
-            Ok(())
-        }
 
         ClickProposition::Comparison {
             left,
@@ -5012,12 +5006,6 @@ fn validate_predicate_calls_in_proposition_one(
         ClickProposition::Value(expression) => {
             validate_contract_expression_calls(expression, click_functions, context)
         }
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                validate_resource_subject_calls(r, click_functions, context)?;
-            }
-            Ok(())
-        }
 
         ClickProposition::Comparison { left, right, .. } => {
             validate_contract_expression_calls(left, click_functions, context)?;
@@ -5409,12 +5397,6 @@ fn validate_value_proposition_calls(
     match proposition {
         ClickProposition::Value(expression) => {
             validate_contract_expression_calls(expression, click_functions, context)
-        }
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                validate_resource_subject_calls(r, click_functions, context)?;
-            }
-            Ok(())
         }
 
         ClickProposition::Comparison { left, right, .. } => {
