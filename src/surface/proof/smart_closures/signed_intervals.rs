@@ -141,7 +141,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     pub(in crate::surface::proof) fn apply_signed_interval_composition(
         proof: &Proof<'a>,
-        certificate: &SignedInt32Certificate,
+        certificate: &SignedIntervalPlan,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_signed_interval_composition");
@@ -570,6 +570,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if proof.focused_discharged() {
                 return Ok(Some(proof));
             }
+        }
+        if proof.surface_goal().is_some_and(|goal| {
+            !matches!(
+                surface_comparison_with_anchored_operands(goal),
+                ClickProposition::Comparison { .. }
+            )
+        }) && let Ok(closed) = proof.driver().apply_step(ProofStep::Known)
+        {
+            return Ok(Some(closed));
         }
         let Some(target) = proof.surface_goal().cloned() else {
             return Ok(Some(proof.driver().apply_step(ProofStep::Known)?));

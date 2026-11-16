@@ -2302,11 +2302,13 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
         .expect("the expansion must keep a threw certificate");
     assert!(
         expanded.contains("outcomes {")
-            && returned_proof.contains("normalize();")
+            && returned_proof.contains("have result == 7 by {")
+            && threw_proof.contains("have result == 7 by {")
+            && returned_proof.contains("known();")
             && threw_proof.contains("known();")
-            && !threw_proof.contains("normalize();")
+            && !expanded.contains("solve(")
             && !expanded.contains("trivial();"),
-        "distinct exact path closers should retain returned/threw certificates: {expanded}"
+        "each outcome should retain its own explicit result certificate: {expanded}"
     );
     let rewritten = click_project.with_entry_source(expanded.clone());
     // Session construction cold-verifies this complete program once.
@@ -7287,10 +7289,7 @@ fn check_sidecar_tactic_with_tools(
     .unwrap();
     let rewritten = parsed.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, import).unwrap_or_else(|error| {
-        panic!(
-            "expanded arithmetic certificate: {}\n{expanded}",
-            error.message()
-        )
+        panic!("expanded arithmetic proof: {}\n{expanded}", error.message())
     });
     let (session, _) =
         ProgramVerificationSession::new_program_prepared_project(&parsed, import).unwrap();
@@ -7305,7 +7304,7 @@ fn check_sidecar_tactic_with_tools(
     .unwrap();
     session
         .verify_at_project(&expanded, position.line, position.column)
-        .expect("retained audit accepts arithmetic certificate");
+        .expect("retained audit accepts ordinary arithmetic proof");
 }
 
 #[test]
@@ -9440,7 +9439,7 @@ int32 relay(int32 __click_exception, int32 value) throws int32 {
     .unwrap();
     verify_program_prepared_project(
         &parsed.with_entry_source(expanded),
-        &load_import(&project.config()).unwrap(),
+        load_import(&project.config()).unwrap(),
     )
     .unwrap();
     let (before, after) = source.rsplit_once("exception == 7").unwrap();
@@ -11980,15 +11979,8 @@ fn not_equal_source_supports_the_existing_narrow_scalar_widths() {
 const WIDE_NARROWING_SOURCE: &str =
     include_str!("fixtures/cpp-verification/wide-narrowing/narrow.cpp");
 
-fn cast_identity_certificate(original: &str, lo: &str, hi: &str) -> String {
-    format!(
-        r#"arithmetic_certificate rules {{
-        premise 0: {lo} <= {original} => {lo} <= {original};
-        premise 1: {original} <= {hi} => {original} <= {hi};
-        integer_cast_identity bounds [0, 1] => to_integer(result) == {original};
-        conclusion 0;
-    }}"#
-    )
+fn cast_identity_proof(original: &str, lo: &str, hi: &str) -> String {
+    format!(r#"solve() using {{ {lo} <= {original}; {original} <= {hi}; }};"#)
 }
 
 #[test]
@@ -12014,7 +12006,7 @@ fn wide_narrowing_preserves_symbolic_values_only_with_checked_destination_bounds
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let cert = cast_identity_certificate("to_integer(a)", lo, hi);
+        let cert = cast_identity_proof("to_integer(a)", lo, hi);
         let proof = format!(
             "verifying \"narrow.cpp\"; {result} {name}({source} a) {{ requires {lo} <= to_integer(a); requires to_integer(a) <= {hi}; ensures to_integer(result) == to_integer(a); }} by {{ step_until(function.exit); have to_integer(result) == to_integer(a) by {{ {cert} }} solve(); }}"
         );
@@ -12049,7 +12041,7 @@ fn wide_narrowing_quotient_and_remainder_keep_native_definedness_and_range_bound
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let observed = format!("to_integer(a {op} b)");
-        let cert = cast_identity_certificate(&observed, lo, hi);
+        let cert = cast_identity_proof(&observed, lo, hi);
         let proof = format!(
             "verifying \"narrow.cpp\"; {result} {name}(int128 a, int128 b) {{ requires to_integer(b) != 0; requires to_integer(a) != -170141183460469231731687303715884105728 or to_integer(b) != -1; requires {lo} <= {observed}; requires {observed} <= {hi}; ensures to_integer(result) == {observed}; }} by {{ step_until(function.exit); have to_integer(result) == {observed} by {{ {cert} }} solve(); }}"
         );
@@ -12062,7 +12054,7 @@ fn wide_narrowing_quotient_and_remainder_keep_native_definedness_and_range_bound
         let parsed = read_click_project(&path, &unsafe_proof).unwrap();
         let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
         assert!(
-            error.message().contains("undefined behavior"),
+            error.message().contains("division by zero"),
             "{}",
             error.message()
         );
@@ -12107,7 +12099,7 @@ fn wide_narrowing_modular_contract_preserves_framed_narrow_memory() {
     let import = load_import(&project.config()).unwrap();
     let lo = "-9223372036854775808";
     let hi = "9223372036854775807";
-    let cert = cast_identity_certificate("to_integer(a)", lo, hi);
+    let cert = cast_identity_proof("to_integer(a)", lo, hi);
     let proof = format!(
         r#"verifying "narrow.cpp";
 int64 ss64(int128 a) {{
@@ -13229,16 +13221,9 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let certificate = |goal: &str| {
+        let certificate = |_goal: &str| {
             format!(
-                r#"arithmetic_certificate rules {{
-            premise 0: -9223372036854775808 <= to_integer(a) => -9223372036854775808 <= to_integer(a);
-            premise 1: to_integer(a) <= 9223372036854775807 => to_integer(a) <= 9223372036854775807;
-            premise 2: 1 <= to_integer(b) => 1 <= to_integer(b);
-            premise 3: to_integer(b) <= 2147483647 => to_integer(b) <= 2147483647;
-            integer_division_bounds bounds [0, 1, 2, 3] => {goal};
-            conclusion 0;
-        }}"#
+                r#"solve() using {{ -9223372036854775808 <= to_integer(a); to_integer(a) <= 9223372036854775807; 1 <= to_integer(b); to_integer(b) <= 2147483647; }};"#
             )
         };
         let expression = format!("{pure}(to_integer(a), to_integer(b))");
@@ -13247,7 +13232,7 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
         let upper = format!("{expression} <= {hi}");
         let lower_cert = certificate(&lower);
         let upper_cert = certificate(&upper);
-        let cast_cert = cast_identity_certificate(&observed, lo, hi);
+        let cast_cert = cast_identity_proof(&observed, lo, hi);
         let proof = format!(
             r#"verifying "narrow.cpp";
 {ty} {name}(int128 a, int128 b) {{
@@ -13262,22 +13247,10 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
     have {lower} by {{ {lower_cert} }}
     have {upper} by {{ {upper_cert} }}
     step_until(function.exit);
-    have {lo} <= {observed} by {{ arithmetic_certificate rules {{
-        premise 0: {observed} == {expression} => {observed} == {expression};
-        premise 1: {lower} => {lower};
-        integer_relation_transport bounds [0, 1] => {lo} <= {observed}; conclusion 0;
-    }} }}
-    have {observed} <= {hi} by {{ arithmetic_certificate rules {{
-        premise 0: {observed} == {expression} => {observed} == {expression};
-        premise 1: {upper} => {upper};
-        integer_relation_transport bounds [0, 1] => {observed} <= {hi}; conclusion 0;
-    }} }}
+    have {lo} <= {observed} by {{ solve() using {{ {observed} == {expression}; {lower}; }}; }}
+    have {observed} <= {hi} by {{ solve() using {{ {observed} == {expression}; {upper}; }}; }}
     have to_integer(result) == {observed} by {{ {cast_cert} }}
-    have to_integer(result) == {expression} by {{ arithmetic_certificate rules {{
-        premise 0: {observed} == {expression} => {observed} == {expression};
-        premise 1: to_integer(result) == {observed} => to_integer(result) == {observed};
-        integer_relation_transport bounds [0, 1] => to_integer(result) == {expression}; conclusion 0;
-    }} }}
+    have to_integer(result) == {expression} by {{ solve() using {{ {observed} == {expression}; to_integer(result) == {observed}; }}; }}
     solve();
 }}
 "#
@@ -13292,25 +13265,12 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
             ),
             proof.replace("    requires to_integer(a) <= 9223372036854775807;", ""),
             proof.replace("    requires 1 <= to_integer(b);", ""),
-            proof.replace(
-                "integer_division_bounds bounds [0, 1, 2, 3]",
-                "integer_division_bounds bounds [0, 1, 3, 2]",
-            ),
-            proof.replace(
-                "integer_relation_transport bounds [0, 1]",
-                "integer_relation_transport bounds [1, 0]",
-            ),
-            proof.replace(
-                "integer_cast_identity bounds [0, 1]",
-                "integer_cast_identity bounds [0, 0]",
-            ),
         ] {
             let path = project.directory.join("false.click");
             fs::write(&path, &hostile).unwrap();
             let parsed = read_click_project(&path, &hostile).unwrap();
-            let error = verify_program_prepared_project(&parsed, &import).expect_err(
-                "false results, missing guards/bounds and forged certificate references must fail",
-            );
+            let error = verify_program_prepared_project(&parsed, &import)
+                .expect_err("false results and missing guards or bounds must fail");
             assert!(error.message().len() < 8000, "bounded refusal");
         }
     }
@@ -13330,14 +13290,8 @@ int128 {name}(int128 a, int128 b) {{
     requires 1 <= to_integer(b);
     ensures 0 == 0;
 }} by {{
-    have to_integer(b) != 0 by {{ arithmetic_certificate rules {{
-        premise 0: 1 <= to_integer(b) => 1 <= to_integer(b);
-        integer_bound_exclusion bounds [0] => to_integer(b) != 0; conclusion 0;
-    }} }}
-    have to_integer(b) != -1 by {{ arithmetic_certificate rules {{
-        premise 0: 1 <= to_integer(b) => 1 <= to_integer(b);
-        integer_bound_exclusion bounds [0] => to_integer(b) != -1; conclusion 0;
-    }} }}
+    have to_integer(b) != 0 by {{ solve() using {{ 1 <= to_integer(b); }}; }}
+    have to_integer(b) != -1 by {{ solve() using {{ 1 <= to_integer(b); }}; }}
     step_until(function.exit); solve();
 }}"#
         );
@@ -13347,14 +13301,6 @@ int128 {name}(int128 a, int128 b) {{
             source.replace(
                 "requires 1 <= to_integer(b);",
                 "requires 0 <= to_integer(b);",
-            ),
-            source.replace(
-                "integer_bound_exclusion bounds [0]",
-                "integer_bound_exclusion bounds [1]",
-            ),
-            source.replace(
-                "integer_bound_exclusion bounds [0]",
-                "integer_bound_exclusion bounds [0, 0]",
             ),
             source.replace("ensures 0 == 0;", "ensures 0 == 1;"),
             source.replace("1 <= to_integer(b)", "0 <= to_integer(b)"),
@@ -13381,7 +13327,7 @@ fn wide_narrowing_integer_ranges_reflect_into_native_correction_bounds() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let cert = cast_identity_certificate("to_integer(a)", "-100", "100");
+        let cert = cast_identity_proof("to_integer(a)", "-100", "100");
         let helper = if name == "relay" { "ss64" } else { name };
         let mut proof = format!(
             r#"import click::integer;
@@ -13394,16 +13340,8 @@ verifying "narrow.cpp";
 }} by {{
     step_until(function.exit);
     have to_integer(result) == to_integer(a) by {{ {cert} }}
-    have -100 <= to_integer(result) by {{ arithmetic_certificate rules {{
-        premise 0: to_integer(result) == to_integer(a) => to_integer(result) == to_integer(a);
-        premise 1: -100 <= to_integer(a) => -100 <= to_integer(a);
-        integer_relation_transport bounds [0, 1] => -100 <= to_integer(result); conclusion 0;
-    }} }}
-    have to_integer(result) <= 100 by {{ arithmetic_certificate rules {{
-        premise 0: to_integer(result) == to_integer(a) => to_integer(result) == to_integer(a);
-        premise 1: to_integer(a) <= 100 => to_integer(a) <= 100;
-        integer_relation_transport bounds [0, 1] => to_integer(result) <= 100; conclusion 0;
-    }} }}
+    have -100 <= to_integer(result) by {{ solve() using {{ to_integer(result) == to_integer(a); -100 <= to_integer(a); }}; }}
+    have to_integer(result) <= 100 by {{ solve() using {{ to_integer(result) == to_integer(a); to_integer(a) <= 100; }}; }}
     solve();
 }}"#
         );
@@ -13430,10 +13368,6 @@ int64 relay(int128 a, int32* untouched) {
             proof.replace(
                 &format!("ensures result <= 100{suffix};"),
                 &format!("ensures result <= 99{suffix};"),
-            ),
-            proof.replace(
-                "integer_relation_transport bounds [0, 1]",
-                "integer_relation_transport bounds [1, 0]",
             ),
         ] {
             let path = project.directory.join("false.click");
@@ -13556,10 +13490,7 @@ ensures round_down == false implies (to_integer(result) + -1) * to_integer(d) < 
             "ensures -9223372036854775808 <= to_integer(result);",
             "ensures to_integer(result) == 1000;",
         ),
-        proof.replace(
-            "integer_cast_identity bounds [0, 1]",
-            "integer_cast_identity bounds [1, 0]",
-        ),
+
         proof.replace(
             "round_down == true and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
             "round_down == true and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
@@ -16289,7 +16220,7 @@ fn check_converted_wide_call_results(initializer: bool) {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let cert = cast_identity_certificate("to_integer(captured)", lo, hi);
+        let cert = cast_identity_proof("to_integer(captured)", lo, hi);
         let proof = format!(
             r#"verifying "wide.cpp";
 {source} echo({source} value) {{ ensures result == value; }}
@@ -16311,10 +16242,6 @@ fn check_converted_wide_call_results(initializer: bool) {
         if source == "int128" && result == "int64" {
             for hostile in [
                 proof.replacen("ensures result == value;", "", 1),
-                proof.replace(
-                    "integer_cast_identity bounds [0, 1]",
-                    "integer_cast_identity bounds [0, 0]",
-                ),
                 proof.replacen(
                     "ensures to_integer(result) == to_integer(value);",
                     "ensures to_integer(result) == to_integer(value) + 1;",
@@ -18611,6 +18538,9 @@ int twice(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
 }
+theorem twice_doubles() {
+    ensures Doubling(&twice) by { unfold(Doubling); solve(); }
+}
 int stored(int (*f)(int), int x) {
     requires Doubling(f);
     requires 0 <= x and x <= 1000;
@@ -18624,7 +18554,7 @@ int relay(int (*f)(int), int x) {
 int caller(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-}
+} by { apply(twice_doubles()); }
 "#;
 
 // A function-pointer local holds `&twice` or a parameter's pointer, a call
@@ -18659,7 +18589,7 @@ fn stored_and_forwarded_cpp_function_pointers_keep_their_contract() {
         ("stored", "cannot verify call through function pointer `g`"),
         (
             "relay",
-            "is missing prerequisite (precondition clause 1 of `stored`)",
+            "requires an explicit prerequisite proof (precondition clause 1 of `stored`)",
         ),
     ] {
         let hostile = STORED_FUNCTION_POINTER_SIDECAR.replace(
@@ -18673,8 +18603,8 @@ fn stored_and_forwarded_cpp_function_pointers_keep_their_contract() {
         assert!(error.message().contains(expected), "{}", error.message());
     }
     let weak_twice = STORED_FUNCTION_POINTER_SIDECAR.replacen(
-        "    ensures result == x + x;\n}\nint stored",
-        "    ensures result >= 0;\n}\nint stored",
+        "    ensures result == x + x;\n}\ntheorem twice_doubles",
+        "    ensures result >= 0;\n}\ntheorem twice_doubles",
         1,
     );
     assert_ne!(weak_twice, STORED_FUNCTION_POINTER_SIDECAR);
@@ -18684,7 +18614,7 @@ fn stored_and_forwarded_cpp_function_pointers_keep_their_contract() {
     assert!(
         error
             .message()
-            .contains("does not satisfy named contract `Doubling`"),
+            .contains("contract-refinement proof does not establish `Doubling(&twice)`"),
         "{}",
         error.message()
     );

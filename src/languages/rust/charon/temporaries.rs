@@ -350,7 +350,8 @@ fn iterator_move(statement: &S) -> Option<(IteratorKind, &String, &String)> {
     }
 }
 
-/// Builds each range iterator in the local the program moves it into. MIR builds
+/// Builds each range and chunk iterator in the local the program moves it
+/// into. MIR builds
 /// a `for` loop's iterator in a temporary and moves it, sometimes twice,
 /// into the loop's own: `t1 = 0..n; t2 = t1; iter = t2` is `iter = 0..n`.
 /// A move from a temporary that nothing else names, whose definition comes
@@ -417,10 +418,10 @@ pub(super) fn collapse_iterator_moves(
                 continue;
             };
             let (target, source) = (target.clone(), source.clone());
-            // A slice or chunk iterator's moves also pass its liveness flag,
-            // which the lowering keeps per local; only a range moves as a
-            // plain value.
-            if kind != IteratorKind::Range
+            // A slice iterator's moves also pass its liveness flag, which the
+            // lowering keeps per local; a range and a chunk iterator move as
+            // plain values.
+            if !matches!(kind, IteratorKind::Range | IteratorKind::Chunk)
                 || !temporaries.contains(&source)
                 || mentions.get(&source) != Some(&2)
             {

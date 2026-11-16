@@ -1641,15 +1641,18 @@ impl<'a> Proof<'a> {
                 let substitutions = definition
                     .parameters()
                     .iter()
-                    .zip(&application.arguments)
-                    .map(|(parameter, argument)| {
+                    .zip(application.arguments.iter().zip(&checked_arguments))
+                    .map(|(parameter, (argument, checked_argument))| {
                         (
                             parameter.name().to_string(),
                             crate::surface::lowering::pure_function_parameter_argument_of_type(
                                 parameter,
                                 argument,
-                                generics::syntactic_expression_type(argument, &variable_types)
-                                    .as_ref(),
+                                generics::syntactic_expression_type(
+                                    checked_argument,
+                                    &variable_types,
+                                )
+                                .as_ref(),
                             ),
                         )
                     })
@@ -2096,7 +2099,13 @@ impl<'a> Proof<'a> {
                         arguments,
                     },
                 ),
-                (item.clone(), predecessor_end),
+                (
+                    item.clone(),
+                    crate::surface::lowering::pure_function_parameter_argument(
+                        &definition.parameters()[position],
+                        &predecessor_end,
+                    ),
+                ),
             ]);
             if let Ok(appended) = substitute_contract_expression(&body, &cell) {
                 candidates.push(appended);
@@ -2145,16 +2154,15 @@ impl<'a> Proof<'a> {
                     true,
                 ))
                 && let Some(claim) = checked_claim
-                && (crate::kernel::proof::integer_arithmetic::IntegerArithmeticCertificate {
-                    nodes: vec![
-                        crate::kernel::proof::integer_arithmetic::IntegerArithmeticNode::Trivial {
-                            result: claim,
-                        },
-                    ],
-                    conclusion: 0,
-                })
-                .check(refreshed_kernel, &[])
-                .is_ok()
+                && claim.terms.is_empty()
+                && match claim.relation {
+                    crate::kernel::proof::integer_arithmetic::IntegerAffineRelation::Equal => {
+                        claim.constant == num_bigint::BigInt::from(0)
+                    }
+                    crate::kernel::proof::integer_arithmetic::IntegerAffineRelation::LessEqual => {
+                        claim.constant <= num_bigint::BigInt::from(0)
+                    }
+                }
             {
                 return Some(rewritten);
             }

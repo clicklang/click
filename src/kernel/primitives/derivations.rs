@@ -45,7 +45,7 @@ impl PropositionDerivation {
 
     /// Whether this equality retained exact constants and singleton bounds.
     /// Surface transcription uses only the retained context premises to emit
-    /// an independently checked signed arithmetic certificate.
+    /// an ordinary explicit arithmetic proof.
     pub fn is_int32_pinned_constant_equality(&self) -> bool {
         matches!(
             &self.rule,

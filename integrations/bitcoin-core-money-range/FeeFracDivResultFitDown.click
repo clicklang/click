@@ -23,14 +23,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     have to_integer(n) <= 19807040619342712361531211775 by { solve() using {
         to_integer(n) < 9223372036854775808 * to_integer(d); to_integer(d) <= 2147483647;
     }; }
-    have to_integer(d) != 0 by { arithmetic_certificate rules {
-        premise 0: 1 <= to_integer(d) => 1 <= to_integer(d);
-        integer_bound_exclusion bounds [0] => to_integer(d) != 0; conclusion 0;
-    } }
-    have to_integer(d) != -1 by { arithmetic_certificate rules {
-        premise 0: 1 <= to_integer(d) => 1 <= to_integer(d);
-        integer_bound_exclusion bounds [0] => to_integer(d) != -1; conclusion 0;
-    } }
+    have to_integer(d) != 0 by { solve() using { 1 <= to_integer(d); }; }
+    have to_integer(d) != -1 by { solve() using { 1 <= to_integer(d); }; }
     step();
     step();
     have -9223372036854775808 <= truncating_quotient(to_integer(n), to_integer(d)) by {
@@ -40,85 +34,25 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         apply(integer::positive_divisor_quotient_strict_upper(to_integer(n), to_integer(d), 9223372036854775808));
         solve() using { truncating_quotient(to_integer(n), to_integer(d)) < 9223372036854775808; };
     }
-    have -9223372036854775808 <= to_integer(n / d as int128) by { arithmetic_certificate rules {
-        premise 0: to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d)) => to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d));
-        premise 1: -9223372036854775808 <= truncating_quotient(to_integer(n), to_integer(d)) => -9223372036854775808 <= truncating_quotient(to_integer(n), to_integer(d));
-        integer_relation_transport bounds [0, 1] => -9223372036854775808 <= to_integer(n / d as int128); conclusion 0;
-    } }
-    have to_integer(n / d as int128) <= 9223372036854775807 by { arithmetic_certificate rules {
-        premise 0: to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d)) => to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d));
-        premise 1: truncating_quotient(to_integer(n), to_integer(d)) <= 9223372036854775807 => truncating_quotient(to_integer(n), to_integer(d)) <= 9223372036854775807;
-        integer_relation_transport bounds [0, 1] => to_integer(n / d as int128) <= 9223372036854775807; conclusion 0;
-    } }
-    have to_integer(quot) == to_integer(n / d as int128) by { arithmetic_certificate rules {
-        premise 0: -9223372036854775808 <= to_integer(n / d as int128) => -9223372036854775808 <= to_integer(n / d as int128);
-        premise 1: to_integer(n / d as int128) <= 9223372036854775807 => to_integer(n / d as int128) <= 9223372036854775807;
-        integer_cast_identity bounds [0, 1] => to_integer(quot) == to_integer(n / d as int128); conclusion 0;
-    } }
-    have -9223372036854775808 <= to_integer(quot) by { arithmetic_certificate rules {
-        premise 0: to_integer(quot) == to_integer(n / d as int128) => to_integer(quot) == to_integer(n / d as int128);
-        premise 1: -9223372036854775808 <= to_integer(n / d as int128) => -9223372036854775808 <= to_integer(n / d as int128);
-        integer_relation_transport bounds [0, 1] => -9223372036854775808 <= to_integer(quot); conclusion 0;
-    } }
-    have to_integer(quot) <= 9223372036854775807 by { arithmetic_certificate rules {
-        premise 0: to_integer(quot) == to_integer(n / d as int128) => to_integer(quot) == to_integer(n / d as int128);
-        premise 1: to_integer(n / d as int128) <= 9223372036854775807 => to_integer(n / d as int128) <= 9223372036854775807;
-        integer_relation_transport bounds [0, 1] => to_integer(quot) <= 9223372036854775807; conclusion 0;
-    } }
+    have -9223372036854775808 <= to_integer(n / d as int128) by { solve() using { to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d)); -9223372036854775808 <= truncating_quotient(to_integer(n), to_integer(d)); }; }
+    have to_integer(n / d as int128) <= 9223372036854775807 by { solve() using { to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d)); truncating_quotient(to_integer(n), to_integer(d)) <= 9223372036854775807; }; }
+    have to_integer(quot) == to_integer(n / d as int128) by { solve() using { -9223372036854775808 <= to_integer(n / d as int128); to_integer(n / d as int128) <= 9223372036854775807; }; }
+    have -9223372036854775808 <= to_integer(quot) by { solve() using { to_integer(quot) == to_integer(n / d as int128); -9223372036854775808 <= to_integer(n / d as int128); }; }
+    have to_integer(quot) <= 9223372036854775807 by { solve() using { to_integer(quot) == to_integer(n / d as int128); to_integer(n / d as int128) <= 9223372036854775807; }; }
     step();
-    have -2147483646 <= truncating_remainder(to_integer(n), to_integer(d)) by { arithmetic_certificate rules {
-        premise 0: -19807040619342712361531211776 <= to_integer(n) => -19807040619342712361531211776 <= to_integer(n);
-        premise 1: to_integer(n) <= 19807040619342712361531211775 => to_integer(n) <= 19807040619342712361531211775;
-        premise 2: 1 <= to_integer(d) => 1 <= to_integer(d);
-        premise 3: to_integer(d) <= 2147483647 => to_integer(d) <= 2147483647;
-        integer_division_bounds bounds [0, 1, 2, 3] => -2147483646 <= truncating_remainder(to_integer(n), to_integer(d)); conclusion 0;
-    } }
-    have truncating_remainder(to_integer(n), to_integer(d)) <= 2147483646 by { arithmetic_certificate rules {
-        premise 0: -19807040619342712361531211776 <= to_integer(n) => -19807040619342712361531211776 <= to_integer(n);
-        premise 1: to_integer(n) <= 19807040619342712361531211775 => to_integer(n) <= 19807040619342712361531211775;
-        premise 2: 1 <= to_integer(d) => 1 <= to_integer(d);
-        premise 3: to_integer(d) <= 2147483647 => to_integer(d) <= 2147483647;
-        integer_division_bounds bounds [0, 1, 2, 3] => truncating_remainder(to_integer(n), to_integer(d)) <= 2147483646; conclusion 0;
-    } }
-    have -2147483646 <= to_integer(n % d as int128) by { arithmetic_certificate rules {
-        premise 0: to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d)) => to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d));
-        premise 1: -2147483646 <= truncating_remainder(to_integer(n), to_integer(d)) => -2147483646 <= truncating_remainder(to_integer(n), to_integer(d));
-        integer_relation_transport bounds [0, 1] => -2147483646 <= to_integer(n % d as int128); conclusion 0;
-    } }
-    have to_integer(n % d as int128) <= 2147483646 by { arithmetic_certificate rules {
-        premise 0: to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d)) => to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d));
-        premise 1: truncating_remainder(to_integer(n), to_integer(d)) <= 2147483646 => truncating_remainder(to_integer(n), to_integer(d)) <= 2147483646;
-        integer_relation_transport bounds [0, 1] => to_integer(n % d as int128) <= 2147483646; conclusion 0;
-    } }
-    have to_integer(mod) == to_integer(n % d as int128) by { arithmetic_certificate rules {
-        premise 0: -2147483646 <= to_integer(n % d as int128) => -2147483646 <= to_integer(n % d as int128);
-        premise 1: to_integer(n % d as int128) <= 2147483646 => to_integer(n % d as int128) <= 2147483646;
-        integer_cast_identity bounds [0, 1] => to_integer(mod) == to_integer(n % d as int128); conclusion 0;
-    } }
-    have -2147483646 <= to_integer(mod) by { arithmetic_certificate rules {
-        premise 0: to_integer(mod) == to_integer(n % d as int128) => to_integer(mod) == to_integer(n % d as int128);
-        premise 1: -2147483646 <= to_integer(n % d as int128) => -2147483646 <= to_integer(n % d as int128);
-        integer_relation_transport bounds [0, 1] => -2147483646 <= to_integer(mod); conclusion 0;
-    } }
-    have to_integer(mod) <= 2147483646 by { arithmetic_certificate rules {
-        premise 0: to_integer(mod) == to_integer(n % d as int128) => to_integer(mod) == to_integer(n % d as int128);
-        premise 1: to_integer(n % d as int128) <= 2147483646 => to_integer(n % d as int128) <= 2147483646;
-        integer_relation_transport bounds [0, 1] => to_integer(mod) <= 2147483646; conclusion 0;
-    } }
+    have -2147483646 <= truncating_remainder(to_integer(n), to_integer(d)) by { solve() using { -19807040619342712361531211776 <= to_integer(n); to_integer(n) <= 19807040619342712361531211775; 1 <= to_integer(d); to_integer(d) <= 2147483647; }; }
+    have truncating_remainder(to_integer(n), to_integer(d)) <= 2147483646 by { solve() using { -19807040619342712361531211776 <= to_integer(n); to_integer(n) <= 19807040619342712361531211775; 1 <= to_integer(d); to_integer(d) <= 2147483647; }; }
+    have -2147483646 <= to_integer(n % d as int128) by { solve() using { to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d)); -2147483646 <= truncating_remainder(to_integer(n), to_integer(d)); }; }
+    have to_integer(n % d as int128) <= 2147483646 by { solve() using { to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d)); truncating_remainder(to_integer(n), to_integer(d)) <= 2147483646; }; }
+    have to_integer(mod) == to_integer(n % d as int128) by { solve() using { -2147483646 <= to_integer(n % d as int128); to_integer(n % d as int128) <= 2147483646; }; }
+    have -2147483646 <= to_integer(mod) by { solve() using { to_integer(mod) == to_integer(n % d as int128); -2147483646 <= to_integer(n % d as int128); }; }
+    have to_integer(mod) <= 2147483646 by { solve() using { to_integer(mod) == to_integer(n % d as int128); to_integer(n % d as int128) <= 2147483646; }; }
     have 0 < to_integer(d) by { solve() using { 1 <= to_integer(d); }; }
     apply(integer::positive_divisor_remainder_lower(to_integer(n), to_integer(d)));
     apply(integer::positive_divisor_remainder_upper(to_integer(n), to_integer(d)));
     apply(integer::truncation_identity(to_integer(n), to_integer(d)));
-    have to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)) by { arithmetic_certificate rules {
-        premise 0: to_integer(quot) == to_integer(n / d as int128) => to_integer(quot) == to_integer(n / d as int128);
-        premise 1: to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d)) => to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d));
-        integer_relation_transport bounds [0, 1] => to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)); conclusion 0;
-    } }
-    have to_integer(mod) == truncating_remainder(to_integer(n), to_integer(d)) by { arithmetic_certificate rules {
-        premise 0: to_integer(mod) == to_integer(n % d as int128) => to_integer(mod) == to_integer(n % d as int128);
-        premise 1: to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d)) => to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d));
-        integer_relation_transport bounds [0, 1] => to_integer(mod) == truncating_remainder(to_integer(n), to_integer(d)); conclusion 0;
-    } }
+    have to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)) by { solve() using { to_integer(quot) == to_integer(n / d as int128); to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d)); }; }
+    have to_integer(mod) == truncating_remainder(to_integer(n), to_integer(d)) by { solve() using { to_integer(mod) == to_integer(n % d as int128); to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d)); }; }
     have to_integer(n) == to_integer(quot) * to_integer(d) + to_integer(mod) by {
         rewrite(to_integer(quot), truncating_quotient(to_integer(n), to_integer(d)));
         rewrite(to_integer(mod), truncating_remainder(to_integer(n), to_integer(d)));

@@ -941,8 +941,7 @@ sidecar's generic function is, with the instance's own parameter names by
 position. The other non-integer core methods are stated there the same way:
 the `Vec` methods ([Vec values](#vec-values)), `Option` and `Result`
 `unwrap`, `expect` and `unwrap_or` ([Panics](#panics),
-[Result values](#result-values)), and the slice-iterator and `chunks_exact`
-operations with the slice reads they return
+[Result values](#result-values)), and the slice-iterator operations
 ([Rust core models](library/index.md#rust-core-models)). The importer
 writes no contract text; it keeps only a name table from each core method to
 its library file. The instance at `u32` is:
@@ -1033,8 +1032,8 @@ cannot establish Rust panic freedom.
 is a synthetic scalar regression covering byte accumulation, multiplication,
 modular reduction, shifts, packing, truncation, and unsigned comparison. Its
 [sidecar](https://github.com/clicklang/click/blob/master/examples/rust-unsigned/arithmetic.click)
-uses ordinary Click contracts and tactics. Expansion can use the shared
-`unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
+uses ordinary Click contracts and tactics. Expansion uses ordinary Integer laws and explicit normalization for widened
+word bounds.
 The [unchanged Adler2 computation](https://github.com/clicklang/click/blob/master/design/adler32/project/adler2/README.md)
 is verified separately against the common checksum specification for every
 slice length from canonical initial states. The unchanged `write_slice` and
@@ -1490,82 +1489,56 @@ The receiver is a shared byte-slice local; parameters or returns of iterator
 type, adapters, and explicit `next()` calls are unsupported. Mutable chunk
 iterators and chunks of non-byte slices remain unsupported.
 
-Each iterator is one value of the library's `ChunksExact<uint8>`
-([`click::rust::chunks_exact`](library/index.md#clickrustchunks_exact)),
-read through that library's contract (`design/rust-iterators.md`). No
-cursor, remaining-byte count or other generated state is named.
-Construction captures the receiver before evaluating the size once. Input
-lengths and chunk sizes keep the locked target's `usize` width, with no
-artificial `i32::MAX` limit. The compiler enforces moves and borrows.
+An iterator is held as its own fields, the ones `core::slice::ChunksExact`
+declares: `v`, the chunks still to come, `rem`, the elements they leave
+over, and `chunk_size`. A slice field is its data and its length. The
+importer runs `core`'s own code over them:
+
+- `bytes.chunks_exact(size)` panics on a zero size (the `Rust chunks_exact
+  panic check`), then sets `chunk_size = size`, `v` to the first
+  `bytes.len() - bytes.len() % size` bytes, and `rem` to the rest;
+- `next()` yields `None` while `v.len() < chunk_size`; otherwise it yields
+  `v`'s first `chunk_size` bytes and moves `v` on by `chunk_size`;
+- `remainder()` returns `rem`.
+
+Construction evaluates the size once. Input lengths and chunk sizes keep the
+locked target's `usize` width. The compiler enforces moves and borrows.
 Neither `next()` nor `remainder()` copies bytes or creates write authority:
 reads through chunks, aliases, calls, and tails need the original input's
-views.
+views, and so does moving `v` on, whose result must stay inside the input.
+No trusted chunk contract is involved.
 
-`bytes.chunks_exact(size)` is a call whose contract requires
-`size != 0` and gives `chunks_exact::chunks_exact(Slice<u8>::Slice(bytes,
-bytes.len()), size)`. Without `"iterators": "library"`, a test for another
-chunk reads `it.len()`, and `next()` on an iterator that has one yields
-`it.nth(0u64)` and leaves `it.after_next()`.
+In a loop's clauses and phases a proof reads the iterator the loop advances
+through its fields: `iter.v`, `iter.v.len()`, `iter.rem`, `iter.rem.len()`
+and `iter.chunk_size`, and `iter.len()` is `iter.v.len() / iter.chunk_size`,
+Rust's `ExactSizeIterator::len`. `loop(i).iter` names them outside the loop.
+Inside a loop, `iter` is the loop's iterator even where the function has a
+local of that name. A pass's `next()` splits on `iter.chunk_size <=
+iter.v.len()`, so a `preserve` script splits the same way with a proof `if`;
+the other arm takes the exit with three `step()`s. A chunk is still `chunk`
+and `chunk_len`, and the remainder `tail` and `tail_len`.
 
-A unit with `"iterators": "library"` imports the iterator through Rust's own
-interface instead, as it does a slice iterator. Each pass of a `for` loop
-calls `ChunksExact::next(&mut iter)`, which returns `Option<&[u8]>`, and
-matches on it. The `&[u8]` is a value of the library's `Slice<u8>`.
-`next`'s contract says:
-
-- with `iter.len() == 0` it returns `None` and leaves the iterator;
-- otherwise it returns `Some(iter.nth(0u64))` and leaves
-  `iter.after_next()`.
-
-`chunks.remainder()` is a call to `ChunksExact::remainder(&chunks)`, which
-returns `chunks_exact::remainder(chunks)`. A returned slice reaches the body
-as its data and length through Rust's own `<[u8]>::as_ptr` and
-`<[u8]>::len`, so a chunk is still `chunk` and `chunk_len`, and the
-remainder `tail` and `tail_len`. Outside a loop the iterator local is read
-with the library's functions, `chunks_exact::len(chunks)`.
-
-The proof cites the module's axioms: what `chunks_exact`
-builds (`len_chunks_exact`, `nth_chunks_exact`, `remainder_chunks_exact`,
-applied to the slice, `Slice<u8>::Slice(bytes, bytes.len())`) and what one
-`next()` leaves
-(`len_after_next`, `nth_after_next`, `remainder_after_next`).
-
-In a loop's clauses and phases `iter` is the iterator value the loop
-advances, and `loop(i).iter` names it outside them, so `decreases
-iter.len()` ranks the loop. Where the iterator stands is one invariant over
-the pass count: `iter == chunks_exact::after(start, iterations)`, the
-starting iterator after that many `next()` calls. From it `nth_after` gives
-the chunk a pass binds as a chunk of `start`, and `after_next_after` carries
-the invariant across the `next()`. No cursor, remaining-byte count or
-generated local is named:
+Where the iterator stands is an invariant over `v`:
 
 ```text
 loop {
-    decreases iter.len();
-    invariant iter == chunks_exact::after(
-        chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations);
-    invariant to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);
+    decreases iter.v.len();
+    views bytes[0..bytes.len()];
+    invariant iter.chunk_size == 4u64;
+    invariant iter.v.len() <= bytes.len() - bytes.len() % 4u64;
+    invariant iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
     ...
 }
 ```
 
-Without the switch, the loop is imported as a `while (1)` whose header reads
-`iter.len()` and leaves by `break` when it is zero, so a `preserve` script
-that needs `0u64 < iter.len()` splits on it with a proof `if` after the
-header's steps; the empty arm takes the `break` with one `step()`. With
-`"iterators": "library"` the header calls `next`, so the script splits on
-`0u64 < iter.len()` before any step, and the empty arm states
-`have iter.len() == 0u64;` before stepping through the call and the test
-([proof](https://github.com/clicklang/click/blob/master/examples/rust-chunks-exact/chunks.click)).
-
-The chunk a pass binds is `iter.nth(0u64)`: its data pointer is
-`bytes + k * size` by `nth_after` and `nth_chunks_exact`, and its length is
-`size`. A read through it,
-`chunk[0]`, is a read of `bytes`, and owes its offset's bound as the machine
-value the program computes: `to_integer(k * 4u64) < to_integer(bytes.len())`,
-not `k * 4u64 < bytes.len()`, which states the exact product. The same form
-is owed for `p[k * 4]` in C
-([proof](https://github.com/clicklang/click/blob/master/examples/rust-chunks-exact/chunks.click)).
+A pass moves `v` from `bytes + k` to `bytes + k + 4`. The proof states the
+offset's bounds in the forms the step owes, `to_integer(k) + 4 <=
+to_integer(bytes.len())` and `to_integer(k + 4u64) <= to_integer(bytes.len())`,
+and regroups `(bytes + k) + 4u64` as `bytes + (k + 4u64)` from
+`to_integer(k) + 4 <= 18446744073709551615`
+([full-width pointer association](tactics/index.md#normalization-with-selected-premises),
+[proof](https://github.com/clicklang/click/blob/master/examples/rust-chunks-exact/chunks.click)).
+A read through the chunk, `chunk[3]`, is a read of `bytes` at `k + 3`.
 
 ## Moves and drops
 

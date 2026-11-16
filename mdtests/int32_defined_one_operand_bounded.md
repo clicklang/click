@@ -21,16 +21,11 @@ int32 sum(int32 a, int32 b) {
     ensures result == a + b;
 } by {
     have defined(a + b) by {
-        arithmetic_certificate rules {
-            premise 0: 0 <= a => 0 <= a;
-            premise 1: a < 100 => a < 100;
-            int32_defined bounds [0, 1] => defined(a + b);
-            conclusion 0;
-        }
+        solve() using { 0 <= a; a < 100; };
     }
 }
 ```
 
 ```expect
-fail: put the exact result in [-2147483648, 2147483746], which leaves int32
+fail: solve
 ```

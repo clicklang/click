@@ -146,12 +146,7 @@ pub(crate) enum PropositionCloseError {
     Unavailable,
     DoesNotNormalize,
     ConditionalNormalization(super::fact_reasoning::ConditionalNormalizationError),
-    IntegerArithmeticPremiseUnavailable(usize),
-    IntegerArithmetic(super::integer_arithmetic::IntegerArithmeticCheckError),
-    SignedArithmeticPremiseUnavailable(usize),
-    SignedArithmetic(super::signed_arithmetic::SignedArithmeticCheckError),
-    SpecialArithmeticPremiseUnavailable(usize),
-    SpecialArithmetic(super::arithmetic_special::SpecialArithmeticCheckError),
+
     ExpectedIntroduction(Proposition),
     IntegerFresheningExhausted,
     /// The reserved universal-witness range
@@ -1339,69 +1334,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .focused_proposition()
             .ok_or("preserve requires a proposition goal")?;
         super::preservation::apply(separation, field, goal.proposition(), |p| facts.contains(p))?;
-        Ok(self.closed_focused())
-    }
-
-    pub(crate) fn apply_integer_arithmetic(
-        &self,
-        certificate: &super::integer_arithmetic::IntegerArithmeticCertificate,
-        premises: &[Proposition],
-    ) -> Result<Self, PropositionCloseError> {
-        let (goal, facts) = self
-            .focused_proposition()
-            .ok_or(PropositionCloseError::NotProposition)?;
-        for (index, premise) in premises.iter().enumerate() {
-            if !facts.listed_premise_available(premise, &[], false) {
-                return Err(PropositionCloseError::IntegerArithmeticPremiseUnavailable(
-                    index,
-                ));
-            }
-        }
-        certificate
-            .check(goal.proposition(), premises)
-            .map_err(PropositionCloseError::IntegerArithmetic)?;
-        Ok(self.closed_focused())
-    }
-
-    pub(crate) fn apply_signed_arithmetic(
-        &self,
-        certificate: &super::signed_arithmetic::SignedArithmeticCertificate,
-        premises: &[Proposition],
-    ) -> Result<Self, PropositionCloseError> {
-        let (goal, facts) = self
-            .focused_proposition()
-            .ok_or(PropositionCloseError::NotProposition)?;
-        for (index, premise) in premises.iter().enumerate() {
-            if !facts.listed_premise_available(premise, &[], false) {
-                return Err(PropositionCloseError::SignedArithmeticPremiseUnavailable(
-                    index,
-                ));
-            }
-        }
-        certificate
-            .check(goal.proposition(), premises)
-            .map_err(PropositionCloseError::SignedArithmetic)?;
-        Ok(self.closed_focused())
-    }
-
-    pub(crate) fn apply_special_arithmetic(
-        &self,
-        certificate: &super::arithmetic_special::SpecialArithmeticCertificate,
-        premises: &[Proposition],
-    ) -> Result<Self, PropositionCloseError> {
-        let (goal, facts) = self
-            .focused_proposition()
-            .ok_or(PropositionCloseError::NotProposition)?;
-        for (index, premise) in premises.iter().enumerate() {
-            if !facts.listed_premise_available(premise, &[], false) {
-                return Err(PropositionCloseError::SpecialArithmeticPremiseUnavailable(
-                    index,
-                ));
-            }
-        }
-        certificate
-            .check(goal.proposition(), premises)
-            .map_err(PropositionCloseError::SpecialArithmetic)?;
         Ok(self.closed_focused())
     }
 

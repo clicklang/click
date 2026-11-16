@@ -1,10 +1,11 @@
-//! Signed-certificate atom identities backed by the common structural DAG.
+//! Signed arithmetic atom identities backed by the common structural DAG.
 //! The admitted fragment and opaque-atom rule are unchanged; these keys are
 //! checking metadata and never replace a written expression.
 use super::*;
 use crate::kernel::{KernelTerm, KernelTermImport, KernelTermNode, KernelType, MachineUnaryOp};
 use MachineIntegerType as T;
 use SignedArithmeticAtomToken as Token;
+use std::collections::HashMap;
 
 fn constant(bits: u32) -> KernelTerm {
     KernelTermImport::default().machine(T::Int32, &MachineTerm::constant(bits))
@@ -116,19 +117,6 @@ pub(super) fn from_tokens(tokens: Vec<Token>) -> Option<SignedArithmeticAtom> {
         opaque_parts,
         small_word_literal,
     })
-}
-
-pub(super) fn remainder(base: &SignedArithmeticAtom, divisor: u32) -> SignedArithmeticAtom {
-    SignedArithmeticAtom {
-        key: KernelTerm::machine_binary_shared(
-            T::Int32,
-            MachineBinaryOp::Remainder,
-            [base.key.clone(), constant(divisor)],
-        ),
-        opaque_root: false,
-        opaque_parts: false,
-        small_word_literal: base.small_word_literal || divisor <= 31,
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -528,55 +516,6 @@ mod tests {
         }
     }
 
-    fn observed_result(root: KernelTerm, format: T) -> Proposition {
-        use crate::kernel::{IntegerTerm, SharedMachineIntegerTerm};
-        let observation = IntegerTerm::Machine(
-            SharedMachineIntegerTerm::from_shared(
-                format,
-                root.with_machine_observation_type(format),
-            )
-            .unwrap(),
-        );
-        Proposition::ConditionIs(
-            ConditionTerm::integer_less_equal(observation, IntegerTerm::constant_i64(0)),
-            true,
-        )
-    }
-
-    #[test]
-    fn mathematical_results_keep_unsigned_and_conversion_refusals_without_exports() {
-        let _session = VerificationSession::enter();
-        let variable = variable(Variable(1006403));
-        let converted = KernelTerm::integer_to_machine(
-            T::Int32,
-            KernelTerm::variable(KernelType::Integer, Variable(1006404)),
-        )
-        .unwrap();
-        let native = KernelTermExport::machine(&converted).unwrap();
-        assert!(
-            SignedArithmeticAtom::from_term(&crate::kernel::eval::canonical_term(&native))
-                .is_none()
-        );
-        let exports = KernelTermExport::machine_export_count();
-        assert!(
-            signed_arithmetic_integer_result(&observed_result(variable.clone(), T::UInt32))
-                .is_none()
-        );
-        assert!(
-            signed_arithmetic_integer_result(&observed_result(converted.clone(), T::Int32))
-                .is_none()
-        );
-        let composite = KernelTerm::machine_binary_shared(
-            T::Int32,
-            MachineBinaryOp::Add,
-            [converted, variable.clone()],
-        );
-        assert!(signed_arithmetic_integer_result(&observed_result(composite, T::Int32)).is_none());
-        let claim = signed_arithmetic_integer_result(&observed_result(variable, T::Int16)).unwrap();
-        assert_eq!(claim.terms.len(), 1);
-        assert_eq!(KernelTermExport::machine_export_count(), exports);
-    }
-
     #[test]
     fn native_pure_application_keys_retain_argument_order() {
         let _session = VerificationSession::enter();
@@ -594,6 +533,7 @@ mod tests {
 
     mod scaling_tests {
         use super::*;
+
         include!("../../../scaling_tests/kernel/proof/signed_arithmetic/atom_keys.rs");
     }
 }

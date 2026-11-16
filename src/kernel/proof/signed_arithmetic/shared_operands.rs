@@ -1,21 +1,12 @@
 //! Shared/native certificate operands use the same retained structural key.
 use super::*;
+#[cfg(test)]
 use crate::kernel::MachineOperandView;
 #[cfg(test)]
 use crate::kernel::{KernelTerm, KernelType};
 
 pub(crate) fn clear_shared_operand_keys() {
     atom_keys::clear();
-}
-
-pub(super) fn operands_equal(left: MachineOperandView<'_>, right: MachineOperandView<'_>) -> bool {
-    match (
-        SignedArithmeticAtom::from_operand(left),
-        SignedArithmeticAtom::from_operand(right),
-    ) {
-        (Some(left), Some(right)) => charge_atom_pair_work(&left, &right) && left == right,
-        _ => false,
-    }
 }
 
 #[cfg(test)]
@@ -40,14 +31,18 @@ mod tests {
                 );
             }
             let view = MachineOperandView::Shared(&term);
-            assert!(operands_equal(view, view));
+            assert_eq!(
+                SignedArithmeticAtom::from_operand(view),
+                SignedArithmeticAtom::from_operand(view)
+            );
             let count = atom_keys::cache_len();
             assert!(crate::kernel::VerificationSession::restore_state(
                 &retained_state
             ));
             crate::kernel::eval::begin_load_origin_epoch();
-            let (same, work) =
-                crate::instrumentation::measure_deterministic_work(|| operands_equal(view, view));
+            let (same, work) = crate::instrumentation::measure_deterministic_work(|| {
+                SignedArithmeticAtom::from_operand(view) == SignedArithmeticAtom::from_operand(view)
+            });
             assert!(same);
             assert!(
                 work <= 4,

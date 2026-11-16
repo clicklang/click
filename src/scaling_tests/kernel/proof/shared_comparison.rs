@@ -312,3 +312,79 @@ fn wide_checking_syntax_growing_prefixes_retain_shared_work() {
         assert!(pair[1].1 <= pair[0].1 * 5, "{samples:?}");
     }
 }
+
+#[test]
+fn substituted_conditional_guards_match_evaluation_with_linear_work() {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    let samples = [4, 16, 64].map(|size| {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let source = MachineTerm::Variable(Variable(994600));
+        let replacement = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Subtract,
+            [
+                imported(format, MachineTerm::Variable(Variable(994601))),
+                imported(format, MachineTerm::constant(1)),
+            ],
+        );
+        let one = imported(format, MachineTerm::constant(1));
+        let zero = imported(format, MachineTerm::constant(0));
+        let mut root = zero.clone();
+        let mut expected = zero.clone();
+        for index in 0..size {
+            let bound = MachineTerm::constant(index);
+            let guard = ConditionTerm::machine_compare(
+                format,
+                CompareRelation::Equal,
+                source.clone(),
+                bound.clone(),
+            );
+            let original = KernelTerm::machine_if_shared(
+                format,
+                [
+                    KernelTermImport::default().condition(&guard),
+                    one.clone(),
+                    zero.clone(),
+                ],
+            );
+            let guard = condition_for_operand_views(
+                format,
+                CompareRelation::Equal,
+                [
+                    MachineOperandView::Shared(&replacement),
+                    MachineOperandView::Legacy(&bound),
+                ],
+            );
+            let rewritten = KernelTerm::machine_if_shared(
+                format,
+                [
+                    KernelTermImport::default().condition(&guard),
+                    one.clone(),
+                    zero.clone(),
+                ],
+            );
+            root =
+                KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [root, original]);
+            expected = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [expected, rewritten],
+            );
+        }
+        let (actual, work) = crate::instrumentation::measure_deterministic_work(|| {
+            TermRewrite::for_machine_operand_checked(
+                &source,
+                MachineOperandView::Shared(&replacement),
+            )
+            .shared_machine_operand(&root)
+            .unwrap()
+        });
+        assert_eq!(actual, expected);
+        work
+    });
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 6 * pair[0] + 8),
+        "{samples:?}"
+    );
+}

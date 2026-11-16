@@ -1,6 +1,6 @@
 //! Bound a truncating quotient by an exact Integer multiple of a positive divisor.
 //! Reads two named premises only; it infers no native safety or operand ranges.
-use super::arithmetic_special::SpecialArithmeticCheckError as Error;
+use super::arithmetic_special::ArithmeticRuleError as Error;
 use super::integer_product_bounds::order;
 use crate::kernel::{IntegerTerm, Proposition};
 use num_traits::{One, Zero};
@@ -69,10 +69,7 @@ pub(super) fn check(
 mod tests {
     use super::*;
     use crate::kernel::ConditionTerm;
-    use crate::kernel::{
-        Variable,
-        proof::arithmetic_special::{SpecialArithmeticCertificate, SpecialArithmeticNode},
-    };
+    use crate::kernel::Variable;
     use num_bigint::BigInt;
     use num_traits::Signed;
     fn c(n: i64) -> IntegerTerm {
@@ -96,55 +93,7 @@ mod tests {
         let result = if lower { le(bound, q) } else { le(q, bound) };
         (vec![scaled, le(c(1), d)], result)
     }
-    #[test]
-    fn quotient_bound_checks_exact_operands_polarity_and_two_selected_premises() {
-        for lower in [false, true] {
-            for bound in [
-                c(-17),
-                c(0),
-                c(1),
-                c(17),
-                v(198003),
-                IntegerTerm::truncating_quotient(v(198010), v(198002)),
-            ] {
-                for d in [c(3), v(198002)] {
-                    let (p, result) = case(bound.clone(), d, lower);
-                    check(0, &[0, 1], &p, &result).unwrap();
-                    for indices in [vec![], vec![0], vec![1, 0], vec![0, 2], vec![0, 1, 1]] {
-                        assert!(check(0, &indices, &p, &result).is_err());
-                    }
-                    for index in [0, 1] {
-                        let mut bad = p.clone();
-                        if let Proposition::ConditionIs(_, truth) = &mut bad[index] {
-                            *truth = false;
-                        }
-                        assert!(check(0, &[0, 1], &bad, &result).is_err());
-                        bad[index] = le(c(0), v(198002));
-                        assert!(check(0, &[0, 1], &bad, &result).is_err());
-                        bad[index] = le(v(198004), v(198005));
-                        assert!(check(0, &[0, 1], &bad, &result).is_err());
-                    }
-                    let mut bad_result = result.clone();
-                    if let Proposition::ConditionIs(_, truth) = &mut bad_result {
-                        *truth = false;
-                    }
-                    assert!(check(0, &[0, 1], &p, &bad_result).is_err());
-                    let (_, wrong) = case(IntegerTerm::add(bound.clone(), c(1)), v(198002), lower);
-                    assert!(check(0, &[0, 1], &p, &wrong).is_err());
-                    assert!(check(0, &[0, 1], &p, &le(c(0), v(198001))).is_err());
-                    let cert = SpecialArithmeticCertificate {
-                        nodes: vec![SpecialArithmeticNode::IntegerQuotientBound {
-                            bounds: vec![0, 1],
-                            result: result.clone(),
-                        }],
-                        conclusion: 0,
-                    };
-                    cert.check(&result, &p).unwrap();
-                    assert!(cert.check(&bad_result, &p).is_err());
-                }
-            }
-        }
-    }
+
     #[test]
     fn quotient_bound_signed_wide_oracle_includes_multiple_neighbors() {
         // An independent magnitude/sign oracle, including values far outside int64.

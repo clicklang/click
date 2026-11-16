@@ -7,15 +7,11 @@
 theorem over_rounded(x: Integer) {
     requires 2 * x <= 5;
     ensures x <= 1 by {
-        arithmetic_certificate {
-            premise 0: 2 * x <= 5 => 2 * x <= 5;
-            divide 0 by 2 => x <= 1;
-            conclusion 1;
-        }
+        solve() using { 2 * x <= 5; };
     }
 }
 ```
 
 ```expect
-fail: node 1 does not state what its rule derives from its inputs
+fail: solve
 ```

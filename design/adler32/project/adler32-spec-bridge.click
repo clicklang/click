@@ -10,12 +10,7 @@ theorem adler_byte_widen(value: uint8) {
  ensures to_integer(value as int32) == to_integer(value) by {
   have 0 <= value as int32 by solve();
   have value as int32 <= 255 by solve();
-  arithmetic_certificate rules {
-   premise 0: 0 <= to_integer(value as int32) => 0 <= to_integer(value as int32);
-   premise 1: to_integer(value as int32) <= 255 => to_integer(value as int32) <= 255;
-   integer_cast_identity bounds [0, 1] => to_integer(value as int32) == to_integer(value);
-   conclusion 0;
-  }
+  solve() using { 0 <= to_integer(value as int32); to_integer(value as int32) <= 255; };
  }
 }
 

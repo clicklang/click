@@ -3161,41 +3161,40 @@ fn validate_pure_theorem_tactics(
                 validate_pure_theorem_tactics(theorem_name, std::slice::from_ref(inner))?;
             }
             ProofTactic::UnfoldPredicate(_)
-            | ProofTactic::UnfoldFunction(_)
-            | ProofTactic::PeelFunction { .. }
-            | ProofTactic::Induct { .. }
-            | ProofTactic::ApplyInduction { .. }
-            | ProofTactic::ApplyInductionUsing { .. }
-            | ProofTactic::ApplyTheorem(_)
-            | ProofTactic::ApplyTheoremUsing { .. }
-            | ProofTactic::CheckTerminationLocal(_)
-            | ProofTactic::CheckTerminationComponent { .. }
-            | ProofTactic::CheckTerminationCallbacks
-            | ProofTactic::Known
-            | ProofTactic::Extract(_)
-            | ProofTactic::Normalize
-            | ProofTactic::NormalizeUsing(_)
-            | ProofTactic::ArithmeticCertificate(_)
-            | ProofTactic::ArithmeticUsing(_)
-            | ProofTactic::Intro
-            | ProofTactic::IntroAs(_)
-            | ProofTactic::Enumerate
-            | ProofTactic::Contradiction(_)
-            | ProofTactic::Preserve(_)
-            | ProofTactic::Rewrite(_)
-            | ProofTactic::InstantiateUsing { .. }
-            | ProofTactic::Witness(_)
-            | ProofTactic::LetSatisfy(_)
-            | ProofTactic::Choose(_)
-            | ProofTactic::Solve
-            | ProofTactic::ImplicitSolve
+             |  ProofTactic::UnfoldFunction(_)
+             |  ProofTactic::PeelFunction { .. }
+             |  ProofTactic::Induct { .. }
+             |  ProofTactic::ApplyInduction { .. }
+             |  ProofTactic::ApplyInductionUsing { .. }
+             |  ProofTactic::ApplyTheorem(_)
+             |  ProofTactic::ApplyTheoremUsing { .. }
+             |  ProofTactic::CheckTerminationLocal(_)
+             |  ProofTactic::CheckTerminationComponent { .. }
+             |  ProofTactic::CheckTerminationCallbacks
+             |  ProofTactic::Known
+             |  ProofTactic::Extract(_)
+             |  ProofTactic::Normalize
+             |  ProofTactic::NormalizeUsing(_)
+             |  ProofTactic::ArithmeticUsing(_)
+             |  ProofTactic::Intro
+             |  ProofTactic::IntroAs(_)
+             |  ProofTactic::Enumerate
+             |  ProofTactic::Contradiction(_)
+             |  ProofTactic::Preserve(_)
+             |  ProofTactic::Rewrite(_)
+             |  ProofTactic::InstantiateUsing { .. }
+             |  ProofTactic::Witness(_)
+             |  ProofTactic::LetSatisfy(_)
+             |  ProofTactic::Choose(_)
+             |  ProofTactic::Solve
+             |  ProofTactic::ImplicitSolve
             // `transport(P, Q) using { ... }` names its source, its target,
             // and every premise, so it needs no state: the explicit facts
             // decide it. The smart `transport(P, Q)` form still does not
             // belong here, because it selects its premises from a fixed
             // state's ambient facts.
-            | ProofTactic::TransportUsing { .. }
-            | ProofTactic::SolveUsing(_) => {}
+             |  ProofTactic::TransportUsing { .. }
+             |  ProofTactic::SolveUsing(_) => {}
             ProofTactic::Match(proof_match) => {
                 for arm in &proof_match.arms {
                     validate_pure_theorem_tactics(theorem_name, &arm.tactics)?;
@@ -3323,7 +3322,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Solve => "solve",
         ProofTactic::ImplicitSolve => "implicit tail",
         ProofTactic::SolveUsing(_) => "solve",
-        ProofTactic::ArithmeticCertificate(_) => "arithmetic_certificate",
     }
 }
 

@@ -28,3 +28,19 @@ fn old_aggregate_lookup_scales_with_reads_not_unrelated_locals() {
         "{selected:?}"
     );
 }
+
+#[test]
+fn recorded_aggregate_place_lookup_ignores_unrelated_locals() {
+    let costs = [0, 16, 64, 256].map(|count| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut state = entry_state();
+        for index in 0..count {
+            state = state.with_local(format!("unrelated_{index}"), crate::kernel::int32(index));
+        }
+        lower_recorded_input(&state).1
+    });
+    assert!(
+        costs[0] > 0 && costs.iter().all(|cost| *cost <= costs[0] + 32),
+        "{costs:?}"
+    );
+}

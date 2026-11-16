@@ -13,12 +13,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  if len == 1u64 {
   have len <= 2147483647u64 by solve() using { len == 1u64; };
   have to_integer(len as uint32 as int32) == to_integer(len) by {
-   arithmetic_certificate rules {
-    premise 0: 0 <= to_integer(len) => 0 <= to_integer(len);
-    premise 1: to_integer(len) <= 2147483647 => to_integer(len) <= 2147483647;
-    integer_cast_identity bounds [0, 1] => to_integer(len as uint32 as int32) == to_integer(len);
-    conclusion 0;
-   }
+   solve() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
   }
   apply(adler_spec_checksum_bridge(buf, len as uint32 as int32, len, to_integer(zlib_seed_a(adler)), to_integer(zlib_seed_b(adler)))) using { to_integer(len as uint32 as int32) == to_integer(len); };
 apply(zlib_seed_bounds(adler));
@@ -155,12 +150,7 @@ apply(zlib_seed_bounds(adler));
   if len <= 15u64 {
   have len <= 2147483647u64 by solve() using { len <= 15u64; };
   have to_integer(len as uint32 as int32) == to_integer(len) by {
-   arithmetic_certificate rules {
-    premise 0: 0 <= to_integer(len) => 0 <= to_integer(len);
-    premise 1: to_integer(len) <= 2147483647 => to_integer(len) <= 2147483647;
-    integer_cast_identity bounds [0, 1] => to_integer(len as uint32 as int32) == to_integer(len);
-    conclusion 0;
-   }
+   solve() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
   }
   apply(adler_spec_checksum_bridge(buf, len as uint32 as int32, len, to_integer(zlib_seed_a(adler)), to_integer(zlib_seed_b(adler)))) using { to_integer(len as uint32 as int32) == to_integer(len); };
 have viewable(buf[0u64..len]) by solve();
@@ -2036,12 +2026,7 @@ apply(zlib_seed_bounds(adler));
    have buf == at(loop(3).entry, buf) + (at(loop(3).entry, len) - len) by {
     rewrite(buf, at(before_block, buf) + 16);
     rewrite(to_integer(at(loop(3).entry, len) - len), to_integer((at(loop(3).entry, len) - at(before_block, len)) + 16u64));
-    arithmetic_certificate rules {
-     premise 0: at(before_block, buf) == at(loop(3).entry, buf) + (at(loop(3).entry, len) - at(before_block, len)) => at(before_block, buf) == at(loop(3).entry, buf) + (at(loop(3).entry, len) - at(before_block, len));
-     premise 1: to_integer(at(loop(3).entry, len) - at(before_block, len)) <= to_integer(5535u64) => to_integer(at(loop(3).entry, len) - at(before_block, len)) <= to_integer(5535u64);
-     pointer_translation relation 0 bounds [1] => at(before_block, buf) + 16 == at(loop(3).entry, buf) + ((at(loop(3).entry, len) - at(before_block, len)) + 16u64);
-     conclusion 0;
-    }
+    solve() using { at(before_block, buf) == at(loop(3).entry, buf) + (at(loop(3).entry, len) - at(before_block, len)); to_integer(at(loop(3).entry, len) - at(before_block, len)) <= to_integer(5535u64); };
    }
    have to_integer(len) <= to_integer(at(before_block, len) - 16u64) by solve();
    have viewable(buf[0u64..len]) by {

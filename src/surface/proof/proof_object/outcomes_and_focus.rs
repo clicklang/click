@@ -557,16 +557,6 @@ impl<'a> Proof<'a> {
             .map_err(|reason| self.step_error(reason))
     }
 
-    pub(in crate::surface::proof) fn contract_exit_completes_boundary(&self) -> bool {
-        match self.focused_obligation() {
-            Some(Obligation::FunctionOutcome(goal)) => goal
-                .closing
-                .as_ref()
-                .is_some_and(|closing| closing.completes_boundary()),
-            _ => false,
-        }
-    }
-
     /// The focused outcome path's claim goals, once opened.
     pub(in crate::surface::proof) fn claim_goals(&self) -> Option<&OutcomeClaimGoals> {
         match self.focused_obligation() {
