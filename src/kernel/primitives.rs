@@ -5365,11 +5365,6 @@ pub enum SpecPredicateArgument {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecProposition {
-    ChangesOnly {
-        before: SpecMemory,
-        after: SpecMemory,
-        resources: Vec<SpecResource>,
-    },
     IntegerComparison {
         left: SpecIntegerExpression,
         operator: IntegerComparisonOperator,

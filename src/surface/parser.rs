@@ -8635,24 +8635,6 @@ impl Parser {
             return Ok(proposition);
         }
 
-        if self.peek_ident() == Some("changes_only") && self.peek_next() == Some(&Token::LParen) {
-            self.position += 2;
-            let before = self.parse_program_point_selector()?;
-            self.expect(Token::Comma)?;
-            let after = self.parse_program_point_selector()?;
-            let mut resources = Vec::new();
-            while self.peek() == Some(&Token::Comma) {
-                self.position += 1;
-                resources.push(self.parse_resource_subject()?);
-            }
-            self.expect(Token::RParen)?;
-            return Ok(ClickProposition::ChangesOnly {
-                before,
-                after,
-                resources,
-            });
-        }
-
         if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
             let start = self.position;
             self.position += 2;

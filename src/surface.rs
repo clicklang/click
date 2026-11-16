@@ -235,7 +235,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "constructs",
     "consumes",
     "contains",
-    "changes_only",
     "contract",
     "contradiction",
     "conclusion",
@@ -388,7 +387,6 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "by",
     "c-fragment",
     "contains-proposition",
-    "changes-only",
     "contract",
     "decreases",
     "defined",
@@ -2357,11 +2355,6 @@ pub enum ResourceKind {
 pub enum ClickProposition {
     /// Assert a proposition-valued expression, such as a lambda application.
     Value(ContractExpression),
-    ChangesOnly {
-        before: ProgramPointSelector,
-        after: ProgramPointSelector,
-        resources: Vec<ResourceSubject>,
-    },
     Comparison {
         left: ContractExpression,
         operator: ComparisonOperator,
@@ -2445,15 +2438,6 @@ impl Clone for ClickProposition {
 fn clone_click_proposition_atom(proposition: &ClickProposition) -> ClickProposition {
     match proposition {
         ClickProposition::Value(expression) => ClickProposition::Value(expression.clone()),
-        ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => ClickProposition::ChangesOnly {
-            before: before.clone(),
-            after: after.clone(),
-            resources: resources.clone(),
-        },
 
         ClickProposition::Comparison {
             left,
@@ -3200,7 +3184,6 @@ fn collect_current_proposition_variables(
             ClickProposition::Value(expression) => {
                 collect_current_contract_expression_variables(expression, names)
             }
-            ClickProposition::ChangesOnly { .. } => {}
 
             ClickProposition::Comparison { left, right, .. } => {
                 collect_current_contract_expression_variables(left, names);
@@ -8244,8 +8227,7 @@ fn click_proposition_reads_memory(
         }
         // Resource separation, containment, loadability, states, and
         // predicates all observe the C state.
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }

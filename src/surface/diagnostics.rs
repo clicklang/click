@@ -3574,7 +3574,6 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
             ClickProposition::PredicateCall { arguments, .. } => expressions.extend(arguments),
             // A state proposition reads its own state.
             ClickProposition::At { .. }
-            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }

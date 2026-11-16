@@ -268,8 +268,7 @@ pub(in crate::surface) fn proposition_contains_resource_count(
         ClickProposition::PredicateCall { arguments, .. } => {
             arguments.iter().any(contains_resource_count)
         }
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => false,
@@ -354,7 +353,6 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
         }
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
-        | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Defined { .. } => false,
@@ -521,8 +519,7 @@ pub(in crate::surface) fn collect_resource_count_families(
                 collect_expression(argument, families);
             }
         }
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => {}
@@ -568,7 +565,6 @@ pub(in crate::surface) fn collect_called_predicates(
         }
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
-        | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
@@ -612,9 +608,6 @@ pub(in crate::surface) fn proposition_contains_old_expression(
 ) -> bool {
     match proposition {
         ClickProposition::Value(expression) => contains_old_expression(expression),
-        ClickProposition::ChangesOnly { resources, .. } => resources
-            .iter()
-            .any(resource_subject_contains_old_expression),
 
         ClickProposition::Comparison { left, right, .. } => {
             contains_old_expression(left) || contains_old_expression(right)
@@ -782,7 +775,6 @@ pub(in crate::surface) fn proposition_contains_at_expression(
 ) -> bool {
     match proposition {
         ClickProposition::Value(expression) => contains_at_expression(expression),
-        ClickProposition::ChangesOnly { .. } => true,
 
         ClickProposition::Comparison { left, right, .. } => {
             contains_at_expression(left) || contains_at_expression(right)
@@ -1042,11 +1034,6 @@ fn collect_click_function_calls_in_proposition_one(
 ) {
     match proposition {
         ClickProposition::Value(expression) => collect_click_function_calls(expression, calls),
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                collect_click_function_calls_in_resource_subject(r, calls);
-            }
-        }
 
         ClickProposition::Comparison { left, right, .. } => {
             collect_click_function_calls(left, calls);
@@ -1649,21 +1636,6 @@ fn validate_recursive_calls_in_proposition(
             measures,
             algebraic_definitions,
         ),
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for resource in resources {
-                validate_recursive_calls_in_resource_subject(
-                    caller,
-                    resource,
-                    lower_bounds,
-                    structural_subterms,
-                    definitions,
-                    function_calls,
-                    measures,
-                    algebraic_definitions,
-                )?;
-            }
-            Ok(())
-        }
 
         ClickProposition::Comparison { left, right, .. } => {
             expression(left)?;

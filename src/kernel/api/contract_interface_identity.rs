@@ -580,11 +580,6 @@ impl Names {
         use SpecProposition::*;
         match proposition {
             ResourceViewable { resource, .. } => self.resource(resource),
-            ChangesOnly { resources, .. } => {
-                for r in resources {
-                    self.resource(r);
-                }
-            }
 
             IntegerComparison { left, right, .. } => {
                 self.integer(left);
