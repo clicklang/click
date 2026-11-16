@@ -196,3 +196,26 @@ It uses the same owned frames across its recoloring calls, with the frame
 definitions shared by both sidecars in `rbtree_size_context_flip_frames.click`.
 Its C and contracts are unchanged, and the insertion proof expands and rechecks.
 Other remaining sidecars and the directory-wide audit still leave this report open.
+
+## Context rotation
+
+All three selected proofs in
+`rbtree_size_insert_context_rotation.click` now verify. The proof retains
+ancestor links and complete tagged-parent relationships across local
+initialization and read-only steps, executes the missing declaration and
+middle-child store, and keeps unchanged and newly written links in owned
+resources through the rotation helper. Empty children are refolded at the
+established null pointer.
+
+The shared `rbtree_size_rotate_set_parents.click` helper now also guarantees
+the promoted node's typed parent relationship, in addition to the copied
+numeric parent word. Its proof retains that complete relationship across the
+ancestor-link update. The output link uses the entry value of the unchanged
+subtree count; the existing unchanged-size guarantee is retained. Both helper
+proofs verify. Expansion audits pass all 10 sites in the insertion sidecar
+and all 34 sites in the shared helper.
+
+The C, original insertion contracts, existing tree-resource definitions, and
+verifier are unchanged by this repair. Other context sidecars and the
+full-directory audit remain outside this completed repair; keep this report
+open.
