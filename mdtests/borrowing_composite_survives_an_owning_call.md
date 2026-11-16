@@ -31,7 +31,35 @@ int32 setup(struct s* p, int32 d[], int32 n) {
     ensures p->b == n;
     ensures p->d == d;
 } by {
+    unfold(src(d, n));
+    have separate(memory(*p), memory(d[0..n])) by { solve(); }
+    have contains(memory(d[0..n]), memory(d[0..n])) by { apply(click::separation::contains_refl(memory(d[0..n]))) using {}; }
+    have contains(memory(*p), memory(p->a)) by { normalize(); }
+    have contains(memory(*p), memory(p->b)) by { normalize(); }
+    have contains(memory(*p), memory(p->d)) by { normalize(); }
+    have separate(memory(p->a), memory(d[0..n])) by {
+        apply(click::separation::separate_restrict(memory(*p), memory(d[0..n]), memory(p->a), memory(d[0..n]))) using {
+            separate(memory(*p), memory(d[0..n]));
+            contains(memory(*p), memory(p->a));
+            contains(memory(d[0..n]), memory(d[0..n]));
+        };
+    }
+    have separate(memory(p->b), memory(d[0..n])) by {
+        apply(click::separation::separate_restrict(memory(*p), memory(d[0..n]), memory(p->b), memory(d[0..n]))) using {
+            separate(memory(*p), memory(d[0..n]));
+            contains(memory(*p), memory(p->b));
+            contains(memory(d[0..n]), memory(d[0..n]));
+        };
+    }
+    have separate(memory(p->d), memory(d[0..n])) by {
+        apply(click::separation::separate_restrict(memory(*p), memory(d[0..n]), memory(p->d), memory(d[0..n]))) using {
+            separate(memory(*p), memory(d[0..n]));
+            contains(memory(*p), memory(p->d));
+            contains(memory(d[0..n]), memory(d[0..n]));
+        };
+    }
     step_until(function.exit);
+    fold(src(d, n));
     fold(box(p));
     solve();
 }
@@ -58,9 +86,9 @@ int32 probe(struct s* p, int32 d[], int32 n) {
     step();
     step();
     step();
-    transport(at(region(2).entry, p->b) == n, p->b == n) using {
-        at(region(2).entry, p->b) == n;
-    };
+    have p->b == n by { known(); }
+    step();
+    step();
     step();
     step();
     solve();
