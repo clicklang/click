@@ -16,6 +16,12 @@ with opaque payloads; initializer reads and arithmetic remain checked. The
 regressions cover qualified names, exact nominal type separation, borrowed
 memory, expansion and retained checking.
 
+`noexcept` definitions now admit checked nonthrowing interfaces: guarded
+throwing calls must have impossible exceptional outcomes, and `throws` cannot
+weaken a `noexcept` declaration. Supported constructors, getters and normal
+cleanup can participate in exception-enabled proofs. `std::terminate` and
+opaque-class unwinding through destructible locals remain outside the model.
+
 Still pending: `SpanReader::read`, decoded serialization through that real
 reader, and exact/base-class typed catches. User constructors, lvalue throws,
 nontrivial exception classes, resource transitions and full C++ unwinding

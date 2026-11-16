@@ -5848,8 +5848,9 @@ pub(crate) enum CheckedBranchSplitError {
     InvalidEvidence,
 }
 
-/// A complete, kernel-checked direct call with exactly one feasible normal
-/// successor and one feasible exceptional successor. Individual statement
+/// A complete, kernel-checked direct call with one normal successor and one
+/// exceptional successor. An arm may be inconsistent with the root facts;
+/// its proof then closes by contradiction. Individual statement
 /// theorems prove each arm; this witness proves that neither arm was omitted.
 /// Its source and fact root are exact, so it cannot authorize a fork at a
 /// different call or after the proof context has changed.
@@ -5910,12 +5911,7 @@ impl CheckedCallOutcomeSplit {
                 else {
                     return false;
                 };
-                if **proved_state != state
-                    || **proved_statement != statement
-                    || outcome != expected
-                    || path_facts
-                        .iter()
-                        .any(|fact| root_facts.directly_conflicts_with(fact))
+                if **proved_state != state || **proved_statement != statement || outcome != expected
                 {
                     return false;
                 }
@@ -9221,7 +9217,11 @@ impl ExecutionProofCore {
                         if let Some(tail) = tail {
                             frame.handler = tail;
                         } else {
-                            self.evidence_try_stack.pop();
+                            let completed = self
+                                .evidence_try_stack
+                                .pop()
+                                .expect("handler frame just matched");
+                            return Some(completed.tail_after_try);
                         }
                     }
                     return Some(self.evidence_source.clone());
@@ -9281,11 +9281,20 @@ impl ExecutionProofCore {
                             matches!(tail_head.as_ref(), ProgramStatement::Throw(_))
                                 && tail_tail.is_none()
                         });
-                    self.evidence_try_stack.pop();
+                    let completed = self
+                        .evidence_try_stack
+                        .pop()
+                        .expect("handler frame just matched");
                     if cleanup_rethrows {
                         return Some(self.evidence_source.clone());
                     }
-                    return Some(handler_tail);
+                    return Some(match (handler_tail, completed.tail_after_try) {
+                        (Some(handler), Some(tail)) => {
+                            Some(Arc::new(ProgramStatement::seq(handler, tail)))
+                        }
+                        (Some(handler), None) => Some(handler),
+                        (None, tail) => tail,
+                    });
                 }
             }
             return None;

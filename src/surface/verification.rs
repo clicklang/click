@@ -7211,6 +7211,12 @@ pub(in crate::surface) fn check_signature(
     parsed_function: &crate::languages::interface::ImportedFunction,
     source_path: &str,
 ) -> Result<(), ClickError> {
+    if parsed_function.requires_nonthrowing_contract() && signature.exceptional_type().is_some() {
+        return Err(ClickError::new(format!(
+            "noexcept C++ function `{}` requires a nonthrowing contract; omit `throws` and prove no exception escapes",
+            signature.name()
+        )).with_kind(ClickErrorKind::Type));
+    }
     let c_parameters = &signature.parameters()[..signature.parameters().len() - witness_count];
     // A head restates the C declaration, so its types are the declaration's
     // exact C types: `long` and `long long` are distinct, as in C.

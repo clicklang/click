@@ -2757,28 +2757,6 @@ impl CppFunction {
                 self.name
             ));
         }
-        if matches!(exception_behavior, CppExceptionBehavior::ScalarInt32)
-            && self.declared_noexcept
-            && matches!(
-                self.function_kind,
-                CppFunctionKind::Free
-                    | CppFunctionKind::StaticMethod { .. }
-                    | CppFunctionKind::Method { .. }
-            )
-        {
-            return Err(format!(
-                "C++ function `{}` declares noexcept, whose termination behavior is outside the scalar int32 exception profile",
-                self.name
-            ));
-        }
-        if matches!(
-            exception_behavior,
-            CppExceptionBehavior::IosFailure | CppExceptionBehavior::Typed
-        ) && self.declared_noexcept
-            && self.axiom.is_none()
-        {
-            return Err("user noexcept bodies are outside the opaque exception profiles".into());
-        }
         let mut places = ValidationPlaces::new();
         for parameter in &self.parameters {
             match &parameter.value_type {
@@ -3182,21 +3160,6 @@ impl CppFunction {
             && sequence_contains_throw(&self.body)
         {
             return Err("throw expressions are outside the normal-only C++ profile".into());
-        }
-        if matches!(exception_behavior, CppExceptionBehavior::ScalarInt32)
-            && !matches!(
-                self.function_kind,
-                CppFunctionKind::Free | CppFunctionKind::StaticMethod { .. }
-            )
-        {
-            let mut calls = Vec::new();
-            collect_calls(&self.body, &mut calls);
-            if sequence_contains_throw(&self.body) || !calls.is_empty() {
-                return Err(format!(
-                    "noexcept C++ object operation `{}` may not throw or call another function in the scalar int32 exception profile",
-                    self.name
-                ));
-            }
         }
         let mut aggregate_locals = 0;
         let mut destructible_locals = 0usize;
@@ -3643,8 +3606,18 @@ impl CppFunction {
                 ));
             };
         }
-        super::lifetime::LifetimePlan::new(&self.body, |id| records.get(id).copied())?
-            .validate(&self.body, &self.name)?;
+        let lifetimes =
+            super::lifetime::LifetimePlan::new(&self.body, |id| records.get(id).copied())?;
+        if !self.declared_noexcept
+            && matches!(
+                exception_behavior,
+                CppExceptionBehavior::IosFailure | CppExceptionBehavior::Typed
+            )
+            && lifetimes.has_destructors()
+        {
+            return Err("opaque exception profiles require noexcept for functions with automatic destruction; class unwinding remains unsupported".into());
+        }
+        lifetimes.validate(&self.body, &self.name)?;
         match &self.function_kind {
             CppFunctionKind::Free
             | CppFunctionKind::StaticMethod { .. }

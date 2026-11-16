@@ -370,8 +370,8 @@ installed new-handler; it does not model propagation of `std::bad_alloc`
 ([trust](../../concepts/trust.md#library-models)). Direct `throws` contracts
 may borrow memory with `owns` and `views`, and must establish their footprint
 and exceptional guarantees after a throw. The pinned `SpanReader::ignore`
-fixture verifies the real `streams.h` through this boundary. User `noexcept`
-bodies, nontrivial user cleanup, typed class catches, base-class matching,
+fixture verifies the real `streams.h` through this boundary. Nontrivial
+opaque-exception unwinding, typed class catches, base-class matching,
 rethrow, message inspection and general class exceptions remain refused.
 The existing `normal_only` and `scalar_int32` profiles retain their rules.
 
@@ -386,16 +386,36 @@ arithmetic definedness are checked in source order even though the payload
 fields cannot be inspected. Construction and copying need no user-constructor
 axiom. Scalar `int32` throws also work in this profile. A pinned
 `std::ios_base::failure` construction still requires its library assertion.
-User constructors, lvalue throws, nontrivial cleanup, class catches, rethrow
-and user `noexcept` bodies remain refused.
+User exception constructors, lvalue throws, nontrivial exception objects, class catches
+and rethrow remain refused.
+
+Exception-enabled profiles also admit user `noexcept` definitions, including
+`noexcept(true)`, ordinary methods and supported constructors/destructors.
+Their sidecars omit `throws`: the imported declaration requires a nonthrowing
+contract, and the ordinary body proof must establish that no exception escapes.
+The declaration is not an assumption that a throwing body is safe. The
+exporter defers Clang's specific explicit-throw-in-noexcept warning to this
+proof check; other compiler diagnostics retain their admission policy. A call to
+a potentially throwing function is valid when the caller's preconditions and
+the callee's exceptional guarantees exclude that outcome. Scalar exceptions
+caught inside a `noexcept` function may also be verified. `noexcept(false)`
+retains the ordinary potentially throwing interface. No additional sidecar
+syntax is needed.
+
+Normal cleanup stays checked in `noexcept` functions. `typed` and
+`ios_failure` still refuse potentially throwing functions with automatic
+destruction; general class unwinding and `std::terminate` paths are not
+modeled. An escaping exception remains a proof refusal, even if a sidecar
+tries to admit it with `throws`.
 
 A source's separate `"exception_behavior": "scalar_int32"` requires
 `"exceptions": true`. Its locked artifact may contain a source `throw` of a
 typed `int` payload in an object-free function; the importer lowers that node
-to Click's checked exceptional statement outcome. A Click `throws int32`
-signature must still declare the exception, and normal and exceptional
-postconditions are proved separately. Reachable direct calls can propagate
-that exception while normal scalar statements continue. One object-free
+to Click's checked exceptional statement outcome. The contract uses
+`throws int32` when it permits an escaping exception; a nonthrowing contract
+must prove that outcome unreachable. Normal and exceptional postconditions
+are proved separately. Reachable direct calls can propagate that exception
+while normal scalar statements continue. One object-free
 `try` with exactly one named by-value `catch (int name)` is also supported.
 The handler binds the thrown payload and resumes from the thrown state, so a
 caller can catch a verified helper's exception without declaring `throws`.
@@ -410,8 +430,7 @@ from the checked execution state. The `cpp_one_guard_unwind` and
 the guards are destroyed in reverse construction order.
 The importer still rejects nested handlers, catch-all or non-`int` handlers,
 other local declarations inside either block, guards constructed after the call, returns
-from a guarded `try`, `noexcept` free functions (whose termination behavior is
-not modeled), and consuming or producing exceptional resources. This is not general
+from a guarded `try`, and consuming or producing exceptional resources. This is not general
 C++ unwinding support or an exception-ABI proof. Clang's typed
 source semantics and the compiler/runtime implementation remain the trust
 boundary. The config, artifact, and lock keep

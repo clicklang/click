@@ -568,17 +568,6 @@ private:
            "the supported C++ function must have a prototype");
       return std::nullopt;
     }
-    if ((exception_behavior_ == "ios_failure" || exception_behavior_ == "typed") && prototype->isNothrow()) {
-      fail(declaration->getLocation(),
-           "user noexcept bodies are outside the opaque exception profiles");
-      return std::nullopt;
-    }
-    if (exception_behavior_ == "scalar_int32" && prototype->isNothrow() &&
-        constructor == nullptr && destructor == nullptr) {
-      fail(declaration->getLocation(),
-           "scalar int32 exception profile does not model noexcept termination");
-      return std::nullopt;
-    }
     if (!prototype->isNothrow() &&
         (!context_.getLangOpts().CXXExceptions || constructor != nullptr ||
          destructor != nullptr)) {
@@ -5321,7 +5310,7 @@ private:
       return false;
     }
     if (context_.getLangOpts().CXXExceptions &&
-        exception_behavior_ != "scalar_int32" &&
+        exception_behavior_ == "normal_only" &&
         !definition->hasTrivialDestructor()) {
       fail(definition->getLocation(),
            "the exception-enabled C++ profile is limited to an object-free "
@@ -7009,6 +6998,12 @@ public:
   // Each generic class template's abstract type arguments are declared
   // ahead of the translation unit, in the predefines, which no file holds.
   bool BeginSourceFileAction(clang::CompilerInstance &compiler) override {
+    if (options_.exception_behavior != "normal_only") {
+      // The checked nonthrowing contract, rather than a syntactic warning,
+      // must prove that a noexcept body's explicit throw cannot escape.
+      compiler.getDiagnostics().setSeverity(clang::diag::warn_throw_in_noexcept_func,
+          clang::diag::Severity::Ignored, clang::SourceLocation());
+    }
     std::set<std::string> names;
     for (const GenericTemplate &generic : options_.generic_templates)
       names.insert(generic.parameters.begin(), generic.parameters.end());

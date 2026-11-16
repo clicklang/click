@@ -1554,8 +1554,12 @@ pub(super) fn route_throw_to_handler(
 ) -> Result<bool, ClickError> {
     let handler = loop {
         match execution.core.frontier.continuations.pop() {
-            Some(continuation) => {
-                if let Some(exceptional) = continuation.exceptional {
+            Some(mut continuation) => {
+                if let Some(exceptional) = continuation.exceptional.take() {
+                    // The handler replaces the abandoned try body, but its
+                    // normal completion must still resume after the try.
+                    // Clear this handler so a rethrow cannot catch itself.
+                    execution.core.frontier.continuations.push(continuation);
                     break Some(exceptional);
                 }
                 // Non-handler continuations in the abandoned region are

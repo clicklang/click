@@ -162,6 +162,20 @@ Class types use an elaborated `struct Name` identity distinct from generic
 type parameters. Construction has no trusted user-constructor contract;
 nontrivial copying, destruction and class handlers remain refused.
 
+C++ `declared_noexcept` is retained in the shared imported declaration as
+`requires_nonthrowing_contract`, including dispatch aliases. Signature
+checking refuses `throws` on that interface; the existing nonthrowing body
+judgment proves that all reachable exits are normal. A guarded call may use
+its callee's exceptional guarantees to refute the exceptional path. Modular
+eligibility depends on the interface, while checked body safety establishes
+that internal throws are caught or excluded by its preconditions. No
+termination behavior is assumed from a `noexcept` spelling. Opaque exception
+profiles still refuse automatic destruction in potentially throwing functions;
+the already-built lifetime plan detects that restriction in nested scopes too.
+A caught scalar throw retains the after-try continuation in both the Surface
+frontier and checked statement-evidence cursor, so a normally completing
+handler resumes the enclosing function.
+
 C++ void fallthrough lowers to an explicit kernel return, as C void fallthrough
 does. This gives a final maybe-throwing call a normal continuation for `outcomes`
 without adding a statement to the original source.

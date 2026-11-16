@@ -2867,6 +2867,7 @@ fn scalar_int32_profile_rejects_broader_guarded_try_shapes() {
         ONE_GUARD_UNWIND_MDTEST,
     )
     .unwrap();
+    let original_sidecar = mdtest.click_source.clone().unwrap();
     let cpp = mdtest.cpp_source.unwrap();
     let declaration = "        Restore guard(&value);\n        helper(should_throw);";
     assert!(cpp.source.contains(declaration));
@@ -2915,17 +2916,9 @@ fn scalar_int32_profile_rejects_broader_guarded_try_shapes() {
             1,
         )
     );
-    for (name, source, expected) in [
-        (
-            "throwing_destructor",
-            throwing_destructor,
-            "has a non-throwing exception specification but can still throw",
-        ),
-        (
-            "calling_destructor",
-            calling_destructor,
-            "noexcept C++ object operation",
-        ),
+    for (name, source) in [
+        ("throwing_destructor", throwing_destructor),
+        ("calling_destructor", calling_destructor),
     ] {
         let project = Project::with_fixture(&cpp.filename, &cpp.functions[0], &source);
         project.write_exception_enabled_compilation_database();
@@ -2935,13 +2928,20 @@ fn scalar_int32_profile_rejects_broader_guarded_try_shapes() {
             true,
             &cpp.profile,
         );
-        let error = refresh_import(&project.config())
-            .expect_err(&format!("{name} must not enter a locked artifact"));
-        assert!(error.contains(expected), "{name}: {error}");
-        assert!(
-            !project.artifact().exists(),
-            "{name} was unexpectedly locked"
-        );
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = if name == "calling_destructor" {
+            format!(
+                "{original_sidecar}\nint32 destructor_helper() throws int32 {{ ensures false; exceptional ensures exception == 7; }}\n"
+            )
+        } else {
+            original_sidecar.clone()
+        };
+        let path = project.directory.join("destructor.click");
+        fs::write(&path, &source).unwrap();
+        let parsed = read_click_project(&path, &source).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .expect_err("a noexcept destructor's escaping exception must fail its proof");
     }
 }
 
@@ -2966,12 +2966,8 @@ fn scalar_int32_profile_rejects_a_non_int32_exception_payload() {
         true,
         "scalar_int32",
     );
-    let error = refresh_import(&noexcept.config())
-        .expect_err("the scalar profile must not mis-model noexcept termination");
-    assert!(
-        error.contains("does not model noexcept termination"),
-        "{error}"
-    );
+    refresh_import(&noexcept.config())
+        .expect("noexcept admission is followed by a checked nonthrowing contract");
 
     let project = Project::new();
     fs::write(
@@ -20275,7 +20271,6 @@ fn typed_exceptions_refuse_unmodeled_construction_and_corrupt_fields() {
         "struct Error { int code; ~Error() noexcept {} }; void probe() { throw Error{1}; }",
         "struct Error { int code; }; void probe(Error& e) { throw e; }",
         "struct Error { int code; }; void probe() { throw Error{}; }",
-        "struct Error {}; void probe() noexcept { throw Error{}; }",
     ] {
         let project = Project::with_fixture("refused.cpp", "probe", cpp);
         project.write_exception_enabled_compilation_database();
@@ -20590,4 +20585,316 @@ int32 View::get() const { views this->data; views this->data[0]; ensures result 
 int32 probe(const int32* p) { views p[0]; ensures result == p[0]; }
 "#;
     check_return_call_sidecar(&project, &import, source);
+}
+
+fn check_noexcept_replay_all(
+    project: &Project,
+    import: &click::languages::cpp::PreparedCppImport,
+    source: &str,
+) {
+    check_return_call_sidecar(project, import, source);
+    let parsed = read_click_project(&project.directory.join("arithmetic.click"), source).unwrap();
+    let labels = project_smart_tactic_source_sites(&parsed, &ProgramInputs::program(import))
+        .unwrap()
+        .into_iter()
+        .map(|site| site.claim_label)
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut rewritten = parsed.clone();
+    for label in labels {
+        let expanded = expand_project_claim_source_by_label(
+            &rewritten,
+            &ProgramInputs::program(import),
+            &label,
+        )
+        .unwrap();
+        let (session, _) =
+            ProgramVerificationSession::new_program_prepared_project(&rewritten, import).unwrap();
+        rewritten = parsed.with_entry_source(expanded.clone());
+        let position =
+            project_tactic_source_position(&rewritten, &ProgramInputs::program(import), &label, 0)
+                .unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .unwrap();
+    }
+    click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, import))
+        .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: checked scalar noexcept calls, guarded throws and replay"]
+fn cpp_noexcept_scalar_boundaries_require_no_escaping_exception() {
+    let project = Project::with_fixture(
+        "checked.cpp",
+        "probe",
+        r#"
+int direct(int x, bool fail) noexcept { if (fail) { throw 7; } return x; }
+int leaf(int x) noexcept { return x; }
+int fallible(int x, bool fail) { if (fail) { throw 7; } return leaf(x); }
+int guarded(int x, bool fail) noexcept { return fallible(x, fail); }
+int probe(int x, bool fail) { int value = direct(x, fail); return guarded(value, fail); }
+"#,
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("probe", "checked.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "checked.cpp";
+int32 direct(int32 x, bool fail) { requires fail == false; ensures result == x; }
+int32 leaf(int32 x) { ensures result == x; }
+int32 fallible(int32 x, bool fail) throws int32 { ensures result == x; exceptional ensures fail == true; exceptional ensures exception == 7; }
+int32 guarded(int32 x, bool fail) { requires fail == false; ensures result == x; }
+int32 probe(int32 x, bool fail) { requires fail == false; ensures result == x; }
+"#;
+    check_noexcept_replay_all(&project, &import, source);
+    for bad in [
+        source.replace("requires fail == false;", ""),
+        source.replace(
+            "int32 guarded(int32 x, bool fail) {",
+            "int32 guarded(int32 x, bool fail) throws int32 {",
+        ),
+        source.replace(
+            "int32 leaf(int32 x) {",
+            "int32 leaf(int32 x) throws int32 {",
+        ),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let accepted = read_click_project(&path, &bad)
+            .ok()
+            .is_some_and(|parsed| verify_program_prepared_project(&parsed, &import).is_ok());
+        assert!(
+            !accepted,
+            "accepted escaping exception or throwing noexcept contract"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: typed noexcept(true/false), guarded opaque exits and replay"]
+fn cpp_noexcept_typed_conditions_are_checked_at_the_boundary() {
+    let project = Project::with_fixture(
+        "typed.cpp",
+        "probe",
+        r#"
+struct Error { int code; };
+int leaf(int x) noexcept { return x; }
+int fallible(int x, bool fail) { if (fail) { throw Error{x}; } return leaf(x); }
+int guarded(int x, bool fail) noexcept(true) { return fallible(x, fail); }
+int probe(int x, bool fail) noexcept(false) { return guarded(x, fail); }
+"#,
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("probe", "typed.cpp", true, "typed");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(!import.export().functions[0].declared_noexcept);
+    assert!(
+        import
+            .export()
+            .reachable_functions
+            .iter()
+            .find(|function| function.name == "guarded")
+            .unwrap()
+            .declared_noexcept
+    );
+    let source = r#"verifying "typed.cpp";
+int32 leaf(int32 x) { ensures result == x; }
+int32 fallible(int32 x, bool fail) throws Error { ensures result == x; exceptional ensures fail == true; }
+int32 guarded(int32 x, bool fail) { requires fail == false; ensures result == x; } by {
+    step();
+    outcomes {
+        returned => { step(); step_until(function.exit); solve(); }
+        threw => { step(); have fail == true; have false by { contradiction(fail); }; solve(); }
+    }
+}
+int32 probe(int32 x, bool fail) throws Error { requires fail == false; ensures result == x; exceptional ensures true; }
+"#;
+    click::surface::with_proof_trace("guarded", || {
+        check_noexcept_replay_all(&project, &import, source)
+    });
+    for bad in [
+        source.replace("requires fail == false;", ""),
+        source.replace(
+            "int32 guarded(int32 x, bool fail) {",
+            "int32 guarded(int32 x, bool fail) throws Error {",
+        ),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let accepted = read_click_project(&path, &bad)
+            .ok()
+            .is_some_and(|parsed| verify_program_prepared_project(&parsed, &import).is_ok());
+        assert!(
+            !accepted,
+            "accepted escaping opaque exception or noexcept(true) weakening"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: noexcept constructors/getters in opaque exception profiles"]
+fn cpp_noexcept_constructors_and_getters_compose_with_throwing_profiles() {
+    for profile in ["typed", "ios_failure"] {
+        let project = Project::with_fixture(
+            "view.cpp",
+            "probe",
+            r#"
+struct View {
+    int value;
+    explicit View(int x) noexcept : value(x) {}
+    int get() const noexcept { return value; }
+};
+int probe(int x) { View view(x); return view.get(); }
+"#,
+        );
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_exception_behavior("probe", "view.cpp", true, profile);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = r#"verifying "view.cpp";
+View::View(int32 x) { owns this->value; ensures this->value == x; }
+int32 View::get() const { views this->value; ensures result == this->value; }
+int32 probe(int32 x) { ensures result == x; }
+"#;
+        check_noexcept_replay_all(&project, &import, source);
+    }
+}
+
+#[test]
+#[ignore = "nightly: unconditional noexcept throws must fail verification"]
+fn cpp_noexcept_does_not_trust_the_source_promise() {
+    for (profile, cpp, payload) in [
+        (
+            "scalar_int32",
+            "void probe() noexcept { throw 7; }",
+            "int32",
+        ),
+        (
+            "typed",
+            "struct Error {}; void probe() noexcept { throw Error{}; }",
+            "Error",
+        ),
+    ] {
+        let project = Project::with_fixture("escape.cpp", "probe", cpp);
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_exception_behavior("probe", "escape.cpp", true, profile);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        for signature in [
+            "void probe()".to_string(),
+            format!("void probe() throws {payload}"),
+        ] {
+            let source = format!("verifying \"escape.cpp\"; {signature} {{ ensures true; }}");
+            let path = project.directory.join("escape.click");
+            fs::write(&path, &source).unwrap();
+            let parsed = read_click_project(&path, &source).unwrap();
+            assert!(
+                verify_program_prepared_project(&parsed, &import).is_err(),
+                "trusted noexcept promise or exposed its exception"
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "nightly: noexcept catches internal scalar exceptions"]
+fn cpp_noexcept_scalar_catches_can_finish_normally() {
+    // Retain both frontiers: a throw at the end of the try body and a
+    // throw that abandons a remaining statement before entering the handler.
+    for (tail, normal) in [("", 3), ("result = 4;", 4)] {
+        let cpp = format!(
+            r#"
+int probe(bool fail) noexcept {{
+    int result = 3;
+    try {{ if (fail) {{ throw 7; }} {tail} }} catch (int error) {{ result = error; }}
+    return result;
+}}
+"#
+        );
+        let project = Project::with_fixture("caught.cpp", "probe", &cpp);
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_exception_behavior("probe", "caught.cpp", true, "scalar_int32");
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            r#"verifying "caught.cpp";
+int32 probe(bool fail) {{ ensures fail == false or result == 7; ensures fail == true or result == {normal}; }} by {{
+    if fail {{ step_until(function.exit); solve(); }} else {{ step_until(function.exit); solve(); }}
+}}
+"#
+        );
+        click::surface::with_proof_trace("probe", || {
+            check_noexcept_replay_all(&project, &import, &source)
+        });
+    }
+}
+
+#[test]
+#[ignore = "nightly: noexcept scalar cleanup, body proof and replay"]
+fn cpp_noexcept_scalar_cleanup_remains_checked_on_normal_paths() {
+    check_noexcept_cleanup("scalar_int32", "", "7");
+}
+
+#[test]
+#[ignore = "nightly: noexcept typed cleanup, body proof, replay and unwind refusals"]
+fn cpp_noexcept_typed_cleanup_remains_checked_on_normal_paths() {
+    check_noexcept_cleanup("typed", "struct Error {};", "Error{}");
+}
+
+fn check_noexcept_cleanup(profile: &str, declaration: &str, thrown: &str) {
+    let cpp = format!(
+        r#"
+    {declaration}
+    struct Guard {{
+        int* slot;
+        explicit Guard(int* p) noexcept : slot(p) {{}}
+        ~Guard() noexcept {{ *slot = 9; }}
+    }};
+    int fallible(bool fail) {{ if (fail) {{ throw {thrown}; }} return 4; }}
+    int probe(int* slot, bool fail) noexcept {{ Guard guard(slot); int result = fallible(fail); return result; }}
+    "#
+    );
+    let project = Project::with_fixture("cleanup.cpp", "probe", &cpp);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("probe", "cleanup.cpp", true, profile);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = format!(
+        r#"verifying "cleanup.cpp";
+    Guard::Guard(int32* p) {{ owns this->slot; owns p[0]; ensures this->slot == p; ensures separate(memory(*this), memory(this->slot[0..1])); }}
+    Guard::~Guard() {{ requires separate(memory(*this), memory(this->slot[0..1])); views this->slot; owns this->slot[0]; ensures this->slot[0] == 9; }}
+    int32 fallible(bool fail) {{ requires fail == false; ensures result == 4; }}
+    int32 probe(int32* slot, bool fail) {{ requires fail == false; owns slot[0]; ensures slot[0] == 9; ensures result == 4; }}
+    "#
+    );
+    click::surface::with_proof_trace("probe", || {
+        check_noexcept_replay_all(&project, &import, &source)
+    });
+    for bad in [
+        source.replace("requires fail == false;", ""),
+        source.replace("ensures slot[0] == 9;", "ensures slot[0] == old(slot[0]);"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+    if profile == "typed" {
+        for replacement in [
+            "int probe(int* slot, bool fail) { Guard guard(slot); int result = fallible(fail); return result; }",
+            "int probe(int* slot, bool fail) { { Guard guard(slot); fallible(fail); } return 4; }",
+        ] {
+            let changed = cpp.replace("int probe(int* slot, bool fail) noexcept { Guard guard(slot); int result = fallible(fail); return result; }", replacement);
+            let refused = Project::with_fixture("unwind.cpp", "probe", &changed);
+            refused.write_exception_enabled_compilation_database();
+            refused.write_config_with_exception_behavior("probe", "unwind.cpp", true, "typed");
+            let error = refresh_import(&refused.config()).unwrap_err();
+            assert!(
+                error.contains("class unwinding remains unsupported"),
+                "{error}"
+            );
+        }
+    }
 }

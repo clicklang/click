@@ -550,7 +550,7 @@ fn function_interface(
             .with_struct_return(name.clone(), layout.clone())
             .with_aggregate_return_mode(lowered.contract_interface().aggregate_return_mode());
     }
-    Ok(interface)
+    Ok(interface.with_nonthrowing_contract(source.declared_noexcept))
 }
 
 /// The signature of a function-pointer type in proof types, as a C

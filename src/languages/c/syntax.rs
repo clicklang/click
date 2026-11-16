@@ -9361,6 +9361,7 @@ impl Parser {
             name: header.name,
             inline_body,
             requires_read_only_contract: false,
+            requires_nonthrowing_contract: false,
             positional_parameters: false,
             closure_captures: 0,
             trait_interface: None,

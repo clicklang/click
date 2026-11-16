@@ -1741,17 +1741,13 @@ impl ProgramFunction {
 
     pub fn opaque_contract_supported(&self) -> bool {
         self.contract_interface.opaque_contract_supported()
-            && !statement_contains_internal_throw(&self.body)
     }
 
     pub(crate) fn verified_direct_contract_supported(&self) -> bool {
+        // Eligibility depends on the interface. A reusable rule still needs
+        // checked body safety; an internal throw may be caught or excluded
+        // by the contract's preconditions.
         self.contract_interface.verified_direct_contract_supported()
-            && (!self.has_internal_exceptional_outcome()
-                || !self.exceptional_signature().is_empty())
-    }
-
-    pub(crate) fn has_internal_exceptional_outcome(&self) -> bool {
-        statement_contains_internal_throw(&self.body)
     }
 
     pub fn composite_resource_definitions(&self) -> &[CompositeResourceDefinition] {
@@ -3577,58 +3573,6 @@ impl FunctionContract {
     /// The body-independent interface selected by this nominal contract.
     pub fn interface(&self) -> &FunctionContractInterface {
         &self.interface
-    }
-}
-
-fn statement_contains_internal_throw(statement: &ProgramStatement) -> bool {
-    match statement {
-        ProgramStatement::Throw(_) | ProgramStatement::ThrowOpaque(_) => true,
-        ProgramStatement::ForStep { step, .. } => statement_contains_internal_throw(step),
-        ProgramStatement::Seq(statements) => statements
-            .iter()
-            .any(|statement| statement_contains_internal_throw(statement)),
-        ProgramStatement::TryCatchInt32 {
-            try_body, handler, ..
-        } => {
-            statement_contains_internal_throw(try_body)
-                || statement_contains_internal_throw(handler)
-        }
-        ProgramStatement::If {
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            statement_contains_internal_throw(then_branch)
-                || statement_contains_internal_throw(else_branch)
-        }
-        ProgramStatement::While { body, .. } => statement_contains_internal_throw(body),
-        ProgramStatement::Switch { cases, .. } => cases
-            .iter()
-            .any(|case| statement_contains_internal_throw(&case.body)),
-        ProgramStatement::Skip
-        | ProgramStatement::EndScalarReference(_)
-        | ProgramStatement::ScalarReferenceScope(_)
-        | ProgramStatement::EndAutomaticLifetimes { .. }
-        | ProgramStatement::Break
-        | ProgramStatement::Continue
-        | ProgramStatement::Goto { .. }
-        | ProgramStatement::Declare { .. }
-        | ProgramStatement::DeclareAggregate { .. }
-        | ProgramStatement::CopyAggregate { .. }
-        | ProgramStatement::InitializeScalarArray { .. }
-        | ProgramStatement::Assign { .. }
-        | ProgramStatement::CallConstruct { .. }
-        | ProgramStatement::Call { .. }
-        | ProgramStatement::CallResult { .. }
-        | ProgramStatement::HeapAllocate { .. }
-        | ProgramStatement::HeapFree { .. }
-        | ProgramStatement::Assert { .. }
-        | ProgramStatement::StepValue { .. }
-        | ProgramStatement::LoopTest { .. }
-        | ProgramStatement::Return(_)
-        | ProgramStatement::Store { .. }
-        | ProgramStatement::TypedStore { .. }
-        | ProgramStatement::Update { .. } => false,
     }
 }
 

@@ -34,6 +34,9 @@ pub struct ImportedFunction {
     pub(super) inline_body: bool,
     /// Calls used as expression observers must have contracts with views only.
     pub(super) requires_read_only_contract: bool,
+    /// The source promises that exceptions cannot escape this definition.
+    /// Its checked contract must expose only normal outcomes.
+    pub(super) requires_nonthrowing_contract: bool,
     /// The declaration names its parameters only by position, as a Rust
     /// `extern` block item does in Charon's output; the sidecar head names
     /// them ([`Self::named_by_head`]).
@@ -488,6 +491,15 @@ impl ImportedFunction {
         self
     }
 
+    pub(crate) fn with_nonthrowing_contract(mut self, required: bool) -> Self {
+        self.requires_nonthrowing_contract = required;
+        self
+    }
+
+    pub(crate) fn requires_nonthrowing_contract(&self) -> bool {
+        self.requires_nonthrowing_contract
+    }
+
     pub(crate) fn with_read_only_contract(mut self, required: bool) -> Self {
         self.requires_read_only_contract = required;
         self
@@ -596,6 +608,7 @@ impl ImportedFunction {
         alias.return_struct_name = self.return_struct_name.clone();
         alias.return_pointer_struct_name = self.return_pointer_struct_name.clone();
         alias.requires_read_only_contract = self.requires_read_only_contract;
+        alias.requires_nonthrowing_contract = self.requires_nonthrowing_contract;
         alias.dispatched_method = Some(self.name.clone());
         alias
     }
@@ -616,6 +629,7 @@ impl ImportedFunction {
             name,
             inline_body: false,
             requires_read_only_contract: false,
+            requires_nonthrowing_contract: false,
             positional_parameters: false,
             closure_captures: 0,
             trait_interface: None,
@@ -746,6 +760,7 @@ impl ImportedFunction {
             && self.return_struct_name == other.return_struct_name
             && self.aggregate_return_mode == other.aggregate_return_mode
             && self.return_pointer_struct_name == other.return_pointer_struct_name
+            && self.requires_nonthrowing_contract == other.requires_nonthrowing_contract
             && self.positional_parameters == other.positional_parameters
             && self.closure_captures == other.closure_captures
             && unnamed(&self.parameters) == unnamed(&other.parameters)
