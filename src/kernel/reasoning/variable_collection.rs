@@ -3640,7 +3640,7 @@ fn collect_pointer_capture_variables(
         | PointerBlock::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        PointerBlock::AutomaticLocal { .. } | PointerBlock::Concrete(_)
+        PointerBlock::StaticObject { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
         | PointerBlock::ExternalArgument
@@ -5697,7 +5697,8 @@ fn collect_pointer_block_bitvector_variables(
                 collect_pointer_bitvector_variables(&address, variables);
             }
         }
-        PointerBlock::AutomaticLocal { .. }
+        PointerBlock::StaticObject { .. }
+        | PointerBlock::AutomaticLocal { .. }
         | PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
@@ -6317,7 +6318,8 @@ fn block_variables(block: &PointerBlock, contents: &MemoryBlock) -> BTreeSet<Var
         | PointerBlock::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        PointerBlock::AutomaticLocal { .. }
+        PointerBlock::StaticObject { .. }
+        | PointerBlock::AutomaticLocal { .. }
         | PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
@@ -6622,7 +6624,8 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
             | PointerBlock::ExternalObject(variable) => {
                 variables.insert(*variable);
             }
-            PointerBlock::AutomaticLocal { .. }
+            PointerBlock::StaticObject { .. }
+            | PointerBlock::AutomaticLocal { .. }
             | PointerBlock::Concrete(_)
             | PointerBlock::StringLiteral { .. }
             | PointerBlock::Function(_)

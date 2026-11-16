@@ -3657,6 +3657,7 @@ impl PureFactContext {
                         && !matches!(
                             coordinate.representative,
                             PointerBlock::Heap(_)
+                                | PointerBlock::StaticObject { .. }
                                 | PointerBlock::AutomaticLocal { .. }
                                 | PointerBlock::Temporary(_)
                                 | PointerBlock::StringLiteral { .. }

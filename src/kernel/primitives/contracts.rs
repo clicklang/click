@@ -115,7 +115,7 @@ impl Global {
 
     pub fn new_with_kernel_name(
         source_name: impl Into<String>,
-        kernel_name: impl Into<String>,
+        kernel_name: impl Into<BindingName>,
         program_type: ProgramType,
         initial_value: ProgramValue,
     ) -> Self {
@@ -167,7 +167,7 @@ impl Global {
         );
         Self {
             source_name: source_name.into(),
-            kernel_name: kernel_name.into(),
+            kernel_name: BindingDeclaration::from(kernel_name.into()),
             program_type,
             initial_value,
             volatile: false,
@@ -204,7 +204,7 @@ impl Global {
         &self.source_name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -256,7 +256,7 @@ impl Global {
 impl GlobalArray {
     pub fn new_with_kernel_name(
         source_name: impl Into<String>,
-        kernel_name: impl Into<String>,
+        kernel_name: impl Into<BindingName>,
         element_type: ProgramType,
         length: u32,
         initial_values: impl Into<ArrayContents>,
@@ -292,7 +292,7 @@ impl GlobalArray {
         );
         Self {
             source_name: source_name.into(),
-            kernel_name: kernel_name.into(),
+            kernel_name: BindingDeclaration::from(kernel_name.into()),
             element_type,
             length,
             initial_values,
@@ -327,7 +327,7 @@ impl GlobalArray {
         &self.source_name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -356,7 +356,7 @@ impl GlobalArray {
 impl GlobalAggregate {
     pub fn new(
         source_name: impl Into<String>,
-        kernel_name: impl Into<String>,
+        kernel_name: impl Into<BindingName>,
         layout: AggregateLayout,
         initializers: Vec<AggregateInitializer>,
     ) -> Self {
@@ -370,7 +370,7 @@ impl GlobalAggregate {
         );
         Self {
             source_name: source_name.into(),
-            kernel_name: kernel_name.into(),
+            kernel_name: BindingDeclaration::from(kernel_name.into()),
             layout,
             initializers,
             constant: false,
@@ -397,7 +397,7 @@ impl GlobalAggregate {
         &self.source_name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -422,7 +422,7 @@ impl GlobalAggregate {
 impl GlobalAggregateArray {
     pub fn new(
         source_name: impl Into<String>,
-        kernel_name: impl Into<String>,
+        kernel_name: impl Into<BindingName>,
         layout: AggregateLayout,
         length: u32,
         initializers: Vec<AggregateInitializer>,
@@ -441,7 +441,7 @@ impl GlobalAggregateArray {
         );
         Self {
             source_name: source_name.into(),
-            kernel_name: kernel_name.into(),
+            kernel_name: BindingDeclaration::from(kernel_name.into()),
             layout,
             length,
             initializers,
@@ -469,7 +469,7 @@ impl GlobalAggregateArray {
         &self.source_name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -498,7 +498,7 @@ impl GlobalAggregateArray {
 impl StaticLocal {
     pub fn new(
         source_name: impl Into<String>,
-        kernel_name: impl Into<String>,
+        kernel_name: impl Into<BindingName>,
         program_type: ProgramType,
         initial_value: ProgramValue,
     ) -> Self {
@@ -548,7 +548,7 @@ impl StaticLocal {
         );
         Self {
             source_name: source_name.into(),
-            kernel_name: kernel_name.into(),
+            kernel_name: BindingDeclaration::from(kernel_name.into()),
             program_type,
             initial_value,
             volatile: false,
@@ -562,7 +562,7 @@ impl StaticLocal {
         &self.source_name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -614,7 +614,7 @@ impl StaticLocal {
 impl StaticArray {
     pub fn new(
         source_name: impl Into<String>,
-        kernel_name: impl Into<String>,
+        kernel_name: impl Into<BindingName>,
         element_type: ProgramType,
         length: u32,
         initial_values: impl Into<ArrayContents>,
@@ -653,7 +653,7 @@ impl StaticArray {
         );
         Self {
             source_name: source_name.into(),
-            kernel_name: kernel_name.into(),
+            kernel_name: BindingDeclaration::from(kernel_name.into()),
             element_type,
             length,
             initial_values,
@@ -665,7 +665,7 @@ impl StaticArray {
         &self.source_name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -694,7 +694,7 @@ impl StaticArray {
 impl StaticAggregate {
     pub fn new(
         source_name: impl Into<String>,
-        kernel_name: impl Into<String>,
+        kernel_name: impl Into<BindingName>,
         layout: AggregateLayout,
         initializers: Vec<AggregateInitializer>,
     ) -> Self {
@@ -708,7 +708,7 @@ impl StaticAggregate {
         );
         Self {
             source_name: source_name.into(),
-            kernel_name: kernel_name.into(),
+            kernel_name: BindingDeclaration::from(kernel_name.into()),
             layout,
             initializers,
             constant: false,
@@ -719,7 +719,7 @@ impl StaticAggregate {
         &self.source_name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 
@@ -744,7 +744,7 @@ impl StaticAggregate {
 impl StaticAggregateArray {
     pub fn new(
         source_name: impl Into<String>,
-        kernel_name: impl Into<String>,
+        kernel_name: impl Into<BindingName>,
         layout: AggregateLayout,
         length: u32,
         initializers: Vec<AggregateInitializer>,
@@ -763,7 +763,7 @@ impl StaticAggregateArray {
         );
         Self {
             source_name: source_name.into(),
-            kernel_name: kernel_name.into(),
+            kernel_name: BindingDeclaration::from(kernel_name.into()),
             layout,
             length,
             initializers,
@@ -775,7 +775,7 @@ impl StaticAggregateArray {
         &self.source_name
     }
 
-    pub fn kernel_name(&self) -> &str {
+    pub fn kernel_name(&self) -> &BindingName {
         &self.kernel_name
     }
 

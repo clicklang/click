@@ -72,10 +72,10 @@ pub struct ImportedFunction {
     pub(super) global_arrays: DeclarationMap<CGlobalArray>,
     pub(super) global_aggregates: DeclarationMap<CGlobalAggregate>,
     pub(super) global_aggregate_arrays: DeclarationMap<CGlobalAggregateArray>,
-    pub(super) static_locals: BTreeMap<String, CStaticLocal>,
-    pub(super) static_arrays: BTreeMap<String, CStaticArray>,
-    pub(super) static_aggregates: BTreeMap<String, CStaticAggregate>,
-    pub(super) static_aggregate_arrays: BTreeMap<String, CStaticAggregateArray>,
+    pub(super) static_locals: BTreeMap<crate::kernel::BindingName, CStaticLocal>,
+    pub(super) static_arrays: BTreeMap<crate::kernel::BindingName, CStaticArray>,
+    pub(super) static_aggregates: BTreeMap<crate::kernel::BindingName, CStaticAggregate>,
+    pub(super) static_aggregate_arrays: BTreeMap<crate::kernel::BindingName, CStaticAggregateArray>,
     /// The struct name of each automatic local of struct-pointer type, keyed
     /// by its C spelling. A sidecar names a local by that spelling, so this is
     /// what gives `have p->value == root->value` a layout for `p`; globals,

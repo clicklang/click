@@ -121,3 +121,48 @@ fn parameter_declaration_references_keep_pointer_field_syntax() {
         }
     ));
 }
+
+#[test]
+fn function_statics_keep_types_and_exact_storage_spelling() {
+    let source = "struct pair { int padding; int value; int storage; }; int f(void) { static int a[2][3]; static struct pair p; return 0; }";
+    let array = parse_binding_expression("f.static(0)[1][2]", source).unwrap();
+    assert!(
+        matches!(array, ContractExpression::ArrayIndex { dimensions, .. } if dimensions == vec![2,3])
+    );
+    let field = parse_binding_expression("f.static(1).value", source).unwrap();
+    assert!(matches!(
+        field,
+        ContractExpression::Field {
+            offset_bytes: 4,
+            ..
+        }
+    ));
+    let field = parse_binding_expression("f.static(1).storage", source).unwrap();
+    assert!(matches!(
+        field,
+        ContractExpression::Field {
+            offset_bytes: 8,
+            ..
+        }
+    ));
+    let expression = parse_binding_expression("f.static(0).storage()", source).unwrap();
+    let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+        pointer,
+    ))) = expression
+    else {
+        panic!("static address");
+    };
+    assert!(matches!(
+        pointer.pointer().block,
+        crate::kernel::PointerBlock::StaticObject { .. }
+    ));
+    assert_eq!(
+        crate::surface::diagnostics::describe_pointer(
+            pointer.pointer(),
+            crate::surface::ParameterBinding::default()
+        ),
+        "\"bindings.c\"::f.static(0).storage()"
+    );
+    assert!(parse_binding_expression("f.static(2)", source).is_err());
+    assert!(parse_binding_expression("f.static(0).storage(frame, 1)", source).is_err());
+}

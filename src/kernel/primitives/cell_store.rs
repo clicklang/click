@@ -1512,7 +1512,7 @@ impl CellStore {
                 }),
                 Bound::Unbounded,
             ))
-            .filter(|(key, _)| matches!(key.block, PointerBlock::AutomaticLocal { .. }));
+            .take_while(|(key, _)| matches!(key.block, PointerBlock::AutomaticLocal { .. }));
         let mut visited = 0usize;
         let rejected = local_cells
             .chain(automatic_cells)

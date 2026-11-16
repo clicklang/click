@@ -2247,7 +2247,7 @@ fn c_collects_file_scope_struct_aggregates() {
         .iter()
         .find(|aggregate| aggregate.source_name() == "shared")
         .expect("kernel aggregate metadata");
-    assert_eq!(kernel_aggregate.kernel_name(), "shared");
+    assert_eq!(kernel_aggregate.kernel_name().named(), Some("shared"));
     assert_eq!(
         kernel_aggregate.layout().size_bytes(),
         aggregate.layout().size_bytes()
@@ -2280,7 +2280,7 @@ fn c_collects_static_struct_aggregates_with_stable_kernel_names() {
         .expect("static aggregate metadata");
     assert_eq!(aggregate.name(), "state");
     assert_eq!(aggregate.struct_name(), "state");
-    assert_ne!(aggregate.kernel_name(), aggregate.name());
+    assert!(aggregate.kernel_name().static_id().is_some());
 
     let kernel_function = function.to_kernel_function();
     let kernel_aggregate = kernel_function
@@ -2405,7 +2405,7 @@ fn c_collects_aggregate_arrays() {
 
     let private = &function.global_aggregate_arrays()["private_table"];
     assert!(private.is_file_static());
-    assert_ne!(private.kernel_name(), private.name());
+    assert!(private.kernel_name().static_id().is_some());
     assert_eq!(private.initializer().unwrap().len(), 3);
 
     let local = function
@@ -2427,7 +2427,7 @@ fn c_collects_aggregate_arrays() {
         .iter()
         .find(|array| array.source_name() == "shared_table")
         .expect("kernel global aggregate array metadata");
-    assert_eq!(kernel_global.kernel_name(), "shared_table");
+    assert_eq!(kernel_global.kernel_name().named(), Some("shared_table"));
     assert_eq!(kernel_global.length(), 2);
     assert_eq!(kernel_global.initializers().len(), 3);
     let kernel_local = kernel_function
@@ -3090,8 +3090,8 @@ fn c_file_static_globals_are_qualified_by_translation_unit() {
     assert!(beta_global.is_file_static());
     assert_eq!(alpha_global.name(), "counter");
     assert_eq!(beta_global.name(), "counter");
-    assert_ne!(alpha_global.kernel_name(), alpha_global.name());
-    assert_ne!(beta_global.kernel_name(), beta_global.name());
+    assert!(alpha_global.kernel_name().static_id().is_some());
+    assert!(beta_global.kernel_name().static_id().is_some());
     assert_ne!(alpha_global.kernel_name(), beta_global.kernel_name());
     assert_eq!(
         alpha[0].to_kernel_function().global_variables()[0].name(),
@@ -3160,7 +3160,7 @@ fn c_collects_static_scalar_locals_with_stable_kernel_names() {
         .next()
         .expect("static local metadata");
     assert_eq!(local.name(), "calls");
-    assert_ne!(local.kernel_name(), local.name());
+    assert!(local.kernel_name().static_id().is_some());
     assert_eq!(
         local.interface_type(),
         crate::languages::interface::InterfaceType::Int32
@@ -3192,7 +3192,7 @@ fn c_collects_static_scalar_arrays_with_stable_kernel_names() {
         .next()
         .expect("static array metadata");
     assert_eq!(array.name(), "values");
-    assert_ne!(array.kernel_name(), array.name());
+    assert!(array.kernel_name().static_id().is_some());
     assert_eq!(
         array.element_type(),
         crate::languages::interface::InterfaceType::Int32
@@ -15306,4 +15306,44 @@ fn automatic_test_block(function: &str, ordinal: u32) -> crate::kernel::PointerB
         ),
         instance: crate::kernel::LocalStorageInstance::Implicit,
     }
+}
+
+#[test]
+fn static_declarations_keep_linkage_and_redeclaration_identity() {
+    use crate::kernel::{BindingName, StaticBindingOwner};
+    let source = "static int32 file_value; static int32 file_value = 3; \
+        int32 first(void) { static int32 value = 7; return value + file_value; } \
+        int32 second(void) { static int32 value = 9; return value + file_value; }";
+    let functions = syntax::parse_functions_for_source(source, "statics.c").unwrap();
+    let file = functions[0].globals()["file_value"].kernel_name();
+    let first = functions[0]
+        .static_locals()
+        .values()
+        .next()
+        .unwrap()
+        .kernel_name();
+    let second = functions[1]
+        .static_locals()
+        .values()
+        .next()
+        .unwrap()
+        .kernel_name();
+    assert!(
+        matches!(file, BindingName::Static(id) if matches!(id.owner(), StaticBindingOwner::File(_)))
+    );
+    assert_eq!(file, functions[1].globals()["file_value"].kernel_name());
+    assert_eq!(file.static_id().unwrap().ordinal(), 0);
+    assert_ne!(first, second);
+    assert_ne!(file, first);
+    for binding in [first, second] {
+        let id = binding.static_id().unwrap();
+        assert_eq!(id.ordinal(), 0);
+        assert_eq!(id.spelling(), "value");
+        assert_eq!(id.source(), Some("statics.c"));
+        assert!(matches!(id.owner(), StaticBindingOwner::Function(_)));
+    }
+    let other = syntax::parse_functions_for_source(source, "other.c").unwrap();
+    assert_ne!(file, other[0].globals()["file_value"].kernel_name());
+    assert!(!format!("{:?}", functions[0].body()).contains("#static"));
+    assert!(!format!("{:?}", functions[0].body()).contains("#file-static"));
 }

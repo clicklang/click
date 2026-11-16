@@ -2698,8 +2698,8 @@ impl EqualityGraph {
                 push(member, delta);
                 next = members.get_greater_than(member);
             }
-            // AutomaticLocal is the final PointerBlock variant, immediately
-            // after Temporary. Seek that variant's interval without visiting
+            // Seek the AutomaticLocal interval immediately after Temporary,
+            // without visiting
             // unrelated opaque pointer members of the same equality class.
             let mut next = members.get_greater_than(&PointerBlock::Temporary(u64::MAX));
             while let Some((member @ PointerBlock::AutomaticLocal { .. }, delta)) = next {
@@ -3089,6 +3089,7 @@ impl EqualityGraphState {
             PointerBlock::Heap(_)
                 | PointerBlock::Temporary(_)
                 | PointerBlock::StringLiteral { .. }
+                | PointerBlock::StaticObject { .. }
                 | PointerBlock::AutomaticLocal { .. }
         ) || matches!(block, PointerBlock::Concrete(name) if name != "null")
     }
