@@ -65,6 +65,7 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
         &state,
         2,
         &[],
+        ReturnResourceComposition::RestoreEntryBorrows,
         &PureFactContext::new(),
         &mut ExecutionBudget::beside_live_state(),
     )
@@ -295,6 +296,7 @@ fn return_roles_follow_skipped_guards_and_deferred_output_emission() {
         &state,
         4,
         &[],
+        ReturnResourceComposition::RestoreEntryBorrows,
         &PureFactContext::new(),
         &mut ExecutionBudget::beside_live_state(),
     )
@@ -306,7 +308,7 @@ fn return_roles_follow_skipped_guards_and_deferred_output_emission() {
         returned
             .occurrences
             .iter()
-            .map(|entry| entry.entry_borrow)
+            .map(|entry| matches!(entry.origin, ReturnOwnershipOrigin::EntryBorrow))
             .collect::<Vec<_>>(),
         [true, false, false]
     );
@@ -442,6 +444,7 @@ fn unmatched_entry_borrow_descriptions_do_not_authorize_restoration() {
         &state,
         2,
         &[],
+        ReturnResourceComposition::RestoreEntryBorrows,
         &facts,
         &mut ExecutionBudget::beside_live_state(),
     )
@@ -451,7 +454,7 @@ fn unmatched_entry_borrow_descriptions_do_not_authorize_restoration() {
         evaluated
             .occurrences
             .iter()
-            .map(|entry| entry.entry_borrow)
+            .map(|entry| matches!(entry.origin, ReturnOwnershipOrigin::EntryBorrow))
             .collect::<Vec<_>>(),
         [false, false]
     );

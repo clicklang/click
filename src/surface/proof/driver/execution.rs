@@ -70,6 +70,7 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
             | ProofTactic::UnfoldFunction(_)
             | ProofTactic::PeelFunction { .. }
             | ProofTactic::ObserveResource(_)
+            | ProofTactic::ObserveSavedMemory { .. }
             | ProofTactic::ApplyTheorem(_)
             | ProofTactic::ApplyTheoremUsing { .. }
             | ProofTactic::UserTactic(_)

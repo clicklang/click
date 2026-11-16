@@ -1407,10 +1407,17 @@ the range in the loop's iterator directly, so its state is the proof's
 iterator protocol splits from a `next` call come from the `for` statement,
 so their regions are named inside it.
 
+Once the protocol has split a range's `next` into its two outcomes, the
+`Option` it returns is read only by the `Some` arm's first statement,
+`i = (opt as Some).0`. `temporaries::bind_range_payloads` makes that
+statement the yielding outcome's own binding (`MirStatement::RangeNext`
+with `payload: Some(i)` and `option: None`), and the `Option` and its
+temporary are gone.
+
 These still stay a temporary:
 
-- a call's result read more than once, so a `for` loop's `next` result is one
-  and a proof sees it;
+- a call's result read more than once, so a slice, chunk or `enumerate`
+  loop's `next` result is one and a proof sees it;
 - a borrow, unless its one read in its block takes it whole: a call
   argument (`t = &mut x; f(t)` is `f(&mut x)`, whose loan lasts the call), a
   local's whole value (`let r = &mut x`), or a reborrow (`&mut *t` is the

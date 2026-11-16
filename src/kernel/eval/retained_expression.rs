@@ -1911,6 +1911,7 @@ mod tests {
                     origin: crate::kernel::StepOrigin::Operator(
                         crate::kernel::OperatorKind::Ternary,
                     ),
+                    ends: true,
                 },
                 &PureFactContext::new(),
                 &mut ExecutionBudget::new(),
@@ -2032,6 +2033,7 @@ mod tests {
         let expression = ProgramExpression::StepResult {
             step: 11,
             origin: crate::kernel::StepOrigin::Operator(crate::kernel::OperatorKind::Ternary),
+            ends: true,
         };
         let paths = evaluate_expression_value_paths(
             &after,

@@ -150,8 +150,9 @@ impl Context<'_> {
     pub(super) fn range_next(
         &mut self,
         iterator: &str,
-        option: &str,
+        option: Option<&str>,
         option_type: &str,
+        payload: Option<&str>,
         taken: Option<bool>,
     ) -> Result<ProgramStatement, String> {
         let element = self.range_element(iterator)?;
@@ -191,14 +192,25 @@ impl Context<'_> {
         } else {
             advance
         };
-        let some = program_seq(
-            self.assign(option, &construct("Some", vec![local(&start)]))?,
-            advance,
-        );
-        let none = self.assign(option, &construct("None", vec![]))?;
+        let none = match option {
+            Some(option) => self.assign(option, &construct("None", vec![]))?,
+            None => program_skip(),
+        };
+        if taken == Some(false) {
+            return Ok(none);
+        }
+        // The yielded value is the loop variable's, when the loop reads only
+        // that; otherwise the `Option` holds it.
+        let yielded = match (payload, option) {
+            (Some(payload), _) => self.assign(payload, &local(&start))?,
+            (None, Some(option)) => self.assign(option, &construct("Some", vec![local(&start)]))?,
+            (None, None) => {
+                return Err("Rust range next binds neither its Option nor its value".into());
+            }
+        };
+        let some = program_seq(yielded, advance);
         Ok(match taken {
-            Some(true) => some,
-            Some(false) => none,
+            Some(_) => some,
             None => program_if(self.range_has_next(iterator)?, some, none),
         })
     }

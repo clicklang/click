@@ -3855,6 +3855,10 @@ pub enum ProgramExpression {
     StepResult {
         step: u32,
         origin: StepOrigin,
+        /// Whether this read ends the result. A read that keeps it, as a
+        /// Rust `for` loop's `match` test of the `Option` `next()` returned,
+        /// leaves it for a later read in the same pass, which ends it.
+        ends: bool,
     },
     /// Whether an enum value is of variant `variant`, as a `bool`: the test
     /// a Rust `match` arm makes. An undecided test splits on the variant.
@@ -10405,10 +10409,13 @@ pub enum OperatorKind {
 }
 
 impl ProgramExpression {
-    /// The steps whose results evaluating this expression reads.
+    /// The steps whose results evaluating this expression reads and ends.
     pub(crate) fn collect_step_results_read(&self, steps: &mut Vec<u32>) {
         match self {
-            ProgramExpression::StepResult { step, .. } => steps.push(*step),
+            ProgramExpression::StepResult {
+                step, ends: true, ..
+            } => steps.push(*step),
+            ProgramExpression::StepResult { ends: false, .. } => {}
             ProgramExpression::StringLiteral(_)
             | ProgramExpression::Value(_)
             | ProgramExpression::Variable(_)

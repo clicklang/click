@@ -245,8 +245,9 @@ impl BodyAdapter<'_, '_> {
         };
         Ok(Some(S::RangeNext {
             iterator: self.iterator_root(operand_place(argument)?)?,
-            option: destination,
+            option: Some(destination),
             option_type,
+            payload: None,
             taken: None,
         }))
     }

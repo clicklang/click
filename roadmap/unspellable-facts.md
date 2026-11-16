@@ -784,6 +784,73 @@ and completion runs. The broad run passed 1,939 before the existing conjunction
 selection transport test hit its 30-second limit; it passed unchanged in
 isolation in 12.792s, and the remaining 57 checks passed separately.
 
+8ac imports mixed Boolean, algebraic, float, complete-pointer and array-reference
+arguments through the common structural importer in Integer, machine, Boolean,
+pointer, float and algebraic calls. A `ProgramParameter` node retains an
+algebraic operand while preserving its distinct `Value(Parameter)` argument
+form. Canonical Boolean literals and raw C Boolean variables preserve their
+original carrier forms. Other raw C Boolean words and noncanonical carriers
+remain exact native inputs. Shared application payloads retain their prepared children within one
+thread and verification-session generation, preserving repeated-import identity without
+mixing producer metadata with observation equality.
+
+Pointer observation keys retain their existing native metadata policy; variable
+readers retain the distinct program-parameter and logical-algebraic policies.
+Selected native call-output, certification and observation adapters remain
+explicit boundaries for package 9. Complete pointer-to-integer records keep
+the package-7 native descriptor rather than being reduced to their numeric
+projection. Tests cover exact mixed argument round trips, all variable-reader
+modes, thread/session isolation and construction around growing shared prefixes.
+All 2,196 selected representation, reader, Surface and scaling tests passed;
+10 final focused checks also passed. Float, algebraic and pure-function fixtures
+passed with zero fact-stability differences. The generic filter passed 25/27
+fixtures; its two nightly C++ failures reproduced with identical diagnostics
+on the merged baseline and are not claimed green. CI also exposed a real
+pointer-call spelling regression: shared arguments attempted general pointer
+synthesis where native arguments require an exact proof-local name. The common
+call renderer now preserves that name policy for all call result families.
+Native/shared parity and both pointer-body-fact fixtures pass, including the
+expected negative refusal, without changing search or budgets. Its measured
+negative-case work is about 1.16 million units versus 415,000 on the baseline;
+the unchanged limit is 2 million.
+
+### 8ad closure and remaining boundaries
+
+Package 8's planned family producers, readers and mixed argument adapters are
+implemented. The final slices are [8z #2903](https://github.com/clicklang/click/pull/2903),
+[8aa #2907](https://github.com/clicklang/click/pull/2907),
+[8ab #2910](https://github.com/clicklang/click/pull/2910), and
+[8ac #2916](https://github.com/clicklang/click/pull/2916).
+8ad removes obsolete Integer/algebraic-variable legacy identities and the
+superseded Boolean-variable export arm, makes argument and machine fallback
+families exhaustive, and reconciles the baseline inventory below.
+
+The remaining native boundaries are explicit; package 8 closure does not mean
+that every compatibility tree or every `Legacy` node has disappeared:
+
+| Boundary | Remaining native payload and reason |
+| --- | --- |
+| `KernelTermImport::argument` | Noncanonical/raw C Boolean word carriers retain exact width and bits; `Void` has no children; complete `PointerInteger` records retain package-7 designation/evidence; non-pointer array-reference descriptors retain their existing refusal input. Logical Boolean, algebraic, typed float, complete-pointer, array-reference and numeric expressions use common nodes. |
+| `KernelTermImport::machine` | Unrecognized untyped `PureFunctionApplication` intrinsics, wrong-sort float inputs, and read/address descriptors outside the admitted result/address forms retain exact native inputs. Recognized conversions, numeric operators, typed Click calls, folds, matches and admitted reads/addresses use structural nodes. |
+| `KernelTermImport::float` / `float_atom` | Recognized arithmetic/conversions, typed Click calls, literals, variables and correctly typed reads are structural. Unknown untyped intrinsic calls and other native-only carriers (including raw conditionals, folds/matches and wrong-sort inputs without a migrated float producer) retain exact input. This does not add float conditional semantics or infer missing call signatures. |
+| `retained_native_machine_operand` | Selected already-native checker inputs can retain exact producer payloads at a shared parent. They do not acquire another producer's auxiliary pointer metadata from observation equality. |
+| `machine_observation_leaf`, `bool_observation_leaf`, `native_observation_leaf` | Explicit observation identities may own native descriptors. `LegacyBool` remains for this purpose; the ordinary condition importer is exhaustive. These leaves must not replace exact producer payloads. |
+| Native call assembly/output, certification, variable and Surface adapters | Selected compatibility readings still exist. General raise/lower and certification consolidation is package 9, not an unreported part of this closure. |
+| Cached native storage/key readings | Selected Eq/Ord/Hash views preserve existing carrier contracts. Duplicate-storage removal and final migration closure remain package 10. |
+
+`ApplicationArgument` and `ExactApplicationArgument` now wrap only arguments
+outside the migrated common domain; they preserve the original application
+position and, where required, producer payload identity. `Fresh` names exact
+fallback producers. `Machine`, `MachineObservation` and `NativeObservation`
+retain the separate checker/observation purposes above. Memory state, type,
+binder, function and allocation identities remain legitimate descriptors.
+
+Closure validation: all 2,197 selected representation, reader, Surface and
+scaling tests passed. Float, algebraic, pure-function and generic-pointer
+fixtures passed with zero fact-stability differences; quality checks passed.
+The two baseline nightly C++ fixture failures recorded under 8ac remain outside
+the green validation claim. CI and the merge queue run the full gate.
+
 ### 8a inventory
 
 Source baseline: `20100ea35` (after package 7 closure). This inventory describes
@@ -792,7 +859,7 @@ state, variable, function or allocation identities. The two additional
 algebraic slices, 8s.1 and 8s.2, were explicitly approved after this inventory
 identified their omission from the original sequence.
 
-| Entry point / payload | Current boundary | Assigned slices |
+| Entry point / payload | Boundary at baseline | Assigned slices |
 | --- | --- | --- |
 | `kernel_term/boolean.rs`, `KernelTermImport::condition` | Constants, variables, numeric comparisons, Boolean equality/conditionals and calls already have common roots. The fallback wraps the entire other condition in `LegacyBool`. | Views/readers/transport/keys 8b–8f; production and handoffs 8l–8o. |
 | `ConditionTerm::{PointerOffsetEqual, PointerEqual, PointerValueEqual}` | Whole native operands inside the Boolean fallback despite package-7 shared pointer support. | 8g, 8h, 8i respectively. |

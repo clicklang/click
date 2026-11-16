@@ -11150,22 +11150,35 @@ impl Parser {
             }
             "observe" => {
                 self.expect(Token::LParen)?;
-                let start = self.position;
-                let resource = if let Ok(quantity) = self.parse_contract_expression()
-                    && self.peek_ident() == Some("of")
+                if matches!(self.peek_ident(), Some("at" | "old"))
+                    && self.peek_next() == Some(&Token::LParen)
                 {
-                    self.position += 1;
-                    let resource = self.parse_resource_target(ResourceAccessMode::Own)?;
-                    ResourceClause::Quantified {
-                        quantity,
-                        resource: Box::new(resource),
-                    }
+                    let base = self.parse_contract_primary()?;
+                    self.expect(Token::LBracket)?;
+                    let start = self.parse_contract_expression()?;
+                    self.expect(Token::DotDot)?;
+                    let end = self.parse_contract_expression()?;
+                    self.expect(Token::RBracket)?;
+                    self.expect(Token::RParen)?;
+                    ProofTactic::ObserveSavedMemory { base, start, end }
                 } else {
-                    self.position = start;
-                    self.parse_resource_target(ResourceAccessMode::View)?
-                };
-                self.expect(Token::RParen)?;
-                ProofTactic::ObserveResource(resource)
+                    let start = self.position;
+                    let resource = if let Ok(quantity) = self.parse_contract_expression()
+                        && self.peek_ident() == Some("of")
+                    {
+                        self.position += 1;
+                        let resource = self.parse_resource_target(ResourceAccessMode::Own)?;
+                        ResourceClause::Quantified {
+                            quantity,
+                            resource: Box::new(resource),
+                        }
+                    } else {
+                        self.position = start;
+                        self.parse_resource_target(ResourceAccessMode::View)?
+                    };
+                    self.expect(Token::RParen)?;
+                    ProofTactic::ObserveResource(resource)
+                }
             }
             "witness" => {
                 // `witness { k: value, ... }`: a value for each named binder
