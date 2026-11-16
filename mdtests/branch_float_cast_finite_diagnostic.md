@@ -22,5 +22,5 @@ int32 positive(double d) {
 ```
 
 ```expect
-fail: `isfinite("branch_float_cast.c"::positive.parameter(0))`
+fail: `isfinite(d)`
 ```

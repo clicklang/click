@@ -68,5 +68,5 @@ int f() {
 ```
 
 ```expect
-fail: a 8-byte load at `"pointer_byte_write.c"::f.local(3)->target` did not fit the cell's value
+fail: a 8-byte load at `dst->target` did not fit the cell's value
 ```

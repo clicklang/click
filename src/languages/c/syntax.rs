@@ -8696,6 +8696,15 @@ impl Parser {
             .into()
     }
 
+    /// Whether a file-scope object declared so far has this spelling.
+    fn is_file_scope_object(&self, name: &str) -> bool {
+        self.globals.contains_key(name)
+            || self.global_arrays.contains_key(name)
+            || self.global_aggregates.contains_key(name)
+            || self.global_aggregate_arrays.contains_key(name)
+            || self.file_static_bindings.contains_key(name)
+    }
+
     /// Records a parameter or local declaration in the innermost scope. A
     /// shadowing declaration gets a kernel-only identity; source references
     /// continue to resolve by their ordinary C spelling. Call right after
@@ -8724,6 +8733,10 @@ impl Parser {
             name.to_owned(),
             (self.scopes.len().saturating_sub(1), kernel_name.clone()),
         );
+        if let Some(function) = &self.binding_function {
+            let shadows = previous_visible.is_some() || self.is_file_scope_object(name);
+            function.record_declaration_spelling(name, shadows);
+        }
         // A parameter may keep the source spelling of a file-scope object.
         // Save only that object's metadata, not the translation-unit tables.
         let shadowed = self
@@ -8793,6 +8806,11 @@ impl Parser {
             name.to_owned(),
             (self.scopes.len().saturating_sub(1), kernel_name.clone()),
         );
+        // An automatic declaration of the same spelling could resolve to
+        // this static, so the spelling no longer names one declaration.
+        if let Some(function) = &self.binding_function {
+            function.record_declaration_spelling(name, true);
+        }
         match self.scopes.last_mut() {
             Some(scope) => scope.push(ScopeBinding {
                 source_name: Some(name.to_string()),

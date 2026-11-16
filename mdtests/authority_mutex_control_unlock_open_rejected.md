@@ -56,5 +56,5 @@ int32 run() {
 ```
 
 ```expect
-fail: Requires owns control("authority_mutex_control_unlock_open_rejected.c"::run.local(0))
+fail: Requires owns control(obj)
 ```

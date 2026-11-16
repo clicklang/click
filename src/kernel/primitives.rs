@@ -3429,7 +3429,7 @@ impl std::fmt::Display for PointerBlock {
             Self::ContractException => formatter.write_str("exception.storage()"),
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
             Self::AutomaticLocal { binding, instance } => {
-                write!(formatter, "{binding}.storage({instance})")
+                write!(formatter, "{}.storage({instance})", binding.canonical())
             }
             Self::PureFunctionApplication(application) => write!(
                 formatter,
