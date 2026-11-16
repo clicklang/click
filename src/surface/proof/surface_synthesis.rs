@@ -3314,6 +3314,49 @@ pub(super) fn raise_kernel_term(
     raise_kernel_term_dispatch(term, parameter_binding, state, bound_variables)
 }
 
+// Definedness names the written operation, even when a local holds its
+// result. Keep its children shared and preserve the supported overflow profile.
+fn raise_shared_overflow(
+    format: MachineIntegerType,
+    operation: OverflowOperation,
+    arguments: &[crate::kernel::KernelTerm; 2],
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    if !matches!(
+        format,
+        MachineIntegerType::Int32 | MachineIntegerType::Int64
+    ) || !matches!(
+        operation,
+        OverflowOperation::Add | OverflowOperation::Subtract | OverflowOperation::Multiply
+    ) {
+        return None;
+    }
+    let left = Box::new(raise_kernel_term(
+        &arguments[0],
+        parameter_binding,
+        state,
+        bound_variables,
+    )?);
+    let right = Box::new(raise_kernel_term(
+        &arguments[1],
+        parameter_binding,
+        state,
+        bound_variables,
+    )?);
+    let expression = match operation {
+        OverflowOperation::Add => SurfaceTerm::Add(left, right),
+        OverflowOperation::Subtract => SurfaceTerm::Subtract(left, right),
+        OverflowOperation::Multiply => SurfaceTerm::Multiply(left, right),
+        _ => unreachable!("supported overflow operation"),
+    };
+    proposition_bool_value(ClickProposition::Not(Box::new(ClickProposition::Defined {
+        expression,
+    })))
+    .ok()
+}
+
 // Read spelling keeps the native boundary's selection order and state
 // equality, but compares the common address without exporting its index DAG.
 fn raise_algebraic_read(
@@ -3672,13 +3715,44 @@ fn raise_kernel_term_dispatch(
         }
         // Offset spelling still uses its existing address context at the
         // explicit Surface boundary; no new standalone offset syntax.
-        Node::BoolRead(_)
-        | Node::AlgebraicEqual { .. }
-        | Node::BoolOverflow { .. }
-        | Node::PointerValueEqual(_)
+        Node::AlgebraicEqual { arguments } => {
+            proposition_bool_value(ClickProposition::Comparison {
+                left: recurse(&arguments[0])?,
+                operator: ComparisonOperator::Equal,
+                right: recurse(&arguments[1])?,
+            })
+            .ok()?
+        }
+        Node::BoolOverflow {
+            format,
+            operation,
+            arguments,
+        } => raise_shared_overflow(
+            *format,
+            *operation,
+            arguments,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
+        Node::BoolRead(_) => synthesize_surface_bool(
+            term.boolean_read_native()?,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
+        Node::LegacyBool(payload) => {
+            let crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(
+                MachineTerm::BoolCast { value, .. },
+            )) = payload.value()
+            else {
+                return None;
+            };
+            synthesize_surface_bool(value, parameter_binding, state, bound_variables)?
+        }
+        Node::PointerValueEqual(_)
         | Node::PointerEqual { .. }
-        | Node::PointerOffsetEqual { .. }
-        | Node::LegacyBool(_) => {
+        | Node::PointerOffsetEqual { .. } => {
             let condition = crate::kernel::KernelTermExport::condition(term).ok()?;
             synthesize_surface_bool(&condition, parameter_binding, state, bound_variables)?
         }

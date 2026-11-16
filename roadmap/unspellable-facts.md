@@ -211,6 +211,21 @@ the nested constructor scaling regression now requires zero exports including
 its named leaf. All 1,846 Surface/scaling tests, quality checks and the algebraic
 fixture filter passed; its separate fact-stability report has zero differences.
 
+### 9e Boolean raising
+
+Algebraic equality and supported signed-overflow predicates now raise their
+shared children directly. Overflow spelling still names the operation's domain,
+not a local holding its result, and keeps the existing int32/int64 arithmetic
+profile. Logical connectives and scalar comparisons were already shared.
+Selected Boolean read descriptors retain their explicit native leaf boundary;
+legacy observation payloads are borrowed without cloning their condition tree.
+Pointer comparisons remain assigned to 9f.
+
+Validation: native/shared overflow and algebraic spelling parity; growing
+overflow operands raise with zero machine exports. All 1,848 Surface/scaling
+tests and quality checks passed. Algebraic, int32 single-overflow and int64
+signed-overflow fixture filters passed with zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

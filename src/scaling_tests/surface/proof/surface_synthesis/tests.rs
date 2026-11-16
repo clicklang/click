@@ -812,3 +812,40 @@ fn nested_shared_constructors_and_named_leaf_do_not_export() {
         assert!(work <= 64 * size + 64, "{size} constructors: {work} work");
     }
 }
+
+#[test]
+fn shared_overflow_spelling_does_not_export_growing_operands() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, OverflowOperation};
+    for size in [8, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = Variable(999987);
+        let mut operand = MachineTerm::Variable(variable);
+        for _ in 0..size {
+            operand = MachineTerm::logical_machine_binary(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                operand,
+                MachineTerm::constant(1),
+            );
+        }
+        let root = KernelTermImport::default().condition(&ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: Box::new(operand),
+            right: Box::new(MachineTerm::Variable(variable)),
+        });
+        let names = BTreeMap::from([(variable, "x".into())]);
+        let exports = KernelTermExport::machine_export_count();
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            raise_kernel_term(
+                &root,
+                ParameterBinding::default(),
+                &ExecutionState::new(),
+                &names,
+            )
+        });
+        assert!(surface.is_some());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work <= size * 64 + 128, "{size} operations: {work} work");
+    }
+}
