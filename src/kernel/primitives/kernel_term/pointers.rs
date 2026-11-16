@@ -59,6 +59,19 @@ impl SharedPointerValue {
     pub(crate) fn node(&self) -> &KernelPointerValue {
         &self.0
     }
+    pub(in crate::kernel) fn retained_nonaddress_metadata(&self) -> RetainedPointerMetadata<'_> {
+        let value = self.node();
+        let qualifiers = value.qualifiers.as_deref();
+        RetainedPointerMetadata {
+            program_type: value.program_type,
+            volatile: qualifiers.is_some_and(|q| q.volatile),
+            constant: qualifiers.is_some_and(|q| q.constant),
+            extent_known: qualifiers.is_some_and(|q| q.extent_known),
+            declared_class: qualifiers.and_then(|q| q.object_class.as_ref()),
+            evidence: qualifiers.and_then(|q| q.object_type_evidence.as_ref()),
+            local_reference: qualifiers.and_then(|q| q.local_reference.as_ref()),
+        }
+    }
     /// Rebind only the declaration's type and cv qualifiers. Expression
     /// children and evidence remain shared, including default qualifier shape.
     pub(crate) fn with_binding_type_and_qualifiers(

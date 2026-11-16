@@ -320,6 +320,12 @@ pub enum Expression {
     ChunkOptionTag {
         option: String,
     },
+    /// Whether the enum `value` is its variant `variant`: the test a
+    /// `match` on a crate iterator's `next()` makes for `Some`.
+    VariantIs {
+        value: Box<Self>,
+        variant: String,
+    },
     ChunkRemainder {
         iterator: String,
     },
@@ -329,6 +335,10 @@ pub enum Expression {
     CallResult {
         call: u32,
         function: String,
+        /// Whether this read leaves the result for a later read: a `match`'s
+        /// test of it, before the arm that reads its payload.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        keeps: bool,
     },
     ArrayToSlice {
         array: Box<Self>,

@@ -197,6 +197,35 @@ impl ExecutionEvidence {
     }
 }
 
+/// Publication of a completing statement, retaining its selected fact delta.
+/// The combined stream is still the complete candidate presentation. The delta
+/// is what its producer added beyond the context already retained on the trace.
+#[derive(Clone)]
+pub(crate) struct CompletedExecutionFacts {
+    pub(in crate::kernel) facts: ExecutionFacts,
+    pub(in crate::kernel) additional: Option<ExecutionFacts>,
+}
+
+impl CompletedExecutionFacts {
+    pub(crate) fn from_facts(facts: ExecutionFacts) -> Self {
+        Self {
+            facts,
+            additional: None,
+        }
+    }
+
+    pub(crate) fn push(&mut self, fact: ExecutionPureFact) {
+        self.facts.push(fact.clone());
+        if let Some(additional) = &mut self.additional {
+            additional.push(fact);
+        }
+    }
+
+    pub(crate) fn into_facts(self) -> ExecutionFacts {
+        self.facts
+    }
+}
+
 /// What the kernel established along one open trace: every fact of each
 /// context recorded on it, every case fact it admitted, and every effect it
 /// retained. It is extended at each recorded transition by what that
@@ -9035,6 +9064,38 @@ impl ExecutionProofCore {
         self.publication_case_facts.clone()
     }
 
+    /// Keep the completing statement's explicit delta beside its full
+    /// publication. Completion already has the trace's cases and effects.
+    pub(crate) fn completed_execution_facts(
+        &self,
+        delta: &ExecutionFacts,
+    ) -> CompletedExecutionFacts {
+        let facts = self
+            .completed_path_facts_with_effects(delta)
+            .unwrap_or_else(|| {
+                // Preserve the existing overlap route's publication order.
+                let mut facts = self.completed_path_facts(delta);
+                let mut seen = std::collections::BTreeSet::new();
+                let accepted = self
+                    .effect_facts
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, fact)| {
+                        ((is_memory_effect(fact.proposition()) || fact.is_certified())
+                            && !facts.contains(fact)
+                            && seen.insert(fact))
+                        .then_some(index)
+                    })
+                    .collect::<Vec<_>>();
+                facts.extend_shared(&self.effect_facts.selected(&accepted));
+                facts
+            });
+        CompletedExecutionFacts {
+            facts,
+            additional: Some(delta.clone()),
+        }
+    }
+
     /// Candidate publication retains the admitted case prefix and appends
     /// only this statement's own evidence. This carries no theorem authority.
     pub(crate) fn completed_path_facts(&self, delta: &ExecutionFacts) -> ExecutionFacts {
@@ -11914,8 +11975,8 @@ impl ExecutionProofCore {
             let body_outcome = candidate.outcome().clone();
             // The kernel built this path's context as the path advanced.
             // It holds the completing statement's context, every case fact
-            // and every effect, so only the facts the candidate published
-            // after its case facts are new here. A path with post-return
+            // and every effect. Import only the completing producer's delta
+            // when it retained one. A path with post-return
             // exchanges completes under their facts too, and is rebuilt.
             let path_context = (publication_end == events.len())
                 .then(|| {
@@ -11938,7 +11999,17 @@ impl ExecutionProofCore {
             let mut boundary_assumptions = statement_assumptions.clone();
             if let Some(path_context) = path_context {
                 boundary_assumptions = path_context.facts.clone();
-                for fact in candidate.facts().facts_from(path_context.cases) {
+                let _publication_delta = crate::instrumentation::OperationTiming::new(
+                    function.name(),
+                    "proof completion",
+                    "completion fact delta",
+                );
+                let additional = match &candidate.data.completion_delta {
+                    Some(delta) => delta.facts_from(0),
+                    // Older candidate producers do not yet retain their delta.
+                    None => candidate.facts().facts_from(path_context.cases),
+                };
+                for fact in additional {
                     boundary_assumptions = retain_completed_path_fact(boundary_assumptions, fact);
                 }
             } else {

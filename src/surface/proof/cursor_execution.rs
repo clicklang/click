@@ -346,13 +346,8 @@ pub(super) fn apply_branch_interface_with_proof_facts(
 fn completed_execution_facts(
     core: &crate::kernel::proof::ExecutionProofCore,
     delta: &ExecutionFacts,
-) -> ExecutionFacts {
-    core.completed_path_facts_with_effects(delta)
-        .unwrap_or_else(|| {
-            let mut facts = core.completed_path_facts(delta);
-            append_execution_effect_facts(&mut facts, &core.effect_facts);
-            facts
-        })
+) -> crate::kernel::proof::CompletedExecutionFacts {
+    core.completed_execution_facts(delta)
 }
 
 pub(super) fn append_execution_effect_facts(
@@ -2065,7 +2060,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
             append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
             *available_pure_facts = transition.pure_facts.clone();
             let completed =
-                crate::kernel::program_function_execution_candidates_from_outcomes_with_loan_evidence(
+                crate::kernel::program_function_execution_candidates_from_completed_outcomes(
                     prepared.execution_start_state.clone(),
                     function.clone(),
                     arguments.to_vec(),
@@ -2806,7 +2801,7 @@ fn execute_step_from_frontier_position_selecting_path(
         append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
         let state: &mut ExecutionState = &mut execution.core.state;
         let completed =
-            crate::kernel::program_function_execution_candidates_from_outcomes_with_loan_evidence(
+            crate::kernel::program_function_execution_candidates_from_completed_outcomes(
                 execution_start_state.clone(),
                 function.clone(),
                 arguments.to_vec(),
@@ -3253,7 +3248,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     &returned.execution_facts,
                     &returned.obligations,
                     outcome,
-                    completed_execution_facts,
+                    completed_execution_facts.into_facts(),
                     obligations,
                     returned_facts,
                     loan_evidence,
@@ -3611,7 +3606,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 }
                 append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
                 let completed =
-                    crate::kernel::program_function_execution_candidates_from_outcomes_with_loan_evidence(
+                    crate::kernel::program_function_execution_candidates_from_completed_outcomes(
                         execution_start_state.clone(),
                         function.clone(),
                         arguments.to_vec(),
@@ -3732,7 +3727,7 @@ fn execute_step_from_frontier_position_selecting_path(
             )];
             append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
             let completed =
-                crate::kernel::program_function_execution_candidates_from_outcomes_with_loan_evidence(
+                crate::kernel::program_function_execution_candidates_from_completed_outcomes(
                     execution_start_state.clone(),
                     function.clone(),
                     arguments.to_vec(),
@@ -4194,7 +4189,7 @@ fn append_pending_loop_returns(
     core: &mut crate::kernel::proof::ExecutionProofCore,
     completed_outcomes: &mut Vec<(
         FunctionOutcome,
-        ExecutionFacts,
+        crate::kernel::proof::CompletedExecutionFacts,
         Vec<ProofObligation>,
         crate::kernel::CheckedLoanCallEvidenceSequence,
     )>,
@@ -4202,7 +4197,7 @@ fn append_pending_loop_returns(
     for pending in core.complete_pending_loop_returns() {
         completed_outcomes.push((
             pending.outcome,
-            pending.execution_facts,
+            crate::kernel::proof::CompletedExecutionFacts::from_facts(pending.execution_facts),
             pending.obligations,
             pending.loan_evidence,
         ));

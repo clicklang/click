@@ -86,6 +86,59 @@ only one. Existing produce-then-check code is a defect, tracked in
 [`roadmap/scaling.md`](https://github.com/clicklang/click/blob/master/roadmap/scaling.md)
 cause 4.
 
+### Ownership construction and raw admission
+
+An ownership transition needs a reason to introduce its output: an entry
+assumption, a fresh allocation, a selected transfer, or a checked resource
+exchange. Failing to discover an overlap does not supply that reason. Trace
+the producer and the frame it constructs before changing admission checks.
+Checking the same ownership description in isolation does not establish its
+relationship to a withheld frame.
+
+The current compatibility admission API mixes several callers.
+`try_compose_into_valid_context_delaying_normalization` delegates to
+`try_compose_with_legacy_discovery_and_occurrences`: it first calls
+`admit_without_discovery`, then resumes legacy discovery if indexed coverage
+is unsupported. The indexed operation returns an incomplete pending admission,
+not a valid successor, in that case. The compatibility wrapper can enumerate
+aliases and related roots even though its caller supplied every resource.
+Its name is not evidence that it satisfies the fast-part contract. See
+[`ownership_admission.rs`](https://github.com/clicklang/click/blob/master/src/kernel/primitives/resource_algebra/ownership_admission.rs)
+and [`legacy_search.rs`](https://github.com/clicklang/click/blob/master/src/kernel/primitives/resource_algebra/legacy_search.rs).
+
+Distinguish these producer boundaries:
+
+| Producer or caller | Ownership evidence and current boundary |
+| --- | --- |
+| Instance unfold | `unfold_instance_body` consumes the selected parent and exposes its constructed body in the retained frame. It checks exclusive identities without rediscovering memory overlap. Evaluating the body description earlier is a separate operation. |
+| Return-clause evaluation | `EvaluatedReturnResources::admit_clause` records emitted occurrences and their origins, but still validates the growing output group through compatibility admission. This precedes restoration; a flat restoration measurement does not cover this earlier validation. |
+| Return composition | `restore_entry_borrows` uses selected entry borrows, consumed-cell transfers, and fresh-allocation provenance to construct the recognized outputs in the residual frame. `PreparedReturnComposition::finish` sends the remaining descriptions through compatibility admission. `ValidateDescriptions` deliberately does not turn a role marker into transfer evidence. |
+| Produced composite boundary | Construction of the body's internal partition does not itself record a transfer against the destination frame. `produced_composite_frontier_conflict` checks that boundary through indexed admission or legacy discovery. Audit the producer's frame evidence before removing this check. |
+| Iterated `take` and `scatter` | These consume or update an iterated owner and expose selected memory, but still pass the exposed memory through compatibility admission. Their checked exchange and retained frame are the starting point for removing rediscovery; no complete-operation fast bound follows from not enumerating the iterated range. |
+| Local-reference and loan recovery | A reserved owner or escrow supplies provenance, but `ReservedLocalScalarOwner::restore_into`, temporary local access, and stable-view recovery still use compatibility admission. Trace the reservation, intervening operations, and destination frame together. |
+| Worker completion and loop-frame exchange | Checked output inside a worker or narrowed loop body is not by itself evidence about the current parent or withheld frame. These callers still validate the newly composed boundary. A replacement must construct that boundary from the operation's transfer evidence. |
+| Instance and authority bookkeeping | Some callers add only an instance identity or an exclusive authority. Those facts do not have a raw memory footprint for alias discovery; do not classify every use of the generic API as a memory scan. |
+
+The return paths are in
+[`mixed_return_resources.rs`](https://github.com/clicklang/click/blob/master/src/kernel/functions/mixed_return_resources.rs)
+and [`functions.rs`](https://github.com/clicklang/click/blob/master/src/kernel/functions.rs).
+The regressions `raw_description_mode_never_authorizes_restoration_from_a_role_marker`
+and `a_consumed_cell_cannot_supply_two_return_occurrences` preserve the
+distinction between a description and a selected, single-use transfer.
+The alias diagnostic `raw_ownership_admission_must_not_search_ambient_pointer_aliases`
+measures raw insertion separately from instance unfold. It does not establish
+the cost or necessity of every caller above.
+
+These are current implementation boundaries, not exceptions to construction
+without re-validation. Remove repeated checking where the producer already
+constructs the frame relationship. Where that relationship is missing, put
+the necessary construction inside the producing operation and retain the
+refusals for descriptions that have no such justification. Making legacy
+overlap discovery faster is not a substitute for identifying the ownership
+rule.
+
+### Existing construction paths
+
 Current instances of the rule:
 
 - A named-instance fold constructs its successor, checked facts, and

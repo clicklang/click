@@ -1778,4 +1778,8 @@ pub enum RustIteratorKind {
     /// `RangeInclusive`: `_start`, `_end`, and `_done`, whether it has
     /// yielded its end.
     RangeInclusive,
+    /// A crate's own struct that implements `Iterator`: the struct itself,
+    /// whose `next` the loop calls. A proof reads its fields as the
+    /// program's local `iter` holds them, `iter.n`.
+    User,
 }

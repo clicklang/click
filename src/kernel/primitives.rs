@@ -2379,6 +2379,19 @@ struct PointerQualifiers {
     local_reference: Option<super::loans::LocalScalarReference>,
 }
 
+/// Exact non-address metadata shared by native and retained certification.
+/// Optional default qualifier storage is not itself part of this reading.
+#[derive(PartialEq, Eq)]
+pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
+    program_type: ProgramType,
+    volatile: bool,
+    constant: bool,
+    extent_known: bool,
+    declared_class: Option<&'a crate::kernel::effective_type::CAccessClass>,
+    evidence: Option<&'a ObjectTypeEvidence>,
+    local_reference: Option<&'a super::loans::LocalScalarReference>,
+}
+
 /// The subobject a pointer was formed from, narrower than its complete
 /// object (`design/pointer-subobject-extents.md`). C11 6.5.6p7-p8 and C++
 /// [expr.add] bound pointer arithmetic and access by the designated object,
@@ -2627,21 +2640,19 @@ impl PointerValue {
 
     /// Exact retained qualifiers for syntax certification. Address-bearing
     /// metadata is compared separately through its written term structure.
-    pub(in crate::kernel) fn retained_nonaddress_metadata_eq(&self, other: &Self) -> bool {
-        let declared_class = |value: &Self| {
-            value
+    pub(in crate::kernel) fn retained_nonaddress_metadata(&self) -> RetainedPointerMetadata<'_> {
+        RetainedPointerMetadata {
+            program_type: self.program_type,
+            volatile: self.pointee_volatile(),
+            constant: self.pointee_constant(),
+            extent_known: self.extent_is_known(),
+            declared_class: self
                 .qualifiers
                 .as_ref()
-                .and_then(|q| q.object_class.as_ref())
-                .cloned()
-        };
-        self.program_type == other.program_type
-            && self.pointee_volatile() == other.pointee_volatile()
-            && self.pointee_constant() == other.pointee_constant()
-            && self.extent_is_known() == other.extent_is_known()
-            && declared_class(self) == declared_class(other)
-            && self.object_origin_evidence() == other.object_origin_evidence()
-            && self.local_reference() == other.local_reference()
+                .and_then(|q| q.object_class.as_ref()),
+            evidence: self.object_origin_evidence(),
+            local_reference: self.local_reference(),
+        }
     }
 
     pub(crate) fn pointee_volatile(&self) -> bool {
@@ -15530,8 +15541,11 @@ pub struct FunctionExecutionCandidate {
 /// An immutable candidate record retained across distinct terminal frontiers.
 /// Adding facts shares the original outcome and obligations as well as the
 /// unchanged fact streams. This is untrusted publication, never a theorem.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub(super) struct FunctionExecutionCandidateData {
+    /// Selected producer delta for a retained completion context. It changes
+    /// neither the candidate's facts nor its untrusted publication semantics.
+    pub(super) completion_delta: Option<ExecutionFacts>,
     pub(super) outcome: Arc<FunctionOutcome>,
     pub(super) facts: ExecutionFacts,
     pub(super) effect_facts: ExecutionFacts,
@@ -15541,6 +15555,18 @@ pub(super) struct FunctionExecutionCandidateData {
     pub(super) obligations: Arc<Vec<ProofObligation>>,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
 }
+
+impl PartialEq for FunctionExecutionCandidateData {
+    fn eq(&self, other: &Self) -> bool {
+        self.outcome == other.outcome
+            && self.facts == other.facts
+            && self.effect_facts == other.effect_facts
+            && self.effects_public_first == other.effects_public_first
+            && self.obligations == other.obligations
+            && self.loan_evidence == other.loan_evidence
+    }
+}
+impl Eq for FunctionExecutionCandidateData {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SymbolicConditionEvaluation {

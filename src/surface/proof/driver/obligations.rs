@@ -66,6 +66,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 crate::surface::printing::source_click_proposition(disjunction)
             ))
         };
+        if let Ok(closed) = scope.driver().apply_step(ProofStep::Known) {
+            return closed.join();
+        }
         if super::execution_statements::implicit_solve_disabled() {
             return Err(refusal());
         }

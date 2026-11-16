@@ -1666,9 +1666,26 @@ permitted stores or a transition that drops the fact:
   views now use their finite expansion directly. The obsolete second pass
   that repeatedly opened every decidable recursive tail has been removed;
   deeper opening requires explicit unfold steps.
-  Multiple witnesses, existential bodies containing composites, matched and
-  authority cases retain explicitly classified legacy routes. Failure constructing a
-  migrated body refuses the return rather than retrying legacy reconstruction.
+  Flat, unmatched named instances now carry their selected field/argument
+  values and emitted child occurrence IDs through return construction. Fixed
+  parameter memory can carry a consumed-input reservation selected at call
+  entry; model-field pointers do not acquire that custody by matching geometry.
+  Fieldless authority controls carry the actual ledger count observations
+  beside their emitted authority IDs. Exact exclusive-resource indexes check
+  these authority leaves against the retained boundary, including when there
+  is no memory conflict. Ledger identities are never recovered through pointer
+  aliases. Flat matched named instances select one indexed constructor and
+  retain its payload bindings and body; a missing constructor keeps the head
+  opaque, without enumerating variant-refutation premises. Projection uses the
+  constructed body without selecting the arm again. These named-instance
+  fragments preserve the existing owned-unit clause restriction. Multiple
+  witnesses, existential bodies containing composites, named children,
+  field-bearing authority protocols and nested/recursive matched arms retain
+  explicitly classified legacy routes. Specialized producers also return an
+  explicit unsupported result for geometry outside the maintained ownership
+  index; that result dispatches to compatibility without invoking discovery
+  inside construction. A conflicting or invalid migrated body refuses the
+  return rather than retrying legacy reconstruction.
   Monotone memory-evidence admission walks a smaller incoming contract or a
   shared persistent delta, without enumerating absent caller facts. Scalar
   refresh seeks only the equality class's concrete `local:` block interval,

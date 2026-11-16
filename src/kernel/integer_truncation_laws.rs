@@ -5,6 +5,7 @@ use super::prelude::*;
 pub(crate) fn integer_truncation_law_requirements(name: &str) -> Option<usize> {
     Some(match name {
         "click::integer::truncation_identity" => 1,
+        "click::integer::quotient_negate_divisor" | "click::integer::remainder_negate_divisor" => 2,
         "click::integer::positive_divisor_remainder_lower"
         | "click::integer::positive_divisor_remainder_upper" => 2,
         "click::integer::nonnegative_dividend_remainder"
@@ -31,7 +32,26 @@ pub(crate) fn prove_integer_truncation_law(
         d.clone().into(),
     ));
     let remainder = IntegerTerm::truncating_remainder(n.clone(), d.clone());
+    let negative = |term: IntegerTerm| IntegerTerm::Negate(term.into());
+    let negative_nonzero = condition(ConditionTerm::IntegerNotEqual(
+        negative(d.clone()).into(),
+        zero.clone().into(),
+    ));
     let (premises, conclusion) = match name {
+        "click::integer::quotient_negate_divisor" => (
+            vec![nonzero, negative_nonzero],
+            condition(ConditionTerm::IntegerEqual(
+                IntegerTerm::truncating_quotient(n.clone(), d.clone()).into(),
+                negative(IntegerTerm::truncating_quotient(n, negative(d))).into(),
+            )),
+        ),
+        "click::integer::remainder_negate_divisor" => (
+            vec![nonzero, negative_nonzero],
+            condition(ConditionTerm::IntegerEqual(
+                remainder.into(),
+                IntegerTerm::truncating_remainder(n, negative(d)).into(),
+            )),
+        ),
         "click::integer::truncation_identity" => {
             let quotient = IntegerTerm::truncating_quotient(n.clone(), d.clone());
             let reconstructed = IntegerTerm::add(IntegerTerm::multiply(quotient, d), remainder);
@@ -100,8 +120,10 @@ mod tests {
 
     const N: Variable = Variable(310_001);
     const D: Variable = Variable(310_002);
-    const NAMES: [&str; 5] = [
+    const NAMES: [&str; 7] = [
         "click::integer::truncation_identity",
+        "click::integer::quotient_negate_divisor",
+        "click::integer::remainder_negate_divisor",
         "click::integer::positive_divisor_remainder_lower",
         "click::integer::positive_divisor_remainder_upper",
         "click::integer::nonnegative_dividend_remainder",
@@ -124,6 +146,7 @@ mod tests {
             IntegerTerm::Variable(v) if *v == N => n.clone(),
             IntegerTerm::Variable(v) if *v == D => d.clone(),
             IntegerTerm::Constant(c) => c.clone(),
+            IntegerTerm::Negate(a) => -integer(a, n, d),
             IntegerTerm::Add(a, b) => integer(a, n, d) + integer(b, n, d),
             IntegerTerm::Subtract(a, b) => integer(a, n, d) - integer(b, n, d),
             IntegerTerm::Multiply(a, b) => integer(a, n, d) * integer(b, n, d),

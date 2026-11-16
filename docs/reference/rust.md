@@ -1379,8 +1379,8 @@ the element's address and a copied pattern `(i, &x)` reads it.
 [`design/charon-trial/enumerate`](https://github.com/clicklang/click/blob/master/design/charon-trial/enumerate/enumerate.click)
 proves the last index a loop yields with `iter.count == xs.len() - iter.len()`
 and `iter.as_slice() == xs + iter.count`.
-`.iter_mut()`, by-value array iteration and custom iterators remain outside
-this subset.
+`.iter_mut()` and by-value array iteration remain outside this subset; a
+crate's own iterator is [below](#crate-iterators).
 
 ## Range loops
 
@@ -1504,6 +1504,56 @@ and regroups `(bytes + k) + 4u64` as `bytes + (k + 4u64)` from
 ([full-width pointer association](tactics/index.md#normalization-with-selected-premises),
 [proof](https://github.com/clicklang/click/blob/master/examples/rust-chunks-exact/chunks.click)).
 A read through the chunk, `chunk[3]`, is a read of `bytes` at `k + 3`.
+
+## Crate iterators
+
+A `for` loop over a value of a crate struct with its own `impl Iterator`
+calls that `next` each pass, as written. The struct is the loop's
+iterator, so a proof reads its fields as `iter.<field>` inside the loop and
+`loop(i).iter.<field>` anywhere. `next` is an ordinary crate function under
+its own contract, declared in the sidecar's `impl Iterator for S` block and
+proved from its body. The exporter checks that `into_iter` is the core
+`impl<I: Iterator> IntoIterator for I`, which moves the struct into the
+loop's iterator, and that `next` is the crate's local, non-generic
+`Iterator::next` for that struct.
+
+The `Option` that `next` returns is no local. The loop tests the call's
+result for `Some` without ending it, and the `Some` arm's payload read binds
+the loop variable and ends it. A pass is decided by `next`'s contract. When
+the contract's cases are stated over the iterator's fields, a `preserve`
+script splits on the same fields with a proof `if` and states the case's
+premise in the contract's own form before the call:
+
+```text
+fn count(n: u32) -> u32 {
+    ensures result == n;
+} by {
+    step_until(loop(0));
+    loop {
+        decreases iter.n;
+        invariant to_integer(passes) + to_integer(iter.n) == to_integer(n);
+        preserve by {
+            if 0u32 < iter.n {
+                mark iteration;
+                have iter.n != 0u32;
+                have passes <= 4294967294u32;
+                step_until(back_edge());
+                have to_integer(iter.n) == to_integer(at(iteration, iter.n)) - 1;
+            } else {
+                have iter.n == 0u32;
+                step(); step(); step();
+            }
+        }
+    }
+    step_until(function.exit);
+    solve();
+}
+```
+
+[`design/charon-trial/user-iterator`](https://github.com/clicklang/click/blob/master/design/charon-trial/user-iterator/countdown.click)
+proves the count of a countdown's passes and the last value it yields.
+Generic iterators, iterator adapters over a crate iterator and a `next`
+reached through a trait object remain outside this subset.
 
 ## Moves and drops
 
