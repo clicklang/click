@@ -1653,9 +1653,21 @@ permitted stores or a transition that drops the fact:
   neighbour per key without enumerating aliases or endpoint classes. A missed
   merge retains both facts. Internal composition still checks ownership using
   the full assumptions through incremental admission. Ordinary body producers
-  retain their existing normalization. Multiple
-  witnesses, existential bodies containing composites, recursive, matched
-  and authority cases retain explicitly classified legacy routes. Failure constructing a
+  retain their existing normalization. Guarded direct recursive bodies without
+  witnesses or named fields now construct a finite frontier: open the selected
+  body once and retain each recursive child with its emitted occurrence ID.
+  Known deeper guards do not trigger further opening; an undecided root stays
+  folded, and a false root contributes emp. Visible leaves use incremental
+  admission and projections reuse this same construction. Recursive frontiers
+  use the bounded optional normalization described above. Every return
+  projection carries its one-level frontier, including explicit legacy
+  projections; escaping-loan recovery no longer reconstructs a missing frontier.
+  Call precondition, canonical-entry, population-entry and dependent-return
+  views now use their finite expansion directly. The obsolete second pass
+  that repeatedly opened every decidable recursive tail has been removed;
+  deeper opening requires explicit unfold steps.
+  Multiple witnesses, existential bodies containing composites, matched and
+  authority cases retain explicitly classified legacy routes. Failure constructing a
   migrated body refuses the return rather than retrying legacy reconstruction.
   Monotone memory-evidence admission walks a smaller incoming contract or a
   shared persistent delta, without enumerating absent caller facts. Scalar

@@ -164,7 +164,11 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     };
     if !matches!(
         format,
-        MachineIntegerType::Int32
+        MachineIntegerType::Int8
+            | MachineIntegerType::UInt8
+            | MachineIntegerType::Int16
+            | MachineIntegerType::UInt16
+            | MachineIntegerType::Int32
             | MachineIntegerType::UInt32
             | MachineIntegerType::Int64
             | MachineIntegerType::UInt64
@@ -1089,6 +1093,10 @@ mod borrowed_comparison_tests {
     #[test]
     fn literal_native_orders_are_builtin_truths_without_ambient_facts() {
         for format in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt16,
             MachineIntegerType::Int32,
             MachineIntegerType::UInt32,
             MachineIntegerType::Int64,

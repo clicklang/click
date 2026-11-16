@@ -365,6 +365,24 @@ linear work and zero float exports. All 2,019 API, specification, execution-valu
 and scaling tests and quality checks passed. Regular float fixtures passed with
 zero fact-stability differences.
 
+### 9q Mixed call assembly
+
+Machine and Boolean call results assemble supported typed arguments directly
+from common roots. Float expressions, logical algebraic fields, program-parameter
+envelopes, Integer and Boolean operands, and complete shared pointer values retain
+their argument identity. Native opaque descriptors and unsupported carriers use
+the existing application-owned compatibility boundary. Existing float/algebraic
+call producers remain shared; pointer-result metadata and native Integer-result
+storage remain explicit boundaries.
+
+Validation: native/retained result and scoped-context parity covers mixed argument
+families, program-parameter envelopes and complete pointer payloads. Growing float
+arguments use linear work with zero float exports. All 2,021 API, specification,
+execution-value and scaling tests passed. The six combined float, mixed-call and
+pointer-cast regressions and three serial scaling checks also passed with the
+9o cast fix integrated. Quality and four regular mixed-call proof fixtures passed
+with zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

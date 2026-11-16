@@ -35,7 +35,7 @@ mod bindings;
 mod object_address;
 use algebraic_result::{AlgebraicFieldResult, AlgebraicResult};
 mod result;
-use result::{SpecCallArgument, SpecValue, call_arguments};
+use result::{SpecCallArgument, SpecValue, call_arguments, common_call_arguments};
 
 /// One lowering path: a typed result plus its separately scoped facts and debts.
 /// Mapping the representation of a result does not evaluate or discharge either.
@@ -7931,12 +7931,19 @@ fn evaluate_spec_pure_function_application_paths_in(
         if !budget.machine_result_production_disabled
             && let Some(format) = MachineIntegerType::from_program_type(result_type)
         {
-            let application =
-                SharedPureApplication::intern(name.to_owned(), call_arguments(arguments));
+            let value = if let Some(operands) = common_call_arguments(&arguments) {
+                KernelTerm::checked_call(
+                    KernelType::Program(result_type),
+                    name.to_owned(),
+                    operands,
+                )
+            } else {
+                let application =
+                    SharedPureApplication::intern(name.to_owned(), call_arguments(arguments));
+                KernelTermImport::default().machine_call(format, &application)
+            };
             results.push(SpecExpressionPath {
-                value: KernelTermImport::default()
-                    .machine_call(format, &application)
-                    .into(),
+                value: value.into(),
                 facts,
                 obligations,
             });
@@ -7961,6 +7968,15 @@ fn evaluate_spec_pure_function_application_paths_in(
             continue;
         }
         if result_type == ProgramType::Bool && !budget.machine_result_production_disabled {
+            if let Some(operands) = common_call_arguments(&arguments) {
+                results.push(SpecExpressionPath {
+                    value: KernelTerm::checked_call(KernelType::Bool, name.to_owned(), operands)
+                        .into(),
+                    facts,
+                    obligations,
+                });
+                continue;
+            }
             let retained = arguments
                 .iter()
                 .map(|argument| match argument {
