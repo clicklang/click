@@ -4,8 +4,7 @@
       "language": "rust",
       "sources": {
         "chunks.rs": {}
-      },
-      "iterators": "library"
+      }
     }
   }
 }

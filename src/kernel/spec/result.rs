@@ -19,6 +19,7 @@ impl SpecValue {
                     .retain_pointer_result()
                     .retain_algebraic_result()
                     .retain_float_result()
+                    .retain_boolean_result()
             } else {
                 then_value.clone()
             }));
