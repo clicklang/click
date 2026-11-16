@@ -733,3 +733,82 @@ fn array_argument_state_lookup_ignores_unrelated_recorded_history() {
         "state lookup scanned history: {samples:?}"
     );
 }
+
+#[test]
+fn shared_constructor_spelling_visits_fields_without_exporting_the_tree() {
+    use crate::kernel::{
+        AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, KernelMatch, KernelTermExport,
+        KernelTermImport,
+    };
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut native =
+            KernelMatch::test_scrutinee(vec![
+                AlgebraicValueType::Program(ProgramType::Int32);
+                size
+            ]);
+        native.node = AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields: (0..size)
+                .map(|i| AlgebraicValue::Program(int32(i as u32)))
+                .collect(),
+        };
+        let root = KernelTermImport::default().algebraic(&native);
+        let exports = KernelTermExport::algebraic_export_count();
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            raise_kernel_term(
+                &root,
+                ParameterBinding::default(),
+                &ExecutionState::new(),
+                &BTreeMap::new(),
+            )
+        });
+        let Some(SurfaceTerm::AlgebraicConstructor { arguments, .. }) = surface else {
+            panic!("constructor spelling")
+        };
+        assert_eq!(arguments.len(), size);
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        assert!(work <= 32 * size + 32, "{size} fields: {work} work");
+    }
+}
+
+#[test]
+fn nested_shared_constructors_export_only_the_named_leaf() {
+    use crate::kernel::{
+        AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, KernelMatch, KernelTermExport,
+        KernelTermImport,
+    };
+    for size in [8, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut native = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Algebraic {
+            name: "MatchScope".into(),
+            arguments: vec![],
+        }]);
+        let AlgebraicTermNode::Variable(variable) = native.node else {
+            panic!("named leaf")
+        };
+        let names = BTreeMap::from([(variable, "payload".into())]);
+        for _ in 0..size {
+            native = crate::kernel::AlgebraicTerm {
+                algebraic_type: native.algebraic_type.clone(),
+                node: AlgebraicTermNode::Constructor {
+                    variant: "Arm".into(),
+                    fields: vec![AlgebraicValue::Algebraic(native)],
+                },
+            };
+        }
+        let root = KernelTermImport::default().algebraic(&native);
+        let exports = KernelTermExport::algebraic_export_count();
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            raise_kernel_term(
+                &root,
+                ParameterBinding::default(),
+                &ExecutionState::new(),
+                &names,
+            )
+        });
+        assert!(surface.is_some(), "{size} nested constructors");
+        assert!(KernelTermExport::algebraic_export_count() - exports <= 1);
+        assert!(work <= 64 * size + 64, "{size} constructors: {work} work");
+    }
+}
