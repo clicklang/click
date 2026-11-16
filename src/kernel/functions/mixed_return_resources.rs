@@ -2,7 +2,7 @@
 use super::*;
 
 /// A checked call consumed this selected flat owner and promises the same
-/// scalar footprint on return. This is permission to move ownership back into
+/// fixed footprint on return. This is permission to move ownership back into
 /// its residual frame, never permission to admit an arbitrary description.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct ConsumedCellReturn {
@@ -23,10 +23,10 @@ impl ConsumedCellReturns {
         let parameters = interface
             .parameters()
             .iter()
-            .filter(|parameter| parameter.program_type() == ProgramType::Int32Pointer)
+            .filter(|parameter| parameter.program_type().is_object_pointer())
             .map(|parameter| parameter.binding_name())
             .collect::<BTreeSet<_>>();
-        let mut inputs = BTreeMap::<BindingName, VecDeque<ConsumedCellReturn>>::new();
+        let mut inputs = BTreeMap::<FixedMemoryKey, VecDeque<ConsumedCellReturn>>::new();
         for (checked, source) in plan
             .transferred_ownership
             .iter()
@@ -41,8 +41,7 @@ impl ConsumedCellReturns {
             else {
                 continue;
             };
-            let Some(parameter) =
-                scalar_parameter(input, &parameters, ResourceTransferRole::Consume)
+            let Some(key) = fixed_memory_key(input, &parameters, ResourceTransferRole::Consume)
             else {
                 continue;
             };
@@ -57,21 +56,20 @@ impl ConsumedCellReturns {
                 continue;
             }
             inputs
-                .entry(parameter.clone())
+                .entry(key)
                 .or_default()
                 .push_back(ConsumedCellReturn { input: *source });
         }
         let mut outputs = BTreeMap::new();
         for (index, output) in interface.resource_ensures().iter().enumerate() {
-            let Some(parameter) =
-                scalar_parameter(output, &parameters, ResourceTransferRole::Produce)
+            let Some(key) = fixed_memory_key(output, &parameters, ResourceTransferRole::Produce)
             else {
                 continue;
             };
             if output.state_source() != ResourceStateSource::Post {
                 continue;
             }
-            if let Some(input) = inputs.get_mut(parameter).and_then(VecDeque::pop_front) {
+            if let Some(input) = inputs.get_mut(&key).and_then(VecDeque::pop_front) {
                 outputs.insert(index, input);
             }
         }
@@ -83,28 +81,48 @@ impl ConsumedCellReturns {
     }
 }
 
-fn scalar_parameter<'a>(
-    spec: &'a ResourceSpec,
+// Retain the bound's type as well as its literal value: byte-equivalent
+// spellings and width conversions are not new transfer evidence.
+type FixedMemoryKey = (BindingName, ProgramValue, ProgramValue, u32);
+
+fn fixed_memory_key(
+    spec: &ResourceSpec,
     parameters: &BTreeSet<&BindingName>,
     role: ResourceTransferRole,
-) -> Option<&'a BindingName> {
-    use crate::kernel::program_expression::int32_literal;
+) -> Option<FixedMemoryKey> {
     let ResourceTerm::Memory(segment) = spec.term() else {
         return None;
     };
     let ProgramExpression::Variable(parameter) = &segment.base else {
         return None;
     };
-    (spec.role() == role
-        && spec.access() == ResourceAccessMode::Own
-        && spec.quantity() == &ResourceQuantity::One
-        && spec.guard().is_none()
-        && segment.guard().is_none()
-        && segment.start == int32_literal(0)
-        && segment.end == int32_literal(1)
-        && segment.element_width() == 4
-        && parameters.contains(parameter))
-    .then_some(parameter)
+    if spec.role() != role
+        || spec.access() != ResourceAccessMode::Own
+        || spec.quantity() != &ResourceQuantity::One
+        || spec.guard().is_some()
+        || segment.guard().is_some()
+        || !parameters.contains(parameter)
+    {
+        return None;
+    }
+    Some((
+        parameter.clone(),
+        fixed_memory_bound(&segment.start)?,
+        fixed_memory_bound(&segment.end)?,
+        segment.element_width(),
+    ))
+}
+
+fn fixed_memory_bound(expression: &ProgramExpression) -> Option<ProgramValue> {
+    let ProgramExpression::Value(value) = expression else {
+        return None;
+    };
+    match value {
+        ProgramValue::Int32(bits32_constant!(_))
+        | ProgramValue::Int64(int64_constant!(_))
+        | ProgramValue::UInt64(uint64_constant!(_)) => Some(value.clone()),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

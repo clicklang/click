@@ -910,3 +910,250 @@ fn a_borrowed_composites_post_footprint_cannot_overlap_a_transferred_cell() {
         Err(RuntimeError::ProducedCompositeOverlapsHeldResource { .. })
     ));
 }
+
+pub(super) fn fixed_range_contract(
+    pointer_type: ProgramType,
+    input: MemorySegment,
+    output: MemorySegment,
+) -> ProgramFunction {
+    program_function(
+        ProgramType::Void,
+        "fixed_range_transfer",
+        vec![program_parameter("p", pointer_type)],
+        program_skip(),
+    )
+    .with_resource_summary(
+        vec![
+            ResourceSpec::owned_memory(input.with_uninitialized(true))
+                .with_role(ResourceTransferRole::Consume),
+        ],
+        vec![
+            ResourceSpec::owned_memory(output)
+                .with_role(ResourceTransferRole::Produce)
+                .with_state_source(ResourceStateSource::Post),
+        ],
+    )
+}
+
+#[test]
+fn fixed_range_transfers_preserve_typed_widths_and_partial_frames() {
+    use crate::kernel::program_expression::{int32_literal, int64_literal, variable};
+    for (pointer_type, width, start, end) in [
+        (ProgramType::UInt8Pointer, 1, 2, 7),
+        (ProgramType::Int16Pointer, 2, 1, 4),
+        (ProgramType::Int64Pointer, 8, 2, 5),
+        (ProgramType::Int32Pointer, 16, 1, 3),
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let pointer = Pointer::symbolic(Variable(8_910_000));
+        let owner = |from, to| {
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                pointer.clone(),
+                MachineTerm::constant(from),
+                MachineTerm::constant(to),
+                width,
+            ))
+        };
+        let original = owner(0, end + 2);
+        let state = ExecutionState::new()
+            .with_memory(Memory::new().with_block(pointer.block.clone(), 1024))
+            .with_local(
+                "p",
+                ProgramValue::typed_pointer(pointer.clone(), pointer_type),
+            )
+            .with_resource_context(
+                ResourceContext::new_with_equalities(&facts).unchecked_with_fact(original.clone()),
+            );
+        let bound = |value: u32| {
+            if width == 8 {
+                int64_literal(i64::from(value))
+            } else {
+                int32_literal(value)
+            }
+        };
+        let segment =
+            MemorySegment::new(variable("p"), bound(start), bound(end)).with_element_width(width);
+        let function = fixed_range_contract(pointer_type, segment.clone(), segment);
+        let transfer = prepare_mixed_scalar(&function, &state, &facts);
+        let selected = transfer
+            .consumed_cell_returns
+            .get(0)
+            .expect("fixed range transfer");
+        assert_eq!(
+            state.resources().owned_fact_for_occurrence(selected.input),
+            Some(&original)
+        );
+        let evaluated = evaluate_mixed_scalar(&function, &state, &transfer, &facts).unwrap();
+        assert_eq!(
+            evaluated.occurrences[0].origin,
+            ReturnOwnershipOrigin::ConsumedCell(selected)
+        );
+        for _ in 0..2 {
+            let (result, mapping) = evaluated
+                .restore_entry_borrows(
+                    transfer.caller_resources_after_requirements.clone(),
+                    ReturnResourceComposition::RestoreEntryBorrows,
+                    &facts,
+                )
+                .unwrap()
+                .finish(&facts)
+                .unwrap();
+            assert_eq!(mapping[0].consumed_input, Some(selected.input));
+            assert!(result.satisfies_fact(&owner(0, end + 2), &facts));
+            let retained = result
+                .without_exact_representation_for_occurrence(mapping[0].destination)
+                .unwrap();
+            assert!(retained.satisfies_fact(&owner(0, start), &facts));
+            assert!(retained.satisfies_fact(&owner(end, end + 2), &facts));
+            assert!(!retained.satisfies_fact(&owner(start, end), &facts));
+        }
+        assert_eq!(state.resources().facts(), &[original]);
+    }
+}
+
+#[test]
+fn fixed_range_matching_retains_bound_types_width_and_single_use() {
+    use crate::kernel::program_expression::{int32_literal, uint64_literal, variable};
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_910_001));
+    let segment =
+        MemorySegment::new(variable("p"), int32_literal(2), int32_literal(5)).with_element_width(8);
+    let function =
+        fixed_range_contract(ProgramType::Int64Pointer, segment.clone(), segment.clone());
+    let state = ExecutionState::new()
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int64Pointer),
+        )
+        .with_memory(Memory::new().with_block(pointer.block.clone(), 1024))
+        .with_resource_context(
+            ResourceContext::new_with_equalities(&facts).unchecked_with_facts([
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                    pointer.clone(),
+                    2u32.into(),
+                    5u32.into(),
+                    8,
+                )),
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                    pointer,
+                    6u32.into(),
+                    8u32.into(),
+                    8,
+                )),
+            ]),
+        );
+    let transfer = prepare_mixed_scalar(&function, &state, &facts);
+    let input = function.contract_interface().resource_requires()[0].clone();
+    let output = |segment| {
+        ResourceSpec::owned_memory(segment)
+            .with_role(ResourceTransferRole::Produce)
+            .with_state_source(ResourceStateSource::Post)
+    };
+    for changed in [
+        MemorySegment::new(variable("p"), int32_literal(3), int32_literal(6)).with_element_width(8),
+        MemorySegment::new(variable("p"), int32_literal(2), int32_literal(6)).with_element_width(8),
+        MemorySegment::new(variable("p"), int32_literal(2), int32_literal(5)).with_element_width(4),
+        MemorySegment::new(variable("p"), uint64_literal(2), uint64_literal(5))
+            .with_element_width(8),
+        MemorySegment::new(variable("p"), variable("index"), int32_literal(5))
+            .with_element_width(8),
+    ] {
+        let changed = function
+            .clone()
+            .with_resource_summary(vec![input.clone()], vec![output(changed)]);
+        assert!(
+            ConsumedCellReturns::prepare(
+                changed.contract_interface(),
+                transfer.stable_view_plan.as_ref().unwrap(),
+                state.resources()
+            )
+            .get(0)
+            .is_none()
+        );
+    }
+    let other =
+        MemorySegment::new(variable("p"), int32_literal(6), int32_literal(8)).with_element_width(8);
+    let reversed = function.clone().with_resource_summary(
+        vec![
+            input.clone(),
+            ResourceSpec::owned_memory(other.clone().with_uninitialized(true))
+                .with_role(ResourceTransferRole::Consume),
+        ],
+        vec![output(other), output(segment.clone())],
+    );
+    let reversed_transfer = prepare_mixed_scalar(&reversed, &state, &facts);
+    for (index, start) in [(0, 6), (1, 2)] {
+        let selected = reversed_transfer.consumed_cell_returns.get(index).unwrap();
+        assert_eq!(
+            state
+                .resources()
+                .owned_fact_for_occurrence(selected.input)
+                .unwrap()
+                .memory_own_range()
+                .unwrap()
+                .constant_start(),
+            Some(start)
+        );
+    }
+    let duplicate =
+        function.with_resource_summary(vec![input], vec![output(segment.clone()), output(segment)]);
+    let selected = ConsumedCellReturns::prepare(
+        duplicate.contract_interface(),
+        transfer.stable_view_plan.as_ref().unwrap(),
+        state.resources(),
+    );
+    assert!(selected.get(0).is_some());
+    assert!(selected.get(1).is_none());
+}
+
+#[test]
+fn fixed_wide_range_returns_keep_their_original_index_kind() {
+    use crate::kernel::program_expression::{uint64_literal, variable};
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_910_002));
+    let range = |start, end| {
+        ResourceFact::own_memory(MemoryRange::new_wide(
+            pointer.clone(),
+            MachineTerm::uint64_constant(start),
+            MachineTerm::uint64_constant(end),
+            8,
+        ))
+    };
+    let state = ExecutionState::new()
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int64Pointer),
+        )
+        .with_memory(Memory::new().with_block(pointer.block.clone(), 1024))
+        .with_resource_context(
+            ResourceContext::new_with_equalities(&facts).unchecked_with_fact(range(0, 8)),
+        );
+    let segment = MemorySegment::new(variable("p"), uint64_literal(2), uint64_literal(5))
+        .with_element_width(8);
+    let function = fixed_range_contract(ProgramType::Int64Pointer, segment.clone(), segment);
+    let transfer = prepare_mixed_scalar(&function, &state, &facts);
+    assert!(transfer.consumed_cell_returns.get(0).is_some());
+    let evaluated = evaluate_mixed_scalar(&function, &state, &transfer, &facts).unwrap();
+    let (result, mapping) = evaluated
+        .restore_entry_borrows(
+            transfer.caller_resources_after_requirements,
+            ReturnResourceComposition::RestoreEntryBorrows,
+            &facts,
+        )
+        .unwrap()
+        .finish(&facts)
+        .unwrap();
+    assert!(
+        result
+            .owned_fact_for_occurrence(mapping[0].destination)
+            .unwrap()
+            .memory_own_range()
+            .unwrap()
+            .wide_bounds()
+            .is_some()
+    );
+    assert!(result.satisfies_fact(&range(0, 8), &facts));
+}
