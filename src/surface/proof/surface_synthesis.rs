@@ -3167,6 +3167,28 @@ fn raise_algebraic_if<'a>(
     })
 }
 
+// Complete pointer call arguments use their exact proof-local source name,
+// just as native arguments do. General pointer-expression synthesis can pick
+// an address spelling with different producer metadata; it is not this
+// argument boundary's policy.
+fn raise_call_argument(
+    term: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::KernelTermNode as Node;
+    match term.node() {
+        Node::PointerValue(value)
+        | Node::PointerRead { value, .. }
+        | Node::PointerArithmetic { value, .. }
+        | Node::PointerCall { value, .. } => Some(SurfaceTerm::ProgramExpression(
+            ProgramExpression::Variable(pointer_names::shared_name(value)?.into()),
+        )),
+        _ => raise_kernel_term(term, parameter_binding, state, bound_variables),
+    }
+}
+
 // Keep the float-only temporaries out of the recursive shared renderer's
 // frame, which is also used for deeply nested integer expressions.
 fn raise_float_expression(
@@ -3202,9 +3224,49 @@ fn raise_float_expression(
             arguments: call
                 .arguments
                 .iter()
-                .map(recurse)
+                .map(|argument| {
+                    raise_call_argument(argument, parameter_binding, state, bound_variables)
+                })
                 .collect::<Option<Vec<_>>>()?,
         },
+        Node::FloatCompare {
+            operator,
+            arguments,
+            ..
+        } => {
+            use crate::kernel::ComparisonOperator as C;
+            proposition_bool_value(ClickProposition::Comparison {
+                left: recurse(&arguments[0])?,
+                operator: match operator {
+                    C::Equal => ComparisonOperator::Equal,
+                    C::NotEqual => ComparisonOperator::NotEqual,
+                    C::LessThan => ComparisonOperator::LessThan,
+                    C::LessEqual => ComparisonOperator::LessEqual,
+                    C::GreaterThan => ComparisonOperator::GreaterThan,
+                    C::GreaterEqual => ComparisonOperator::GreaterEqual,
+                },
+                right: recurse(&arguments[1])?,
+            })
+            .ok()?
+        }
+        Node::FloatClassify {
+            classification,
+            operand,
+            ..
+        } => {
+            use crate::kernel::FloatClassification as C;
+            proposition_bool_value(ClickProposition::FloatClassification {
+                expression: recurse(operand)?,
+                classification: match classification {
+                    C::Finite => syntax::CFloatClassification::Finite,
+                    C::Infinite => syntax::CFloatClassification::Infinite,
+                    C::Zero => syntax::CFloatClassification::Zero,
+                    C::Subnormal => syntax::CFloatClassification::Subnormal,
+                    C::Nan => syntax::CFloatClassification::Nan,
+                },
+            })
+            .ok()?
+        }
         _ => unreachable!("float expression dispatch"),
     })
 }
@@ -3219,6 +3281,12 @@ pub(super) fn raise_kernel_term(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::{KernelTermNode as Node, KernelType};
+    // A program parameter changes the argument carrier, not its spelling.
+    // Peel that envelope without another recursive renderer frame.
+    let term = match term.node() {
+        Node::ProgramParameter { operand } => operand,
+        _ => term,
+    };
     let category = if term.ty() == &KernelType::Integer {
         "integer"
     } else {
@@ -3349,13 +3417,20 @@ fn raise_kernel_term_dispatch(
             arguments: call
                 .arguments
                 .iter()
-                .map(recurse)
+                .map(|argument| {
+                    raise_call_argument(argument, parameter_binding, state, bound_variables)
+                })
                 .collect::<Option<Vec<_>>>()?,
         },
         Node::Call { name, arguments } => {
             let call = SurfaceTerm::Call {
                 name: generic_instance_source_name(name).into(),
-                arguments: arguments.iter().map(recurse).collect::<Option<Vec<_>>>()?,
+                arguments: arguments
+                    .iter()
+                    .map(|argument| {
+                        raise_call_argument(argument, parameter_binding, state, bound_variables)
+                    })
+                    .collect::<Option<Vec<_>>>()?,
             };
             // The root may read a call's word at the other signedness. Its
             // declaration alone cannot recover that selected interpretation.
@@ -3398,44 +3473,6 @@ fn raise_kernel_term_dispatch(
                     C::GreaterEqual => ComparisonOperator::GreaterEqual,
                 },
                 right: recurse(&arguments[1])?,
-            })
-            .ok()?
-        }
-        Node::FloatCompare {
-            operator,
-            arguments,
-            ..
-        } => {
-            use crate::kernel::ComparisonOperator as C;
-            proposition_bool_value(ClickProposition::Comparison {
-                left: recurse(&arguments[0])?,
-                operator: match operator {
-                    C::Equal => ComparisonOperator::Equal,
-                    C::NotEqual => ComparisonOperator::NotEqual,
-                    C::LessThan => ComparisonOperator::LessThan,
-                    C::LessEqual => ComparisonOperator::LessEqual,
-                    C::GreaterThan => ComparisonOperator::GreaterThan,
-                    C::GreaterEqual => ComparisonOperator::GreaterEqual,
-                },
-                right: recurse(&arguments[1])?,
-            })
-            .ok()?
-        }
-        Node::FloatClassify {
-            classification,
-            operand,
-            ..
-        } => {
-            use crate::kernel::FloatClassification as C;
-            proposition_bool_value(ClickProposition::FloatClassification {
-                expression: recurse(operand)?,
-                classification: match classification {
-                    C::Finite => syntax::CFloatClassification::Finite,
-                    C::Infinite => syntax::CFloatClassification::Infinite,
-                    C::Zero => syntax::CFloatClassification::Zero,
-                    C::Subnormal => syntax::CFloatClassification::Subnormal,
-                    C::Nan => syntax::CFloatClassification::Nan,
-                },
             })
             .ok()?
         }
@@ -3504,6 +3541,7 @@ fn raise_kernel_term_dispatch(
                 }],
             }
         }
+        Node::ProgramParameter { .. } => unreachable!("parameter envelope was peeled"),
         Node::PointerCall { call, .. } => recurse(call)?,
         Node::ArrayReference {
             memory, pointer, ..
@@ -3536,7 +3574,9 @@ fn raise_kernel_term_dispatch(
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
         },
-        Node::FloatConvert { .. }
+        Node::FloatCompare { .. }
+        | Node::FloatClassify { .. }
+        | Node::FloatConvert { .. }
         | Node::FloatNegate { .. }
         | Node::FloatBinary { .. }
         | Node::FloatCall(_) => {

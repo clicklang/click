@@ -222,6 +222,124 @@ fn iterator_definition(statement: &mut S) -> Option<(IteratorKind, &mut String)>
 
 /// The iterator `statement` moves: its kind, the local it moves into, and
 /// the local it moves from.
+/// Binds a range loop's variable where `next` yields it. Once the iterator
+/// protocol has split a range's `next` into its two outcomes, the `Option`
+/// it returns is read only by the `match` the split replaced and by the
+/// `Some` arm's first statement, `i = (opt as Some).0`. That statement
+/// becomes the yielding outcome's own binding, `i = iter.start`, neither
+/// outcome builds the `Option`, and its temporary is gone.
+pub(super) fn bind_range_payloads(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    let mut mentions = BTreeMap::<String, usize>::new();
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            if matches!(statement, S::BeginStorage { .. } | S::EndStorage { .. }) {
+                continue;
+            }
+            for name in mentioned_locals(statement) {
+                *mentions.entry(name).or_default() += 1;
+            }
+        }
+        let mut reads = BTreeMap::new();
+        let mut named = BTreeSet::new();
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        if let Some(destination) = call_destination(&block.terminator) {
+            named.insert(destination.clone());
+        }
+        named.extend(reads.into_keys());
+        for name in named {
+            *mentions.entry(name).or_default() += 1;
+        }
+    }
+    let transparent = |statement: &S| {
+        matches!(
+            statement,
+            S::BeginStorage { .. } | S::EndStorage { .. } | S::Site { .. }
+        )
+    };
+    let mut removed = BTreeSet::new();
+    for index in 0..blocks.len() {
+        let (option, target) = match (blocks[index].statements.last(), &blocks[index].terminator) {
+            (
+                Some(S::RangeNext {
+                    option: Some(option),
+                    payload: None,
+                    taken: Some(true),
+                    ..
+                }),
+                T::Goto { target },
+            ) => (option.clone(), *target),
+            _ => continue,
+        };
+        // The replaced `match`, the two outcomes and the binding: nothing
+        // else names the `Option`.
+        if !temporaries.contains(&option) || mentions.get(&option) != Some(&4) {
+            continue;
+        }
+        let Some(position) = blocks[target]
+            .statements
+            .iter()
+            .position(|statement| !transparent(statement))
+        else {
+            continue;
+        };
+        let S::Assign {
+            target: E::Local { name: payload },
+            value:
+                E::EnumField {
+                    base,
+                    variant,
+                    index: 0,
+                    ..
+                },
+        } = &blocks[target].statements[position]
+        else {
+            continue;
+        };
+        if variant != "Some" || !matches!(base.as_ref(), E::Local { name } if *name == option) {
+            continue;
+        }
+        let payload = payload.clone();
+        blocks[target].statements.remove(position);
+        for block in blocks.iter_mut() {
+            for statement in &mut block.statements {
+                if let S::RangeNext {
+                    option: next_option,
+                    payload: next_payload,
+                    taken,
+                    ..
+                } = statement
+                    && next_option.as_deref() == Some(option.as_str())
+                {
+                    *next_option = None;
+                    if *taken == Some(true) {
+                        *next_payload = Some(payload.clone());
+                    }
+                }
+            }
+            // The `match` the protocol replaced, which no block reaches.
+            if matches!(&block.terminator, T::Switch { scrutinee: E::Local { name }, .. } if *name == option)
+            {
+                block.terminator = T::Unreachable;
+            }
+        }
+        removed.insert(option);
+    }
+    if removed.is_empty() {
+        return;
+    }
+    for block in blocks.iter_mut() {
+        block.statements.retain(|statement| match statement {
+            S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !removed.contains(&local.name));
+}
+
 fn iterator_move(statement: &S) -> Option<(IteratorKind, &String, &String)> {
     match statement {
         S::SharedArrayMove { target, source } => Some((IteratorKind::SharedArray, target, source)),
@@ -599,10 +717,16 @@ fn statement_named_locals(statement: &S) -> Vec<&String> {
         | S::Copy { target, source, .. } => vec![target, source],
         S::SharedArrayNext { iterator, option }
         | S::EnumerateNext { iterator, option }
-        | S::RangeNext {
-            iterator, option, ..
-        }
         | S::ChunkNext { iterator, option } => vec![iterator, option],
+        S::RangeNext {
+            iterator,
+            option,
+            payload,
+            ..
+        } => std::iter::once(iterator)
+            .chain(option)
+            .chain(payload)
+            .collect(),
         S::Assert { .. }
         | S::Assign { .. }
         | S::BeginStorage { .. }

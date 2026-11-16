@@ -3491,19 +3491,38 @@ void arena_free(struct region* region) {
         contradiction(k < region->start);
     }
     have viewable(arena->occupied[0..arena->capacity]) by {
-        transport(at(unfolded, viewable(region->arena->occupied[0..region->arena->capacity])), viewable(arena->occupied[0..arena->capacity])) using {
-            at(unfolded, viewable(region->arena->occupied[0..region->arena->capacity]));
-        };
+        observe(at(unfolded, region->arena->occupied)[0..at(unfolded, region->arena->capacity)]);
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == old(region->arena->occupied[k]) } by {
         intro();
         intro();
         extract(0 <= k);
         extract(k < arena->capacity);
-        transport(old(region->arena->occupied[k]) == old(region->arena->occupied[k]), arena->occupied[k] == old(region->arena->occupied[k])) using {
-            0 <= k;
-            k < arena->capacity;
-        };
+        have separate(statement(0).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
+            normalize() using {};
+        }
+        have at(statement(0).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(0).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
+            preserve(separate(statement(0).footprint, memory(at(unfolded, region->arena->occupied)[k])));
+        }
+        have separate(statement(1).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
+            normalize() using {};
+        }
+        have at(statement(1).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(1).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
+            preserve(separate(statement(1).footprint, memory(at(unfolded, region->arena->occupied)[k])));
+        }
+        have separate(statement(2).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
+            normalize() using {};
+        }
+        have at(statement(2).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(2).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
+            preserve(separate(statement(2).footprint, memory(at(unfolded, region->arena->occupied)[k])));
+        }
+        have separate(statement(3).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
+            normalize() using {};
+        }
+        have at(statement(3).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(3).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
+            preserve(separate(statement(3).footprint, memory(at(unfolded, region->arena->occupied)[k])));
+        }
+        known();
     }
     let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, region->start, region->end), { next: region->start });
     loop as clear_occupied {

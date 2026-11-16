@@ -51,6 +51,39 @@ fn charon_range_loops_verify_from_their_bounds() {
     }
 }
 
+/// A range loop's `next` binds the loop variable itself: the `Option` MIR
+/// returns, and the temporary that holds it, are gone from every loop.
+#[test]
+fn charon_range_loops_bind_their_variable_without_an_option() {
+    use click::languages::rust::schema::MirStatement;
+    let p = Project::from_fixture("design/charon-trial/ranges");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    let mut nexts = 0;
+    for function in &prepared.export().functions {
+        let Some(mir) = &function.mir else { continue };
+        for statement in mir.blocks.iter().flat_map(|block| &block.statements) {
+            if let MirStatement::RangeNext {
+                option,
+                payload,
+                taken,
+                ..
+            } = statement
+            {
+                nexts += 1;
+                assert_eq!(option, &None, "{}: {statement:?}", function.name);
+                assert_eq!(
+                    payload.is_some(),
+                    *taken == Some(true),
+                    "{}: {statement:?}",
+                    function.name
+                );
+            }
+        }
+    }
+    assert!(nexts > 0);
+}
+
 /// A range loop's failures name its iterator as the proof does, `iter.end`
 /// inside the loop and `loop(0).iter.start` after it, and its points by the
 /// `for` statement: no compiler temporary or bare region index appears.

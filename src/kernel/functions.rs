@@ -23,7 +23,7 @@ mod literal_objects;
 mod mixed_return_resources;
 mod produced_argument_supply;
 use mixed_return_resources::{
-    ConsumedCellReturn, EvaluatedReturnResources, ProjectedReturnResource,
+    ConsumedCellReturns, EvaluatedReturnResources, ProjectedReturnResource, ReturnOwnershipOrigin,
     project_return_resource_cores,
 };
 pub(in crate::kernel) use mixed_return_resources::{ReturnResourceTransfer, ReturnedConsumedCell};
@@ -199,10 +199,24 @@ fn record_resource_clause_attempt() {
 /// A selected consumed scalar can also return by explicit transfer; other
 /// outputs still pass through description admission.
 #[derive(Clone, Copy)]
-enum ReturnResourceComposition {
+enum ReturnResourceComposition<'a> {
     RestoreEntryBorrows,
-    RestoreConsumedCell(ConsumedCellReturn),
+    ApplyTransfers(&'a ConsumedCellReturns),
     ValidateDescriptions,
+}
+
+impl ReturnResourceComposition<'_> {
+    fn origin_for_return(self, clause: usize, entry_borrow: bool) -> ReturnOwnershipOrigin {
+        if entry_borrow {
+            return ReturnOwnershipOrigin::EntryBorrow;
+        }
+        if let Self::ApplyTransfers(transfers) = self
+            && let Some(transfer) = transfers.get(clause)
+        {
+            return ReturnOwnershipOrigin::ConsumedCell(transfer);
+        }
+        ReturnOwnershipOrigin::Description
+    }
 }
 
 /// Entry-state borrows restored to the residual frame from which they were lent.
@@ -232,7 +246,7 @@ struct FunctionResourceTransfer {
     /// This is output-sized call-boundary provenance, not a search through
     /// the caller frame.
     canonical_borrowed_owners: Vec<(ResourceFact, ResourceFact)>,
-    consumed_cell_return: Option<ConsumedCellReturn>,
+    consumed_cell_returns: ConsumedCellReturns,
     callee_resources: ResourceContext,
     /// Resources left in the caller after the entry requirements have been
     /// consumed; this is the caller frame for the remainder of the call.
@@ -3831,10 +3845,7 @@ fn execute_verified_function_applications_with_suspension(
             name,
             interface,
             &prepared_outputs,
-            transfer.consumed_cell_return.map_or(
-                ReturnResourceComposition::RestoreEntryBorrows,
-                ReturnResourceComposition::RestoreConsumedCell,
-            ),
+            ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
             &effective_assumptions,
             budget,
         )? {
@@ -11013,7 +11024,7 @@ fn prepare_contract_resource_transfer_unexplained(
             borrowed_inputs: Vec::new(),
             consumed_inputs: Vec::new(),
             canonical_borrowed_owners: Vec::new(),
-            consumed_cell_return: None,
+            consumed_cell_returns: ConsumedCellReturns::default(),
             callee_resources: with_private_aggregate_parameter_owners(
                 ResourceContext::new_with_equalities(assumptions),
                 callee_state,
@@ -12216,16 +12227,20 @@ fn prepare_contract_resource_transfer_unexplained(
         })
         .collect();
     canonical_borrowed_owners.extend(canonical_population_owners);
-    let consumed_cell_return = stable_view_plan
-        .as_ref()
-        .filter(|_| purpose == ResourceTransitionPurpose::CallSite)
-        .and_then(|plan| ConsumedCellReturn::prepare(interface, plan, caller_state.resources()));
+    let consumed_cell_returns = if purpose == ResourceTransitionPurpose::CallSite {
+        stable_view_plan
+            .as_ref()
+            .map(|plan| ConsumedCellReturns::prepare(interface, plan, caller_state.resources()))
+            .unwrap_or_default()
+    } else {
+        ConsumedCellReturns::default()
+    };
     Ok(Ok(FunctionResourceTransfer {
         helper_call,
         borrowed_inputs,
         consumed_inputs,
         canonical_borrowed_owners,
-        consumed_cell_return,
+        consumed_cell_returns,
         callee_resources: with_private_aggregate_parameter_owners(
             callee_resources,
             callee_state,
@@ -12379,6 +12394,7 @@ pub(super) fn evaluate_function_return_resource_context(
         post_state,
         count,
         &[],
+        ReturnResourceComposition::ValidateDescriptions,
         assumptions,
         budget,
     )
@@ -12418,6 +12434,7 @@ fn evaluate_contract_return_resource_context(
     post_state: &ExecutionState,
     count: usize,
     prepared_outputs: &[Option<ResourceFact>],
+    composition: ReturnResourceComposition,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<EvaluatedReturnResources, RuntimeError>> {
@@ -12837,7 +12854,11 @@ fn evaluate_contract_return_resource_context(
         // its occurrence. Consumers compose the pieces of their requested
         // footprint; constructing outputs must not discover optional merges
         // by walking the ambient pointer/endpoint equality classes.
-        evaluated = match evaluated.admit(resource.clone(), return_entry_borrow, assumptions) {
+        evaluated = match evaluated.admit(
+            resource.clone(),
+            composition.origin_for_return(clause_index, return_entry_borrow),
+            assumptions,
+        ) {
             Ok(evaluated) => evaluated,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
@@ -12857,7 +12878,11 @@ fn evaluate_contract_return_resource_context(
                 budget,
             )? {
                 Ok(fact) => {
-                    evaluated = match evaluated.admit(fact.clone(), false, assumptions) {
+                    evaluated = match evaluated.admit(
+                        fact.clone(),
+                        composition.origin_for_return(clause_index, false),
+                        assumptions,
+                    ) {
                         Ok(evaluated) => evaluated,
                         Err(error) => return Ok(Err(resource_context_runtime_error(error))),
                     };
@@ -12998,6 +13023,7 @@ fn evaluate_contract_return_resources(
                 post_state,
                 interface.resource_ensures().len(),
                 prepared_outputs,
+                composition,
                 assumptions,
                 budget,
             )
@@ -13039,7 +13065,8 @@ fn evaluate_contract_return_resources(
             if !prepared.entry_borrow_outputs.facts().is_empty() {
                 let retained = caller_resources_after_requirements
                     .clone()
-                    .unchecked_with_facts(escrowed_owners.iter().cloned());
+                    .unchecked_with_facts(escrowed_owners.iter().cloned())
+                    .unchecked_with_facts(prepared.consumed_cell_outputs.facts().iter().cloned());
                 if let Some(error) = produced_composite_frontier_conflict(
                     &retained,
                     &prepared.entry_borrow_outputs,

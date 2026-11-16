@@ -9500,8 +9500,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // What the closers above miss goes to the arithmetic engine, as
         // `arithmetic() using` sends it: a bound from the goal's own terms,
         // a sum or chain over the premises, or a refutation of
-        // contradictory ones. It comes last so a goal they close keeps its
-        // expansion.
+        // contradictory ones. Existing strategies precede theorem discovery
+        // so a goal they close keeps its expansion.
         search_input
             .driver()
             .apply_step(ProofStep::ArithmeticUsing(surfaces.to_vec()))
@@ -9515,6 +9515,56 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .ok()
                 .flatten()
             })
+            .or_else(|| Self::try_single_theorem_using(search_input, surfaces))
+    }
+
+    /// Discover one application, never its premises or a chain of lemmas.
+    /// `ApplyTheoremUsing` receives only the written list, including argument
+    /// guards, and retains the ordinary checked step for expansion.
+    fn try_single_theorem_using(
+        search_input: &Proof<'a>,
+        surfaces: &[ClickProposition],
+    ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_single_theorem_using");
+        let goal = search_input.surface_goal()?;
+        let environment = match search_input.context.as_ref() {
+            ProofContext::Pure(context) => context.theorem_environment,
+            ProofContext::FixedState(context) => context.theorem_environment,
+            ProofContext::Execution(context) => context.theorem_environment,
+        };
+        for candidate in environment.conclusion_candidates(goal) {
+            if crate::instrumentation::deadline_exceeded_with_work(1) {
+                attempt::record_search_note("single theorem", "theorem discovery budget exhausted");
+                return None;
+            }
+            if search_input
+                .claim_label()
+                .strip_prefix(&candidate.name)
+                .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with('.'))
+            {
+                continue;
+            }
+            let definition = environment.get(&candidate.name)?;
+            let Some(application) = crate::surface::planning::theorems::match_theorem_conclusion(
+                definition,
+                candidate.ensure,
+                goal,
+            ) else {
+                continue;
+            };
+            let step = ProofStep::ApplyTheoremUsing {
+                application,
+                premises: surfaces.to_vec(),
+            };
+            if let Some(proof) =
+                attempt::candidate_outcome(search_input.driver().apply_step(step)).ok()?
+                && (proof.is_complete() || proof.focused_discharged())
+            {
+                return Some(proof);
+            }
+        }
+        None
     }
 
     /// Establish the goal's machine-operation identities from only the

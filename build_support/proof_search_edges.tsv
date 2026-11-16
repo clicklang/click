@@ -705,3 +705,5 @@ src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::prepare
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_closure	driver	3
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_closure	try_signed_definedness_closure	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_bounds	prepare_integer_read_domain	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure	try_single_theorem_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_single_theorem_using	driver	1
