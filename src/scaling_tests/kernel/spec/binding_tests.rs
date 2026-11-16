@@ -72,9 +72,12 @@ fn selected_let_lookup_does_not_scan_other_lexical_values() {
         let state = ExecutionState::new();
         let selected =
             KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(992420));
-        let mut values = crate::persistent::PersistentMap::default();
+        let mut values: crate::persistent::PersistentMap<
+            crate::kernel::BindingName,
+            crate::kernel::KernelTerm,
+        > = crate::persistent::PersistentMap::default();
         for index in 0..size {
-            values.insert(format!("other_{index}"), selected.clone());
+            values.insert(format!("other_{index}").into(), selected.clone());
         }
         values.insert("selected".into(), selected.clone());
         let scope = SpecScope {

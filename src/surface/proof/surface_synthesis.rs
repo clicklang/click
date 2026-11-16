@@ -12,7 +12,7 @@ use crate::kernel::{
 #[cfg(test)]
 mod tests;
 
-mod folds;
+pub(super) mod folds;
 mod matches;
 mod pointer_indices;
 mod pointer_names;
@@ -63,9 +63,9 @@ thread_local! {
     /// The names the source wrote for kernel quantifier binders, when the
     /// proposition being spelled came from lowering a written quantifier.
     /// A synthesized binder takes its written name instead of a generated
-    /// `__click_q` one, so a proof focused on the synthesized goal names it
+    /// generated one, so a proof focused on the synthesized goal names it
     /// the way the source did.
-    static SYNTHESIS_BINDER_NAMES: std::cell::RefCell<Option<std::sync::Arc<BTreeMap<Variable, String>>>> =
+    static SYNTHESIS_BINDER_NAMES: std::cell::RefCell<Option<std::sync::Arc<BTreeMap<Variable, SurfaceBinder>>>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -87,10 +87,10 @@ pub(in crate::surface::proof) fn with_structural_goal_synthesis<T>(f: impl FnOnc
 /// not collide with a parameter, a local, or an enclosing binder, and the
 /// caller still validates the result by lowering it.
 pub(in crate::surface) fn with_synthesis_binder_names<T>(
-    names: &std::sync::Arc<BTreeMap<Variable, String>>,
+    names: &std::sync::Arc<BTreeMap<Variable, SurfaceBinder>>,
     synthesize: impl FnOnce() -> T,
 ) -> T {
-    struct Restore(Option<std::sync::Arc<BTreeMap<Variable, String>>>);
+    struct Restore(Option<std::sync::Arc<BTreeMap<Variable, SurfaceBinder>>>);
     impl Drop for Restore {
         fn drop(&mut self) {
             SYNTHESIS_BINDER_NAMES.with(|slot| {
@@ -614,7 +614,7 @@ pub(in crate::surface) fn synthesize_surface_proposition_at_entry_post_with_boun
     parameter_binding: ParameterBinding<'_>,
     entry: &ExecutionState,
     post: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     let _entry =
         SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(entry.clone()))));
@@ -738,7 +738,7 @@ fn synthesize_recorded_held_value_local(
 fn synthesize_load_at_recorded_point(
     variable: &Variable,
     parameter_binding: ParameterBinding<'_>,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let read = crate::kernel::registered_load_term_for_variable(variable)?;
     synthesize_read_at_recorded_point(&read, parameter_binding, bound_variables)
@@ -747,7 +747,7 @@ fn synthesize_load_at_recorded_point(
 fn synthesize_read_at_recorded_point(
     read: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let (selector, state, load) = recorded_point_of_load(read)?;
     let expression =
@@ -810,7 +810,7 @@ fn synthesize_recorded_local(term: &MachineTerm) -> Option<ContractExpression> {
 fn synthesize_recorded_cell_value(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let candidates = SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
@@ -890,7 +890,7 @@ impl SurfacePointerFrame {
         pointer: &Pointer,
         parameter_binding: ParameterBinding<'_>,
         state: &ExecutionState,
-        bound_variables: &BTreeMap<Variable, String>,
+        bound_variables: &BTreeMap<Variable, SurfaceBinder>,
     ) -> Option<Self> {
         // All borrowed inputs remain live for this frame. Their addresses
         // distinguish state and binder environments without cloning or
@@ -1107,7 +1107,7 @@ pub(in crate::surface) fn synthesize_store_index_disequality(
     format: MachineIntegerType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     let _scope = SurfaceSynthesisScope::enter();
     let word = |term: &MachineTerm| {
@@ -1162,17 +1162,17 @@ thread_local! {
     /// `obtain`, `unfold`) name. A C local or parameter holding the same
     /// value is spelled first, since it carries its declared type; these
     /// name what no C name holds.
-    static PROOF_BINDER_NAMES: std::cell::RefCell<std::sync::Arc<BTreeMap<Variable, String>>> =
+    static PROOF_BINDER_NAMES: std::cell::RefCell<std::sync::Arc<BTreeMap<Variable, SurfaceBinder>>> =
         std::cell::RefCell::new(std::sync::Arc::default());
 }
 
 /// Runs `operation` with `names` as the proof binders' names; see
 /// `PROOF_BINDER_NAMES`.
 pub(in crate::surface) fn with_proof_binder_names<R>(
-    names: std::sync::Arc<BTreeMap<Variable, String>>,
+    names: std::sync::Arc<BTreeMap<Variable, SurfaceBinder>>,
     operation: impl FnOnce() -> R,
 ) -> R {
-    struct Restore(std::sync::Arc<BTreeMap<Variable, String>>);
+    struct Restore(std::sync::Arc<BTreeMap<Variable, SurfaceBinder>>);
     impl Drop for Restore {
         fn drop(&mut self) {
             let previous = std::mem::take(&mut self.0);
@@ -1186,21 +1186,21 @@ pub(in crate::surface) fn with_proof_binder_names<R>(
 thread_local! {
     static PROOF_BINDING_NAMES: std::cell::RefCell<(
         super::proof_object::binding_names::BindingNames,
-        PersistentMap<String, ContractExpression>,
+        PersistentBinderMap<ContractExpression>,
     )> = std::cell::RefCell::new((
         super::proof_object::binding_names::BindingNames::default(),
-        PersistentMap::default(),
+        PersistentBinderMap::default(),
     ));
 }
 
 pub(super) struct ProofBindingNamesScope(
     super::proof_object::binding_names::BindingNames,
-    PersistentMap<String, ContractExpression>,
+    PersistentBinderMap<ContractExpression>,
 );
 impl ProofBindingNamesScope {
     pub(super) fn enter(
         names: super::proof_object::binding_names::BindingNames,
-        shadows: PersistentMap<String, ContractExpression>,
+        shadows: PersistentBinderMap<ContractExpression>,
     ) -> Self {
         let (names, shadows) = PROOF_BINDING_NAMES.with(|slot| slot.replace((names, shadows)));
         Self(names, shadows)
@@ -1214,7 +1214,7 @@ impl Drop for ProofBindingNamesScope {
     }
 }
 
-fn proof_binder_name(variable: Variable) -> Option<String> {
+fn proof_binder_name(variable: Variable) -> Option<SurfaceBinder> {
     PROOF_BINDER_NAMES
         .with(|names| names.borrow().get(&variable).cloned())
         .or_else(|| {
@@ -1241,7 +1241,7 @@ thread_local! {
 /// Runs `operation` with the proof locals that name C values, such as an
 /// unfold's named witnesses, in scope for [`synthesize_surface_value`].
 pub(in crate::surface) fn with_proof_local_value_names<R>(
-    names: Vec<(ProgramValue, String)>,
+    names: Vec<(ProgramValue, SurfaceBinder)>,
     operation: impl FnOnce() -> R,
 ) -> R {
     struct Restore(Vec<pointer_names::NamedValue>);
@@ -1266,7 +1266,7 @@ fn synthesize_surface_pointer_address(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let operand =
         synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
@@ -1332,7 +1332,7 @@ pub(in crate::surface) fn synthesize_surface_proposition_with_bound_variable_nam
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     let _scope = SurfaceSynthesisScope::enter();
     synthesize_surface_proposition_with_guard_fallback(
@@ -1350,7 +1350,7 @@ pub(in crate::surface::proof) fn synthesize_source_projection_proposition_with_b
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     let _scope = SurfaceSynthesisScope::enter();
     if let Proposition::MemoryLoadable { base, bytes, .. } = proposition {
@@ -1380,7 +1380,7 @@ pub(in crate::surface) fn synthesize_surface_proposition_with_names(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    names: &BTreeMap<Variable, String>,
+    names: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     let _scope = SurfaceSynthesisScope::enter();
     synthesize_surface_proposition_with_bound_variables(
@@ -1395,7 +1395,7 @@ fn synthesize_surface_proposition_with_guard_fallback(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     let literal = synthesize_surface_proposition_with_bound_variables(
         proposition,
@@ -1423,7 +1423,7 @@ fn synthesize_surface_proposition_with_bound_variables(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     let _frame = SurfaceSynthesisFrame::enter("proposition")?;
     match proposition {
@@ -1625,7 +1625,7 @@ fn synthesize_surface_quantified_proposition(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     match proposition {
         Proposition::ForAll {
@@ -1639,42 +1639,14 @@ fn synthesize_surface_quantified_proposition(
                 ClickType::Program(crate::surface::generics::interface_type_from_program_type(
                     integer_type.program_type(),
                 ));
-            let conflicts = |candidate: &str| {
-                parameter_binding
-                    .parameters
-                    .iter()
-                    .any(|parameter| parameter.name() == candidate)
-                    || state
-                        .locals()
-                        .object_values()
-                        .any(|(name, _)| name.source_name() == candidate)
-                    || bound_variables.values().any(|name| name == candidate)
-            };
-            let written = SYNTHESIS_BINDER_NAMES.with(|slot| {
-                slot.borrow()
-                    .as_ref()
-                    .and_then(|names| names.get(var).cloned())
-            });
-            let name = match written {
-                Some(written) if !conflicts(&written) => written,
-                _ => {
-                    let mut suffix = bound_variables.len();
-                    loop {
-                        let candidate = format!("__click_q{suffix}");
-                        if !conflicts(&candidate) {
-                            break candidate;
-                        }
-                        suffix += 1;
-                    }
-                }
-            };
-            let mut body_variables = bound_variables.clone();
-            body_variables.insert(*var, name.clone());
+            let name = SurfaceBinder::fresh();
+            let _binder =
+                folds::Binding::enter((folds::BinderCarrier::Program, *var), name.clone());
             let body = Box::new(synthesize_surface_proposition_with_bound_variables(
                 body,
                 parameter_binding,
                 state,
-                &body_variables,
+                bound_variables,
             )?);
             Some(match proposition {
                 Proposition::ForAll { .. } => ClickProposition::ForAll {
@@ -1704,7 +1676,7 @@ fn synthesize_zero_based_loadable_segment(
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     // A displaced pointer may encode the start of a named range. Prefer that
     // faithful spelling when a folded byte count still identifies the named
@@ -1812,7 +1784,7 @@ fn synthesize_exact_external_zero_based_byte_range(
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Result<Option<ClickProposition>, ()> {
     if base.block != PointerBlock::ExternalArgument {
         return Ok(None);
@@ -1881,7 +1853,7 @@ fn synthesize_named_range_loadable_segment(
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     if let Some(segment) = synthesize_struct_loadable_segment(base, bytes, parameter_binding, state)
     {
@@ -2019,7 +1991,7 @@ fn synthesize_external_symbolic_element_range(
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     let (name, index) = parameter_binding
         .parameters
@@ -2198,7 +2170,7 @@ fn synthesize_load_defining_equation(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     let (registered_memory, registered_pointer) =
         crate::kernel::registered_load_for_variable(variable)?;
@@ -2275,7 +2247,7 @@ fn synthesize_surface_bool(
     condition: &ConditionTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("bool")?;
     crate::instrumentation::record_deterministic_work(1);
@@ -2285,10 +2257,13 @@ fn synthesize_surface_bool(
     match condition {
         ConditionTerm::Constant(value) => Some(bool_literal(*value)),
         ConditionTerm::Variable(variable) => {
-            if let Some(name) = folds::binder_name(false, *variable)
-                .or_else(|| bound_variables.get(variable).cloned())
-            {
-                return Some(ContractExpression::Binding(name.clone()));
+            if let Some(name) = folds::binder_name(false, *variable).or_else(|| {
+                bound_variables
+                    .get(variable)
+                    .cloned()
+                    .map(SurfaceBinder::from)
+            }) {
+                return Some(name.reference());
             }
             synthesize_surface_bitvector(
                 &MachineTerm::bool_cast(MachineIntegerType::UInt8, condition.clone()),
@@ -2376,7 +2351,7 @@ fn synthesize_surface_atomic_proposition(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     // A `bool` local's truth, C's test `w != 0` at `uint8` of its carrier:
     // the claim on the local, `w` or `not w`, which is what a claim on it
@@ -2437,7 +2412,7 @@ fn synthesize_surface_atomic_proposition(
             value: &crate::kernel::SequenceTerm,
             parameter_binding: ParameterBinding<'_>,
             state: &ExecutionState,
-            bound: &BTreeMap<Variable, String>,
+            bound: &BTreeMap<Variable, SurfaceBinder>,
         ) -> Option<ContractExpression> {
             let _frame = SurfaceSynthesisFrame::enter("sequence")?;
             Some(match value.node.as_ref() {
@@ -3131,15 +3106,9 @@ fn synthesize_surface_atomic_proposition(
     }
 }
 
-/// The value is outside the binding's scope, so this local name cannot
-/// capture a name in the expression being spelled.
+/// Preserve the Integer context without introducing a lexical binding.
 pub(super) fn integer_typed_expression(value: ContractExpression) -> ContractExpression {
-    ContractExpression::Let {
-        name: "integer_value".into(),
-        click_type: Some(ClickType::Integer),
-        value: Box::new(value),
-        body: Box::new(ContractExpression::Binding("integer_value".into())),
-    }
+    ContractExpression::IntegerContext(Box::new(value))
 }
 
 /// An Integer arithmetic term over machine observations, spelled with
@@ -3149,7 +3118,7 @@ fn synthesize_surface_integer(
     term: &crate::kernel::SharedIntegerTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     // Keep the carrier's bridge identity: a native clone and re-intern here
     // discards the caller's shared handoff before reaching the common renderer.
@@ -3177,7 +3146,7 @@ fn raise_call_argument(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelTermNode as Node;
     match term.node() {
@@ -3197,7 +3166,7 @@ fn raise_float_expression(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelTermNode as Node;
     let recurse = |term| raise_kernel_term(term, parameter_binding, state, bound_variables);
@@ -3280,7 +3249,7 @@ pub(super) fn raise_kernel_term(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::{KernelTermNode as Node, KernelType};
     // A program parameter changes the argument carrier, not its spelling.
@@ -3321,7 +3290,7 @@ fn raise_pointer_comparison(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::{KernelPointerOffset, KernelTermNode as Node};
     let (left, right) = match term.node() {
@@ -3385,7 +3354,7 @@ fn raise_shared_overflow(
     arguments: &[crate::kernel::KernelTerm; 2],
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     if !matches!(
         format,
@@ -3493,7 +3462,7 @@ fn raise_constructor_field(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::{KernelTermNode as Node, KernelType};
     let term = match term.node() {
@@ -3552,7 +3521,7 @@ fn raise_constructor_pointer(
     pointer: &crate::kernel::PointerValue,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)
         .or_else(|| synthesize_loaded_pointer_value(pointer, parameter_binding, state))
@@ -3590,7 +3559,7 @@ fn raise_integer_operation(
     arguments: &[crate::kernel::KernelTerm],
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelIntegerOperator as Op;
     let recurse = |term| raise_kernel_term(term, parameter_binding, state, bound_variables);
@@ -3621,7 +3590,7 @@ fn raise_kernel_term_dispatch(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::{KernelTermNode as Node, KernelType};
     let recurse = |term| raise_kernel_term(term, parameter_binding, state, bound_variables);
@@ -3666,8 +3635,13 @@ fn raise_kernel_term_dispatch(
         Node::IntegerLiteral(value) => SurfaceTerm::IntegerLiteral(value.to_string()),
         Node::Variable(variable) if term.ty() == &KernelType::Integer => {
             match folds::binder_name(true, *variable)
-                .or_else(|| bound_variables.get(variable).cloned())
-                .or_else(|| proof_binder_name(*variable))
+                .or_else(|| {
+                    bound_variables
+                        .get(variable)
+                        .cloned()
+                        .map(SurfaceBinder::from)
+                })
+                .or_else(|| proof_binder_name(*variable).map(SurfaceBinder::from))
                 // A name the loop phase gives a variable it binds, such as
                 // the head's pass count `iterations`.
                 .or_else(|| {
@@ -3675,9 +3649,10 @@ fn raise_kernel_term_dispatch(
                         slot.borrow()
                             .as_ref()
                             .and_then(|names| names.get(variable).cloned())
+                            .map(SurfaceBinder::from)
                     })
                 }) {
-                Some(name) => SurfaceTerm::Binding(name),
+                Some(name) => name.reference(),
                 // A loop's pass count past the loop.
                 None => SurfaceTerm::Binding(crate::surface::loop_iterations_spelling(
                     SYNTHESIS_RECORDED_POINTS
@@ -4087,7 +4062,7 @@ fn synthesize_unsigned_comparison(
     condition: &ConditionTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
     let ConditionTerm::Compare {
         format: MachineIntegerType::UInt32,
@@ -4162,7 +4137,7 @@ pub(super) fn synthesize_surface_resource_subject(
     resource: &Resource,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ResourceSubject> {
     let _frame = SurfaceSynthesisFrame::enter("resource")?;
     if let Resource::Star(pair) = resource {
@@ -4378,7 +4353,7 @@ pub(super) fn synthesize_surface_pointer_offset(
     term: &PointerOffsetTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-offset")?;
     for (parameter, argument) in parameter_binding
@@ -4626,7 +4601,7 @@ fn bitvector_spells_uint32(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> bool {
     if let MachineTerm::Variable(variable) = term
         && bound_variables.contains_key(variable)
@@ -4734,7 +4709,7 @@ fn synthesize_typed_word_read(
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
         return None;
@@ -4785,7 +4760,7 @@ fn synthesize_surface_bitvector(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("bitvector")?;
     let bitvector_frame = SurfaceBitvectorFrame::enter();
@@ -4794,8 +4769,12 @@ fn synthesize_surface_bitvector(
         return None;
     }
     if let MachineTerm::Variable(variable) = term
-        && let Some(name) =
-            folds::binder_name(false, *variable).or_else(|| bound_variables.get(variable).cloned())
+        && let Some(name) = folds::binder_name(false, *variable).or_else(|| {
+            bound_variables
+                .get(variable)
+                .cloned()
+                .map(SurfaceBinder::from)
+        })
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Variable((name.clone()).into()),
@@ -5496,7 +5475,7 @@ fn synthesize_surface_call(
     values: &[crate::kernel::PureFunctionArgument],
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("function-call")?;
     let mut importer = crate::kernel::KernelTermImport::default();
@@ -5551,7 +5530,7 @@ fn synthesize_legacy_call_argument(
     value: &crate::kernel::PureFunctionArgument,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     Some(match value {
         crate::kernel::PureFunctionArgument::Value(value @ ProgramValue::Pointer(_)) => {
@@ -5612,7 +5591,7 @@ fn synthesize_parameter_field_indexed_int32_load(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("indexed-field")?;
     let pointer_field_and_index = |base: &PointerOffsetTerm,
@@ -5938,7 +5917,7 @@ fn synthesize_local_indexed_load(
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("local-index")?;
     state.locals().object_values().find_map(|(name, value)| {
@@ -5995,7 +5974,7 @@ fn synthesize_static_storage_array_element_load(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     if !pointer.block.is_static_storage_block() {
         return None;
@@ -6333,7 +6312,7 @@ fn synthesize_surface_pointer(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ProgramExpression> {
     let _pointer_frame =
         SurfacePointerFrame::enter(pointer, parameter_binding, state, bound_variables)?;
@@ -6364,8 +6343,12 @@ fn synthesize_surface_pointer(
     // A pointer a proof binder names, such as a match arm's payload.
     if let (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) =
         (&pointer.block, &pointer.offset)
-        && let Some(name) =
-            folds::binder_name(false, *variable).or_else(|| bound_variables.get(variable).cloned())
+        && let Some(name) = folds::binder_name(false, *variable).or_else(|| {
+            bound_variables
+                .get(variable)
+                .cloned()
+                .map(SurfaceBinder::from)
+        })
     {
         return Some(ProgramExpression::Variable((name.clone()).into()));
     }
@@ -6629,7 +6612,7 @@ fn synthesize_pointer_equality_operand(
     value: &crate::kernel::PointerValue,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     synthesize_pointer_equality_address(
         value.pointer(),
@@ -6645,7 +6628,7 @@ fn synthesize_pointer_equality_address(
     program_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let expression =
         synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
@@ -6672,7 +6655,7 @@ fn synthesize_surface_pointer_expression(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-expression")?;
     if let Some(region) = SYNTHESIS_RECORDED_POINTS
@@ -6739,7 +6722,7 @@ fn synthesize_surface_pointer_expression(
 fn synthesize_recorded_pointer_expression(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let candidates = SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
@@ -6767,7 +6750,7 @@ fn synthesize_entry_pointer_expression(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let _ = state;
     let entry = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())?;
@@ -6917,7 +6900,7 @@ fn synthesize_scalar_model_field(
 fn synthesize_state_pointer_expression(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let (retained_state, selector) =
         SYNTHESIS_REFERENCE_STATE.with(|slot| slot.borrow().clone())?;
@@ -6941,7 +6924,7 @@ fn raise_float_read(
     root: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     let read = root.float_read_native()?;
     let MachineTerm::MemoryLoad(memory, _, _) = read else {
@@ -7024,13 +7007,13 @@ fn synthesize_surface_algebraic(
     term: &crate::kernel::AlgebraicTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("algebraic")?;
     if let crate::kernel::AlgebraicTermNode::Variable(variable) = &term.node
         && let Some(name) = folds::scoped_binder_name(folds::BinderCarrier::Algebraic, *variable)
     {
-        return Some(SurfaceTerm::Binding(name));
+        return Some(name.reference());
     }
     match &term.node {
         crate::kernel::AlgebraicTermNode::Match { .. } => {
@@ -7044,14 +7027,14 @@ fn synthesize_surface_algebraic(
         crate::kernel::AlgebraicTermNode::Variable(variable)
             if let Some(name) = bound_variables.get(variable) =>
         {
-            Some(ContractExpression::Binding(name.clone()))
+            Some(name.reference())
         }
         crate::kernel::AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
             synthesize_surface_call(name, arguments, parameter_binding, state, bound_variables)
         }
         crate::kernel::AlgebraicTermNode::Variable(variable) => {
             if let Some(name) = proof_binder_name(*variable) {
-                return Some(ContractExpression::Binding(name));
+                return Some(name.reference());
             }
             // A parameter's own algebraic value is spelled by its name.
             if let Some((parameter, _)) = parameter_binding

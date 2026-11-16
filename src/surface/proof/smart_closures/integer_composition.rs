@@ -781,6 +781,7 @@ fn with_argument_domains(step: ProofStep, domains: &[ClickProposition]) -> Proof
 
 pub(super) fn observed_argument(expression: &ContractExpression) -> Option<ContractExpression> {
     match expression {
+        ContractExpression::IntegerContext(value) => observed_argument(value),
         ContractExpression::Call { name, arguments }
             if name == "to_integer" && arguments.len() == 1 =>
         {
@@ -1504,16 +1505,15 @@ mod tests {
             declaration_bindings: BTreeMap::new(),
             memory: Memory::new(),
             values: BTreeMap::new(),
-            integer_values: crate::persistent::PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
             array_refs: BTreeMap::new(),
             requires: vec![premise.clone()],
             surface_requirements: SurfacePropositionMap::default(),
         };
         for (name, term) in [("x", &x), ("y", &y), ("z", &z)] {
-            context.integer_values = context.integer_values.with_inserted(
-                name.into(),
-                SpecIntegerExpression::Term(term.as_ref().clone()),
-            );
+            context.integer_values = context
+                .integer_values
+                .with_inserted(name, SpecIntegerExpression::Term(term.as_ref().clone()));
         }
         for index in 1..=ambient {
             context.requires.push(Proposition::ConditionIs(

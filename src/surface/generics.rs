@@ -891,7 +891,7 @@ fn instantiate_theorem_with_proof(
             Some((
                 parameter.name().to_string(),
                 ContractExpression::AlgebraicVariable {
-                    name: parameter.name().to_string(),
+                    name: parameter.name().into(),
                     algebraic_type: algebraic_type.clone(),
                     binder_index,
                 },

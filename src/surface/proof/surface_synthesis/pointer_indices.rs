@@ -69,7 +69,7 @@ pub(super) fn raise(
     value: V<'_>,
     parameters: ParameterBinding<'_>,
     state: &ExecutionState,
-    names: &BTreeMap<Variable, String>,
+    names: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     match value {
         V::Shared(root) => raise_kernel_term(root, parameters, state, names),

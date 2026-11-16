@@ -482,10 +482,10 @@ impl CheckedFocusedTransition {
 /// the counter is branch-local scalar freshness state.
 #[derive(Clone)]
 struct ProofLocals {
-    values: PersistentMap<String, ContractExpression>,
+    values: PersistentBinderMap<ContractExpression>,
     value_names: binding_names::BindingNames,
-    integer_values: PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    algebraic_values: PersistentMap<String, crate::kernel::SpecAlgebraicExpression>,
+    integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+    algebraic_values: PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
     /// Authored spellings used for premise lookup and certificate printing.
     /// A recorded form is an index, not authority; lookups still validate it.
     surface_facts: SurfacePropositionMap,
@@ -500,14 +500,14 @@ struct ProofLocals {
 pub(in crate::surface::proof) mod binding_names;
 
 impl ProofLocals {
-    fn set_values(&mut self, values: PersistentMap<String, ContractExpression>) {
+    fn set_values(&mut self, values: PersistentBinderMap<ContractExpression>) {
         self.value_names.update_values(&self.values, &values);
         self.values = values;
     }
 
     fn set_integer_values(
         &mut self,
-        values: PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+        values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     ) {
         self.value_names
             .update_integers(&self.integer_values, &values);
@@ -516,7 +516,7 @@ impl ProofLocals {
 
     fn set_algebraic_values(
         &mut self,
-        values: PersistentMap<String, crate::kernel::SpecAlgebraicExpression>,
+        values: PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
     ) {
         self.value_names
             .update_algebraics(&self.algebraic_values, &values);
@@ -527,10 +527,10 @@ impl ProofLocals {
 impl Default for ProofLocals {
     fn default() -> Self {
         Self {
-            values: PersistentMap::default(),
+            values: PersistentBinderMap::default(),
             value_names: binding_names::BindingNames::default(),
-            integer_values: PersistentMap::default(),
-            algebraic_values: PersistentMap::default(),
+            integer_values: PersistentBinderMap::default(),
+            algebraic_values: PersistentBinderMap::default(),
             surface_facts: SurfacePropositionMap::default(),
             checked_lowerings: SurfacePropositionMap::default(),
             termination_diagnostics: Default::default(),
@@ -1467,7 +1467,7 @@ impl DiagnosticNaming {
 /// through these, so a report and a citation agree.
 fn proof_local_program_values(
     proof: &KernelProofHandle,
-) -> impl Iterator<Item = (&str, &ProgramValue)> {
+) -> impl Iterator<Item = (&SurfaceBinder, &ProgramValue)> {
     proof
         .state()
         .locals()
@@ -1475,7 +1475,7 @@ fn proof_local_program_values(
         .iter()
         .filter_map(|(name, expression)| match expression {
             ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
-                Some((name.as_str(), value))
+                Some((name, value))
             }
             _ => None,
         })
@@ -1485,7 +1485,7 @@ fn proof_local_program_values(
 /// shadows an outer name, an `outer.` entry spells that outer value.
 fn goal_binder_program_values(
     proof: &KernelProofHandle,
-) -> impl Iterator<Item = (&str, &ProgramValue)> {
+) -> impl Iterator<Item = (&SurfaceBinder, &ProgramValue)> {
     proof
         .state()
         .open_branches()
@@ -1498,7 +1498,7 @@ fn goal_binder_program_values(
         .flatten()
         .filter_map(|(name, expression)| match expression {
             ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
-                Some((name.as_str(), value))
+                Some((name, value))
             }
             _ => None,
         })
@@ -1511,7 +1511,7 @@ impl Proof<'_> {
     ) -> super::surface_synthesis::ProofBindingNamesScope {
         let shadows = match self.focused_obligation() {
             Some(Obligation::Proposition(goal)) => goal.surface_bindings.clone(),
-            _ => PersistentMap::default(),
+            _ => PersistentBinderMap::default(),
         };
         super::surface_synthesis::ProofBindingNamesScope::enter(
             self.state.locals().value_names.clone(),
@@ -1527,7 +1527,10 @@ impl Proof<'_> {
     /// value. A proof local an `intro` binder shadows is out of scope.
     pub(in crate::surface::proof) fn binder_variable_names(
         &self,
-    ) -> (BTreeMap<Variable, String>, BTreeMap<Variable, String>) {
+    ) -> (
+        BTreeMap<Variable, SurfaceBinder>,
+        BTreeMap<Variable, SurfaceBinder>,
+    ) {
         fn variable(value: &ProgramValue) -> Option<Variable> {
             match value.numeric_value() {
                 ProgramValue::Parameter(term) => match term.node {
@@ -1553,9 +1556,13 @@ impl Proof<'_> {
         // that local is out of scope, and its name now spells the binder.
         let shadowing = goal_binder_program_values(&self.state)
             .map(|(name, _)| name)
-            .filter(|name| !name.starts_with("outer."))
+            .filter(|name| {
+                !name
+                    .written()
+                    .is_some_and(|name| name.starts_with("outer."))
+            })
             .collect::<BTreeSet<_>>();
-        let named = |values: &mut dyn Iterator<Item = (&str, &ProgramValue)>| {
+        let named = |values: &mut dyn Iterator<Item = (&SurfaceBinder, &ProgramValue)>| {
             values
                 .filter_map(|(name, value)| Some((variable(value)?, name.to_owned())))
                 .collect::<BTreeMap<_, _>>()
@@ -1567,7 +1574,7 @@ impl Proof<'_> {
             if let crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::Variable(
                 variable,
             )) = value
-                && !shadowing.contains(name.as_str())
+                && !shadowing.contains(name)
             {
                 intro.entry(*variable).or_insert_with(|| name.clone());
             }
@@ -1578,7 +1585,7 @@ impl Proof<'_> {
             .locals()
             .values
             .iter()
-            .filter(|(name, _)| !shadowing.contains(name.as_str()))
+            .filter(|(name, _)| !shadowing.contains(name))
             .filter_map(|(name, expression)| {
                 let variable = match expression {
                     ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
@@ -1798,16 +1805,16 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         // user-chosen name wins over the synthesized C assignment target.
         for (name, value) in proof_local_program_values(&self.0) {
             if let ProgramValue::Pointer(pointer) = value {
-                labels.immutable_pointer_name(pointer.pointer(), name);
+                labels.immutable_pointer_name(pointer.pointer(), &name.to_string());
             }
             if let Some(variable) = diagnostic_value_variable(value) {
-                labels.immutable_source_name(variable, name.to_owned());
+                labels.immutable_source_name(variable, name.to_string());
                 labels.source_type(variable, value.program_type());
             }
         }
         for (name, value) in self.0.state().locals().algebraic_values.iter() {
             if let crate::kernel::SpecAlgebraicExpressionNode::Variable(variable) = value.node {
-                labels.source_name(variable, name.clone());
+                labels.source_name(variable, name.to_string());
             }
         }
         for (name, value) in self.0.state().locals().integer_values.iter() {
@@ -1815,17 +1822,19 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                 crate::kernel::IntegerTerm::Variable(variable),
             ) = value
             {
-                labels.integer_source_name(*variable, name.clone());
+                labels.integer_source_name(*variable, name.to_string());
             }
         }
         // `intro` names a universal's binder on the goal it refines, not in
         // the proof's locals.
         // A report names a shadowed outer value by its source name.
-        for (name, value) in
-            goal_binder_program_values(&self.0).filter(|(name, _)| !name.starts_with("outer."))
-        {
+        for (name, value) in goal_binder_program_values(&self.0).filter(|(name, _)| {
+            !name
+                .written()
+                .is_some_and(|name| name.starts_with("outer."))
+        }) {
             if let Some(variable) = diagnostic_value_variable(value) {
-                labels.source_name(variable, name.to_owned());
+                labels.source_name(variable, name.to_string());
                 labels.source_type(variable, value.program_type());
             }
         }
@@ -2530,7 +2539,7 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
 /// The arm a deferred `match` took on one outcome path, by the match's
 /// source occurrence: its index among the written arms and its bindings.
 pub(in crate::surface::proof) type OutcomeMatchArms =
-    PersistentMap<usize, (usize, PersistentMap<String, ContractExpression>)>;
+    PersistentMap<usize, (usize, PersistentBinderMap<ContractExpression>)>;
 
 pub(in crate::surface::proof) type OutcomeProofData =
     KernelOutcomeProofState<OutcomeProofPresentation>;
@@ -2552,7 +2561,7 @@ pub(in crate::surface::proof) struct PropositionPresentation {
     /// Surface names introduced while refining this exact proposition goal.
     /// Universal binders are goal-local: sibling goals share the persistent
     /// map root at a split, then refine independently without leaking names.
-    pub(in crate::surface::proof) surface_bindings: PersistentMap<String, ContractExpression>,
+    pub(in crate::surface::proof) surface_bindings: PersistentBinderMap<ContractExpression>,
     /// What the kernel lowering recorded about this goal's outermost nodes.
     /// An introduction reads it instead of inferring the Surface-to-kernel
     /// correspondence from a shape the written syntax happens to share.
@@ -2707,7 +2716,7 @@ impl OpenBranchConstruction for OpenBranch {
                 kernel,
                 PropositionPresentation {
                     surface: None,
-                    surface_bindings: PersistentMap::default(),
+                    surface_bindings: PersistentBinderMap::default(),
                     ..PropositionPresentation::default()
                 },
             )),
@@ -2733,7 +2742,7 @@ impl OpenBranchConstruction for OpenBranch {
                 kernel,
                 PropositionPresentation {
                     surface: Some(Arc::new(surface)),
-                    surface_bindings: PersistentMap::default(),
+                    surface_bindings: PersistentBinderMap::default(),
                     ..PropositionPresentation::default()
                 },
             )),
@@ -2754,7 +2763,7 @@ impl OpenBranchConstruction for OpenBranch {
                 kernel,
                 PropositionPresentation {
                     surface: Some(Arc::new(surface)),
-                    surface_bindings: PersistentMap::default(),
+                    surface_bindings: PersistentBinderMap::default(),
                     ..PropositionPresentation::default()
                 },
                 outcome,
@@ -2832,7 +2841,7 @@ impl<'a> Proof<'a> {
     /// binding its pass count as `loop(i).iterations`.
     pub(super) fn local_integer_values(
         &self,
-    ) -> PersistentMap<String, crate::kernel::SpecIntegerExpression> {
+    ) -> PersistentBinderMap<crate::kernel::SpecIntegerExpression> {
         let mut values = self.state().locals().integer_values.clone();
         let recorded_states = if let Some(outcome) = self.focused_outcome_data() {
             Some(&outcome.recorded_states)
@@ -2856,7 +2865,7 @@ impl<'a> Proof<'a> {
 
     pub(super) fn local_algebraic_values(
         &self,
-    ) -> &PersistentMap<String, crate::kernel::SpecAlgebraicExpression> {
+    ) -> &PersistentBinderMap<crate::kernel::SpecAlgebraicExpression> {
         &self.state().locals().algebraic_values
     }
 
@@ -2978,9 +2987,9 @@ impl<'a> Proof<'a> {
         }
     }
 
-    pub(in crate::surface::proof) fn local_binding(
+    pub(in crate::surface::proof) fn local_binding<Q: binders::BinderKey + ?Sized>(
         &self,
-        name: &String,
+        name: &Q,
     ) -> Option<&ContractExpression> {
         self.state().locals().values.get(name)
     }
@@ -2988,9 +2997,7 @@ impl<'a> Proof<'a> {
     /// Every proof local in scope at this point, by name: a proof `match`
     /// arm's bindings, `let { ... } = unfold(...)` names, call-result binders, loop
     /// binders. Loop clauses written in this scope are resolved through it.
-    pub(in crate::surface::proof) fn proof_local_values(
-        &self,
-    ) -> BTreeMap<String, ContractExpression> {
+    pub(in crate::surface::proof) fn proof_local_values(&self) -> BinderMap<ContractExpression> {
         self.state()
             .locals()
             .values
@@ -3281,7 +3288,7 @@ impl<'a> Proof<'a> {
                         goal,
                         PropositionPresentation {
                             surface: surface_goal.clone().map(Arc::new),
-                            surface_bindings: PersistentMap::default(),
+                            surface_bindings: PersistentBinderMap::default(),
                             ..PropositionPresentation::default()
                         },
                     )
@@ -3292,7 +3299,7 @@ impl<'a> Proof<'a> {
                         claim_goal,
                         PropositionPresentation {
                             surface: surface_goal.clone().map(Arc::new),
-                            surface_bindings: PersistentMap::default(),
+                            surface_bindings: PersistentBinderMap::default(),
                             ..PropositionPresentation::default()
                         },
                     )
@@ -3326,7 +3333,7 @@ impl<'a> Proof<'a> {
                     };
                     let presentation = PropositionPresentation {
                         surface: surface_goal.map(Arc::new),
-                        surface_bindings: PersistentMap::default(),
+                        surface_bindings: PersistentBinderMap::default(),
                         ..PropositionPresentation::default()
                     };
                     let obligation = match outcome.clone() {
@@ -3799,7 +3806,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::ArithmeticUsing(_) => "solve() using",
         ProofStep::Preserve(_) => "preserve",
 
-        ProofStep::Intro | ProofStep::IntroAs(_) => "intro()",
+        ProofStep::Intro | ProofStep::IntroAs(_) | ProofStep::IntroBinder(_) => "intro()",
         ProofStep::Enumerate => "enumerate()",
         ProofStep::Step
         | ProofStep::StepBind(_)
@@ -3933,7 +3940,7 @@ impl ExecutionProofPresentation {
         tactic_index: usize,
         source_index: usize,
         tactic: PostExecutionTactic,
-        lexical_bindings: Option<PersistentMap<String, ContractExpression>>,
+        lexical_bindings: Option<PersistentBinderMap<ContractExpression>>,
     ) {
         self.post_execution_tactics
             .push(DeferredPostExecutionTactic {

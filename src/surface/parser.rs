@@ -196,7 +196,8 @@ impl SourceBindingIndex {
             crate::kernel::BindingName::Static(id) => self.statics.get(id),
             crate::kernel::BindingName::Named(_)
             | crate::kernel::BindingName::ContractResult
-            | crate::kernel::BindingName::ContractException => None,
+            | crate::kernel::BindingName::ContractException
+            | crate::kernel::BindingName::Generated(_) => None,
         }
     }
 }
@@ -923,7 +924,7 @@ struct Parser {
     rust_slice_params: BTreeSet<String>,
     /// The element type of each slice parameter read so far, by name: the
     /// latest parameter of that name, which is the current declaration's.
-    rust_slice_elements: BTreeMap<String, InterfaceType>,
+    rust_slice_elements: BinderMap<InterfaceType>,
     /// The `Vec` parameters of the Rust signature being parsed, and
     /// `result` when it returns one: each reads `v.len()` and `v[i]`, through
     /// `*v` when the parameter is a reference (`true`).
@@ -1054,7 +1055,7 @@ struct Parser {
     let_operands: spec_arithmetic::LetOperands,
     /// The machine types of the current theorem's or pure function's
     /// parameters, which a diagnostic names.
-    spec_parameter_types: BTreeMap<String, InterfaceType>,
+    spec_parameter_types: BinderMap<InterfaceType>,
     /// The casts written as `address(p)`, which convert a C pointer to its
     /// `uint64` address. Arithmetic on them is
     /// pointer-word arithmetic, such as a tag added to an aligned address,
@@ -1085,7 +1086,7 @@ struct Parser {
     integer_arithmetic: bool,
     /// Quantifier variables open at the cursor, innermost last. Each hides
     /// a fact of the same name inside its body.
-    quantifier_binders: Vec<String>,
+    quantifier_binders: Vec<SurfaceBinder>,
     integer_literal_context: bool,
     /// Instance binders declared by each C function block already parsed,
     /// keyed by function name. A call step reads exactly the entry for its
@@ -1461,7 +1462,7 @@ impl Parser {
 }
 
 /// The machine types of a theorem's or pure function's parameters.
-fn spec_parameter_types(parameters: &[FunctionParameter]) -> BTreeMap<String, InterfaceType> {
+fn spec_parameter_types(parameters: &[FunctionParameter]) -> BinderMap<InterfaceType> {
     parameters
         .iter()
         .filter_map(|parameter| match parameter.click_type() {
@@ -1790,6 +1791,23 @@ impl Parser {
                 }
                 _ => None,
             }));
+        // Reserve written binder identities before desugaring allocates any names.
+        for window in tokens.windows(4) {
+            if let [Token::Ident(name), Token::LParen, number, Token::RParen] = window
+                && name == "binder"
+            {
+                let number = match number {
+                    Token::Number(n) => Some(u64::from(*n)),
+                    Token::UnsuffixedUInt64(n) | Token::UInt64Number(n) => Some(*n),
+                    Token::UnsuffixedInt64(n) | Token::Int64Number(n) => u64::try_from(*n).ok(),
+                    Token::RustInteger(n) => n.digits.parse::<u64>().ok(),
+                    _ => None,
+                };
+                if let Some(number) = number {
+                    crate::kernel::GeneratedBinderId::from_spelling(number);
+                }
+            }
+        }
         let mut tokens = tokens;
         if language == SourceLanguage::Rust {
             rust_literals::normalize_tokens(&mut tokens);
@@ -1851,7 +1869,7 @@ impl Parser {
             int64_t_rank: LongRank::Long,
             exact_long_rank: false,
             rust_slice_params: BTreeSet::new(),
-            rust_slice_elements: BTreeMap::new(),
+            rust_slice_elements: BinderMap::new(),
             rust_vec_params: BTreeMap::new(),
             rust_loop_iterators: Vec::new(),
             loop_block_depth: 0,
@@ -1907,7 +1925,7 @@ impl Parser {
             pointer_result_functions: BTreeSet::new(),
             integer_parameter_positions: BTreeMap::new(),
             let_operands: Default::default(),
-            spec_parameter_types: BTreeMap::new(),
+            spec_parameter_types: BinderMap::new(),
             address_casts: std::collections::HashSet::new(),
             theorem_pointer_params: BTreeSet::new(),
             pending_slice_params: None,
@@ -3877,7 +3895,7 @@ impl Parser {
                         );
                     }
                     witnesses.push(ResourceWitness {
-                        name: binding.name,
+                        name: binding.name.into(),
                         interface_type,
                     });
                     facts.push(condition);
@@ -4046,7 +4064,7 @@ impl Parser {
         };
         let clause = IteratedResourceClause {
             owner: resource_name.to_string(),
-            binder,
+            binder: binder.into(),
             range,
             guard,
             element,
@@ -6005,7 +6023,13 @@ impl Parser {
 
     /// Refuse a Click binder spelled `true` or `false`: inside Click those
     /// spellings are the `bool` literals, so the binder could never be read.
-    fn refuse_bool_literal_binder(&self, name: &str) -> Result<(), ClickError> {
+    fn refuse_bool_literal_binder(
+        &self,
+        name: &(impl binders::BinderKey + ?Sized),
+    ) -> Result<(), ClickError> {
+        let Some(binders::BinderKeyRef::Written(name)) = name.binder_key() else {
+            return Ok(());
+        };
         if matches!(name, "true" | "false") {
             return Err(self.error(format!(
                 "`{name}` is a `Bool` literal and cannot name a Click binder"
@@ -7868,7 +7892,7 @@ impl Parser {
             .zip(arguments.iter())
             .map(|(parameter, argument)| (parameter.clone(), argument.clone()))
             .collect::<BTreeMap<_, _>>();
-        let target = substitute_resource_clause_bindings(resource, &substitutions)
+        let target = substitute_resource_clause_bindings(resource, &substitutions.into())
             .map_err(|message| self.error(message))?;
         let ResourceClause::Named { binding, resource } = target else {
             return Err(self.error(format!(
@@ -8632,7 +8656,7 @@ impl Parser {
             let body = self.parse_proposition()?;
             return Ok(ClickProposition::Exists {
                 click_type: ClickType::Program(interface_type),
-                name: binding.name,
+                name: binding.name.into(),
                 written_name: None,
                 body: Box::new(ClickProposition::And(Box::new(condition), Box::new(body))),
             });
@@ -8779,6 +8803,7 @@ impl Parser {
                 self.peek_ident(),
                 Some(
                     "address"
+                        | "binder"
                         | "byte_offset"
                         | "sizeof"
                         | "float32_from_bits"
@@ -8939,11 +8964,12 @@ impl Parser {
         struct Scope {
             forall: bool,
             click_type: ClickType,
-            name: String,
+            name: SurfaceBinder,
             negations: usize,
             previous_integer_context: bool,
             /// Where the bindings this binder makes and hides start.
             names: NameScope,
+            operand: spec_arithmetic::ShadowedLet,
         }
 
         let mut scopes = Vec::new();
@@ -8991,13 +9017,13 @@ impl Parser {
                     self.expect(Token::LParen)?;
                     let mut group_len = 0;
                     loop {
-                        let name = self.expect_ident(if forall {
+                        let name = self.expect_surface_binder(if forall {
                             "forall variable name"
                         } else {
                             "exists variable name"
                         })?;
                         self.refuse_bool_literal_binder(&name)?;
-                        if is_c_type_keyword(&name) {
+                        if name.written().is_some_and(is_c_type_keyword) {
                             return Err(self.error(
                                 "Click-native binders use `name: type`, for example `exists (k: int32)`",
                             ));
@@ -9055,9 +9081,11 @@ impl Parser {
                                 ));
                             }
                         }
+                        let operand = self.bind_let_operand(&name, Some(&click_type), None);
                         self.quantifier_binders.push(name.clone());
                         scopes.push(Scope {
                             forall,
+                            operand,
                             click_type,
                             name,
                             negations: if group_len == 0 { negations } else { 0 },
@@ -9127,6 +9155,7 @@ impl Parser {
                     let scope = scopes.pop().expect("quantifier scope marker has a scope");
                     self.quantifier_binders.pop();
                     self.names.end(scope.names);
+                    self.unbind_let_operands(vec![scope.operand]);
                     self.integer_literal_context = scope.previous_integer_context;
                     let body = operands.pop().expect("quantifier body operand");
                     let mut quantifier = if scope.forall {
@@ -9191,10 +9220,12 @@ impl Parser {
             ));
         }
         self.expect(Token::Pipe)?;
-        let item = self.expect_ident("range item name")?;
+        let item = self.expect_surface_binder("range item name")?;
         self.expect(Token::Pipe)?;
         let binder_scope = self.loop_proof_value_names.clone();
-        self.loop_proof_value_names = self.loop_proof_value_names.with_value(item.clone());
+        if let Some(name) = item.written() {
+            self.loop_proof_value_names = self.loop_proof_value_names.with_value(name.to_owned());
+        }
         let body = if self.peek() == Some(&Token::LBrace) {
             self.position += 1;
             let body = self.parse_proposition()?;
@@ -9261,6 +9292,12 @@ impl Parser {
         // nonzero truth.
         if self.at_proposition_end() {
             let proposition_binding = match &left {
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    crate::kernel::BindingName::Generated(id),
+                )) => {
+                    self.specification_binding_kind(id)
+                        == Some(spec_arithmetic::SpecificationBinding::Proposition)
+                }
                 ContractExpression::Binding(name)
                 | ContractExpression::CBinding(name)
                 | ContractExpression::ProgramExpression(ProgramExpression::Variable(
@@ -9707,7 +9744,7 @@ impl Parser {
                 } => {
                     self.loop_proof_value_names = self
                         .loop_proof_value_names
-                        .with_value(written_name.as_ref().unwrap_or(name).clone());
+                        .with_value(written_name.clone().unwrap_or_else(|| name.to_string()));
                     pending.push(body);
                 }
                 ClickProposition::RangeAll {
@@ -9724,7 +9761,7 @@ impl Parser {
                 } => {
                     self.loop_proof_value_names = self
                         .loop_proof_value_names
-                        .with_value(written_item.as_ref().unwrap_or(item).clone());
+                        .with_value(written_item.clone().unwrap_or_else(|| item.to_string()));
                     pending.push(body);
                 }
                 ClickProposition::And(left, right)
@@ -10350,7 +10387,7 @@ impl Parser {
             .rev()
             .fold(body, |body, (name, click_type)| ClickProposition::Exists {
                 click_type: click_type.clone(),
-                name: name.clone(),
+                name: name.clone().into(),
                 written_name: None,
                 body: Box::new(body),
             });
@@ -10846,7 +10883,7 @@ impl Parser {
                     resources,
                     initialize_proof,
                     preserve_proof,
-                    scope: BTreeMap::new(),
+                    scope: BinderMap::new(),
                 },
             )));
         }
@@ -11275,11 +11312,18 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("as") {
                     self.position += 1;
-                    let name = self.expect_ident("name for the introduced variable")?;
-                    self.refuse_cast_type_binder(&name)?;
+                    let name = self.expect_surface_binder("name for the introduced variable")?;
+                    if let Some(name) = name.written() {
+                        self.refuse_cast_type_binder(name)?;
+                    }
                     self.names.hide_for_proof_binder(&name, false);
-                    self.names.ended_fact_names.remove(&name);
-                    ProofTactic::IntroAs(name)
+                    if let Some(name) = name.written() {
+                        self.names.ended_fact_names.remove(name);
+                    }
+                    match name {
+                        SurfaceBinder::Written(name) => ProofTactic::IntroAs(name),
+                        name => ProofTactic::IntroBinder(name),
+                    }
                 } else {
                     ProofTactic::Intro
                 }
@@ -13576,6 +13620,10 @@ impl Parser {
     fn binding_struct_name(&self, binding: &crate::kernel::BindingName) -> Option<&String> {
         match binding {
             crate::kernel::BindingName::ContractException => None,
+            crate::kernel::BindingName::Generated(id) => match self.let_operands.types.get(id) {
+                Some(ClickType::CObjectPointer { struct_name, .. }) => Some(struct_name),
+                _ => None,
+            },
             crate::kernel::BindingName::ContractResult => self
                 .names
                 .struct_params
@@ -13603,7 +13651,8 @@ impl Parser {
     }
     fn binding_is_aggregate(&self, binding: &crate::kernel::BindingName) -> bool {
         match binding {
-            crate::kernel::BindingName::ContractException => false,
+            crate::kernel::BindingName::ContractException
+            | crate::kernel::BindingName::Generated(_) => false,
             crate::kernel::BindingName::ContractResult => {
                 self.names.aggregate_objects.contains_key("result")
             }
@@ -14979,7 +15028,7 @@ impl Parser {
                 self.position += 1;
                 if self.peek() != Some(&Token::RParen) {
                     loop {
-                        bindings.push(self.expect_ident("match pattern binding")?);
+                        bindings.push(self.expect_surface_binder("match pattern binding")?);
                         match self.peek() {
                             Some(Token::Comma) => self.position += 1,
                             Some(Token::RParen) => break,
@@ -15000,11 +15049,11 @@ impl Parser {
             self.expect(Token::FatArrow)?;
             let newly_bound = bindings
                 .iter()
+                .filter_map(|binding| binding.written().map(str::to_owned))
                 .filter(|binding| {
                     self.names
                         .insert(NameKind::ContractBinding, (*binding).clone())
                 })
-                .cloned()
                 .collect::<Vec<_>>();
             let body = self.parse_branch_value(bool_arms);
             for binding in newly_bound {
@@ -15396,6 +15445,9 @@ impl Parser {
     }
 
     fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        if self.peek_ident() == Some("binder") && self.peek_next() == Some(&Token::LParen) {
+            return Ok(self.expect_surface_binder("binder reference")?.reference());
+        }
         if let Some(binding) = self.take_local_binding_reference()? {
             return Ok(binding);
         }
@@ -15566,7 +15618,7 @@ impl Parser {
             let mut bound = BTreeSet::new();
             if self.peek() != Some(&Token::Pipe) {
                 loop {
-                    let name = self.expect_ident("lambda parameter name")?;
+                    let name = self.expect_surface_binder("lambda parameter name")?;
                     self.refuse_bool_literal_binder(&name)?;
                     if !bound.insert(name.clone()) {
                         return Err(self.error(format!("duplicate lambda parameter `{name}`")));
@@ -15975,7 +16027,7 @@ impl Parser {
                     match self.names.algebraic_params.get(&name) {
                         Some((algebraic_type, binder_index)) => {
                             Ok(ContractExpression::AlgebraicVariable {
-                                name,
+                                name: name.into(),
                                 algebraic_type: algebraic_type.clone(),
                                 binder_index: *binder_index,
                             })
@@ -16100,6 +16152,43 @@ impl Parser {
     }
 
     fn parse_contract_value_let_expression(&mut self) -> Result<ContractExpression, ClickError> {
+        if self.tokens.get(self.position + 1) == Some(&Token::Ident("binder".into()))
+            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+        {
+            self.expect_ident_spelling("let")?;
+            let name = self.expect_surface_binder("let binding")?;
+            let click_type = if self.peek() == Some(&Token::Colon) {
+                self.position += 1;
+                Some(self.parse_click_type()?.0)
+            } else {
+                None
+            };
+            self.expect(Token::Equal)?;
+            let previous_integer = std::mem::replace(
+                &mut self.integer_literal_context,
+                click_type == Some(ClickType::Integer),
+            );
+            let value = self.parse_contract_expression();
+            self.integer_literal_context = previous_integer;
+            let value = value?;
+            let value = match &click_type {
+                Some(ClickType::Integer) => self.at_integer_position(value),
+                Some(ClickType::Program(ty)) => {
+                    self.typed_let_literal("generated binder", *ty, value)?
+                }
+                _ => value,
+            };
+            self.expect(Token::Semicolon)?;
+            let shadowed = self.bind_let_operand(&name, click_type.as_ref(), Some(&value));
+            let body = self.parse_branch_value(self.bool_value_context);
+            self.unbind_let_operands(vec![shadowed]);
+            return Ok(ContractExpression::Let {
+                name,
+                click_type,
+                value: Box::new(value),
+                body: Box::new(body?),
+            });
+        }
         let bool_body = std::mem::take(&mut self.bool_value_context);
         let mut bindings = Vec::new();
         let mut shadowed_lets = Vec::new();
@@ -16147,7 +16236,7 @@ impl Parser {
         let mut body = body?;
         for (name, click_type, value, _, _) in bindings.into_iter().rev() {
             body = ContractExpression::Let {
-                name,
+                name: name.into(),
                 click_type,
                 value: Box::new(value),
                 body: Box::new(body),
@@ -16531,22 +16620,34 @@ impl Parser {
         self.expect(Token::Comma)?;
         // The untyped two-name spelling is contextual lambda sugar.
         // A typed literal or any other expression is an ordinary step value.
+        let binder_end = if self.tokens.get(self.position + 1)
+            == Some(&Token::Ident("binder".into()))
+            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+        {
+            self.position + 5
+        } else {
+            self.position + 2
+        };
         let untyped_binder = self.peek() == Some(&Token::Pipe)
             && matches!(self.peek_next(), Some(Token::Ident(_)))
-            && self.tokens.get(self.position + 2) == Some(&Token::Comma);
+            && self.tokens.get(binder_end) == Some(&Token::Comma);
         if !untyped_binder {
             let step = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
             return Ok(lambdas::range_fold(start, end, initial, step));
         }
         self.expect(Token::Pipe)?;
-        let accumulator = self.expect_ident("fold accumulator name")?;
+        let accumulator = self.expect_surface_binder("fold accumulator name")?;
         self.expect(Token::Comma)?;
-        let item = self.expect_ident("fold item name")?;
+        let item = self.expect_surface_binder("fold item name")?;
         self.expect(Token::Pipe)?;
         let binder_scope = self.loop_proof_value_names.clone();
-        self.loop_proof_value_names = self.loop_proof_value_names.with_value(accumulator.clone());
-        self.loop_proof_value_names = self.loop_proof_value_names.with_value(item.clone());
+        if let Some(name) = accumulator.written() {
+            self.loop_proof_value_names = self.loop_proof_value_names.with_value(name.to_owned());
+        }
+        if let Some(name) = item.written() {
+            self.loop_proof_value_names = self.loop_proof_value_names.with_value(name.to_owned());
+        }
         let body = if self.peek() == Some(&Token::LBrace) {
             self.position += 1;
             let body = self.parse_contract_expression()?;
@@ -16910,6 +17011,18 @@ impl Parser {
                 format!("expected `{expected}`, got {}", token.describe()),
             )),
             None => Err(self.error_at(at, format!("expected `{expected}`, got end of input"))),
+        }
+    }
+
+    fn expect_surface_binder(&mut self, expected: &str) -> Result<SurfaceBinder, ClickError> {
+        if self.peek_ident() == Some("binder") && self.peek_next() == Some(&Token::LParen) {
+            self.position += 2;
+            let number = self.expect_u64("binder identity")?;
+            self.expect(Token::RParen)?;
+            let id = crate::kernel::GeneratedBinderId::from_spelling(number);
+            Ok(SurfaceBinder::Generated(id))
+        } else {
+            self.expect_ident(expected).map(Into::into)
         }
     }
 

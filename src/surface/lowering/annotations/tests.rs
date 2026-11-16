@@ -414,7 +414,7 @@ fn ordinary_integer_arithmetic_retains_structure_and_deferred_domain_checks() {
     let x = Int::Variable(crate::kernel::Variable(914002));
     context.integer_values = context
         .integer_values
-        .with_inserted("x".into(), Spec::Term(x.clone()));
+        .with_inserted("x", Spec::Term(x.clone()));
     let binding = || Box::new(ContractExpression::Binding("x".into()));
     let one = || Box::new(ContractExpression::IntegerLiteral("1".into()));
     for (expression, expected) in [

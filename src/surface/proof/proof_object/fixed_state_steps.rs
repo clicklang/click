@@ -127,7 +127,7 @@ mod projection_path_tests {
 
 /// A source-sized decision graph. Both arms point to the shared continuation;
 /// walking an arm never visits the syntax or outcomes of its sibling.
-type OutcomeBindings = PersistentMap<String, ContractExpression>;
+type OutcomeBindings = PersistentBinderMap<ContractExpression>;
 
 // Nodes select their lexical match by source occurrence. Shared continuation
 // nodes keep their enclosing scope, so arm bindings cannot escape the arm.
@@ -1493,7 +1493,7 @@ impl<'a> Proof<'a> {
                 .expect("pointer choice sort"),
             _ => return Ok(None),
         };
-        let bound_names = BTreeMap::from([(chosen_variable, name.clone())]);
+        let bound_names = BTreeMap::from([(chosen_variable, SurfaceBinder::from(name))]);
         let mut pending = vec![(chosen_body.clone(), Vec::new())];
         let mut leaves = Vec::new();
         let mut work = 0usize;
@@ -1715,7 +1715,7 @@ impl<'a> Proof<'a> {
         let projection_allocations_before = persistent_node_allocations();
         let mut leaves = Vec::new();
         let mut pending = vec![(instantiated, Vec::new())];
-        let bound_names = BTreeMap::from([(chosen_variable, choice.name.clone())]);
+        let bound_names = BTreeMap::from([(chosen_variable, SurfaceBinder::from(&choice.name))]);
         let mut work = 0usize;
         while let Some((proposition, connective_path)) = pending.pop() {
             check_verification_deadline()?;
@@ -2052,7 +2052,7 @@ impl<'a> Proof<'a> {
             body,
         } = &goal
         {
-            if name != witness.name() {
+            if !name.is_empty() && name != witness.name() {
                 return Err(self.step_error(format!(
                     "`witness` binds `{name}`, but proof provided `{}`",
                     witness.name()
@@ -2094,7 +2094,7 @@ impl<'a> Proof<'a> {
                     written_name,
                     body,
                     ..
-                }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+                }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
                     let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                     Some(
                         substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2141,7 +2141,7 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+            }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2157,7 +2157,7 @@ impl<'a> Proof<'a> {
                 item,
                 written_item,
                 body,
-            }) if written_item.as_ref().unwrap_or(item) == witness.name() => {
+            }) if item.matches_witness_label(written_item.as_deref(), witness.name()) => {
                 let substitutions = BTreeMap::from([(item.clone(), witness.value().clone())]);
                 let start =
                     substitute_contract_expression(start, &substitutions).map_err(|message| {
@@ -2332,7 +2332,7 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+            }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2371,7 +2371,7 @@ impl<'a> Proof<'a> {
                 "pure `witness` currently requires an Integer existential proposition",
             ));
         };
-        if name != witness.name() {
+        if !name.is_empty() && name != witness.name() {
             return Err(self.step_error(format!(
                 "`witness` binds `{name}`, but proof provided `{}`",
                 witness.name()
@@ -2389,7 +2389,7 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+            }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2428,7 +2428,7 @@ impl<'a> Proof<'a> {
                 "pure algebraic `witness` requires an algebraic existential proposition",
             ));
         };
-        if name != witness.name() {
+        if !name.is_empty() && name != witness.name() {
             return Err(self.step_error(format!(
                 "`witness` binds `{name}`, but proof provided `{}`",
                 witness.name()
@@ -2447,7 +2447,7 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+            }) if name.matches_witness_label(written_name.as_deref(), witness.name()) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2551,7 +2551,7 @@ impl<'a> Proof<'a> {
         let promoted = crate::surface::proof::surface_lowering::promote_integer_expression(
             expression,
             &integers,
-            &crate::persistent::PersistentMap::default(),
+            &PersistentBinderMap::default(),
         );
         if let Ok(crate::kernel::SpecIntegerExpression::Term(value)) =
             crate::surface::lowering::lower_contract_integer_to_spec(&promoted, &integers)
@@ -3551,7 +3551,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn checked_outcome_match_arm(
         &self,
         occurrence: usize,
-    ) -> Result<(usize, PersistentMap<String, ContractExpression>), ClickError> {
+    ) -> Result<(usize, PersistentBinderMap<ContractExpression>), ClickError> {
         if !matches!(
             self.focused_obligation(),
             Some(Obligation::FunctionOutcome(_))

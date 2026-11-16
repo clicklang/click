@@ -46,7 +46,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         )?;
     }
 
-    let mut contracts = BTreeMap::new();
+    let mut contracts = BinderMap::new();
     for definition in file.contract_definitions() {
         crate::surface::enter_ambient_declaration(definition.name());
         // A contract proposition takes the function value, then one value
@@ -62,7 +62,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         );
     }
 
-    let mut click_function_types = BTreeMap::new();
+    let mut click_function_types = BinderMap::new();
     for definition in &click_function_definitions {
         crate::surface::enter_ambient_declaration(definition.name());
         generics::validate_type_parameter_list(
@@ -139,11 +139,11 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     let predicate_definition_map = predicate_definitions
         .iter()
         .map(|definition| (definition.name(), definition))
-        .collect::<BTreeMap<_, _>>();
+        .collect();
     let click_function_definition_map = click_function_definitions
         .iter()
         .map(|definition| (definition.name(), definition))
-        .collect::<BTreeMap<_, _>>();
+        .collect();
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
         .with_contracts(file.contract_definitions(), &file.program_function_names);
     let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
@@ -154,7 +154,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     let resource_definition_map = resource_definitions
         .iter()
         .map(|definition| (definition.name(), definition))
-        .collect::<BTreeMap<_, _>>();
+        .collect();
     for definition in &resource_definitions {
         crate::surface::enter_ambient_declaration(definition.name());
         validate_resource_definition(
@@ -184,7 +184,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                     .interface_type()
                     .map(|interface_type| (parameter.name().to_string(), interface_type))
             })
-            .collect::<BTreeMap<_, _>>();
+            .collect();
         validate_predicate_calls_in_proposition(
             definition.body(),
             &proposition_calls,
@@ -328,7 +328,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         validate_declaration_lambda_bindings(
             function.ensures(),
             &requires_type_environment,
-            &BTreeSet::new(),
+            &BinderSet::new(),
             &click_function_types,
             &format!("declaration bindings in `{}`", function.signature().name()),
         )?;
@@ -474,7 +474,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                         validate_theorem_proposition_expression_types(
                             proposition,
                             &ensures_type_environment,
-                            &BTreeSet::new(),
+                            &BinderSet::new(),
                             &click_function_types,
                             &format!("ensures clause in `{}`", function.signature().name()),
                         )?;
@@ -519,7 +519,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
 /// objects are resolved by the source-aware parser rather than this scope.
 fn validate_contract_proposition_names(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, InterfaceType>,
+    variables: &BinderMap<InterfaceType>,
     program_objects: &BTreeSet<String>,
     clause: &str,
     context: &str,
@@ -733,9 +733,9 @@ pub(in crate::surface) fn program_expression_reads_no_memory(
 
 fn validate_contract_applications_in_proposition(
     proposition: &ClickProposition,
-    contracts: &BTreeMap<String, InterfaceType>,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    contracts: &BinderMap<InterfaceType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     let mut pending = vec![(proposition, variables)];
@@ -763,9 +763,9 @@ fn validate_contract_applications_in_proposition(
 
 fn validate_contract_applications_in_proposition_one(
     proposition: &ClickProposition,
-    contracts: &BTreeMap<String, InterfaceType>,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_functions: &BTreeMap<String, ClickFunctionType>,
+    contracts: &BinderMap<InterfaceType>,
+    variables: &BinderMap<InterfaceType>,
+    click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
@@ -1011,9 +1011,9 @@ fn reject_held_outside_execution(
 fn validate_theorem_definition(
     theorem: &TheoremDefinition,
     predicates: &BTreeMap<String, usize>,
-    contracts: &BTreeMap<String, InterfaceType>,
+    contracts: &BinderMap<InterfaceType>,
     click_functions: &BTreeMap<String, usize>,
-    click_function_types: &BTreeMap<String, ClickFunctionType>,
+    click_function_types: &BinderMap<ClickFunctionType>,
 ) -> Result<(), ClickError> {
     if theorem.ensures().is_empty() {
         return Err(ClickError::new(format!(
@@ -1122,9 +1122,9 @@ fn validate_resource_definition<'a>(
     resources: &BTreeMap<String, usize>,
     recursive_resources: &BTreeSet<String>,
     predicates: &BTreeMap<String, usize>,
-    contracts: &BTreeMap<String, InterfaceType>,
+    contracts: &BinderMap<InterfaceType>,
     click_functions: &BTreeMap<String, usize>,
-    click_function_types: &BTreeMap<String, ClickFunctionType>,
+    click_function_types: &BinderMap<ClickFunctionType>,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     spec_definitions: SpecDefinitions<'_>,
@@ -1191,11 +1191,11 @@ fn validate_resource_definition<'a>(
             spec_definitions,
         );
     }
-    let mut variables = definition
+    let mut variables: BinderMap<InterfaceType> = definition
         .parameters()
         .iter()
         .map(|parameter| (parameter.name().to_string(), parameter.interface_type()))
-        .collect::<BTreeMap<_, _>>();
+        .collect();
     for witness in composite_body.witnesses() {
         if variables
             .insert(witness.name().to_string(), witness.interface_type())
@@ -1337,8 +1337,8 @@ fn validate_resource_definition<'a>(
 fn validate_iterated_resource_clauses(
     definition: &ResourceDefinition,
     composite_body: &CompositeResourceBody,
-    variables: &BTreeMap<String, InterfaceType>,
-    click_function_types: &BTreeMap<String, ClickFunctionType>,
+    variables: &BinderMap<InterfaceType>,
+    click_function_types: &BinderMap<ClickFunctionType>,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     spec_definitions: SpecDefinitions<'_>,
@@ -1364,7 +1364,7 @@ fn validate_iterated_resource_clauses(
             definition.name(),
             crate::surface::lowering::describe_iterated_clause(clause)
         );
-        let index = clause.binder.as_str();
+        let index = &clause.binder;
         if variables.contains_key(index)
             || composite_body
                 .fields
@@ -1392,7 +1392,7 @@ fn validate_iterated_resource_clauses(
         // a fold consumes both from one context, where owned memory is a
         // partition, so no cell is ever held twice.
         let mut scoped = variables.clone();
-        scoped.insert(index.to_string(), InterfaceType::Int32);
+        scoped.insert(index, InterfaceType::Int32);
         let clause_guard = clause
             .guard
             .as_ref()
@@ -1434,7 +1434,7 @@ fn validate_iterated_resource_clauses(
         // body does not own could change while the resource is folded.
         let guard_fact = ClickProposition::ForAll {
             click_type: ClickType::Program(InterfaceType::Int32),
-            name: index.to_string(),
+            name: index.to_string().into(),
             written_name: None,
             body: Box::new(ClickProposition::Implies(
                 Box::new(clause.range.clone()),
@@ -1631,7 +1631,7 @@ fn validate_resource_fact_memory_read_authority(
                 )),
             )
         })
-        .collect::<BTreeMap<_, _>>();
+        .collect();
     let validation_parameters = bound_names
         .iter()
         .map(|(name, interface_type, struct_name)| {
@@ -2188,7 +2188,7 @@ fn collect_resource_fact_reads_from_proposition(
 /// bound must still come from the guard.
 fn quantified_index_interval(
     body: &ClickProposition,
-    name: &str,
+    name: &SurfaceBinder,
     binder_type: &ClickType,
 ) -> Option<(ProgramExpression, ProgramExpression)> {
     let ClickProposition::Implies(antecedent, _) = body else {
@@ -2196,7 +2196,7 @@ fn quantified_index_interval(
     };
     fn visit(
         proposition: &ClickProposition,
-        name: &str,
+        name: &SurfaceBinder,
         lower: &mut Option<ProgramExpression>,
         upper: &mut Option<ProgramExpression>,
     ) {
@@ -2229,7 +2229,7 @@ fn quantified_index_interval(
                     _ => (left, right),
                 };
                 let variable = ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    (name.to_string()).into(),
+                    name.kernel_name(),
                 ));
                 match operator {
                     ComparisonOperator::LessEqual if right == &variable => {
@@ -2840,12 +2840,12 @@ fn collect_resource_fact_reads_from_contract_expression(
                 }
                 visited_functions.reads_memory.insert(name.clone());
             }
-            let substitutions = definition
+            let substitutions: BTreeMap<_, _> = definition
                 .parameters()
                 .iter()
                 .zip(arguments)
                 .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
-                .collect::<BTreeMap<_, _>>();
+                .collect();
             let Some(definition_body) = definition.body() else {
                 return Ok(());
             };
@@ -3274,7 +3274,7 @@ fn declared_composite_resource_name(resource: &ResourceClause) -> Option<&str> {
 }
 
 fn reject_composite_resource_cycles(definitions: &[ResourceDefinition]) -> Result<(), ClickError> {
-    let graph = definitions
+    let graph: BTreeMap<_, _> = definitions
         .iter()
         .map(|definition| {
             let dependencies = definition
@@ -3325,7 +3325,7 @@ fn reject_composite_resource_cycles(definitions: &[ResourceDefinition]) -> Resul
                 .collect::<Vec<_>>();
             (definition.name().to_string(), dependencies)
         })
-        .collect::<BTreeMap<_, _>>();
+        .collect();
     let mut permanent = BTreeSet::new();
     let mut visiting = Vec::new();
     for name in graph.keys() {
@@ -3636,7 +3636,7 @@ mod resource_function_composition_tests {
             .click_function_definitions()
             .iter()
             .map(|definition| (definition.name(), definition))
-            .collect::<BTreeMap<_, _>>();
+            .collect();
         for depth in [16, 64, 256] {
             let mut expression =
                 ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0)));

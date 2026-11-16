@@ -687,7 +687,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // The Integer names the arguments read, such as a loop's
         // `iterations`, by name alone, as the algebraic ones just below.
         let local_integer_values = search_input.local_integer_values();
-        let mut integer_values = crate::persistent::PersistentMap::default();
+        let mut integer_values = PersistentBinderMap::default();
         for name in application
             .arguments
             .iter()

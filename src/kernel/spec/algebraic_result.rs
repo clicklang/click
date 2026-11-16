@@ -186,10 +186,10 @@ impl AlgebraicFieldResult {
     }
     pub(super) fn bind(
         &self,
-        name: &str,
+        name: &BindingName,
         state: &mut ExecutionState,
-        algebraic: &mut BTreeMap<String, AlgebraicTerm>,
-        values: &mut crate::persistent::PersistentMap<String, KernelTerm>,
+        algebraic: &mut BTreeMap<BindingName, AlgebraicTerm>,
+        values: &mut crate::persistent::PersistentMap<BindingName, KernelTerm>,
     ) {
         match self {
             Self::Shared(root) if matches!(root.node(), KernelTermNode::Legacy(_)) => self
@@ -201,7 +201,7 @@ impl AlgebraicFieldResult {
             }
             Self::Shared(_) | Self::Native(AlgebraicValue::Integer(_)) => {}
             Self::Native(AlgebraicValue::Program(value)) => {
-                state.locals.set(name.to_owned(), value.clone());
+                super::bindings::bind_value(name, value.clone().into(), state, values);
             }
             Self::Native(AlgebraicValue::Algebraic(value)) => {
                 algebraic.insert(name.to_owned(), value.clone());

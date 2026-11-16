@@ -7240,9 +7240,8 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 arguments.join(", ")
             )
         }
-        ContractExpression::AlgebraicVariable { name, .. } | ContractExpression::Binding(name) => {
-            name.clone()
-        }
+        ContractExpression::AlgebraicVariable { name, .. } => name.to_string(),
+        ContractExpression::Binding(name) => name.clone(),
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
             let scrutinee = describe_contract_expression(scrutinee);
             let arms = arms
@@ -7252,7 +7251,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                         "{}::{}({}) => {}",
                         arm.type_name,
                         arm.variant,
-                        arm.bindings.join(", "),
+                        arm.bindings
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", "),
                         describe_contract_expression(&arm.body)
                     )
                 })

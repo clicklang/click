@@ -1341,7 +1341,8 @@ impl LocalEnvironment {
             BindingName::Local(_)
             | BindingName::Static(_)
             | BindingName::ContractResult
-            | BindingName::ContractException => name.clone(),
+            | BindingName::ContractException
+            | BindingName::Generated(_) => name.clone(),
         }
     }
     /// The source spelling of this active lexical binding, for source-name
@@ -1351,7 +1352,9 @@ impl LocalEnvironment {
             BindingName::Local(id) => id.spelling()?,
             BindingName::Static(id) => id.spelling(),
             BindingName::Named(name) => name,
-            BindingName::ContractResult | BindingName::ContractException => return None,
+            BindingName::ContractResult
+            | BindingName::ContractException
+            | BindingName::Generated(_) => return None,
         };
         (self.resolve_binding(&BindingName::from(source)) == *name).then_some(source)
     }
@@ -7581,7 +7584,9 @@ impl Memory {
             },
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:value-parameter:{name}").into(),
-            BindingName::ContractResult | BindingName::ContractException => {
+            BindingName::ContractResult
+            | BindingName::ContractException
+            | BindingName::Generated(_) => {
                 unreachable!("contract outcome is not an automatic declaration")
             }
         };
@@ -7600,6 +7605,7 @@ impl Memory {
             },
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:{name}").into(),
+            BindingName::Generated(_) => unreachable!("a logical binder has no storage"),
             BindingName::ContractResult => PointerBlock::ContractResult,
             BindingName::ContractException => PointerBlock::ContractException,
         };
@@ -7621,7 +7627,9 @@ impl Memory {
             },
             BindingName::Static(binding) => PointerBlock::StaticObject { binding },
             BindingName::Named(name) => format!("local:lifetime:{lifetime}:{name}").into(),
-            BindingName::ContractResult | BindingName::ContractException => {
+            BindingName::ContractResult
+            | BindingName::ContractException
+            | BindingName::Generated(_) => {
                 unreachable!("contract outcome is not an automatic declaration")
             }
         };
@@ -7637,7 +7645,8 @@ impl Memory {
             BindingName::Named(name) => format!("global:{name}").into(),
             BindingName::Local(_)
             | BindingName::ContractResult
-            | BindingName::ContractException => {
+            | BindingName::ContractException
+            | BindingName::Generated(_) => {
                 unreachable!("non-global binding used as a global")
             }
         };
@@ -7663,7 +7672,8 @@ impl Memory {
             BindingName::Named(name) => format!("static:{function}:{name}").into(),
             BindingName::Local(_)
             | BindingName::ContractResult
-            | BindingName::ContractException => {
+            | BindingName::ContractException
+            | BindingName::Generated(_) => {
                 unreachable!("non-static binding used as a static")
             }
         };
@@ -7697,7 +7707,9 @@ impl Memory {
                 block: PointerBlock::StaticObject { binding },
                 offset: PointerOffsetTerm::Constant(0),
             },
-            BindingName::ContractResult | BindingName::ContractException => {
+            BindingName::ContractResult
+            | BindingName::ContractException
+            | BindingName::Generated(_) => {
                 unreachable!("contract outcome is not a frame-local declaration")
             }
             BindingName::Named(name) => Pointer {

@@ -22,7 +22,7 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
     available: &ProofFacts,
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     surface_propositions: &SurfacePropositionMap,
     unfolded_predicates: &[String],

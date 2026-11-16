@@ -270,8 +270,8 @@ fn wide_call_identity_casts_keep_the_native_type_refusal() {
                 let root = call(source, "wide_call");
                 let native = SpecValue::Shared(root.clone()).into_native();
                 let state = ExecutionState::new();
-                let mut values = crate::persistent::PersistentMap::default();
-                values.insert("x".to_string(), root);
+                let mut values : crate::persistent::PersistentMap<crate::kernel::BindingName,crate::kernel::KernelTerm> = crate::persistent::PersistentMap::default();
+                values.insert("x".into(), root);
                 for shared in [false, true] {
                     let mut expression = if shared {
                         SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()))

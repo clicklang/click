@@ -211,6 +211,85 @@ impl std::fmt::Display for LocalBindingId {
     }
 }
 
+/// A specification binder identity occupies a separate namespace from source
+/// names and C declarations. Cloning a term retains its lexical identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct GeneratedBinderId(u64);
+// Explicit numeric spellings and internally allocated names share a typed namespace.
+// Reserve intervals so sparse user spellings do not exhaust or linearly probe it.
+#[derive(Default)]
+struct BinderIds {
+    next: u64,
+    reserved: std::collections::BTreeMap<u64, u64>,
+}
+impl BinderIds {
+    fn reserve(&mut self, number: u64) {
+        let mut start = number;
+        let mut end = number;
+        if let Some((&left, &right)) = self.reserved.range(..=number).next_back() {
+            if right >= number {
+                return;
+            }
+            if right.checked_add(1) == Some(number) {
+                start = left;
+                self.reserved.remove(&left);
+            }
+        }
+        if let Some((&left, &right)) = self.reserved.range(number..).next() {
+            if number.checked_add(1) == Some(left) {
+                end = right;
+                self.reserved.remove(&left);
+            }
+        }
+        self.reserved.insert(start, end);
+    }
+    fn fresh(&mut self) -> u64 {
+        if let Some((_, &end)) = self.reserved.range(..=self.next).next_back() {
+            if end >= self.next {
+                self.next = end
+                    .checked_add(1)
+                    .expect("specification binder identity space exhausted");
+            }
+        }
+        let number = self.next;
+        self.reserve(number);
+        self.next = number
+            .checked_add(1)
+            .expect("specification binder identity space exhausted");
+        number
+    }
+}
+fn binder_ids() -> &'static std::sync::Mutex<BinderIds> {
+    static IDS: std::sync::OnceLock<std::sync::Mutex<BinderIds>> = std::sync::OnceLock::new();
+    IDS.get_or_init(|| {
+        std::sync::Mutex::new(BinderIds {
+            next: 1,
+            ..Default::default()
+        })
+    })
+}
+impl GeneratedBinderId {
+    pub(crate) fn fresh() -> Self {
+        crate::instrumentation::record_deterministic_work(1);
+        Self(binder_ids().lock().unwrap().fresh())
+    }
+    pub(crate) fn from_spelling(number: u64) -> Self {
+        binder_ids().lock().unwrap().reserve(number);
+        Self(number)
+    }
+    pub fn number(self) -> u64 {
+        self.0
+    }
+    pub fn binding_name(self) -> BindingName {
+        BindingName::Generated(self)
+    }
+}
+impl std::fmt::Display for GeneratedBinderId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "binder({})", self.0)
+    }
+}
+
 /// The C declaration owning static storage. File ownership uses the root
 /// translation unit, including for declarations brought in through a header.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -348,6 +427,8 @@ pub enum BindingName {
     ContractResult,
     /// The current exceptional postcondition's payload; never a declaration.
     ContractException,
+    /// A lexical proof binder, never a program object.
+    Generated(GeneratedBinderId),
 }
 
 impl BindingName {
@@ -357,7 +438,7 @@ impl BindingName {
             Self::Named(name) => Some(name),
             Self::Local(id) => id.spelling(),
             Self::Static(id) => Some(id.spelling()),
-            Self::ContractResult | Self::ContractException => None,
+            Self::ContractResult | Self::ContractException | Self::Generated(_) => None,
         }
     }
     pub fn source_name(&self) -> &str {
@@ -367,6 +448,7 @@ impl BindingName {
             Self::Static(id) => id.spelling(),
             Self::ContractResult => "result",
             Self::ContractException => "exception",
+            Self::Generated(_) => "",
         }
     }
     pub fn static_id(&self) -> Option<&StaticBindingId> {
@@ -441,6 +523,7 @@ impl From<BindingName> for BindingDeclaration {
             BindingName::Static(id) => Some(Arc::from(id.spelling())),
             BindingName::ContractResult => Some(Arc::from("result")),
             BindingName::ContractException => Some(Arc::from("exception")),
+            BindingName::Generated(_) => None,
         };
         let scope_depth = reference.local_id().map_or(0, LocalBindingId::scope_depth);
         let array_shape = reference.array_shape().map(Arc::from);
@@ -513,6 +596,7 @@ impl std::fmt::Display for BindingName {
             Self::Static(id) => id.fmt(f),
             Self::ContractResult => f.write_str("result"),
             Self::ContractException => f.write_str("exception"),
+            Self::Generated(id) => id.fmt(f),
         }
     }
 }
@@ -541,12 +625,15 @@ impl BindingName {
         self.named() == Some(name)
     }
     pub(crate) fn named_in<'a, T>(&self, map: &'a impl NamedBindingMap<T>) -> Option<&'a T> {
-        self.named().and_then(|name| map.get_named(name))
+        map.get_binding(self)
     }
 }
 
 pub(crate) trait NamedBindingMap<T> {
     fn get_named(&self, name: &str) -> Option<&T>;
+    fn get_binding(&self, name: &BindingName) -> Option<&T> {
+        name.named().and_then(|name| self.get_named(name))
+    }
 }
 impl<T> NamedBindingMap<T> for BTreeMap<String, T> {
     fn get_named(&self, name: &str) -> Option<&T> {

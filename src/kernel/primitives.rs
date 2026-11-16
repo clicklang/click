@@ -15,8 +15,8 @@ use std::sync::{Arc, OnceLock};
 
 mod bindings;
 pub use bindings::{
-    BindingDeclaration, BindingName, LocalBindingId, LocalFunctionId, LocalStorageInstance,
-    StaticBindingId, StaticBindingMetadata, StaticBindingOwner,
+    BindingDeclaration, BindingName, GeneratedBinderId, LocalBindingId, LocalFunctionId,
+    LocalStorageInstance, StaticBindingId, StaticBindingMetadata, StaticBindingOwner,
 };
 
 pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
@@ -4173,12 +4173,12 @@ pub enum SpecExpression {
         start: Box<SpecExpression>,
         end: Box<SpecExpression>,
         initial: Box<SpecExpression>,
-        accumulator: String,
-        item: String,
+        accumulator: BindingName,
+        item: BindingName,
         body: Box<SpecExpression>,
     },
     Let {
-        name: String,
+        name: BindingName,
         value: Box<SpecExpression>,
         body: Box<SpecExpression>,
     },
@@ -4433,7 +4433,7 @@ pub enum SpecIntegerRangeFoldIndex {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecAlgebraicExpressionNode {
     Variable(Variable),
-    Binding(String),
+    Binding(BindingName),
     ResourceField(ResourceFieldProjection),
     Constructor {
         variant: String,
@@ -4495,7 +4495,7 @@ pub enum SpecAlgebraicValue {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SpecAlgebraicMatchArm {
     pub variant: String,
-    pub bindings: Vec<String>,
+    pub bindings: Vec<BindingName>,
     pub binding_types: Vec<AlgebraicValueType>,
     pub body: SpecExpression,
 }
@@ -4503,7 +4503,7 @@ pub struct SpecAlgebraicMatchArm {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SpecAlgebraicResultMatchArm {
     pub variant: String,
-    pub bindings: Vec<String>,
+    pub bindings: Vec<BindingName>,
     pub binding_types: Vec<AlgebraicValueType>,
     /// Kernel identities of Integer fields in the lowered arm body.
     /// Other carriers are bound through their typed environments.
@@ -4535,7 +4535,7 @@ impl SpecAlgebraicResultMatchArm {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SpecIntegerMatchArm {
     pub variant: String,
-    pub bindings: Vec<String>,
+    pub bindings: Vec<BindingName>,
     pub binding_types: Vec<AlgebraicValueType>,
     /// Kernel identities used by Integer binders in the lowered arm body.
     /// C and algebraic binders are represented by their typed environments.
@@ -5408,57 +5408,57 @@ pub enum SpecProposition {
     Not(Box<SpecProposition>),
     Implies(Box<SpecProposition>, Box<SpecProposition>),
     ForAllInt32 {
-        name: String,
+        name: BindingName,
         variable: Variable,
         body: Box<SpecProposition>,
     },
     ForAllMachineInteger {
-        name: String,
+        name: BindingName,
         variable: Variable,
         integer_type: MachineIntegerType,
         body: Box<SpecProposition>,
     },
     ForAllInteger {
-        name: String,
+        name: BindingName,
         variable: Variable,
         body: Box<SpecProposition>,
     },
     ForAllAlgebraic {
-        name: String,
+        name: BindingName,
         variable: Variable,
         algebraic_type: AlgebraicType,
         body: Box<SpecProposition>,
     },
     ForAllPointer {
-        name: String,
+        name: BindingName,
         variable: Variable,
         program_type: ProgramType,
         body: Box<SpecProposition>,
     },
     ExistsInt32 {
-        name: String,
+        name: BindingName,
         variable: Variable,
         body: Box<SpecProposition>,
     },
     ExistsMachineInteger {
-        name: String,
+        name: BindingName,
         variable: Variable,
         integer_type: MachineIntegerType,
         body: Box<SpecProposition>,
     },
     ExistsInteger {
-        name: String,
+        name: BindingName,
         variable: Variable,
         body: Box<SpecProposition>,
     },
     ExistsAlgebraic {
-        name: String,
+        name: BindingName,
         variable: Variable,
         algebraic_type: AlgebraicType,
         body: Box<SpecProposition>,
     },
     ExistsPointer {
-        name: String,
+        name: BindingName,
         variable: Variable,
         program_type: ProgramType,
         body: Box<SpecProposition>,
@@ -13071,6 +13071,9 @@ pub enum Term {
 pub struct BinderName(Option<std::sync::Arc<str>>);
 
 impl BinderName {
+    pub fn binding(name: &BindingName) -> Self {
+        name.named().map(Self::written).unwrap_or_default()
+    }
     pub fn written(name: &str) -> Self {
         Self((!name.is_empty()).then(|| name.into()))
     }
@@ -13086,6 +13089,9 @@ impl BinderName {
 pub struct BindingNames(Option<std::sync::Arc<[BinderName]>>);
 
 impl BindingNames {
+    pub fn bindings(names: &[BindingName]) -> Self {
+        Self((!names.is_empty()).then(|| names.iter().map(BinderName::binding).collect()))
+    }
     pub fn written(names: &[String]) -> Self {
         Self(
             (!names.is_empty())
@@ -15921,3 +15927,5 @@ impl TypeParameterName {
 mod scaling_tests {
     include!("../scaling_tests/kernel/primitives.rs");
 }
+
+pub(crate) use bindings::NamedBindingMap;

@@ -127,7 +127,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions(
         fixed_state,
         spec_definitions,
         &BTreeMap::new(),
-        &crate::persistent::PersistentMap::default(),
+        &PersistentBinderMap::default(),
     )
     .map(|(proposition, _)| proposition)
 }
@@ -150,7 +150,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     let names = proposition_referenced_names(proposition);
@@ -184,7 +184,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_integer_valu
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     let names = proposition_referenced_names(proposition);
@@ -217,7 +217,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
     let names = proposition_referenced_names(proposition);
     let (values, array_refs) =
@@ -271,7 +271,7 @@ pub(in crate::surface) struct FixedStateLoweringOptions<'a> {
     pub(in crate::surface) algebraic_values: Option<&'a BTreeMap<String, SpecAlgebraicExpression>>,
     /// Checked mathematical Integer bindings of the surrounding scope.
     pub(in crate::surface) integer_values:
-        Option<&'a crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>>,
+        Option<&'a PersistentBinderMap<crate::kernel::SpecIntegerExpression>>,
     /// Array-valued names bound to array references of their own, as a theorem
     /// application binds its parameters. An argument that names another state
     /// (`old(a)`, `at(mark, a)`) binds the parameter to that state's memory;
@@ -350,7 +350,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
     ),
     String,
 > {
-    let no_integer_values = crate::persistent::PersistentMap::default();
+    let no_integer_values = PersistentBinderMap::default();
     let integer_values = options.integer_values.unwrap_or(&no_integer_values);
     let obligation_assumptions = options.obligation_assumptions.unwrap_or(assumptions);
     let (lowered, introductions, facts, obligations) =
@@ -392,7 +392,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
     ),
     String,
 > {
-    let no_integer_values = crate::persistent::PersistentMap::default();
+    let no_integer_values = PersistentBinderMap::default();
     let FixedStateLoweringOptions {
         algebraic_values,
         integer_values,
@@ -524,7 +524,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
         assumptions,
         contract_environment,
         algebraic_values,
-        &crate::persistent::PersistentMap::default(),
+        &PersistentBinderMap::default(),
         fixed_state,
         spec_definitions,
         opaque_click_functions,
@@ -537,7 +537,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
@@ -563,7 +563,7 @@ pub(in crate::surface) fn capture_fixed_state_native_expression_with_guards(
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
@@ -630,7 +630,7 @@ pub(in crate::surface) fn capture_fixed_state_native_expression_with_guards(
 /// existing logical specification read semantics and grant no access authority.
 pub(in crate::surface::proof) fn capture_fixed_state_integer_expression(
     expression: &ContractExpression,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -650,7 +650,7 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression(
 
 pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_guards(
     expression: &ContractExpression,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,

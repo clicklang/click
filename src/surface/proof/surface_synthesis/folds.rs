@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::{KernelFold, KernelFoldIndex, KernelType};
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
-pub(super) enum BinderCarrier {
+pub(in crate::surface::proof) enum BinderCarrier {
     Program,
     Integer,
     Algebraic,
@@ -12,15 +12,17 @@ pub(super) enum BinderCarrier {
 struct FoldNames {
     active: bool,
     // Integer and program variables are separate namespaces even at the same ID.
-    names: BTreeMap<(BinderCarrier, Variable), String>,
-    markers: Vec<(String, Option<String>)>,
+    names: BTreeMap<(BinderCarrier, Variable), SurfaceBinder>,
 }
 
 thread_local! {
     static FOLD_NAMES: std::cell::RefCell<FoldNames> = Default::default();
 }
 
-pub(super) fn binder_name(integer: bool, variable: Variable) -> Option<String> {
+pub(in crate::surface::proof) fn binder_name(
+    integer: bool,
+    variable: Variable,
+) -> Option<SurfaceBinder> {
     let carrier = if integer {
         BinderCarrier::Integer
     } else {
@@ -29,37 +31,28 @@ pub(super) fn binder_name(integer: bool, variable: Variable) -> Option<String> {
     scoped_binder_name(carrier, variable)
 }
 
-pub(super) fn scoped_binder_name(carrier: BinderCarrier, variable: Variable) -> Option<String> {
+pub(in crate::surface::proof) fn scoped_binder_name(
+    carrier: BinderCarrier,
+    variable: Variable,
+) -> Option<SurfaceBinder> {
     FOLD_NAMES.with(|slot| slot.borrow().names.get(&(carrier, variable)).cloned())
 }
 
-pub(super) fn marker(preferred: Option<&str>) -> String {
-    FOLD_NAMES.with(|slot| {
-        let mut names = slot.borrow_mut();
-        let marker = format!("\0binder{}", names.markers.len());
-        names
-            .markers
-            .push((marker.clone(), preferred.map(str::to_owned)));
-        marker
-    })
+pub(in crate::surface::proof) fn marker(_preferred: Option<&str>) -> SurfaceBinder {
+    SurfaceBinder::fresh()
 }
 
-pub(super) fn scope(f: impl FnOnce() -> Option<SurfaceTerm>) -> Option<SurfaceTerm> {
+pub(in crate::surface::proof) fn scope(
+    f: impl FnOnce() -> Option<SurfaceTerm>,
+) -> Option<SurfaceTerm> {
     let query = Query(FOLD_NAMES.with(|slot| {
         let mut names = slot.borrow_mut();
         let outermost = !names.active;
         names.active = true;
         outermost
     }));
-    let expression = f()?;
-    if query.0 {
-        FOLD_NAMES.with(|slot| {
-            crate::surface::lowering::name_synthesized_binders(&expression, &slot.borrow().markers)
-                .ok()
-        })
-    } else {
-        Some(expression)
-    }
+    let _query = query;
+    f()
 }
 
 struct Query(bool);
@@ -71,12 +64,15 @@ impl Drop for Query {
     }
 }
 
-pub(super) struct Binding {
+pub(in crate::surface::proof) struct Binding {
     key: (BinderCarrier, Variable),
-    previous: Option<String>,
+    previous: Option<SurfaceBinder>,
 }
 impl Binding {
-    pub(super) fn enter(key: (BinderCarrier, Variable), name: String) -> Self {
+    pub(in crate::surface::proof) fn enter(
+        key: (BinderCarrier, Variable),
+        name: SurfaceBinder,
+    ) -> Self {
         let previous = FOLD_NAMES.with(|slot| slot.borrow_mut().names.insert(key, name));
         Self { key, previous }
     }
@@ -94,11 +90,11 @@ impl Drop for Binding {
     }
 }
 
-pub(super) fn raise_fold(
+pub(in crate::surface::proof) fn raise_fold(
     fold: &KernelFold,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     raise_parts(
         fold.index,
@@ -110,11 +106,11 @@ pub(super) fn raise_fold(
     )
 }
 
-pub(super) fn raise_machine_fold(
+pub(in crate::surface::proof) fn raise_machine_fold(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, String>,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     let MachineTerm::RangeFold {
         start,
@@ -191,8 +187,8 @@ fn raise_parts<T>(
             let start_name = marker(None);
             let end_name = marker(None);
             (
-                SurfaceTerm::Binding(start_name.clone()),
-                SurfaceTerm::Binding(end_name.clone()),
+                start_name.reference(),
+                end_name.reference(),
                 Some((start_name, start, end_name, end)),
             )
         } else {

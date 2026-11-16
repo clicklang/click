@@ -1487,8 +1487,7 @@ pub(super) struct LoopReturnProof {
 
 #[derive(Clone)]
 pub(super) struct DeferredPostExecutionTactic {
-    pub(super) lexical_bindings:
-        Option<crate::persistent::PersistentMap<String, ContractExpression>>,
+    pub(super) lexical_bindings: Option<PersistentBinderMap<ContractExpression>>,
     pub(super) tactic_index: usize,
     pub(super) source_index: usize,
     pub(super) tactic: PostExecutionTactic,
@@ -1815,7 +1814,7 @@ pub(super) struct ExecutionView<'a> {
     function_entry_state: Option<&'a ExecutionState>,
     /// Lexical names available where this certificate is emitted. They are
     /// presentation hints, never proof authority.
-    pub(super) proof_bindings: Option<&'a PersistentMap<String, ContractExpression>>,
+    pub(super) proof_bindings: Option<&'a PersistentBinderMap<ContractExpression>>,
 }
 
 impl<'a> ExecutionView<'a> {

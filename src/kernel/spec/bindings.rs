@@ -1,7 +1,7 @@
 //! Iterative lexical binding chains with retained machine values.
 use super::*;
 
-type Values = crate::persistent::PersistentMap<String, KernelTerm>;
+type Values = crate::persistent::PersistentMap<BindingName, KernelTerm>;
 
 #[derive(Clone)]
 struct Path {
@@ -15,21 +15,15 @@ struct Path {
 
 #[derive(Clone)]
 struct ReturnBinding<'a> {
-    name: &'a String,
+    name: &'a BindingName,
     body: &'a SpecExpression,
     state: ExecutionState,
     values: Values,
 }
 
 impl Path {
-    fn bind(&mut self, name: &String, value: SpecValue) {
-        match value {
-            SpecValue::Shared(value) => self.values.insert(name.clone(), value),
-            SpecValue::Native(value) => {
-                self.values.remove(name);
-                self.state.locals.set(name.clone(), value);
-            }
-        }
+    fn bind(&mut self, name: &BindingName, value: SpecValue) {
+        bind_value(name, value, &mut self.state, &mut self.values);
     }
     fn append(&mut self, path: &mut SpecExpressionPath, base: &PureFactContext) -> bool {
         let next_context =
@@ -57,6 +51,26 @@ impl Path {
         self.mandatory_only &= mandatory;
         self.context = next_context;
         true
+    }
+}
+
+/// Logical binders retain values without allocating C storage or pseudo-slots.
+pub(super) fn bind_value(
+    name: &BindingName,
+    value: SpecValue,
+    state: &mut ExecutionState,
+    values: &mut Values,
+) {
+    match value {
+        SpecValue::Shared(root) => values.insert(name.clone(), root),
+        SpecValue::Native(value) if matches!(name, BindingName::Generated(_)) => values.insert(
+            name.clone(),
+            KernelTermImport::default().argument(&PureFunctionArgument::Value(value)),
+        ),
+        SpecValue::Native(value) => {
+            values.remove(name);
+            state.locals.set(name.clone(), value);
+        }
     }
 }
 

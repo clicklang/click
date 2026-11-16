@@ -76,19 +76,19 @@ struct SpecAlgebraicPath {
 struct SpecScope<'a> {
     state: &'a ExecutionState,
     loop_entry_state: Option<&'a ExecutionState>,
-    algebraic_bindings: &'a BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &'a BTreeMap<BindingName, AlgebraicTerm>,
     /// Lexical machine values keep their shared producer identity. Native C
     /// locals remain in `state`; only explicitly selected native consumers export.
-    values: Option<&'a crate::persistent::PersistentMap<String, KernelTerm>>,
+    values: Option<&'a crate::persistent::PersistentMap<BindingName, KernelTerm>>,
 }
 
-static NO_ALGEBRAIC_BINDINGS: BTreeMap<String, AlgebraicTerm> = BTreeMap::new();
+static NO_ALGEBRAIC_BINDINGS: BTreeMap<BindingName, AlgebraicTerm> = BTreeMap::new();
 
 impl<'a> SpecScope<'a> {
     fn new(
         state: &'a ExecutionState,
         loop_entry_state: Option<&'a ExecutionState>,
-        algebraic_bindings: &'a BTreeMap<String, AlgebraicTerm>,
+        algebraic_bindings: &'a BTreeMap<BindingName, AlgebraicTerm>,
     ) -> Self {
         Self {
             state,
@@ -100,11 +100,11 @@ impl<'a> SpecScope<'a> {
 
     fn without_values<'n>(
         self,
-        names: impl IntoIterator<Item = &'n str>,
-    ) -> crate::persistent::PersistentMap<String, KernelTerm> {
+        names: impl IntoIterator<Item = impl Into<BindingName>>,
+    ) -> crate::persistent::PersistentMap<BindingName, KernelTerm> {
         let mut values = self.values.cloned().unwrap_or_default();
         for name in names {
-            values.remove(&name.to_string());
+            values.remove(&name.into());
         }
         values
     }
@@ -121,7 +121,7 @@ impl<'a> SpecScope<'a> {
             crate::kernel::loops::collect_variable_names(expression, &mut names);
             for name in names {
                 crate::instrumentation::record_deterministic_work(1);
-                if let Some(value) = name.named().and_then(|name| values.get(name)) {
+                if let Some(value) = values.get(&name) {
                     state
                         .to_mut()
                         .locals
@@ -411,7 +411,7 @@ pub(in crate::kernel) fn lower_spec_proposition_at_state_with_algebraic_bindings
     proposition: &SpecProposition,
     loop_entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     lower_spec_proposition_at_state_with_algebraic_bindings_in(
@@ -430,7 +430,7 @@ pub(in crate::kernel) fn lower_held_resource_body_clause(
     state: &ExecutionState,
     proposition: &SpecProposition,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let mut evaluation = SpecEvaluation::logical(budget);
@@ -473,7 +473,7 @@ pub(in crate::kernel) fn evaluate_spec_expression_paths_with_bindings(
     state: &ExecutionState,
     expression: &SpecExpression,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     evaluate_spec_expression_paths_with_bindings_in(
@@ -489,7 +489,7 @@ pub(in crate::kernel) fn evaluate_resource_child_argument_paths(
     state: &ExecutionState,
     expression: &SpecExpression,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     integer_bindings: &BTreeMap<Variable, IntegerTerm>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExpressionPath<SpecValue>>> {
@@ -1163,7 +1163,7 @@ fn lower_spec_conjunction_left_spine_in(
 
 #[derive(Clone)]
 struct SpecUniversalBinder {
-    name: String,
+    name: BindingName,
     variable: Variable,
     sort: Sort,
     pointer: bool,
@@ -1307,7 +1307,7 @@ fn wrap_spec_universal_path(
 ) -> SpecPropositionPath {
     let (body, guards) = wrap_path_context_with_introductions(path.proposition, &path.facts, &[]);
     let mut introductions = vec![LoweringIntroduction::WrittenUniversal {
-        name: binder.name.clone(),
+        name: binder.name.clone().into(),
         variable: binder.variable,
         pointer: binder.pointer,
         integer: binder.integer,
@@ -1319,7 +1319,7 @@ fn wrap_spec_universal_path(
             var: binder.variable,
             sort: binder.sort.clone(),
             body: Box::new(body),
-            name: BinderName::written(&binder.name),
+            name: BinderName::binding(&binder.name),
         },
         facts: Vec::new().into(),
         obligations: path
@@ -1341,7 +1341,7 @@ fn wrap_spec_universal_path(
                 obligation.map_proposition(|proposition| Proposition::ForAll {
                     var: binder.variable,
                     sort: binder.sort.clone(),
-                    name: BinderName::written(&binder.name),
+                    name: BinderName::binding(&binder.name),
                     body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                 })
             })
@@ -1723,7 +1723,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             SpecPropositionPath {
                 proposition: Proposition::ForAll {
                     var: *variable,
-                    name: BinderName::written(name),
+                    name: BinderName::binding(name),
                     sort: Sort::Integer,
                     body: Box::new(body),
                 },
@@ -1734,7 +1734,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     .map(|obligation| {
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
-                            name: BinderName::written(name),
+                            name: BinderName::binding(name),
                             sort: Sort::Integer,
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
@@ -1770,7 +1770,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             SpecPropositionPath {
                 proposition: Proposition::ForAll {
                     var: *variable,
-                    name: BinderName::written(name),
+                    name: BinderName::binding(name),
                     sort: Sort::Algebraic(algebraic_type.clone()),
                     body: Box::new(body),
                 },
@@ -1781,7 +1781,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     .map(|obligation| {
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
-                            name: BinderName::written(name),
+                            name: BinderName::binding(name),
                             sort: Sort::Algebraic(algebraic_type.clone()),
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
@@ -1861,7 +1861,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             SpecPropositionPath {
                 proposition: Proposition::ForAll {
                     var: *variable,
-                    name: BinderName::written(name),
+                    name: BinderName::binding(name),
                     sort: Sort::ProgramPointer(*program_type),
                     body: Box::new(body),
                 },
@@ -1872,7 +1872,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     .map(|obligation| {
                         obligation.map_proposition(|proposition| Proposition::ForAll {
                             var: *variable,
-                            name: BinderName::written(name),
+                            name: BinderName::binding(name),
                             sort: Sort::ProgramPointer(*program_type),
                             body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
@@ -3228,10 +3228,15 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
             )?;
             let mut body_state = state.clone();
             let mut body_algebraic_bindings = algebraic_bindings.clone();
-            let body_values = scope.without_values(arm.bindings.iter().map(String::as_str));
+            let mut body_values = scope.without_values(arm.bindings.iter());
             for (binding, value) in arm.bindings.iter().zip(bindings.clone()) {
                 match value {
-                    AlgebraicValue::Program(value) => body_state.locals.set(binding.clone(), value),
+                    AlgebraicValue::Program(value) => bindings::bind_value(
+                        binding,
+                        value.into(),
+                        &mut body_state,
+                        &mut body_values,
+                    ),
                     AlgebraicValue::Algebraic(value) => {
                         body_algebraic_bindings.insert(binding.clone(), value);
                     }
@@ -3293,7 +3298,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
             )
             .ok_or(ExecutionLimit::Paths)?;
             lowered_arms.push(AlgebraicIntegerMatchArm {
-                binding_names: crate::kernel::BindingNames::written(&arm.bindings),
+                binding_names: crate::kernel::BindingNames::bindings(&arm.bindings),
                 variant: arm.variant.clone(),
                 bindings: bindings.clone(),
                 body: body.into(),
@@ -3727,7 +3732,7 @@ fn algebraic_match_reconstructs(
                             )),
                             AlgebraicValueType::Program(_)
                             | AlgebraicValueType::ObjectPointer(_, _),
-                        ) => name.is_named(binding),
+                        ) => name == binding,
                         (
                             SpecAlgebraicValue::Algebraic(SpecAlgebraicExpression {
                                 node: SpecAlgebraicExpressionNode::Binding(name),
@@ -3960,7 +3965,7 @@ fn evaluate_spec_algebraic_non_call_in(
             Ok(paths)
         }
         SpecAlgebraicExpressionNode::Binding(name) => {
-            if let Some(root) = scope.values.and_then(|values| values.get(name)) {
+            if let Some(root) = scope.values.and_then(|values| values.get(&name.into())) {
                 if root.ty() != &KernelType::Algebraic(expression.algebraic_type.clone()) {
                     return Err(ExecutionLimit::Paths);
                 }
@@ -4030,12 +4035,16 @@ fn evaluate_spec_algebraic_non_call_in(
                         )?;
                         let mut body_state = state.clone();
                         let mut body_algebraic_bindings = algebraic_bindings.clone();
-                        let body_values =
-                            scope.without_values(arm.bindings.iter().map(String::as_str));
+                        let mut body_values = scope.without_values(arm.bindings.iter());
                         for (binding, value) in arm.bindings.iter().zip(&bindings) {
                             match value {
                                 AlgebraicValue::Program(value) => {
-                                    body_state.locals.set(binding.clone(), value.clone());
+                                    bindings::bind_value(
+                                        binding,
+                                        value.clone().into(),
+                                        &mut body_state,
+                                        &mut body_values,
+                                    );
                                 }
                                 AlgebraicValue::Integer(_) => {}
                                 AlgebraicValue::Algebraic(value) => {
@@ -4083,7 +4092,7 @@ fn evaluate_spec_algebraic_non_call_in(
                             &arm.variant,
                             &bindings,
                             body_path.value.into_kernel(),
-                            &crate::kernel::BindingNames::written(&arm.bindings),
+                            &crate::kernel::BindingNames::bindings(&arm.bindings),
                         ));
                     }
                     result.push(SpecAlgebraicPath {
@@ -4113,8 +4122,7 @@ fn evaluate_spec_algebraic_non_call_in(
                     }
                     let mut body_state = state.clone();
                     let mut body_algebraic_bindings = algebraic_bindings.clone();
-                    let mut body_values =
-                        scope.without_values(arm.bindings.iter().map(String::as_str));
+                    let mut body_values = scope.without_values(arm.bindings.iter());
                     for (binding, field) in arm.bindings.iter().zip(&case.fields) {
                         field.bind(
                             binding,
@@ -4524,7 +4532,7 @@ fn guard_scalar_match_obligation(
         };
         obligation = obligation.map_proposition(|body| Proposition::ForAll {
             var: *variable,
-            name: BinderName::written(name),
+            name: BinderName::binding(name),
             sort,
             body: Box::new(body),
         });
@@ -5965,7 +5973,7 @@ fn evaluate_spec_expression_paths_with_bindings_in(
     state: &ExecutionState,
     expression: &SpecExpression,
     assumptions: &PureFactContext,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -6870,12 +6878,16 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         )?;
                         let mut body_state = state.clone();
                         let mut body_algebraic_bindings = algebraic_bindings.clone();
-                        let body_values =
-                            scope.without_values(arm.bindings.iter().map(String::as_str));
+                        let mut body_values = scope.without_values(arm.bindings.iter());
                         for (binding, value) in arm.bindings.iter().zip(&bindings) {
                             match value {
                                 AlgebraicValue::Program(value) => {
-                                    body_state.locals.set(binding.clone(), value.clone());
+                                    bindings::bind_value(
+                                        binding,
+                                        value.clone().into(),
+                                        &mut body_state,
+                                        &mut body_values,
+                                    );
                                 }
                                 AlgebraicValue::Integer(_) => {}
                                 AlgebraicValue::Algebraic(value) => {
@@ -6933,7 +6945,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                     &arm.variant,
                                     &bindings,
                                     body_path.value.algebraic().ok_or(ExecutionLimit::Paths)?,
-                                    &crate::kernel::BindingNames::written(&arm.bindings),
+                                    &crate::kernel::BindingNames::bindings(&arm.bindings),
                                 ));
                                 continue;
                             }
@@ -6944,7 +6956,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             // A value of a Rust type parameter is a term of
                             // its type, so the match is one too.
                             parameter_arms.push(AlgebraicResultMatchArm {
-                                binding_names: crate::kernel::BindingNames::written(&arm.bindings),
+                                binding_names: crate::kernel::BindingNames::bindings(&arm.bindings),
                                 variant: arm.variant.clone(),
                                 bindings,
                                 body: *body,
@@ -6957,7 +6969,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             let body = program_value_bitvector_term(&body_path.value.native())
                                 .ok_or(ExecutionLimit::Paths)?;
                             compatibility_arms.push(AlgebraicBitvectorMatchArm {
-                                binding_names: crate::kernel::BindingNames::written(&arm.bindings),
+                                binding_names: crate::kernel::BindingNames::bindings(&arm.bindings),
                                 variant: arm.variant.clone(),
                                 bindings,
                                 body,
@@ -6970,7 +6982,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             &arm.variant,
                             &bindings,
                             body,
-                            &crate::kernel::BindingNames::written(&arm.bindings),
+                            &crate::kernel::BindingNames::bindings(&arm.bindings),
                         ));
                     }
                     let Some(result_type) = result_type else {
@@ -7042,8 +7054,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     }
                     let mut body_state = state.clone();
                     let mut body_algebraic_bindings = algebraic_bindings.clone();
-                    let mut body_values =
-                        scope.without_values(arm.bindings.iter().map(String::as_str));
+                    let mut body_values = scope.without_values(arm.bindings.iter());
                     for (binding, field) in arm.bindings.iter().zip(&case.fields) {
                         field.bind(
                             binding,
@@ -7102,19 +7113,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             paths
         }
         SpecExpression::ProgramExpression(ProgramExpression::Variable(name))
-            if scope
-                .values
-                .and_then(|values| name.named().and_then(|name| values.get(name)))
-                .is_some() =>
+            if scope.values.and_then(|values| values.get(&name)).is_some() =>
         {
             vec![SpecExpressionPath {
-                value: scope
-                    .values
-                    .unwrap()
-                    .get(name.named().unwrap())
-                    .unwrap()
-                    .clone()
-                    .into(),
+                value: scope.values.unwrap().get(name).unwrap().clone().into(),
                 facts: ExecutionFacts::new(),
                 obligations: Vec::new(),
             }]
@@ -9462,8 +9464,8 @@ fn evaluate_spec_range_fold_paths_in(
     start: &SpecExpression,
     end: &SpecExpression,
     initial: &SpecExpression,
-    accumulator: &str,
-    item: &str,
+    accumulator: &BindingName,
+    item: &BindingName,
     body: &SpecExpression,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
@@ -9549,8 +9551,8 @@ fn evaluate_spec_range_fold_body_path_in(
     start: SpecValue,
     end: SpecValue,
     initial: SpecValue,
-    accumulator: &str,
-    item: &str,
+    accumulator: &BindingName,
+    item: &BindingName,
     body: &SpecExpression,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -9566,18 +9568,35 @@ fn evaluate_spec_range_fold_body_path_in(
             let mut obligations = obligations;
             for index in concrete_spec_fold_range(start as i32, end as i32) {
                 let mut body_state = state.clone();
-                let body_values = scope.without_values([accumulator, item]);
-                let ty = value.program_type();
-                body_state.locals.set_retained_typed_with_all_qualifiers(
-                    accumulator.to_string(),
-                    value,
-                    ty,
-                    false,
-                    false,
-                    false,
-                    false,
-                );
-                body_state.locals.set(item.to_string(), int32(index as u32));
+                let mut body_values = scope.without_values([accumulator, item]);
+                if matches!(accumulator, BindingName::Generated(_)) {
+                    let root = match value {
+                        SpecValue::Shared(root) => root,
+                        SpecValue::Native(value) => KernelTermImport::default()
+                            .argument(&PureFunctionArgument::Value(value)),
+                    };
+                    body_values.insert(accumulator.clone(), root);
+                } else {
+                    let ty = value.program_type();
+                    body_state.locals.set_retained_typed_with_all_qualifiers(
+                        accumulator.clone(),
+                        value,
+                        ty,
+                        false,
+                        false,
+                        false,
+                        false,
+                    );
+                }
+                if matches!(item, BindingName::Generated(_)) {
+                    body_values.insert(
+                        item.clone(),
+                        KernelTermImport::default()
+                            .argument(&PureFunctionArgument::Value(int32(index as u32))),
+                    );
+                } else {
+                    body_state.locals.set(item.clone(), int32(index as u32));
+                }
                 let body_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
                 let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -9620,18 +9639,18 @@ fn evaluate_spec_range_fold_body_path_in(
         }
         _ => {
             let mut body_state = state.clone();
-            let body_values = scope.without_values([accumulator, item]);
-            body_state.locals.set(
-                accumulator.to_string(),
-                int32(MachineTerm::Variable(spec_fold_bound_variable(
-                    accumulator,
-                    0,
-                ))),
-            );
-            body_state.locals.set(
-                item.to_string(),
-                int32(MachineTerm::Variable(spec_fold_bound_variable(item, 1))),
-            );
+            let mut body_values = scope.without_values([accumulator, item]);
+            for (name, salt) in [(accumulator, 0), (item, 1)] {
+                let value = int32(MachineTerm::Variable(spec_fold_bound_variable(name, salt)));
+                if matches!(name, BindingName::Generated(_)) {
+                    body_values.insert(
+                        name.clone(),
+                        KernelTermImport::default().argument(&PureFunctionArgument::Value(value)),
+                    );
+                } else {
+                    body_state.locals.set(name.clone(), value);
+                }
+            }
             let body_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope {
@@ -9690,9 +9709,18 @@ pub(super) fn concrete_spec_fold_range(start: i32, end: i32) -> std::ops::Range<
 pub(super) const SPEC_FOLD_BINDER_VARIABLE_BASE: u64 = 1 << 43;
 pub(super) const SPEC_FOLD_BINDER_VARIABLE_CEILING: u64 = 1 << 44;
 
-pub(super) fn spec_fold_bound_variable(name: &str, salt: u64) -> Variable {
+pub(super) fn spec_fold_bound_variable(name: &BindingName, salt: u64) -> Variable {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64 ^ salt;
-    for byte in name.bytes() {
+    let bytes;
+    let name = match name {
+        BindingName::Named(name) => name.as_bytes(),
+        BindingName::Generated(id) => {
+            bytes = id.number().to_le_bytes();
+            &bytes
+        }
+        _ => unreachable!("fold binders are lexical values"),
+    };
+    for &byte in name {
         hash ^= u64::from(byte);
         hash = hash.wrapping_mul(0x1000_0000_01b3);
     }
@@ -9706,8 +9734,8 @@ pub(super) fn symbolic_spec_range_fold_value(
     start: SpecValue,
     end: SpecValue,
     initial: SpecValue,
-    accumulator: &str,
-    item: &str,
+    accumulator: &BindingName,
+    item: &BindingName,
     body_value: SpecValue,
 ) -> Option<SpecValue> {
     let read = |value: &SpecValue| {
