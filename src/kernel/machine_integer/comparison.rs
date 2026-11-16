@@ -150,6 +150,77 @@ pub(crate) fn native_comparison_of_integer_observation(
     native_comparison_view(condition, value)?.boxed_condition()
 }
 
+/// Check two literal native operands without rewriting the stored comparison
+/// or reading ambient facts. Symbolic operands are refused at their roots.
+pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Option<bool> {
+    let ConditionTerm::Compare {
+        format,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    if !matches!(
+        format,
+        MachineIntegerType::Int32
+            | MachineIntegerType::UInt32
+            | MachineIntegerType::Int64
+            | MachineIntegerType::UInt64
+    ) || format.constant_from_term(left).is_none()
+        || format.constant_from_term(right).is_none()
+    {
+        return None;
+    }
+    match ConditionTerm::machine_compare(
+        *format,
+        *relation,
+        left.as_ref().clone(),
+        right.as_ref().clone(),
+    ) {
+        ConditionTerm::Constant(value) => Some(value),
+        _ => None,
+    }
+}
+
+/// Preserve a closed native order comparison during logical lowering. Inspect
+/// only the two literal roots; deciding their truth belongs to checking.
+pub(crate) fn logical_condition_for_operand_views(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    operands: [crate::kernel::MachineOperandView<'_>; 2],
+) -> ConditionTerm {
+    closed_order_for_operand_views(format, relation, operands)
+        .unwrap_or_else(|| condition_for_operand_views(format, relation, operands))
+}
+
+fn closed_order_for_operand_views(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    operands: [crate::kernel::MachineOperandView<'_>; 2],
+) -> Option<ConditionTerm> {
+    if relation == crate::kernel::CompareRelation::Equal {
+        return None;
+    }
+    let [Some(left), Some(right)] = operands.map(|operand| operand.literal()) else {
+        return None;
+    };
+    // Native 32-bit comparisons read sign-free words; their format carries
+    // the signedness. Keep the same operand representation as exact rewriting.
+    let [left, right] = if format.format().bits() == 32 {
+        [left.into_word32(), right.into_word32()]
+    } else {
+        [left, right]
+    };
+    Some(ConditionTerm::Compare {
+        format,
+        relation,
+        left: Box::new(left),
+        right: Box::new(right),
+    })
+}
+
 /// Construct a checking comparison from two borrowed operands. Native inputs
 /// and fixed-size atoms keep their written comparison; shared arithmetic stays
 /// in exact observations. This never exports a shared arithmetic tree.
@@ -1014,6 +1085,58 @@ pub(crate) fn integer_observations_of_native_comparison(
 mod borrowed_comparison_tests {
     use super::*;
     use crate::kernel::{CompareRelation as R, MachineOperandView, Variable};
+
+    #[test]
+    fn literal_native_orders_are_builtin_truths_without_ambient_facts() {
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let signed = format.format().is_signed();
+            let value = if signed {
+                (-1).into()
+            } else {
+                format.format().bounds().1
+            };
+            let left = range::constant_word(format, &value).unwrap();
+            let right = range::constant_word(format, &0.into()).unwrap();
+            for (relation, expected) in [
+                (R::Equal, false),
+                (R::LessThan, signed),
+                (R::LessEqual, signed),
+                (R::GreaterThan, !signed),
+                (R::GreaterEqual, !signed),
+            ] {
+                let condition = ConditionTerm::Compare {
+                    format,
+                    relation,
+                    left: Box::new(left.clone()),
+                    right: Box::new(right.clone()),
+                };
+                assert_eq!(literal_native_comparison_value(&condition), Some(expected));
+                for truth in [true, false] {
+                    let proposition = Proposition::ConditionIs(condition.clone(), truth);
+                    assert_eq!(
+                        crate::kernel::reasoning::path_facts::solve_builtin_prop(&proposition),
+                        expected == truth
+                    );
+                    assert_eq!(
+                        crate::kernel::reasoning::path_facts::disprove_builtin_prop(&proposition),
+                        expected != truth
+                    );
+                }
+                let symbolic = ConditionTerm::Compare {
+                    format,
+                    relation,
+                    left: Box::new(MachineTerm::Variable(Variable(992597))),
+                    right: Box::new(right.clone()),
+                };
+                assert_eq!(literal_native_comparison_value(&symbolic), None);
+            }
+        }
+    }
 
     #[test]
     fn written_comparison_views_borrow_and_normalize_every_relation() {

@@ -157,3 +157,69 @@ fn symbolic_integer_conversions_produce_shared_roots_with_the_same_bounds() {
         assert_eq!(retained.value.into_native(), native.value.into_native());
     }
 }
+
+#[test]
+fn specification_machine_expression_handoff_keeps_the_execution_root() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let source = ProgramExpression::Add(
+            Box::new(ProgramExpression::Value(
+                format.value_from_term(MachineTerm::Variable(Variable(999997))),
+            )),
+            Box::new(ProgramExpression::Value(
+                format.value_from_term(MachineTerm::Variable(Variable(999998))),
+            )),
+        );
+        let state = ExecutionState::new();
+        let assumptions = PureFactContext::new();
+        let expected = {
+            let _scope = crate::kernel::eval::SpecificationReadScope::enter();
+            evaluate_expression_value_paths(
+                &state,
+                &source,
+                &assumptions,
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+            .into_iter()
+            .find(|path| matches!(path.outcome, ExpressionOutcome::Value(_)))
+            .expect("the defined execution path")
+        };
+        let ExpressionOutcome::Value(expected_value) = expected.outcome else {
+            panic!()
+        };
+        assert!(expected_value.shared().is_some());
+        let expression = SpecExpression::ProgramExpression(source);
+        let evaluate = |disabled| {
+            let mut budget = ExecutionBudget::new();
+            let mut evaluation = SpecEvaluation::logical(&mut budget);
+            evaluation.machine_result_production_disabled = disabled;
+            evaluate_spec_expression_paths_with_bindings_in(
+                &state,
+                &expression,
+                &assumptions,
+                &BTreeMap::new(),
+                &mut evaluation,
+            )
+            .unwrap()
+            .pop()
+            .unwrap()
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let actual = evaluate(false);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert_eq!(actual.value.shared(), expected_value.shared());
+        assert_eq!(actual.obligations, expected.obligations);
+        assert_eq!(actual.facts, expected.facts);
+        let native = evaluate(true);
+        assert!(native.value.shared().is_none());
+        assert_eq!(actual.obligations, native.obligations);
+        assert_eq!(actual.facts, native.facts);
+        assert_eq!(actual.value.into_native(), native.value.into_native());
+    }
+}

@@ -266,6 +266,30 @@ fn loaded_quantifier_guard_matching_preserves_machine_binder_width() {
     }
 }
 
+#[test]
+fn loaded_quantifier_without_prepared_state_matches_retained_order() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64));
+    let native = loaded_fact(&memory, Variable(950_001), false);
+    let shared = loaded_fact(&memory, Variable(950_002), true);
+    let same_binder = loaded_fact(&memory, Variable(950_001), true);
+    for (source, requested) in [
+        (&native, &shared),
+        (&shared, &native),
+        (&native, &same_binder),
+        (&same_binder, &native),
+    ] {
+        crate::kernel::reasoning::clear_shared_memory_variables();
+        assert_eq!(
+            crate::kernel::proof::fact_keys::selected_state_quantified_alpha_equivalent(
+                source, requested
+            ),
+            None,
+        );
+        assert!(quantified_binder_equivalent(source, requested));
+    }
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/proof/fact_reasoning/loaded_quantifier_tests.rs");

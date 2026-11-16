@@ -6057,7 +6057,7 @@ fn theorem_from_exact_context_fact(
     assumptions: &PureFactContext,
     conclusion: Proposition,
 ) -> Option<Theorem> {
-    if !assumptions.proves_exact(&conclusion) {
+    if !proposition_holds_without_facts(&conclusion) && !assumptions.proves_exact(&conclusion) {
         return None;
     }
     let proposition = Proposition::Implies(Box::new(conclusion.clone()), Box::new(conclusion));
@@ -6239,13 +6239,21 @@ pub fn checked_owned_resource_count_lower_bound(
         value.clone()
     };
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(quantity.clone(), count.clone()),
+        crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            [
+                MachineOperandView::Legacy(&quantity),
+                MachineOperandView::Legacy(&count),
+            ],
+        ),
         true,
     );
     {
         let reversed =
             Proposition::ConditionIs(ConditionTerm::signed_greater_equal(count, quantity), true);
-        if !PureFactContext::settles_exactly(&checked_facts, &conclusion)
+        if !proposition_holds_without_facts(&conclusion)
+            && !PureFactContext::settles_exactly(&checked_facts, &conclusion)
             && !checked_facts.proves_exact(&reversed)
         {
             return None;
@@ -6267,7 +6275,14 @@ pub fn prove_owned_resource_quantity_nonnegative(
     }
     let quantity = owned.owned_quantity_term()?.clone();
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(MachineTerm::constant(0), quantity),
+        crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            [
+                MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                MachineOperandView::Legacy(&quantity),
+            ],
+        ),
         true,
     );
     if claimed != &conclusion {

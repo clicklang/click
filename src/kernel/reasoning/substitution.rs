@@ -5438,6 +5438,27 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                     return Err(());
                 };
                 let arguments = [left, right];
+                let closed_order = *relation != CompareRelation::Equal
+                    && matches!(
+                        format,
+                        MachineIntegerType::Int32
+                            | MachineIntegerType::UInt32
+                            | MachineIntegerType::Int64
+                            | MachineIntegerType::UInt64
+                    )
+                    && arguments.iter().all(|argument| {
+                        crate::kernel::MachineOperandView::Shared(argument)
+                            .literal()
+                            .is_some()
+                    });
+                if closed_order {
+                    let condition = crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+                        *format,
+                        *relation,
+                        arguments.each_ref().map(crate::kernel::MachineOperandView::Shared),
+                    );
+                    return Ok(KernelTermImport::default().condition(&condition));
+                }
                 return Ok(
                     if *format == MachineIntegerType::Int64 && *relation == CompareRelation::Equal {
                         KernelTerm::boolean_comparison_raw(*format, *relation, arguments)
@@ -5709,6 +5730,38 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
                 },
             )
             .expect("a `Bool` value form maps"),
+        ConditionTerm::Compare {
+            format,
+            relation,
+            left,
+            right,
+        } if *relation != CompareRelation::Equal
+            && matches!(
+                format,
+                MachineIntegerType::Int32
+                    | MachineIntegerType::UInt32
+                    | MachineIntegerType::Int64
+                    | MachineIntegerType::UInt64
+            ) =>
+        {
+            let left = substitute_bitvector_variable(left, from, to);
+            let right = substitute_bitvector_variable(right, from, to);
+            if format.constant_from_term(&left).is_some()
+                && format.constant_from_term(&right).is_some()
+            {
+                crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+                    *format,
+                    *relation,
+                    [
+                        crate::kernel::MachineOperandView::Legacy(&left),
+                        crate::kernel::MachineOperandView::Legacy(&right),
+                    ],
+                )
+            } else {
+                let (operator, _, _) = condition.as_bitvector_comparison().expect("native order");
+                operator.build(left, right)
+            }
+        }
         condition => {
             let (op, left, right) = condition
                 .as_bitvector_comparison()

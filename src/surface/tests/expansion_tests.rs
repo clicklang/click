@@ -15467,8 +15467,21 @@ fn grouped_residual_normalization_expansion_checks_original_claims() {
     assert_ne!(repeated_rewrite, source);
     for source in [source, repeated_rewrite.as_str()] {
         verify_c_sources(source, &sources).unwrap();
+        assert!(
+            c_smart_tactic_source_sites(source, &sources)
+                .unwrap()
+                .iter()
+                .any(|site| site.claim_label == "current.contract")
+        );
         let expanded = expand_function_proof_source(source, &sources, "current").unwrap();
-        assert!(expanded.contains("    normalize();"));
+        // Residual equalities can close directly with `known`. Check that
+        // the selected proof is fully explicit, independent of its closer.
+        assert!(
+            !c_smart_tactic_source_sites(&expanded, &sources)
+                .unwrap()
+                .iter()
+                .any(|site| site.claim_label == "current.contract")
+        );
         assert!(expanded.contains("    known();"));
         verify_c_sources(&expanded, &sources)
             .unwrap_or_else(|error| panic!("{error:?}\n{expanded}"));

@@ -1704,6 +1704,35 @@ pub(crate) fn quantified_equivalent_available_fact(
         .cloned()
 }
 
+/// Compare bodies after both binders have been renamed to one fresh name.
+/// Walk only their logical spine. Nested scopes and non-order leaves retain
+/// structural equality, including the states produced by substitution.
+fn substituted_body_retained_order_equivalent(left: &Proposition, right: &Proposition) -> bool {
+    let mut pending = vec![(left, right)];
+    while let Some((left, right)) = pending.pop() {
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return false;
+        }
+        match (left, right) {
+            (Proposition::And(a, b), Proposition::And(c, d))
+            | (Proposition::Or(a, b), Proposition::Or(c, d))
+            | (Proposition::Implies(a, b), Proposition::Implies(c, d)) => {
+                pending.push((a, c));
+                pending.push((b, d));
+            }
+            (Proposition::Not(a), Proposition::Not(b)) => pending.push((a, b)),
+            (Proposition::ConditionIs(a, av), Proposition::ConditionIs(b, bv)) => {
+                if (av != bv || a != b) && !retained_comparison_equivalent(a, *av, b, *bv, false) {
+                    return false;
+                }
+            }
+            _ if left == right => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
 pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Proposition) -> bool {
     let left_comparison = super::term_rewrite::TermRewrite::arithmetic_comparison(left);
     let right_comparison = super::term_rewrite::TermRewrite::arithmetic_comparison(right);
@@ -1796,7 +1825,7 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
         return false;
     }
     if left_var == right_var {
-        return left_body == right_body;
+        return substituted_body_retained_order_equivalent(left_body, right_body);
     }
     // Neither binder name is necessarily fresh in the other body: it can
     // already occur freely inside a retained memory state. Compare both
@@ -1823,15 +1852,17 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
             )
         }
         _ => {
-            substitute_int32_variable_in_proposition(
+            let left = substitute_int32_variable_in_proposition(
                 left_body,
                 left_var,
                 MachineTerm::Variable(fresh),
-            ) == substitute_int32_variable_in_proposition(
+            );
+            let right = substitute_int32_variable_in_proposition(
                 right_body,
                 right_var,
                 MachineTerm::Variable(fresh),
-            )
+            );
+            substituted_body_retained_order_equivalent(&left, &right)
         }
     }
 }
