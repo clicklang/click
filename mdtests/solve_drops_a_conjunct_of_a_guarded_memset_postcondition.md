@@ -1,7 +1,7 @@
 # The implicit closer drops a conjunct of `memset`'s guarded postcondition
 
 `memset`'s library contract ends
-`(0u64..bytes).all(|k| { defined(destination[k]) and destination[k] == value })`.
+`(0u64..bytes).all(|k| { defined(destination[k]) and destination[k] == (value as uint8) })`.
 A caller that states only the values, as `bytes::all_equal` does once it is
 unfolded, needs the same guarded universal without the `defined(..)`
 conjunct. A guarded universal whose conclusion is a conjunction entails the
