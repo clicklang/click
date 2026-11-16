@@ -5544,9 +5544,9 @@ pub(in crate::surface) fn build_function_environment(
                             function_block.signature().name()
                         ))
                     })?;
-                if function_block.signature().exceptional_type().is_some() {
+                if let Some(exceptional_type) = function_block.signature().exceptional_type() {
                     function = function
-                        .with_int32_exceptional_outcome()
+                        .with_exceptional_outcome(exceptional_type.to_kernel_type())
                         .with_exceptional_ensures(exceptional_ensures);
                 }
                 if resource_derived_mutable_frame {

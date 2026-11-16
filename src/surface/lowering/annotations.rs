@@ -1933,9 +1933,9 @@ fn annotate_function(
         .with_recursion_binder(recursion_binder)
         .with_recursion_resource(recursion_resource);
     function = function.with_recursion_measure(recursion_measure);
-    if function_block.signature().exceptional_type().is_some() {
+    if let Some(exceptional_type) = function_block.signature().exceptional_type() {
         function = function
-            .with_int32_exceptional_outcome()
+            .with_exceptional_outcome(exceptional_type.to_kernel_type())
             .with_exceptional_ensures(exceptional_ensures);
     }
     let function = function

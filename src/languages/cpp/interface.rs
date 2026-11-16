@@ -17,13 +17,27 @@ pub(super) fn prepare(
     dispatches: &BTreeMap<String, String>,
     receiver_calls: &BTreeMap<String, Vec<(String, Option<String>)>>,
 ) -> Result<PreparedExecution, String> {
+    let shared_layouts = std::sync::Arc::new(layouts.clone());
     let mut functions = prepare_functions(import, selected, reachable, &layouts)?
         .into_iter()
-        .map(|function| match receiver_calls.get(function.name()) {
-            Some(calls) => function.with_receiver_calls(calls.clone()),
-            None => function,
+        .map(|mut function| {
+            crate::instrumentation::record_deterministic_work(1);
+            function.prepared_record_layouts = shared_layouts.clone();
+            match receiver_calls.get(function.name()) {
+                Some(calls) => function.with_receiver_calls(calls.clone()),
+                None => function,
+            }
         })
         .collect::<Vec<_>>();
+    if import.export().exception_behavior == super::schema::CppExceptionBehavior::IosFailure {
+        functions.push(crate::languages::interface::ImportedFunction::external(
+            InterfaceType::Parameter(crate::kernel::TypeParameterName::intern(
+                "std::ios_base::failure",
+            )),
+            super::standard_library::IOS_FAILURE_FACTORY.to_string(),
+            Vec::new(),
+        ));
+    }
     // A call through a reference to a class another derives from, to its
     // method that overrides another, names a dispatch with the method's
     // interface. Its contract is the sidecar's, or the method's.
@@ -578,4 +592,9 @@ pub(super) fn function_pointer_signature(
         parameters,
         false,
     ))
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/languages/cpp/interface/tests.rs");
 }

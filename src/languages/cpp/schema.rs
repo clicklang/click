@@ -156,6 +156,7 @@ pub enum CppLibraryAssertionKind {
     CheckedBooleanStatement,
     CheckedBooleanStatementWithConstevalMetadata,
     CheckedBooleanStatementWithLiteralMetadata,
+    OpaqueExceptionConstructor,
 }
 
 /// Assumes defined, normally returning construction from a narrow string literal,
@@ -266,7 +267,8 @@ pub(super) fn validate_library_assertion_metadata(
     specialization: &Option<String>,
 ) -> Result<(), String> {
     contract.validate()?;
-    if metadata.len() > 8
+    if contract.kind == CppLibraryAssertionKind::OpaqueExceptionConstructor
+        || metadata.len() > 8
         || specialization
             .as_ref()
             .is_some_and(|name| name.len() > 512 || !super::import::is_identifier(name))
@@ -300,6 +302,11 @@ impl CppLibraryAssertion {
     }
 
     pub(crate) fn validate(&self) -> Result<(), String> {
+        if self.kind == CppLibraryAssertionKind::OpaqueExceptionConstructor
+            && self.function != "std::ios_base::failure::failure"
+        {
+            return Err("only the pinned std::ios_base::failure constructor is supported".into());
+        }
         if (self.kind == CppLibraryAssertionKind::CheckedBooleanStatementWithLiteralMetadata)
             != self.literal_constructor.is_some()
         {
@@ -340,6 +347,7 @@ pub enum CppExceptionBehavior {
     #[default]
     NormalOnly,
     ScalarInt32,
+    IosFailure,
 }
 
 impl CppExceptionBehavior {
@@ -347,6 +355,7 @@ impl CppExceptionBehavior {
         match self {
             Self::NormalOnly => "normal_only",
             Self::ScalarInt32 => "scalar_int32",
+            Self::IosFailure => "ios_failure",
         }
     }
 }
@@ -1252,6 +1261,14 @@ pub enum CppStatement {
         value: CppExpression,
         span: CppSpan,
     },
+    /// The exact pinned standard constructor with its default error code.
+    /// The runtime owns the opaque exception object and its destruction.
+    ThrowIosFailure {
+        constructor: CppLibraryAssertion,
+        declaration_file: String,
+        message: String,
+        span: CppSpan,
+    },
     Unreachable {
         span: CppSpan,
     },
@@ -1339,7 +1356,7 @@ impl CppExport {
             ));
         }
         if self.exception_behavior != expected_exception_behavior
-            || (matches!(self.exception_behavior, CppExceptionBehavior::ScalarInt32)
+            || (!matches!(self.exception_behavior, CppExceptionBehavior::NormalOnly)
                 && !self.profile.exceptions)
         {
             return Err(
@@ -2189,11 +2206,20 @@ impl CppRecord {
                 .split("__")
                 .skip(1)
                 .enumerate()
-                .filter_map(|(index, part)| (part == "std_byte").then_some(index as u32))
-                .eq(self
-                    .byte_template_arguments
-                    .iter()
-                    .map(|argument| argument.index))
+                .filter_map(|(index, part)| match part {
+                    "std_byte" => Some((index as u32, false)),
+                    "const_std_byte" => Some((index as u32, true)),
+                    _ => None,
+                })
+                .eq(self.byte_template_arguments.iter().map(|argument| {
+                    (
+                        argument.index,
+                        matches!(
+                            argument.value_type,
+                            CppType::Enumeration { is_const: true, .. }
+                        ),
+                    )
+                }))
         {
             return Err("C++ standard-byte template identity is incomplete".into());
         }
@@ -2203,10 +2229,6 @@ impl CppRecord {
             if argument.index >= 32
                 || previous_index.is_some_and(|previous| previous >= argument.index)
                 || !super::scalar::is_standard_byte(&argument.value_type)
-                || matches!(
-                    argument.value_type,
-                    CppType::Enumeration { is_const: true, .. }
-                )
             {
                 return Err("C++ standard-byte template argument is invalid".into());
             }
@@ -2673,6 +2695,14 @@ impl CppFunction {
                 self.name
             ));
         }
+        if exception_behavior == CppExceptionBehavior::IosFailure
+            && self.declared_noexcept
+            && self.axiom.is_none()
+        {
+            return Err(
+                "user noexcept bodies are outside the ios_failure exception profile".into(),
+            );
+        }
         let mut places = ValidationPlaces::new();
         for parameter in &self.parameters {
             match &parameter.value_type {
@@ -3029,6 +3059,39 @@ impl CppFunction {
             return Err("supported C++ function has no executable statements".into());
         }
         validate_return_types(&self.body, &self.return_type)?;
+        let mut pending_exception_bodies = vec![self.body.as_slice()];
+        while let Some(body) = pending_exception_bodies.pop() {
+            for statement in body {
+                crate::instrumentation::record_deterministic_work(1);
+                match statement {
+                    CppStatement::ThrowIosFailure { .. }
+                        if exception_behavior != CppExceptionBehavior::IosFailure =>
+                    {
+                        return Err(
+                            "opaque ios failure requires the ios_failure exception profile".into(),
+                        );
+                    }
+                    CppStatement::If {
+                        then_branch,
+                        else_branch,
+                        ..
+                    } => {
+                        pending_exception_bodies.push(then_branch);
+                        pending_exception_bodies.push(else_branch);
+                    }
+                    CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
+                        pending_exception_bodies.push(body)
+                    }
+                    CppStatement::TryCatchInt32 {
+                        try_body, handler, ..
+                    } => {
+                        pending_exception_bodies.push(try_body);
+                        pending_exception_bodies.push(handler);
+                    }
+                    _ => {}
+                }
+            }
+        }
         if matches!(exception_behavior, CppExceptionBehavior::NormalOnly)
             && sequence_contains_throw(&self.body)
         {
@@ -3835,6 +3898,19 @@ impl CppStatement {
                 require_bool(condition.value_type(), false, "library assertion condition")?;
                 if !checked_boolean_condition(condition, places, true) {
                     return Err("C++ library assertion requires a supported scalar condition without side effects or partial arithmetic; field reads require normal memory authority".into());
+                }
+                Ok(())
+            }
+            Self::ThrowIosFailure { constructor, declaration_file, message, span } => {
+                constructor.validate()?;
+                span.validate(logical_source)?;
+                if constructor.kind != CppLibraryAssertionKind::OpaqueExceptionConstructor
+                    || declaration_file.is_empty()
+                    || declaration_file.len() > 4096
+                    || message.len() > 4096
+                    || !message.bytes().all(|b| b.is_ascii() && b != 0)
+                {
+                    return Err("invalid pinned opaque ios failure construction".into());
                 }
                 Ok(())
             }
@@ -5255,7 +5331,7 @@ fn validate_loop_body(
 
 fn sequence_contains_throw(statements: &[CppStatement]) -> bool {
     statements.iter().any(|statement| match statement {
-        CppStatement::Throw { .. } => true,
+        CppStatement::Throw { .. } | CppStatement::ThrowIosFailure { .. } => true,
         CppStatement::If {
             then_branch,
             else_branch,
@@ -5280,6 +5356,7 @@ impl CppStatement {
             | Self::Return { .. }
             | Self::ReturnCall { .. }
             | Self::Throw { .. }
+            | Self::ThrowIosFailure { .. }
             | Self::Unreachable { .. } => true,
             Self::If {
                 condition,
@@ -5936,6 +6013,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             }
             CppStatement::Unreachable { .. }
             | CppStatement::Throw { .. }
+            | CppStatement::ThrowIosFailure { .. }
             | CppStatement::Assume { .. }
             | CppStatement::LibraryAssert { .. }
             | CppStatement::Assign { .. }
@@ -6595,6 +6673,7 @@ fn validate_statement_constant_references(
     for statement in statements {
         match statement {
             CppStatement::Unreachable { .. }
+            | CppStatement::ThrowIosFailure { .. }
             | CppStatement::TrivialCopy { .. }
             | CppStatement::BaseDestruct { .. }
             | CppStatement::ReturnRecord { .. } => {}

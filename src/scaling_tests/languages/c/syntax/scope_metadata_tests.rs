@@ -40,7 +40,12 @@ fn explicit_embedded_layout_work_tracks_materialized_leaves() {
             layouts
         });
         assert_eq!(layouts.len(), size as usize);
-        assert_eq!(work, (size * (size - 1) / 2) as usize);
+        // Each embedded leaf is materialized once. The direct nominal-field
+        // index additionally visits each declared field: one in R0, two in
+        // every later record. Its work is linear in these explicit inputs.
+        let leaves = size * (size - 1) / 2;
+        let declared_fields = 2 * size - 1;
+        assert_eq!(work, (leaves + declared_fields) as usize);
     }
 }
 

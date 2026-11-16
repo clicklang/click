@@ -215,14 +215,15 @@ std::optional<Options> parse_options(int argc, const char **argv) {
             !object->getString("header") || !object->getString("sha256") ||
             (object->getString("kind") != "checked_boolean_statement" &&
              object->getString("kind") != "checked_boolean_statement_with_consteval_metadata" &&
-             object->getString("kind") != "checked_boolean_statement_with_literal_metadata") ||
+             object->getString("kind") != "checked_boolean_statement_with_literal_metadata" &&
+             object->getString("kind") != "opaque_exception_constructor") ||
             !result.library_assertions.emplace(object->getString("function")->str(), std::move(entry)).second) {
           llvm::errs() << "error: invalid or duplicate library assertion contract\n";
           return std::nullopt;
         }
       }
     } else if (option == "--exception-behavior") {
-      if (value != "normal_only" && value != "scalar_int32") {
+      if (value != "normal_only" && value != "scalar_int32" && value != "ios_failure") {
         llvm::errs() << "error: unsupported exception behavior `" << value << "`\n";
         return std::nullopt;
       }
@@ -325,9 +326,11 @@ public:
   }
 
   void finish() {
-    if (exception_behavior_ == "scalar_int32" &&
+    if (exception_behavior_ != "normal_only" &&
         !context_.getLangOpts().CXXExceptions) {
-      fail({}, "scalar int32 exception profile requires C++ exceptions enabled");
+      fail({}, exception_behavior_ == "ios_failure"
+                   ? "ios_failure exception profile requires C++ exceptions enabled"
+                   : "scalar int32 exception profile requires C++ exceptions enabled");
       return;
     }
     if (!resolve_generic_templates())
@@ -563,6 +566,11 @@ private:
     if (prototype == nullptr) {
       fail(declaration->getLocation(),
            "the supported C++ function must have a prototype");
+      return std::nullopt;
+    }
+    if (exception_behavior_ == "ios_failure" && prototype->isNothrow()) {
+      fail(declaration->getLocation(),
+           "user noexcept bodies are outside the ios_failure exception profile");
       return std::nullopt;
     }
     if (exception_behavior_ == "scalar_int32" && prototype->isNothrow() &&
@@ -1648,6 +1656,95 @@ private:
     return statement;
   }
 
+  std::optional<Json>
+  lower_ios_failure_throw(const clang::CXXThrowExpr *statement) {
+    const clang::Expr *value = statement->getSubExpr();
+    while (value != nullptr) {
+      value = value->IgnoreParenImpCasts();
+      if (const auto *cleanup = llvm::dyn_cast<clang::ExprWithCleanups>(value))
+        value = cleanup->getSubExpr();
+      else if (const auto *temporary =
+                   llvm::dyn_cast<clang::CXXBindTemporaryExpr>(value))
+        value = temporary->getSubExpr();
+      else if (const auto *temporary =
+                   llvm::dyn_cast<clang::MaterializeTemporaryExpr>(value))
+        value = temporary->getSubExpr();
+      else if (const auto *cast =
+                   llvm::dyn_cast<clang::CXXFunctionalCastExpr>(value))
+        value = cast->getSubExpr();
+      else
+        break;
+    }
+    const auto *construction =
+        llvm::dyn_cast_or_null<clang::CXXConstructExpr>(value);
+    const auto *constructor =
+        construction == nullptr ? nullptr : construction->getConstructor();
+    const auto *record =
+        constructor == nullptr ? nullptr : constructor->getParent();
+    const std::string name = "std::ios_base::failure::failure";
+    auto configured = library_assertions_.find(name);
+    const auto *contract = configured == library_assertions_.end()
+                               ? nullptr
+                               : configured->second.getAsObject();
+    const auto *literal = construction && construction->getNumArgs() == 2
+        ? llvm::dyn_cast<clang::StringLiteral>(
+              construction->getArg(0)->IgnoreParenImpCasts())
+        : nullptr;
+    if (!construction || !constructor || !record ||
+        record->getQualifiedNameAsString() != "std::ios_base::failure" ||
+        constructor->isVariadic() || constructor->getNumParams() != 2 ||
+        !literal || !literal->isOrdinary() || literal->getBytes().size() > 4096 ||
+        !std::all_of(literal->getBytes().begin(), literal->getBytes().end(),
+                     [](unsigned char byte) { return byte > 0 && byte < 128; }) ||
+        !llvm::isa<clang::CXXDefaultArgExpr>(construction->getArg(1)) ||
+        !contract ||
+        contract->getString("kind") != "opaque_exception_constructor") {
+      fail(statement->getThrowLoc(),
+           "ios_failure throws require the pinned std::ios_base::failure "
+           "narrow-literal constructor and its default error code");
+      return std::nullopt;
+    }
+    const auto first = constructor->getParamDecl(0)->getType();
+    const auto second = constructor->getParamDecl(1)->getType();
+    const auto *error_type = second.getNonReferenceType()->getAsCXXRecordDecl();
+    if (!first->isPointerType() || !first->getPointeeType().isConstQualified() ||
+        !context_.hasSameUnqualifiedType(first->getPointeeType(), context_.CharTy) ||
+        !second->isLValueReferenceType() ||
+        !second.getNonReferenceType().isConstQualified() || !error_type ||
+        error_type->getQualifiedNameAsString() != "std::error_code") {
+      fail(statement->getThrowLoc(),
+           "ios_failure constructor has an unsupported signature");
+      return std::nullopt;
+    }
+    auto header = dependency_source(constructor->getLocation());
+    if (!header || *header != contract->getString("header") ||
+        constructor->getDefinition() != nullptr) {
+      fail(statement->getThrowLoc(),
+           "ios_failure constructor must be an external declaration in its "
+           "pinned header");
+      return std::nullopt;
+    }
+    std::filesystem::path file(source_manager_.getFilename(
+        source_manager_.getSpellingLoc(constructor->getLocation())).str());
+    if (file.is_relative())
+      file = std::filesystem::path(compilation_directory_) / file;
+    std::error_code error;
+    file = std::filesystem::canonical(file, error);
+    if (error) {
+      fail(statement->getThrowLoc(),
+           "could not resolve the exception constructor header");
+      return std::nullopt;
+    }
+    dependency_sources_.insert(*header);
+    llvm::json::Object result;
+    result["kind"] = "throw_ios_failure";
+    result["constructor"] = Json(llvm::json::Object(*contract));
+    result["declaration_file"] = file.generic_string();
+    result["message"] = literal->getBytes().str();
+    result["span"] = span(statement->getSourceRange());
+    return Json(std::move(result));
+  }
+
   std::optional<Json> lower_statement(const clang::Stmt *statement,
                                       const clang::FunctionDecl *function,
                                       bool allow_local_declaration,
@@ -1678,6 +1775,9 @@ private:
       return Json(std::move(result));
     }
     if (const auto *cleanups = llvm::dyn_cast<clang::ExprWithCleanups>(statement)) {
+      if (exception_behavior_ == "ios_failure")
+        if (const auto *throwing = llvm::dyn_cast<clang::CXXThrowExpr>(cleanups->getSubExpr()))
+          return lower_ios_failure_throw(throwing);
       const auto *call = llvm::dyn_cast<clang::CallExpr>(cleanups->getSubExpr());
       const auto *callee = call == nullptr ? nullptr : call->getDirectCallee();
       // A trivial record assignment still materializes the RHS temporary. Its
@@ -1701,7 +1801,10 @@ private:
     }
     if (const auto *throw_expression =
             llvm::dyn_cast<clang::CXXThrowExpr>(statement)) {
-      if (exception_behavior_ != "scalar_int32") {
+      if (exception_behavior_ == "ios_failure" && throw_expression->getSubExpr() != nullptr &&
+          !throw_expression->getSubExpr()->getType()->isSpecificBuiltinType(clang::BuiltinType::Int))
+        return lower_ios_failure_throw(throw_expression);
+      if (exception_behavior_ != "scalar_int32" && exception_behavior_ != "ios_failure") {
         fail(throw_expression->getThrowLoc(),
              "throw expressions are outside the normal-only C++ profile");
         return std::nullopt;

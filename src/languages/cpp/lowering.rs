@@ -290,6 +290,17 @@ fn lower_function(
         _ if matches!(source.return_type, CppType::Record { .. }) => ProgramType::Int32Pointer,
         _ => cpp_return_scalar_type(&source.return_type)?,
     };
+    // Falling off a void function is a return. Keep that semantic exit in
+    // the lowered body, as the C frontend does, so an explicit call-outcome
+    // split has a continuation even when the call is the last source statement.
+    let body = if return_type == ProgramType::Void {
+        program_seq(
+            body,
+            program_return(ProgramExpression::Value(crate::kernel::ProgramValue::Void)),
+        )
+    } else {
+        body
+    };
     let return_constant = scalar::returns_constant_element(&source.return_type);
     let mut function = program_function(
         return_type,
@@ -1293,6 +1304,7 @@ impl LoweringContext<'_> {
             | CppStatement::Return { .. }
             | CppStatement::ReturnCall { .. }
             | CppStatement::Throw { .. }
+            | CppStatement::ThrowIosFailure { .. }
             | CppStatement::TryCatchInt32 { .. }
             | CppStatement::Scope { .. }
             | CppStatement::If { .. }
@@ -1554,6 +1566,26 @@ impl LoweringContext<'_> {
                     &state.exit(0).collect::<Vec<_>>(),
                     &state.exit(unwind_base).collect::<Vec<_>>(),
                 )
+            }
+            CppStatement::ThrowIosFailure { .. } => {
+                let capture = self.fresh_call_capture()?;
+                let payload = ProgramType::Parameter(crate::kernel::TypeParameterName::intern(
+                    "std::ios_base::failure",
+                ));
+                let construction = program_seq(
+                    program_declare(capture.clone(), payload),
+                    self.call_then_assign(
+                        capture.clone(),
+                        super::standard_library::IOS_FAILURE_FACTORY.to_string(),
+                        Vec::new(),
+                    ),
+                );
+                let throw =
+                    ProgramStatement::Throw(crate::kernel::program_expression::variable(capture));
+                Ok(program_seq(
+                    construction,
+                    self.lower_throwing_statement(throw, state.exit(unwind_base))?,
+                ))
             }
             CppStatement::Throw { value, .. } => {
                 let throw = ProgramStatement::Throw(self.lower_expression(value)?);
@@ -2191,6 +2223,35 @@ impl LoweringContext<'_> {
                     let (value_type, _) = self
                         .records
                         .resolve_path(&root.value_type, &place.projections)?;
+                    if matches!(value_type, CppType::Record { .. }) {
+                        // Keep each declared receiver projection, even when a
+                        // zero-offset child's address equals its parent's.
+                        // Expansion follows these explicit edges by index.
+                        let mut address =
+                            crate::kernel::program_expression::variable(self.variable_name(place));
+                        let mut parent = &root.value_type;
+                        for projection in &place.projections {
+                            let (child, offset) = self
+                                .records
+                                .resolve_path(parent, std::iter::once(projection.as_ref()))?;
+                            address = crate::kernel::program_expression::pointer_offset_bytes(
+                                address, offset,
+                            );
+                            if let CppType::Record { name, is_const, .. } = child {
+                                address = ProgramExpression::Cast {
+                                    expression: Box::new(address),
+                                    target_type: ProgramType::Int32Pointer,
+                                    integer_mode: crate::kernel::IntegerCastMode::Standard,
+                                    pointee_struct: Some(name.clone()),
+                                    pointee_volatile: false,
+                                    pointee_constant: *is_const,
+                                    explicit_qualification: false,
+                                };
+                            }
+                            parent = child;
+                        }
+                        return Ok(address);
+                    }
                     if let Some(element) = Scalar::pointer_element(value_type, true) {
                         let member_type = element.kind.kernel_type();
                         return Ok(crate::kernel::program_expression::checked_object_address(

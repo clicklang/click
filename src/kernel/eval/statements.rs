@@ -4766,7 +4766,10 @@ fn execute_execution_statement_leaf_paths(
             for path in evaluate_expression_value_paths(state, expression, assumptions, budget)? {
                 let outcome = match path.outcome {
                     ExpressionOutcome::Value(value)
-                        if value.program_type() == ProgramType::Int32 =>
+                        if matches!(
+                            value.program_type(),
+                            ProgramType::Int32 | ProgramType::Parameter(_)
+                        ) =>
                     {
                         if let Some(refusal) = return_authority_refusal(state) {
                             refusal

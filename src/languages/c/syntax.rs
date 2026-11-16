@@ -9376,6 +9376,7 @@ impl Parser {
             ),
             control_targets,
             structs: self.structs.clone(),
+            prepared_record_layouts: std::sync::Arc::default(),
             enums: self.enums.clone(),
             unions: self.unions.clone(),
             globals: self.globals.clone(),

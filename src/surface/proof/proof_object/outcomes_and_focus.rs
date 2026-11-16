@@ -399,10 +399,7 @@ impl<'a> Proof<'a> {
         }
         let mut goal = goal.clone();
         goal.closing = Some(closing_context.open(goal.path_index, &goal.data.core));
-        goal.claims = Some(OutcomeClaimGoals::open(
-            claims,
-            goal.data.core.is_exceptional,
-        ));
+        goal.claims = Some(closing_context.open_claims(claims, goal.data.core.is_exceptional));
         self.with_focused_outcome_obligation(goal)
     }
 

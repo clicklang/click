@@ -1067,21 +1067,24 @@ impl FunctionContractInterface {
     /// Whether this interface can be applied as a modular call: a direct
     /// call, an external declaration, or a named contract a call through a
     /// pointer is made under. A throwing interface is narrower than an
-    /// ordinary one: only the checked scalar channel and pure clauses cross
-    /// the boundary, with no resource or mutable-effect transfer.
+    /// ordinary one: it returns borrowed memory authority on either exit,
+    /// with no consuming, producing, or construction transition.
     pub(crate) fn verified_direct_contract_supported(&self) -> bool {
         if self.exceptional_signature.is_empty() {
             return self.opaque_contract_supported();
         }
         self.opaque_contract_supported
-            && self.exceptional_signature == ExceptionalSignature::Int32
             && self.proof_parameters.is_empty()
-            && self.resource_requires.is_empty()
-            && self.resource_ensures.is_empty()
+            && self.resource_requires.iter().all(|resource| {
+                resource.role() == ResourceTransferRole::Borrow
+                    && matches!(resource.term(), ResourceTerm::Memory(_))
+            })
+            && self.resource_ensures.iter().all(|resource| {
+                resource.role() == ResourceTransferRole::Borrow
+                    && matches!(resource.term(), ResourceTerm::Memory(_))
+            })
             && self.resource_constructors.is_empty()
-            && self.contract_mutable.is_empty()
-            && !self.contract_effect_claim_required
-            && !self.resource_derived_mutable_frame
+            && (self.contract_mutable.is_empty() || self.resource_derived_mutable_frame)
             && !self.resource_derived_frame_mixed
             && self.composite_resource_definitions.is_empty()
             && self.predicate_unfoldings.is_empty()
@@ -1395,9 +1398,19 @@ impl ProgramFunction {
 
     /// Internal staging hook for importers and tests. No source frontend opts
     /// into the exceptional channel yet.
+    #[cfg(test)]
     pub(crate) fn with_int32_exceptional_outcome(mut self) -> Self {
         Arc::make_mut(&mut self.contract_interface).exceptional_signature =
             ExceptionalSignature::Int32;
+        self
+    }
+
+    pub(crate) fn with_exceptional_outcome(mut self, payload_type: ProgramType) -> Self {
+        Arc::make_mut(&mut self.contract_interface).exceptional_signature = match payload_type {
+            ProgramType::Int32 => ExceptionalSignature::Int32,
+            ProgramType::Parameter(name) => ExceptionalSignature::Opaque(name),
+            _ => panic!("unsupported exceptional payload type"),
+        };
         self
     }
 
@@ -1733,8 +1746,6 @@ impl ProgramFunction {
 
     pub(crate) fn verified_direct_contract_supported(&self) -> bool {
         self.contract_interface.verified_direct_contract_supported()
-            && (self.exceptional_signature().is_empty()
-                || self.exceptional_signature() == ExceptionalSignature::Int32)
             && (!self.has_internal_exceptional_outcome()
                 || !self.exceptional_signature().is_empty())
     }
@@ -3438,6 +3449,11 @@ impl FunctionContract {
         // A throwing interface is supported when its exceptional channel is
         // the checked scalar one with pure clauses.
         (interface.verified_direct_contract_supported()
+            && (interface.exceptional_signature() == ExceptionalSignature::None
+                || (interface.exceptional_signature() == ExceptionalSignature::Int32
+                    && interface.resource_requires().is_empty()
+                    && interface.resource_ensures().is_empty()
+                    && interface.contract_mutable().is_empty()))
             && interface.aggregate_return_mode() == AggregateReturnMode::Copy
             && interface.construction_parameter().is_none()
             && interface.resource_constructors().is_empty()

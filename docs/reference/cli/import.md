@@ -352,6 +352,29 @@ check its normal behavior without inventing an exceptional proof outcome.
 An RTTI-enabled profile also permits those borrowed records; this does not add
 `typeid` or `dynamic_cast` semantics.
 
+A source may instead select `"exception_behavior": "ios_failure"`, with
+`"exceptions": true`, for propagation of an opaque
+`std::ios_base::failure`. It accepts the exact external narrow-string
+constructor with its default `std::error_code` argument, using an ordinary
+nonzero ASCII string literal of at most 4096 bytes. Configure a
+`library_assertions` entry with `kind: "opaque_exception_constructor"`,
+`function: "std::ios_base::failure::failure"`, and the declaration header's
+relative `header` and `sha256`. The artifact records the resolved constructor,
+canonical declaration file, literal and source span; loading checks them
+against that configured pin and the locked input closure.
+
+The constructor model returns a fresh opaque value, with no observable memory
+effects. Exception storage and destruction belong to the C++ runtime.
+**This profile assumes allocation failure terminates**, as with Bitcoin's
+installed new-handler; it does not model propagation of `std::bad_alloc`
+([trust](../../concepts/trust.md#library-models)). Direct `throws` contracts
+may borrow memory with `owns` and `views`, and must establish their footprint
+and exceptional guarantees after a throw. The pinned `SpanReader::ignore`
+fixture verifies the real `streams.h` through this boundary. User `noexcept`
+bodies, nontrivial user cleanup, typed class catches, base-class matching,
+rethrow, message inspection and general class exceptions remain refused.
+The existing `normal_only` and `scalar_int32` profiles retain their rules.
+
 A source's separate `"exception_behavior": "scalar_int32"` requires
 `"exceptions": true`. Its locked artifact may contain a source `throw` of a
 typed `int` payload in an object-free function; the importer lowers that node
@@ -374,7 +397,7 @@ the guards are destroyed in reverse construction order.
 The importer still rejects nested handlers, catch-all or non-`int` handlers,
 other local declarations inside either block, guards constructed after the call, returns
 from a guarded `try`, `noexcept` free functions (whose termination behavior is
-not modeled), and broader exceptional resource transfer. This is not general
+not modeled), and consuming or producing exceptional resources. This is not general
 C++ unwinding support or an exception-ABI proof. Clang's typed
 source semantics and the compiler/runtime implementation remain the trust
 boundary. The config, artifact, and lock keep

@@ -205,10 +205,21 @@ proved. Each family is an assumption in the same sense:
 | C library | `C library` | `memcpy`, `memcmp`, `memset` and `strlen` meet their contracts | `library/c/string.click` |
 | Allocator | `allocator` | `malloc`, `calloc`, `realloc` and `free` behave as the kernel's allocation model: a fresh block or null, released once | Built in, as a language primitive: the C front end and the kernel (`allocation` resource), documented in [heap allocation](../reference/language/c.md#heap-allocation) |
 | Formatted output | `snprintf` | One contract per `snprintf` format a program uses, written from the format ([formatted output](../reference/language/c.md#formatted-output)) | `src/languages/c/formatted_output.rs` |
-| C++ standard library | `C++ std` | The catalog contract of each `std::span`, `std::array` and `std::as_writable_bytes` function an import calls | `library/cpp/span.click` (`std::span<T>` and static-extent `std::span<T, N>`), `library/cpp/array.click` (`std::array<T, N>`, its `const` and mutable overloads), and `library/cpp/as_writable_bytes.click` (`std::as_writable_bytes<T, N>`), Click templates written out at each called element type and extent; `src/languages/cpp/standard_library.rs` keeps only the name table |
+| C++ standard library | `C++ std` | The catalog contract of each `std::span`, `std::array` and `std::as_writable_bytes` function an import calls, and the explicitly pinned opaque exception constructor in the `ios_failure` profile | `library/cpp/span.click` (`std::span<T>` and static-extent `std::span<T, N>`), `library/cpp/array.click` (`std::array<T, N>`, its `const` and mutable overloads), and `library/cpp/as_writable_bytes.click` (`std::as_writable_bytes<T, N>`), Click templates written out at each called element type and extent; `src/languages/cpp/standard_library.rs` keeps the name table and the opaque exception factory contract |
 | Rust core library | `Rust core` | The contract of each core method an import calls: integer methods (`u32::min`), `Vec`, slice, and `Option`/`Result` unwrapping ([core library methods](../reference/rust.md#core-library-methods)), with the 7 `axiom`s above | `library/rust/core.click` (`Vec`, `slice::swap<T>`, `Option`/`Result` unwrapping contracts, generic `extern fn` blocks written out at each called type, with only a name table in `src/languages/rust/standard_library.rs`) and `library/rust/integers.click` (one `extern fn` per integer method and type, stating its result with the specification function of the same path in `library/rust/<type>.click`; only the called methods' lines are appended) |
 | Verifier primitive | `primitive` | `__click_constant_p_unknown`, the value of `__builtin_constant_p`, is 0 or 1 ([verifier primitives](../reference/language/index.md#verifier-primitives)): it stands for a compiler decision, not a library function | `library/c/builtins.click` |
 | Thread runtime | `runtime` | The selected `modeled-pthread` specification: create/join, shared mutex calls and one-shot atomic publication obey it | `src/languages/c/thread_runtime.rs` |
+
+The C++ `ios_failure` profile assumes that constructing the pinned
+`std::ios_base::failure(const char*, const std::error_code& = ...)`
+returns a fresh opaque value of that exact type, with no caller-observable
+memory effects. Its message, representation and `what()` are unavailable to
+proofs. The runtime owns the exception storage and its trusted standard-library
+destruction. Allocation failure terminates, so `std::bad_alloc` does not
+propagate; running without that behavior is outside this profile. The
+constructor and its default argument are an explicit library assumption, not
+a verified implementation. Internally the model is the reserved external
+`__click_cpp_decl_ios_failure`, reported as `C++ std` when called.
 
 A Rust core contract states the method's result with the library function
 of the same path in `library/rust/`, `click::rust::u32::min`, and so trusts

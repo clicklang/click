@@ -9337,8 +9337,8 @@ fn direct_return_calls_keep_guarded_try_returns_unsupported_and_emit_uncaught_cl
         assert!(!project.artifact().exists());
     }
 
-    // Uncaught cleanup edges are checked structurally: resource-bearing
-    // exceptional contracts remain outside the existing surface slice.
+    // Keep this regression focused on the selected guard's structural cleanup.
+    // Borrowed memory on throwing exits has separate proof/replay coverage.
     let escaping = Project::with_fixture("unwind.cpp", "escaping", cpp);
     escaping.write_exception_enabled_compilation_database();
     escaping.write_config_with_exception_behavior("escaping", "unwind.cpp", true, "scalar_int32");
@@ -20029,4 +20029,88 @@ fn committed_cpp_project_imports_match_the_pinned_exporter() {
             );
         }
     }
+}
+
+#[test]
+#[ignore = "nightly: exceptional memory proof expansion and replay"]
+fn scalar_exception_returns_changed_memory_and_borrowed_authority() {
+    let project = Project::with_fixture(
+        "caller.cpp",
+        "caller",
+        r#"
+void update(int* value, bool fail) {
+    if (fail) { *value = 9; throw 7; }
+    *value = 7;
+}
+void caller(int* value, bool fail) { update(value, fail); }
+"#,
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("caller", "caller.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let prepared = load_import(&project.config()).unwrap();
+    let source = r#"verifying "caller.cpp";
+void update(int32* value, bool fail) throws int32 {
+    owns value[0];
+    ensures value[0] == 7;
+    exceptional ensures value[0] == 9;
+    exceptional ensures exception == 7;
+}
+void caller(int32* value, bool fail) throws int32 {
+    owns value[0];
+    ensures value[0] == 7;
+    exceptional ensures value[0] == 9;
+    exceptional ensures exception == 7;
+}
+"#;
+    check_return_call_sidecar(&project, &prepared, source);
+    let sidecar = project.directory.join("false.click");
+    for false_source in [
+        source.replace(
+            "exceptional ensures value[0] == 9;",
+            "exceptional ensures value[0] == old(value[0]);",
+        ),
+        source.replacen("    owns value[0];", "    views value[0];", 1),
+    ] {
+        fs::write(&sidecar, &false_source).unwrap();
+        let parsed = read_click_project(&sidecar, &false_source).unwrap();
+        verify_program_prepared_project(&parsed, &prepared).expect_err(
+            "a false exceptional state or read-only authority cannot certify the write",
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: borrowed authority cannot be consumed on a throwing exit"]
+fn scalar_exception_refuses_lost_borrowed_authority() {
+    let project = Project::with_fixture(
+        "abandon.cpp",
+        "abandon",
+        "void take(int* value) noexcept;\nvoid abandon(int* value) { take(value); throw 7; }\n",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("abandon", "abandon.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let prepared = load_import(&project.config()).unwrap();
+    let source = r#"verifying "abandon.cpp";
+extern void take(int32* value) {
+    consumes value[0];
+    ensures true;
+}
+void abandon(int32* value) throws int32 {
+    owns value[0];
+    ensures true;
+    exceptional ensures exception == 7;
+}
+"#;
+    let sidecar = project.directory.join("abandon.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    let error = verify_program_prepared_project(&parsed, &prepared)
+        .expect_err("a throwing function must return the authority it borrowed");
+    assert!(
+        error.message().contains("resource") || error.message().contains("ownership"),
+        "{}",
+        error.report()
+    );
 }

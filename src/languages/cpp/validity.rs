@@ -565,7 +565,9 @@ impl Metadata<'_> {
                     self.cleanups(cleanups)?;
                     span
                 }
-                CppStatement::Unreachable { span } => span,
+                CppStatement::Unreachable { span } | CppStatement::ThrowIosFailure { span, .. } => {
+                    span
+                }
                 CppStatement::Throw { value, span }
                 | CppStatement::Assume {
                     condition: value,

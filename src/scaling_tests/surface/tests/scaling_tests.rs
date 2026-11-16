@@ -11134,3 +11134,44 @@ fn nested_call_results_scale_with_the_statements_that_read_them() {
         "nested call results grew per statement: {samples:?}"
     );
 }
+
+/// A throwing call returns its selected memory input without walking the
+/// unrelated function declarations or pure requirements at its call frontier.
+#[test]
+#[ignore = "nightly: exceptional memory context scaling"]
+fn exceptional_borrowed_memory_is_indexed_in_unrelated_context() {
+    const CALL_WORK: &str = "operation `verification statement: call`";
+    let mut samples = Vec::new();
+    let mut frontier = Vec::new();
+    for size in [2, 8, 16] {
+        let mut c = String::from("void update(int32* value) { *value = 7; }\n");
+        let mut source = String::from(
+            "verifying \"memory.c\";\nfunction unrelated_fact(n: int32) -> int32 { n }\nvoid update(int32* value) throws int32 { owns value[0]; ensures value[0] == 7; exceptional ensures value[0] == 9; }\n",
+        );
+        for index in 0..size {
+            c.push_str(&format!("int32 unused_{index}(int32 x) {{ return x; }}\n"));
+            source.push_str(&format!(
+                "int32 unused_{index}(int32 x) {{ ensures result == x; }}\n"
+            ));
+        }
+        c.push_str("void target(int32* value) { update(value); }\n");
+        source.push_str("void target(int32* value) throws int32 { owns value[0];\n");
+        for index in 0..size {
+            source.push_str(&format!(
+                "requires unrelated_fact({}) != 0;\n",
+                10000 + index
+            ));
+        }
+        source.push_str("ensures value[0] == 7; exceptional ensures value[0] == 9; }\n");
+        let (verified, sample) =
+            scaling_sample(size, || verify_c_sources(&source, &[("memory.c", &c)]));
+        verified.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        frontier.push(sample.named_work.get(CALL_WORK).copied().unwrap_or(0));
+        samples.push(sample);
+    }
+    assert_near_linear_scaling_at_sampled_sizes("exceptional borrowed memory", &samples);
+    assert!(
+        frontier[0] > 0 && frontier.iter().all(|work| *work == frontier[0]),
+        "call frontier {frontier:?}"
+    );
+}
