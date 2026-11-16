@@ -1,59 +1,81 @@
 use super::*;
 
+// Keep both count-width promotion and signed shifts in the gate, at three
+// sizes. The complete type/operator matrix and longer chains run nightly.
 #[test]
+fn representative_c_shift_prefixes_scale_without_exports() {
+    for (a, b, op) in [
+        (
+            MachineIntegerType::UInt64,
+            MachineIntegerType::UInt32,
+            MachineBinaryOp::ShiftLeft,
+        ),
+        (
+            MachineIntegerType::Int32,
+            MachineIntegerType::Int64,
+            MachineBinaryOp::ShiftRight,
+        ),
+    ] {
+        check_c_shift_prefix_scaling(a, b, op, &[2, 8, 32]);
+    }
+}
+
+#[test]
+#[ignore = "nightly: full C shift matrix took 5.60s in isolation"]
 fn c_shifts_retain_growing_values_and_count_prefixes_without_exports() {
     for a in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
         for b in [MachineIntegerType::UInt32, MachineIntegerType::Int64] {
             for op in OPS {
-                let mut previous = None;
-                for size in [16, 64, 256] {
-                    let _session = VerificationSession::enter();
-                    let mut execution = ExecutionBudget::new();
-                    let budget = SpecEvaluation::logical(&mut execution);
-                    let SpecValue::Shared(mut left) =
-                        input(a, &MachineTerm::Variable(Variable(995476)), true)
-                    else {
-                        panic!()
-                    };
-                    let SpecValue::Shared(mut count) =
-                        input(b, &MachineTerm::Variable(Variable(995477)), true)
-                    else {
-                        panic!()
-                    };
-                    let one = KernelTermImport::default().machine(
-                        b,
-                        &crate::kernel::machine_integer::range::constant_word(b, &1.into())
-                            .unwrap(),
-                    );
-                    let exports = KernelTermExport::machine_export_count();
-                    let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                        for _ in 0..size {
-                            count = KernelTerm::machine_binary_shared(
-                                b,
-                                MachineBinaryOp::Add,
-                                [count.clone(), one.clone()],
-                            );
-                            left = apply_values(
-                                Some(op),
-                                &left.into(),
-                                &count.clone().into(),
-                                &budget,
-                            )
-                            .unwrap()
-                            .value;
-                        }
-                    });
-                    assert_eq!(KernelTermExport::machine_export_count(), exports);
-                    if let Some(before) = previous {
-                        assert!(
-                            work <= before * 5 + 8,
-                            "{a:?}/{b:?} {op:?}: {size}: {work} vs {before}"
-                        );
-                    }
-                    previous = Some(work);
-                }
+                check_c_shift_prefix_scaling(a, b, op, &[16, 64, 256]);
             }
         }
+    }
+}
+
+fn check_c_shift_prefix_scaling(
+    a: MachineIntegerType,
+    b: MachineIntegerType,
+    op: MachineBinaryOp,
+    sizes: &[usize],
+) {
+    let mut previous = None;
+    for &size in sizes {
+        let _session = VerificationSession::enter();
+        let mut execution = ExecutionBudget::new();
+        let budget = SpecEvaluation::logical(&mut execution);
+        let SpecValue::Shared(mut left) = input(a, &MachineTerm::Variable(Variable(995476)), true)
+        else {
+            panic!()
+        };
+        let SpecValue::Shared(mut count) = input(b, &MachineTerm::Variable(Variable(995477)), true)
+        else {
+            panic!()
+        };
+        let one = KernelTermImport::default().machine(
+            b,
+            &crate::kernel::machine_integer::range::constant_word(b, &1.into()).unwrap(),
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                count = KernelTerm::machine_binary_shared(
+                    b,
+                    MachineBinaryOp::Add,
+                    [count.clone(), one.clone()],
+                );
+                left = apply_values(Some(op), &left.into(), &count.clone().into(), &budget)
+                    .unwrap()
+                    .value;
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        if let Some(before) = previous {
+            assert!(
+                work <= before * 5 + 8,
+                "{a:?}/{b:?} {op:?}: {size}: {work} vs {before}"
+            );
+        }
+        previous = Some(work);
     }
 }
 
