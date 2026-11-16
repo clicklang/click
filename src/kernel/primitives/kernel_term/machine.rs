@@ -745,9 +745,15 @@ impl KernelTermImport {
                 destination: *to,
                 operand: self.machine(*from, value),
             },
-            // Reads with unmigrated address payloads, binders and pointer
-            // observations retain their complete legacy payload.
-            _ => {
+            // Unrecognized untyped intrinsics, wrong-sort float inputs and
+            // read/address descriptors not admitted above keep exact payloads.
+            Old::PureFunctionApplication { .. }
+            | Old::MemoryLoad(..)
+            | Old::PointerAddress(..)
+            | Old::Float32Negate(_)
+            | Old::Float32Binary { .. }
+            | Old::Float64Negate(_)
+            | Old::Float64Binary { .. } => {
                 return KernelTerm::legacy(PureFunctionArgument::Value(wrap_exact(
                     result,
                     term.clone(),
