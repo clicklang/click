@@ -48,6 +48,9 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
 
 fn write_havoc_block(identity: &mut String, block: PointerBlock) {
     match block {
+        PointerBlock::AggregateReturn { frame } => {
+            let _ = write!(identity, "breturn{frame};");
+        }
         PointerBlock::ContractResult => identity.push_str("br;"),
         PointerBlock::StaticObject { binding } => {
             write_havoc_string(identity, "bst", &binding.to_string())
@@ -7630,6 +7633,14 @@ impl Memory {
         };
         Pointer {
             block,
+            offset: PointerOffsetTerm::Constant(0),
+        }
+    }
+
+    /// Materialized return storage has a typed identity, never a C local name.
+    pub(in crate::kernel) fn aggregate_return_pointer(frame: u64) -> Pointer {
+        Pointer {
+            block: PointerBlock::AggregateReturn { frame },
             offset: PointerOffsetTerm::Constant(0),
         }
     }

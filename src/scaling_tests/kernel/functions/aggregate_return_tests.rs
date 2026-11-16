@@ -206,3 +206,55 @@ fn aggregate_return_copy_permission_ignores_unrelated_storage() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn materialized_return_storage_ignores_unrelated_local_declarations() {
+    let mut samples = Vec::new();
+    for count in [4, 32, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = Memory::frame_local_pointer(999, "source");
+        let mut state = ExecutionState::new().with_memory(
+            Memory::new()
+                .with_block(source.block.clone(), 16)
+                .store(
+                    source.clone(),
+                    ProgramValue::typed_pointer(Pointer::null(), ProgramType::Int32Pointer),
+                )
+                .store(source.offset_by_bytes(8), int32(37)),
+        );
+        let owner = LocalFunctionId::new(None, "return_scaling".into());
+        for ordinal in 0..count {
+            let binding = LocalBindingId::new(
+                owner.clone(),
+                false,
+                ordinal,
+                Some(format!("unrelated_{ordinal}")),
+            );
+            state.locals.set(binding, int32(0));
+        }
+        let function = copy_function();
+        let (returned, work) = crate::instrumentation::measure_deterministic_work(|| {
+            complete_aggregate_return(
+                &mut state,
+                &function,
+                ProgramValue::typed_pointer(source.clone(), ProgramType::VoidPointer),
+            )
+            .unwrap()
+        });
+        assert_eq!(
+            pointer(&returned).block,
+            PointerBlock::AggregateReturn { frame: 0 }
+        );
+        assert_eq!(
+            state
+                .memory
+                .known_value(&pointer(&returned).offset_by_bytes(8)),
+            Some(int32(37))
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}

@@ -16377,19 +16377,29 @@ impl Parser {
 
     #[inline(never)]
     fn parse_contract_non_match_primary(&mut self) -> Result<ContractExpression, ClickError> {
-        // An exact name for the value-only result slot. This grants no C
-        // object storage or access rights.
+        // Exact result storage identities. Naming one grants no access rights.
         if self.peek_ident() == Some("result")
             && self.tokens.get(self.position + 1) == Some(&Token::Dot)
             && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(name)) if name == "storage")
             && self.tokens.get(self.position + 3) == Some(&Token::LParen)
-            && self.tokens.get(self.position + 4) == Some(&Token::RParen)
         {
-            self.position += 5;
+            self.position += 4;
+            let block = if self.peek() == Some(&Token::RParen) {
+                crate::kernel::PointerBlock::ContractResult
+            } else {
+                let kind = self.expect_ident("return storage kind `frame`")?;
+                if kind != "frame" {
+                    return Err(self.error("return storage kind must be `frame`"));
+                }
+                self.expect(Token::Comma)?;
+                let frame = self.expect_u64("return storage frame")?;
+                crate::kernel::PointerBlock::AggregateReturn { frame }
+            };
+            self.expect(Token::RParen)?;
             return Ok(ContractExpression::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
                     crate::kernel::Pointer {
-                        block: crate::kernel::PointerBlock::ContractResult,
+                        block,
                         offset: crate::kernel::PointerOffsetTerm::Constant(0),
                     },
                     ProgramType::UInt8Pointer,
@@ -17807,6 +17817,29 @@ impl Parser {
             self.expect(Token::RParen)?;
         }
         Ok(value)
+    }
+
+    fn expect_u64(&mut self, expected: &str) -> Result<u64, ClickError> {
+        let at = self.error_context();
+        match self.next() {
+            Some(Token::Number(value)) => Ok(u64::from(value)),
+            Some(Token::UnsuffixedUInt64(value) | Token::UInt64Number(value)) => Ok(value),
+            Some(Token::UnsuffixedInt64(value) | Token::Int64Number(value)) => u64::try_from(value)
+                .map_err(|_| self.error_at(at, format!("expected nonnegative {expected}"))),
+            Some(Token::RustInteger(literal)) => {
+                literal
+                    .program_expression(false)
+                    .map_err(|message| self.error_at(at.clone(), message))?;
+                literal
+                    .digits
+                    .parse::<u64>()
+                    .map_err(|_| self.error_at(at, format!("expected {expected} to fit in uint64")))
+            }
+            Some(token) => {
+                Err(self.error_at(at, format!("expected {expected}, got {}", token.describe())))
+            }
+            None => Err(self.error_at(at, format!("expected {expected}, got end of input"))),
+        }
     }
 
     fn expect_index(&mut self, expected: &str) -> Result<usize, ClickError> {

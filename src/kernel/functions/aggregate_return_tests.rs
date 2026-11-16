@@ -1552,3 +1552,57 @@ fn aggregate_return_temporary_copy_requires_its_recorded_extent() {
         );
     }
 }
+
+#[test]
+fn aggregate_return_storage_is_distinct_from_a_same_frame_source_named_return() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Memory::frame_local_pointer(0, "__return");
+    let self_pointer =
+        ProgramValue::typed_pointer(source.offset_by_bytes(8), ProgramType::Int32Pointer);
+    let caller = Memory::new();
+    let mut state = ExecutionState::new().with_memory(
+        caller
+            .clone()
+            .with_block(source.block.clone(), 16)
+            .store(source.clone(), self_pointer.clone())
+            .store(source.offset_by_bytes(8), int32(37)),
+    );
+    state
+        .locals
+        .set_aggregate_object_at("__return", node_layout(), source.clone());
+    let function = copy_function();
+    let first = complete_aggregate_return(
+        &mut state,
+        &function,
+        ProgramValue::typed_pointer(source.clone(), ProgramType::VoidPointer),
+    )
+    .unwrap();
+    let second = complete_aggregate_return(&mut state, &function, first.clone()).unwrap();
+    assert_eq!(
+        pointer(&first).block,
+        PointerBlock::AggregateReturn { frame: 0 }
+    );
+    assert_eq!(
+        pointer(&second).block,
+        PointerBlock::AggregateReturn { frame: 1 }
+    );
+    assert_eq!(state.next_local_frame, 2);
+    for result in [&first, &second] {
+        let destination = pointer(result);
+        assert!(destination.block.proven_distinct(&source.block));
+        assert_eq!(
+            state.memory.known_value(&destination),
+            Some(self_pointer.clone())
+        );
+        assert_eq!(
+            state.memory.known_value(&destination.offset_by_bytes(8)),
+            Some(int32(37))
+        );
+    }
+    set_function_result(&mut state, &function, second.clone());
+    let after =
+        end_function_body_automatic_lifetimes(&state, &function, &caller, Some(&second)).unwrap();
+    assert!(!after.has_block(&source.block));
+    assert!(after.has_block(&pointer(&second).block));
+    assert_eq!(after.known_value(&pointer(&second)), Some(self_pointer));
+}
