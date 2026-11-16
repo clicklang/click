@@ -1,5 +1,7 @@
 //! Checked equality substitution. Surface syntax is never evidence for a rewrite.
 
+#[cfg(test)]
+mod closed_word32_tests;
 mod shared;
 pub(in crate::kernel) use shared::canonical_index as canonical_pointer_index;
 
@@ -1129,7 +1131,28 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
         }
         MachineTerm::Constant { .. } => term.clone(),
         term => match (term.as_binary(), term.as_unary()) {
-            // The 32-bit word operators are rebuilt as bare nodes, the rest
+            (
+                Some((
+                    op @ crate::kernel::BitvectorBinaryOp::Machine(
+                        _,
+                        MachineBinaryOp::Divide
+                        | MachineBinaryOp::Remainder
+                        | MachineBinaryOp::ShiftRight,
+                    ),
+                    left,
+                    right,
+                )),
+                _,
+            ) if op.is_bitvector32() => {
+                let left = rewrite_term(left, from, to);
+                let right = rewrite_term(right, from, to);
+                if matches!((&left, &right), (bits32_constant!(_), bits32_constant!(_))) {
+                    op.build(left, right)
+                } else {
+                    op.build_raw(left, right)
+                }
+            }
+            // Other 32-bit word operators are rebuilt as bare nodes, the rest
             // through their smart constructors.
             (Some((op, left, right)), _) if op.is_bitvector32() => {
                 op.build_raw(rewrite_term(left, from, to), rewrite_term(right, from, to))

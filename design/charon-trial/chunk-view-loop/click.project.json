@@ -4,8 +4,7 @@
       "language": "rust",
       "sources": {
         "loop.rs": {}
-      },
-      "iterators": "library"
+      }
     }
   }
 }

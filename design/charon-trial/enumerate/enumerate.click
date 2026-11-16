@@ -1,10 +1,8 @@
-import click::integer;
-
 verifying "enumerate.rs";
 
-// `for (i, x) in xs.iter().enumerate()` is read through `iter.len()`, the
-// elements left: each iteration yields index `xs.len() - iter.len()` and the
-// element there, then advances.
+// `for (i, x) in xs.iter().enumerate()` is `core`'s `Enumerate { iter,
+// count }`: each iteration yields index `iter.count` and the element at
+// `iter.as_slice()`, then counts it and moves the slice on.
 
 fn last_index(bytes: &[u8]) -> usize {
     views bytes[0..bytes.len()];
@@ -15,27 +13,32 @@ fn last_index(bytes: &[u8]) -> usize {
         decreases iter.len();
         views bytes[0..bytes.len()];
         invariant iter.len() <= bytes.len();
-        invariant iter.len() != bytes.len() implies last == bytes.len() - iter.len() - 1u64;
+        invariant iter.count == bytes.len() - iter.len();
+        invariant iter.as_slice() == bytes + iter.count;
+        invariant iter.count != 0u64 implies last == iter.count - 1u64;
         preserve by {
-            mark iteration;
-            step_until(back_edge());
-            have 1 <= to_integer(at(iteration, iter.len()));
-            have to_integer(at(iteration, iter.len())) <= to_integer(bytes.len());
-            apply(integer::uint64_subtract_to_integer(at(iteration, iter.len()), 1u64)) using {
-                1 <= to_integer(at(iteration, iter.len()));
-            };
-            apply(integer::uint64_subtract_to_integer(bytes.len(), at(iteration, iter.len()))) using {
-                to_integer(at(iteration, iter.len())) <= to_integer(bytes.len());
-            };
-            have to_integer(iter.len()) == to_integer(at(iteration, iter.len())) - 1 by { known(); }
-            have to_integer(last) == to_integer(bytes.len()) - to_integer(at(iteration, iter.len())) by { known(); }
+            if 0u64 < iter.len() {
+                mark taken;
+                have to_integer(iter.count) < to_integer(bytes.len());
+                have to_integer(iter.count) + 1 <= to_integer(bytes.len());
+                have to_integer(iter.count + 1u64) <= to_integer(bytes.len());
+                have to_integer(iter.count) + 1 <= 18446744073709551615;
+                have (bytes + iter.count) + 1u64 == bytes + (iter.count + 1u64);
+                step_until(back_edge());
+                have iter.count == at(taken, iter.count) + 1u64;
+                have iter.len() == at(taken, iter.len()) - 1u64;
+                have iter.as_slice() == bytes + iter.count;
+                have last == iter.count - 1u64;
+                have iter.len() < at(taken, iter.len());
+            } else {
+                step(); step(); step(); step(); step();
+            }
         }
     }
     have loop(0).iter.len() == 0u64;
     have bytes.len() != 0u64 implies last == bytes.len() - 1u64 by {
         intro();
-        have loop(0).iter.len() != bytes.len();
-        have to_integer(last) == to_integer(bytes.len()) - to_integer(loop(0).iter.len()) - 1;
+        have loop(0).iter.count == bytes.len();
         solve();
     }
 }
@@ -50,21 +53,27 @@ fn last_pair(words: &[u16]) -> u32 {
         decreases iter.len();
         views words[0..words.len()];
         invariant iter.len() <= words.len();
-        invariant iter.len() != words.len() implies index == words.len() - iter.len() - 1u64;
+        invariant iter.count == words.len() - iter.len();
+        invariant iter.as_slice() == words + iter.count;
+        invariant iter.count != 0u64 implies index == iter.count - 1u64;
         invariant value <= 65535u32;
         preserve by {
-            mark iteration;
-            step_until(back_edge());
-            have 1 <= to_integer(at(iteration, iter.len()));
-            have to_integer(at(iteration, iter.len())) <= to_integer(words.len());
-            apply(integer::uint64_subtract_to_integer(at(iteration, iter.len()), 1u64)) using {
-                1 <= to_integer(at(iteration, iter.len()));
-            };
-            apply(integer::uint64_subtract_to_integer(words.len(), at(iteration, iter.len()))) using {
-                to_integer(at(iteration, iter.len())) <= to_integer(words.len());
-            };
-            have to_integer(iter.len()) == to_integer(at(iteration, iter.len())) - 1 by { known(); }
-            have to_integer(index) == to_integer(words.len()) - to_integer(at(iteration, iter.len())) by { known(); }
+            if 0u64 < iter.len() {
+                mark taken;
+                have to_integer(iter.count) < to_integer(words.len());
+                have to_integer(iter.count) + 1 <= to_integer(words.len());
+                have to_integer(iter.count + 1u64) <= to_integer(words.len());
+                have to_integer(iter.count) + 1 <= 18446744073709551615;
+                have (words + iter.count) + 1u64 == words + (iter.count + 1u64);
+                step_until(back_edge());
+                have iter.count == at(taken, iter.count) + 1u64;
+                have iter.len() == at(taken, iter.len()) - 1u64;
+                have iter.as_slice() == words + iter.count;
+                have index == iter.count - 1u64;
+                have iter.len() < at(taken, iter.len());
+            } else {
+                step(); step(); step(); step(); step();
+            }
         }
     }
 }

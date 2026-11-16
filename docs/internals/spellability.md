@@ -331,6 +331,20 @@ the one the text names.
   choosing a term by known provenance. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
+Closed native order comparisons at 32 and 64 bits retain their comparison
+node, format, and literal operands during logical lowering. Their truth is
+established by checking, including when exact rewriting removed the last
+variable before the comparison was printed. This does not change literal
+arithmetic evaluation or the existing equality normal forms.
+
+Checked machine equality rewriting evaluates a 32-bit division, remainder, or right
+shift when its operands are literals, using logical
+arithmetic's existing literal constructor. Native and shared operands follow
+the same rule. Symbolic instances of these operations and exact
+Integer-congruence payloads retain their syntax; division by zero, signed
+division overflow, and invalid shifts
+remain opaque instead of acquiring an invented value.
+
 Logical object-pointer reads now retain their version names, including when
 memory stores a complete pointer at the cell. The read's complete stored value
 is related through `EqualityGraph::register_logical_read_values` and the

@@ -561,7 +561,12 @@ pub(super) struct ConstructedReturnBodies(
 );
 
 pub(in crate::kernel) struct ConstructedReturnBody {
+    // Each binding belongs to the actual occurrence opened by the producer.
+    // Projection and admission consume its expansion without rebinding it.
+    #[allow(dead_code)]
+    witnesses: BTreeMap<ResourceOccurrenceId, Vec<ProgramValue>>,
     pub(super) frontier: Vec<ResourceFact>,
+    viewed_children: Vec<(ResourceFact, ResourceOccurrenceId)>,
     expansion: Vec<ResourceFact>,
     // Only these descriptions still need a new separation argument. The
     // transfer producer has already established separation for the others.
@@ -648,8 +653,10 @@ impl ConstructedReturnBodies {
         Some(Self(bodies, legacy))
     }
 
-    // Classify definitions before producing any body. Unsupported authority,
-    // existential, matched and recursive shapes take only the legacy route.
+    // Classify definitions before producing any body. Existential migration
+    // is deliberately separate: one pointer witness with flat memory/token
+    // children. Its binder examines only this definition, never held children.
+    // More complex existential, authority, matched and recursive bodies stay legacy.
     fn supports(
         name: &str,
         definitions: &[CompositeResourceDefinition],
@@ -669,10 +676,19 @@ impl ConstructedReturnBodies {
         if !active.insert(name.to_string()) {
             return false;
         }
+        let flat_existential = matches!(definition.witnesses.as_slice(), [witness]
+            if witness.program_type().is_pointer())
+            && definition.contains().iter().all(|child| {
+                crate::instrumentation::record_deterministic_work(1);
+                matches!(
+                    child.term(),
+                    ResourceTerm::Memory(_) | ResourceTerm::Token { .. }
+                )
+            });
         let valid = definition.instance_schema.is_none()
             && definition.matched.is_none()
             && !definition.is_recursive()
-            && definition.witnesses.is_empty()
+            && (definition.witnesses.is_empty() || flat_existential)
             && definition.children.is_empty()
             && definition.contains().iter().all(|child| {
                 crate::instrumentation::record_deterministic_work(1);
@@ -682,8 +698,7 @@ impl ConstructedReturnBodies {
                 match child.term() {
                     ResourceTerm::Memory(_) | ResourceTerm::Token { .. } => true,
                     ResourceTerm::Composite { name, .. } => {
-                        !child.is_view()
-                            && child.quantity() == &ResourceQuantity::One
+                        child.quantity() == &ResourceQuantity::One
                             && Self::supports(name, definitions, supported, active)
                     }
                     _ => false,
@@ -709,7 +724,8 @@ impl ConstructedReturnBodies {
         let (singleton, inserted) = ResourceContext::new_with_equalities(assumptions)
             .unchecked_with_facts_and_occurrences([support.clone()]);
         let mut transfers = Vec::new();
-        let (context, frontier) = Self::open(
+        let mut witnesses = BTreeMap::new();
+        let (context, frontier, viewed_children) = Self::open(
             singleton,
             support,
             inserted[0].1,
@@ -722,11 +738,19 @@ impl ConstructedReturnBodies {
             planned,
             borrowed,
             &mut transfers,
+            &mut witnesses,
         )?;
         // Normalize descriptions only after the transfer producer has finished.
         // Source/parent identities remain the actual pre-normalization IDs.
-        let boundary = ResourceContext::new_with_equalities(assumptions)
-            .unchecked_with_facts(
+        let normalize = |context: ResourceContext| {
+            if witnesses.is_empty() {
+                context.normalized(assumptions)
+            } else {
+                context.normalized_without_discovery(assumptions)
+            }
+        };
+        let boundary = normalize(
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
                 transfers
                     .iter()
                     .filter(|transfer| {
@@ -734,13 +758,16 @@ impl ConstructedReturnBodies {
                             && !matches!(transfer.fact.resource(), Resource::Composite { .. })
                     })
                     .map(|transfer| transfer.fact.clone()),
-            )
-            .normalized(assumptions)
-            .facts()
-            .to_vec();
+            ),
+        )
+        .facts()
+        .to_vec();
+        let expansion = normalize(context).facts().to_vec();
         Some(ConstructedReturnBody {
+            witnesses,
             frontier,
-            expansion: context.normalized(assumptions).facts().to_vec(),
+            viewed_children,
+            expansion,
             boundary,
             transfers,
         })
@@ -760,7 +787,12 @@ impl ConstructedReturnBodies {
         planned: bool,
         borrowed: bool,
         transfers: &mut Vec<CompositeChildTransfer>,
-    ) -> Option<(ResourceContext, Vec<ResourceFact>)> {
+        witnesses: &mut BTreeMap<ResourceOccurrenceId, Vec<ProgramValue>>,
+    ) -> Option<(
+        ResourceContext,
+        Vec<ResourceFact>,
+        Vec<(ResourceFact, ResourceOccurrenceId)>,
+    )> {
         let Resource::Composite { name, .. } = support.resource() else {
             return None;
         };
@@ -779,7 +811,15 @@ impl ConstructedReturnBodies {
             Some(selected),
         )?;
         if !body.opened {
-            return Some((body.expanded, Vec::new()));
+            return Some((body.expanded, Vec::new(), Vec::new()));
+        }
+        if !body.witnesses.is_empty() {
+            let _checking = crate::instrumentation::CheckingWorkScope::new(
+                "retain returned existential witness",
+                body.witnesses.len(),
+            );
+            crate::instrumentation::record_deterministic_work(body.witnesses.len());
+            witnesses.insert(parent, body.witnesses);
         }
         let parameters = definition
             .parameters()
@@ -787,11 +827,20 @@ impl ConstructedReturnBodies {
             .map(ProgramParameter::binding_name)
             .collect::<BTreeSet<_>>();
         let mut context = body.expanded;
+        let mut viewed_children = Vec::new();
         for (index, (fact, child_source)) in body.occurrences.into_iter().enumerate() {
             let spec = &definition.contains()[index];
             path.push(index);
-            let fixed_borrow = borrowed && fixed_memory_shape(spec, &parameters).is_some();
-            let origin = if fixed_borrow {
+            if fact.is_view() {
+                viewed_children.push((fact.clone(), child_source));
+            }
+            let fixed_borrow =
+                fact.is_own() && borrowed && fixed_memory_shape(spec, &parameters).is_some();
+            // A view remains a view even when its definition contains owns.
+            // Neither its declaration nor a fresh backing block grants custody.
+            let origin = if fact.is_view() {
+                ReturnOwnershipOrigin::Description
+            } else if fixed_borrow {
                 ReturnOwnershipOrigin::EntryBorrow
             } else if let Some(plan) = composition.consumed_children()
                 && planned
@@ -826,7 +875,7 @@ impl ConstructedReturnBodies {
                     }
                     _ => false,
                 };
-                (context, _) = Self::open(
+                (context, _, _) = Self::open(
                     context,
                     &fact,
                     child_source,
@@ -837,13 +886,14 @@ impl ConstructedReturnBodies {
                     assumptions,
                     path,
                     planned,
-                    borrowed && invariant_arguments,
+                    borrowed && invariant_arguments && fact.is_own(),
                     transfers,
+                    witnesses,
                 )?;
             }
             path.pop();
         }
-        Some((context, body.children))
+        Some((context, body.children, viewed_children))
     }
 
     pub(super) fn for_return(
@@ -890,12 +940,55 @@ impl PreparedReturnComposition {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::kernel) struct ProducedBorrowingPiece {
+    pub(super) support: super::super::loans::EscapingComposite,
+    pub(super) piece: ResourceFact,
+    // Legacy one-level expansion has no occurrence record. Constructed bodies
+    // always carry the actual child identity, never a description-based rank.
+    #[allow(dead_code)]
+    pub(super) sources: Option<Arc<Vec<ResourceOccurrenceId>>>,
+}
+
 pub(super) struct ProjectedReturnResource {
     pub(super) support: ResourceFact,
     pub(super) destination: ResourceOccurrenceId,
     pub(super) expansion: Vec<ResourceFact>,
     pub(super) projected: Vec<ResourceFact>,
     pub(super) frontier: Option<Vec<ResourceFact>>,
+    pub(super) viewed_children: Option<Vec<(ResourceFact, ResourceOccurrenceId)>>,
+}
+
+impl ProjectedReturnResource {
+    pub(super) fn constructed_borrowing_pieces(&self) -> Option<Vec<ProducedBorrowingPiece>> {
+        let children = self.viewed_children.as_ref()?;
+        // Normalization may merge adjacent or equal views. Keep the producer's
+        // raw identities as one shared group, alongside its normalized views;
+        // do not recover an individual source by matching descriptions.
+        let sources = Arc::new(
+            children
+                .iter()
+                .map(|(_, source)| *source)
+                .collect::<Vec<_>>(),
+        );
+        let support = super::super::loans::EscapingComposite {
+            head: self.support.clone(),
+            occurrence: self.destination,
+        };
+        Some(
+            self.frontier
+                .as_ref()
+                .expect("a constructed body carries its frontier")
+                .iter()
+                .filter(|piece| piece.is_view())
+                .map(|piece| ProducedBorrowingPiece {
+                    support: support.clone(),
+                    piece: piece.clone(),
+                    sources: Some(sources.clone()),
+                })
+                .collect(),
+        )
+    }
 }
 
 /// Read each owned output by its selected source identity. Equal descriptions
@@ -953,6 +1046,7 @@ pub(super) fn project_return_resource_cores(
                 destination: destination_occurrence,
                 expansion,
                 projected,
+                viewed_children: body.map(|body| body.viewed_children.clone()),
                 frontier: body.map(|body| body.frontier.clone()).or_else(|| {
                     matches!(
                         support.resource(),
@@ -966,9 +1060,11 @@ pub(super) fn project_return_resource_cores(
 }
 
 #[cfg(test)]
+mod existential_return_tests;
+#[cfg(test)]
 mod fresh_allocation_tests;
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 #[cfg(test)]
 mod scaling_tests {

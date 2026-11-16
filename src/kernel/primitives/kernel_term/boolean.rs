@@ -492,6 +492,25 @@ impl<'a> BooleanOperandView<'a> {
 }
 
 impl KernelTerm {
+    pub(crate) fn integer_comparison(
+        operator: IntegerComparisonOperator,
+        arguments: [Self; 2],
+    ) -> Result<Self, &'static str> {
+        if arguments
+            .iter()
+            .any(|argument| argument.ty() != &KernelType::Integer)
+        {
+            return Err("Integer comparison requires Integer operands");
+        }
+        Ok(Self::intern(
+            KernelType::Bool,
+            KernelTermNode::IntegerCompare {
+                operator,
+                arguments,
+            },
+        ))
+    }
+
     pub(crate) fn boolean_if_raw(arguments: [Self; 3]) -> Self {
         Self::intern(KernelType::Bool, KernelTermNode::BoolIf { arguments })
     }

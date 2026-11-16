@@ -76,8 +76,8 @@ impl AlgebraicResult {
     }
 }
 
-/// A selected constructor field. Program-carried parameters keep their native
-/// field form at the mixed-family boundary; logical algebraic fields retain roots.
+/// A selected constructor field. Program-carried parameters retain their typed
+/// envelope around the shared algebraic root; logical fields keep the bare root.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum AlgebraicFieldResult {
     Native(AlgebraicValue),
@@ -87,10 +87,11 @@ pub(super) enum AlgebraicFieldResult {
 impl AlgebraicFieldResult {
     pub(super) fn from_program(value: SpecValue) -> Self {
         match value {
-            SpecValue::Shared(root) if !matches!(root.ty(), KernelType::Algebraic(_)) => {
-                Self::Shared(root)
+            SpecValue::Shared(root) if matches!(root.ty(), KernelType::Algebraic(_)) => {
+                Self::Shared(KernelTerm::program_parameter(root))
             }
-            value => Self::Native(AlgebraicValue::Program(value.into_native())),
+            SpecValue::Shared(root) => Self::Shared(root),
+            SpecValue::Native(value) => Self::Native(AlgebraicValue::Program(value)),
         }
     }
     pub(super) fn from_algebraic(value: AlgebraicResult) -> Self {

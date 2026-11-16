@@ -338,31 +338,61 @@ fn substitute_click_proposition_logical(
     proposition: &ClickProposition,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ClickProposition, String> {
-    match proposition {
-        ClickProposition::At {
-            selector,
-            proposition,
-        } => Ok(ClickProposition::At {
-            selector: selector.clone(),
-            proposition: Box::new(substitute_click_proposition_in(proposition, substitutions)?),
-        }),
-        ClickProposition::And(left, right) => Ok(ClickProposition::And(
-            Box::new(substitute_click_proposition_in(left, substitutions)?),
-            Box::new(substitute_click_proposition_in(right, substitutions)?),
-        )),
-        ClickProposition::Or(left, right) => Ok(ClickProposition::Or(
-            Box::new(substitute_click_proposition_in(left, substitutions)?),
-            Box::new(substitute_click_proposition_in(right, substitutions)?),
-        )),
-        ClickProposition::Not(body) => Ok(ClickProposition::Not(Box::new(
-            substitute_click_proposition_in(body, substitutions)?,
-        ))),
-        ClickProposition::Implies(left, right) => Ok(ClickProposition::Implies(
-            Box::new(substitute_click_proposition_in(left, substitutions)?),
-            Box::new(substitute_click_proposition_in(right, substitutions)?),
-        )),
-        _ => unreachable!("non-logical proposition dispatched to logical substitution"),
+    let mut pending = vec![(proposition, false)];
+    let mut values = Vec::new();
+    while let Some((proposition, finish)) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        if finish {
+            let right = values.pop().expect("a logical child was substituted");
+            let value = match proposition {
+                ClickProposition::At { selector, .. } => ClickProposition::At {
+                    selector: selector.clone(),
+                    proposition: Box::new(right),
+                },
+                ClickProposition::Not(_) => ClickProposition::Not(Box::new(right)),
+                ClickProposition::And(..)
+                | ClickProposition::Or(..)
+                | ClickProposition::Implies(..) => {
+                    let left = values
+                        .pop()
+                        .expect("both logical children were substituted");
+                    let (left, right) = (Box::new(left), Box::new(right));
+                    match proposition {
+                        ClickProposition::And(..) => ClickProposition::And(left, right),
+                        ClickProposition::Or(..) => ClickProposition::Or(left, right),
+                        ClickProposition::Implies(..) => ClickProposition::Implies(left, right),
+                        _ => unreachable!(),
+                    }
+                }
+                _ => unreachable!("only logical nodes have a finish frame"),
+            };
+            values.push(value);
+            continue;
+        }
+        match proposition {
+            ClickProposition::At {
+                proposition: body, ..
+            }
+            | ClickProposition::Not(body) => {
+                pending.push((proposition, true));
+                pending.push((body, false));
+            }
+            ClickProposition::And(left, right)
+            | ClickProposition::Or(left, right)
+            | ClickProposition::Implies(left, right) => {
+                pending.push((proposition, true));
+                pending.push((right, false));
+                pending.push((left, false));
+            }
+            proposition => values.push(substitute_click_proposition_nonlogical(
+                proposition,
+                substitutions,
+            )?),
+        }
     }
+    Ok(values
+        .pop()
+        .expect("the selected proposition was substituted"))
 }
 
 fn substitute_click_proposition_nonlogical(
@@ -5234,6 +5264,48 @@ fn substitute_fresh_synthesis_expression(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn logical_substitution_preserves_operators_points_and_bound_names() {
+        let variable = |name: &str| {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name.into()))
+        };
+        let atom = |left: ContractExpression| ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+        };
+        let build = |free: ContractExpression| {
+            ClickProposition::And(
+                Box::new(atom(free.clone())),
+                Box::new(ClickProposition::Or(
+                    Box::new(ClickProposition::Not(Box::new(atom(variable("y"))))),
+                    Box::new(ClickProposition::Implies(
+                        Box::new(atom(free.clone())),
+                        Box::new(ClickProposition::At {
+                            selector: ProgramPointSelector::Mark("entry".into()),
+                            proposition: Box::new(ClickProposition::And(
+                                Box::new(atom(free)),
+                                Box::new(ClickProposition::ForAll {
+                                    click_type: ClickType::Program(InterfaceType::Int32),
+                                    name: "x".into(),
+                                    written_name: None,
+                                    body: Box::new(atom(variable("x"))),
+                                }),
+                            )),
+                        }),
+                    )),
+                )),
+            )
+        };
+        let replacement = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7)));
+        let actual = substitute_click_proposition(
+            &build(variable("x")),
+            &BTreeMap::from([("x".into(), replacement.clone())]),
+        )
+        .unwrap();
+        assert_eq!(actual, build(replacement));
+    }
 
     #[test]
     fn expression_rewrite_respects_absolute_state_boundaries() {

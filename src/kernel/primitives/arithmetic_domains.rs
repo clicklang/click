@@ -140,8 +140,19 @@ impl Proposition {
         left: MachineOperandView<'_>,
         right: MachineOperandView<'_>,
     ) -> Self {
-        let a = left.observe(format).expect("arithmetic operand");
-        let b = right.observe(format).expect("arithmetic operand");
+        // A signed operation can retain an unsigned literal carrier after
+        // a bit-preserving rewrite. Interpret its bits for this domain only;
+        // changing the carrier itself would alter structural proof identity.
+        let observe = |operand: MachineOperandView<'_>| {
+            if format == MachineIntegerType::Int64
+                && let Some(uint64_constant!(bits)) = operand.literal()
+            {
+                return IntegerTerm::constant(i128::from(constant_u64(bits) as i64).into());
+            }
+            operand.observe(format).expect("arithmetic operand")
+        };
+        let a = observe(left);
+        let b = observe(right);
         let exact = match op {
             MachineBinaryOp::Add => IntegerTerm::add(a, b),
             MachineBinaryOp::Subtract => IntegerTerm::subtract(a, b),
@@ -339,5 +350,60 @@ mod construction_tests {
                 fits
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signed_domains_read_unsigned_literal_bits_without_rewriting_the_carrier() {
+        let _session = crate::kernel::VerificationSession::enter();
+        use MachineIntegerType::{Int64, UInt64};
+        for bits in [0, 1, 7, i64::MAX as u64, 1u64 << 63, u64::MAX - 6, u64::MAX] {
+            let raw = MachineTerm::uint64_constant(bits);
+            let root = KernelTermImport::default().machine(Int64, &raw);
+            let signed = MachineTerm::int64_constant(bits as i64);
+            for op in [
+                MachineBinaryOp::Add,
+                MachineBinaryOp::Subtract,
+                MachineBinaryOp::Multiply,
+            ] {
+                for swapped in [false, true] {
+                    let other = MachineTerm::Variable(Variable(1_990_000));
+                    let (left, right) = if swapped {
+                        (
+                            MachineOperandView::Legacy(&other),
+                            MachineOperandView::Shared(&root),
+                        )
+                    } else {
+                        (
+                            MachineOperandView::Shared(&root),
+                            MachineOperandView::Legacy(&other),
+                        )
+                    };
+                    let expected = if swapped {
+                        Proposition::signed_arithmetic_domain(Int64, op, &other, &signed)
+                    } else {
+                        Proposition::signed_arithmetic_domain(Int64, op, &signed, &other)
+                    };
+                    assert_eq!(
+                        Proposition::signed_arithmetic_domain_views(Int64, op, left, right),
+                        expected
+                    );
+                }
+            }
+            assert_eq!(KernelTermExport::machine(&root).unwrap(), raw);
+            assert_eq!(
+                root.with_machine_observation_type(UInt64).node(),
+                root.node()
+            );
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/primitives/arithmetic_domains/literal_readings.rs");
     }
 }

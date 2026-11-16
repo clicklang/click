@@ -399,3 +399,62 @@ fn same_format_casts_keep_deferred_prefixes_and_obligations() {
         previous = Some(work);
     }
 }
+
+#[test]
+fn closed_order_lowering_ignores_unrelated_state_and_facts() {
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let mut baseline = None;
+        for unrelated in [0, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut state = ExecutionState::new();
+            let mut facts = PureFactContext::new();
+            for index in 0..unrelated {
+                state = state.with_local(format!("unused{index}"), int32(index));
+                facts = facts.assume_proposition(Proposition::ConditionIs(
+                    ConditionTerm::signed_less_equal(
+                        MachineTerm::Variable(Variable(999800 + index as u64)),
+                        MachineTerm::constant(100),
+                    ),
+                    true,
+                ));
+            }
+            let value = |n| {
+                let word =
+                    crate::kernel::machine_integer::range::constant_word(format, &n).unwrap();
+                SpecExpression::Value(match format {
+                    MachineIntegerType::Int32 => ProgramValue::Int32(word),
+                    MachineIntegerType::UInt32 => ProgramValue::UInt32(word),
+                    MachineIntegerType::Int64 => ProgramValue::Int64(word),
+                    MachineIntegerType::UInt64 => ProgramValue::UInt64(word),
+                    _ => unreachable!(),
+                })
+            };
+            let proposition = SpecProposition::Comparison {
+                left: value(9.into()),
+                operator: ComparisonOperator::LessEqual,
+                right: value(100.into()),
+            };
+            let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::program_lower_spec_proposition_at_state(
+                    &state,
+                    &proposition,
+                    None,
+                    &facts,
+                )
+                .unwrap()
+            });
+            assert!(matches!(
+                lowered.0,
+                Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
+            ));
+            assert!(work > 0);
+            let expected = *baseline.get_or_insert(work);
+            assert_eq!(work, expected, "{format:?}, unrelated={unrelated}");
+        }
+    }
+}

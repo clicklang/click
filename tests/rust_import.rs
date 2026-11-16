@@ -56,17 +56,6 @@ impl Project {
         .unwrap();
         p
     }
-    /// [`Project::new`] with the unit's slice iterators imported as values
-    /// of their library type (`design/rust-iterators.md`).
-    fn with_library_iterators(source: &str) -> Self {
-        let p = Self::isolated(source);
-        fs::write(
-            p.project_file(),
-            r#"{"units": {"borrow": {"language": "rust", "iterators": "library", "sources": {"borrow.rs": {}}}}}"#,
-        )
-        .unwrap();
-        p
-    }
     /// Where a test writes an import description in the per-sidecar config
     /// format of earlier releases, for [`Project::adopt_config`] to translate.
     fn config(&self) -> PathBuf {
@@ -1337,7 +1326,7 @@ fn peel_refusal_names_a_guard_spelling_integer_arithmetic_reads_as_native() {
             "                    (bytes.len() - iter.len()) < 18446744073709551615u64;\n",
         );
     assert!(sidecar.contains("(bytes.len() - iter.len()) < 18446744073709551615u64;"));
-    let p = Project::with_library_iterators(source);
+    let p = Project::new(source);
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
     p.refresh().unwrap();
     let output = p.cli(&["verify"]);
@@ -1349,7 +1338,7 @@ fn peel_refusal_names_a_guard_spelling_integer_arithmetic_reads_as_native() {
     );
     assert!(
         error.contains(
-            "the append-last-cell equation needs `to_integer(bytes.len() - click::rust::slice_iter::len::<uint8>(at(<state A>, iter))) < 18446744073709551615`"
+            "the append-last-cell equation needs `to_integer(bytes.len() - iter.len()) < 18446744073709551615`"
         ),
         "{error}"
     );
@@ -1647,11 +1636,9 @@ fn charon_chunk_view_loop_reborrows_shared_subslices_at_symbolic_heads() {
 
 const SLICE_ITER_PROOF: &str = include_str!("../design/charon-trial/slice-iter/sum.click");
 
-/// Under `"iterators": "library"` a slice iterator is one value of the
-/// library's `SliceIter`: construction and each `next()` are calls whose
-/// contracts say what the iterator will still yield, and the loop carries
-/// where it stands as an invariant over `iter.as_slice()` and `iter.len()`.
-/// No base, length or remaining-count local is named.
+/// A slice iterator is the slice it still covers: each `next()` moves it on
+/// by one element, and the loop carries where it stands as an invariant
+/// over `iter.as_slice()` and `iter.len()`. No generated local is named.
 #[test]
 #[ignore = "nightly: Charon slice-iterator library model"]
 fn charon_slice_iter_sums_bytes_by_its_library_contract() {
@@ -5412,7 +5399,7 @@ fn slice_iterator_is_read_as_iter_through_its_methods() {
         (
             "invariant iter.len() <= bytes.len();",
             "invariant iter <= bytes.len();",
-            "algebraic values support only `==` and `!=` comparisons",
+            "inside a loop, `iter` is the loop's iterator",
         ),
         (
             "have loop(0).iter.len() == 0u64;",
@@ -5537,7 +5524,7 @@ fn rust_slice_iter_reference_sum_verifies_and_expands() {
     // Shared references from both the implicit slice iterator and .iter()
     // have the same checked address and dereference semantics.
     for source in [source.to_string(), source.replace("bytes.iter()", "bytes")] {
-        let p = Project::with_library_iterators(&source);
+        let p = Project::new(&source);
         p.refresh().unwrap();
         assert_slice_iterator_artifact(&p);
         let prepared = p.prepared().unwrap();
@@ -5711,7 +5698,7 @@ fn chunks_loop_project(by_reference: bool) -> (Project, String) {
     // The proof names the loop's iterator as `iter` and reads its fields,
     // so it is the same proof whether the loop consumes the iterator or
     // borrows it.
-    let p = Project::with_library_iterators(&source);
+    let p = Project::new(&source);
     p.refresh().unwrap();
     (p, sidecar)
 }
