@@ -6122,6 +6122,30 @@ fn prepare_verified_function_call<'a>(
     // its preconditions alone.
     if let Some(anchor) = environment.recursion_anchor()
         && anchor.ranks_call_to(application.name)
+        && let Some(descent) = anchor.structural_resource.as_ref()
+    {
+        let passed = contract_interface
+            .recursion_resource()
+            .and_then(|index| contract_interface.resource_requires().get(index));
+        let failure = if let Some(spec) = passed {
+            match evaluate_function_resource_spec(
+                &precondition_state,
+                spec,
+                &path_assumptions,
+                budget,
+            )? {
+                Ok(fact) => descent.check(caller_state, &fact, &path_assumptions).err(),
+                Err(_) => Some("the callee's resource measure could not be read"),
+            }
+        } else {
+            Some("the callee declares no anonymous resource measure")
+        };
+        if let Some(failure) = failure {
+            obligations.push(ProofObligation::verification_condition(false_equals_true_proposition())
+                .with_context(format!("{} structural recursion measure does not descend: the call to `{}` must receive a retained child witness of the entry resource: {failure}; unfold or observe its owned child before the call", anchor.function(), application.name)));
+        }
+    } else if let Some(anchor) = environment.recursion_anchor()
+        && anchor.ranks_call_to(application.name)
         && let Some(entry) = anchor.structural_entry()
     {
         // A structural measure is ranked by the instance this call passes for
@@ -6400,6 +6424,21 @@ fn prepare_verified_function_call<'a>(
     // The projection above is also retained on the transition record below;
     // no later call path reconstructs the footprint from source clauses.
     let mut transfer = transfer;
+    if caller_state.resources().structural_witnesses.is_some() {
+        for input in transfer
+            .borrowed_inputs
+            .iter()
+            .chain(&transfer.consumed_inputs)
+        {
+            transfer
+                .caller_resources_after_requirements
+                .retire_owned_structural_input(
+                    caller_state.resources(),
+                    &input.fact,
+                    &path_assumptions,
+                );
+        }
+    }
     transfer.memory_effects = mutable_ranges.clone();
     // A resource-derived call is authorized by exactly these checked inputs,
     // borrowed and consumed alike: its write set is projected from them

@@ -32,5 +32,5 @@ int32 empty_repeat(int32 active) {
 ```
 
 ```expect
-fail: is reachable without establishing the active structural resource guard
+fail: must receive a retained child witness of the entry resource
 ```

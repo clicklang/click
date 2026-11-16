@@ -7,6 +7,7 @@ pub(in crate::kernel) mod descent_completion;
 mod execution;
 pub(in crate::kernel) mod loop_evidence;
 mod recursion_authority;
+pub(crate) mod resource_descent;
 pub(crate) use loop_evidence::StatementProofInput;
 mod obligations;
 pub(in crate::kernel) use completion::ProgramBodyOwner;
@@ -3145,6 +3146,24 @@ pub(super) fn program_function_recursion_anchor(
     budget: &mut ExecutionBudget,
 ) -> Result<Option<RecursionAnchor>, String> {
     let interface = function.contract_interface();
+    if let Some(requirement) = interface.recursion_resource() {
+        let descent = resource_descent::ResourceDescent::open(
+            function,
+            entry_state,
+            requirement,
+            assumptions,
+            budget,
+        )?;
+        return Ok(Some(RecursionAnchor {
+            function: function.name().to_string(),
+            components: Vec::new(),
+            peers: interface.recursion_peers().to_vec(),
+            measure: Vec::new(),
+            structural_entry: None,
+            structural_resource: Some(descent),
+            entry_obligations: Vec::new(),
+        }));
+    }
     if let Some(binder) = interface.recursion_binder() {
         // A structural measure is the instance the binder holds at entry; the
         // descent at each call compares the instance it passes with this one.
@@ -3172,6 +3191,7 @@ pub(super) fn program_function_recursion_anchor(
             peers: interface.recursion_peers().to_vec(),
             measure: Vec::new(),
             structural_entry: Some(entry),
+            structural_resource: None,
             entry_obligations: Vec::new(),
         }));
     }
@@ -3214,6 +3234,7 @@ pub(super) fn program_function_recursion_anchor(
         peers: function.contract_interface().recursion_peers().to_vec(),
         measure,
         structural_entry: None,
+        structural_resource: None,
         entry_obligations,
     }))
 }
@@ -6888,6 +6909,7 @@ mod local_descent_tests {
             components: vec![declared_component()],
             peers: Vec::new(),
             structural_entry: None,
+            structural_resource: None,
             measure: vec![RankingMeasureValue::Machine(MachineTerm::constant(7))],
             entry_obligations: Vec::new(),
         }

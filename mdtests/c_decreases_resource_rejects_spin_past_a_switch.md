@@ -41,5 +41,5 @@ int32 spin_past_a_switch(struct node* node, int32 k) {
 ```
 
 ```expect
-fail: does not pass a direct contained child of its structural resource measure
+fail: must receive a retained child witness of the entry resource
 ```

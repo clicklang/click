@@ -110,8 +110,8 @@ A structural measure (`decreases x;`) ranks the instance passed for that
 resource binder: its model must be strictly contained in the entry model,
 through constructor arms established on the proof path. Unfolding the entry
 instance exposes the child to pass, as with structural loop measures.
-Anonymous resource applications still use the legacy C body analysis and
-cannot rank tactic recursion.
+Anonymous resource applications use the finite-witness evidence retained by
+the resource operations that supply their calls.
 
 ## Application
 
@@ -180,7 +180,7 @@ One design, delivered in pull requests on it:
    tactic expand/audit inventory and every per-variant tactic table join here.
 2. Recursion: self-recursion ranked by numeric measures or named structural
    binders, the tactic call edges, and refusal of unranked recursion,
-   anonymous resource measures, and `diverges`.
+   and `diverges`. Anonymous resources use retained finite-witness evidence.
 3. Cross-backend regressions: one imported tactic applied in a C proof, a C++
    proof, and a Rust proof, with a refusal in each.
 4. Click-typed logical parameters (`Integer`, `Nat`, models), application in

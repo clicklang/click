@@ -1867,6 +1867,9 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                 "`{claim_label}` tactic {tactic_index}: `observe` refused ambiguous loan dependency: {message}"
             ))
         })?;
+    let witness_opening = state
+        .resources()
+        .open_structural_witness(&abstract_resource, &assumptions);
     let (memory, contained_resources, body_projected) = apply_composite_observation_law_with_facts(
         resource_environment,
         definition,
@@ -2030,6 +2033,12 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             .clone()
             .unchecked_with_facts_and_occurrences(viewed_contained_resources.clone())
     };
+    let resources = resources.with_opened_structural_witnesses(
+        witness_opening,
+        contained_resources.facts(),
+        true,
+        &assumptions,
+    );
     let mut dependency_bindings = Vec::new();
     let mut state = state;
     if let Some(binding) = borrowed_parent_binding {
@@ -3466,6 +3475,9 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     // representation must not normalize every unrelated resource in the
     // ambient context. Preserve the equality-aware fallback for callers whose
     // resource arguments are only propositionally equal.
+    let witness_opening = state
+        .resources()
+        .open_structural_witness(&abstract_resource, &assumptions);
     let folded_resources = if access == ResourceBodyAccess::Open {
         // Opening exposes the population body but does not consume one of its
         // units. Keeping the folded unit in the context is also essential for
@@ -3563,6 +3575,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             .assume_held_resource_domains()
     };
     let mut unfolded_facts = Vec::new();
+    let mut witness_children = Vec::new();
     // Lower later selectors through earlier cached fields, but name every
     // exposed cell at this one rewrite's input state. Caching a read is
     // not a new program write or a new load-naming epoch.
@@ -3581,6 +3594,9 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             None,
             &body_assumptions,
         )?;
+        if lowered.is_own() {
+            witness_children.push(lowered.clone());
+        }
         if opening_view {
             lowered = ResourceFact::View(lowered.resource().clone());
         }
@@ -3962,6 +3978,26 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         )?;
         let resources = state.resources().clone();
         state = state.with_resource_context_and_loan_dependencies(resources, dependencies);
+    }
+
+    if !already_unfolded && !body_was_already_exposed {
+        let resources = state.resources().clone().with_opened_structural_witnesses(
+            witness_opening,
+            &witness_children,
+            opening_view,
+            available_pure_facts.assumptions(),
+        );
+        state = state.with_resource_context(resources);
+    }
+
+    if access == ResourceBodyAccess::Open && abstract_resource.is_own() {
+        let mut resources = state.resources().clone();
+        if let Some(occurrence) = resources
+            .structural_witness_occurrence(&abstract_resource, available_pure_facts.assumptions())
+        {
+            resources.forget_structural_witness(occurrence);
+        }
+        state = state.with_resource_context(resources);
     }
 
     let unfolded_resources =
@@ -4604,6 +4640,7 @@ fn fold_composite_resources_on_outcome_with_facts(
         let assumptions = pure_facts.assumptions().clone();
         let _assumptions_id_scope = crate::kernel::PureFactContextIdScope::enter(&assumptions);
         let mut lowered_contained = Vec::new();
+        let mut witness_fold_children = Vec::new();
         let mut body_has_unbound_view = false;
         let preserve_exposed_body = matches!(
             closure,
@@ -4626,6 +4663,11 @@ fn fold_composite_resources_on_outcome_with_facts(
                 Some(&value.native()),
                 pure_facts.assumptions(),
             )?;
+            // The constructor's owned-child slots determine witness height,
+            // including when this fold describes them through views.
+            if lowered.is_own() {
+                witness_fold_children.push(lowered.clone());
+            }
             if lowered.is_view() {
                 let binding = unique_borrowed_resource_dependency(&post_state, &lowered)
                     .map_err(|message| {
@@ -4706,6 +4748,9 @@ fn fold_composite_resources_on_outcome_with_facts(
             }
             lowered_contained.push(lowered);
         }
+        let mut witness_fold = post_state
+            .resources()
+            .prepare_structural_witness_fold(&witness_fold_children, &assumptions);
         let pre_fold_resources = post_state.resources().clone();
         let mut resources = post_state.resources().clone();
         for lowered in lowered_contained.as_slice() {
@@ -4808,6 +4853,11 @@ fn fold_composite_resources_on_outcome_with_facts(
                         .map(|(_, occurrence)| occurrence),
                 )
             };
+            let resources = resources.with_folded_structural_witness(
+                witness_fold.take(),
+                &abstract_resource,
+                &assumptions,
+            );
             folded_authority_occurrence = inserted_occurrence;
             post_state = Box::new(post_state.with_resource_context(resources));
             if let Some(definition) = authority_control_definition.as_ref() {
@@ -4909,6 +4959,15 @@ fn fold_composite_resources_on_outcome_with_facts(
                 Some(&value.native()),
                 pure_facts.assumptions(),
             )?;
+            let resources = post_state
+                .resources()
+                .clone()
+                .with_folded_structural_witness(
+                    witness_fold.take(),
+                    &selected,
+                    pure_facts.assumptions(),
+                );
+            post_state = Box::new(post_state.with_resource_context(resources));
             if let Resource::Composite { name, arguments } | Resource::Token { name, arguments } =
                 selected.resource()
             {

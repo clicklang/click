@@ -73,5 +73,5 @@ int32 odd(struct node* node) {
 ```
 
 ```expect
-fail: recursive call to `even` does not pass a direct contained child of its structural resource measure
+fail: must receive a retained child witness of the entry resource
 ```

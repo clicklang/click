@@ -3394,7 +3394,27 @@ impl OpenedContractEntry {
             &self.entry.function,
             environment,
         )?;
+        // This explicit entry producer publishes the contract's admitted
+        // resource input once. Subsequent child/alias lookups use its deltas.
+        if self
+            .entry
+            .function
+            .contract_interface()
+            .recursion_resource()
+            .is_some()
+        {
+            self.entry
+                .caller_state
+                .resources()
+                .synchronize_memory_equalities(self.facts.assumptions());
+        }
         let mut core = self.into_execution_core();
+        if let Some(resource) = environment
+            .recursion_anchor()
+            .and_then(|anchor| anchor.structural_resource.as_ref())
+        {
+            core.state = resource.at_entry(&core.state).into();
+        }
         core.descent = descent;
         Ok(core)
     }
@@ -3931,13 +3951,19 @@ impl CheckedProofCaseJoin {
         {
             return Err("the case-join successor holds a fact that not every arm established");
         }
+        let mut joined_state = arms[0].0.reached_state().clone();
+        let mut resources = joined_state.resources().clone();
+        for (arm, _) in &arms[1..] {
+            resources.meet_structural_witnesses(arm.reached_state().resources());
+        }
+        joined_state = joined_state.with_resource_context(resources);
         Ok(Self {
             partition,
             arms: checked,
             start_state,
             start_source,
             end_source,
-            joined_state: arms[0].0.reached_state().clone(),
+            joined_state,
             joined_facts: successor_facts.clone(),
             interface: None,
         })
@@ -4003,6 +4029,14 @@ impl CheckedProofCaseJoin {
             successor_facts,
             old_reference,
         )?;
+        let mut resources = constructed_state.resources().clone();
+        resources.structural_witnesses = arm_cores[0]
+            .reached_state()
+            .resources()
+            .structural_witnesses
+            .clone();
+        resources.meet_structural_witnesses(arm_cores[1].reached_state().resources());
+        let constructed_state = constructed_state.with_resource_context(resources);
         let joined_state = &constructed_state;
         let conditional_heap_frees = conditional_heap_frees(arm_effect_facts);
         if !conditional_heap_frees.is_empty()
@@ -8372,7 +8406,7 @@ impl ExecutionProofCore {
     ) -> Result<(), EvidenceRefusal> {
         if let Some(opened) = &self.descent {
             opened
-                .accept(native_step.descent_step.as_ref())
+                .accept_at_state(native_step.descent_step.as_ref(), self.reached_state())
                 .map_err(EvidenceRefusal::from)?;
         }
         self.record_statement_transition_native(
@@ -8695,7 +8729,7 @@ impl ExecutionProofCore {
         if let Some(opened) = &self.descent {
             for (step, _) in outcomes {
                 opened
-                    .accept(step.descent_step.as_ref())
+                    .accept_at_state(step.descent_step.as_ref(), self.reached_state())
                     .map_err(EvidenceRefusal::from)?;
             }
         }
@@ -8774,7 +8808,7 @@ impl ExecutionProofCore {
     ) -> Result<(), EvidenceRefusal> {
         if let Some(opened) = &parent.descent {
             opened
-                .accept(native_step.descent_step.as_ref())
+                .accept_at_state(native_step.descent_step.as_ref(), parent.reached_state())
                 .map_err(EvidenceRefusal::from)?;
         }
         let theorem = &native_step.theorem;
