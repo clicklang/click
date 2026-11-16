@@ -125,11 +125,57 @@ fn fixed_memory_bound(expression: &ProgramExpression) -> Option<ProgramValue> {
     }
 }
 
+/// Separation evidence from an actual allocation in this call's creator
+/// scope. A contract allocation claim and a pending/retired allocation do not
+/// establish this evidence. Body exit still checks actual returned custody.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct FreshAllocationReturn {
+    allocation: u64,
+}
+
+impl FreshAllocationReturn {
+    pub(super) fn from_created_owner(
+        fact: &ResourceFact,
+        creator: &CreationEvents,
+        events: &CreationEvents,
+    ) -> Option<Self> {
+        if fact.owned_quantity_term()?.as_const() != Some(1) {
+            return None;
+        }
+        let base = fact
+            .memory_own_range()
+            .map(MemoryRange::base)
+            .or_else(|| fact.allocation().map(|(base, _)| base))?;
+        let PointerBlock::Heap(allocation) = base.block else {
+            return None;
+        };
+        events
+            .storage_created_by(creator, &base.block)
+            .then_some(Self { allocation })
+    }
+}
+
+pub(in crate::kernel) struct ReturnedFreshAllocation {
+    frame: ResourceContext,
+    output: ResourceFact,
+    source: ResourceOccurrenceId,
+    fresh: FreshAllocationReturn,
+}
+
+impl ReturnedFreshAllocation {
+    pub(in crate::kernel) fn into_parts(
+        self,
+    ) -> (ResourceContext, ResourceFact, ResourceOccurrenceId, u64) {
+        (self.frame, self.output, self.source, self.fresh.allocation)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ReturnOwnershipOrigin {
     Description,
     EntryBorrow,
     ConsumedCell(ConsumedCellReturn),
+    FreshAllocation(FreshAllocationReturn),
 }
 
 pub(in crate::kernel) struct ReturnedConsumedCell {
@@ -170,6 +216,7 @@ pub(in crate::kernel) struct ReturnResourceTransfer {
     pub(in crate::kernel) source: ResourceOccurrenceId,
     pub(in crate::kernel) destination: ResourceOccurrenceId,
     pub(in crate::kernel) consumed_input: Option<ResourceOccurrenceId>,
+    pub(in crate::kernel) fresh_allocation: Option<u64>,
 }
 
 pub(super) struct PreparedReturnComposition {
@@ -177,7 +224,7 @@ pub(super) struct PreparedReturnComposition {
     pub(super) pending: ResourceContext,
     pub(super) entry_borrow_outputs: ResourceContext,
     restored: BTreeMap<ResourceOccurrenceId, ReturnResourceTransfer>,
-    pub(super) consumed_cell_outputs: ResourceContext,
+    pub(super) transferred_memory_outputs: ResourceContext,
     occurrences: Vec<EvaluatedReturnOccurrence>,
 }
 
@@ -218,10 +265,18 @@ impl EvaluatedReturnResources {
             .iter()
             .map(|entry| EvaluatedReturnOccurrence {
                 source: entry.source,
-                origin: if matches!(composition, ReturnResourceComposition::ValidateDescriptions) {
-                    ReturnOwnershipOrigin::Description
-                } else {
-                    entry.origin
+                origin: match (composition, entry.origin) {
+                    (ReturnResourceComposition::ValidateDescriptions, _) => {
+                        ReturnOwnershipOrigin::Description
+                    }
+                    (
+                        ReturnResourceComposition::BodyAllocations { .. },
+                        ReturnOwnershipOrigin::FreshAllocation(_),
+                    ) => entry.origin,
+                    (ReturnResourceComposition::BodyAllocations { .. }, _) => {
+                        ReturnOwnershipOrigin::Description
+                    }
+                    _ => entry.origin,
                 },
             })
             .collect::<Vec<_>>();
@@ -233,7 +288,7 @@ impl EvaluatedReturnResources {
                 frame,
                 pending: self.resources.clone(),
                 entry_borrow_outputs: ResourceContext::new_with_equalities(assumptions),
-                consumed_cell_outputs: ResourceContext::new_with_equalities(assumptions),
+                transferred_memory_outputs: ResourceContext::new_with_equalities(assumptions),
                 restored: BTreeMap::new(),
                 occurrences,
             });
@@ -242,7 +297,7 @@ impl EvaluatedReturnResources {
         let mut borrowed = ResourceContext::new_with_equalities(assumptions);
         let mut borrowed_sources = Vec::new();
         let mut pending = ResourceContext::new_with_equalities(assumptions);
-        let mut consumed_cell_outputs = ResourceContext::new_with_equalities(assumptions);
+        let mut transferred_memory_outputs = ResourceContext::new_with_equalities(assumptions);
         let mut restored = BTreeMap::new();
         for (fact, occurrence) in self.resources.facts().iter().zip(&occurrences) {
             match occurrence.origin {
@@ -262,7 +317,23 @@ impl EvaluatedReturnResources {
                     );
                     frame = next;
                     restored.insert(occurrence.source, transfer);
-                    consumed_cell_outputs = consumed_cell_outputs.unchecked_with_fact(fact.clone());
+                    transferred_memory_outputs =
+                        transferred_memory_outputs.unchecked_with_fact(fact.clone());
+                }
+                ReturnOwnershipOrigin::FreshAllocation(fresh) => {
+                    let (next, transfer) = ResourceContext::return_fresh_allocation(
+                        ReturnedFreshAllocation {
+                            frame,
+                            output: fact.clone(),
+                            source: occurrence.source,
+                            fresh,
+                        },
+                        assumptions,
+                    );
+                    frame = next;
+                    restored.insert(occurrence.source, transfer);
+                    transferred_memory_outputs =
+                        transferred_memory_outputs.unchecked_with_fact(fact.clone());
                 }
                 ReturnOwnershipOrigin::Description => {
                     pending = pending.unchecked_with_fact(fact.clone());
@@ -284,6 +355,7 @@ impl EvaluatedReturnResources {
                     source,
                     destination,
                     consumed_input: None,
+                    fresh_allocation: None,
                 },
             );
         }
@@ -291,7 +363,7 @@ impl EvaluatedReturnResources {
             frame,
             pending,
             entry_borrow_outputs,
-            consumed_cell_outputs,
+            transferred_memory_outputs,
             restored,
             occurrences,
         })
@@ -331,6 +403,7 @@ impl PreparedReturnComposition {
                         source: source.source,
                         destination,
                         consumed_input: None,
+                        fresh_allocation: None,
                     }
                 }
             })
@@ -394,6 +467,8 @@ pub(super) fn project_return_resource_cores(
         .collect()
 }
 
+#[cfg(test)]
+mod fresh_allocation_tests;
 #[cfg(test)]
 mod tests;
 
