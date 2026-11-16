@@ -142,3 +142,48 @@ fn unsupported_batches_preserve_conflict_order_and_later_exclusive_checks() {
         OwnershipAdmission::Conflict(ResourceContextValidityError::DuplicateOwnedResourceFact(_))
     ));
 }
+
+#[test]
+fn returned_boundary_names_exclusive_conflicts_without_installing_children() {
+    let facts = PureFactContext::new();
+    let held = guard();
+    let parent = ResourceContext::new().unchecked_with_fact(held.clone());
+    assert_eq!(
+        parent
+            .returned_boundary_conflict_with_legacy_discovery(std::slice::from_ref(&held), &facts),
+        Some((held.clone(), held.clone())),
+    );
+    assert!(
+        ResourceContext::new()
+            .returned_boundary_conflict_with_legacy_discovery(std::slice::from_ref(&held), &facts)
+            .is_none()
+    );
+    assert_eq!(parent.facts(), &[held]);
+}
+
+#[test]
+fn cold_return_boundary_keeps_the_aliased_held_fact_and_parent_partition() {
+    let facts =
+        PureFactContext::new().assume_condition(ConditionTerm::pointer_equal(at(0), at(1)), true);
+    let piece = owner(at(0), 0, 4);
+    let parent = ResourceContext::new().unchecked_with_fact(owner(at(1), 4, 8));
+    assert!(
+        parent
+            .returned_boundary_conflict_with_legacy_discovery(std::slice::from_ref(&piece), &facts)
+            .is_none()
+    );
+    let held = owner(at(1), 0, 4);
+    let branch = parent.clone().unchecked_with_fact(held.clone());
+    assert_eq!(
+        branch
+            .returned_boundary_conflict_with_legacy_discovery(std::slice::from_ref(&piece), &facts),
+        Some((piece.clone(), held))
+    );
+    assert!(
+        parent
+            .returned_boundary_conflict_with_legacy_discovery(&[piece], &facts)
+            .is_none()
+    );
+    assert_eq!(parent.facts().len(), 1);
+    assert_eq!(branch.facts().len(), 2);
+}

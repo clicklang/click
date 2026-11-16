@@ -13483,7 +13483,7 @@ fn produced_composite_frontier_conflict<'a>(
                     });
                 }
                 // Cold indexes and symbolic/general coordinates retain the
-                // existing validation. They are never admitted on a miss.
+                // boundary-only compatibility query below. A miss is not admission.
                 FlatBodyAdmission::Unsupported => {}
             }
         }
@@ -13537,59 +13537,20 @@ fn produced_composite_frontier_conflict<'a>(
                  body, so its units would own the same range more than once"
             )));
         }
-        // The pieces are a checked composition, so they are already disjoint
-        // from one another: one validity check over the whole frontier
-        // decides the composite, and only a refusal pays to name the piece.
-        let Some(error) = destination
-            .clone()
-            .unchecked_with_facts(frontier.iter().cloned())
-            .validity_error(assumptions)
+        // Construction established the body's internal partition. Only its
+        // boundary with the retained caller frame is new information.
+        let Some((piece, held)) =
+            destination.returned_boundary_conflict_with_legacy_discovery(frontier, assumptions)
         else {
             continue;
         };
-        let piece = frontier
-            .iter()
-            .find(|piece| {
-                destination
-                    .clone()
-                    .unchecked_with_fact((*piece).clone())
-                    .validity_error(assumptions)
-                    .is_some()
-            })
-            .unwrap_or(produced);
-        let held =
-            conflicting_destination_fact(destination, &error).unwrap_or_else(|| piece.clone());
         return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
             produced: Box::new(produced.clone()),
-            piece: Box::new(piece.clone()),
+            piece: Box::new(piece),
             held: Box::new(held),
         });
     }
     None
-}
-
-/// Names the destination fact a frontier piece collides with, so the refusal
-/// can point at both sides rather than at a bare range.
-fn conflicting_destination_fact(
-    destination: &ResourceContext,
-    error: &ResourceContextValidityError,
-) -> Option<ResourceFact> {
-    match error {
-        ResourceContextValidityError::InvalidExclusiveAccess(fact)
-        | ResourceContextValidityError::DuplicateOwnedResourceFact(fact) => Some(fact.clone()),
-        // The two overlapping ranges are reported in index order, so the
-        // destination's own range may be either side.
-        ResourceContextValidityError::OverlappingOwnedMemoryResources { left, right } => {
-            destination
-                .facts()
-                .iter()
-                .find(|held| {
-                    held.memory_own_range()
-                        .is_some_and(|range| range == left || range == right)
-                })
-                .cloned()
-        }
-    }
 }
 
 /// Whether a requirement asks for a quantity of a resource population other

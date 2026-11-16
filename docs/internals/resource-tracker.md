@@ -1621,8 +1621,13 @@ permitted stores or a transition that drops the fact:
   Admission uses only the remaining unclassified ownership boundary, so cold
   or symbolic fallback cannot rediscover separation for transferred children.
   Prepared constant-coordinate memory leaves query the frame's address-class
-  interval index; conflicts name the selected original held fact. Projections,
-  packaged views and expansion caches reuse the same construction. Flat memory
+  interval index; conflicts name the selected original held fact. Cold and
+  symbolic boundary checks retain explicitly named legacy discovery, comparing
+  only each new piece with retained owners. They never install a temporary
+  combined context, revalidate the unchanged frame or the constructed body's
+  internal partition, or scan the frame again to name a conflict. Exclusive
+  boundaries select the retained occurrence by resource or instance identity.
+  Projections, packaged views and expansion caches reuse the same construction. Flat memory
   and token returns project directly, without generic composite expansion.
   An undecided body condition retains the opaque head; a decided false body
   produces emp. Viewed children keep their emitted source identities and

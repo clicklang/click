@@ -1239,3 +1239,87 @@ fn rebound_hold_creation_scales_with_the_returned_occurrences() {
         "returned holds: {samples:?}"
     );
 }
+
+#[test]
+fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
+    for axis in ["cold unrelated", "cold related", "general unrelated"] {
+        for overlap in [false, true] {
+            let mut samples = Vec::new();
+            for count in [4_u32, 16, 64] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let pointer = Pointer::symbolic(Variable(8_849_000));
+                let facts = PureFactContext::new();
+                let owner = |base, start: u32| {
+                    ResourceFact::own_memory(MemoryRange::new(
+                        base,
+                        start.into(),
+                        (start + 1).into(),
+                    ))
+                };
+                let mut frame = ResourceContext::new();
+                for index in 0..count {
+                    let base = if axis == "cold related" {
+                        pointer.clone()
+                    } else {
+                        Pointer::symbolic(Variable(8_849_100 + u64::from(index)))
+                    };
+                    frame = frame.unchecked_with_fact(owner(base, index * 2 + 10));
+                }
+                if axis == "general unrelated" {
+                    frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                        pointer.clone(),
+                        1000u32.into(),
+                        MachineTerm::Variable(Variable(8_849_001)),
+                    )));
+                    frame.synchronize_memory_equalities(&facts);
+                }
+                let held = owner(pointer.clone(), 0);
+                if overlap {
+                    frame = frame.unchecked_with_fact(held.clone());
+                }
+                let (evaluated, bodies) =
+                    super::tests::constructed_flat_return(&pointer, 1, &facts);
+                let source = evaluated.occurrences[0].source;
+                let body = bodies.get(source).unwrap();
+                assert!(matches!(
+                    frame.admit_returned_flat_body(body, &facts),
+                    FlatBodyAdmission::Unsupported
+                ));
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    let error = produced_composite_frontier_conflict(
+                        &frame,
+                        std::iter::once((
+                            evaluated
+                                .resources
+                                .owned_fact_for_occurrence(source)
+                                .unwrap(),
+                            Some(body),
+                        )),
+                        &[],
+                        &Memory::new(),
+                        &facts,
+                    );
+                    if overlap {
+                        let Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
+                            piece,
+                            held: selected,
+                            ..
+                        }) = error
+                        else {
+                            panic!("missing boundary conflict");
+                        };
+                        assert_eq!(*piece, held);
+                        assert_eq!(*selected, held);
+                    } else {
+                        assert!(error.is_none());
+                    }
+                });
+                samples.push(work);
+            }
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 64),
+                "{axis}, overlap={overlap}: {samples:?}"
+            );
+        }
+    }
+}
