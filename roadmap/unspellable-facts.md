@@ -226,6 +226,20 @@ overflow operands raise with zero machine exports. All 1,848 Surface/scaling
 tests and quality checks passed. Algebraic, int32 single-overflow and int64
 signed-overflow fixture filters passed with zero fact-stability differences.
 
+### 9f pointer comparison raising
+
+Complete pointer equality now reads only the retained address and declared type
+needed by the existing spelling policy. It does not export qualifiers, evidence
+or subobject extents to construct an intermediate native condition. Raw address
+and offset comparisons use explicit selected presentation adapters; those native
+adapters remain intentional. Exact pointer call-argument naming is unchanged.
+
+Validation: native/shared complete-pointer, raw-address and null-comparison
+spelling parity; growing unused extent payloads incur constant rendering work
+and zero machine exports. All 1,850 Surface/scaling tests and quality checks
+passed. The pointer-address-equality fixture passed with zero fact-stability
+differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
