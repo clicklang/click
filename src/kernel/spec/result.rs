@@ -354,6 +354,29 @@ impl SpecCallArgument {
     }
 }
 
+/// Assemble supported typed arguments without a native call payload. Exact
+/// opaque descriptors keep the existing application-owned compatibility path.
+pub(super) fn common_call_arguments(arguments: &[SpecCallArgument]) -> Option<Vec<KernelTerm>> {
+    let mut importer = KernelTermImport::default();
+    arguments
+        .iter()
+        .map(|argument| match argument {
+            SpecCallArgument::Shared(root) => Some(root.clone()),
+            SpecCallArgument::Native(PureFunctionArgument::Value(
+                ProgramValue::Pointer(_) | ProgramValue::PointerInteger(_) | ProgramValue::Void,
+            ))
+            | SpecCallArgument::Native(PureFunctionArgument::ArrayRef { .. }) => None,
+            SpecCallArgument::Native(PureFunctionArgument::Value(
+                crate::kernel::integer_c_value!(term),
+            )) if matches!(term, MachineTerm::PointerAddress(..)) => None,
+            SpecCallArgument::Native(value) => {
+                let root = importer.argument(value);
+                (!matches!(root.node(), KernelTermNode::Legacy(_))).then_some(root)
+            }
+        })
+        .collect()
+}
+
 /// Call payloads retain word expressions and preserve opaque descriptors.
 pub(super) fn call_arguments(arguments: Vec<SpecCallArgument>) -> Vec<PureFunctionArgument> {
     arguments
