@@ -2339,7 +2339,7 @@ impl Proof<'_> {
                 .and_then(|view| view.fixed_state.native_result()),
         };
         source_types.extend(result.as_deref().and_then(|value| {
-            diagnostic_value_variable(&value).map(|variable| (variable, value.program_type()))
+            diagnostic_value_variable(value).map(|variable| (variable, value.program_type()))
         }));
         let source_names = match self.context.as_ref() {
             ProofContext::Pure(context) => {

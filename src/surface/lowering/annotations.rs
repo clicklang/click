@@ -3386,7 +3386,6 @@ pub(in crate::surface) fn lower_integer_arithmetic_proposition(
 }
 
 /// The decimal spelling of an integer literal, negated or not.
-
 fn integer_literal_spelling(expression: &ContractExpression) -> Option<String> {
     match expression {
         ContractExpression::IntegerLiteral(text) => Some(text.clone()),

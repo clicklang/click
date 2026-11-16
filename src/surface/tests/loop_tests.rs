@@ -2892,9 +2892,7 @@ fn shared_post_test_scope_retires_storage_after_a_switch_continue() {
     let sources = borrowed_sources(&sources);
     let live = click.split("int32 expired_post_test()").next().unwrap();
     verify_c_sources(live, &sources).expect("the inline reader accepts live local storage");
-    let error = verify_c_sources(&click, &sources)
-        .err()
-        .expect("the expired array is refused");
+    let error = verify_c_sources(&click, &sources).expect_err("the expired array is refused");
     assert!(
         error.message().contains("invalid memory access"),
         "{}",

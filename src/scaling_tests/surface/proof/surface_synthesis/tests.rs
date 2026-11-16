@@ -961,7 +961,7 @@ fn narrow_comparison_spelling_scales_with_the_selected_proposition() {
         let mut layer = vec![atom; size];
         while layer.len() > 1 {
             layer = layer
-                .chunks_exact(2)
+                .as_chunks::<2>().0.iter()
                 .map(|pair| Proposition::And(Box::new(pair[0].clone()), Box::new(pair[1].clone())))
                 .collect();
         }

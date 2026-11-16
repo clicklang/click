@@ -75,12 +75,12 @@ impl<'a> Proof<'a> {
         let state = (*goal.data.core.state).clone();
         Ok(if goal.data.core.is_exceptional {
             FunctionOutcome::Throw {
-                value: value.into(),
+                value,
                 state: Box::new(state),
             }
         } else {
             FunctionOutcome::Return {
-                value: value.into(),
+                value,
                 state: Box::new(state),
             }
         })
