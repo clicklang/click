@@ -67,7 +67,11 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
                     &state,
                 )
             });
-            let (after, _, retired) = result.expect("an allocating call");
+            let VerifiedAllocationDelta {
+                memory: after,
+                retired_creations: retired,
+                ..
+            } = result.expect("an allocating call");
             assert!(retired.is_empty());
             assert!(after.live_heap_block_extent(&created).is_some());
             (size, work)

@@ -433,6 +433,27 @@ execution-value, expression and scaling tests passed. Growing Boolean and
 algebraic refusal payloads take constant deterministic work. Quality checks and
 four exact regular logical fixtures passed, with zero fact-stability differences.
 
+### 9u Pointer and state certification
+
+Complete pointer and captured-array arguments borrow their native/shared
+payloads. Address roles and scaled indices use one written-syntax traversal;
+shared address DAGs are not expanded into native trees. Algebraic read comparison
+retains exact memory identity and reads its shared addresses directly. A common
+metadata projection preserves type, cv qualifiers, known extent, declared class,
+unchecked evidence and local-reference identity, including equivalent default
+qualifier storage shapes.
+
+The selected extent-width adapter remains native because this route's width
+admission is native-syntax based; common-root identity would accept additional
+widths. Opaque index leaves keep the native reading used by the old exporter.
+No address aliasing, proof rules, search indexes or budgets changed.
+
+Validation: all 22 focused certification cases passed in the 2,148-test broad
+and serial suite, including a complete metadata matrix, captured memory and
+algebraic-read state parity, opaque-index refusal and linear traversal of growing
+shared address DAGs with zero machine exports. Quality and five exact regular
+pointer fixtures passed, with zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

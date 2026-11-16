@@ -122,7 +122,11 @@ fn contract_retirement_invalidates_creation_provenance_even_with_replacement() {
             replacement_bytes.clone(),
         )),
     ] {
-        let (after_memory, _, retired) = apply_verified_heap_allocation_delta(
+        let VerifiedAllocationDelta {
+            memory: after_memory,
+            retired_creations: retired,
+            ..
+        } = apply_verified_heap_allocation_delta(
             memory.clone(),
             &memory,
             &input,
