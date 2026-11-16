@@ -1641,8 +1641,21 @@ permitted stores or a transition that drops the fact:
   head's name changes; further returned owners receive additional holds.
   Loan backing
   selection still uses the existing call-plan compatibility checks.
-  Recursive, existential, matched and authority cases retain explicitly
-  classified legacy routes. Failure constructing a
+  Single-pointer-witness existential bodies with memory/token children use a
+  separate migrated fragment, also when nested under ordinary owned or viewed
+  parents. The body producer retains the actual witness value keyed by its
+  opened occurrence; admission, projection and caches reuse the emitted body
+  without binding that witness again. A witness-dependent memory description
+  receives no invariant-parameter borrow or consumed-input custody. Only its
+  actual fresh-allocation provenance can grant allocation custody. This flat
+  fragment never selects a witness from held composite children. Its optional
+  normalization reads written endpoints/exact resource keys, selecting one
+  neighbour per key without enumerating aliases or endpoint classes. A missed
+  merge retains both facts. Internal composition still checks ownership using
+  the full assumptions through incremental admission. Ordinary body producers
+  retain their existing normalization. Multiple
+  witnesses, existential bodies containing composites, recursive, matched
+  and authority cases retain explicitly classified legacy routes. Failure constructing a
   migrated body refuses the return rather than retrying legacy reconstruction.
   Monotone memory-evidence admission walks a smaller incoming contract or a
   shared persistent delta, without enumerating absent caller facts. Scalar
