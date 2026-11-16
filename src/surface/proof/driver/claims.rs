@@ -150,21 +150,6 @@ fn prove_next_contract_closing_goal<'a>(
 }
 
 #[cfg(test)]
-fn resource_receipts_jointly_available(
-    available: &crate::kernel::ResourceContext,
-    receipts: &crate::kernel::ResourceContext,
-    assumptions: &PureFactContext,
-) -> bool {
-    receipts
-        .facts()
-        .iter()
-        .try_fold(available.clone(), |remaining, receipt| {
-            remaining.without_fact_incrementally(receipt, assumptions)
-        })
-        .is_some()
-}
-
-#[cfg(test)]
 thread_local! {
     static FLAT_PROOF_UNITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
@@ -3192,28 +3177,6 @@ fn record_claim_closure<'e>(
     Ok(())
 }
 
-/// The resource receipt each claim on the path was closed with, held by its
-/// goal on the outcome `Proof`. A divergent path has no outcome `Proof`; it
-/// holds its claims vacuously and returns no resources.
-fn claim_resource_receipts<'p>(
-    outcome_proof: &'p Option<Proof<'_>>,
-    claims: &[FunctionClaimRef<'_>],
-) -> Result<Vec<Option<&'p crate::kernel::proof::ClaimResourceReceipt>>, ClickError> {
-    let Some(proof) = outcome_proof else {
-        return Ok(vec![None; claims.len()]);
-    };
-    let goals = proof.claim_goals().ok_or_else(|| {
-        proof.step_error("the outcome Proof no longer holds this path's claim goals")
-    })?;
-    Ok(claims
-        .iter()
-        .map(|claim| match goals.evidence(&claim.key()) {
-            Some(crate::kernel::proof::ClaimGoalEvidence::Resource(receipt)) => Some(receipt),
-            _ => None,
-        })
-        .collect())
-}
-
 /// A closer written when every proposition claim on the path is closed.
 fn no_open_goal(closer: &str) -> String {
     format!("`{closer}` has no goal to close: every claim on this path is already closed")
@@ -3475,11 +3438,6 @@ pub(super) fn finish_ordered_proof<'a>(
             outcome_branches.values().copied(),
         )?;
         let mut verified = Vec::new();
-        let mut checked_resource_claims_by_path =
-            vec![Vec::<FunctionContractClaimKey>::new(); execution.paths().len()];
-        let mut checked_resource_transitions_by_path = vec![false; execution.paths().len()];
-        let mut checked_returned_resources_by_path =
-            vec![crate::kernel::ResourceContext::new(); execution.paths().len()];
         let mut surface_closers_by_claim = vec![Vec::new(); claims.len()];
         let mut surface_grouped_closers_by_path = Vec::with_capacity(execution.paths().len());
         let mut surface_post_tactics_by_path = Vec::with_capacity(execution.paths().len());
@@ -5240,9 +5198,6 @@ pub(super) fn finish_ordered_proof<'a>(
                             );
                         }
                     }
-                    let path_requirements = outcome_proof
-                        .as_ref()
-                        .map_or_else(|| proof.facts().clone(), |root| root.facts().clone());
                     drop(_post_execution_timing);
                     let _path_certification_timing = crate::instrumentation::OperationTiming::new(
                         function_block.signature().name(),
@@ -5414,45 +5369,6 @@ pub(super) fn finish_ordered_proof<'a>(
                         return Err(ClickError::new(summary));
                     }
 
-                    let receipts = claim_resource_receipts(&outcome_proof, claims)?;
-                    for (claim, receipt) in claims.iter().zip(&receipts) {
-                        if receipt.is_some() {
-                            checked_resource_claims_by_path[path_index].push(claim.key());
-                        }
-                    }
-                    // Borrowed outputs also have checked receipts, even when no
-                    // `produces` clause contributes a new returned owner.
-                    let has_resource_claims = claims
-                        .iter()
-                        .any(|claim| matches!(claim.clause().ensure(), Ensure::Resource(_)));
-                    let all_resource_claims_checked = has_resource_claims
-                        && claims
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, claim)| {
-                                matches!(claim.clause().ensure(), Ensure::Resource(_))
-                            })
-                            .all(|(claim_index, _)| receipts[claim_index].is_some());
-                    let receipt_assumptions = assumptions_from_propositions(&path_requirements);
-                    let mut checked_returned_resources =
-                        crate::kernel::ResourceContext::new_with_equalities(&receipt_assumptions);
-                    if all_resource_claims_checked {
-                        for receipt in receipts
-                            .iter()
-                            .flatten()
-                            .filter(|receipt| receipt.contributes_returned_resources)
-                        {
-                            checked_returned_resources = checked_returned_resources
-                                .unchecked_with_facts(
-                                    receipt.returned_resources.facts().iter().cloned(),
-                                );
-                        }
-                    }
-                    if all_resource_claims_checked {
-                        checked_returned_resources_by_path[path_index] =
-                            checked_returned_resources.clone();
-                    }
-
                     // The checked execution producer owns the specification.
                     // Return-resource rewrites advance that same publication;
                     // ordinary claim goals publish through their retained binding.
@@ -5469,10 +5385,6 @@ pub(super) fn finish_ordered_proof<'a>(
                         )?,
                     };
                     let checked_specification = input.specification;
-                    if let Some(root) = outcome_proof.as_ref() {
-                        checked_resource_transitions_by_path[path_index] =
-                            root.contract_exit_completes_boundary();
-                    }
                     let specification = checked_specification.specification();
                     let theorem = checked_specification.theorem();
                     // Every theorem of this path shares one copy of the loop
@@ -5654,18 +5566,10 @@ pub(super) fn finish_ordered_proof<'a>(
                 }
             }
         }
-        let final_checked_execution =
-            outcome_substrate.finish_contract_execution(contract_owner)?;
-        let completed_with_resource_claims =
-            final_checked_execution.with_checked_resource_claims(checked_resource_claims_by_path);
-        let completed_with_resource_claims = completed_with_resource_claims
-            .with_checked_resource_transitions(checked_resource_transitions_by_path);
-        let completed_with_resource_claims = completed_with_resource_claims
-            .with_checked_returned_resources(checked_returned_resources_by_path);
-        let completed_strategy = completed_with_resource_claims;
-        let completed_with_resource_claims = std::sync::Arc::clone(completed_strategy.execution());
+        let completed_strategy = outcome_substrate.finish_contract_execution(contract_owner)?;
+        let completed_execution = std::sync::Arc::clone(completed_strategy.execution());
         for theorem in &mut verified {
-            theorem.checked_execution = std::sync::Arc::clone(&completed_with_resource_claims);
+            theorem.checked_execution = std::sync::Arc::clone(&completed_execution);
         }
         // A context that recorded a proof-branch choice appends its
         // post-execution tactics as a flat suffix after the choice point,
