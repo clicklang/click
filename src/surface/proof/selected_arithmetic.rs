@@ -740,7 +740,11 @@ theorem identity(x: {ty}) {{
         let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
             crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1).unwrap();
-        assert!(expanded.contains("normalize() using"), "{expanded}");
+        assert!(
+            expanded.contains("integer_operation_identity bounds [0, 1]"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("normalize("), "{expanded}");
         without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
         let omitted = source.replace(&format!("using {{ {bound}; }}"), "using {}");
         assert!(
@@ -794,7 +798,10 @@ theorem product_identity(a: uint16, b: uint16) {
         let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
             crate::surface::expand_c_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(
+            expanded.contains("integer_operation_identity bounds [0, 1]"),
+            "{expanded}"
+        );
         assert!(expanded.contains("normalize() using"), "{expanded}");
         without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
         // Without the upper bound the product may wrap; nothing gives it.

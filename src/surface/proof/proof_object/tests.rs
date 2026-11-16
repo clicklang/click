@@ -188,6 +188,14 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
                         [IntegerCertificateNode::Trivial { .. }
                          | IntegerCertificateNode::TypeRange { .. }
                          | IntegerCertificateNode::OperationBound { .. }])) => {}
+            ProofStep::ArithmeticCertificate(certificate)
+                if matches!(&certificate.family, ArithmeticCertificateFamily::Special(special)
+                    if special.conclusion == 0 && special.premises.len() == 2
+                        && matches!(special.nodes.as_slice(),
+                            [SpecialArithmeticNode::IntegerOperationIdentity { bounds, .. }] if bounds == &[0, 1])) =>
+            {
+                count += 2;
+            }
             ProofStep::NormalizeUsing(premises) => count += premises.len(),
             ProofStep::ApplyTheoremUsing {
                 application,

@@ -2278,15 +2278,27 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
         .expect("the uint64 arithmetic step expands");
     for step in [
         "have to_integer((i + 1u64)) < to_integer(length) by {\n            known();",
-        "have 0 <= to_integer(i) by {\n            normalize();",
+        "type_range => 0 <= to_integer(i)",
         "have to_integer((i + 2u64)) ==",
-        "normalize() using {",
+        "integer_operation_identity bounds [0, 1]",
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }
     assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
-    verify_c_sources(&expanded, &[]).expect("the expansion verifies");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    assert!(
+        expanded.contains("integer_operation_identity bounds [0, 1]"),
+        "{expanded}"
+    );
+    without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+        .expect("the expansion verifies without search");
+    let tampered = expanded.replacen(
+        "integer_operation_identity bounds [0, 1]",
+        "integer_operation_identity bounds [0]",
+        1,
+    );
+    assert!(without_implicit_solve(|| verify_c_sources(&tampered, &[])).is_err());
     // Without the bound on `i`, `i + 1` may wrap, and the step says so.
     let unbounded = source.replace("i <= length; to_integer(i + 1u64)", "to_integer(i + 1u64)");
     assert_ne!(unbounded, source);
@@ -2385,7 +2397,19 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     }
     assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
-    verify_c_sources(&expanded, &[]).expect("the expansion verifies");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    assert!(
+        expanded.contains("integer_operation_identity bounds [0, 1]"),
+        "{expanded}"
+    );
+    without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+        .expect("the expansion verifies without search");
+    let tampered = expanded.replacen(
+        "integer_operation_identity bounds [0, 1]",
+        "integer_operation_identity bounds [0]",
+        1,
+    );
+    assert!(without_implicit_solve(|| verify_c_sources(&tampered, &[])).is_err());
     // Without an upper bound on `i`, `i + 1` may overflow above. (A lower
     // bound is not needed: `i`'s own `int64` range keeps `i + 1` above
     // `INT64_MIN`.)

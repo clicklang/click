@@ -1478,8 +1478,8 @@ bounds and intrinsic type ranges to prove the two exact-result bounds through
 ordinary normalization and Integer laws. For an Integer goal observing a machine sum or difference,
 listed bounds and the machine type's range can establish the in-range
 identity, such as `to_integer(x + 1) == to_integer(x) + 1`. Expansion writes
-the range proofs and an explicit normalization step. An
-unsigned operation is used this way only when those bounds prove it does not wrap.
+explicit `type_range` proofs and an `integer_operation_identity` certificate
+citing the two exact-result bounds. An unsigned operation is used this way only when those bounds prove it does not wrap.
 
 Available verified theorems are reasoning rules, not extra hypotheses. If the
 existing strategies miss, restricted solve searches for one theorem application
@@ -1828,9 +1828,10 @@ nonnegative operands. Pointer translation names its equality first and scalar
 bounds after it; tagged-word rules name their word equality first (when used)
 and then the alignment facts. One finite classification proves the matching
 reflexive IEEE comparison. These are fixed local rules over explicit inputs;
-none selects premises or expands a polynomial. Generated proofs use ordinary
-normalization steps; legacy `rules` certificates remain accepted as authored
-compatibility syntax.
+none selects premises or expands a polynomial. Operation-identity bridges emit
+explicit `integer_operation_identity` rules certificates. The other specialized
+selected rules retain ordinary normalization steps; authored `rules`
+certificates remain accepted.
 
 **Accepts** a goal that `normalize()` accepts after this reduction, when every
 cited premise is accepted:
@@ -2259,8 +2260,9 @@ other refutations open a negated-goal scope with `intro` and close its contradic
 ranges and constant-divisor quotient, shift, and remainder bounds use explicit
 `type_range` and `operation_bound` Integer certificate nodes. Rounding and
 endpoint exclusions use ordinary Integer laws.
-Machine operation and cast identities normalize from their explicit Integer
-bounds. Signed intervals expand to ordinary bounds and observation identities;
+Machine operation bridges use `integer_operation_identity` certificates citing
+their two explicit Integer bounds; cast identities retain their normalization
+route. Signed intervals expand to ordinary bounds and observation identities;
 specialized selected rules normalize from explicit inputs, while polynomial
 search emits separate distribution and rewrite steps. All library proofs use
 ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
