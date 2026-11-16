@@ -22,7 +22,9 @@ fn typed_lambda_validation_scales_with_body_and_ignores_unrelated_bindings() {
                 .collect::<Vec<_>>();
             while level.len() > 1 {
                 level = level
-                    .as_chunks::<2>().0.iter()
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|pair| {
                         ContractExpression::Add(
                             Box::new(pair[0].clone()),
@@ -88,7 +90,9 @@ fn lambda_fold_typing_scales_with_captures_and_ignores_unrelated_bindings() {
                 .collect::<Vec<_>>();
             while level.len() > 1 {
                 level = level
-                    .as_chunks::<2>().0.iter()
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|pair| {
                         ContractExpression::Add(
                             Box::new(pair[0].clone()),
@@ -175,7 +179,9 @@ fn proposition_lambda_and_range_validation_ignore_unrelated_scopes() {
                 .collect::<Vec<_>>();
             while level.len() > 1 {
                 level = level
-                    .as_chunks::<2>().0.iter()
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|pair| {
                         ClickProposition::And(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
                     })
@@ -249,7 +255,9 @@ fn memory_lambda_validation_scales_with_reads_and_ignores_unrelated_bindings() {
                 .collect::<Vec<_>>();
             while level.len() > 1 {
                 level = level
-                    .as_chunks::<2>().0.iter()
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|pair| {
                         ContractExpression::Add(
                             Box::new(pair[0].clone()),
@@ -337,7 +345,9 @@ fn callback_parameter_typing_scales_with_selected_body_and_ignores_other_functio
                 .collect::<Vec<_>>();
             while nodes.len() > 1 {
                 nodes = nodes
-                    .as_chunks::<2>().0.iter()
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|pair| {
                         ContractExpression::Add(
                             Box::new(pair[0].clone()),

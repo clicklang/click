@@ -22,10 +22,7 @@ fn contract_refusal_sample_ignores_unprinted_facts() {
             .collect::<Vec<_>>();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
-                let failure = unproved_contract_path_condition(
-                    "missing premise".into(),
-                    &context,
-                );
+                let failure = unproved_contract_path_condition("missing premise".into(), &context);
                 assert_eq!(failure.available_count, all.len());
                 assert_eq!(failure.available, expected);
             }
