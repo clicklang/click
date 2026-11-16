@@ -6339,3 +6339,159 @@ fn shared_pointer_comparisons_preserve_native_spelling() {
         );
     }
 }
+
+#[test]
+fn closed_machine_orders_round_trip_after_checked_rewrite() {
+    use crate::kernel::proof::ProofFacts;
+    for (spelling, suffix, value) in [
+        (
+            "uint32",
+            "u32",
+            ProgramValue::UInt32(MachineTerm::Variable(Variable(999701))),
+        ),
+        (
+            "int64",
+            "i64",
+            ProgramValue::Int64(MachineTerm::Variable(Variable(999701))),
+        ),
+        (
+            "uint64",
+            "u64",
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(999701))),
+        ),
+    ] {
+        for bound in [5, 100] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let state = ExecutionState::new().with_local("x", value.clone());
+            let values = BTreeMap::from([("x".to_string(), value.clone())]);
+            let empty = BTreeMap::new();
+            let lower = |surface: &ClickProposition| {
+                crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+                    surface, &PureFactContext::new(), ContractEnvironment::new(&values, &empty),
+                    FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+                    SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
+                    FixedStateLoweringOptions::default(),
+                ).unwrap().0
+            };
+            let file = parser::parse(&format!("theorem probe(x: {spelling}) {{ requires x == 9{suffix}; ensures x <= {bound}{suffix}; }}")).unwrap();
+            let theorem = &file.theorem_definitions()[0];
+            let Requirement::Proposition(equality) = &theorem.requires()[0] else {
+                panic!("requirement")
+            };
+            let Ensure::Proposition(goal) = theorem.ensures()[0].ensure() else {
+                panic!("ensure")
+            };
+            let equality = lower(equality);
+            let produced = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+                .check_equality_rewrite(&lower(goal), &equality)
+                .unwrap()
+                .proposition()
+                .clone();
+            let Proposition::ConditionIs(condition @ ConditionTerm::Compare { .. }, true) =
+                &produced
+            else {
+                panic!("retained native comparison: {produced:?}")
+            };
+            assert_eq!(PureFactContext::new().decide(condition), Some(9 <= bound));
+            let raised =
+                synthesize_surface_proposition(&produced, ParameterBinding::default(), &state)
+                    .unwrap();
+            let text = crate::surface::printing::source_click_proposition(&raised);
+            let file = parser::parse(&format!(
+                "theorem probe(x: {spelling}) {{ requires {text}; ensures true; }}"
+            ))
+            .unwrap();
+            let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0]
+            else {
+                panic!("requirement")
+            };
+            assert_eq!(
+                lower(written),
+                produced,
+                "{spelling}, bound {bound}: {text}"
+            );
+        }
+    }
+}
+
+#[test]
+fn closed_machine_order_keeps_a_defined_right_disjunct() {
+    let file = parser::parse(
+        "theorem probe() { requires 64u64 >= 64u64 or (1u64 << 1u64) == 2u64; ensures true; }",
+    )
+    .unwrap();
+    let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+        panic!("requirement")
+    };
+    let lowered = relower_written_proposition(written, &ExecutionState::new()).unwrap();
+    assert!(matches!(lowered, Proposition::Or(..)));
+}
+
+#[test]
+fn closed_machine_order_short_circuits_undefined_right_operand() {
+    let file = parser::parse(
+        "theorem probe() { requires 64u64 >= 64u64 or (1u64 << 64u64) == 2u64; ensures true; }",
+    )
+    .unwrap();
+    let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+        panic!("requirement")
+    };
+    let lowered = relower_written_proposition(written, &ExecutionState::new()).unwrap();
+    assert!(matches!(
+        lowered,
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: crate::kernel::MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterEqual,
+                ..
+            },
+            true
+        )
+    ));
+}
+
+#[test]
+fn closed_machine_order_lowering_preserves_relations_and_truth_checking() {
+    use crate::kernel::MachineIntegerType as T;
+    let state = ExecutionState::new();
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for (operator, relation, truth) in [
+            ("<", CompareRelation::LessThan, false),
+            ("<=", CompareRelation::LessEqual, false),
+            (">", CompareRelation::GreaterThan, true),
+            (">=", CompareRelation::GreaterEqual, true),
+        ] {
+            let file = parser::parse(&format!("theorem probe() {{ requires (9 as {spelling}) {operator} (5 as {spelling}); ensures true; }}")).unwrap();
+            let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0]
+            else {
+                panic!("requirement")
+            };
+            let lowered = relower_written_proposition(written, &state).unwrap();
+            let Proposition::ConditionIs(
+                condition @ ConditionTerm::Compare {
+                    format: actual,
+                    relation: actual_relation,
+                    ..
+                },
+                true,
+            ) = &lowered
+            else {
+                panic!("{spelling} {operator}: {lowered:?}")
+            };
+            assert_eq!((*actual, *actual_relation), (format, relation));
+            assert_eq!(PureFactContext::new().decide(condition), Some(truth));
+            assert_eq!(
+                crate::kernel::proof::checked_branch_fact_is_available(
+                    &crate::kernel::proof::ProofFacts::from_ordered(&[]),
+                    &lowered,
+                ),
+                truth,
+            );
+        }
+    }
+}

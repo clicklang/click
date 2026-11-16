@@ -5595,14 +5595,16 @@ fn lower_spec_disjunction_at_state_in(
             &right_assumptions,
             budget,
         )?;
-        // A literally true left side leaves no case for the right, which then
-        // need not denote anything (`0u32 == 0u32 or a <= MAX / 0u32`).
-        if right_paths.is_empty()
-            && matches!(
-                &left_path.proposition,
-                Proposition::ConditionIs(ConditionTerm::Constant(value), expected)
-                    if value == expected
-            )
+        // Preserve a defined disjunction even when its left side is true:
+        // its logical structure still belongs to the proof. An intrinsically
+        // undefined right side need not denote anything when the left holds.
+        if constant_spec_condition_value(&left_path.proposition) == Some(true)
+            && right_paths.iter().all(|path| {
+                path.obligations.iter().any(|obligation| {
+                    obligation.evaluation_domain
+                        && constant_spec_condition_value(obligation.proposition()) == Some(false)
+                })
+            })
         {
             paths.push(left_path);
             continue;
@@ -9862,12 +9864,12 @@ pub(super) fn proposition_as_single_condition(
     }
 }
 
-/// The truth value a lowered specification condition folds to on its own,
+/// The truth value a lowered specification condition establishes on its own,
 /// or `None` when deciding it would need an ambient fact.
 ///
-/// This is exact constant folding: context-free builtin solving of the
+/// This checks intrinsic truth: context-free builtin solving of the
 /// lowered proposition, plus the frozen condition checker on the empty
-/// context for a bare `ConditionIs`, which is where a folded comparison of
+/// context for a bare `ConditionIs`, which is where a retained comparison of
 /// two constants is decided. Nothing here reads the surrounding proof
 /// context, so a specification `if` lowers to the same shape wherever it is
 /// written and wherever it is applied; a condition that holds only under
