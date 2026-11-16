@@ -13530,8 +13530,10 @@ fn produced_composite_frontier_conflict<'a>(
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
     for (produced, body) in ensured {
-        let Resource::Composite { name, .. } = produced.resource() else {
-            continue;
+        let name = match produced.resource() {
+            Resource::Composite { name, .. } => name.as_str(),
+            Resource::Instance(instance) if body.is_some() => instance.name(),
+            _ => continue,
         };
         if !produced.is_own() {
             continue;

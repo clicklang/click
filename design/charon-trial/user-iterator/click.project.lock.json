@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "units": {
+    "countdown": {
+      "language": "rust",
+      "lock": {
+        "envelope": 1,
+        "frontend": {
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
+        },
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "76608ba086743f1a63091725b3246eab12a314ec6307e2e595df4804bbfdff0e"
+        },
+        "sources": {
+          "countdown.rs": {
+            "artifact": {
+              "bytes": 393254,
+              "path": ".click/countdown/countdown.rs.ullbc",
+              "sha256": "186515b1a70ba84707e769cccc3999767e99e68ba0a95085825ebead4f4cbe97"
+            },
+            "identity": "c27e78aecbb7642eac9a99f38d5c8d3b1b62922d7151725e5db1fbe65e8157eb",
+            "inputs": {
+              "countdown.rs": "76608ba086743f1a63091725b3246eab12a314ec6307e2e595df4804bbfdff0e"
+            }
+          }
+        },
+        "unit": "e429aaa92f7665d1e1190f4a9fe4db109751a25ddb892a17820ef3ba34bd9358"
+      }
+    }
+  }
+}

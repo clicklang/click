@@ -8,8 +8,10 @@ and `remainder` run over them, as a `Range` is held as `start` and `end`.
 them and are not migrated. A slice iterator is likewise held as the slice
 it still covers, which `iter.as_slice()` and `iter.len()` read, and an
 `enumerate` as that slice iterator and `count`; `library/rust/slice_iter.click`
-and the `"iterators": "library"` unit option are removed. The design below
-is kept for its history.
+and the `"iterators": "library"` unit option are removed. A crate's own
+`impl Iterator` is called as the crate wrote it, under its `next`'s contract,
+with its fields read as `iter.<field>` (`design/charon-trial/user-iterator`).
+The design below is kept for its history.
 
 Status: steps 1 and 2 done, step 3 under way and being revised: the
 iterator is imported through its Rust interface (`next(&mut it)` returning
