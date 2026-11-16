@@ -1335,3 +1335,102 @@ fn nested_and_nonunit_return_bodies_keep_legacy_expansion() {
         FlatReturnBodies::construct(&evaluated, &definitions, &ExecutionState::new(), &facts);
     assert!(bodies.0.is_empty());
 }
+
+pub(super) fn constructed_flat_return(
+    pointer: &Pointer,
+    count: u32,
+    facts: &PureFactContext,
+) -> (EvaluatedReturnResources, FlatReturnBodies) {
+    let evaluated = EvaluatedReturnResources::new(facts)
+        .admit(
+            ResourceFact::own_composite("boundary_return".into(), vec![]),
+            ReturnOwnershipOrigin::Description,
+            facts,
+        )
+        .unwrap();
+    let bodies = FlatReturnBodies::construct(
+        &evaluated,
+        &[flat_body_definition("boundary_return", pointer, count)],
+        &ExecutionState::new(),
+        facts,
+    );
+    assert_eq!(bodies.0.len(), 1);
+    (evaluated, bodies)
+}
+
+#[test]
+fn flat_body_admission_keeps_selected_alias_diagnostics_and_branch_isolation() {
+    let pointer = Pointer::symbolic(Variable(8_819_100));
+    let alias = Pointer::symbolic(Variable(8_819_101));
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(pointer.clone(), alias.clone()),
+        true,
+    );
+    let (evaluated, bodies) = constructed_flat_return(&pointer, 2, &facts);
+    let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+    // The packaged view may overlap a retained owner; only owned leaves
+    // introduce a new exclusive footprint.
+    let parent = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts([owner(alias.clone(), 4, 5), owner(alias.clone(), 6, 7)]);
+    parent.synchronize_memory_equalities(&facts);
+    assert!(matches!(
+        parent.admit_returned_flat_body(body, &facts),
+        FlatBodyAdmission::Admitted
+    ));
+    let overlapping = owner(alias, 2, 3);
+    let branch = parent.clone().unchecked_with_fact(overlapping.clone());
+    branch.synchronize_memory_equalities(&facts);
+    let FlatBodyAdmission::Conflict { piece, held } = branch.admit_returned_flat_body(body, &facts)
+    else {
+        panic!("an aliased body leaf must conflict");
+    };
+    assert_eq!(*piece, owner(pointer, 2, 3));
+    assert_eq!(*held, overlapping);
+    assert_eq!(branch.facts().len(), 3);
+    assert_eq!(parent.facts().len(), 2);
+    assert!(matches!(
+        parent.admit_returned_flat_body(body, &facts),
+        FlatBodyAdmission::Admitted
+    ));
+}
+
+#[test]
+fn flat_body_admission_does_not_certify_cold_or_general_geometry() {
+    let facts = PureFactContext::new();
+    let pointer = Pointer::symbolic(Variable(8_819_102));
+    let (evaluated, bodies) = constructed_flat_return(&pointer, 1, &facts);
+    let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+    let cold = ResourceContext::new().unchecked_with_fact(owner(pointer.clone(), 0, 1));
+    assert!(matches!(
+        cold.admit_returned_flat_body(body, &facts),
+        FlatBodyAdmission::Unsupported
+    ));
+    // Unsupported dispatch still preserves the original overlap refusal.
+    assert!(matches!(
+        produced_composite_frontier_conflict(
+            &cold,
+            std::iter::once((
+                evaluated
+                    .resources
+                    .owned_fact_for_occurrence(evaluated.occurrences[0].source)
+                    .unwrap(),
+                Some(body)
+            )),
+            &[],
+            &Memory::new(),
+            &facts
+        ),
+        Some(RuntimeError::ProducedCompositeOverlapsHeldResource { .. })
+    ));
+    let symbolic = ResourceFact::own_memory(MemoryRange::new(
+        pointer,
+        4u32.into(),
+        MachineTerm::Variable(Variable(8_819_103)),
+    ));
+    let general = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(symbolic);
+    general.synchronize_memory_equalities(&facts);
+    assert!(matches!(
+        general.admit_returned_flat_body(body, &facts),
+        FlatBodyAdmission::Unsupported
+    ));
+}

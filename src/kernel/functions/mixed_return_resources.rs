@@ -419,9 +419,17 @@ impl PreparedReturnComposition {
 #[derive(Default)]
 pub(super) struct FlatReturnBodies(BTreeMap<ResourceOccurrenceId, FlatReturnBody>);
 
-pub(super) struct FlatReturnBody {
+pub(in crate::kernel) struct FlatReturnBody {
     pub(super) frontier: Vec<ResourceFact>,
     expansion: Vec<ResourceFact>,
+}
+
+impl FlatReturnBody {
+    pub(in crate::kernel) fn owned_memory_frontier(&self) -> impl Iterator<Item = &ResourceFact> {
+        self.frontier
+            .iter()
+            .filter(|piece| piece.memory_own_range().is_some())
+    }
 }
 
 impl FlatReturnBodies {

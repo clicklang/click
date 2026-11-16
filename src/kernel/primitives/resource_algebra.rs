@@ -7,8 +7,8 @@ use crate::kernel::int32_constant;
 use crate::kernel::{CompareRelation, MachineCastSpelling, MachineIntegerType, OverflowOperation};
 mod observable;
 mod ownership_admission;
-pub(crate) use ownership_admission::OwnershipAdmission;
 use ownership_admission::PendingOwnershipAdmission;
+pub(crate) use ownership_admission::{FlatBodyAdmission, OwnershipAdmission};
 
 /// A proof-aware composition query in progress on this thread. Bridging a
 /// query's state form to a carrier entry can itself ask whether a

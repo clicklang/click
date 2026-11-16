@@ -28,7 +28,7 @@ use mixed_return_resources::{
     ProjectedReturnResource, ReturnOwnershipOrigin, project_return_resource_cores,
 };
 pub(in crate::kernel) use mixed_return_resources::{
-    ReturnResourceTransfer, ReturnedConsumedCell, ReturnedFreshAllocation,
+    FlatReturnBody, ReturnResourceTransfer, ReturnedConsumedCell, ReturnedFreshAllocation,
 };
 #[cfg(test)]
 mod produced_argument_supply_tests;
@@ -13344,6 +13344,21 @@ fn produced_composite_frontier_conflict<'a>(
         };
         if !produced.is_own() {
             continue;
+        }
+        if let Some(body) = body {
+            match destination.admit_returned_flat_body(body, assumptions) {
+                FlatBodyAdmission::Admitted => continue,
+                FlatBodyAdmission::Conflict { piece, held } => {
+                    return Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
+                        produced: Box::new(produced.clone()),
+                        piece,
+                        held,
+                    });
+                }
+                // Cold indexes and symbolic/general coordinates retain the
+                // existing validation. They are never admitted on a miss.
+                FlatBodyAdmission::Unsupported => {}
+            }
         }
         let legacy_frontier;
         let frontier = if let Some(body) = body {

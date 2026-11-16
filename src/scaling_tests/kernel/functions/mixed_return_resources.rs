@@ -849,3 +849,118 @@ fn flat_return_body_consumers_scale_with_output_and_ignore_ambient_state() {
         }
     }
 }
+
+#[test]
+fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_misses() {
+    for axis in ["owners", "related owners", "aliases", "cold", "general"] {
+        for overlap in [false, true] {
+            let mut samples = Vec::new();
+            for count in [4_u32, 16, 64] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let pointer = Pointer::symbolic(Variable(8_839_500));
+                let mut facts = PureFactContext::new();
+                let owner = |base, start: u32| {
+                    ResourceFact::own_memory(MemoryRange::new(
+                        base,
+                        start.into(),
+                        (start + 1).into(),
+                    ))
+                };
+                let mut frame =
+                    ResourceContext::new().unchecked_with_fact(owner(pointer.clone(), 4));
+                for index in 0..count {
+                    let other = Pointer::symbolic(Variable(8_839_600 + u64::from(index)));
+                    match axis {
+                        "aliases" => {
+                            facts = facts.assume_condition(
+                                ConditionTerm::pointer_equal(pointer.clone(), other),
+                                true,
+                            )
+                        }
+                        "related owners" => {
+                            frame =
+                                frame.unchecked_with_fact(owner(pointer.clone(), index * 2 + 10))
+                        }
+                        _ => frame = frame.unchecked_with_fact(owner(other, 0)),
+                    }
+                }
+                if overlap {
+                    frame = frame.unchecked_with_fact(owner(pointer.clone(), 0));
+                }
+                if axis == "general" {
+                    frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                        pointer.clone(),
+                        1000u32.into(),
+                        MachineTerm::Variable(Variable(8_839_599)),
+                    )));
+                }
+                if axis != "cold" {
+                    frame.synchronize_memory_equalities(&facts);
+                }
+                let (evaluated, bodies) =
+                    super::tests::constructed_flat_return(&pointer, 1, &facts);
+                let source = evaluated.occurrences[0].source;
+                let body = bodies.get(source).unwrap();
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    let _fast = crate::kernel::search::FastOperationScope::enter(
+                        "indexed flat composite frontier",
+                    );
+                    let result = frame.admit_returned_flat_body(body, &facts);
+                    if axis == "cold" || axis == "general" {
+                        assert!(matches!(result, FlatBodyAdmission::Unsupported));
+                    } else {
+                        assert!(matches!(result, FlatBodyAdmission::Conflict { .. }) == overlap);
+                        if !overlap {
+                            assert!(matches!(result, FlatBodyAdmission::Admitted));
+                        }
+                        let error = produced_composite_frontier_conflict(
+                            &frame,
+                            std::iter::once((
+                                evaluated
+                                    .resources
+                                    .owned_fact_for_occurrence(source)
+                                    .unwrap(),
+                                Some(body),
+                            )),
+                            &[],
+                            &Memory::new(),
+                            &facts,
+                        );
+                        assert_eq!(error.is_some(), overlap);
+                    }
+                });
+                samples.push(work);
+            }
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 64),
+                "{axis}, overlap={overlap}: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn flat_body_admission_scales_with_the_constructed_frontier() {
+    let mut samples = Vec::new();
+    for count in [4_u32, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let pointer = Pointer::symbolic(Variable(8_839_800));
+        let frame = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
+            ResourceFact::own_memory(MemoryRange::new(
+                pointer.clone(),
+                1000u32.into(),
+                1001u32.into(),
+            )),
+        );
+        frame.synchronize_memory_equalities(&facts);
+        let (evaluated, bodies) = super::tests::constructed_flat_return(&pointer, count, &facts);
+        let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            frame.admit_returned_flat_body(body, &facts)
+        });
+        assert!(matches!(result, FlatBodyAdmission::Admitted));
+        samples.push(work);
+    }
+    assert!(samples[2] <= samples[0] * 20 + 64, "frontier: {samples:?}");
+}
