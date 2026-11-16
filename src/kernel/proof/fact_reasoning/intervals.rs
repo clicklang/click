@@ -204,35 +204,42 @@ fn operation(
 }
 
 pub(super) fn reduces_one_operation(goal: &Proposition, premises: &[Proposition]) -> bool {
-    if let Proposition::And(left, right) = goal {
-        // One explicit pair (a domain or two endpoints), never a recursive
-        // conjunction walk rebuilding selection for an unbounded goal.
-        if matches!(left.as_ref(), Proposition::And(..))
-            || matches!(right.as_ref(), Proposition::And(..))
-        {
+    let goals = match goal {
+        Proposition::And(left, right) => {
+            // A single explicit endpoint pair shares one selected-bound index.
+            // Nested conjunctions still require separate ordinary proof steps.
+            if matches!(left.as_ref(), Proposition::And(..))
+                || matches!(right.as_ref(), Proposition::And(..))
+            {
+                return false;
+            }
+            vec![left.as_ref(), right.as_ref()]
+        }
+        _ => vec![goal],
+    };
+    let mut comparisons = Vec::with_capacity(goals.len());
+    for goal in goals {
+        if parts(goal).is_none() {
+            let Proposition::ConditionIs(condition, truth) = goal else {
+                return false;
+            };
+            if !crate::kernel::machine_integer::comparison::comparison_view(condition, *truth)
+                .is_some_and(|view| {
+                    matches!(
+                        view.relation,
+                        crate::kernel::machine_integer::Relation::Less
+                            | crate::kernel::machine_integer::Relation::LessEqual
+                    )
+                })
+            {
+                return false;
+            }
+        }
+        let goal_readings = readings(goal);
+        if !goal_readings.iter().any(|reading| parts(reading).is_some()) {
             return false;
         }
-        return reduces_one_operation(left, premises) && reduces_one_operation(right, premises);
-    }
-    if parts(goal).is_none() {
-        let Proposition::ConditionIs(condition, truth) = goal else {
-            return false;
-        };
-        if !crate::kernel::machine_integer::comparison::comparison_view(condition, *truth)
-            .is_some_and(|view| {
-                matches!(
-                    view.relation,
-                    crate::kernel::machine_integer::Relation::Less
-                        | crate::kernel::machine_integer::Relation::LessEqual
-                )
-            })
-        {
-            return false;
-        }
-    }
-    let goal_readings = readings(goal);
-    if !goal_readings.iter().any(|reading| parts(reading).is_some()) {
-        return false;
+        comparisons.push(goal_readings);
     }
     let mut selected = HashMap::<SharedIntegerTerm, Bounds>::new();
     for p in premises {
@@ -269,21 +276,26 @@ pub(super) fn reduces_one_operation(goal: &Proposition, premises: &[Proposition]
             }
         }
     }
-    for reading in goal_readings {
-        let Some((a, b, strict)) = parts(&reading) else {
-            continue;
-        };
-        // At most one written operation is reduced. A bound on its opaque
-        // children must be cited; nested arithmetic requires another have.
-        let left = operation(a, &selected, premises).or_else(|| bounds(a, &selected));
-        let right = operation(b, &selected, premises).or_else(|| bounds(b, &selected));
-        if let (Some((_, ah)), Some((bl, _))) = (left, right)
-            && if strict { ah < bl } else { ah <= bl }
-        {
-            return true;
-        }
-    }
-    false
+    comparisons.iter().all(|goal_readings| {
+        goal_readings.iter().any(|reading| {
+            let Some((a, b, strict)) = parts(reading) else {
+                return false;
+            };
+            // At most one operation per written endpoint. Children are opaque.
+            let left = operation(a, &selected, premises).or_else(|| bounds(a, &selected));
+            let right = operation(b, &selected, premises).or_else(|| bounds(b, &selected));
+            match (left, right) {
+                (Some((_, ah)), Some((bl, _))) => {
+                    if strict {
+                        ah < bl
+                    } else {
+                        ah <= bl
+                    }
+                }
+                _ => false,
+            }
+        })
+    })
 }
 
 #[cfg(test)]

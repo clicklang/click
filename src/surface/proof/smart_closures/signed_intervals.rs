@@ -49,20 +49,6 @@ fn observed(term: &ContractExpression) -> ContractExpression {
     to_integer(&native_int32_split_operand(term.clone()))
 }
 
-/// A complete domain made only of established arithmetic range guards.
-/// Historical/read initialization obligations are deliberately stronger.
-pub(super) fn arithmetic_domain_only(domain: &Proposition) -> bool {
-    crate::instrumentation::record_deterministic_work(1);
-    if crate::kernel::machine_integer::definedness::range_domain_query(domain).is_some() {
-        return true;
-    }
-    match domain {
-        Proposition::And(a, b) => arithmetic_domain_only(a) && arithmetic_domain_only(b),
-        Proposition::ConditionIs(ConditionTerm::Constant(value), expected) => value == expected,
-        _ => false,
-    }
-}
-
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Retain a native read's available domain or its recorded initialization.
     /// Observation identities themselves need only their outer range guards.
@@ -162,7 +148,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut proof = proof.clone();
         let mut values = Vec::<Value>::new();
         let mut identities = Vec::new();
-        let mut pending_identities = Vec::<([ClickProposition; 2], ClickProposition)>::new();
+        let mut pending_identities = Vec::<(
+            Vec<ClickProposition>,
+            [ClickProposition; 2],
+            ClickProposition,
+        )>::new();
         let last_interval = certificate.nodes.iter().rposition(|node| {
             crate::instrumentation::record_deterministic_work(1);
             matches!(
@@ -446,10 +436,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 inputs.extend(values[index].facts());
             }
             if let Some(claim) = claim {
-                let scope = proof.driver().open_have(claim.clone())?;
-                if let Ok(closed) = scope
-                    .driver()
-                    .apply_step(ProofStep::NormalizeUsing(inputs.clone()))
+                if let Some(scope) =
+                    attempt::candidate_outcome(proof.driver().open_have(claim.clone()))?
+                    && let Ok(closed) = scope
+                        .driver()
+                        .apply_step(ProofStep::NormalizeUsing(inputs.clone()))
                     && closed.is_complete()
                 {
                     proof = closed.join()?;
@@ -459,10 +450,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // Observation identities are needed only when a claim crosses
                 // an operation boundary. Endpoint-only plans use their stated
                 // intervals directly, without expanding unused affine bridges.
-                for (bounds, identity) in pending_identities.drain(..) {
+                for (sources, bounds, identity) in pending_identities.drain(..) {
                     for bound in &bounds {
-                        let scope = proof.driver().open_have(bound.clone())?;
-                        proof = scope.driver().apply_step(ProofStep::Known)?.join()?;
+                        let Some(next) =
+                            Self::ordinary_integer_fact(&proof, bound.clone(), &sources)?
+                        else {
+                            return Ok(None);
+                        };
+                        proof = next;
                     }
                     let Some(next) =
                         Self::ordinary_integer_fact(&proof, identity.clone(), &bounds)?
@@ -514,8 +509,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         proof = next;
                     }
                 }
-                // Materialize the exact operation's bounds before observing
-                // it, so no implicit solver can supply an overflow guard.
+                // Native endpoint reduction checks the operation's range from
+                // its children's explicit bounds. Defer the separate exact
+                // range proof until an affine bridge actually needs it.
                 let exact = match &term {
                     ContractExpression::Add(a, b) => Some(ContractExpression::Add(
                         Box::new(observed(a)),
@@ -536,43 +532,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         le(number(i64::from(i32::MIN)), exact.clone()),
                         le(exact.clone(), number(i64::from(i32::MAX))),
                     ];
-                    // State only the outer operation's ordinary range pair.
-                    // Rebuilding definedness of every nested operand here
-                    // repeats the growing domain tree at each interval node.
-                    let range = ClickProposition::And(
-                        Box::new(bounds[0].clone()),
-                        Box::new(bounds[1].clone()),
-                    );
-                    let scope = proof.driver().open_have(range)?;
-                    if let Ok(closed) = scope
-                        .driver()
-                        .apply_step(ProofStep::NormalizeUsing(inputs.clone()))
-                        && closed.is_complete()
-                    {
-                        proof = closed.join()?;
-                    } else {
-                        for bound in &bounds {
-                            let Some(next) =
-                                Self::ordinary_integer_fact(&proof, bound.clone(), &inputs)?
-                            else {
-                                return Ok(None);
-                            };
-                            proof = next;
-                        }
-                    }
-                    // Retain the complete native domain once its constituent
-                    // range facts are established. Subsequent observations can
-                    // reuse it instead of rebuilding nested argument domains.
-                    let domain = ClickProposition::Defined {
-                        expression: term.clone(),
-                    };
-                    let kernel =
-                        proof.lower_cited_surface_proposition(&domain, "native interval domain")?;
-                    if arithmetic_domain_only(&kernel) {
-                        let scope = proof.driver().open_have(domain)?;
-                        proof = scope.driver().apply_step(ProofStep::Known)?.join()?;
-                    }
-                    pending_identities.push((bounds, eq(observed(&term), exact)));
+                    pending_identities.push((inputs.clone(), bounds, eq(observed(&term), exact)));
                 }
                 // The final operation can close the original goal directly
                 // from its children's bounds. Avoid publishing an unused

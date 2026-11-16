@@ -1789,13 +1789,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && let Some(expression) = integer_composition::observed_argument(&spelled_observed)
             {
                 let domain = ClickProposition::Defined { expression };
-                // For total operands this contains only arithmetic ranges. Keep
+                // For total operands this is precisely the range pair. Keep
                 // its native spelling available to subsequent theorem arguments.
                 // A domain containing read initialization is a stronger claim
                 // and is established only when an argument requires it.
                 if proof
                     .lower_cited_surface_proposition(&domain, "native argument domain")
-                    .is_ok_and(|kernel| signed_intervals::arithmetic_domain_only(&kernel))
+                    .is_ok_and(|kernel| {
+                        crate::kernel::machine_integer::definedness::range_domain_query(&kernel)
+                            .is_some()
+                    })
                 {
                     let scope = proof.driver().open_have(domain)?;
                     proof = scope.driver().apply_step(ProofStep::Known)?.join()?;

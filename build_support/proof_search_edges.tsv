@@ -672,7 +672,7 @@ src/surface/proof/driver/claims.rs	driver	::apply_post_execution_arithmetic_usin
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	apply_integer_composition	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_recorded_footprint_preservation	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_recorded_footprint_preservation	driver	1
-src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	driver	15
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	driver	9
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	driver	5
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	try_integer_composition_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_signed_interval_using	1
