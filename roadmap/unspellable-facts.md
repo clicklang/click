@@ -805,7 +805,14 @@ All 2,196 selected representation, reader, Surface and scaling tests passed;
 10 final focused checks also passed. Float, algebraic and pure-function fixtures
 passed with zero fact-stability differences. The generic filter passed 25/27
 fixtures; its two nightly C++ failures reproduced with identical diagnostics
-on the merged baseline and are not claimed green.
+on the merged baseline and are not claimed green. CI also exposed a real
+pointer-call spelling regression: shared arguments attempted general pointer
+synthesis where native arguments require an exact proof-local name. The common
+call renderer now preserves that name policy for all call result families.
+Native/shared parity and both pointer-body-fact fixtures pass, including the
+expected negative refusal, without changing search or budgets. Its measured
+negative-case work is about 1.16 million units versus 415,000 on the baseline;
+the unchanged limit is 2 million.
 
 ### 8a inventory
 

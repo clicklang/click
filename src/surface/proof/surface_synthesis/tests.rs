@@ -6063,3 +6063,29 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
     assert_eq!(value, ProgramValue::Float64(source), "{text}");
     assert!(obligations.is_empty());
 }
+
+#[test]
+fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = crate::kernel::PointerValue::new(
+        Pointer::symbolic(Variable(1008590)),
+        ProgramType::Int32Pointer,
+    );
+    let value = ProgramValue::Pointer(pointer);
+    let argument = crate::kernel::PureFunctionArgument::Value(value.clone());
+    let root = crate::kernel::KernelTermImport::default().argument(&argument);
+    let state = ExecutionState::new().with_local("p", value.clone());
+    let bound = BTreeMap::new();
+    for names in [vec![], vec![(value.clone(), "exact_p".into())]] {
+        with_proof_local_value_names(names, || {
+            let native = synthesize_legacy_call_argument(
+                &argument,
+                ParameterBinding::default(),
+                &state,
+                &bound,
+            );
+            let shared = raise_call_argument(&root, ParameterBinding::default(), &state, &bound);
+            assert_eq!(shared, native);
+        });
+    }
+}

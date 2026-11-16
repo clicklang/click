@@ -3162,6 +3162,28 @@ fn raise_algebraic_if<'a>(
     })
 }
 
+// Complete pointer call arguments use their exact proof-local source name,
+// just as native arguments do. General pointer-expression synthesis can pick
+// an address spelling with different producer metadata; it is not this
+// argument boundary's policy.
+fn raise_call_argument(
+    term: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::KernelTermNode as Node;
+    match term.node() {
+        Node::PointerValue(value)
+        | Node::PointerRead { value, .. }
+        | Node::PointerArithmetic { value, .. }
+        | Node::PointerCall { value, .. } => Some(SurfaceTerm::ProgramExpression(
+            ProgramExpression::Variable(pointer_names::shared_name(value)?),
+        )),
+        _ => raise_kernel_term(term, parameter_binding, state, bound_variables),
+    }
+}
+
 // Keep the float-only temporaries out of the recursive shared renderer's
 // frame, which is also used for deeply nested integer expressions.
 fn raise_float_expression(
@@ -3197,7 +3219,9 @@ fn raise_float_expression(
             arguments: call
                 .arguments
                 .iter()
-                .map(recurse)
+                .map(|argument| {
+                    raise_call_argument(argument, parameter_binding, state, bound_variables)
+                })
                 .collect::<Option<Vec<_>>>()?,
         },
         Node::FloatCompare {
@@ -3355,13 +3379,20 @@ pub(super) fn raise_kernel_term(
             arguments: call
                 .arguments
                 .iter()
-                .map(recurse)
+                .map(|argument| {
+                    raise_call_argument(argument, parameter_binding, state, bound_variables)
+                })
                 .collect::<Option<Vec<_>>>()?,
         },
         Node::Call { name, arguments } => {
             let call = SurfaceTerm::Call {
                 name: generic_instance_source_name(name).into(),
-                arguments: arguments.iter().map(recurse).collect::<Option<Vec<_>>>()?,
+                arguments: arguments
+                    .iter()
+                    .map(|argument| {
+                        raise_call_argument(argument, parameter_binding, state, bound_variables)
+                    })
+                    .collect::<Option<Vec<_>>>()?,
             };
             // The root may read a call's word at the other signedness. Its
             // declaration alone cannot recover that selected interpretation.
