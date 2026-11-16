@@ -1303,11 +1303,21 @@ impl LoweringContext<'_> {
                 callee, arguments, ..
             } => {
                 let target = self.call_name(callee, arguments)?;
-                let (prefix, arguments) = self.normalize_arguments(arguments)?;
-                Ok(evaluate_then(
-                    prefix,
-                    self.coerced(program_call(target, arguments)),
-                ))
+                let (prefix, arguments, mut temporaries) =
+                    self.normalize_temporary_arguments(arguments, true)?;
+                temporaries.reverse();
+                let operation = self.coerced(program_call(target, arguments));
+                let operation = if temporaries.is_empty() {
+                    operation
+                } else {
+                    program_seq(
+                        operation,
+                        program_end_automatic_lifetimes(
+                            temporaries.into_iter().map(Into::into).collect(),
+                        ),
+                    )
+                };
+                Ok(evaluate_then(prefix, operation))
             }
             CppStatement::CallStore {
                 callee,
@@ -1753,6 +1763,17 @@ impl LoweringContext<'_> {
         &mut self,
         arguments: &[CppCallArgument],
     ) -> Result<(ProgramStatement, Vec<ProgramExpression>), String> {
+        let (prefix, actual, temporaries) = self.normalize_temporary_arguments(arguments, false)?;
+        debug_assert!(temporaries.is_empty());
+        Ok((prefix, actual))
+    }
+
+    fn normalize_temporary_arguments(
+        &mut self,
+        arguments: &[CppCallArgument],
+        allow_temporaries: bool,
+    ) -> Result<(ProgramStatement, Vec<ProgramExpression>, Vec<String>), String> {
+        let mut temporaries = Vec::new();
         let mut evaluation = program_skip();
         let has_nested = arguments
             .iter()
@@ -1824,6 +1845,67 @@ impl LoweringContext<'_> {
                     ),
                 );
                 lowered.push(crate::kernel::program_expression::variable(capture));
+            } else if matches!(
+                argument,
+                CppCallArgument::Construct { .. }
+                    | CppCallArgument::Call {
+                        value_type: CppType::Record { .. },
+                        ..
+                    }
+            ) {
+                if !allow_temporaries {
+                    return Err(
+                        "C++ record temporaries require a statement-call full expression".into(),
+                    );
+                }
+                let (callee, arguments, value_type, constructor) = match argument {
+                    CppCallArgument::Construct {
+                        callee,
+                        arguments,
+                        value_type,
+                        ..
+                    } => (callee, arguments, value_type, true),
+                    CppCallArgument::Call {
+                        callee,
+                        arguments,
+                        value_type,
+                        ..
+                    } => (callee, arguments, value_type, false),
+                    _ => unreachable!(),
+                };
+                let CppType::Record { name, .. } = value_type else {
+                    unreachable!()
+                };
+                let layout = self.record_layout(name)?;
+                let capture = self.fresh_aggregate_capture()?;
+                let (prefix, mut actual, inner_temporaries) =
+                    self.normalize_temporary_arguments(arguments, true)?;
+                temporaries.extend(inner_temporaries);
+                evaluation = evaluate_then(evaluation, prefix);
+                let operation = if constructor {
+                    actual.insert(
+                        0,
+                        crate::kernel::program_expression::cast(
+                            crate::kernel::program_expression::variable(capture.clone()),
+                            ProgramType::Int32Pointer,
+                        ),
+                    );
+                    program_call(self.callee_name(callee)?, actual)
+                } else {
+                    program_call_construct(capture.clone(), self.callee_name(callee)?, actual)
+                };
+                evaluation = evaluate_then(
+                    evaluation,
+                    program_seq(
+                        program_allocate_aggregate_destination(capture.clone(), layout),
+                        self.coerced(operation),
+                    ),
+                );
+                lowered.push(crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::variable(capture.clone()),
+                    ProgramType::UInt8Pointer,
+                ));
+                temporaries.push(capture);
             } else if let CppCallArgument::Call {
                 callee,
                 arguments,
@@ -1851,7 +1933,7 @@ impl LoweringContext<'_> {
                 lowered.push(self.lower_call_argument(argument)?);
             }
         }
-        Ok((evaluation, lowered))
+        Ok((evaluation, lowered, temporaries))
     }
 
     fn lower_scalar_return(
@@ -2149,8 +2231,8 @@ impl LoweringContext<'_> {
                     pointer_type,
                 ))
             }
-            CppCallArgument::Call { .. } => {
-                Err("nested C++ call bypassed scalar evaluation normalization".into())
+            CppCallArgument::Call { .. } | CppCallArgument::Construct { .. } => {
+                Err("nested C++ call bypassed argument evaluation normalization".into())
             }
         }
     }
@@ -2705,5 +2787,5 @@ fn is_const_int64(value_type: &CppType) -> bool {
 }
 
 fn is_native_object_pointer(value_type: &CppType) -> bool {
-    matches!(value_type, CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some())
+    matches!(value_type, CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some())
 }

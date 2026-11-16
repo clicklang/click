@@ -4,6 +4,58 @@ use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 #[test]
+fn separation_names_loaded_pointer_fields_at_their_declared_type() {
+    use crate::kernel::{MemoryRange, PointerValue, Resource};
+    for scalar in ["uint8", "uint16", "int32", "uint64"] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let function = syntax::parse_function(&format!(
+            "struct Cursor {{ const {scalar}* data; }}; void read(struct Cursor* cursor) {{}}"
+        ))
+        .unwrap();
+        let parameters = [function.parameters()[0].clone()];
+        let base = Pointer::symbolic(Variable(997101));
+        let memory = Memory::new();
+        let loaded =
+            Pointer::canonical_loaded_value(&crate::kernel::intern_memory_ref(&memory), &base);
+        let other = Pointer::symbolic(Variable(997102));
+        let arguments = [ProgramExpression::Value(ProgramValue::pointer(
+            base.clone(),
+        ))];
+        let state = ExecutionState::new()
+            .with_memory(memory)
+            .with_local("cursor", ProgramValue::pointer(base))
+            .with_local(
+                "other",
+                ProgramValue::typed_pointer(other.clone(), ProgramType::UInt8Pointer),
+            );
+        let range = |pointer| {
+            Resource::Memory(MemoryRange::from_pointer_value(
+                &PointerValue::new(pointer, ProgramType::UInt8Pointer),
+                MachineTerm::constant(0),
+                MachineTerm::constant(4),
+                1,
+            ))
+        };
+        let expected = Proposition::ResourceSeparate {
+            left: Box::new(range(loaded)),
+            right: Box::new(range(other)),
+        };
+        let raised = synthesize_surface_proposition(
+            &expected,
+            ParameterBinding::new(&parameters, &arguments),
+            &state,
+        )
+        .expect("a loaded pointer field has its declared source spelling");
+        let lowered = relower_written_proposition(&raised, &state).unwrap();
+        assert_eq!(
+            crate::kernel::proof::proposition_identity_key(&lowered),
+            crate::kernel::proof::proposition_identity_key(&expected),
+            "{scalar}: {raised:?}"
+        );
+    }
+}
+
+#[test]
 fn separate_round_trips_without_generating_extent_obligations() {
     use crate::kernel::{MemoryRange, PointerValue, Resource};
     for wide in [false, true] {

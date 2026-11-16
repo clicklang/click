@@ -7390,6 +7390,25 @@ impl PureFactContext {
             Proposition::ConditionIs(condition, value) => {
                 self.knows_condition_or_stated_separation(condition, *value)
             }
+            Proposition::ResourceSeparate { left, right } => {
+                let (Resource::Memory(left_range), Resource::Memory(right_range)) =
+                    (left.as_ref(), right.as_ref())
+                else {
+                    return false;
+                };
+                if self.resource_separation_conflicts_with_equalities(left, right) {
+                    return false;
+                }
+                let Some(source) = self.separated_address_classes.exact_spans(
+                    left_range,
+                    right_range,
+                    &self.equality_graph,
+                ) else {
+                    return false;
+                };
+                record_implicit_reasoning_provenance(self, &source);
+                true
+            }
             Proposition::Not(body) => match body.as_ref() {
                 Proposition::ConditionIs(condition, value) => {
                     self.knows_condition_or_stated_separation(condition, !*value)

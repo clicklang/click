@@ -22,6 +22,7 @@ struct Index {
     graph: Option<EqualityGraph>,
     sources: PersistentMap<Proposition, (Pointer, Pointer)>,
     pairs: PersistentMap<Pair, PersistentSet<Proposition>>,
+    exact_spans: PersistentMap<Pair, PersistentMap<(u32, u32), Proposition>>,
     incident: PersistentMap<u64, PersistentSet<Pair>>,
 }
 
@@ -43,6 +44,26 @@ fn pair(left: u64, right: u64) -> Pair {
         (left, right)
     } else {
         (right, left)
+    }
+}
+
+// A fixed nonempty byte interval is identified by its start address and
+// extent, independently of the pointer spelling or element type.
+fn fixed_span_bytes(range: &MemoryRange) -> Option<u32> {
+    let elements = range
+        .signed_constant_end()?
+        .checked_sub(range.signed_constant_start()?)?;
+    let bytes = u32::try_from(elements)
+        .ok()?
+        .checked_mul(range.element_width())?;
+    (bytes != 0).then_some(bytes)
+}
+
+fn span_key(left: u64, right: u64, left_bytes: u32, right_bytes: u32) -> (Pair, (u32, u32)) {
+    if (left, left_bytes) <= (right, right_bytes) {
+        ((left, right), (left_bytes, right_bytes))
+    } else {
+        ((right, left), (right_bytes, left_bytes))
     }
 }
 
@@ -69,7 +90,31 @@ impl Index {
         }
     }
 
+    fn attach_exact(&mut self, key: Pair, widths: (u32, u32), fact: Proposition) {
+        crate::instrumentation::record_deterministic_work(1);
+        let spans = self.exact_spans.get(&key).cloned().unwrap_or_default();
+        // Equal address classes and extents denote the same physical spans;
+        // retain one selected authority rather than a growing fact bucket.
+        self.exact_spans = self
+            .exact_spans
+            .with_inserted(key, spans.with_inserted(widths, fact));
+    }
+
+    fn attach_exact_fact(&mut self, fact: &Proposition, left: u64, right: u64) {
+        let Proposition::ResourceSeparate { left: a, right: b } = fact else {
+            return;
+        };
+        let (Resource::Memory(a), Resource::Memory(b)) = (a.as_ref(), b.as_ref()) else {
+            return;
+        };
+        if let (Some(a), Some(b)) = (fixed_span_bytes(a), fixed_span_bytes(b)) {
+            let (key, widths) = span_key(left, right, a, b);
+            self.attach_exact(key, widths, fact.clone());
+        }
+    }
+
     fn detach_pair(&mut self, key: Pair) {
+        self.exact_spans = self.exact_spans.without_key(&key);
         self.pairs = self.pairs.without_key(&key);
         for endpoint in [key.0, key.1] {
             if let Some(incident) = self.incident.get(&endpoint) {
@@ -94,6 +139,7 @@ impl Index {
                 let incident = self.incident.get(&merge.moved).cloned().unwrap_or_default();
                 for old in incident.iter() {
                     let facts = self.pairs.get(old).cloned().unwrap_or_default();
+                    let exact = self.exact_spans.get(old).cloned().unwrap_or_default();
                     self.detach_pair(*old);
                     let replace = |id| if id == merge.moved { merge.kept } else { id };
                     let new = pair(replace(old.0), replace(old.1));
@@ -101,12 +147,18 @@ impl Index {
                         crate::instrumentation::record_deterministic_work(1);
                         self.attach(new, fact.clone());
                     }
+                    for (widths, fact) in exact.iter() {
+                        let (key, widths) =
+                            span_key(replace(old.0), replace(old.1), widths.0, widths.1);
+                        self.attach_exact(key, widths, fact.clone());
+                    }
                 }
             }
         } else {
             // Restriction reconstructs the checked graph from its selected
             // exact support. Class IDs from that lineage cannot be reused.
             self.pairs = Default::default();
+            self.exact_spans = Default::default();
             self.incident = Default::default();
             let sources = self.sources.clone();
             let registered = sources
@@ -123,13 +175,12 @@ impl Index {
             // Registration may join classes through producer definitions.
             // Attach only after every selected source has been registered.
             for (fact, left, right) in registered {
-                self.attach(
-                    pair(
-                        graph.address_class_root(left),
-                        graph.address_class_root(right),
-                    ),
-                    fact,
+                let (left, right) = (
+                    graph.address_class_root(left),
+                    graph.address_class_root(right),
                 );
+                self.attach(pair(left, right), fact.clone());
+                self.attach_exact_fact(&fact, left, right);
             }
         }
         self.graph = Some(graph.clone());
@@ -158,6 +209,44 @@ impl SeparatedAddressIndex {
         );
         index.sources = index.sources.with_inserted(fact.clone(), (left, right));
         index.attach(key, fact.clone());
+        index.attach_exact_fact(
+            fact,
+            graph.address_class_root(left_class),
+            graph.address_class_root(right_class),
+        );
+    }
+
+    /// One stated authority for exactly these two physical byte intervals.
+    /// Widths select a map entry, never a bucket of related separation facts.
+    pub(in crate::kernel) fn exact_spans(
+        &self,
+        left: &MemoryRange,
+        right: &MemoryRange,
+        graph: &EqualityGraph,
+    ) -> Option<Proposition> {
+        let (left_bytes, right_bytes) = (fixed_span_bytes(left)?, fixed_span_bytes(right)?);
+        let mut cache = self.0.lock().expect("separation index");
+        let index = cache.as_deref_mut()?;
+        let (left, right) = (
+            graph.address_class(&left.start_pointer())?,
+            graph.address_class(&right.start_pointer())?,
+        );
+        index.synchronize(graph);
+        let (key, widths) = span_key(
+            graph.address_class_root(left),
+            graph.address_class_root(right),
+            left_bytes,
+            right_bytes,
+        );
+        // Registering the selected addresses can itself expose an equality.
+        // Nonempty intervals starting at one address always overlap.
+        if key.0 == key.1 {
+            return None;
+        }
+        let fact = index.exact_spans.get(&key)?.get(&widths)?;
+        source_visit();
+        crate::instrumentation::record_deterministic_work(1);
+        Some(fact.clone())
     }
 
     pub(in crate::kernel) fn candidates(

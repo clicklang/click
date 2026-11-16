@@ -5742,6 +5742,14 @@ fn synthesize_parameter_field_load(
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<ContractExpression> {
+    synthesize_parameter_field_load_matching(pointer, Some(value_type), parameter_binding)
+}
+
+fn synthesize_parameter_field_load_matching(
+    pointer: &Pointer,
+    value_type: Option<ProgramType>,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<ContractExpression> {
     for (parameter, argument) in parameter_binding
         .parameters
         .iter()
@@ -5769,10 +5777,12 @@ fn synthesize_parameter_field_load(
         else {
             continue;
         };
-        if field.interface_type().to_kernel_type() != value_type {
+        let declared_type = field.interface_type().to_kernel_type();
+        if !value_type.map_or_else(|| declared_type.is_pointer(), |ty| ty == declared_type) {
             continue;
         }
-        let base = ProgramExpression::Variable((parameter.name().to_string()).into());
+        let value_type = declared_type;
+        let base = ProgramExpression::Variable(parameter.name().to_string().into());
         let field_pointer = if offset_bytes == 0 {
             base.clone()
         } else {
@@ -5808,6 +5818,15 @@ fn synthesize_local_field_load(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
+    synthesize_local_field_load_matching(pointer, Some(value_type), parameter_binding, state)
+}
+
+fn synthesize_local_field_load_matching(
+    pointer: &Pointer,
+    value_type: Option<ProgramType>,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+) -> Option<ContractExpression> {
     for owner in struct_owners(parameter_binding, state) {
         // Compare each field's address with the load's pointer directly: an
         // object reached through an opaque `void *` keeps a byte-scaled
@@ -5822,9 +5841,11 @@ fn synthesize_local_field_load(
         }) else {
             continue;
         };
-        if field.interface_type().to_kernel_type() != value_type {
+        let declared_type = field.interface_type().to_kernel_type();
+        if !value_type.map_or_else(|| declared_type.is_pointer(), |ty| ty == declared_type) {
             continue;
         }
+        let value_type = declared_type;
         return Some(ContractExpression::Field {
             pointee_struct: None,
             base: Box::new(ContractExpression::ProgramExpression(owner.base.clone())),
@@ -6213,12 +6234,22 @@ fn synthesize_surface_pointer(
         // A field spelling reads this state; historical reads need their
         // recorded selector before entering this C-only source fragment.
         pointer_read_address_in_state(pointer, state)?;
-        let field = synthesize_struct_field_load(
+        // A resource retains an address, not its source pointer type. Recover
+        // that type from the field declaration instead of assuming int32*;
+        // byte pointers must round-trip through their actual field load.
+        let field = synthesize_parameter_field_load_matching(
             &read.defining_address,
-            ProgramType::Int32Pointer,
+            None,
             parameter_binding,
-            state,
         )
+        .or_else(|| {
+            synthesize_local_field_load_matching(
+                &read.defining_address,
+                None,
+                parameter_binding,
+                state,
+            )
+        })
         .or_else(|| {
             Some(ContractExpression::ProgramExpression(
                 ProgramExpression::TypedLoad {
