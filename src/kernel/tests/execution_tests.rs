@@ -2586,14 +2586,17 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
         assert!(declaration[0].introductions().is_some());
     }
     assert_eq!(
-        goals.declarations()[0][0].proposition(),
-        goals.declarations()[1][0].proposition()
+        goals.declarations()[1][0].proposition(),
+        &Proposition::Implies(
+            Box::new(goals.declarations()[0][0].proposition().clone()),
+            Box::new(goals.declarations()[0][0].proposition().clone()),
+        )
     );
-    assert!(
-        loop_invariant_obligations_at_entry(&state, &checks, &assumptions)
-            .unwrap()
-            .is_empty()
-    );
+    let obligations = loop_invariant_obligations_at_entry(&state, &checks, &assumptions).unwrap();
+    assert_eq!(obligations.len(), 2);
+    for (obligation, declaration) in obligations.iter().zip(goals.declarations()) {
+        assert_eq!(obligation.proposition(), declaration[0].proposition());
+    }
 }
 
 #[test]

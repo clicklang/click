@@ -150,6 +150,43 @@ pub(crate) fn native_comparison_of_integer_observation(
     native_comparison_view(condition, value)?.boxed_condition()
 }
 
+/// Preserve a closed native order comparison during logical lowering. Inspect
+/// only the two literal roots; deciding their truth belongs to checking.
+pub(crate) fn logical_condition_for_operand_views(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    operands: [crate::kernel::MachineOperandView<'_>; 2],
+) -> ConditionTerm {
+    closed_order_for_operand_views(format, relation, operands)
+        .unwrap_or_else(|| condition_for_operand_views(format, relation, operands))
+}
+
+fn closed_order_for_operand_views(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    operands: [crate::kernel::MachineOperandView<'_>; 2],
+) -> Option<ConditionTerm> {
+    if relation == crate::kernel::CompareRelation::Equal {
+        return None;
+    }
+    let [Some(left), Some(right)] = operands.map(|operand| operand.literal()) else {
+        return None;
+    };
+    // Native 32-bit comparisons read sign-free words; their format carries
+    // the signedness. Keep the same operand representation as exact rewriting.
+    let [left, right] = if format.format().bits() == 32 {
+        [left.into_word32(), right.into_word32()]
+    } else {
+        [left, right]
+    };
+    Some(ConditionTerm::Compare {
+        format,
+        relation,
+        left: Box::new(left),
+        right: Box::new(right),
+    })
+}
+
 /// Construct a checking comparison from two borrowed operands. Native inputs
 /// and fixed-size atoms keep their written comparison; shared arithmetic stays
 /// in exact observations. This never exports a shared arithmetic tree.

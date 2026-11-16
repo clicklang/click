@@ -3058,6 +3058,7 @@ impl CheckedResourceObservation {
         });
         if introduced.iter().any(|fact| {
             !allowed.contains(fact)
+                && !crate::kernel::proposition_holds_without_facts(fact)
                 && !resource_composition_is_supported_by(fact, &child_context, assumptions)
                 && !allowed_assumptions.proves_exact(fact)
         }) {
@@ -6567,6 +6568,7 @@ fn collect_retained_call_events<'e>(
 
 /// Check only a literal int32 comparison, without folding expressions or
 /// consulting a context. Signed order interprets the stored bits as int32.
+#[cfg(test)]
 fn ground_comparison_premise_holds(premise: &Proposition) -> bool {
     use crate::kernel::ConditionTerm;
     let Proposition::ConditionIs(condition, expected) = premise else {
@@ -6652,7 +6654,11 @@ pub(crate) fn checked_branch_fact_is_available(facts: &ProofFacts, fact: &Propos
         // does not derive a weaker bound or search for a missing premise.
         || matches!(fact, Proposition::ConditionIs(condition, truth)
             if facts.assumptions().selected_comparison_source(condition, *truth).is_some())
-        || ground_comparison_premise_holds(fact)
+        || matches!(fact, Proposition::ConditionIs(crate::kernel::ConditionTerm::Compare { .. }, _)
+            if crate::kernel::proposition_holds_without_facts(fact))
+        || matches!(fact, Proposition::And(left, right)
+            if checked_branch_fact_is_available(facts, left)
+                && checked_branch_fact_is_available(facts, right))
         || matches!(fact,
             Proposition::ConditionIs(crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, true)
                 if left == right)

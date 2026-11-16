@@ -331,6 +331,12 @@ the one the text names.
   choosing a term by known provenance. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
+Closed native order comparisons at 32 and 64 bits retain their comparison
+node, format, and literal operands during logical lowering. Their truth is
+established by checking, including when exact rewriting removed the last
+variable before the comparison was printed. This does not change literal
+arithmetic evaluation or the existing equality normal forms.
+
 Logical object-pointer reads now retain their version names, including when
 memory stores a complete pointer at the cell. The read's complete stored value
 is related through `EqualityGraph::register_logical_read_values` and the
