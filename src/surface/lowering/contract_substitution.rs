@@ -2462,7 +2462,11 @@ impl ReferencedBinding for LexicalBinding {
     fn program(binding: &crate::kernel::BindingName) -> Option<Self> {
         Some(Self(binding.clone()))
     }
-    fn leave_scope(_: &mut BTreeSet<Self>, _: &Self) -> bool {
+    fn leave_scope(names: &mut BTreeSet<Self>, binder: &Self) -> bool {
+        // Unused declarations can capture inserted references too. Retain
+        // every binder, so deterministic slots never trigger fresh renaming.
+        crate::instrumentation::record_deterministic_work(1);
+        names.insert(binder.clone());
         false
     }
 }
