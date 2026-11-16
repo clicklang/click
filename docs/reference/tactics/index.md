@@ -1247,6 +1247,16 @@ A bound on the low word or a signed comparison cannot establish this unsigned
 projection, and address equality grants no permission to access the backing
 storage. Conditional normalization does not enter binder bodies.
 
+Two displacements of one pointer by full-width unsigned indices regroup:
+`(p + a) + b == p + (a + b)` for `uint64` (or `usize`) `a` and `b` at one
+stride, when the sum does not wrap. The one fact read is
+`to_integer(a) + to_integer(b) <= 18446744073709551615`, found by exact
+lookup, and `normalize() using { ... }` can cite it. A loop that moves a
+cursor forward, `v = v + cs`, carries `v == b + k` across the pass this way
+([`full_width_pointer_cursor_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/full_width_pointer_cursor_loop.md),
+[`full_width_pointer_association.md`](https://github.com/clicklang/click/blob/master/mdtests/full_width_pointer_association.md),
+[`full_width_pointer_association_requires_its_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/full_width_pointer_association_requires_its_bound.md)).
+
 When a smart `have` needs memory permissions merely to lower its goal, its
 expanded proof retains the relevant viewability and order facts through
 explicit transports, rewrites, extracts, or named theorem applications. A
