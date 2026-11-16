@@ -1825,10 +1825,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             let identity_surface = identity.clone();
             let scope = proof.driver().open_have(identity.clone())?;
-            let step = if conversion {
-                ProofStep::NormalizeUsing(vec![lower, upper])
-            } else {
+            // Integer-to-word conversions and ordinary C casts are distinct.
+            // Only an actual machine operation uses this certificate family.
+            let step = if crate::kernel::machine_integer::identity::mathematical(observed).is_some()
+            {
                 super::super::wide_arithmetic::operation_identity(lower, upper, identity)
+            } else {
+                ProofStep::NormalizeUsing(vec![lower, upper])
             };
             let closed = match scope.driver().apply_step(step) {
                 Ok(closed) => closed,
