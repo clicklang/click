@@ -5,10 +5,18 @@
 use super::*;
 
 #[test]
-fn concrete_storage_lookup_does_not_walk_alias_history() {
+fn automatic_storage_lookup_does_not_walk_alias_history() {
     let root = Pointer::symbolic(Variable(896_100));
     let storage = Pointer {
-        block: "local:indexed".into(),
+        block: PointerBlock::AutomaticLocal {
+            binding: crate::kernel::LocalBindingId::new(
+                crate::kernel::LocalFunctionId::new(Some("indexed.c".into()), "f".into()),
+                false,
+                0,
+                Some("indexed".into()),
+            ),
+            instance: crate::kernel::LocalStorageInstance::Implicit,
+        },
         offset: PointerOffsetTerm::Constant(0),
     };
     let mut samples = Vec::new();
@@ -31,6 +39,10 @@ fn concrete_storage_lookup_does_not_walk_alias_history() {
             assert_eq!(
                 facts.equality_graph.storage_address(&query),
                 storage.offset_by_bytes(8)
+            );
+            assert_eq!(
+                facts.equality_graph.local_slot_alias_blocks(&query),
+                vec![storage.block.clone()]
             );
         });
         samples.push(work);

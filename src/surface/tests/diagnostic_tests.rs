@@ -365,17 +365,19 @@ fn callback_sources_keep_field_names_through_subobject_lowering() {
         "callback-names.c",
     )
     .unwrap();
-    for (function, expected) in
-        functions
-            .iter()
-            .zip(["cb->propagate", "cb->copy", "owner->callbacks->copy"])
+    for (function, expected) in functions
+        .iter()
+        .zip(["propagate", "copy", "callbacks->copy"])
     {
         let sources = function.callback_statement_sources();
         assert_eq!(sources.len(), 1, "{}", function.name());
         let source = sources.values().next().unwrap();
         assert_eq!(
             crate::surface::diagnostics::describe_callback_source(source),
-            expected
+            format!(
+                "\"callback-names.c\"::{}.parameter(0)->{expected}",
+                function.name()
+            )
         );
     }
     assert_eq!(functions.len(), 3);
@@ -1991,7 +1993,12 @@ fn failed_generated_loop_closer_reports_a_short_summary_at_the_loop_tactic() {
     let error = verify_c_sources(click_source, &[("settle.c", c_source)])
         .expect_err("a loop whose measure does not decrease is refused");
     let (report, context) = error.concise_report_parts();
-    assert!(report.contains("`state < state` remained open"), "{report}");
+    assert!(
+        report.contains(
+            "`\"settle.c\"::settle.parameter(0) < \"settle.c\"::settle.parameter(0)` remained open"
+        ),
+        "{report}"
+    );
     assert!(report.lines().count() <= 4, "{report}");
     for internal in ["stage", "search candidates", "18446744073709551615"] {
         assert!(!report.contains(internal), "{report}");
@@ -3222,7 +3229,10 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
                 .trace_context_report()
                 .expect("the accepted prefix must survive exhaustion");
             assert!(trace.contains("steps through:"), "{trace}");
-            assert!(trace.contains("*cell = value"), "{trace}");
+            assert!(
+                trace.contains("*\"f.c\"::f.parameter(0) = \"f.c\"::f.parameter(1)"),
+                "{trace}"
+            );
             if nested {
                 assert!(trace.contains("have value == value"), "{trace}");
             }
@@ -3269,7 +3279,10 @@ fn loop_have_budget_refusal_retains_checked_store_trace() {
         let trace = error
             .trace_context_report()
             .expect("the loop's checked prefix must survive");
-        assert!(trace.contains("steps through: *cell = value"), "{trace}");
+        assert!(
+            trace.contains("steps through: *\"f.c\"::f.parameter(0) = \"f.c\"::f.parameter(1)"),
+            "{trace}"
+        );
         assert!(!trace.contains("adds: cell[0] == value + 1"), "{trace}");
     });
 }
@@ -3478,7 +3491,10 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
         let error = verify_c_sources(source, &[("loop.c", c)])
             .expect_err("the deliberately invalid invariant must fail in the then arm");
         let trace = error.trace_context_report().unwrap();
-        assert!(trace.contains("flag == 0"), "{trace}");
+        assert!(
+            trace.contains("\"loop.c\"::branch_drain.parameter(1) == 0"),
+            "{trace}"
+        );
         assert!(trace.contains("have len == 0u64"), "{trace}");
         assert!(!trace.contains("else arm"), "{trace}");
     });
@@ -3653,7 +3669,7 @@ void symbolic(int32* p, const struct callbacks* cb) {
                 // pointer as the source writes it.
                 let message = error.message();
                 assert!(
-                    message.contains("no contract fact for the function pointer `cb->call`"),
+                    message.contains("no contract fact for the function pointer `\"callbacks.c\"::symbolic.parameter(1)->call`"),
                     "{message}"
                 );
                 return;
@@ -3780,7 +3796,10 @@ fn failed_final_known_preserves_its_checked_trace_context() {
         let trace = error
             .trace_context_report()
             .expect("retain the failed focused goal's existing context");
-        assert!(trace.contains("steps through: *cell = value"), "{trace}");
+        assert!(
+            trace.contains("steps through: *\"f.c\"::f.parameter(0) = \"f.c\"::f.parameter(1)"),
+            "{trace}"
+        );
         assert!(trace.contains("have cell[0] == value"), "{trace}");
         assert!(!trace.contains("adds: cell[0] == value + 1"), "{trace}");
     });
@@ -3966,8 +3985,14 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
                 trace.contains("checked prefix; certification failed"),
                 "{trace}"
             );
-            assert!(trace.contains("steps through: p[1] = 9"), "{trace}");
-            assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
+            assert!(
+                trace.contains("steps through: \"f.c\"::f.parameter(0)[1] = 9"),
+                "{trace}"
+            );
+            assert!(
+                trace.contains("steps through: \"f.c\"::f.parameter(0)[0] = 9"),
+                "{trace}"
+            );
             assert!(!trace.contains("transport using"), "{trace}");
         });
     }
@@ -4003,7 +4028,10 @@ fn failed_normalize_using_retains_actual_wide_read_resolution() {
         let trace = error
             .trace_context_report()
             .expect("the failed written check retains its diagnostic state");
-        assert!(trace.contains("steps through: declare y"), "{trace}");
+        assert!(
+            trace.contains("steps through: declare \"f.c\"::f.local(0)"),
+            "{trace}"
+        );
         assert!(trace.contains("read-resolution check:"), "{trace}");
         assert!(trace.contains("equality check: not attempted"), "{trace}");
     });
@@ -4040,7 +4068,10 @@ fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
             .trace_context_report()
             .expect("a rejected premise retains its checked prefix");
         assert!(trace.contains("required transport premise:"), "{trace}");
-        assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
+        assert!(
+            trace.contains("steps through: \"f.c\"::f.parameter(0)[0] = 9"),
+            "{trace}"
+        );
         assert!(trace.contains("p"), "{trace}");
         assert!(trace.contains("q"), "{trace}");
         let premise = trace
@@ -4088,7 +4119,10 @@ fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
         let trace = error
             .trace_context_report()
             .expect("retain the failed written check's prefix");
-        assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
+        assert!(
+            trace.contains("steps through: \"f.c\"::f.parameter(0)[0] = 9"),
+            "{trace}"
+        );
     });
 }
 
@@ -4201,7 +4235,10 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
         let trace = error
             .trace_context_report()
             .expect("attach the checked predecessor even on a budget error");
-        assert!(trace.contains("steps through: *p = 9"), "{trace}");
+        assert!(
+            trace.contains("steps through: *\"f.c\"::f.parameter(0) = 9"),
+            "{trace}"
+        );
     });
 }
 
@@ -4270,7 +4307,10 @@ fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact(
             let trace = error
                 .trace_context_report()
                 .expect("a stopped explicit transport retains the checked predecessor");
-            assert!(trace.contains("steps through: *q = "), "{trace}");
+            assert!(
+                trace.contains("steps through: *\"f.c\"::f.parameter(1) = "),
+                "{trace}"
+            );
             if limit != 0 {
                 let failed = trace
                     .split("failed check:")

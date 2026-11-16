@@ -1,8 +1,9 @@
 # a recursive termination measure cannot escape through a parameter address
 
-The recursive call is guarded and decreases `n`, but the body writes through
-`&n`. A termination measure whose address escapes is not stable enough to rank
-the recursive edge.
+The body writes 1000 through `&n`, so the recursive call passes 999.
+Its guard establishes only that the entry value was positive; it cannot prove
+999 is smaller than that entry value. The ordinary call obligation refuses
+this nondecreasing recursion, rather than banning parameter addresses.
 
 ```c filename=c_decreases_rejects_address_escaped_parameter.c
 int32 escaped_parameter(int32 n) {
@@ -26,5 +27,5 @@ int32 escaped_parameter(int32 n) {
 ```
 
 ```expect
-fail: termination measure `n` in `escaped_parameter` has its address taken
+fail: escaped_parameter recursion measure: `n` decreases at the recursive call
 ```

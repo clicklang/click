@@ -33,7 +33,10 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
     let mut measured_work = Vec::new();
     for count in [0, 16, 64, 256] {
         crate::kernel::set_never_address_taken_locals(
-            (0..count).map(|i| format!("hidden_{i}")).collect(),
+            (0..count)
+                .map(|i| format!("hidden_{i}"))
+                .map(Into::into)
+                .collect(),
         );
         let mut resources = base.clone();
         for i in 0..count {

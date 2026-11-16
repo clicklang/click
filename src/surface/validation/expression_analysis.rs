@@ -12,7 +12,7 @@ pub(in crate::surface) fn program_expression_uses_variable(
         | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => false,
-        ProgramExpression::Variable(name) => name == variable,
+        ProgramExpression::Variable(name) => name.is_named(variable),
         ProgramExpression::Cast { expression, .. } => {
             program_expression_uses_variable(expression, variable)
         }
@@ -1254,7 +1254,9 @@ fn contract_expression_variable(expression: &ContractExpression) -> Option<&str>
     match expression {
         ContractExpression::Binding(name)
         | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        ))
         | ContractExpression::CBinding(name) => Some(name),
         _ => None,
     }

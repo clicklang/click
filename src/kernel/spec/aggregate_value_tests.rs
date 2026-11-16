@@ -30,9 +30,9 @@ fn logical_pointer_field_uses_current_pointee_memory() {
     let load = SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::AggregateFieldValue {
-            parameter: "input".to_string(),
+            parameter: "input".to_string().into(),
             pointer: Box::new(SpecExpression::ProgramExpression(
-                ProgramExpression::Variable("input".to_string()),
+                ProgramExpression::Variable(("input".to_string()).into()),
             )),
             value_type: ProgramType::Int32Pointer,
         }),

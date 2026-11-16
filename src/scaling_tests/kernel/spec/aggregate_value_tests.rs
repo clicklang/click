@@ -17,9 +17,9 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
         vec![AggregateField::new("value", 0, ProgramType::Int32)],
     );
     let projection = SpecExpression::AggregateFieldValue {
-        parameter: "input".to_string(),
+        parameter: "input".into(),
         pointer: Box::new(SpecExpression::ProgramExpression(
-            ProgramExpression::Variable("input".to_string()),
+            ProgramExpression::Variable(("input".to_string()).into()),
         )),
         value_type: ProgramType::Int32,
     };
@@ -77,7 +77,7 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
             ProgramType::Int32,
         ));
         let forged = SpecExpression::AggregateFieldValue {
-            parameter: "input".to_string(),
+            parameter: "input".into(),
             pointer: Box::new(SpecExpression::Value(ProgramValue::pointer(slot.clone()))),
             value_type: ProgramType::Int32,
         };

@@ -383,8 +383,9 @@ impl BodyChecker<'_> {
     fn endpoint(&self, endpoint: &SpecExpression) -> Result<FoldEndpointTemplate, FoldReadDecline> {
         crate::instrumentation::record_deterministic_work(1);
         match endpoint {
-            SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
-                .scalar_parameter(name)
+            SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => name
+                .named()
+                .and_then(|name| self.scalar_parameter(name))
                 .map(FoldEndpointTemplate::Parameter)
                 .ok_or(FoldReadDecline::UnsupportedEndpoint),
             SpecExpression::Value(ProgramValue::Int32(bits32_constant!(value))) => {
@@ -510,7 +511,7 @@ impl BodyChecker<'_> {
         *byte_width == self.element_type.byte_width()
             && matches!(
                 pointer.as_ref(),
-                SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name == self.array_name
+                SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named(self.array_name)
             )
             && matches!(
                 elements.as_ref(),
@@ -527,9 +528,13 @@ impl BodyChecker<'_> {
             }
             SpecExpression::Value(_) => Err(Self::unsupported("a non-int32 value")),
             SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-                if self.scalar_parameter(name).is_some() {
+                if name
+                    .named()
+                    .and_then(|name| self.scalar_parameter(name))
+                    .is_some()
+                {
                     Ok(())
-                } else if name == self.array_name {
+                } else if name.is_named(self.array_name) {
                     Err(Self::unsupported("the array pointer used as a value"))
                 } else {
                     Err(Self::unsupported("a name that is not an int32 parameter"))

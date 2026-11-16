@@ -291,7 +291,7 @@ fn parses_composite_resource_definition() {
             ResourceClause::OwnMemory(ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: ProgramExpression::Variable("flag".to_string()),
+                base: ProgramExpression::Variable(("flag".to_string()).into()),
                 start: ProgramExpression::Value(int32(0)),
                 end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
@@ -440,7 +440,7 @@ fn parses_resource_verb_function_clauses() {
             Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: ProgramExpression::Variable("flag".to_string()),
+                base: ProgramExpression::Variable(("flag".to_string()).into()),
                 start: ProgramExpression::Value(int32(0)),
                 end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
@@ -480,7 +480,7 @@ fn parses_resource_verb_function_clauses() {
                 ensure: Ensure::Resource(ResourceClause::OwnMemory(ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
-                    base: ProgramExpression::Variable("flag".to_string()),
+                    base: ProgramExpression::Variable(("flag".to_string()).into()),
                     start: ProgramExpression::Value(int32(0)),
                     end: ProgramExpression::Value(int32(1)),
                     surface: ContractSegmentSurface::Range {

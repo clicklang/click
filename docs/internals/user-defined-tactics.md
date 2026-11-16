@@ -5,7 +5,7 @@ Click, certified once, and applied in C proofs.
 
 Status: delivery steps 1, 2, and 5 are implemented: declarations,
 certification, application in C proofs before function exit, self-recursion
-ranked by an expression measure (see
+ranked by numeric measures or named structural binders (see
 [User-defined tactics](../reference/language/index.md#user-defined-tactics)),
 and the consumer, `refold_to_root` in `examples/rbtree/rbtree-insert`, which gives
 `__rb_insert` its root-form contract. Steps 3 and 4 remain.
@@ -105,11 +105,13 @@ measure at the application is nonnegative and strictly smaller than at entry.
 These are emitted by the same recursion anchor that ranks a recursive C
 function's expression measure.
 
-A structural (`decreases x;`) or parameter measure is refused for a tactic.
-Those measures are checked by reading the arguments of recursive calls in a C
-body, and a tactic's recursion is in its proof. Checking structural descent at
-the application, from the unfolds the path performed, as structural loop
-measures do, is future work.
+A bare numeric parameter also uses these ordinary application obligations.
+A structural measure (`decreases x;`) ranks the instance passed for that
+resource binder: its model must be strictly contained in the entry model,
+through constructor arms established on the proof path. Unfolding the entry
+instance exposes the child to pass, as with structural loop measures.
+Anonymous resource applications still use the legacy C body analysis and
+cannot rank tactic recursion.
 
 ## Application
 
@@ -151,8 +153,8 @@ application.
   applied. The kernel collects those names from the checked traces into the
   certified claims and the verified rule (`applied_tactics`), and the
   termination call graph reads them as the rule's call edges, since its body
-  has none. A recursion carried by such an edge is accepted only under an
-  expression measure, whose descent was owed at the application.
+  has none. A recursion carried by such an edge owes its numeric or modeled
+  structural descent at the application, through the ordinary recursion anchor.
 - **Application event.** `CheckedExecutionEvent::TacticApplication` records a
   tactic application at a frontier. The kernel builds it only through
   `apply_verified_tactic_rule`, which refuses any procedure whose body is not
@@ -176,10 +178,9 @@ One design, delivered in pull requests on it:
 1. Declaration, parsing, validation, certification of a non-recursive tactic,
    and application in C proofs, with the event and no-havoc transfer. The
    tactic expand/audit inventory and every per-variant tactic table join here.
-2. Recursion: self-recursion ranked by an expression measure, the tactic
-   call edges, and refusal of unranked recursion, structural and parameter
-   measures, and `diverges`. (Structural descent at the application is
-   deferred.)
+2. Recursion: self-recursion ranked by numeric measures or named structural
+   binders, the tactic call edges, and refusal of unranked recursion,
+   anonymous resource measures, and `diverges`.
 3. Cross-backend regressions: one imported tactic applied in a C proof, a C++
    proof, and a Rust proof, with a refusal in each.
 4. Click-typed logical parameters (`Integer`, `Nat`, models), application in

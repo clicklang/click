@@ -64,6 +64,15 @@ impl Boundary<'_> {
     }
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
+        if self.path == "src/kernel/functions/mixed_return_resources.rs"
+            && self.function == "project_return_resource_cores"
+            && matches!(name, "owned_occurrences_for_fact" | "occurrences_for_fact")
+        {
+            self.errors.push(format!(
+                "{}: return projection must select the supplied occurrence, not enumerate equal descriptions ({name})",
+                self.path
+            ));
+        }
         if ((self.path == "src/surface/proof/proof_object/splits_and_scopes.rs"
             && self.function == "begin_have")
             || (self.path == "src/surface/proof/proof_object/outcomes_and_focus.rs"

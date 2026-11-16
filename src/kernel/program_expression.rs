@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub fn variable(name: impl Into<String>) -> ProgramExpression {
+pub fn variable(name: impl Into<BindingName>) -> ProgramExpression {
     ProgramExpression::Variable(name.into())
 }
 
@@ -161,7 +161,7 @@ pub fn float_negate(expression: ProgramExpression) -> ProgramExpression {
     ProgramExpression::FloatNegate(Box::new(expression))
 }
 
-pub fn addr_of(name: impl Into<String>) -> ProgramExpression {
+pub fn addr_of(name: impl Into<BindingName>) -> ProgramExpression {
     ProgramExpression::AddressOf(Box::new(variable(name)))
 }
 

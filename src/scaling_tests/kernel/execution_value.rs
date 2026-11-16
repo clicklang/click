@@ -283,3 +283,78 @@ fn boolean_storage_handoffs_do_not_walk_expression_prefixes() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn float_local_handoffs_retain_growing_shared_prefixes() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let mut root = KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(1008301),
+            );
+            for _ in 0..size {
+                root = KernelTerm::float_binary(
+                    format,
+                    FloatBinaryOperator::Add,
+                    [root.clone(), root],
+                )
+                .unwrap();
+            }
+            let exports = KernelTermExport::float_export_count();
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut state = ExecutionState::new();
+                state.locals.set_retained_typed_with_all_qualifiers(
+                    "x",
+                    ExecutionValue::Shared(root.clone()),
+                    format.program_type(),
+                    false,
+                    false,
+                    false,
+                    false,
+                );
+                let stored = state.locals.get("x").unwrap().clone();
+                assert_eq!(stored.shared(), Some(&root));
+                let separate = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+                assert_eq!(stored, stored.clone());
+                assert_eq!(stored, separate);
+                assert_eq!(stored.cmp(&separate), std::cmp::Ordering::Equal);
+                assert_eq!(stored.into_value().shared(), Some(&root));
+            });
+            assert!(work <= 100, "size={size}, work={work}");
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+        }
+    }
+}
+
+#[test]
+fn float_memory_carriers_retain_growing_shared_prefixes() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let mut root = KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(1008400),
+            );
+            for _ in 0..size {
+                root = KernelTerm::float_binary(
+                    format,
+                    FloatBinaryOperator::Add,
+                    [root.clone(), root],
+                )
+                .unwrap();
+            }
+            let exports = KernelTermExport::float_export_count();
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..32 {
+                    let cell = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
+                    assert_eq!(cell.program_type(), format.program_type());
+                    assert_eq!(cell.clone().into_value().shared(), Some(&root));
+                    assert_eq!(cell.into_value().shared(), Some(&root));
+                }
+            });
+            assert_eq!(work, 0, "size={size}");
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+        }
+    }
+}

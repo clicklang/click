@@ -76,7 +76,7 @@ pub(super) fn is_publication_operation(function_name: &str) -> bool {
 
 pub(super) fn execute_publication_paths(
     state: &ExecutionState,
-    target: Option<&str>,
+    target: Option<&BindingName>,
     function_name: &str,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
@@ -368,12 +368,12 @@ fn release_store(
                     assumptions,
                 )
             });
-        next.memory = state.memory.clone().with_call_memory_havoc(
+        next.set_memory_directly(state.memory.clone().with_call_memory_havoc(
             budget.allocate_kernel_variable()?,
             &ranges,
             assumptions,
             kept.as_ref(),
-        );
+        ));
     }
     Ok(Ok(next))
 }

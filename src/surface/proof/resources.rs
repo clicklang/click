@@ -887,9 +887,9 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
             ));
         };
         let expression = match names_by_value.get(value).and_then(Option::as_ref) {
-            Some(name) => {
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone()))
-            }
+            Some(name) => ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                (name.clone()).into(),
+            )),
             None => ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
         };
         substitutions.insert(parameter.name().to_string(), expression);
@@ -4064,7 +4064,8 @@ fn fold_composite_resources_on_outcome_with_facts(
                     let value = evaluate_fixed_state_expression_through_kernel(
                         argument,
                         pure_facts.assumptions(),
-                        ContractEnvironment::new(&values, &array_refs),
+                        ContractEnvironment::new(&values, &array_refs)
+                            .with_parameters(parameter_binding),
                         FixedStateFrame::new(
                             pre_state,
                             &guard_state,

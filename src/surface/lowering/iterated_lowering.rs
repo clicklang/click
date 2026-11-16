@@ -64,7 +64,7 @@ fn affine_in(expression: &ProgramExpression, index: &str) -> Option<Affine> {
         });
     }
     match expression {
-        ProgramExpression::Variable(name) if name == index => Some(Affine {
+        ProgramExpression::Variable(name) if name.is_named(index) => Some(Affine {
             coefficient: 1,
             constant: 0,
         }),
@@ -109,12 +109,12 @@ fn indexed_load_base<'a>(
 ) -> Option<&'a ProgramExpression> {
     match expression {
         ProgramExpression::Index(base, offset) => {
-            matches!(offset.as_ref(), ProgramExpression::Variable(name) if name == index)
+            matches!(offset.as_ref(), ProgramExpression::Variable(name) if name.is_named(index))
                 .then_some(base)
         }
         ProgramExpression::TypedLoad { pointer, .. } | ProgramExpression::Load(pointer) => {
             match pointer.as_ref() {
-                ProgramExpression::Add(base, offset) if matches!(offset.as_ref(), ProgramExpression::Variable(name) if name == index) => {
+                ProgramExpression::Add(base, offset) if matches!(offset.as_ref(), ProgramExpression::Variable(name) if name.is_named(index)) => {
                     Some(base)
                 }
                 ProgramExpression::Index(..) => indexed_load_base(pointer, index),
@@ -136,7 +136,7 @@ fn side_as_c(expression: &ContractExpression) -> Result<ProgramExpression, Strin
 }
 
 fn is_index(expression: &ProgramExpression, index: &str) -> bool {
-    matches!(expression, ProgramExpression::Variable(name) if name == index)
+    matches!(expression, ProgramExpression::Variable(name) if name.is_named(index))
 }
 
 /// One bound of the `where` proposition: `Ok(Some((true, lo)))` for a lower

@@ -4337,6 +4337,25 @@ impl ProgramType {
         }
     }
 
+    pub(crate) fn array_element_type(self) -> Option<Self> {
+        Some(match self {
+            Self::Int8Array(_) => Self::Int8,
+            Self::UInt8Array(_) => Self::UInt8,
+            Self::Int16Array(_) => Self::Int16,
+            Self::UInt16Array(_) => Self::UInt16,
+            Self::Int32Array(_) => Self::Int32,
+            Self::UInt32Array(_) => Self::UInt32,
+            Self::Int64Array(_) => Self::Int64,
+            Self::UInt64Array(_) => Self::UInt64,
+            Self::Int128Array(_) => Self::Int128,
+            Self::UInt128Array(_) => Self::UInt128,
+            Self::Float32Array(_) => Self::Float32,
+            Self::Float64Array(_) => Self::Float64,
+            Self::PointerArray(element, _) => element.pointer_type(),
+            _ => return None,
+        })
+    }
+
     pub fn pointee_type(self) -> Option<Self> {
         match self {
             Self::VoidPointerPointer => Some(Self::VoidPointer),
@@ -4552,12 +4571,12 @@ impl ProgramValue {
 }
 
 impl LValue {
-    pub(in crate::kernel) fn local(name: impl Into<String>, value_type: ProgramType) -> Self {
+    pub(in crate::kernel) fn local(name: impl Into<BindingName>, value_type: ProgramType) -> Self {
         Self::local_with_qualifiers(name, value_type, false, false)
     }
 
     pub(in crate::kernel) fn local_with_qualifiers(
-        name: impl Into<String>,
+        name: impl Into<BindingName>,
         value_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,

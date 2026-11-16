@@ -214,7 +214,10 @@ fn unresolved_load_projection_ignores_earlier_objects_and_hidden_slots() {
     for size in [16usize, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(
-            (0..=size).map(|index| format!("hidden{index}")).collect(),
+            (0..=size)
+                .map(|index| format!("hidden{index}"))
+                .map(Into::into)
+                .collect(),
         );
         let slot = |index: usize| Pointer {
             block: PointerBlock::Concrete(format!("local:hidden{index}")),

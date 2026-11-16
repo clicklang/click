@@ -504,7 +504,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     assertion(flag, true),
                     program_seq(
                         ProgramStatement::HeapAllocate {
-                            target: destination.clone(),
+                            target: (destination.clone()).into(),
                             bytes: crate::kernel::program_expression::int32_literal(
                                 layout.size_bytes(),
                             ),

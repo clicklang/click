@@ -20,7 +20,13 @@ mod aggregate_return_tests;
 mod construction_return;
 #[cfg(test)]
 mod literal_objects;
+mod mixed_return_resources;
 mod produced_argument_supply;
+use mixed_return_resources::{
+    ConsumedCellReturn, EvaluatedReturnResources, ProjectedReturnResource,
+    project_return_resource_cores,
+};
+pub(in crate::kernel) use mixed_return_resources::{ReturnResourceTransfer, ReturnedConsumedCell};
 #[cfg(test)]
 mod produced_argument_supply_tests;
 use produced_argument_supply::prepare_produced_argument_supply;
@@ -189,10 +195,13 @@ fn record_resource_clause_attempt() {
     RESOURCE_CLAUSE_ATTEMPTS.with(|attempts| attempts.set(attempts.get() + 1));
 }
 /// Resource descriptions can be checked before their transfer is proved.
-/// Only entry borrows retain the ownership partition established at call entry.
+/// Checked call application restores entry borrows per emitted occurrence.
+/// A selected consumed scalar can also return by explicit transfer; other
+/// outputs still pass through description admission.
 #[derive(Clone, Copy)]
 enum ReturnResourceComposition {
     RestoreEntryBorrows,
+    RestoreConsumedCell(ConsumedCellReturn),
     ValidateDescriptions,
 }
 
@@ -223,6 +232,7 @@ struct FunctionResourceTransfer {
     /// This is output-sized call-boundary provenance, not a search through
     /// the caller frame.
     canonical_borrowed_owners: Vec<(ResourceFact, ResourceFact)>,
+    consumed_cell_return: Option<ConsumedCellReturn>,
     callee_resources: ResourceContext,
     /// Resources left in the caller after the entry requirements have been
     /// consumed; this is the caller frame for the remainder of the call.
@@ -3456,7 +3466,7 @@ fn execute_verified_function_applications_with_suspension(
                             .into_certified(),
                         );
                     }
-                    post_state.memory = successor.memory.clone();
+                    post_state.set_memory_directly(successor.memory.clone());
                     post_state.mutex_ledger = successor.mutex_ledger.clone();
                     post_state.opaque_mutex_acquisitions =
                         successor.opaque_mutex_acquisitions.clone();
@@ -3821,14 +3831,10 @@ fn execute_verified_function_applications_with_suspension(
             name,
             interface,
             &prepared_outputs,
-            if interface.resource_ensures().iter().all(|resource| {
-                resource.role() == ResourceTransferRole::Borrow
-                    && resource.state_source() == ResourceStateSource::Entry
-            }) {
-                ReturnResourceComposition::RestoreEntryBorrows
-            } else {
-                ReturnResourceComposition::ValidateDescriptions
-            },
+            transfer.consumed_cell_return.map_or(
+                ReturnResourceComposition::RestoreEntryBorrows,
+                ReturnResourceComposition::RestoreConsumedCell,
+            ),
             &effective_assumptions,
             budget,
         )? {
@@ -3864,7 +3870,7 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
-        post_state.memory = match produced_memory_initialization(
+        let produced = match produced_memory_initialization(
             &entry_resource_state,
             &output_resource_state,
             interface,
@@ -3883,6 +3889,7 @@ fn execute_verified_function_applications_with_suspension(
                 continue;
             }
         };
+        post_state.set_memory_directly(produced);
         let authority_release_retires = {
             match authority_release_retires_control(
                 &entry_contract_state,
@@ -4823,7 +4830,10 @@ fn execute_verified_function_applications_with_suspension(
         return_state.next_local_frame = post_state.next_local_frame;
         return_state.next_local_lifetime = post_state.next_local_lifetime;
         let outcome = FunctionOutcome::Return {
-            value: ExecutionValue::from(result).retain_pointer_result().into(),
+            value: ExecutionValue::from(result)
+                .retain_pointer_result()
+                .retain_float_result()
+                .into(),
             state: Box::new(return_state),
         };
         if let Some(function) = evidence {
@@ -6729,7 +6739,7 @@ fn call_value_arguments(
         }
         let is_parameter = |argument: &ProgramExpression| {
             matches!(argument, ProgramExpression::Variable(name)
-                if parameters.iter().any(|parameter| parameter.name() == name))
+                if parameters.iter().any(|parameter| parameter.binding_name() == name))
         };
         let clause = interface.resource_requires().iter().find_map(|spec| {
             match spec.term() {
@@ -6741,7 +6751,7 @@ fn call_value_arguments(
             } => arguments
                 .iter()
                 .position(|argument| {
-                    matches!(argument, ProgramExpression::Variable(name) if name == parameter.name())
+                    matches!(argument, ProgramExpression::Variable(name) if name == parameter.binding_name())
                 })
                 .map(|position| {
                     (spec, name, arguments, argument_state_sources, parameter_types, position)
@@ -9578,13 +9588,14 @@ pub(crate) fn initialize_program_function_globals(
 pub(crate) fn with_static_pointer_read_cached(
     state: &ExecutionState,
     memory: Memory,
-    name: &str,
+    name: impl Into<BindingName>,
 ) -> Memory {
+    let name = name.into();
     let locals = state.locals();
-    let (Some(program_type), Some(slot)) = (locals.object_type(name), locals.slot(name)) else {
+    let (Some(program_type), Some(slot)) = (locals.object_type(&name), locals.slot(&name)) else {
         return memory;
     };
-    if !locals.is_global_object(name)
+    if !locals.is_global_object(&name)
         || !program_type.is_object_pointer()
         || !slot.block.is_static_storage_block()
         || !memory.has_block(&slot.block)
@@ -11002,6 +11013,7 @@ fn prepare_contract_resource_transfer_unexplained(
             borrowed_inputs: Vec::new(),
             consumed_inputs: Vec::new(),
             canonical_borrowed_owners: Vec::new(),
+            consumed_cell_return: None,
             callee_resources: with_private_aggregate_parameter_owners(
                 ResourceContext::new_with_equalities(assumptions),
                 callee_state,
@@ -12204,11 +12216,16 @@ fn prepare_contract_resource_transfer_unexplained(
         })
         .collect();
     canonical_borrowed_owners.extend(canonical_population_owners);
+    let consumed_cell_return = stable_view_plan
+        .as_ref()
+        .filter(|_| purpose == ResourceTransitionPurpose::CallSite)
+        .and_then(|plan| ConsumedCellReturn::prepare(interface, plan, caller_state.resources()));
     Ok(Ok(FunctionResourceTransfer {
         helper_call,
         borrowed_inputs,
         consumed_inputs,
         canonical_borrowed_owners,
+        consumed_cell_return,
         callee_resources: with_private_aggregate_parameter_owners(
             callee_resources,
             callee_state,
@@ -12365,6 +12382,7 @@ pub(super) fn evaluate_function_return_resource_context(
         assumptions,
         budget,
     )
+    .map(|result| result.map(|evaluated| evaluated.resources))
 }
 
 type BorrowedResourceKey = (
@@ -12402,8 +12420,8 @@ fn evaluate_contract_return_resource_context(
     prepared_outputs: &[Option<ResourceFact>],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ResourceContext, RuntimeError>> {
-    let mut context = ResourceContext::new_with_equalities(assumptions);
+) -> ExecutionResult<Result<EvaluatedReturnResources, RuntimeError>> {
+    let mut evaluated = EvaluatedReturnResources::new(assumptions);
     // `owns` requirements that are returned as entry-state borrows carry
     // caller identity in the checked transition. Re-evaluating an address
     // such as `self->pointer` in the callee entry state can replace that
@@ -12796,6 +12814,7 @@ fn evaluate_contract_return_resource_context(
         .then(|| borrowed_resource_key(resource))
         .and_then(|key| entry_borrows.get_mut(&key))
         .and_then(VecDeque::pop_front);
+        let return_entry_borrow = entry_borrow.is_some();
         let resource = if let Some(entry_borrow) = entry_borrow {
             entry_borrow
         } else {
@@ -12818,10 +12837,8 @@ fn evaluate_contract_return_resource_context(
         // its occurrence. Consumers compose the pieces of their requested
         // footprint; constructing outputs must not discover optional merges
         // by walking the ambient pointer/endpoint equality classes.
-        context = match context
-            .try_compose_into_valid_context_delaying_normalization([resource.clone()], assumptions)
-        {
-            Ok(context) => context,
+        evaluated = match evaluated.admit(resource.clone(), return_entry_borrow, assumptions) {
+            Ok(evaluated) => evaluated,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
         returned.push(resource);
@@ -12840,11 +12857,8 @@ fn evaluate_contract_return_resource_context(
                 budget,
             )? {
                 Ok(fact) => {
-                    context = match context.try_compose_into_valid_context_delaying_normalization(
-                        [fact.clone()],
-                        assumptions,
-                    ) {
-                        Ok(context) => context,
+                    evaluated = match evaluated.admit(fact.clone(), false, assumptions) {
+                        Ok(evaluated) => evaluated,
                         Err(error) => return Ok(Err(resource_context_runtime_error(error))),
                     };
                     returned.push(fact);
@@ -12862,7 +12876,7 @@ fn evaluate_contract_return_resource_context(
         }
         deferred = waiting;
     }
-    Ok(Ok(context))
+    Ok(Ok(evaluated))
 }
 
 /// The memory a context's owned composites hold, opened through their
@@ -12970,7 +12984,7 @@ fn evaluate_contract_return_resources(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ContractReturnResources, RuntimeError>> {
-    let ensured_resources = match crate::instrumentation::measure_operation(
+    let evaluated = match crate::instrumentation::measure_operation(
         interface_name,
         "contract resource transition",
         "ensured resource lowering",
@@ -12992,6 +13006,24 @@ fn evaluate_contract_return_resources(
         Ok(resources) => resources,
         Err(error) => return Ok(Err(error)),
     };
+    let ensured_resources = &evaluated.resources;
+    // Entry borrows rejoin their selected frame before newly described
+    // ownership is checked, including the bodies of produced composites.
+    let prepared = match crate::instrumentation::measure_operation(
+        interface_name,
+        "contract resource transition",
+        "entry borrow restoration",
+        || {
+            evaluated.restore_entry_borrows(
+                caller_resources_after_requirements.clone(),
+                composition,
+                assumptions,
+            )
+        },
+    ) {
+        Ok(prepared) => prepared,
+        Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+    };
     // A composite arrives folded, so composing its head says nothing about
     // what its body covers. Check the body against the destination before the
     // head enters it, or a contract that produces a composite over bytes the
@@ -13001,17 +13033,35 @@ fn evaluate_contract_return_resources(
         "contract resource transition",
         "ensured composite frontier check",
         || {
+            // Borrowed composite arguments retain their entry identity, but
+            // their bodies can read post-call memory. Preserve the existing
+            // check against the retained frame, before adding their heads.
+            if !prepared.entry_borrow_outputs.facts().is_empty() {
+                let retained = caller_resources_after_requirements
+                    .clone()
+                    .unchecked_with_facts(escrowed_owners.iter().cloned());
+                if let Some(error) = produced_composite_frontier_conflict(
+                    &retained,
+                    &prepared.entry_borrow_outputs,
+                    interface.composite_resource_definitions(),
+                    post_state.memory(),
+                    assumptions,
+                ) {
+                    return Some(error);
+                }
+            }
             // A lend empties the escrowed owner out of the residual, and
             // recovery composes it straight back. The destination for this
             // check is what the caller holds across the call, so the escrow
             // belongs in it; without it the stable-view transition would
             // admit exactly the overlap the definitional residual catches.
-            let destination = caller_resources_after_requirements
+            let destination = prepared
+                .frame
                 .clone()
                 .unchecked_with_facts(escrowed_owners.iter().cloned());
             produced_composite_frontier_conflict(
                 &destination,
-                &ensured_resources,
+                &prepared.pending,
                 interface.composite_resource_definitions(),
                 post_state.memory(),
                 assumptions,
@@ -13040,82 +13090,29 @@ fn evaluate_contract_return_resources(
             interface_name,
             "contract resource transition",
             "ensured resource composition",
-            || {
-                let frame = caller_resources_after_requirements.clone();
-                match composition {
-                    ReturnResourceComposition::RestoreEntryBorrows => {
-                        ResourceContext::restore_call_borrows(
-                            ReturnedCallBorrows {
-                                frame,
-                                outputs: ensured_resources.clone(),
-                            },
-                            assumptions,
-                        )
-                    }
-                    ReturnResourceComposition::ValidateDescriptions => frame
-                        .try_compose_with_legacy_discovery_and_occurrences(
-                            ensured_resources.facts().iter().cloned(),
-                            assumptions,
-                        ),
-                }
-            },
+            || prepared.finish(assumptions),
         ) {
             Ok(resources) => resources,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
-    let mut source_ranks = BTreeMap::<ResourceFact, usize>::new();
     let Some(projected_cores_by_support) = crate::instrumentation::measure_operation(
         interface_name,
         "contract resource transition",
         "ensured resource core projection",
         || {
-            let _assumptions_id_scope = crate::kernel::PureFactContextIdScope::enter(assumptions);
-            ensured_resources
-                .facts()
-                .iter()
-                .filter(|support| support.is_own())
-                .map(|support| {
-                    let source_rank = source_ranks.entry(support.clone()).or_default();
-                    let support_occurrence = ensured_resources
-                        .owned_occurrences_for_fact(support)
-                        .get(*source_rank)
-                        .copied()?;
-                    *source_rank += 1;
-                    let singleton = ResourceContext::new_with_equalities(assumptions)
-                        .unchecked_with_fact(support.clone());
-                    let expanded = {
-                        let projection_state =
-                            post_state.clone().with_resource_context(singleton.clone());
-                        expand_all_composite_resource_facts_at_state(
-                            &singleton,
-                            interface.composite_resource_definitions(),
-                            &projection_state,
-                            assumptions,
-                        )?
-                    };
-                    let expansion = expanded.facts().to_vec();
-                    let projected = expansion
-                        .iter()
-                        .filter_map(|fact| fact.core_with_assumptions(assumptions))
-                        // These duplicable cores are certified projections of
-                        // `support`; publishing them needs no proof-aware
-                        // search through the caller's existing resources.
-                        // Exact duplicates are the only entries worth
-                        // suppressing here. Equivalent alternate spellings
-                        // remain supported by this occurrence and disappear
-                        // with it.
-                        .filter(|core| !return_resources.contains_exact_representation(core))
-                        .collect::<BTreeSet<_>>()
-                        .into_iter()
-                        .collect::<Vec<_>>();
-                    Some((support.clone(), support_occurrence, expansion, projected))
-                })
-                .collect::<Option<Vec<_>>>()
+            project_return_resource_cores(
+                ensured_resources,
+                &inserted_ensured_occurrences,
+                interface.composite_resource_definitions(),
+                post_state,
+                assumptions,
+                &return_resources,
+            )
         },
     ) else {
         return Ok(Err(RuntimeError::FunctionContract(format!(
             "could not expand ensured composite resources after call ({})",
-            bounded_contract_resource_frontier(&ensured_resources)
+            bounded_contract_resource_frontier(ensured_resources)
         ))));
     };
     // The callee has already certified every ensured composite and its
@@ -13123,36 +13120,15 @@ fn evaluate_contract_return_resources(
     // certified ownership, not independent persistent caller capabilities.
     // Record their exact support so consuming that ownership removes only
     // its projections through the reverse index.
-    let mut destination_occurrences = std::collections::BTreeMap::<
-        ResourceFact,
-        Vec<crate::kernel::primitives::ResourceOccurrenceId>,
-    >::new();
-    for (fact, occurrence) in inserted_ensured_occurrences {
-        destination_occurrences
-            .entry(fact)
-            .or_default()
-            .push(occurrence);
-    }
-    let mut destination_source_ranks = std::collections::BTreeMap::<ResourceFact, usize>::new();
-    let mut destination_by_source_occurrence = std::collections::BTreeMap::new();
-    for (support, source_occurrence, _, _) in &projected_cores_by_support {
-        let rank = destination_source_ranks.entry(support.clone()).or_default();
-        let Some(destination_occurrence) = destination_occurrences
-            .get(support)
-            .and_then(|occurrences| occurrences.get(*rank))
-            .copied()
-        else {
-            return Ok(Err(RuntimeError::FunctionContract(format!(
-                "ensured resource support `{}` was not preserved after call",
-                support.diagnostic_summary()
-            ))));
-        };
-        *rank += 1;
-        destination_by_source_occurrence.insert(*source_occurrence, destination_occurrence);
-    }
     let mut return_resources = return_resources;
     let mut produced_borrowing_pieces = Vec::new();
-    for (support, source_occurrence, expansion, projected) in projected_cores_by_support {
+    for ProjectedReturnResource {
+        support,
+        destination: support_occurrence,
+        expansion,
+        projected,
+    } in projected_cores_by_support
+    {
         // Only the one-level frontier names the borrows this composite
         // packages; a nested composite's own body is that composite's
         // business (the 4b rule). The viewed pieces of an observed
@@ -13186,15 +13162,6 @@ fn evaluate_contract_return_resources(
                     .map(|piece| (support.clone(), piece)),
             );
         }
-        let Some(support_occurrence) = destination_by_source_occurrence
-            .get(&source_occurrence)
-            .copied()
-        else {
-            return Ok(Err(RuntimeError::FunctionContract(format!(
-                "ensured resource support `{}` was not preserved after call",
-                support.diagnostic_summary()
-            ))));
-        };
         return_resources = return_resources
             .unchecked_with_supported_facts_from_occurrence_with_memory(
                 support_occurrence,
@@ -13209,7 +13176,7 @@ fn evaluate_contract_return_resources(
             );
     }
     Ok(Ok(ContractReturnResources {
-        output_resources: ensured_resources,
+        output_resources: evaluated.resources,
         return_resources,
         ensured_views,
         produced_borrowing_pieces,
@@ -13543,7 +13510,7 @@ fn held_child_witness(
     let child_name = definition.contains().iter().find_map(|spec| {
         let arguments = spec.declared_arguments()?;
         (spec.family() == ResourceFamily::Composite
-            && matches!(arguments, [ProgramExpression::Variable(argument)] if argument == witness))
+            && matches!(arguments, [ProgramExpression::Variable(argument)] if argument.is_named(witness)))
         .then(|| spec.declared_name().expect("composite spec has a name"))
     })?;
     let mut candidates = resources
@@ -13585,7 +13552,7 @@ fn witness_origin_word<'a>(fact: &'a SpecProposition, witness: &str) -> Option<&
                 target_type: ProgramType::UInt64 | ProgramType::Int64,
                 ..
             }) => {
-                matches!(expression.as_ref(), ProgramExpression::Variable(name) if name == witness)
+                matches!(expression.as_ref(), ProgramExpression::Variable(name) if name.is_named(witness))
             }
             SpecExpression::Add(left, right) => {
                 mentions_witness_address(left, witness) || mentions_witness_address(right, witness)
@@ -18013,9 +17980,7 @@ fn matched_argument_classes(
 ) -> Vec<(usize, crate::kernel::effective_type::CAccessClass)> {
     fn variable(expression: &SpecExpression) -> Option<&str> {
         match expression {
-            SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-                Some(name.as_str())
-            }
+            SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => name.named(),
             _ => None,
         }
     }
@@ -18135,7 +18100,7 @@ fn spec_proposition_mentions_any_name(fact: &SpecProposition, names: &BTreeSet<S
         SpecExpression::Value(_) => false,
         SpecExpression::ProgramExpression(expression) => names
             .iter()
-            .any(|name| program_expression_mentions_variable(expression, name)),
+            .any(|name| program_expression_mentions_variable(expression, &name.into())),
         _ => true,
     })
 }
@@ -18540,7 +18505,7 @@ fn resolve_retained_aggregate_fields(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<()> {
     budget.consume_expression_step()?;
-    fn projection(expression: &ProgramExpression) -> Option<(&str, SpecExpression)> {
+    fn projection(expression: &ProgramExpression) -> Option<(&BindingName, SpecExpression)> {
         match expression {
             ProgramExpression::Variable(name) => {
                 Some((name, SpecExpression::ProgramExpression(expression.clone())))
@@ -18586,7 +18551,7 @@ fn resolve_retained_aggregate_fields(
         )
     {
         let field = SpecExpression::AggregateFieldValue {
-            parameter: parameter.to_string(),
+            parameter: parameter.clone(),
             pointer: Box::new(pointer),
             value_type: *value_type,
         };

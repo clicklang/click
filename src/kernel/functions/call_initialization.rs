@@ -80,7 +80,7 @@ pub(super) fn uninitialized_call_input<'a>(
 /// The parameter a segment's address is computed from.
 fn root_parameter(expression: &ProgramExpression) -> Option<&str> {
     match expression {
-        ProgramExpression::Variable(name) => Some(name),
+        ProgramExpression::Variable(name) => name.named(),
         ProgramExpression::PointerOffsetBytes { pointer, .. }
         | ProgramExpression::Subobject { pointer, .. }
         | ProgramExpression::AddressOf(pointer)

@@ -268,3 +268,22 @@ fn retained_context_does_not_discharge_an_unproved_recursive_descent() {
     "#;
     assert!(verify_c_sources(source, &c).is_err());
 }
+
+#[test]
+fn reassigned_numeric_parameter_descent_expands_into_ordinary_steps() {
+    let c = [(
+        "numeric_descent.c",
+        "int32 countdown(int32 n) { if (n > 0) { n = n - 1; return countdown(n); } return 0; }",
+    )];
+    let source = r#"verifying "numeric_descent.c";
+        int32 countdown(int32 n) {
+            decreases n;
+            requires n >= 0;
+            ensures result == 0;
+        }
+    "#;
+    verify_c_sources(source, &c).unwrap();
+    let expanded = expand_function_proof_source(source, &c, "countdown").unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &c))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}

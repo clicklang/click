@@ -134,3 +134,77 @@ fn float_call_results_retain_nested_arguments_and_match_native_production() {
         );
     }
 }
+
+#[test]
+fn float_conditional_handoffs_preserve_exact_equality_and_existing_refusals() {
+    let _session = VerificationSession::enter();
+    for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+        let root = KernelTerm::float_call(format, "float_branch".into(), vec![]);
+        let left = SpecValue::Shared(root.clone());
+        let native = SpecValue::Native(left.clone().into_native());
+        let other = SpecValue::Shared(KernelTerm::float_call(
+            format,
+            "other_branch".into(),
+            vec![],
+        ));
+        let condition = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let exports = KernelTermExport::float_export_count();
+        assert_eq!(
+            SpecValue::conditional(&condition, &left, &native, true)
+                .unwrap()
+                .unwrap()
+                .shared(),
+            Some(&root)
+        );
+        assert!(
+            SpecValue::conditional(&condition, &left, &other, true)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(KernelTermExport::float_export_count(), exports);
+        assert!(
+            SpecValue::conditional(&condition, &left, &other, false)
+                .unwrap()
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn float_specification_values_and_program_reads_keep_execution_roots() {
+    let _session = VerificationSession::enter();
+    for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+        let root = KernelTerm::float_call(format, "float_local".into(), vec![]);
+        let mut state = ExecutionState::new();
+        state.locals.set_retained_typed_with_all_qualifiers(
+            "x",
+            SpecValue::Shared(root.clone()),
+            format.program_type(),
+            false,
+            false,
+            false,
+            false,
+        );
+        let exports = KernelTermExport::float_export_count();
+        let expression = SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
+        let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            SpecScope::unbound(&state, None),
+            &expression,
+            &PureFactContext::new(),
+            &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+        )
+        .unwrap();
+        assert_eq!(paths[0].value.shared(), Some(&root));
+        assert_eq!(KernelTermExport::float_export_count(), exports);
+        let expression =
+            SpecExpression::Value(format.value(MachineTerm::Variable(Variable(1008300))));
+        let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            SpecScope::unbound(&state, None),
+            &expression,
+            &PureFactContext::new(),
+            &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+        )
+        .unwrap();
+        assert!(paths[0].value.shared().is_some());
+    }
+}

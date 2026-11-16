@@ -550,7 +550,7 @@ impl LoweringContext<'_> {
         self.next_call_result
             .set(id.checked_add(1).expect("too many calls in one function"));
         let (call, value) = crate::kernel::program_call_value(id, function, arguments);
-        program_seq(call, program_assign(target, value))
+        program_seq(call, program_assign(Into::<String>::into(target), value))
     }
 
     /// `call`, after the packs its arguments need and before their unpacks:
@@ -1098,7 +1098,7 @@ impl LoweringContext<'_> {
                 let mut result = program_seq(
                     program_declare(object.clone(), ProgramType::Int32Pointer),
                     ProgramStatement::HeapAllocate {
-                        target: object.clone(),
+                        target: (object.clone()).into(),
                         bytes: crate::kernel::program_expression::int32_literal(source.size_bytes),
                         zeroed: false,
                         object_type: class,
@@ -1453,7 +1453,7 @@ impl LoweringContext<'_> {
                                     crate::kernel::program_expression::variable(temporary.clone()),
                                     layout,
                                 ),
-                                program_end_automatic_lifetimes(vec![temporary]),
+                                program_end_automatic_lifetimes(vec![(temporary).into()]),
                             ),
                         ),
                     ),

@@ -48,5 +48,5 @@ int32 f(int32 u, int32 v) {
 ```
 
 ```expect
-fail: case: [at(statement(2).exit, buf) != 0, 0 == v]
+fail: case: [at(statement(2).exit, "execute_in_a_proof_if_arm_names_the_failing_alias_case.c"::f.local(1)) != 0, 0 == v]
 ```

@@ -1,13 +1,10 @@
-# a tactic's recursion is ranked by an expression measure
+# structural tactic recursion carries ordinary descent obligations
 
-`decreases x;` ranks a recursive C function by checking the argument of each
-recursive call in its body. A tactic runs no code: its recursion happens in its
-proof, where no body call exists to check, so a structural measure there would
-rank nothing and is refused. An expression measure is owed at each
-application instead
-([`user_tactic_recursion_converts_a_list.md`](user_tactic_recursion_converts_a_list.md)).
+`decreases x;` ranks each recursive tactic application by the model of the
+resource instance it passes. Unfolding `x` exposes a child whose model is
+strictly contained in the entry model, just as for recursive C calls.
 
-```c filename=user_tactic_recursion_refuses_a_structural_measure.c
+```c filename=user_tactic_recursion_uses_a_structural_measure.c
 struct node { struct node *next; };
 
 void user(struct node *p) {
@@ -15,7 +12,7 @@ void user(struct node *p) {
 ```
 
 ```click
-verifying "user_tactic_recursion_refuses_a_structural_measure.c";
+verifying "user_tactic_recursion_uses_a_structural_measure.c";
 
 spec enum Links { Nil, Cons(Links) }
 
@@ -79,5 +76,5 @@ void user(struct node* p) {
 ```
 
 ```expect
-fail: `convert` recurses through a tactic application, which only an expression `decreases` measure can rank
+pass
 ```

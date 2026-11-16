@@ -40,7 +40,7 @@ fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
     let state = state
         .with_loan_ledger(Some(plan.ledger.clone()))
         .with_loan_participant(Some(caller));
-    let names = vec!["selected".to_string()];
+    let names = vec!["selected".into()];
     let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
     assert!(core.record_automatic_lifetime_end(&state, &names).is_err());
     let forged = CheckedAutomaticLifetimeEnd {
@@ -63,7 +63,7 @@ fn automatic_lifetime_event_rejects_forged_mutex_storage_retirement() {
         .initialize_empty(address.clone(), 40)
         .unwrap();
     let state = context.state();
-    let names = vec!["holder".to_string()];
+    let names = vec!["holder".into()];
     let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
     assert!(matches!(
         core.record_automatic_lifetime_end(state, &names),

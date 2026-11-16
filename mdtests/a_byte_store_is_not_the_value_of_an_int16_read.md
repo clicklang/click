@@ -37,5 +37,5 @@ int32 caller(int16* q) {
 ```
 
 ```expect
-fail: unproved obligation: `d == 7`
+fail: unproved obligation: `"a_byte_store_is_not_the_value_of_an_int16_read.c"::caller.local(1) == 7`
 ```
