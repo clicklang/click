@@ -179,15 +179,31 @@ mod tests {
                 )
                 .unwrap()
         };
-        let other_address = wrong(memory.clone(), address.offset_by_bytes(2), LoadKind::UInt16);
-        let other_kind = wrong(memory.clone(), address.clone(), LoadKind::Int16);
-        let raw =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::UInt16);
+        let other_address = wrong(
+            crate::kernel::ProgramPoint::at(&memory),
+            address.offset_by_bytes(2),
+            LoadKind::UInt16,
+        );
+        let other_kind = wrong(
+            crate::kernel::ProgramPoint::at(&memory),
+            address.clone(),
+            LoadKind::Int16,
+        );
+        let raw = MachineTerm::MemoryLoad(
+            crate::kernel::ProgramPoint::at(&memory),
+            Box::new(address.clone()),
+            LoadKind::UInt16,
+        );
         let other_memory_state = wrong(
-            crate::kernel::intern_memory(memory.memory().clone().store(
-                address.clone(),
-                ProgramValue::UInt16(MachineTerm::narrow_constant(MachineIntegerType::UInt16, 7)),
-            )),
+            crate::kernel::ProgramPoint::at(
+                &(crate::kernel::intern_memory(memory.memory().clone().store(
+                    address.clone(),
+                    ProgramValue::UInt16(MachineTerm::narrow_constant(
+                        MachineIntegerType::UInt16,
+                        7,
+                    )),
+                ))),
+            ),
             address,
             LoadKind::UInt16,
         );

@@ -2810,7 +2810,7 @@ fn bounded_term_hashes(roots: &[&MachineTerm]) -> Option<HashMap<usize, u64>> {
                 uint64_constant!(value) => constant_u64(*value).hash(&mut hasher),
                 MachineTerm::Variable(value) => value.hash(&mut hasher),
                 MachineTerm::MemoryLoad(memory, pointer, kind) => {
-                    memory.arena_id().hash(&mut hasher);
+                    memory.shared_memory().arena_id().hash(&mut hasher);
                     kind.hash(&mut hasher);
                     pointer_identity_hash(pointer)?.hash(&mut hasher);
                 }
@@ -4773,7 +4773,9 @@ mod tests {
         let next = pointer(PointerOffsetTerm::Constant(0));
         let address = MachineTerm::pointer_address(next.clone());
         let raw = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(crate::kernel::Memory::new()),
+            crate::kernel::ProgramPoint::at(
+                &(crate::kernel::intern_memory(crate::kernel::Memory::new())),
+            ),
             Box::new(next.clone()),
             crate::kernel::LoadKind::Bits64,
         );

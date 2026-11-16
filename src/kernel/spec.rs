@@ -2910,7 +2910,7 @@ fn integer_carrier_in_bitvector(term: &MachineTerm, variable: Variable) -> bool 
     let Some(kind) = crate::kernel::eval::registered_load_kind_for_variable(load) else {
         return true;
     };
-    let selected_load = MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
+    let selected_load = MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer), kind);
     let mut pointer_variables = BTreeSet::new();
     collect_bitvector_integer_variables(&selected_load, &mut pointer_variables);
     if pointer_variables.contains(&variable) {
@@ -8524,7 +8524,7 @@ fn array_ref_argument_memory(memory: &Memory, pointer: &ProgramValue) -> Memory 
     let interned = crate::kernel::intern_memory(memory.clone());
     crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Block(&pointer.pointer().block),
-        &crate::kernel::resource_tracker::VersionPoint::at(&interned),
+        &crate::kernel::resource_tracker::ProgramPoint::at(&interned),
     )
     .map(|point| point.memory().clone())
     .unwrap_or_else(|| memory.clone())

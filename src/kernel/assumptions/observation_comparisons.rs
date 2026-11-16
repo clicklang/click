@@ -949,7 +949,7 @@ mod resource_relation_tests {
         for separate in [false, true] {
             let named = relation(MachineTerm::Variable(name), pointer.clone(), separate);
             let structural = relation(
-                read(memory.clone(), address.clone(), LoadKind::Int32),
+                read(ProgramPoint::at(&memory), address.clone(), LoadKind::Int32),
                 pointer.clone(),
                 separate,
             );
@@ -961,9 +961,17 @@ mod resource_relation_tests {
                     "retain the original source"
                 );
                 for different in [
-                    read(other_memory.clone(), address.clone(), LoadKind::Int32),
-                    read(memory.clone(), address.offset_by_bytes(4), LoadKind::Int32),
-                    read(memory.clone(), address.clone(), LoadKind::Int8),
+                    read(
+                        ProgramPoint::at(&other_memory),
+                        address.clone(),
+                        LoadKind::Int32,
+                    ),
+                    read(
+                        ProgramPoint::at(&memory),
+                        address.offset_by_bytes(4),
+                        LoadKind::Int32,
+                    ),
+                    read(ProgramPoint::at(&memory), address.clone(), LoadKind::Int8),
                 ] {
                     assert!(!facts.proves_exact(&relation(different, pointer.clone(), separate)));
                 }

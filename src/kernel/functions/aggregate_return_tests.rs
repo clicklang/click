@@ -774,7 +774,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     let before = Memory::new().with_block(input.block.clone(), 1);
     let read = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(memory.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
             Box::new(input.clone()),
             LoadKind::UInt8,
         )

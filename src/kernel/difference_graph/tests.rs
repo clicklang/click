@@ -946,7 +946,7 @@ fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
     };
     let memory = crate::kernel::Memory::new().with_block("difference-graph-cell", 4);
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );

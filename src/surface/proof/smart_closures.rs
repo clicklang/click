@@ -5183,7 +5183,11 @@ mod synthesized_literal_tests {
             ProgramValue::Int32(MachineTerm::constant(1)),
         ));
         let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
-        let value = read(before.clone(), pointer.clone(), LoadKind::Int32);
+        let value = read(
+            crate::kernel::ProgramPoint::at(&before),
+            pointer.clone(),
+            LoadKind::Int32,
+        );
         let atom = |term: &MachineTerm| {
             crate::kernel::proof::signed_arithmetic::SignedArithmeticAtom::from_canonical_operand(
                 crate::kernel::MachineOperandView::Legacy(term),
@@ -5191,9 +5195,21 @@ mod synthesized_literal_tests {
         };
         assert_eq!(atom(&value), atom(&value));
         for other in [
-            read(after, pointer.clone(), LoadKind::Int32),
-            read(before.clone(), pointer.offset_by_bytes(4), LoadKind::Int32),
-            read(before, pointer, LoadKind::UInt32),
+            read(
+                crate::kernel::ProgramPoint::at(&after),
+                pointer.clone(),
+                LoadKind::Int32,
+            ),
+            read(
+                crate::kernel::ProgramPoint::at(&before),
+                pointer.offset_by_bytes(4),
+                LoadKind::Int32,
+            ),
+            read(
+                crate::kernel::ProgramPoint::at(&before),
+                pointer,
+                LoadKind::UInt32,
+            ),
         ] {
             assert_ne!(atom(&value), atom(&other));
         }
@@ -5251,11 +5267,19 @@ mod synthesized_literal_tests {
         );
         assert!(propositions_match_after_canonical_loads(
             &native,
-            &retained(R::Equal, &read(after), &sum)
+            &retained(
+                R::Equal,
+                &read(crate::kernel::ProgramPoint::at(&after)),
+                &sum
+            )
         ));
         assert!(!propositions_match_after_canonical_loads(
             &native,
-            &retained(R::Equal, &read(before), &sum)
+            &retained(
+                R::Equal,
+                &read(crate::kernel::ProgramPoint::at(&before)),
+                &sum
+            )
         ));
         assert_eq!(
             crate::kernel::KernelTermExport::machine_export_count(),

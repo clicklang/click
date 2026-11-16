@@ -2770,8 +2770,11 @@ mod tests {
             Memory::new().store(to.clone(), ProgramValue::Int32(7u32.into())),
         );
         let read = |address: &Pointer| {
-            let load =
-                MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
+            let load = MachineTerm::MemoryLoad(
+                ProgramPoint::at(&memory),
+                Box::new(address.clone()),
+                LoadKind::Int32,
+            );
             let (variable, _) =
                 crate::kernel::load_variable_for_term(&load).expect("legacy read adapter");
             Pointer::symbolic(variable)
@@ -3322,7 +3325,7 @@ mod tests {
     fn native_read_rewrite_preserves_literal_guards_of_integer_claims() {
         let _session = crate::kernel::VerificationSession::enter();
         let read = MachineTerm::MemoryLoad(
-            intern_memory(Memory::new()),
+            ProgramPoint::at(&(intern_memory(Memory::new()))),
             Box::new(Pointer::symbolic(Variable(193_024))),
             LoadKind::Int32,
         );
@@ -3634,7 +3637,7 @@ mod tests {
             IntegerTerm::from_machine(
                 MachineIntegerType::Int64,
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(pointer.clone()),
                     LoadKind::Bits64,
                 ),
@@ -3837,7 +3840,7 @@ mod tests {
             crate::kernel::eval::declare_load_access_width(&pointer, if wide { 8 } else { 4 });
             let load = |memory: &Memory, pointer: Pointer, kind| {
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory_ref(memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                     Box::new(pointer),
                     kind,
                 )
@@ -3957,7 +3960,7 @@ mod tests {
         let after = before.clone().with_block("local:compound-rewrite-work", 4);
         let expression = |memory: &Memory, size| {
             let mut term = MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(pointer.clone()),
                 LoadKind::Bits64,
             );
@@ -4034,7 +4037,7 @@ mod tests {
         );
         let load = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )

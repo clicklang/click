@@ -88,7 +88,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
     let slot = Pointer::symbolic(Variable(989_799));
     let retained_state = Memory::new().store(slot.clone(), ProgramValue::Int32(a.clone()));
     let loaded = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(retained_state),
+        ProgramPoint::at(&(crate::kernel::intern_memory(retained_state))),
         Box::new(slot),
         LoadKind::Int32,
     );
@@ -4692,7 +4692,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
         .with_block("loaded-address-unrelated", 4)
         .store(selector.clone(), int32(0));
     let selector_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(&memory),
+        ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
         Box::new(selector.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -4768,7 +4768,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
         .with_block("base-start-unrelated", 4)
         .store(selector.clone(), int16(0));
     let selector_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory_ref(&memory),
+        ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
         Box::new(selector.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -6595,7 +6595,7 @@ fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities()
         ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
     );
     let old = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(before.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
         Box::new(pointer.clone()),
         LoadKind::Bits64,
     );
@@ -6610,7 +6610,7 @@ fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities()
         ProgramValue::UInt64(MachineTerm::uint64_constant((1u64 << 32) + 3)),
     );
     let changed = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(after),
+        ProgramPoint::at(&(crate::kernel::intern_memory(after))),
         Box::new(pointer),
         LoadKind::Bits64,
     );

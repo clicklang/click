@@ -455,7 +455,7 @@ mod tests {
                 block: PointerBlock::Symbolic(Variable(999130)),
                 offset: PointerOffsetTerm::scaled_int32_node(
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(memory),
+                        ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(crate::kernel::Memory::global_pointer("complete-read")),
                         LoadKind::Int32,
                     ),

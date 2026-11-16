@@ -236,7 +236,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             .with_block("private-cell", 4);
         let load_in = |memory: &Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(shared.clone()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -269,12 +269,12 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         let same_load = |pointer: &Pointer| {
             checked_atomic_load_equality(
                 &MachineTerm::MemoryLoad(
-                    intern_memory_ref(&before),
+                    ProgramPoint::at(&(intern_memory_ref(&before))),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
                 &MachineTerm::MemoryLoad(
-                    intern_memory_ref(&after),
+                    ProgramPoint::at(&(intern_memory_ref(&after))),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),

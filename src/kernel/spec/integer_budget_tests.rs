@@ -449,7 +449,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::Variable(load)),
             right: Box::new(MachineTerm::MemoryLoad(
-                registered_memory.clone(),
+                ProgramPoint::at(&registered_memory),
                 Box::new(registered_pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -480,7 +480,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::Variable(load)),
             right: Box::new(MachineTerm::MemoryLoad(
-                registered_memory.clone(),
+                ProgramPoint::at(&registered_memory),
                 Box::new(Pointer {
                     offset: PointerOffsetTerm::Constant(4),
                     ..registered_pointer.clone()
@@ -504,7 +504,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::Variable(load)),
             right: Box::new(MachineTerm::MemoryLoad(
-                tampered_memory,
+                ProgramPoint::at(&tampered_memory),
                 Box::new(registered_pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -530,7 +530,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::Variable(unknown)),
             right: Box::new(MachineTerm::MemoryLoad(
-                registered_memory,
+                ProgramPoint::at(&registered_memory),
                 Box::new(registered_pointer),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -665,7 +665,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::Variable(variable)),
                 right: Box::new(MachineTerm::MemoryLoad(
-                    memory,
+                    ProgramPoint::at(&memory),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 )),

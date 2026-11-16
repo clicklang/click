@@ -3705,7 +3705,7 @@ mod shared_offset_evidence_tests {
         let memory = crate::kernel::Memory::new().with_block("offset-evidence", 4);
         let read = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )

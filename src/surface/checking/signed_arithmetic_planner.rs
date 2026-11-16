@@ -3279,7 +3279,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(crate::kernel::Memory::new());
         let pointer = crate::kernel::Pointer::symbolic(Variable(71_201));
         let read = MachineTerm::MemoryLoad(
-            memory.clone(),
+            crate::kernel::ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
@@ -3289,7 +3289,7 @@ mod tests {
         );
         checked_plan(&goal, &[lt(constant(0), read)]);
         let other = MachineTerm::MemoryLoad(
-            memory,
+            crate::kernel::ProgramPoint::at(&memory),
             Box::new(pointer.offset_by_bytes(4)),
             crate::kernel::LoadKind::Int32,
         );

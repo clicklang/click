@@ -4880,8 +4880,11 @@ impl Pointer {
         if let Some(ProgramValue::Pointer(stored)) = memory.memory().known_value(address) {
             return stored.pointer().clone();
         }
-        let read =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(address.clone()),
+            LoadKind::Int32,
+        );
         match canonical_pointer_read(&read) {
             Some(named) => named_pointer_read(named),
             None => Self::loaded_value(memory, address),
@@ -4918,7 +4921,7 @@ impl Pointer {
             return None;
         };
         Some(Self::loaded_value(
-            &memory.unchanged_bytes_source(),
+            &memory.shared_memory().unchanged_bytes_source(),
             address,
         ))
     }
@@ -4981,8 +4984,11 @@ impl Pointer {
         }
         // Pointer values retain the selected read directly. Observation metadata
         // records the live source independently of the term's identity.
-        let bits =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
+        let bits = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(address.clone()),
+            LoadKind::Int32,
+        );
         Err(Self::loaded(&bits).expect("a pointer read has a structural descriptor"))
     }
 
@@ -6235,7 +6241,7 @@ fn named_pointer_read(read: MachineTerm) -> Pointer {
     let MachineTerm::MemoryLoad(memory, address, _) = &read else {
         unreachable!("selected pointer read");
     };
-    let value = Pointer::loaded_value(&memory.unchanged_bytes_source(), address);
+    let value = Pointer::loaded_value(&memory.shared_memory().unchanged_bytes_source(), address);
     if let PointerBlock::LoadedPointer(identity) = value.block {
         crate::kernel::eval::record_pointer_load_source(identity, &read);
     }

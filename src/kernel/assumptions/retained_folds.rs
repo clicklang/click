@@ -334,7 +334,7 @@ mod tests {
                         format,
                         relation: CompareRelation::LessThan,
                         left: Box::new(MachineTerm::MemoryLoad(
-                            crate::kernel::intern_memory_ref(&current),
+                            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&current))),
                             Box::new(pointer.clone()),
                             LoadKind::Int32,
                         )),
@@ -370,7 +370,11 @@ mod tests {
         let current = Memory::new();
         let memory = crate::kernel::intern_memory_ref(&current);
         let pointer = Pointer::symbolic(Variable(991501));
-        let read = MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Bits64);
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer),
+            LoadKind::Bits64,
+        );
         let bound = SharedIntegerRangeEndpoint::intern(read.clone());
         let source = IntegerTerm::RangeFold {
             index: IntegerRangeFoldIndex::UInt64 {
@@ -443,7 +447,7 @@ mod offset_condition_tests {
         let current = Memory::new();
         let read = |id, kind| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(&current),
+                ProgramPoint::at(&(crate::kernel::intern_memory_ref(&current))),
                 Box::new(Pointer::symbolic(Variable(id))),
                 kind,
             )
@@ -493,7 +497,7 @@ mod boolean_read_tests {
                 block: PointerBlock::Symbolic(Variable(999360)),
                 offset: PointerOffsetTerm::scaled_int32_node(
                     MachineTerm::MemoryLoad(
-                        memory,
+                        ProgramPoint::at(&memory),
                         Box::new(Memory::global_pointer("bool-index")),
                         LoadKind::Int32,
                     ),

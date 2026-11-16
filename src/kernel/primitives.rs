@@ -817,7 +817,7 @@ pub enum MachineTerm {
     /// The kind is part of the load's identity: two reads of one address
     /// that differ in width or, below four bytes, in signedness return
     /// different values, so they are different terms. See [`LoadKind`].
-    MemoryLoad(SharedMemory, Box<Pointer>, LoadKind),
+    MemoryLoad(ProgramPoint, Box<Pointer>, LoadKind),
     /// The physical LP64 address bits of an object pointer. This numeric
     /// observation carries no designation or selected extent. Complete C
     /// integer copies retain that information separately in PointerInteger.
@@ -4692,7 +4692,11 @@ impl AlgebraicTermNode {
     /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
     /// address as it reaches a scalar load's.
     pub(crate) fn memory_load_carrier(memory: &SharedMemory, pointer: &Pointer) -> MachineTerm {
-        MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
+        MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer.clone()),
+            LoadKind::Bits64,
+        )
     }
 
     /// The [`AlgebraicTermNode::MemoryLoad`] whose carrier a rewrite of
@@ -4702,7 +4706,7 @@ impl AlgebraicTermNode {
         match carrier {
             ProgramValue::UInt64(MachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64)) => {
                 Some(Self::MemoryLoad {
-                    memory: memory.clone(),
+                    memory: memory.shared_memory().clone(),
                     pointer: pointer.clone(),
                 })
             }
@@ -9227,6 +9231,50 @@ pub struct MemoryBlock {
     /// declared scalar or an array of one scalar type. An access through any
     /// pointer is checked against it (`design/effective-types.md`).
     pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
+}
+
+/// A program point: a node a proof path reached, which Surface names with
+/// `at(point, ...)`. A memory read is lowered to its version point, the point
+/// back to which the recorded steps show the cell unchanged, and holds that
+/// point.
+///
+/// For now a point is identified by the interned memory state there. That is
+/// an implementation detail callers must not rely on.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ProgramPoint(SharedMemory);
+
+impl ProgramPoint {
+    pub fn at(memory: &SharedMemory) -> Self {
+        Self(memory.clone())
+    }
+
+    /// The point a `Memory` value stands at, interning it first. Callers
+    /// that already hold an interned state use [`ProgramPoint::at`].
+    pub(crate) fn of_memory(memory: &Memory) -> Self {
+        Self(intern_memory(memory.clone()))
+    }
+
+    pub(crate) fn shared_memory(&self) -> &SharedMemory {
+        &self.0
+    }
+
+    /// The interned memory state this point stands for, by value.
+    pub(crate) fn into_shared_memory(self) -> SharedMemory {
+        self.0
+    }
+
+    pub(crate) fn memory(&self) -> &Memory {
+        self.0.memory()
+    }
+
+    /// True when this point is later in the recorded history than `other`.
+    /// Memory state ids strictly increase along derivation edges, so comparing
+    /// them orders two points of one arena without walking.
+    pub(crate) fn is_later_than(&self, other: &Self) -> bool {
+        let (arena, id) = self.0.arena_id();
+        let (other_arena, other_id) = other.0.arena_id();
+        arena == other_arena && id > other_id
+    }
 }
 
 /// An interned, immutable memory state for embedding inside terms.

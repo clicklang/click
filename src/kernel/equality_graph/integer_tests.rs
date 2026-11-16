@@ -139,7 +139,10 @@ fn integer_observations_keep_machine_types_and_read_states() {
         )
         .unwrap()
     };
-    assert!(!graph.are_integer_equal(&read(before), &read(after)));
+    assert!(!graph.are_integer_equal(
+        &read(ProgramPoint::at(&before)),
+        &read(ProgramPoint::at(&after))
+    ));
 }
 
 #[cfg(test)]

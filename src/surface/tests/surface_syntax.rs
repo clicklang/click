@@ -2724,7 +2724,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(Memory::new()),
+                crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
                 Box::new(owner.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -2753,7 +2753,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     assert_eq!(describe_contract_expression(&left), "owner->len");
 
     let data_pointer = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(Memory::new()),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
         Box::new(owner.offset_by_bytes(8)),
         crate::kernel::LoadKind::Int32,
     );
@@ -2766,7 +2766,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(Memory::new()),
+                crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
                 Box::new(first_data_cell),
                 crate::kernel::LoadKind::Int32,
             )),

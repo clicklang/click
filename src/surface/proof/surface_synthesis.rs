@@ -682,9 +682,9 @@ fn recorded_point_of_load(
         let slot = slot.borrow();
         let points = slot.as_ref()?;
         points
-            .point_reading_memory(memory)
+            .point_reading_memory(memory.shared_memory())
             .into_iter()
-            .chain(points.points_near_memory(memory))
+            .chain(points.points_near_memory(memory.shared_memory()))
             .find_map(|(selector, state)| {
                 let load = scalar_read_in_state(read, state)?;
                 Some((selector.clone(), state.clone(), load))
@@ -2418,7 +2418,7 @@ fn synthesize_surface_atomic_proposition(
     {
         return synthesize_load_defining_equation(
             variable,
-            memory,
+            memory.shared_memory(),
             pointer,
             parameter_binding,
             state,
@@ -4285,7 +4285,13 @@ fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<Ma
     let memory = crate::kernel::intern_memory_ref(state.memory());
     let selected =
         crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
-    (selected == *read).then(|| MachineTerm::MemoryLoad(memory, pointer.clone(), *kind))
+    (selected == *read).then(|| {
+        MachineTerm::MemoryLoad(
+            crate::kernel::ProgramPoint::at(&memory),
+            pointer.clone(),
+            *kind,
+        )
+    })
 }
 
 // Unsigned division and remainder use the usual C conversion of both
@@ -4427,8 +4433,11 @@ fn synthesize_typed_word_read(
     let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
         return None;
     };
-    let read =
-        crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
+    let read = crate::kernel::canonical_form_of_load(
+        memory.shared_memory().clone(),
+        pointer.as_ref().clone(),
+        *kind,
+    );
     let at_state = |load: &MachineTerm, state: &ExecutionState| {
         let MachineTerm::MemoryLoad(_, pointer, _) = load else {
             return None;
@@ -4741,7 +4750,7 @@ fn synthesize_surface_bitvector(
         }
         MachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
             let read = crate::kernel::canonical_form_of_load(
-                memory.clone(),
+                memory.shared_memory().clone(),
                 kernel_pointer.as_ref().clone(),
                 *kind,
             );
@@ -6620,7 +6629,8 @@ fn raise_float_read(
     // Float producers retain the raw state, rather than the integer load's
     // canonical selection. Spelling must reproduce that same producer input.
     let reads_state = |state: &ExecutionState| {
-        crate::kernel::intern_memory_ref(state.memory()).arena_id() == memory.arena_id()
+        crate::kernel::intern_memory_ref(state.memory()).arena_id()
+            == memory.shared_memory().arena_id()
     };
     if !reads_state(state) {
         if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
@@ -6636,7 +6646,7 @@ fn raise_float_read(
         let (selector, recorded) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
             let slot = slot.borrow();
             let points = slot.as_ref()?;
-            let (selector, recorded) = points.point_reading_memory(memory)?;
+            let (selector, recorded) = points.point_reading_memory(memory.shared_memory())?;
             reads_state(recorded).then(|| (selector.clone(), recorded.clone()))
         })?;
         return Some(SurfaceTerm::At {

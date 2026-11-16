@@ -299,7 +299,7 @@ pub(super) fn uint64_read(
     use crate::kernel::{LoadKind, MachineTerm as T};
     match term {
         T::MemoryLoad(memory, pointer, LoadKind::Bits64) => {
-            Some((memory.clone(), pointer.as_ref().clone()))
+            Some((memory.shared_memory().clone(), pointer.as_ref().clone()))
         }
         T::Variable(variable)
             if crate::kernel::registered_load_kind_for_variable(variable)

@@ -625,7 +625,11 @@ fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() 
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant((-1i32) as u32)),
     );
-    let load = MachineTerm::MemoryLoad(intern_memory(memory), Box::new(pointer), LoadKind::Int32);
+    let load = MachineTerm::MemoryLoad(
+        ProgramPoint::at(&(intern_memory(memory))),
+        Box::new(pointer),
+        LoadKind::Int32,
+    );
     let wide = MachineTerm::machine_integer_cast(
         MachineIntegerType::Int32,
         MachineIntegerType::Int128,
@@ -774,7 +778,9 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
                 .with_block("wide-cached-read", 8)
                 .store(pointer.clone(), value),
         );
-        let load = |kind| MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind);
+        let load = |kind| {
+            MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer.clone()), kind)
+        };
         assert_eq!(
             crate::kernel::api::canonicalize_atomic_loads(&load(LoadKind::Bits64)),
             bits
@@ -797,8 +803,11 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
                     ProgramValue::Int32(MachineTerm::constant(0)),
                 ),
         );
-        let changed =
-            MachineTerm::MemoryLoad(overwritten, Box::new(pointer.clone()), LoadKind::Bits64);
+        let changed = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&overwritten),
+            Box::new(pointer.clone()),
+            LoadKind::Bits64,
+        );
         assert!(
             !crate::kernel::memory_provenance::wide_loads_have_same_canonical_value(
                 &changed,

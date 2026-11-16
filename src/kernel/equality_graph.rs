@@ -525,7 +525,7 @@ pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<MachineTerm> 
     if let Some(read) = value.as_loaded_value() {
         return (read.displacement == PointerOffsetTerm::Constant(0)).then(|| {
             MachineTerm::MemoryLoad(
-                read.defining_memory,
+                ProgramPoint::at(&read.defining_memory),
                 Box::new(read.defining_address),
                 LoadKind::Int32,
             )
@@ -553,7 +553,7 @@ pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<MachineTerm> 
     };
     let load = application.as_loaded_value()?;
     Some(MachineTerm::MemoryLoad(
-        load.defining_memory,
+        ProgramPoint::at(&load.defining_memory),
         Box::new(load.defining_address),
         LoadKind::Int32,
     ))
@@ -3364,7 +3364,7 @@ impl EqualityGraph {
 /// legacy comparison form to inputs that do not already have an identity.
 fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
     if let MachineTerm::MemoryLoad(memory, pointer, kind) = term
-        && crate::kernel::eval::is_selected_scalar_read(memory, pointer, *kind)
+        && crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind)
     {
         term.clone()
     } else {
@@ -3946,7 +3946,7 @@ mod tests {
         );
         assert!(from_p.has_symbolic_block());
         let cell_bits = MachineTerm::MemoryLoad(
-            memory.clone(),
+            ProgramPoint::at(&memory),
             Box::new(p.clone()),
             crate::kernel::LoadKind::Int32,
         );
@@ -4169,7 +4169,11 @@ mod tests {
             };
             let (memory, address) =
                 crate::kernel::registered_load_origin_for_variable(variable).unwrap();
-            MachineTerm::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Int32)
+            MachineTerm::MemoryLoad(
+                ProgramPoint::at(&memory),
+                Box::new(address),
+                crate::kernel::LoadKind::Int32,
+            )
         };
         assert!(!crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
             &load(&left), &load(&right), &separated,
@@ -4381,7 +4385,7 @@ mod tests {
             &model.offset_by_bytes(24)
         ));
         let cell_bits = MachineTerm::MemoryLoad(
-            memory.clone(),
+            ProgramPoint::at(&memory),
             Box::new(address.clone()),
             crate::kernel::LoadKind::Int32,
         );
@@ -4430,7 +4434,7 @@ mod tests {
         let read = |pointer: &Pointer| {
             crate::kernel::eval::declare_load_access_width(pointer, 4);
             crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             ))

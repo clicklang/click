@@ -119,8 +119,8 @@ fn pointer_blocks_equal_with_load_atoms(
                     return false;
                 };
                 loads_match(
-                    &MachineTerm::MemoryLoad(am, Box::new(ap), LoadKind::Bits64),
-                    &MachineTerm::MemoryLoad(bm, Box::new(bp), LoadKind::Bits64),
+                    &MachineTerm::MemoryLoad(ProgramPoint::at(&am), Box::new(ap), LoadKind::Bits64),
+                    &MachineTerm::MemoryLoad(ProgramPoint::at(&bm), Box::new(bp), LoadKind::Bits64),
                 )
             }
             (PointerBlock::Symbolic(_), PointerBlock::Symbolic(_)) => {
@@ -1747,15 +1747,15 @@ fn loads_equal_by_bounded_state_match(
     left_pointer == right_pointer
         && left_kind == right_kind
         && !crate::kernel::reasoning::loads_lack_recorded_equality(
-            left_memory,
-            right_memory,
+            left_memory.shared_memory(),
+            right_memory.shared_memory(),
             left_pointer,
             *left_kind,
             &PureFactContext::new(),
         )
         && crate::kernel::reasoning::memories_match_for_pointer_load_under_assumptions(
-            left_memory,
-            right_memory,
+            left_memory.shared_memory(),
+            right_memory.shared_memory(),
             left_pointer,
             &PureFactContext::new(),
         )
@@ -1791,7 +1791,7 @@ fn exact_materialized_load_fixed_point(term: &MachineTerm) -> MachineTerm {
         let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Int32) = &current else {
             break;
         };
-        let Some(ProgramValue::Int32(value)) = memory.known_value(pointer) else {
+        let Some(ProgramValue::Int32(value)) = memory.shared_memory().known_value(pointer) else {
             break;
         };
         current = value;
@@ -1811,7 +1811,7 @@ mod exact_materialization_tests {
         (0..length).fold(MachineTerm::constant(tail), |value, _| {
             let memory = Memory::new().store(pointer.clone(), ProgramValue::Int32(value));
             MachineTerm::MemoryLoad(
-                intern_memory(memory),
+                ProgramPoint::at(&(intern_memory(memory))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -1851,7 +1851,11 @@ mod exact_materialization_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let unsigned = MachineTerm::MemoryLoad(
-            intern_memory(Memory::new().store(pointer.clone(), ProgramValue::UInt32(17u32.into()))),
+            ProgramPoint::at(
+                &(intern_memory(
+                    Memory::new().store(pointer.clone(), ProgramValue::UInt32(17u32.into())),
+                )),
+            ),
             Box::new(pointer),
             LoadKind::UInt32,
         );
@@ -1897,7 +1901,7 @@ mod exact_materialization_tests {
         let before = Memory::new().with_block("retained-retained_state", 64);
         let load = |memory| {
             MachineTerm::MemoryLoad(
-                intern_memory(memory),
+                ProgramPoint::at(&(intern_memory(memory))),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
             )
@@ -4340,7 +4344,7 @@ impl PureFactContext {
         }
         // The exact proposition was admitted above. The retained producer
         // binding supplies the read descriptor independently of its spelling.
-        self.file_typed_pointer_read(*variable, memory, address, value);
+        self.file_typed_pointer_read(*variable, memory.shared_memory(), address, value);
         self
     }
 
@@ -5000,7 +5004,7 @@ impl PureFactContext {
                         relation: CompareRelation::Equal,
                         left: Box::new(MachineTerm::Variable(*variable)),
                         right: Box::new(MachineTerm::MemoryLoad(
-                            memory.clone(),
+                            ProgramPoint::at(&memory),
                             Box::new(address.clone()),
                             kind,
                         )),
@@ -10392,7 +10396,7 @@ impl ExecutionPureFact {
         if generated_load_binding_matches_proposition(binding, self.proposition())
             && crate::kernel::eval::typed_pointer_read_variable(value) == Some(*variable)
         {
-            context.register_checked_pointer_read(value, memory, address);
+            context.register_checked_pointer_read(value, memory.shared_memory(), address);
             if let Some((observed_memory, observed_address)) = observed_pointer_read {
                 context.equality_graph.add_checked_read_equality(
                     value,
@@ -10969,7 +10973,7 @@ mod dynamic_current_load_tests {
         let memory = Memory::new();
         let retained_state = crate::kernel::intern_memory_ref(&memory);
         let load = MachineTerm::MemoryLoad(
-            retained_state,
+            ProgramPoint::at(&retained_state),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
@@ -11010,7 +11014,7 @@ mod dynamic_current_load_tests {
         let load = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             format,
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(pointer()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -12553,7 +12557,7 @@ mod execution_variable_ceiling_tests {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(&memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                 Box::new(word(4)),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -13181,7 +13185,7 @@ mod shared_load_atom_comparison_tests {
                 ty.format().bits() as u32 / 8,
             );
             (
-                MachineTerm::MemoryLoad(memory, Box::new(pointer), kind),
+                MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer), kind),
                 variable,
             )
         };
@@ -13653,7 +13657,7 @@ mod shared_read_memory_collection_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let raw = MachineTerm::MemoryLoad(
-            intern_memory(memory.clone()),
+            ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
@@ -13779,7 +13783,7 @@ mod pointer_index_walk_tests {
                     op: MachineBinaryOp::Add,
                     left: MachineTerm::Variable(Variable(1007210)).into(),
                     right: MachineTerm::MemoryLoad(
-                        retained_state,
+                        ProgramPoint::at(&retained_state),
                         address.clone().into(),
                         LoadKind::Int32,
                     )

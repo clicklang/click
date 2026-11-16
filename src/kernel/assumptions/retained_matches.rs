@@ -44,7 +44,7 @@ mod tests {
                 let current = Memory::new();
                 let memory = intern_memory_ref(&current);
                 let read = MachineTerm::MemoryLoad(
-                    memory,
+                    ProgramPoint::at(&memory),
                     Box::new(Pointer::symbolic(Variable(991901))),
                     LoadKind::Bits64,
                 );

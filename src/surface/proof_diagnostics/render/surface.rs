@@ -1473,7 +1473,7 @@ impl Printer<'_> {
                 {
                     return Some(atom(name.to_string()));
                 }
-                return self.load(memory.as_ref(), pointer, *kind, depth);
+                return self.load(memory.shared_memory().as_ref(), pointer, *kind, depth);
             }
             cast_term!(UInt32From64, inner) if !self.source_mode() => {
                 let inner = self.bitvector(inner, None, depth)?;
@@ -3352,7 +3352,7 @@ mod tests {
         labels.source_state(&before, "pre".into());
         let load = |memory: &Memory, kind| {
             equality(MachineTerm::MemoryLoad(
-                SharedMemory::from(memory.clone()),
+                crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                 Box::new(pointer.clone()),
                 kind,
             ))
@@ -3403,7 +3403,7 @@ mod tests {
         )));
         let load = |memory: &Memory| {
             equality(MachineTerm::MemoryLoad(
-                SharedMemory::from(memory.clone()),
+                crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                 Box::new(heap.clone()),
                 LoadKind::Int32,
             ))
@@ -3472,7 +3472,7 @@ mod resource_tests {
             ResourceFact::view_composite(
                 "sampled".into(),
                 vec![ProgramValue::Int32(MachineTerm::MemoryLoad(
-                    SharedMemory::from(memory.clone()),
+                    crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,
                 ))],

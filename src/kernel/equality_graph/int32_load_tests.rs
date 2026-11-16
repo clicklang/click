@@ -172,7 +172,7 @@ fn int32_load_defining_state_is_independent_of_live_origin() {
     assert!(!graph.are_int32_equal(&left, &right));
     let raw = |m: &SharedMemory| {
         MachineTerm::MemoryLoad(
-            m.clone(),
+            ProgramPoint::at(&m),
             Box::new(address(1)),
             crate::kernel::LoadKind::Int32,
         )
@@ -494,7 +494,11 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
         },
         ProgramValue::Int32(var(993182)),
     ));
-    let raw = MachineTerm::MemoryLoad(beside, Box::new(pointer.clone()), LoadKind::Int32);
+    let raw = MachineTerm::MemoryLoad(
+        ProgramPoint::at(&beside),
+        Box::new(pointer.clone()),
+        LoadKind::Int32,
+    );
     let root = KernelTermImport::default()
         .machine_arithmetic(MachineIntegerType::Int32, &raw)
         .unwrap();
@@ -509,11 +513,13 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
     );
     assert_eq!(root.machine_read_leaf(), Some(&raw));
     let changed = MachineTerm::MemoryLoad(
-        intern_memory(
-            before
-                .memory()
-                .clone()
-                .store(pointer.clone(), ProgramValue::Int32(var(993183))),
+        ProgramPoint::at(
+            &(intern_memory(
+                before
+                    .memory()
+                    .clone()
+                    .store(pointer.clone(), ProgramValue::Int32(var(993183))),
+            )),
         ),
         Box::new(pointer),
         LoadKind::Int32,
@@ -541,7 +547,11 @@ fn structural_read_graph_keeps_native_only_stored_values() {
             .clone()
             .store(pointer.clone(), ProgramValue::Int32(value.clone())),
     );
-    let read = MachineTerm::MemoryLoad(retained_state, Box::new(pointer), LoadKind::Int32);
+    let read = MachineTerm::MemoryLoad(
+        ProgramPoint::at(&retained_state),
+        Box::new(pointer),
+        LoadKind::Int32,
+    );
     let shared = KernelTermImport::default()
         .machine_arithmetic(MachineIntegerType::Int32, &read)
         .unwrap();

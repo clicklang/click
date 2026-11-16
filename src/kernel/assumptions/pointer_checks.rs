@@ -301,7 +301,7 @@ mod tests {
                 let value = SharedMachineIntegerTerm::index(
                     format,
                     MachineTerm::MemoryLoad(
-                        crate::kernel::intern_memory(memory),
+                        ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(cell.clone()),
                         if matches!(
                             format,

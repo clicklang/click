@@ -68,8 +68,11 @@ fn wide_cached_load_canonicalization_ignores_unrelated_cells() {
             );
         }
         memory = memory.store(pointer.clone(), ProgramValue::UInt64(bits.clone()));
-        let load =
-            MachineTerm::MemoryLoad(intern_memory(memory), Box::new(pointer), LoadKind::Bits64);
+        let load = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&(intern_memory(memory))),
+            Box::new(pointer),
+            LoadKind::Bits64,
+        );
         crate::kernel::memory_provenance::clear_canonical_form_caches();
         crate::kernel::memory_provenance::reset_atomic_canonicalization_term_visits();
         let (result, work) = crate::persistent::measure_persistent_work(|| {
@@ -130,7 +133,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
             Some(&kept),
         );
         let load = MachineTerm::MemoryLoad(
-            intern_memory_ref(&after),
+            ProgramPoint::at(&(intern_memory_ref(&after))),
             Box::new(read_pointer.clone()),
             LoadKind::Bits64,
         );
@@ -146,7 +149,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
         assert!(!matches(&load, &bits, &PureFactContext::new()));
         assert!(!matches(&load, &MachineTerm::uint64_constant(1), &selected));
         let narrow = MachineTerm::MemoryLoad(
-            intern_memory_ref(&after),
+            ProgramPoint::at(&(intern_memory_ref(&after))),
             Box::new(read_pointer.clone()),
             LoadKind::Int32,
         );
@@ -156,7 +159,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
             .without_possible_aliasing_cells(&partial, 4, &selected)
             .store(partial, ProgramValue::Int32(MachineTerm::constant(0)));
         let changed = MachineTerm::MemoryLoad(
-            intern_memory(changed),
+            ProgramPoint::at(&(intern_memory(changed))),
             Box::new(read_pointer.clone()),
             LoadKind::Bits64,
         );
@@ -196,7 +199,7 @@ fn selected_wide_read_value_bounds_unselected_call_history() {
             );
         }
         let load = MachineTerm::MemoryLoad(
-            intern_memory(memory),
+            ProgramPoint::at(&(intern_memory(memory))),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         );
@@ -264,7 +267,7 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
         );
         let read = |retained_state: &Memory, pointer: &Pointer, kind| {
             MachineTerm::MemoryLoad(
-                intern_memory_ref(retained_state),
+                ProgramPoint::at(&(intern_memory_ref(retained_state))),
                 Box::new(pointer.clone()),
                 kind,
             )

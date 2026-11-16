@@ -254,7 +254,7 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
         }
         let load = |memory: &crate::kernel::SharedMemory| {
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(Pointer {
                     block: "same-bucket-facts".into(),
                     offset: PointerOffsetTerm::Constant(0),
