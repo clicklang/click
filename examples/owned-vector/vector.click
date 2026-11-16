@@ -868,8 +868,20 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         }
         mark before_grow;
         step();
+        mark after_grow;
         step();
-        have c(grown) == 0 implies owner->data == at(before_grow, owner->data) by { known(); }
+        have separate(memory(grown), memory(owner->data)) by { solve(); }
+        have separate(statement(2).statement(0).assignment(grown, 0).footprint, memory(owner->data)) by {
+            normalize() using { separate(memory(grown), memory(owner->data)); };
+        }
+        have owner->data == at(after_grow, owner->data) by {
+            preserve(separate(statement(2).statement(0).assignment(grown, 0).footprint, memory(owner->data)));
+        }
+        have c(grown) == 0 implies owner->data == at(before_grow, owner->data) by {
+            intro();
+            extract(at(after_grow, owner->data) == at(before_grow, owner->data));
+            known();
+        }
         if c(grown) == 0 {
             step();
             step();

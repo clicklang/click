@@ -144,6 +144,14 @@ probe/reinvoke adapter. Solving belongs to the driver there; any repeated-loweri
 cost needs its own fixed-input/ambient-growth measurement. This is not evidence
 that the removed step/fold retry survives.
 
+Have opening also retains two separate preparation candidates: the pointer-only
+`with_selected_load_equality_bridge` route can traverse equality chains and
+origin-unchanged edges, and copying `execution.core.effect_facts` visits the
+retained effect collection. Measure each with a fixed written goal and growing
+unrelated history; remove automatic discovery or repeated publication rather
+than moving it into another fast helper. These are not covered by the scalar
+historical-candidate removal regression.
+
 
 ## Operation map
 
