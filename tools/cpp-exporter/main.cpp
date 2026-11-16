@@ -1076,7 +1076,6 @@ private:
     const auto *pointer = parameter->getType()->getAs<clang::PointerType>();
     const bool mutable_int_pointer =
         pointer != nullptr && !parameter->getType().hasQualifiers() &&
-        !pointer->getPointeeType().hasQualifiers() &&
         supported_pointer_element(pointer->getPointeeType());
     const bool by_value_integer =
         !parameter->getType().hasQualifiers() &&
@@ -1103,7 +1102,7 @@ private:
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
            "32/64/128-bit integer or unsigned char, a native element "
-           "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, or mutable int* parameter, mutable unsigned int*/unsigned char* parameter, or a "
+           "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, a native element pointer (possibly const pointee), or a "
            "mutable or const simple-record reference parameter, a trivially copied simple-record value, "
            "a mutable pointer to a simple record, or a pointer to a noexcept function");
       return std::nullopt;
@@ -1176,6 +1175,17 @@ private:
          context_.hasSameType(unqualified, context_.UnsignedCharTy) ||
          (supported_byte_enum(type) &&
           type->getAs<clang::EnumType>()->getDecl()->getQualifiedNameAsString() == "std::byte"));
+  }
+
+  bool supported_pointer_qualification(const clang::CastExpr *cast) const {
+    const auto *source = cast->getSubExpr()->getType()->getAs<clang::PointerType>();
+    const auto *target = cast->getType()->getAs<clang::PointerType>();
+    return cast->getCastKind() == clang::CK_NoOp && source && target &&
+        supported_pointer_element(source->getPointeeType()) &&
+        supported_pointer_element(target->getPointeeType()) &&
+        !source->getPointeeType().isConstQualified() &&
+        target->getPointeeType().isConstQualified() &&
+        context_.hasSameUnqualifiedType(source->getPointeeType(), target->getPointeeType());
   }
 
   // A mutable pointer to a simple, complete, non-polymorphic record, such
@@ -1271,8 +1281,7 @@ private:
         supported_scalar_value_type(type))
       return true;
     const auto *pointer = type->getAs<clang::PointerType>();
-    return pointer != nullptr && !pointer->getPointeeType().hasQualifiers() &&
-           supported_pointer_element(pointer->getPointeeType());
+    return pointer != nullptr && supported_pointer_element(pointer->getPointeeType());
   }
 
   // A pointer to a non-throwing, non-variadic function whose parameters and
@@ -2591,6 +2600,10 @@ private:
         std::string kind;
         switch (cast->getCastKind()) {
         case clang::CK_NoOp:
+          if (supported_pointer_qualification(cast)) {
+            kind = "pointer_qualification";
+            break;
+          }
           if (!context_.hasSameType(cast->getType(), cast->getSubExpr()->getType())) {
             fail(cast->getExprLoc(), "unsupported C++ call-result no-op conversion");
             return std::nullopt;
@@ -2687,7 +2700,7 @@ private:
     const auto *local_pointer = local->getType()->getAs<clang::PointerType>();
     const auto *pointed_record = record_pointer_target(local->getType());
     const bool mutable_pointer = (local_pointer && !local->getType().hasQualifiers() &&
-        !local_pointer->getPointeeType().hasQualifiers() && supported_pointer_element(local_pointer->getPointeeType())) ||
+        supported_pointer_element(local_pointer->getPointeeType())) ||
         pointed_record != nullptr;
     if (pointed_record != nullptr && !remember_record(pointed_record)) {
       return std::nullopt;
@@ -4859,6 +4872,18 @@ private:
       return boolean_constant(boolean->getValue(), boolean->getSourceRange(),
                               false);
     }
+    if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression);
+        cast != nullptr && supported_pointer_qualification(cast)) {
+      auto value = lower_expression(cast->getSubExpr(), function);
+      auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+      if (!value || !value_type) return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "pointer_qualification";
+      result["value"] = std::move(*value);
+      result["value_type"] = std::move(*value_type);
+      result["span"] = span(cast->getSourceRange());
+      return Json(std::move(result));
+    }
     // Only literal null conversions are total, effect-free pointer values.
     // A nullptr_t call or variable still has evaluation behavior and is not
     // silently folded to a literal by this boundary.
@@ -4872,10 +4897,9 @@ private:
         return std::nullopt;
       }
       const auto *pointer = cast->getType()->getAs<clang::PointerType>();
-      if ((pointer == nullptr || pointer->getPointeeType().hasQualifiers() ||
-           !supported_pointer_element(pointer->getPointeeType())) &&
+      if ((pointer == nullptr || !supported_pointer_element(pointer->getPointeeType())) &&
           record_pointer_target(cast->getType()) == nullptr) {
-        fail(cast->getExprLoc(), "C++ null pointer literal requires a mutable int32 pointer, uint32 pointer, unsigned-byte pointer or simple record pointer");
+        fail(cast->getExprLoc(), "C++ null pointer literal requires a native element pointer or simple record pointer");
         return std::nullopt;
       }
       auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());

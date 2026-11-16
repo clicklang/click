@@ -717,6 +717,12 @@ pub enum CppExpression {
         value_type: CppType,
         span: CppSpan,
     },
+    /// Add native pointee const, preserving element identity and address.
+    PointerQualification {
+        value: Box<CppExpression>,
+        value_type: CppType,
+        span: CppSpan,
+    },
     /// Explicit object-pointer reinterpretation to the authenticated byte type.
     BytePointerCast {
         value: Box<CppExpression>,
@@ -986,6 +992,7 @@ pub struct CppScalarConversion {
 #[serde(rename_all = "snake_case")]
 pub enum CppScalarCastKind {
     NoOp,
+    PointerQualification,
     IntegralCast,
     IntegralToEnumeration,
     IntegralToBoolean,
@@ -1018,6 +1025,13 @@ impl CppScalarConversion {
         if matches!(source, CppType::LvalueReference { .. }) {
             return Err("C++ call conversion of a reference must first load it".into());
         }
+        if self.cast_kind == CppScalarCastKind::PointerQualification {
+            return if super::scalar::pointer_qualification(&self.source_type, &self.value_type) {
+                Ok(())
+            } else {
+                Err("C++ pointer qualification must only add pointee const".into())
+            };
+        }
         if self.cast_kind == CppScalarCastKind::BytePointerCast {
             return if self.explicit
                 && super::scalar::byte_pointer_cast(&self.source_type, &self.value_type)
@@ -1041,7 +1055,9 @@ impl CppScalarConversion {
         let to = Scalar::mutable_kind(&self.value_type)
             .ok_or("unsupported C++ call conversion result")?;
         let valid = match self.cast_kind {
-            CppScalarCastKind::BytePointerCast | CppScalarCastKind::ReferenceLoad => {
+            CppScalarCastKind::PointerQualification
+            | CppScalarCastKind::BytePointerCast
+            | CppScalarCastKind::ReferenceLoad => {
                 unreachable!("checked before scalar conversions")
             }
             CppScalarCastKind::NoOp => same_scalar_type(&self.source_type, &self.value_type),
@@ -2802,7 +2818,7 @@ impl CppFunction {
                     validate_record_reference(records, declaration_id, name)?;
                 }
                 CppType::Pointer { pointee } => {
-                    require_native_pointer_element(pointee, false, "pointer pointee")?;
+                    require_native_pointer_element(pointee, true, "pointer pointee")?;
                 }
                 CppType::FunctionPointer { .. } => {
                     require_function_pointer(&parameter.value_type, "function-pointer parameter")?;
@@ -3828,9 +3844,11 @@ impl CppStatement {
             } => {
                 span.validate(logical_source)?;
                 pointer.validate(places, records, logical_source)?;
-                require_native_object_pointer(pointer.value_type(), "store pointer")?;
+                let CppType::Pointer { pointee } = pointer.value_type() else {
+                    return Err("C++ store requires a native pointer".into());
+                };
+                require_native_pointer_element(pointee, false, "store pointer")?;
                 value.validate(places, records, logical_source)?;
-                let CppType::Pointer { pointee } = pointer.value_type() else { unreachable!("validated native pointer") };
                 if !same_scalar_type(pointee, value.value_type()) {
                     return Err("C++ store must preserve the native pointee type".into());
                 }
@@ -4381,6 +4399,7 @@ pub(super) fn field_scalar_argument(expression: &CppExpression) -> bool {
         CppExpression::LogicalNot { value, .. }
         | CppExpression::IntegralCast { value, .. }
         | CppExpression::EnumCast { value, .. }
+        | CppExpression::PointerQualification { value, .. }
         | CppExpression::BytePointerCast { value, .. } => field_scalar_argument(value),
         _ => false,
     }
@@ -4406,6 +4425,7 @@ fn stable_scalar_argument(expression: &CppExpression, places: &ValidationPlaces<
         CppExpression::LogicalNot { value, .. }
         | CppExpression::IntegralCast { value, .. }
         | CppExpression::EnumCast { value, .. }
+        | CppExpression::PointerQualification { value, .. }
         | CppExpression::BytePointerCast { value, .. } => stable_scalar_argument(value, places),
         _ => false,
     }
@@ -4610,6 +4630,7 @@ impl CppExpression {
             Self::LogicalNot { value, .. }
             | Self::IntegralCast { value, .. }
             | Self::EnumCast { value, .. }
+            | Self::PointerQualification { value, .. }
             | Self::BytePointerCast { value, .. }
             | Self::ReferenceBinding { address: value, .. }
             | Self::Dereference { pointer: value, .. } => value.contains_observer(),
@@ -4668,6 +4689,7 @@ impl CppExpression {
             | Self::MemberLoad { value_type, .. }
             | Self::IntegralCast { value_type, .. }
             | Self::EnumCast { value_type, .. }
+            | Self::PointerQualification { value_type, .. }
             | Self::BytePointerCast { value_type, .. }
             | Self::FunctionAddress { value_type, .. }
             | Self::ClosureInstance { value_type, .. }
@@ -4699,6 +4721,7 @@ impl CppExpression {
             | Self::LogicalNot { value: pointer, .. }
             | Self::IntegralCast { value: pointer, .. }
             | Self::EnumCast { value: pointer, .. }
+            | Self::PointerQualification { value: pointer, .. }
             | Self::BytePointerCast { value: pointer, .. } => {
                 pointer.references_place(declaration_id)
             }
@@ -5029,6 +5052,18 @@ impl CppExpression {
                 }
                 require_integral_scalar(value.value_type(), "enum cast operand")?;
                 require_integral_scalar(value_type, "enum cast result")
+            }
+            Self::PointerQualification {
+                value,
+                value_type,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                value.validate(places, records, logical_source)?;
+                if !super::scalar::pointer_qualification(value.value_type(), value_type) {
+                    return Err("C++ pointer qualification must only add pointee const".into());
+                }
+                Ok(())
             }
             Self::BytePointerCast {
                 value,
@@ -6219,6 +6254,7 @@ fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<Collec
         | CppExpression::LogicalNot { value, .. }
         | CppExpression::IntegralCast { value, .. }
         | CppExpression::EnumCast { value, .. }
+        | CppExpression::PointerQualification { value, .. }
         | CppExpression::BytePointerCast { value, .. } => collect_expression_calls(value, calls),
         CppExpression::Binary { left, right, .. } => {
             collect_expression_calls(left, calls);
@@ -6433,7 +6469,7 @@ fn validate_argument_types(
                 }
             }
             (CppCallArgument::Value { value }, CppType::Pointer { pointee }) => {
-                (require_native_pointer_element(pointee, false, "call pointer parameter").is_ok()
+                (require_native_pointer_element(pointee, true, "call pointer parameter").is_ok()
                     || super::scalar::record_pointee(parameter_type).is_some())
                     && require_object_pointer_value(value.value_type(), "call pointer argument")
                         .is_ok()
@@ -7059,6 +7095,7 @@ impl CppExpression {
             Self::LogicalNot { value, .. }
             | Self::IntegralCast { value, .. }
             | Self::EnumCast { value, .. }
+            | Self::PointerQualification { value, .. }
             | Self::BytePointerCast { value, .. } => {
                 value.validate_constant_references(logical_source, constants, referenced_constants)
             }
@@ -7423,9 +7460,9 @@ fn require_object_pointer_value(value: &CppType, label: &str) -> Result<(), Stri
 
 fn require_native_object_pointer(value: &CppType, label: &str) -> Result<(), String> {
     match value {
-        CppType::Pointer { pointee } => require_native_pointer_element(pointee, false, label),
+        CppType::Pointer { pointee } => require_native_pointer_element(pointee, true, label),
         _ => Err(format!(
-            "{label} requires a supported mutable native object pointer"
+            "{label} requires a supported native object pointer"
         )),
     }
 }
@@ -7456,7 +7493,7 @@ pub(super) fn require_function_pointer(value_type: &CppType, context: &str) -> R
     let callback_value = |value_type: &CppType| {
         Scalar::of(value_type).is_some_and(|scalar| !scalar.is_const)
             || matches!(value_type, CppType::Pointer { pointee }
-                if require_native_pointer_element(pointee, false, context).is_ok())
+                if require_native_pointer_element(pointee, true, context).is_ok())
     };
     if !(matches!(return_type.as_ref(), CppType::Void) || callback_value(return_type))
         || !parameters.iter().all(callback_value)
@@ -7696,11 +7733,14 @@ mod tests {
             })
             .is_ok()
         );
+        assert!(
+            validate(CppType::Pointer {
+                pointee: Box::new(signed_integer(32, true))
+            })
+            .is_ok()
+        );
         for value_type in [
             signed_integer(32, false),
-            CppType::Pointer {
-                pointee: Box::new(signed_integer(32, true)),
-            },
             CppType::Pointer {
                 pointee: Box::new(signed_integer(64, false)),
             },

@@ -557,7 +557,7 @@ reads through an aliased `const int&`, using one explicit `owns` resource.
 C++ `const` restricts access through that reference; it does not create a Click
 `views` resource or imply that aliases cannot write. Supported parameters are
 currently by-value `bool` or signed/unsigned 32/64/128-bit integers, native element references,
-mutable `int*`, `unsigned int*` or `unsigned char*`, one `const` signed-64 reference, and mutable or const references
+`int*`, `unsigned int*` or `unsigned char*` (also pointers to const elements), one `const` signed-64 reference, and mutable or const references
 to supported simple record types with distinct proof-facing names. Selected functions return `int`,
 signed/unsigned 64/128-bit integers, `unsigned int`, `unsigned char`, `bool`, mutable `int*`, `unsigned int*` or `unsigned char*`,
 native element references, or `void`.
@@ -833,6 +833,18 @@ conversion, `*pointer` reads, and `*pointer = value` writes lower to the
 kernel's existing address, typed-load, and typed-store operations, so the
 sidecar must provide ordinary memory authority. Removing that authority or
 claiming the wrong pointer-mediated memory effect fails verification.
+
+Native pointer parameters, local aliases, returned pointers and callback
+signatures retain pointee const qualification. `const int*`, `const unsigned
+int*` and `const unsigned char*` use `const int32*`, `const uint32*` and
+`const uint8*` sidecar types. Reads require `views` or `owns`; const does not
+create permission or freeze a mutable alias. Implicit qualification and
+`static_cast<const T*>(p)` add const without changing the address or native
+element type, including converted call results. Null returns retain the
+same qualification. Source and artifact checks refuse const removal,
+mutable sidecar substitutions and stores through const pointers. Volatile
+pointees, other character types and top-level const pointer variables remain
+outside this profile.
 
 The bounded native object-pointer profile also admits mutable `unsigned int*`
 and `unsigned char*`, using `uint32*` and `uint8*` contracts. Loads, stores,

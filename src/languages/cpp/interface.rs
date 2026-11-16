@@ -504,13 +504,13 @@ fn function_interface(
                 carried_name.clone(),
                 function_pointer_signature(&parameter.value_type)?,
             )),
-            CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some() =>
+            CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some() =>
             {
                 Ok(crate::languages::interface::ImportedParameter::new(
-                    Scalar::pointer_element(pointee, false).unwrap().kind.pointer_proof_type().unwrap(),
+                    Scalar::pointer_element(pointee, true).unwrap().kind.pointer_proof_type().unwrap(),
                     carried_name.clone(),
                     None,
-                ))
+                ).with_pointee_constant(super::scalar::returns_constant_element(&parameter.value_type)))
             }
             _ => Err(format!(
                 "C++ declaration `{}` parameter `{}` is outside the supported bool/reference/pointer/record interface",
@@ -568,11 +568,12 @@ pub(super) fn function_pointer_signature(
     };
     let proof_type = |value_type: &CppType| match value_type {
         CppType::Void => Some(InterfaceType::Void),
-        CppType::Pointer { pointee } => Scalar::pointer_element(pointee, false)
+        CppType::Pointer { pointee } => Scalar::pointer_element(pointee, true)
             .and_then(|element| element.kind.pointer_proof_type()),
         _ => Scalar::mutable_kind(value_type).map(ScalarKind::proof_type),
     };
     let unsupported = || "C++ function-pointer type is outside the proof interface".to_string();
+    let return_constant = super::scalar::returns_constant_element(return_type);
     let return_type = proof_type(return_type).ok_or_else(unsupported)?;
     let parameters = parameters
         .iter()
@@ -581,7 +582,11 @@ pub(super) fn function_pointer_signature(
             proof_type(parameter)
                 .filter(|interface_type| *interface_type != InterfaceType::Void)
                 .map(|interface_type| {
-                    crate::languages::interface::CallbackParameter::new(interface_type, None, false)
+                    crate::languages::interface::CallbackParameter::new(
+                        interface_type,
+                        None,
+                        super::scalar::returns_constant_element(parameter),
+                    )
                 })
                 .ok_or_else(unsupported)
         })
@@ -590,7 +595,7 @@ pub(super) fn function_pointer_signature(
         return_type,
         None,
         parameters,
-        false,
+        return_constant,
     ))
 }
 

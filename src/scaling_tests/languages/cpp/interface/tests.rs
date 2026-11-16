@@ -43,3 +43,34 @@ fn source_record_layouts_are_shared_and_lookup_is_indexed() {
         assert_eq!(lookup, 2, "lookup in {size} declarations/functions");
     }
 }
+
+#[test]
+fn qualified_callback_signatures_keep_const_with_linear_parameter_work() {
+    for size in [1, 16, 256, 1024] {
+        let pointer = CppType::Pointer {
+            pointee: Box::new(CppType::Integer {
+                bits: 32,
+                signed: true,
+                is_const: true,
+                source_aliases: Vec::new(),
+            }),
+        };
+        let callback = CppType::FunctionPointer {
+            return_type: Box::new(pointer.clone()),
+            parameters: vec![pointer; size],
+            is_const: false,
+        };
+        let (signature, work) = crate::instrumentation::measure_deterministic_work(|| {
+            function_pointer_signature(&callback).unwrap()
+        });
+        assert_eq!(signature.parameters.len(), size);
+        assert!(signature.return_pointee_constant);
+        assert!(
+            signature
+                .parameters
+                .iter()
+                .all(|parameter| parameter.pointee_constant)
+        );
+        assert_eq!(work, size);
+    }
+}

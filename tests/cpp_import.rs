@@ -5931,7 +5931,7 @@ fn cpp_pointer_slice_rejects_differences_and_multilevel_pointers() {
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("bump_reference.cpp:1"), "{error}");
-    assert!(error.contains("mutable int* parameter"), "{error}");
+    assert!(error.contains("native element pointer"), "{error}");
     assert!(!project.artifact().exists());
 }
 
@@ -6298,11 +6298,11 @@ fn cpp_frontend_rejects_unsupported_source_without_a_c_fallback() {
 
     fs::write(
         project.source(),
-        "int increment(const int* value) noexcept {\n    return *value;\n}\n",
+        "int increment(volatile int* value) noexcept {\n    return *value;\n}\n",
     )
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("mutable int* parameter"), "{error}");
+    assert!(error.contains("native element pointer"), "{error}");
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -17085,12 +17085,8 @@ fn cpp_null_pointer_conversions_keep_effectful_operands_and_other_types_outside_
             "unsupported explicit C++ conversion",
         ),
         (
-            "const int* run() noexcept { return nullptr; }",
-            "mutable int32 pointer",
-        ),
-        (
             "long long* run() noexcept { return nullptr; }",
-            "mutable int32 pointer",
+            "native element pointer",
         ),
     ] {
         let project = Project::with_fixture("null.cpp", "run", cpp);
@@ -20236,6 +20232,14 @@ void marker(bool fail) throws errors::End { ensures true; exceptional ensures tr
 "#,
         ),
         (
+            "pointer-read.cpp",
+            "from_memory",
+            "struct ReadError { int code; }; void from_memory(const int* p) { throw ReadError{p[0]}; }",
+            r#"verifying "pointer-read.cpp";
+void from_memory(const int32* p) throws ReadError { views p[0]; ensures true; exceptional ensures true; }
+"#,
+        ),
+        (
             "read.cpp",
             "from_reference",
             "struct ReadError { int code; }; void from_reference(const int& value) { throw ReadError{value}; }",
@@ -20250,8 +20254,10 @@ void from_reference(const int32& value) throws ReadError { views value; ensures 
         refresh_import(&project.config()).unwrap();
         let prepared = load_import(&project.config()).unwrap();
         check_return_call_sidecar(&project, &prepared, source);
-        if selected == "from_reference" {
-            let bad = source.replace("views value;", "");
+        if selected == "from_reference" || selected == "from_memory" {
+            let bad = source
+                .replace("views value;", "")
+                .replace("views p[0];", "");
             let sidecar = project.directory.join("bad.click");
             fs::write(&sidecar, &bad).unwrap();
             let parsed = read_click_project(&sidecar, &bad).unwrap();
@@ -20265,9 +20271,6 @@ void from_reference(const int32& value) throws ReadError { views value; ensures 
 #[ignore = "nightly: user exception source and artifact admission controls"]
 fn typed_exceptions_refuse_unmodeled_construction_and_corrupt_fields() {
     for cpp in [
-        // Preserve the existing const-pointer parameter refusal. The positive
-        // initializer-read fixture uses the already-supported const reference.
-        "struct ReadError { int code; }; void probe(const int* p) { throw ReadError{p[0]}; }",
         "struct Error { int code; explicit Error(int n) noexcept : code(n) {} }; void probe() { throw Error{1}; }",
         "struct Error { int code; ~Error() noexcept {} }; void probe() { throw Error{1}; }",
         "struct Error { int code; }; void probe(Error& e) { throw e; }",
@@ -20314,4 +20317,277 @@ fn typed_exceptions_refuse_unmodeled_construction_and_corrupt_fields() {
             "accepted artifact mutation {mutation}"
         );
     }
+}
+
+fn check_native_const_pointer_composition(native: &str, proof: &str) {
+    let cpp = format!(
+        r#"
+{native} read(const {native}* p) noexcept {{ return p[0]; }}
+{native}* identity({native}* p) noexcept {{ return p; }}
+const {native}* freeze({native}* p) noexcept {{ return identity(p); }}
+const {native}* choose({native}* p) noexcept {{
+    const {native}* q = static_cast<const {native}*>(p);
+    q = freeze(p);
+    return q;
+}}
+{native} probe({native}* p) noexcept {{
+    const {native}* q = choose(p);
+    return read(q);
+}}
+"#
+    );
+    let project = Project::with_fixture("const.cpp", "probe", &cpp);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = format!(
+        r#"verifying "const.cpp";
+{proof} read(const {proof}* p) {{ views p[0]; ensures result == p[0]; }}
+{proof}* identity({proof}* p) {{ ensures result == p; }}
+const {proof}* freeze({proof}* p) {{ ensures result == p; }}
+const {proof}* choose({proof}* p) {{ ensures result == p; }}
+{proof} probe({proof}* p) {{ views p[0]; ensures result == p[0]; }}
+"#
+    );
+    check_return_call_sidecar(&project, &import, &source);
+    let path = project.directory.join("arithmetic.click");
+    let parsed = read_click_project(&path, &source).unwrap();
+    let labels = project_smart_tactic_source_sites(&parsed, &ProgramInputs::program(&import))
+        .unwrap()
+        .into_iter()
+        .map(|site| site.claim_label)
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut rewritten = parsed.clone();
+    for label in labels {
+        let expanded = expand_project_claim_source_by_label(
+            &rewritten,
+            &ProgramInputs::program(&import),
+            &label,
+        )
+        .unwrap();
+        let (session, _) =
+            ProgramVerificationSession::new_program_prepared_project(&rewritten, &import).unwrap();
+        rewritten = parsed.with_entry_source(expanded.clone());
+        let position =
+            project_tactic_source_position(&rewritten, &ProgramInputs::program(&import), &label, 0)
+                .unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .unwrap();
+    }
+    click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, &import))
+        .unwrap();
+    for bad in [
+        source.replace("views p[0];", ""),
+        source.replace(
+            &format!("read(const {proof}* p)"),
+            &format!("read({proof}* p)"),
+        ),
+        source.replace(
+            &format!("const {proof}* choose"),
+            &format!("{proof}* choose"),
+        ),
+        source.replace("ensures result == p[0];", "ensures result != p[0];"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let accepted = read_click_project(&path, &bad)
+            .ok()
+            .is_some_and(|parsed| verify_program_prepared_project(&parsed, &import).is_ok());
+        assert!(
+            !accepted,
+            "accepted weakened const signature, missing authority or false value: {bad}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: const int pointer composition, full expansion and retained replay"]
+fn cpp_const_pointer_int_composition() {
+    check_native_const_pointer_composition("int", "int32");
+}
+#[test]
+#[ignore = "nightly: const unsigned pointer composition, full expansion and retained replay"]
+fn cpp_const_pointer_unsigned_composition() {
+    check_native_const_pointer_composition("unsigned int", "uint32");
+}
+#[test]
+#[ignore = "nightly: const byte pointer composition, full expansion and retained replay"]
+fn cpp_const_pointer_byte_composition() {
+    check_native_const_pointer_composition("unsigned char", "uint8");
+}
+
+#[test]
+#[ignore = "nightly: const-qualified callback parameters and results"]
+fn cpp_const_pointer_callbacks_preserve_qualified_signatures() {
+    let project = Project::with_fixture(
+        "callback.cpp",
+        "probe",
+        r#"
+const int* identity(const int* p) noexcept { return p; }
+const int* invoke(const int* (*f)(const int*) noexcept, const int* p) noexcept {
+    const int* (*g)(const int*) noexcept = f;
+    return g(p);
+}
+const int* probe(const int* p) noexcept { return invoke(&identity, p); }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "callback.cpp";
+contract const int32* Identity(const int32* p) { ensures result == p; }
+const int32* identity(const int32* p) { ensures result == p; }
+theorem identity_refines() { ensures Identity(&identity) by { unfold(Identity); solve(); } }
+const int32* invoke(const int32* (*f)(const int32*), const int32* p) {
+    requires Identity(f); ensures result == p;
+}
+const int32* probe(const int32* p) { ensures result == p; } by { apply(identity_refines()); step_until(function.exit); solve(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    for bad in [
+        source.replace("(*f)(const int32*)", "(*f)(int32*)"),
+        source.replace("const int32* (*f)", "int32* (*f)"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let accepted = read_click_project(&path, &bad)
+            .ok()
+            .is_some_and(|parsed| verify_program_prepared_project(&parsed, &import).is_ok());
+        assert!(!accepted, "callback signature lost const");
+    }
+}
+
+#[test]
+#[ignore = "nightly: native const pointer views do not freeze mutable aliases"]
+fn cpp_const_pointer_alias_reads_after_mutable_store_and_null_returns() {
+    // The original direct const-pointer read, previously an admission refusal.
+    let direct = Project::with_fixture(
+        "increment.cpp",
+        "increment",
+        "int increment(const int* value) noexcept {\n    return *value;\n}\n",
+    );
+    refresh_import(&direct.config()).unwrap();
+    let imported = load_import(&direct.config()).unwrap();
+    check_return_call_sidecar(
+        &direct,
+        &imported,
+        "verifying \"increment.cpp\"; int32 increment(const int32* value) { views value[0]; ensures result == value[0]; }",
+    );
+    let project = Project::with_fixture(
+        "alias.cpp",
+        "probe",
+        "int probe(int* p) noexcept { const int* q = p; *p = 7; return q[0]; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        "verifying \"alias.cpp\"; int32 probe(int32* p) { owns p[0]; ensures p[0] == 7; ensures result == 7; }",
+    );
+    for expression in ["nullptr", "0", "static_cast<const int*>(nullptr)"] {
+        let cpp = format!("const int* probe() noexcept {{ return {expression}; }}");
+        let project = Project::with_fixture("null.cpp", "probe", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        check_return_call_sidecar(
+            &project,
+            &import,
+            "verifying \"null.cpp\"; const int32* probe() { ensures result == 0; }",
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: const pointer source and artifact controls"]
+fn cpp_const_pointer_refuses_removal_stores_and_forged_qualification() {
+    for cpp in [
+        "int probe(const int* p) noexcept { *p = 1; return *p; }",
+        "int probe(const int* p) noexcept { int* q = const_cast<int*>(p); return *q; }",
+        "int probe(const volatile int* p) noexcept { return *p; }",
+        "unsigned char probe(const char* p) noexcept { return *p; }",
+    ] {
+        let project = Project::with_fixture("refused.cpp", "probe", cpp);
+        assert!(refresh_import(&project.config()).is_err(), "admitted {cpp}");
+    }
+    use sha2::{Digest, Sha256};
+    let rewrite = |project: &Project, artifact: serde_json::Value, lock: &serde_json::Value| {
+        let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
+        let mut lock = lock.clone();
+        lock_source_mut(&mut lock)["artifact"]["sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_source_mut(&mut lock)["artifact"]["bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+    };
+    let project = Project::with_fixture(
+        "qualify.cpp",
+        "probe",
+        "int probe(int* p) noexcept { const int* q = p; return *q; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let original: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..3 {
+        let mut artifact = original.clone();
+        let cast = &mut artifact["functions"][0]["body"][0]["initializer"]["value"];
+        assert_eq!(cast["kind"], "pointer_qualification");
+        match mutation {
+            0 => cast["value_type"]["pointee"]["is_const"] = false.into(),
+            1 => cast["value_type"]["pointee"]["signed"] = false.into(),
+            2 => cast["value"]["value_type"]["pointee"]["is_const"] = true.into(),
+            _ => unreachable!(),
+        }
+        rewrite(&project, artifact, &lock);
+        assert!(
+            load_import(&project.config()).is_err(),
+            "accepted qualification mutation {mutation}"
+        );
+    }
+    let project = Project::with_fixture(
+        "store.cpp",
+        "probe",
+        "int probe(const int* p) noexcept { return *p; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let mut artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    let returned = artifact["functions"][0]["body"][0].clone();
+    let mut value_type = returned["value"]["value_type"].clone();
+    value_type["is_const"] = false.into();
+    let store = serde_json::json!({"kind":"store", "pointer":returned["value"]["pointer"], "value":{"kind":"integer_literal", "value":"1", "value_type":value_type, "span":returned["span"]}, "span":returned["span"]});
+    artifact["functions"][0]["body"] = serde_json::json!([store, returned]);
+    rewrite(&project, artifact, &lock);
+    let error = load_import(&project.config()).unwrap_err();
+    assert!(error.contains("store pointer"), "{error}");
+}
+
+#[test]
+#[ignore = "nightly: const pointer constructor and getter composition"]
+fn cpp_const_pointer_constructed_view_getter_composes() {
+    let project = Project::with_fixture(
+        "view.cpp",
+        "probe",
+        r#"
+struct View {
+    const int* data;
+    explicit View(const int* p) noexcept : data(p) {}
+    int get() const noexcept { return *data; }
+};
+int probe(const int* p) noexcept { View view(p); return view.get(); }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "view.cpp";
+View::View(const int32* p) { owns this->data; ensures this->data == p; }
+int32 View::get() const { views this->data; views this->data[0]; ensures result == this->data[0]; }
+int32 probe(const int32* p) { views p[0]; ensures result == p[0]; }
+"#;
+    check_return_call_sidecar(&project, &import, source);
 }

@@ -287,6 +287,7 @@ impl Metadata<'_> {
             CppExpression::LogicalNot { value, span, .. }
             | CppExpression::IntegralCast { value, span, .. }
             | CppExpression::EnumCast { value, span, .. }
+            | CppExpression::PointerQualification { value, span, .. }
             | CppExpression::BytePointerCast { value, span, .. } => {
                 self.expression(value)?;
                 span
