@@ -1529,8 +1529,8 @@ fn collect_operand_reads(
             pending.extend(operands.into_iter().rev());
         } else if let Some((T::Int32 | T::UInt32, U::BitwiseNot, operand)) = view.unary() {
             pending.push(operand);
-        } else if let Some((encoding, _, _, operand)) = view.cast() {
-            if matches!(
+        } else if let Some((encoding, _, _, operand)) = view.cast()
+            && matches!(
                 encoding,
                 MachineCastSpelling::Generic
                     | MachineCastSpelling::Int64From32
@@ -1539,9 +1539,9 @@ fn collect_operand_reads(
                     | MachineCastSpelling::Int64FromUInt32
                     | MachineCastSpelling::UInt64FromInt32
                     | MachineCastSpelling::UInt64FromInt64
-            ) {
-                pending.push(operand);
-            }
+            )
+        {
+            pending.push(operand);
         }
     }
 }

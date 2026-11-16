@@ -875,9 +875,7 @@ fn collect_pointer_block_carriers(block: &PointerBlock, variables: &mut CarrierV
         PointerBlock::LoadedPointer(identity) if variables.pointer_loads.insert(*identity) => {
             if let Some((_, address)) = crate::kernel::eval::registered_pointer_load(*identity) {
                 collect_pointer_carriers(&address, variables);
-                if variables.exhausted() {
-                    return;
-                }
+                if variables.exhausted() {}
             }
         }
         _ => {}
@@ -2029,6 +2027,7 @@ impl<'a> TermRewrite<'a> {
 
     /// Simultaneous one-step read comparison. Only selected syntax is visited;
     /// inserted values and the contents of states remain opaque.
+    #[cfg(test)]
     pub(crate) fn comparison_read_batch(
         proposition: &Proposition,
         replacements: impl IntoIterator<Item = (MachineTerm, MachineTerm)>,

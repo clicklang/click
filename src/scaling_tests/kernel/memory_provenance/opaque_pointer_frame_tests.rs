@@ -238,7 +238,7 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
         }
         let legacy = |memory: &SharedMemory| {
             Pointer::loaded(&MachineTerm::MemoryLoad(
-                ProgramPoint::at(&memory),
+                ProgramPoint::at(memory),
                 Box::new(field.clone()),
                 LoadKind::Int32,
             ))

@@ -182,7 +182,7 @@ impl ContractBodyProof {
     pub(crate) fn loop_rules(&self) -> &[VerifiedLoopRule] {
         &self.loop_rules
     }
-    pub(crate) fn into_rule(&self) -> Option<VerifiedFunctionRule> {
+    pub(crate) fn to_reusable_rule(&self) -> Option<VerifiedFunctionRule> {
         self.modular.then(|| self.rule.clone())
     }
     pub(in crate::kernel) fn termination_rule(&self) -> &VerifiedFunctionRule {
@@ -999,7 +999,7 @@ mod tests {
                 .admit_executions(&[execution])
                 .complete()
                 .unwrap()
-                .into_rule()
+                .to_reusable_rule()
                 .is_some()
         );
     }
@@ -1090,7 +1090,7 @@ mod tests {
                 .admit_executions(&[completed_execution])
                 .complete()
                 .unwrap()
-                .into_rule()
+                .to_reusable_rule()
                 .is_some()
         );
     }

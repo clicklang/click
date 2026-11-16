@@ -68,15 +68,21 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_program_names
             .expect("the selected member address lowers in the result scope");
         assert_eq!(
             lowered,
-            SpecExpression::Let {
-                name: "<spec-address-operand>".into(),
-                value: Box::new(SpecExpression::ProgramExpression(
+            SpecExpression::ObjectAddress(Box::new(crate::kernel::SpecObjectAddress {
+                base: Box::new(SpecExpression::ProgramExpression(
                     ProgramExpression::Variable(expected)
                 )),
-                body: Box::new(SpecExpression::ProgramExpression(
-                    ProgramExpression::AddressOf(Box::new(member("<spec-address-operand>")))
-                )),
-            },
+                steps: vec![
+                    crate::kernel::SpecAddressStep::Subobject { width: 4 },
+                    crate::kernel::SpecAddressStep::OffsetBytes { bytes: 8 }
+                ],
+                value_type: ProgramType::Int32,
+                volatile: false,
+                pointee_constant: false,
+                access_class: None,
+                source: Default::default(),
+                checked: false,
+            })),
         );
     }
 }

@@ -36,7 +36,11 @@ fn assert_narrow_cast_work(size: u64) {
             assert!(graph.are_int32_equal(&widened, &mask));
         }
     });
-    let last = if size % 2 == 0 { Ty::UInt8 } else { Ty::Int16 };
+    let last = if size.is_multiple_of(2) {
+        Ty::UInt8
+    } else {
+        Ty::Int16
+    };
     let ((), chain_work) = crate::instrumentation::measure_deterministic_work(|| {
         let chain = MachineTerm::machine_integer_cast(last, Ty::UInt32, chain.clone());
         assert!(!graph.are_int32_equal(&chain, &var(174_000)));

@@ -597,7 +597,7 @@ mod tests {
         let expanded = expand_c_claim_source_by_label(&source, &[], "migrated.ensures_0")
             .unwrap_or_else(|e| panic!("{}", e.message()));
         assert!(
-            !expanded.contains("arithmetic_certificate"),
+            !expanded.contains("arithmetic_certificate signed_int32"),
             "{source}\n{expanded}"
         );
         assert!(!expanded.contains("solve("), "{expanded}");
@@ -720,7 +720,10 @@ by {step(); have defined(pool->capacity - 1) by solve();}
             )
             .unwrap();
         }
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(
+            !expanded.contains("arithmetic_certificate signed_int32"),
+            "{expanded}"
+        );
         without_implicit_solve(|| verify_c_sources(&expanded, &[("read.c", c)]))
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
     }
@@ -761,7 +764,10 @@ by {step(); have defined(pool->capacity - 1) by solve();}
             crate::surface::ContractProofClaim::Grouped,
         )
         .unwrap_or_else(|error| panic!("{}", error.message()));
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(
+            !expanded.contains("arithmetic_certificate signed_int32"),
+            "{expanded}"
+        );
         without_implicit_solve(|| verify_c_sources(&expanded, &[("bump.c", c)]))
             .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
     }

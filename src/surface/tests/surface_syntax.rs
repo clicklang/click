@@ -71,10 +71,11 @@ fn integer_solve_expansion_rechecks_without_smart_search() {
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
         if parameters.contains("y: Integer") {
-            assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+            assert_only_integer_arithmetic_leaves(&expanded);
             assert!(expanded.contains("le_antisymmetric"), "{expanded}");
         } else {
-            assert!(expanded.contains("normalize();"), "{expanded}");
+            assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+            assert!(!expanded.contains("normalize("), "{expanded}");
         }
         assert!(!expanded.contains("solve"), "{expanded}");
         let rechecked = source.replace(&format!("by {{ {proof} }}"), &expanded);
@@ -1549,7 +1550,7 @@ fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("compound arithmetic should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert_only_integer_arithmetic_leaves(&expanded);
 
     let rechecked_source = source.replace(
         "by {\n                solve() using {\n                    0 <= n;\n                    n <= 100;\n                }\n            }",
@@ -2007,7 +2008,7 @@ fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("float reflexivity should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert_only_integer_arithmetic_leaves(&expanded);
     assert_eq!(
         expanded.matches("isfinite(value);").count(),
         1,
@@ -2035,7 +2036,7 @@ fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("smart arithmetic should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert_only_integer_arithmetic_leaves(&expanded);
     assert!(
         expanded.contains("normalize"),
         "ordinary interval normalization expected: {expanded}"
@@ -2091,7 +2092,7 @@ fn integer_arithmetic_uses_checked_unified_certificate_without_replanning() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("Integer arithmetic should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert_only_integer_arithmetic_leaves(&expanded);
     assert!(!expanded.contains("solve() using"), "{expanded}");
     let rechecked = source.replace("by { solve() using { x == 1; } }", &expanded);
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
@@ -2121,7 +2122,7 @@ fn integer_arithmetic_using_proves_a_chain_longer_than_three_premises() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("the chain proof should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert_only_integer_arithmetic_leaves(&expanded);
     assert!(expanded.contains("click::integer::"), "{expanded}");
     let rechecked = source.replace(
         "by {\n                solve() using { a <= b; b < c; c <= d; d <= e; }\n            }",
@@ -2174,7 +2175,7 @@ fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("definedness proof should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert_only_integer_arithmetic_leaves(&expanded);
     assert!(expanded.contains("defined"), "{expanded}");
     let rechecked = source.replace(
         "by {\n                solve() using {\n                    0 <= a;\n                    0 <= b;\n                    defined(a + b);\n                }\n            }",
@@ -2211,7 +2212,7 @@ fn signed_arithmetic_smart_planner_handles_deep_supported_terms_iteratively() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("deep arithmetic should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert_only_integer_arithmetic_leaves(&expanded);
     let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
     crate::surface::without_implicit_solve(|| verify_click_theorems(&rechecked))
         .expect("deep ordinary expansion should replay without search");
@@ -2317,7 +2318,7 @@ fn pure_solve_exposes_an_explicit_arithmetic_certificate() {
 
     let verified = verify_click_theorems(source).expect("solve theorem should verify");
     let expanded = verified[0].expanded_proof_source().unwrap();
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert_only_integer_arithmetic_leaves(&expanded);
     assert!(expanded.contains("click::integer::"), "{expanded}");
 }
 
@@ -6241,7 +6242,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
             crate::kernel::Resource::Emp,
         )),
     };
-    let surface = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+    let surface = synthesize_surface_proposition(&original, ParameterBinding::default(), state)
         .expect("local storage and separating conjunction must be spellable");
     let printed = printing::source_click_proposition(&surface);
     let file = parser::parse_file_items(&format!(
@@ -6261,7 +6262,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
         &reparsed,
         &crate::kernel::PureFactContext::new(),
         ContractEnvironment::new(&values, &BTreeMap::new()),
-        FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+        FixedStateFrame::new(state, state, None, &RecordedStates::new()),
         SpecDefinitions::new(&predicates, &functions),
     )
     .unwrap();

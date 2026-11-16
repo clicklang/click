@@ -86,7 +86,7 @@ mod constant_truth_tests {
             crate::kernel::IntegerTerm::Variable(Variable(901_002)).into();
         let equality =
             Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.clone(), b.clone()), true);
-        let root = ProofFacts::from_ordered(&[equality.clone()]);
+        let root = ProofFacts::from_ordered(std::slice::from_ref(&equality));
         assert!(!root.contradicts(&equality));
         for (left, right) in [(a.clone(), b.clone()), (b, a)] {
             let disequality =
@@ -3962,7 +3962,7 @@ mod integer_equality_fact_index_tests {
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
                 MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&memory),
+                    ProgramPoint::at(memory),
                     Box::new(Pointer {
                         block: "retained_state-alpha-facts".into(),
                         offset: PointerOffsetTerm::Constant(0),

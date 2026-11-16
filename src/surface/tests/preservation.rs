@@ -1769,6 +1769,22 @@ fn resource_scope_preservation_migrations_expand_and_replay() {
             "mdtests/store_geometry_uses_explicit_order_and_transport.md",
             "keep_first.contract",
         ),
+        (
+            "mdtests/recursive_walk_survives_unrelated_store.md",
+            "mark.contract",
+        ),
+        (
+            "mdtests/borrowing_composite_survives_an_owning_call.md",
+            "setup.contract",
+        ),
+        (
+            "mdtests/borrowing_composite_survives_an_owning_call.md",
+            "bump.contract",
+        ),
+        (
+            "mdtests/borrowing_composite_survives_an_owning_call.md",
+            "probe.contract",
+        ),
     ] {
         let (source, sources) = mdtest_sources(fixture);
         let sources = sources
@@ -1798,4 +1814,29 @@ fn saved_memory_observation_expands_and_replays() {
     assert!(source.contains("observe(at("), "{source}");
     assert!(!source.contains("transport("), "{source}");
     without_implicit_solve(|| verify_c_sources(&source, &sources)).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: branching graph preservation expansion and cold replay"]
+fn branching_graph_preservation_expands_and_replays() {
+    let fixture = "mdtests/branching_graph_dfs.md";
+    let (source, sources) = mdtest_sources(fixture);
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(fixture);
+    let project = crate::cli::read_click_project(&path, &source).unwrap();
+    let expanded = expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::Bundle(sources.clone()),
+        "dfs.contract",
+    )
+    .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("dfs.contract", || {
+        verify_c_project(&project.with_entry_source(&expanded), &sources)
+            .map_err(|error| format!("{}\nExpanded source:\n{expanded}", error.report()))
+    })
+    .unwrap();
 }

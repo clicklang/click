@@ -2145,7 +2145,7 @@ impl SelectedFacts<'_> {
                 return false;
             };
             return step.lower_is(&base)
-                && step.upper_is(&**upper)
+                && step.upper_is(upper)
                 && step.strict
                 && self.checks_exact_order_step(step);
         }
@@ -2230,7 +2230,7 @@ impl SelectedFacts<'_> {
             let int_max = MachineTerm::constant(i32::MAX as u32);
             return left.as_ref() == &MachineTerm::constant(1)
                 && right.as_ref() == value.as_ref()
-                && step.lower_is(&**value)
+                && step.lower_is(value)
                 && step.upper_is(&int_max)
                 && step.strict
                 && self.checks_exact_order_step(step);
@@ -2386,7 +2386,7 @@ impl SelectedFacts<'_> {
             };
             return lower.as_ref() == &MachineTerm::constant(0)
                 && step.lower_is(&MachineTerm::constant(0))
-                && step.upper_is(&**value)
+                && step.upper_is(value)
                 && step.strict
                 && self.checks_exact_order_step(step);
         }
@@ -2419,7 +2419,7 @@ impl SelectedFacts<'_> {
                 return false;
             };
             return step.lower_is(&MachineTerm::constant(successor_bits as u32))
-                && step.upper_is(&**value)
+                && step.upper_is(value)
                 && !step.strict
                 && self.checks_exact_order_step(step);
         }
@@ -2445,7 +2445,7 @@ impl SelectedFacts<'_> {
                 return false;
             };
             return (constant_u32(*goal_bits) as i32) < (constant_u32(*premise_bits) as i32)
-                && step.upper_is(&**value)
+                && step.upper_is(value)
                 && !step.strict
                 && self.checks_exact_order_step(step);
         }
@@ -2472,7 +2472,7 @@ impl SelectedFacts<'_> {
             };
             let upper = MachineTerm::constant(upper_bits as u32);
             return step.lower_is(&upper)
-                && step.upper_is(&**value)
+                && step.upper_is(value)
                 && !step.strict
                 && matches!(
                     &step.premise,
@@ -2555,7 +2555,7 @@ impl SelectedFacts<'_> {
                 && bounds.nonnegative.upper_is(&value)
                 && !bounds.nonnegative.strict
                 && bounds.upper_bound.lower_is(&value)
-                && bounds.upper_bound.upper_is(&**upper)
+                && bounds.upper_bound.upper_is(upper)
                 && !bounds.upper_bound.strict
                 && self.checks_exact_order_step(&bounds.nonnegative)
                 && self.checks_exact_order_step(&bounds.upper_bound);
@@ -3099,7 +3099,7 @@ impl PureFactContext {
         match source {
             Int32OneLeEvidence::Direct(step) => {
                 step.lower_is(&MachineTerm::constant(1))
-                    && step.upper_is(&*value)
+                    && step.upper_is(value)
                     && !step.strict
                     && self.checks_exact_order_step(step)
             }
@@ -3141,10 +3141,10 @@ impl PureFactContext {
         lower: &MachineTerm,
         value: &MachineTerm,
     ) -> bool {
-        bounds.lower_bound.lower_is(&*lower)
-            && bounds.lower_bound.upper_is(&*value)
+        bounds.lower_bound.lower_is(lower)
+            && bounds.lower_bound.upper_is(value)
             && !bounds.lower_bound.strict
-            && bounds.upper_bound.lower_is(&*value)
+            && bounds.upper_bound.lower_is(value)
             && bounds.upper_bound.strict
             && self.checks_exact_order_step(&bounds.lower_bound)
             && self.checks_exact_order_step(&bounds.upper_bound)
@@ -3156,10 +3156,10 @@ impl PureFactContext {
         lower: &MachineTerm,
         value: &MachineTerm,
     ) -> bool {
-        bounds.lower_bound.lower_is(&*lower)
-            && bounds.lower_bound.upper_is(&*value)
+        bounds.lower_bound.lower_is(lower)
+            && bounds.lower_bound.upper_is(value)
             && bounds.lower_bound.strict
-            && bounds.upper_bound.lower_is(&*value)
+            && bounds.upper_bound.lower_is(value)
             && bounds.upper_bound.strict
             && self.checks_exact_order_step(&bounds.lower_bound)
             && self.checks_exact_order_step(&bounds.upper_bound)
@@ -3565,10 +3565,9 @@ impl PureFactContext {
                 crate::instrumentation::record_deterministic_work(1);
                 if let (MachineOperandView::Shared(a), MachineOperandView::Shared(b)) =
                     (pattern, target)
+                    && !seen.insert((a.id(), b.id()))
                 {
-                    if !seen.insert((a.id(), b.id())) {
-                        continue;
-                    }
+                    continue;
                 }
                 if pattern.variable() == Some(&bound) {
                     // Selected instantiation argument output. The remaining
@@ -3605,10 +3604,10 @@ impl PureFactContext {
                     }
                 } else if let (Some((ae, af, at, av)), Some((be, bf, bt, bv))) =
                     (pattern.cast(), target.cast())
+                    && ae == MachineCastSpelling::Generic
+                    && (ae, af, at) == (be, bf, bt)
                 {
-                    if ae == MachineCastSpelling::Generic && (ae, af, at) == (be, bf, bt) {
-                        pending.push((av, bv));
-                    }
+                    pending.push((av, bv));
                 }
             }
         }

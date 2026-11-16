@@ -194,20 +194,21 @@ impl EndpointKeys {
         }
         let sum = self.sums.get(&(root.id(), format)).unwrap();
         let rendered = sum.tree.as_ref().map(|tree| tree.rendered.clone());
-        let result = if sum.constant != 0 || rendered.is_none() {
-            let constant = KernelTermImport::default()
-                .machine(format, &MachineTerm::constant_at32(format, sum.constant));
-            match rendered {
-                Some(root) => KernelTerm::machine_binary_shared_as(
-                    MachineIntegerType::Int32,
-                    format,
-                    MachineBinaryOp::Add,
-                    [root, constant],
-                ),
-                None => constant,
+        let result = match rendered {
+            Some(root) if sum.constant == 0 => root,
+            rendered => {
+                let constant = KernelTermImport::default()
+                    .machine(format, &MachineTerm::constant_at32(format, sum.constant));
+                match rendered {
+                    Some(root) => KernelTerm::machine_binary_shared_as(
+                        MachineIntegerType::Int32,
+                        format,
+                        MachineBinaryOp::Add,
+                        [root, constant],
+                    ),
+                    None => constant,
+                }
             }
-        } else {
-            rendered.unwrap()
         };
         let key = Key::new(V::Shared(&result));
         self.keys = self.keys.with_inserted(root.id(), key.clone());

@@ -366,9 +366,8 @@ saved states that can be restored. In particular, `step_until(name)` does
 not target a proof mark.
 
 Expansion of execution automation emits one `step();` line per executed
-statement, followed by the outcome closers. Expansion recurses through `loop` and materializes omitted
-phase proofs at the loop keyword. The older numbered-loop summary syntax
-remains migration compatibility and should not be used in new proofs.
+statement, followed by the outcome closers. Expansion recurses through `loop`
+and materializes omitted phase proofs at the loop keyword.
 
 ### Proof marks
 
@@ -2189,16 +2188,18 @@ rules correspond to named laws, applied with explicit `using` premises:
 
 Integer composition plans expand their premise, addition, scaling, and
 equality-direction nodes into ordinary `have`, `apply(...) using`, `rewrite`,
-and explicit `normalize()` steps. Each intermediate fact is established once;
-later nodes reuse it. Context-free identities relate the plan's flat affine
-forms to the written operands, so expansion does not re-enter arithmetic
+and explicit Integer arithmetic certificates. Each intermediate fact is
+established once; later nodes reuse it. One-node `trivial` certificates check
+the context-free identities between flat affine forms and the written
+operands; `known()` remains unchanged. Expansion does not re-enter arithmetic
 search. Integer antisymmetry uses `integer::le_antisymmetric`.
 
 Strict Integer premises and goals use the successor-order law. Linear
 refutations that use the negated goal once become direct compositions;
 other refutations open a negated-goal scope with `intro` and close its contradiction. Type
-ranges normalize directly, as do constant-divisor quotient, shift, and
-remainder bounds. Rounding and endpoint exclusions use ordinary Integer laws.
+ranges and constant-divisor quotient, shift, and remainder bounds use explicit
+`type_range` and `operation_bound` Integer certificate nodes. Rounding and
+endpoint exclusions use ordinary Integer laws.
 Machine operation and cast identities normalize from their explicit Integer
 bounds. Signed intervals expand to ordinary bounds and observation identities;
 specialized selected rules normalize from explicit inputs, while polynomial

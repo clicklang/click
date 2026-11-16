@@ -1313,11 +1313,9 @@ pub(super) fn function_refines_named_contract_in_case(
     let payload = symbolic_call_result(ProgramType::Int32, budget.allocate_kernel_variable()?);
     let throw_frame = |entry: &ExecutionState| {
         let mut state = entry.clone();
-        state.locals.set_typed(
-            C_EXCEPTIONAL_RESULT_NAME.to_string(),
-            payload.clone(),
-            ProgramType::Int32,
-        );
+        state
+            .locals
+            .set_typed(CONTRACT_EXCEPTION, payload.clone(), ProgramType::Int32);
         state
     };
     let function_throw = throw_frame(&function_entry);

@@ -491,9 +491,10 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     "requires this->m_feerate.base.size != 0 implies to_integer(this->m_feerate.base.fee) <= 9223372036854775807;",
                     "",
                 ),
-                "CFeeRateGetFeePerKMissingSizeGuard" => {
-                    ("requires this->m_feerate.base.size > 0;", "")
-                }
+                "CFeeRateGetFeePerKMissingSizeGuard" => (
+                    "requires this->m_feerate.base.size > 0;",
+                    "requires this->m_feerate.base.size == 0; requires this->m_feerate.base.fee == 0i64;",
+                ),
                 "CFeeRateGetFeePerKMissingFeeAuthority" => ("views this->m_feerate.base.fee;", ""),
                 "CFeeRateGetFeePerKMissingLowerFit" => (
                     "requires -9223372036854775808 * to_integer(this->m_feerate.base.size) <= to_integer(this->m_feerate.base.fee) * 1000;",
@@ -512,10 +513,18 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             let root_signature = format!("int64 {selected}(");
             let (helpers, root_source) = source.split_once(&root_signature).unwrap();
             assert!(root_source.contains(from), "missing mutation {name}");
-            let hostile = format!(
+            let mut hostile = format!(
                 "{helpers}{root_signature}{}",
                 root_source.replacen(from, to, 1)
             );
+            if name == "CFeeRateGetFeePerKMissingSizeGuard" {
+                // The strict result-fit bound also excludes zero size. Remove
+                // it so the zero-sized witness reaches the callee's domain check.
+                hostile = hostile.replace(
+                    "requires to_integer(this->m_feerate.base.fee) * 1000 < 9223372036854775808 * to_integer(this->m_feerate.base.size);",
+                    "",
+                );
+            }
             let parsed = read_click_project(&sidecar, &hostile).unwrap();
             if name == "CFeeRateGetFeeNativeFeeBounds" {
                 verify_program_prepared_project(&parsed, &import)
@@ -801,8 +810,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 ],
                 RoundingPhase::NumeratorRejections => vec![
                     source.replace("apply(integer::uint64_multiply_to_integer(this->fee as uint64, at_size as uint64));", ""),
-                    source.replace("to_integer(product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(product) == to_integer(this->fee) * to_integer(at_size) + 1"),
-                    source.replace("to_integer(negative_product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(negative_product) == to_integer(this->fee) * to_integer(at_size) + 1"),
+                    source.replace("to_integer(this->fee) * to_integer(at_size) == to_integer(product)", "to_integer(this->fee) * to_integer(at_size) == to_integer(product) + 1"),
+                    source.replace("to_integer(this->fee) * to_integer(at_size) == to_integer(negative_product)", "to_integer(this->fee) * to_integer(at_size) == to_integer(negative_product) + 1"),
                     source.replace(if down { "apply(integer::uint64_divide_to_integer((this->fee as uint64 * at_size as uint64), this->size as uint32 as uint64));" } else { "apply(integer::uint64_divide_to_integer((((this->fee as uint64 * at_size as uint64) + this->size as uint64) - 1u64), this->size as uint32 as uint64));" }, ""),
                 ],
                 RoundingPhase::AdjustedNumeratorRejections => {
@@ -841,7 +850,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             } else {
                 vec![
                     source.replace(if name.ends_with("Negative") { "requires not (this->fee >= 0i64);" } else { "requires this->fee >= 0i64 and not (this->fee < 8589934592i64);" }, ""),
-                    source.replace("to_integer(product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(product) == to_integer(this->fee) * to_integer(at_size) + 1"),
+                    source.replace("to_integer(this->fee) * to_integer(at_size) == to_integer(product)", "to_integer(this->fee) * to_integer(at_size) == to_integer(product) + 1"),
                     source.replace(if down { "(to_integer(result) + 1) * to_integer(this->size)" } else { "(to_integer(result) + -1) * to_integer(this->size)" }, "to_integer(result) * to_integer(this->size)"),
                     source.replace(if down { "to_integer(result) * to_integer(this->size) <= to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) <= to_integer(result) * to_integer(this->size)" }, if down { "to_integer(result) * to_integer(this->size) < to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) < to_integer(result) * to_integer(this->size)" }),
                 ]
@@ -941,8 +950,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                             "< to_integer(result) * to_integer(this->size)",
                         ),
                     source.replace(
-                        "to_integer(product) == to_integer(this->fee) * to_integer(at_size)",
-                        "to_integer(product) == to_integer(this->fee) * to_integer(at_size) + 1",
+                        "to_integer(this->fee) * to_integer(at_size) == to_integer(product)",
+                        "to_integer(this->fee) * to_integer(at_size) == to_integer(product) + 1",
                     ),
                     source.replace(
                         if selected.ends_with("Down") {
@@ -1676,16 +1685,14 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     let (verification, profile) =
         instrumentation::collect(|| verify_program_prepared_project(&project, &imported));
     verification.expect("verify the exact inclusive range contract");
-    let finished_claims = profile
-        .iter()
-        .filter_map(|event| match event {
-            VerificationEvent::ClaimFinished { key, .. } => Some(key.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    // Whole-contract proof checking reports completion of the function; it
+    // does not run the compatibility per-claim certification pass.
     assert!(
-        !finished_claims.is_empty(),
-        "profile must observe checked claims"
+        profile.iter().any(|event| matches!(event,
+            VerificationEvent::FunctionFinished { name, .. }
+                if display_source_names(name) == "MoneyRange"
+        )),
+        "profile must observe the checked MoneyRange function"
     );
     assert!(
         profile
@@ -1700,7 +1707,8 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
         6,
         "audit must cover every upstream smart tactic"
     );
-    for claim in ["MoneyRange.contract"] {
+    {
+        let claim = "MoneyRange.contract";
         assert!(
             sites.iter().any(|site| site.claim_label == claim),
             "{claim} has no source-selectable smart tactic"
@@ -3339,7 +3347,8 @@ int32& {pop_back}(std::span<int>& span) {{
     ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
 }} by {{
     apply(uint64_predecessor_below(std_span_size(span)));
-    step_until(region(2));
+    step_until(assignment(size, 0));
+    step();
     have size - 1u64 <= std_span_size(span) by {{
         solve() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
     }}
@@ -4184,7 +4193,8 @@ int32& {pop_back}(std::span<int>& span) {{
     ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
 }} by {{
     apply(uint64_predecessor_below(std_span_size(span)));
-    step_until(region(2));
+    step_until(assignment(size, 0));
+    step();
     have size - 1u64 <= std_span_size(span) by {{
         solve() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
     }}

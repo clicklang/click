@@ -95,6 +95,7 @@ pub(crate) use memory_loads::proposition_mentions_scalar_read;
 pub(crate) use memory_loads::read_over_write_program_value;
 pub(in crate::kernel) use memory_loads::record_load_access_width;
 #[cfg(test)]
+#[cfg(test)]
 pub(crate) use memory_loads::record_load_variable_defining_fact;
 #[cfg(test)]
 pub(crate) use memory_loads::recorded_load_access_width;

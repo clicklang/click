@@ -4972,7 +4972,7 @@ impl Pointer {
             return stored.pointer().clone();
         }
         let read = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(memory),
             Box::new(address.clone()),
             LoadKind::Int32,
         );
@@ -5076,7 +5076,7 @@ impl Pointer {
         // Pointer values retain the selected read directly. Observation metadata
         // records the live source independently of the term's identity.
         let bits = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(memory),
             Box::new(address.clone()),
             LoadKind::Int32,
         );

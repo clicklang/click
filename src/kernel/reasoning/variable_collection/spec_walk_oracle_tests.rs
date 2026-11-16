@@ -18,6 +18,9 @@ fn old_collect_spec_expression_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match expression {
+        SpecExpression::ObjectAddress(address) => {
+            old_collect_spec_expression_bitvector_variables(&address.base, variables)
+        }
         SpecExpression::ResourceField { .. } => {}
         SpecExpression::IntegerToMachine { value, .. } => {
             old_collect_spec_integer_variables(value, variables);
@@ -397,6 +400,9 @@ fn old_collect_spec_integer_bound_expression(
     integer_seen: &mut SeenTerms,
 ) {
     match expression {
+        SpecExpression::ObjectAddress(address) => {
+            old_collect_spec_integer_bound_expression(&address.base, variables, integer_seen)
+        }
         SpecExpression::Value(value) => {
             collect_program_value_bound_identities(value, variables, integer_seen);
         }

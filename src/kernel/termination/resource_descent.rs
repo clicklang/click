@@ -689,7 +689,12 @@ mod tests {
             .resources()
             .clone()
             .unchecked_with_fact(child.clone())
-            .with_opened_structural_witnesses(opening, &[child.clone()], false, &assumptions);
+            .with_opened_structural_witnesses(
+                opening,
+                std::slice::from_ref(&child),
+                false,
+                &assumptions,
+            );
         assert!(!descent.accepts(
             &state.clone().with_resource_context(resources.clone()),
             &child,
@@ -716,7 +721,12 @@ mod tests {
             .resources()
             .clone()
             .unchecked_with_fact(viewed_child)
-            .with_opened_structural_witnesses(opening, &[child.clone()], true, &assumptions);
+            .with_opened_structural_witnesses(
+                opening,
+                std::slice::from_ref(&child),
+                true,
+                &assumptions,
+            );
         let fold = resources.prepare_structural_witness_fold(&[child], &assumptions);
         assert!(fold.is_some());
         let viewed_parent = ResourceFact::View(parent.resource().clone());

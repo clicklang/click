@@ -154,15 +154,14 @@ impl VariableSubstitution for PointerSubstitution<'_> {
         substitute_pointer_variable_in_program_value(value, self.from, self.to)
     }
     fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue {
-        if let Some(root) = value.shared() {
-            if let Some(rewritten) =
+        if let Some(root) = value.shared()
+            && let Some(rewritten) =
                 crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(
                     self.from, self.to,
                 )
                 .shared_machine_operand(root)
-            {
-                return rewritten.into();
-            }
+        {
+            return rewritten.into();
         }
         self.program_value(&value.native()).into()
     }
@@ -3117,6 +3116,7 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
             variables.insert(*variable);
         }
         PointerBlock::ContractResult
+        | PointerBlock::ContractException
         | PointerBlock::AggregateReturn { .. }
         | PointerBlock::StaticObject { .. }
         | PointerBlock::AutomaticLocal { .. }
@@ -7372,6 +7372,11 @@ fn substitute_pointer_variable_in_spec_expression(
     to: &Pointer,
 ) -> SpecExpression {
     match expression {
+        SpecExpression::ObjectAddress(address) => {
+            SpecExpression::ObjectAddress(Box::new(address.with_base(
+                substitute_pointer_variable_in_spec_expression(&address.base, from, to),
+            )))
+        }
         SpecExpression::ResourceField { .. } => expression.clone(),
         SpecExpression::IntegerToMachine { value, destination } => {
             SpecExpression::IntegerToMachine {

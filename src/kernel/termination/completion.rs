@@ -14,6 +14,7 @@ pub(crate) enum ProgramContractGoal {
     CallbackSafety,
     Body { ordinal: usize, function: String },
     BodyOpening,
+    DeclaredBody(String),
 }
 
 type ProgramProof = ProofObject<(), ProgramContractGoal, ()>;
@@ -48,6 +49,7 @@ pub(super) struct ProgramState {
     pub(super) proof: ProgramProof,
     pub(super) open: BTreeMap<ProgramContractGoal, BranchId>,
     pending_bodies: BTreeMap<usize, String>,
+    pending_declarations: BTreeSet<String>,
     pub(super) bodies: Vec<Arc<ContractBodyProof>>,
     next_body: usize,
     recursion: Option<Arc<super::recursion_authority::RecursionDeclarations>>,
@@ -113,10 +115,13 @@ impl ProgramBodyOwner {
         let mut state = self.parent.0.lock().expect("program contract root");
         let state = state.as_mut().expect("the parent program is open");
         state.retire(&self.goal);
-        let ProgramContractGoal::Body { ordinal, .. } = &self.goal else {
+        let ProgramContractGoal::Body { ordinal, function } = &self.goal else {
             unreachable!();
         };
         state.pending_bodies.remove(ordinal);
+        if state.pending_declarations.remove(function) {
+            state.retire(&ProgramContractGoal::DeclaredBody(function.clone()));
+        }
         state.bodies.push(body);
     }
 }
@@ -174,7 +179,9 @@ impl ProgramContractProof {
         bodyless_declarations: &BTreeSet<String>,
         functions: &[&ProgramFunction],
         plans: &[FunctionTerminationPlan],
+        mut ordinary_bodies: BTreeSet<String>,
     ) -> Result<Self, TerminationError> {
+        ordinary_bodies.extend(requested.difference(bodyless_declarations).cloned());
         let recursion =
             super::recursion_authority::RecursionDeclarations::open_ordinary(functions, plans)?;
         Ok(Self::open_inner(
@@ -182,6 +189,7 @@ impl ProgramContractProof {
             declared_diverging,
             bodyless_declarations,
             Some(recursion),
+            ordinary_bodies,
         ))
     }
 
@@ -191,7 +199,13 @@ impl ProgramContractProof {
         declared_diverging: BTreeSet<String>,
         bodyless_declarations: &BTreeSet<String>,
     ) -> Self {
-        Self::open_inner(requested, declared_diverging, bodyless_declarations, None)
+        Self::open_inner(
+            requested,
+            declared_diverging,
+            bodyless_declarations,
+            None,
+            BTreeSet::new(),
+        )
     }
 
     fn open_inner(
@@ -199,6 +213,7 @@ impl ProgramContractProof {
         declared_diverging: BTreeSet<String>,
         bodyless_declarations: &BTreeSet<String>,
         recursion: Option<Arc<super::recursion_authority::RecursionDeclarations>>,
+        ordinary_bodies: BTreeSet<String>,
     ) -> Self {
         let goals = requested
             .iter()
@@ -209,6 +224,12 @@ impl ProgramContractProof {
                     .difference(bodyless_declarations)
                     .cloned()
                     .map(ProgramContractGoal::DivergencePolicy),
+            )
+            .chain(
+                ordinary_bodies
+                    .iter()
+                    .cloned()
+                    .map(ProgramContractGoal::DeclaredBody),
             )
             .chain([
                 ProgramContractGoal::CallbackSafety,
@@ -224,6 +245,7 @@ impl ProgramContractProof {
                 proof,
                 open: goals.into_iter().zip(ids).collect(),
                 pending_bodies: BTreeMap::new(),
+                pending_declarations: ordinary_bodies.clone(),
                 bodies: Vec::new(),
                 next_body: 0,
                 recursion,
@@ -235,6 +257,50 @@ impl ProgramContractProof {
 
     pub(crate) fn bodies(&self) -> ProgramContractBodies {
         self.bodies.clone()
+    }
+
+    /// Auxiliary termination evidence for modeled thread creation, before
+    /// the enclosing body proof starts. Preserve native authority for bodies
+    /// already completed; explicit independent inputs can prove termination
+    /// of other code, but cannot retire any declared body cell.
+    pub(crate) fn bootstrap_termination_rules(
+        &self,
+        inputs: ProgramTerminationInputs<'_>,
+    ) -> Result<TerminationVerdicts, TerminationError> {
+        let (bodies, recursion) = {
+            let state = self.bodies.0.lock().expect("program contract root");
+            let state = state
+                .as_ref()
+                .expect("early termination precedes program completion");
+            (state.bodies.clone(), state.recursion.clone())
+        };
+        let mut loop_rules = BTreeMap::<String, Vec<VerifiedLoopRule>>::new();
+        for body in &bodies {
+            charge_termination_work(body.loop_rules().len() + 1);
+            loop_rules
+                .entry(body.termination_rule().function.name().to_string())
+                .or_default()
+                .extend_from_slice(body.loop_rules());
+        }
+        let bodies = super::inputs::TerminationBodyInputs::completed(
+            &bodies,
+            inputs.independent.rules,
+            &loop_rules,
+        );
+        let heights = program_termination_height_plan(&bodies.rules, inputs.independent.bodies);
+        super::obligations::TerminationObligations::generate_from_inputs(
+            &bodies,
+            inputs.plans,
+            &loop_rules,
+            inputs.independent.bodies,
+            &heights,
+            inputs.assumed_terminating,
+            &self.declared_diverging,
+            inputs.diverging_contracts,
+            inputs.has_unselected_functions,
+            recursion.as_deref(),
+        )?
+        .prove_implicitly()
     }
 
     /// Seal body opening and generate termination requirements. No descent
@@ -250,6 +316,9 @@ impl ProgramContractProof {
             .expect("program contract root")
             .take()
             .expect("the program completes once");
+        if let Some(function) = state.pending_declarations.first() {
+            return Err(ProgramContractFailure::UnfinishedBody(function.clone()));
+        }
         if let Some((_, function)) = state.pending_bodies.first_key_value() {
             return Err(ProgramContractFailure::UnfinishedBody(function.clone()));
         }
@@ -426,10 +495,7 @@ mod tests {
         rules: &[VerifiedFunctionRule],
     ) -> Result<ProgramTerminationProof, ProgramContractFailure> {
         owner.generate_termination(ProgramTerminationInputs {
-            independent: crate::kernel::IndependentTerminationInputs {
-                rules: rules,
-                bodies: &[],
-            },
+            independent: crate::kernel::IndependentTerminationInputs { rules, bodies: &[] },
             plans: &[],
             assumed_terminating: &BTreeSet::new(),
             diverging_contracts: &BTreeSet::new(),

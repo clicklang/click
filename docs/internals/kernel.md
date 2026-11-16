@@ -1671,6 +1671,16 @@ its own permission. Historical field reads resolve the object's address in the
 selected entry state. Materialized aggregate results belong to the caller
 and survive the callee's exit.
 
+Specification addresses such as `&p->field` lower to
+`SpecExpression::ObjectAddress`. Its base is a specification expression, so a
+saved-state pointer read stays in the selected memory. Typed, outside-in
+`SpecAddressStep` projections retain C byte offsets and subobject selection;
+the evaluated base feeds the ordinary C address operation, preserving its
+member designation, extent, qualifiers, and checked-address obligations.
+Evaluation introduces no execution local or lexical binder. The Surface form
+remains the original address expression, including `old(...)`/`at(...)` state
+selectors; no generated operand name or replacement syntax is required.
+
 A contract's return value is `BindingName::ContractResult`, with Surface spelling
 `result`. It is distinct from all `Named`, automatic, and static bindings,
 including source C variables named `result`. Fixed-state elaboration carries its
@@ -1679,6 +1689,13 @@ value-only bookkeeping slot is `PointerBlock::ContractResult`, spelled
 `result.storage()` when an exact slot address is needed; this does not declare
 C storage or grant memory ownership. Aggregate results still bind their actual
 returned object address. No string is decoded into a contract-result identity.
+
+The thrown `int32` payload likewise uses `BindingName::ContractException` and
+its own `PointerBlock::ContractException` bookkeeping slot. Exceptional
+postconditions bind `exception` to that typed payload. The exact slot address
+spells `exception.storage()` and grants no storage or ownership. Neither `exception` nor the former internal
+spelling `__click_exception` is decoded into a kernel identity, so a source
+variable of either name cannot replace the payload or alias its slot.
 
 Bare `result` lowers to that typed binding, while `c(result)` resolves the
 source C binding, including inside casts, field projections, and array indices.

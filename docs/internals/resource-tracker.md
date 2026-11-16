@@ -1610,6 +1610,19 @@ permitted stores or a transition that drops the fact:
   Exact flat borrows retain the caller's original checked partition instead
   of reconstructing and validating every old owner. Returned flat resources
   use incremental composition, checking each new owner and its conflicts.
+  Unit returned composites with unconditional flat memory/token bodies carry
+  one evaluated body per emitted source occurrence. The frontier overlap
+  check, core projection, escaping-view bookkeeping and installed expansion
+  cache reuse that construction; equal heads retain independent support IDs.
+  `FlatReturnBodies` does not infer disjointness from a folded head: its body
+  still checks against the retained caller frame in post-call memory. Nested,
+  guarded, existential, nonunit and authority bodies retain legacy expansion.
+  A prepared flat body's constant-coordinate memory leaves query the retained
+  frame's address-class interval index directly. Admission neither inserts
+  temporary children nor rechecks the body's composition or the old frame;
+  an overlap reports the selected held occurrence's original fact. Cold
+  indexes, symbolic/general coordinates and other unsupported geometry keep
+  the legacy frontier validation; an indexed miss never certifies them.
   Monotone memory-evidence admission walks a smaller incoming contract or a
   shared persistent delta, without enumerating absent caller facts. Scalar
   refresh seeks only the equality class's concrete `local:` block interval,

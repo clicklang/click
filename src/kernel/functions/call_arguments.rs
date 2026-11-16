@@ -1233,13 +1233,15 @@ mod pointer_argument_tests {
         let callee = bind_program_function_arguments_retained(
             &state,
             &function,
-            &[native.clone()],
-            &[source.clone()],
+            std::slice::from_ref(&native),
+            std::slice::from_ref(&source),
         )
         .unwrap();
         let bound = callee.locals.get("x").unwrap();
         assert_eq!(bound.shared(), Some(&root));
-        let legacy = bind_program_function_arguments(&state, &function, &[native.clone()]).unwrap();
+        let legacy =
+            bind_program_function_arguments(&state, &function, std::slice::from_ref(&native))
+                .unwrap();
         assert_eq!(bound, legacy.locals.get("x").unwrap());
         let returned = coerce_retained_function_return_value(
             bound.clone(),
@@ -1286,14 +1288,15 @@ mod pointer_argument_tests {
             let callee = bind_program_function_arguments_retained(
                 &state,
                 &function,
-                &[native.clone()],
-                &[source.clone()],
+                std::slice::from_ref(&native),
+                std::slice::from_ref(&source),
             )
             .unwrap();
             let bound = callee.locals.get("x").unwrap();
             assert_eq!(bound.shared(), Some(&root));
             let legacy =
-                bind_program_function_arguments(&state, &function, &[native.clone()]).unwrap();
+                bind_program_function_arguments(&state, &function, std::slice::from_ref(&native))
+                    .unwrap();
             assert_eq!(bound, legacy.locals.get("x").unwrap());
             let returned = coerce_retained_function_return_value(
                 bound.clone(),
@@ -1340,13 +1343,15 @@ mod pointer_argument_tests {
         let callee = bind_program_function_arguments_retained(
             &state,
             &function,
-            &[native.clone()],
-            &[source.clone()],
+            std::slice::from_ref(&native),
+            std::slice::from_ref(&source),
         )
         .unwrap();
         let bound = callee.locals.get("x").unwrap();
         assert_eq!(bound.shared(), Some(&root));
-        let legacy = bind_program_function_arguments(&state, &function, &[native.clone()]).unwrap();
+        let legacy =
+            bind_program_function_arguments(&state, &function, std::slice::from_ref(&native))
+                .unwrap();
         assert_eq!(bound, legacy.locals.get("x").unwrap());
         let returned = coerce_retained_function_return_value(
             bound.clone(),

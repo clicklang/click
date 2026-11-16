@@ -36,8 +36,7 @@ use crate::kernel::{
     program_function_contract_entry_state, program_function_contract_refinement_arguments,
     program_function_contract_refinement_context, program_function_entry_state,
     program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
-    program_seq, program_termination_height_plan, program_verified_function_termination_rules,
-    program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
+    program_seq, program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
     prove_owned_resource_quantity_nonnegative, prove_program_condition_fact_transport,
     prove_program_function_contract_refinement,
     prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget,
@@ -462,7 +461,7 @@ fn library_module_path(identity: &str) -> String {
 /// `uint32` is to the kernel: each has no definition, only the library's
 /// bodyless functions over it and the axioms relating them. Only a library
 /// module declares one, and only one listed here.
-pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec", "ChunksExact", "SliceIter"];
+pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec", "SliceIter"];
 
 /// The name a loop's invariants and proof read its pass count by: the number
 /// of passes the loop has completed.
@@ -475,12 +474,24 @@ pub(crate) fn loop_iterations_spelling(index: usize) -> String {
 
 /// The Rust accessors a proof reads a loop's iterator through, as written
 /// after `iter.`: a call such as `len()` or a public field such as `start`.
-pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 6] =
-    ["len()", "as_slice()", "start", "end", "start()", "end()"];
+pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 11] = [
+    "len()",
+    "as_slice()",
+    "start",
+    "end",
+    "start()",
+    "end()",
+    "v",
+    "v.len()",
+    "rem",
+    "rem.len()",
+    "chunk_size",
+];
 
 /// The accessors of an iterator of `kind`, which are Rust's own:
 /// `ExactSizeIterator::len`, `slice::Iter::as_slice`, a `Range`'s `start`
-/// and `end` fields, and a `RangeInclusive`'s `start()` and `end()`.
+/// and `end` fields, a `RangeInclusive`'s `start()` and `end()`, and a
+/// `ChunksExact`'s fields `v`, `rem` and `chunk_size`.
 pub(crate) fn rust_iterator_accessors(
     kind: crate::languages::interface::RustIteratorKind,
 ) -> &'static [&'static str] {
@@ -489,8 +500,10 @@ pub(crate) fn rust_iterator_accessors(
         crate::languages::interface::RustIteratorKind::Enumerate => &["len()"],
         crate::languages::interface::RustIteratorKind::Range => &["start", "end", "len()"],
         crate::languages::interface::RustIteratorKind::RangeInclusive => &["start()", "end()"],
-        crate::languages::interface::RustIteratorKind::Chunks
-        | crate::languages::interface::RustIteratorKind::SliceLibrary(_) => &[],
+        crate::languages::interface::RustIteratorKind::Chunks => {
+            &["v", "v.len()", "rem", "rem.len()", "chunk_size", "len()"]
+        }
+        crate::languages::interface::RustIteratorKind::SliceLibrary(_) => &[],
     }
 }
 
@@ -502,28 +515,20 @@ pub(crate) fn rust_library_iterator(
 ) -> Option<&str> {
     matches!(
         iterator.kind,
-        crate::languages::interface::RustIteratorKind::Chunks
-            | crate::languages::interface::RustIteratorKind::SliceLibrary(_)
+        crate::languages::interface::RustIteratorKind::SliceLibrary(_)
     )
     .then_some(iterator.local.as_str())
 }
 
-/// The Click type of a library-valued loop iterator: `ChunksExact<uint8>`,
-/// or `SliceIter` at the slice's element type.
+/// The Click type of a library-valued loop iterator: `SliceIter` at the
+/// slice's element type.
 pub(crate) fn rust_library_iterator_type(
     iterator: &crate::languages::interface::RustLoopIterator,
 ) -> Option<ClickType> {
-    rust_library_iterator(iterator)?;
-    if let crate::languages::interface::RustIteratorKind::SliceLibrary(name) = iterator.kind {
-        return generics::primitive_instance_value_type(&ClickType::Program(
-            InterfaceType::Parameter(name),
-        ));
-    }
-    Some(ClickType::Algebraic(AlgebraicTypeApplication {
-        rigid: false,
-        name: "ChunksExact".to_string(),
-        arguments: vec![ClickType::Program(InterfaceType::UInt8)],
-    }))
+    let crate::languages::interface::RustIteratorKind::SliceLibrary(name) = iterator.kind else {
+        return None;
+    };
+    generics::primitive_instance_value_type(&ClickType::Program(InterfaceType::Parameter(name)))
 }
 
 /// `iter.<accessor>` of `iterator`, read from the state the importer keeps
@@ -553,6 +558,17 @@ pub(crate) fn rust_iterator_method(
         (K::Range, "len()") => {
             ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
         }
+        // A slice field reads as a slice parameter does: `iter.v` is its
+        // data and `iter.v.len()` its length.
+        (K::Chunks, "v") => variable("v"),
+        (K::Chunks, "v.len()") => variable("v_len"),
+        (K::Chunks, "rem") => variable("rem"),
+        (K::Chunks, "rem.len()") => variable("rem_len"),
+        (K::Chunks, "chunk_size") => variable("chunk_size"),
+        (K::Chunks, "len()") => ProgramExpression::Divide(
+            Box::new(variable("v_len")),
+            Box::new(variable("chunk_size")),
+        ),
         _ => {
             return Err(format!(
                 "`iter.{accessor}` is not an accessor of this loop's {} iterator{}",
@@ -765,10 +781,6 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/rust/slice.click",
         include_str!("../library/rust/slice.click"),
-    ),
-    (
-        "library/rust/chunks_exact.click",
-        include_str!("../library/rust/chunks_exact.click"),
     ),
     (
         "library/rust/slice_iter.click",
@@ -8701,11 +8713,6 @@ pub(crate) fn note_ambient_source_tactic(claim_label: &str, source_index: usize)
             ambient.tactic = Some((claim_label.to_owned(), source_index));
         }
     });
-}
-
-/// Contract certification belongs to the declaration, not its last proof step.
-pub(crate) fn clear_ambient_source_tactic() {
-    AMBIENT_PROOF_SOURCE.with(|ambient| ambient.borrow_mut().tactic = None);
 }
 
 pub(crate) fn clear_ambient_proof_source() {

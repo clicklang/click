@@ -5157,116 +5157,6 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn expression_rewrite_respects_absolute_state_boundaries() {
-        let x = ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
-        let y = ContractExpression::ProgramExpression(ProgramExpression::Variable("y".into()));
-        let old = |value| ContractExpression::Old(Box::new(value));
-        let at = |label: &str, value| ContractExpression::At {
-            selector: ProgramPointSelector::Mark(label.into()),
-            expression: Box::new(value),
-        };
-        let pair = |left, right| ContractExpression::Add(Box::new(left), Box::new(right));
-        for historical in [old(x.clone()), at("entry", x.clone())] {
-            assert_eq!(
-                rewrite_contract_expression_exact(
-                    &pair(x.clone(), historical.clone()),
-                    &x,
-                    &y,
-                    true
-                ),
-                (pair(y.clone(), historical), true),
-            );
-        }
-        assert_eq!(
-            rewrite_contract_expression_exact(
-                &old(pair(x.clone(), x.clone())),
-                &old(x.clone()),
-                &old(y.clone()),
-                true
-            ),
-            (old(pair(y.clone(), y.clone())), true),
-        );
-        assert_eq!(
-            rewrite_contract_expression_exact(
-                &at("entry", pair(x.clone(), x.clone())),
-                &at("entry", x.clone()),
-                &at("entry", y.clone()),
-                true
-            ),
-            (at("entry", pair(y.clone(), y.clone())), true),
-        );
-        let historical = at("other", pair(x.clone(), x.clone()));
-        assert_eq!(
-            rewrite_contract_expression_exact(&historical, &at("entry", x), &at("entry", y), true),
-            (historical, false),
-        );
-    }
-
-    #[test]
-    fn multidimensional_array_rewrite_updates_its_lowered_base() {
-        let source_base =
-            ContractExpression::ProgramExpression(ProgramExpression::Variable("old".into()));
-        let target_base =
-            ContractExpression::ProgramExpression(ProgramExpression::Variable("new".into()));
-        let expression = ContractExpression::ArrayIndex {
-            base: Box::new(source_base.clone()),
-            indexes: vec![
-                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
-                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
-            ],
-            dimensions: vec![2, 2],
-            lowered: ProgramExpression::Index(
-                Box::new(ProgramExpression::Variable("old".into())),
-                Box::new(ProgramExpression::Value(int32(1))),
-            ),
-        };
-        let (rewritten, changed) =
-            rewrite_contract_expression_exact(&expression, &source_base, &target_base, false);
-        assert!(changed);
-        let ContractExpression::ArrayIndex { lowered, .. } = rewritten else {
-            panic!("array rewrite must retain its presentation node");
-        };
-        assert_eq!(
-            lowered,
-            ProgramExpression::Index(
-                Box::new(ProgramExpression::Variable("new".into())),
-                Box::new(ProgramExpression::Value(int32(1))),
-            )
-        );
-    }
-
-    #[test]
-    fn multidimensional_array_rewrite_fails_closed_for_non_c_bases() {
-        let source_base =
-            ContractExpression::ProgramExpression(ProgramExpression::Variable("old".into()));
-        let expression = ContractExpression::ArrayIndex {
-            base: Box::new(source_base.clone()),
-            indexes: vec![
-                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
-                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
-            ],
-            dimensions: vec![2, 2],
-            lowered: ProgramExpression::Index(
-                Box::new(ProgramExpression::Variable("old".into())),
-                Box::new(ProgramExpression::Value(int32(1))),
-            ),
-        };
-        let target = ContractExpression::Call {
-            name: "not_a_c_fragment".into(),
-            arguments: vec![],
-        };
-        let (rewritten, changed) =
-            rewrite_contract_expression_exact(&expression, &source_base, &target, false);
-        assert!(!changed);
-        assert_eq!(rewritten, expression);
-    }
-}
-
 /// Resolve private synthesis markers in one pass over the selected output.
 /// Targets avoid every referenced and declared name, so this pass cannot
 /// capture a user binding and need not rescan each nested binder's body.
@@ -5403,4 +5293,114 @@ fn substitute_fresh_synthesis_expression(
         }
     }
     Ok(values.pop().expect("selected synthesis expression"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expression_rewrite_respects_absolute_state_boundaries() {
+        let x = ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
+        let y = ContractExpression::ProgramExpression(ProgramExpression::Variable("y".into()));
+        let old = |value| ContractExpression::Old(Box::new(value));
+        let at = |label: &str, value| ContractExpression::At {
+            selector: ProgramPointSelector::Mark(label.into()),
+            expression: Box::new(value),
+        };
+        let pair = |left, right| ContractExpression::Add(Box::new(left), Box::new(right));
+        for historical in [old(x.clone()), at("entry", x.clone())] {
+            assert_eq!(
+                rewrite_contract_expression_exact(
+                    &pair(x.clone(), historical.clone()),
+                    &x,
+                    &y,
+                    true
+                ),
+                (pair(y.clone(), historical), true),
+            );
+        }
+        assert_eq!(
+            rewrite_contract_expression_exact(
+                &old(pair(x.clone(), x.clone())),
+                &old(x.clone()),
+                &old(y.clone()),
+                true
+            ),
+            (old(pair(y.clone(), y.clone())), true),
+        );
+        assert_eq!(
+            rewrite_contract_expression_exact(
+                &at("entry", pair(x.clone(), x.clone())),
+                &at("entry", x.clone()),
+                &at("entry", y.clone()),
+                true
+            ),
+            (at("entry", pair(y.clone(), y.clone())), true),
+        );
+        let historical = at("other", pair(x.clone(), x.clone()));
+        assert_eq!(
+            rewrite_contract_expression_exact(&historical, &at("entry", x), &at("entry", y), true),
+            (historical, false),
+        );
+    }
+
+    #[test]
+    fn multidimensional_array_rewrite_updates_its_lowered_base() {
+        let source_base =
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("old".into()));
+        let target_base =
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("new".into()));
+        let expression = ContractExpression::ArrayIndex {
+            base: Box::new(source_base.clone()),
+            indexes: vec![
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+            ],
+            dimensions: vec![2, 2],
+            lowered: ProgramExpression::Index(
+                Box::new(ProgramExpression::Variable("old".into())),
+                Box::new(ProgramExpression::Value(int32(1))),
+            ),
+        };
+        let (rewritten, changed) =
+            rewrite_contract_expression_exact(&expression, &source_base, &target_base, false);
+        assert!(changed);
+        let ContractExpression::ArrayIndex { lowered, .. } = rewritten else {
+            panic!("array rewrite must retain its presentation node");
+        };
+        assert_eq!(
+            lowered,
+            ProgramExpression::Index(
+                Box::new(ProgramExpression::Variable("new".into())),
+                Box::new(ProgramExpression::Value(int32(1))),
+            )
+        );
+    }
+
+    #[test]
+    fn multidimensional_array_rewrite_fails_closed_for_non_c_bases() {
+        let source_base =
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("old".into()));
+        let expression = ContractExpression::ArrayIndex {
+            base: Box::new(source_base.clone()),
+            indexes: vec![
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+            ],
+            dimensions: vec![2, 2],
+            lowered: ProgramExpression::Index(
+                Box::new(ProgramExpression::Variable("old".into())),
+                Box::new(ProgramExpression::Value(int32(1))),
+            ),
+        };
+        let target = ContractExpression::Call {
+            name: "not_a_c_fragment".into(),
+            arguments: vec![],
+        };
+        let (rewritten, changed) =
+            rewrite_contract_expression_exact(&expression, &source_base, &target, false);
+        assert!(!changed);
+        assert_eq!(rewritten, expression);
+    }
 }

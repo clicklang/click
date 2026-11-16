@@ -200,9 +200,9 @@ impl SourceBindingIndex {
         match binding {
             crate::kernel::BindingName::Local(id) => self.declarations.get(id),
             crate::kernel::BindingName::Static(id) => self.statics.get(id),
-            crate::kernel::BindingName::Named(_) | crate::kernel::BindingName::ContractResult => {
-                None
-            }
+            crate::kernel::BindingName::Named(_)
+            | crate::kernel::BindingName::ContractResult
+            | crate::kernel::BindingName::ContractException => None,
         }
     }
 }
@@ -9139,10 +9139,12 @@ impl Parser {
         }
 
         self.expect(Token::LParen)?;
-        let legacy_binder = self.peek() == Some(&Token::Pipe)
+        // An untyped item binder is contextual sugar for a predicate lambda.
+        // A typed literal or another expression is an ordinary predicate value.
+        let untyped_binder = self.peek() == Some(&Token::Pipe)
             && matches!(self.peek_next(), Some(Token::Ident(_)))
             && self.tokens.get(self.position + 2) == Some(&Token::Pipe);
-        if !legacy_binder {
+        if !untyped_binder {
             let predicate = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
             return Ok(lambdas::range_proposition(
@@ -14436,6 +14438,7 @@ impl Parser {
     /// still reads the surrounding state.
     fn binding_struct_name(&self, binding: &crate::kernel::BindingName) -> Option<&String> {
         match binding {
+            crate::kernel::BindingName::ContractException => None,
             crate::kernel::BindingName::ContractResult => self
                 .names
                 .struct_params
@@ -14463,6 +14466,7 @@ impl Parser {
     }
     fn binding_is_aggregate(&self, binding: &crate::kernel::BindingName) -> bool {
         match binding {
+            crate::kernel::BindingName::ContractException => false,
             crate::kernel::BindingName::ContractResult => {
                 self.names.aggregate_objects.contains_key("result")
             }
@@ -16376,14 +16380,17 @@ impl Parser {
 
     #[inline(never)]
     fn parse_contract_non_match_primary(&mut self) -> Result<ContractExpression, ClickError> {
-        // Exact result storage identities. Naming one grants no access rights.
-        if self.peek_ident() == Some("result")
+        // Exact outcome storage identities. Naming one grants no access rights.
+        if matches!(self.peek_ident(), Some("result" | "exception"))
             && self.tokens.get(self.position + 1) == Some(&Token::Dot)
             && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(name)) if name == "storage")
             && self.tokens.get(self.position + 3) == Some(&Token::LParen)
         {
+            let exceptional = self.peek_ident() == Some("exception");
             self.position += 4;
-            let block = if self.peek() == Some(&Token::RParen) {
+            let block = if exceptional {
+                crate::kernel::PointerBlock::ContractException
+            } else if self.peek() == Some(&Token::RParen) {
                 crate::kernel::PointerBlock::ContractResult
             } else {
                 let kind = self.expect_ident("return storage kind `frame`")?;
@@ -16802,6 +16809,14 @@ impl Parser {
             Some(Token::Ident(name)) => {
                 if let Some(field) = self.names.resource_fields.get(&name) {
                     return Ok(ContractExpression::ResourceField(field.clone()));
+                }
+                // Inside a loop, `iter` is the loop's iterator, read through
+                // its accessors, even where the function has a local of
+                // that name, which is `rust(iter)`.
+                if name == "iter"
+                    && let Some(expression) = self.take_rust_iterator_method(&name, None)?
+                {
+                    return Ok(expression);
                 }
                 if self.names.contains_any(NameKind::VALUES, &name) || self.specification_binding_kind(&name).is_some()
                 {
@@ -17355,12 +17370,12 @@ impl Parser {
         self.expect(Token::LParen)?;
         let initial = self.parse_contract_expression()?;
         self.expect(Token::Comma)?;
-        // The old unannotated two-name spelling remains contextual sugar.
+        // The untyped two-name spelling is contextual lambda sugar.
         // A typed literal or any other expression is an ordinary step value.
-        let legacy_binder = self.peek() == Some(&Token::Pipe)
+        let untyped_binder = self.peek() == Some(&Token::Pipe)
             && matches!(self.peek_next(), Some(Token::Ident(_)))
             && self.tokens.get(self.position + 2) == Some(&Token::Comma);
-        if !legacy_binder {
+        if !untyped_binder {
             let step = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
             return Ok(lambdas::range_fold(start, end, initial, step));
@@ -19336,7 +19351,8 @@ mod rewrite_syntax_tests {
         ] {
             let tactic = Parser::new(source).unwrap().parse_proof_tactic().unwrap();
             let printed =
-                crate::surface::printing::format_proof_tactics(&[tactic.clone()]).unwrap();
+                crate::surface::printing::format_proof_tactics(std::slice::from_ref(&tactic))
+                    .unwrap();
             let reparsed = Parser::new(&printed)
                 .unwrap()
                 .parse_proof_clause_or_default()

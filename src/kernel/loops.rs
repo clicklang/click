@@ -6,6 +6,8 @@ use super::prelude::*;
 use crate::kernel::int32_constant;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
+mod head_locals;
+
 #[cfg(test)]
 mod empty_loop_rule_tests;
 
@@ -5936,9 +5938,11 @@ pub(super) fn prepare_loop_top_state(
     let include_mutable_summaries = statement_may_write_memory(entry_state, body);
     // The locals whose address a body that writes memory may write through,
     // found once for the write set below and the head's havoc.
-    let escaped = include_mutable_summaries
-        .then(|| address_escaped_scalar_locals(entry_state, body))
-        .unwrap_or_default();
+    let escaped = if include_mutable_summaries {
+        address_escaped_scalar_locals(entry_state, body)
+    } else {
+        Default::default()
+    };
     let (effect_ranges, all_ranges_evaluable) = evaluate_whole_loop_effect_ranges(
         entry_state,
         &effect_checks,
@@ -8605,47 +8609,20 @@ pub(super) fn havoc_loop_modified_locals(
     mutable_ranges: Option<&[MemoryRange]>,
     kept_by_function: Option<CallKeptRanges>,
 ) -> ExecutionResult<ExecutionState> {
-    let mut state = state.clone();
     let mut names = BTreeSet::new();
     collect_loop_modified_locals(body, &mut names);
-    let may_write_memory = statement_may_write_memory(&state, body);
+    let may_write_memory = statement_may_write_memory(state, body);
     if may_write_memory {
         // A local whose address escapes can be written by the loop body
         // through a pointer without ever being assigned by name, so treat it
         // as loop-modified too (otherwise its stale value survives the havoc).
         names.extend(escaped.iter().cloned());
     }
-    for name in names {
-        let Some(binding) = state.locals.binding(&name) else {
-            continue;
-        };
-        let program_type = match binding {
-            LocalBinding::Object { program_type, .. } => *program_type,
-            LocalBinding::GlobalObject { .. } => {
-                // File-scope globals and function-local statics are
-                // represented only by memory. The memory havoc below
-                // refreshes their modified slots; there is no local value to
-                // resynchronize here.
-                continue;
-            }
-            LocalBinding::UninitializedObject { .. }
-            | LocalBinding::ArrayObject { .. }
-            | LocalBinding::AggregateObject { .. } => continue,
-        };
-        let Some(value) = fresh_loop_local_value(program_type, variables, budget)? else {
-            continue;
-        };
-        // A pointer local keeps the subobject it designates across the
-        // abstract iteration; the back edge checks that the body returns
-        // it to the same one (`loop_state_components_match_at_back_edge`).
-        let value = with_retained_extent(value, state.locals.get(&name));
-        let value = with_retained_object_class(value, state.locals.get(&name));
-        sync_stack_local(&mut state, &name, &value);
-        state.locals.set_typed(name, value, program_type);
-    }
+    let locals = head_locals::LoopHeadLocals::new(state, names, variables, budget)?;
+    let mut state = locals.install();
     if may_write_memory {
-        // Keep only scalar stack local cells (havoced above and re-synced via
-        // sync_stack_local); every other concrete cell could have been
+        // Keep only scalar stack local cells (constructed above); every other
+        // concrete cell could have been
         // overwritten by the loop body through a pointer. Address-escaped
         // locals were havoced above, so their preserved cells now hold fresh
         // symbolic values rather than stale ones.
@@ -8959,12 +8936,11 @@ pub(super) fn address_escaped_scalar_locals(
         }
     };
     for name in state.locals.bindings.keys() {
-        if let Some(value) = state.locals.get(name) {
-            if let Some(pointer) = value.pointer()
-                && let Some(name) = state.locals.name_for_slot(pointer.pointer())
-            {
-                escaped.insert(name.clone());
-            }
+        if let Some(value) = state.locals.get(name)
+            && let Some(pointer) = value.pointer()
+            && let Some(name) = state.locals.name_for_slot(pointer.pointer())
+        {
+            escaped.insert(name.clone());
         }
     }
     for value in state.memory.cells.concrete().values() {

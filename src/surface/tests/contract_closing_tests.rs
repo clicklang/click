@@ -17,8 +17,21 @@ fn proof(steps: &str) -> String {
 #[test]
 fn explicit_contract_closing_uses_ordinary_known_steps() {
     let source = proof("normalize(); known(); known(); known();");
-    without_implicit_solve(|| verify_c_sources(&source, C))
+    let mut verified = without_implicit_solve(|| verify_c_sources(&source, C))
         .unwrap_or_else(|error| panic!("{}", error.message()));
+    // Reuse the completed artifact: losing its ordinary root must refuse,
+    // rather than admitting a reusable rule through the legacy adapter.
+    let function = verified[0].function_block.clone();
+    for theorem in &mut verified {
+        let mut entry = (**theorem.entry_context.as_ref().unwrap()).clone();
+        entry.completion = None;
+        theorem.entry_context = Some(std::sync::Arc::new(entry));
+    }
+    let error = crate::surface::proof::finish_contract_body_root(&function, &verified).unwrap_err();
+    assert!(
+        error.message().contains("lost its contract root"),
+        "{error}"
+    );
 }
 
 #[test]

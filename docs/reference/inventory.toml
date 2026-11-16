@@ -2550,42 +2550,6 @@ id = "library.cpp.std::span<T>::subspan"
 path = "reference/library/index.md#stdspant"
 
 [[item]]
-id = "library.rust.ChunksExact::after_next"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::item_len"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::item_ptr"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::len"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::new"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::next"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::remainder"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::remainder_len"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::remainder_ptr"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
 id = "library.rust.Option::expect"
 path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
 
@@ -2856,14 +2820,6 @@ path = "reference/library/index.md#integer-wrapping-arithmetic"
 [[item]]
 id = "library.rust.isize::wrapping_sub"
 path = "reference/library/index.md#integer-wrapping-arithmetic"
-
-[[item]]
-id = "library.rust.slice::as_ptr"
-path = "reference/library/index.md#slice-value-methods"
-
-[[item]]
-id = "library.rust.slice::len"
-path = "reference/library/index.md#slice-value-methods"
 
 [[item]]
 id = "library.rust.slice::swap"
@@ -4817,78 +4773,6 @@ path = "reference/library/index.md#slicefrom_raw_parts"
 [[item]]
 id = "library.function.slice::subslice_len"
 path = "reference/library/index.md#slicesubslice_len"
-
-[[item]]
-id = "library.type.ChunksExact"
-path = "reference/library/index.md#chunksexact"
-
-[[item]]
-id = "library.function.chunks_exact::chunks_exact"
-path = "reference/library/index.md#chunks_exactchunks_exact"
-
-[[item]]
-id = "library.function.chunks_exact::len"
-path = "reference/library/index.md#chunks_exactlen"
-
-[[item]]
-id = "library.function.chunks_exact::nth"
-path = "reference/library/index.md#chunks_exactnth"
-
-[[item]]
-id = "library.function.chunks_exact::remainder"
-path = "reference/library/index.md#chunks_exactremainder"
-
-[[item]]
-id = "library.function.chunks_exact::after_next"
-path = "reference/library/index.md#chunks_exactafter_next"
-
-[[item]]
-id = "library.function.chunks_exact::after"
-path = "reference/library/index.md#chunks_exactafter"
-
-[[item]]
-id = "library.theorem.chunks_exact::len_chunks_exact"
-path = "reference/library/index.md#chunks_exactlen_chunks_exact"
-
-[[item]]
-id = "library.theorem.chunks_exact::nth_chunks_exact"
-path = "reference/library/index.md#chunks_exactnth_chunks_exact"
-
-[[item]]
-id = "library.theorem.chunks_exact::remainder_chunks_exact"
-path = "reference/library/index.md#chunks_exactremainder_chunks_exact"
-
-[[item]]
-id = "library.theorem.chunks_exact::len_after_next"
-path = "reference/library/index.md#chunks_exactlen_after_next"
-
-[[item]]
-id = "library.theorem.chunks_exact::nth_after_next"
-path = "reference/library/index.md#chunks_exactnth_after_next"
-
-[[item]]
-id = "library.theorem.chunks_exact::remainder_after_next"
-path = "reference/library/index.md#chunks_exactremainder_after_next"
-
-[[item]]
-id = "library.theorem.chunks_exact::after_zero"
-path = "reference/library/index.md#chunks_exactafter_zero"
-
-[[item]]
-id = "library.theorem.chunks_exact::after_next_after"
-path = "reference/library/index.md#chunks_exactafter_next_after"
-
-[[item]]
-id = "library.theorem.chunks_exact::len_after"
-path = "reference/library/index.md#chunks_exactlen_after"
-
-[[item]]
-id = "library.theorem.chunks_exact::nth_after"
-path = "reference/library/index.md#chunks_exactnth_after"
-
-[[item]]
-id = "library.theorem.chunks_exact::remainder_after"
-path = "reference/library/index.md#chunks_exactremainder_after"
 
 [[item]]
 id = "library.type.SliceIter"

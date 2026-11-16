@@ -6656,6 +6656,11 @@ pub(crate) fn checked_branch_fact_is_available(facts: &ProofFacts, fact: &Propos
     crate::instrumentation::record_deterministic_work(1);
     facts.contains(fact)
         || facts.assumptions().proves_exact(fact)
+        // Interface facts are explicitly selected claims. Their native and
+        // shared comparison spellings use the same retained source; this
+        // does not derive a weaker bound or search for a missing premise.
+        || matches!(fact, Proposition::ConditionIs(condition, truth)
+            if facts.assumptions().selected_comparison_source(condition, *truth).is_some())
         || ground_comparison_premise_holds(fact)
         || matches!(fact,
             Proposition::ConditionIs(crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, true)

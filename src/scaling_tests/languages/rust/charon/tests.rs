@@ -283,7 +283,7 @@ fn charon_chunk_metadata_work_is_independent_of_input_length() {
     for length in [0u64, 8, 1024, 1_000_000] {
         let _session = crate::kernel::VerificationSession::enter();
         let claim = format!(
-            "import click::rust::slice; import click::rust::chunks_exact; verifying \"chunks.rs\"; fn tail(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == 4u64; ensures result == {}u64; }} by {{ step_until(function.exit); apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), size)); solve(); }}",
+            "verifying \"chunks.rs\"; fn tail(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == 4u64; ensures result == {}u64; }} by {{ step_until(function.exit); solve(); }}",
             length % 4
         );
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {

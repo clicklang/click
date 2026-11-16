@@ -126,7 +126,7 @@ impl KernelTerm {
         };
         Some(self.0.machine_leaf.get_or_init(|| {
             MachineTerm::MemoryLoad(
-                ProgramPoint::at(&memory),
+                ProgramPoint::at(memory),
                 Box::new(address.export().expect("retained read address")),
                 *kind,
             )

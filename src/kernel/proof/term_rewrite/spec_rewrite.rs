@@ -291,6 +291,9 @@ fn collect_spec_expression_carriers(
         return;
     }
     match expression {
+        SpecExpression::ObjectAddress(address) => {
+            collect_spec_expression_carriers(&address.base, variables, integer_seen)
+        }
         SpecExpression::Value(value) => collect_program_value_carriers(value, variables),
         SpecExpression::IntegerToMachine { value, .. } => {
             collect_spec_integer_carriers(value, variables, integer_seen)
@@ -1110,6 +1113,9 @@ impl<'a> TermRewrite<'a> {
     ) -> Result<SpecExpression, SpecRewriteError> {
         self.spec_visit()?;
         let result = match expression {
+            SpecExpression::ObjectAddress(address) => SpecExpression::ObjectAddress(Box::new(
+                address.with_base(self.rewrite_spec_expression(&address.base)?),
+            )),
             SpecExpression::Value(value) => SpecExpression::Value(self.value(value)),
             SpecExpression::IntegerToMachine { value, destination } => {
                 SpecExpression::IntegerToMachine {

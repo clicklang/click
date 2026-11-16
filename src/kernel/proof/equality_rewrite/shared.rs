@@ -342,14 +342,15 @@ fn transport_binary(format: T, op: O, left: KernelTerm, right: KernelTerm) -> Ke
             _ => {}
         }
     }
-    if matches!(format, T::Int64 | T::UInt64) && a.is_some() && b.is_some() {
+    if matches!(format, T::Int64 | T::UInt64)
+        && let (Some(a), Some(b)) = (a, b)
+        && !matches!(op, O::ShiftLeft | O::ShiftRight)
+    {
         // Shift constructors require an actual literal count. Other wide
         // operators read cached constants, including opaque native leaves.
-        if !matches!(op, O::ShiftLeft | O::ShiftRight) {
-            let a = literal(&constant(format, a.unwrap())).unwrap();
-            let b = literal(&constant(format, b.unwrap())).unwrap();
-            return retained(format, &MachineTerm::machine_binary(format, op, a, b));
-        }
+        let a = literal(&constant(format, a)).unwrap();
+        let b = literal(&constant(format, b)).unwrap();
+        return retained(format, &MachineTerm::machine_binary(format, op, a, b));
     }
     if format == T::UInt64 {
         match op {
@@ -422,10 +423,7 @@ pub(in crate::kernel) fn transport_node(
                 index: fold.index,
                 accumulator: fold.accumulator,
                 item: fold.item,
-                arguments: children
-                    .try_into()
-                    .ok()
-                    .map(|a: &[KernelTerm; 4]| a.clone())?,
+                arguments: <&[KernelTerm; 4]>::try_from(children).ok()?.clone(),
             }
             .into_term(),
             KernelTermNode::MachineIf { arguments } => {

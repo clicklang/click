@@ -2,6 +2,57 @@ use super::diagnostics::describe_contract_expression;
 use super::*;
 use crate::kernel::{AlgebraicValueType, int32};
 
+// Arithmetic composition stays explicit: only the individual Integer leaves
+// replacing normalize are allowed, never an opaque multi-node proof.
+fn assert_only_integer_arithmetic_leaves(source: &str) {
+    let tokens = parser::source_tokens(source).unwrap();
+    for (index, token) in tokens.iter().enumerate() {
+        if token.text != "arithmetic_certificate" {
+            continue;
+        }
+        assert_eq!(tokens[index + 1].text, "{", "{source}");
+        let mut depth = 1;
+        let mut end = index + 2;
+        while depth != 0 {
+            match tokens[end].text.as_str() {
+                "{" => depth += 1,
+                "}" => depth -= 1,
+                _ => {}
+            }
+            end += 1;
+        }
+        let body = &tokens[index + 2..end - 1];
+        assert!(
+            matches!(
+                body[0].text.as_str(),
+                "trivial" | "type_range" | "operation_bound"
+            ),
+            "{source}"
+        );
+        assert_eq!(body[1].text, "=>", "{source}");
+        // Result expressions may contain let-bound semicolons. Only a
+        // top-level separator ends the single certificate node.
+        let mut nested = 0;
+        let separator = body
+            .iter()
+            .position(|token| {
+                match token.text.as_str() {
+                    "(" | "[" | "{" => nested += 1,
+                    ")" | "]" | "}" => nested -= 1,
+                    ";" if nested == 0 => return true,
+                    _ => {}
+                }
+                false
+            })
+            .expect("one node result");
+        let tail = body[separator + 1..]
+            .iter()
+            .map(|token| token.text.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(tail, ["conclusion", "0", ";"], "{source}");
+    }
+}
+
 // Semantic fixtures cold-check both the original and written output. Reuse the
 // original certificate here instead of searching for that same proof again.
 fn expand_checked_grouped_claim(
@@ -2374,8 +2425,8 @@ int32 keep(int32 x, int32 y) {
     let expanded = expand_checked_function_claim(source, &verified_for_label, "keep.weakened")
         .expect("Integer weakening should expand to a checked certificate");
     assert!(
-        !expanded.contains("arithmetic_certificate"),
-        "execution-context expansion should use ordinary Integer composition: {expanded}"
+        !expanded.contains("normalize("),
+        "execution-context Integer composition should expand without normalization: {expanded}"
     );
     verify_c_sources(&expanded, &c_sources)
         .expect("expanded execution-context Integer weakening should recheck");
@@ -2404,8 +2455,8 @@ theorem integer_affine_two_premise_constant_weakening(x: Integer, y: Integer) {
     )
     .expect("two-premise Integer weakening should expand");
     assert!(
-        !expanded.contains("arithmetic_certificate"),
-        "two-premise expansion should use ordinary Integer composition: {expanded}"
+        !expanded.contains("normalize("),
+        "two-premise Integer composition should expand without normalization: {expanded}"
     );
     verify_click_theorems(&expanded)
         .expect("expanded two-premise Integer weakening should recheck");

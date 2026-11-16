@@ -58,10 +58,6 @@ impl PreparedContractEntryCases {
         self.cases.len()
     }
 
-    pub(crate) fn caller_state(&self) -> &ExecutionState {
-        &self.state
-    }
-
     pub(crate) fn closing_entry(&self) -> &RetainedClosingEntry {
         &self.closing_entry
     }
@@ -936,10 +932,10 @@ fn collect_shallow_operand_variables(term: Operand<'_>, variables: &mut BTreeSet
                 pending.push(right);
                 pending.push(left);
             }
-        } else if let Some((format, MachineUnaryOp::BitwiseNot, child)) = term.unary() {
-            if format.format().bits() == 32 {
-                pending.push(child);
-            }
+        } else if let Some((format, MachineUnaryOp::BitwiseNot, child)) = term.unary()
+            && format.format().bits() == 32
+        {
+            pending.push(child);
         }
         // Casts, wide operations, reads and Integer payloads are opaque to
         // this binder-coordinate query, exactly as in its native rule.

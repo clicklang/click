@@ -341,11 +341,6 @@ pub(crate) fn prove_separation_contains_element(
     )
 }
 
-#[cfg(test)]
-mod scaling_tests {
-    include!("../scaling_tests/kernel/separation_laws.rs");
-}
-
 /// Resource laws construct only the explicitly supplied proposition tree.
 /// They neither inspect ownership nor discover containment paths.
 pub(crate) fn prove_resource_law(name: &str, args: &[Resource]) -> Option<Theorem> {
@@ -432,4 +427,9 @@ pub(crate) fn observe_memory_view(state: &ExecutionState, range: &MemoryRange) -
         return None;
     }
     Some(Theorem::new(range.loadable_fact(state.memory())))
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../scaling_tests/kernel/separation_laws.rs");
 }
