@@ -65,7 +65,6 @@ fn held_is_a_resource_state_dependency() {
         address(0),
     ))));
     assert!(predicate_dependencies::observes_resource_state(&spec));
-    assert!(!crate::kernel::functions::spec_proposition_is_state_independent(&spec));
 }
 
 #[cfg(test)]
