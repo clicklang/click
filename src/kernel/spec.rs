@@ -7156,9 +7156,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         if retain_results
                             && (value.machine().is_some()
                                 || value.float().is_some()
-                                || value
-                                    .shared()
-                                    .is_some_and(|root| root.ty() == &KernelType::Bool))
+                                || value.shared().is_some_and(|root| {
+                                    matches!(root.ty(), KernelType::Bool | KernelType::Algebraic(_))
+                                        || matches!(
+                                            root.node(),
+                                            KernelTermNode::ProgramParameter { .. }
+                                        )
+                                }))
                         {
                             value
                         } else {
