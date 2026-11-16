@@ -15092,6 +15092,57 @@ mod scaling_tests {
 }
 
 #[test]
+fn memory_library_arguments_use_implicit_byte_views_only_for_library_declarations() {
+    fn call_arguments(statement: &syntax::CStatement) -> Option<&[syntax::CExpression]> {
+        match statement {
+            syntax::CStatement::Seq(left, right) => {
+                call_arguments(left).or_else(|| call_arguments(right))
+            }
+            syntax::CStatement::Call { arguments, .. } => Some(arguments),
+            _ => None,
+        }
+    }
+    for (declaration, adapted) in [
+        (
+            "void *memcpy(void *d, const void *s, unsigned long n);",
+            true,
+        ),
+        (
+            "static void *memcpy(void *d, const void *s, unsigned long n) { return d; }",
+            false,
+        ),
+    ] {
+        let source = format!(
+            "{declaration} unsigned int copy(unsigned int value) {{ \
+             unsigned int out; memcpy(&out, &value, sizeof(out)); return out; }}"
+        );
+        let functions = syntax::parse_functions(&source).unwrap();
+        let arguments = call_arguments(functions.last().unwrap().body()).unwrap();
+        for (index, argument) in arguments[..2].iter().enumerate() {
+            if adapted {
+                assert!(
+                    matches!(
+                        argument,
+                        syntax::CExpression::Cast {
+                            interface_type: crate::languages::interface::InterfaceType::UInt8Pointer,
+                            pointee_constant,
+                            explicit_qualification: false,
+                            ..
+                        } if *pointee_constant == (index == 1)
+                    ),
+                    "{argument:?}"
+                );
+            } else {
+                assert!(
+                    matches!(argument, syntax::CExpression::AddressOf(_)),
+                    "{argument:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn aggregate_expression_results_are_steps_instead_of_program_locals() {
     let source = "struct pair { int32 left; int32 right; };\n\
         struct pair make(struct pair input) { return input; }\n\
