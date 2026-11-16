@@ -49,6 +49,20 @@ fn observed(term: &ContractExpression) -> ContractExpression {
     to_integer(&native_int32_split_operand(term.clone()))
 }
 
+/// A complete domain made only of established arithmetic range guards.
+/// Historical/read initialization obligations are deliberately stronger.
+pub(super) fn arithmetic_domain_only(domain: &Proposition) -> bool {
+    crate::instrumentation::record_deterministic_work(1);
+    if crate::kernel::machine_integer::definedness::range_domain_query(domain).is_some() {
+        return true;
+    }
+    match domain {
+        Proposition::And(a, b) => arithmetic_domain_only(a) && arithmetic_domain_only(b),
+        Proposition::ConditionIs(ConditionTerm::Constant(value), expected) => value == expected,
+        _ => false,
+    }
+}
+
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Retain a native read's available domain or its recorded initialization.
     /// Observation identities themselves need only their outer range guards.
@@ -545,6 +559,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             };
                             proof = next;
                         }
+                    }
+                    // Retain the complete native domain once its constituent
+                    // range facts are established. Subsequent observations can
+                    // reuse it instead of rebuilding nested argument domains.
+                    let domain = ClickProposition::Defined {
+                        expression: term.clone(),
+                    };
+                    let kernel =
+                        proof.lower_cited_surface_proposition(&domain, "native interval domain")?;
+                    if arithmetic_domain_only(&kernel) {
+                        let scope = proof.driver().open_have(domain)?;
+                        proof = scope.driver().apply_step(ProofStep::Known)?.join()?;
                     }
                     pending_identities.push((bounds, eq(observed(&term), exact)));
                 }

@@ -1770,12 +1770,12 @@ mod tests {
     }
 
     #[test]
-    fn explicit_integer_scaling_normalization_keeps_known_and_nonlinear_products_opaque() {
+    fn explicit_integer_scaling_normalization_keeps_known_and_multi_step_expansion_opaque() {
         let source = "theorem identity(x: Integer, y: Integer) { ensures 3 * (x - y) == x + x + x - 3 * y by { normalize(); } }";
         without_implicit_solve(|| verify_c_sources(source, &[])).unwrap();
         assert!(verify_c_sources(&source.replace("normalize();", "known();"), &[]).is_err());
         for source in [
-            "theorem nonlinear(x: Integer, y: Integer, z: Integer) { ensures (x + y) * z == x * z + y * z by { normalize(); } }",
+            "theorem nonlinear(x: Integer, y: Integer, z: Integer, w: Integer) { ensures (x + y) * (z + w) == x * z + x * w + y * z + y * w by { normalize(); } }",
             "theorem wrong(x: Integer) { ensures 2 * x == x + x + 1 by { normalize(); } }",
             "theorem ignores_facts(x: Integer) { requires x == 0; ensures 2 * x == 3 * x by { normalize(); } }",
         ] {

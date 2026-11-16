@@ -138,6 +138,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let scope = proof.driver().open_have(result.clone())?;
+        if !polynomial {
+            // Select a rule using only its explicit inputs. Ordinary normalize
+            // may use the ambient equality graph; restricted solve must not
+            // turn an inapplicable rule candidate into an ambient proof.
+            let selected = premises
+                .iter()
+                .map(|premise| {
+                    proof.lower_cited_surface_proposition(premise, "specialized arithmetic input")
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let Some(goal) = scope.body().goal() else {
+                return Ok(None);
+            };
+            if crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                goal,
+                &selected,
+                &crate::kernel::proof::ProofFacts::from_ordered(&selected),
+            )
+            .is_err()
+            {
+                return Ok(None);
+            }
+        }
         if let Ok(closed) = scope
             .driver()
             .apply_step(ProofStep::NormalizeUsing(premises))
@@ -244,6 +267,7 @@ mod tests {
             "theorem bad(a: Integer,b: Integer,f: Integer) { requires a <= b; ensures b*f <= a*f by { normalize() using { a <= b; }; } }",
             "theorem bad(x: Integer,k: Integer) { requires 0 <= k; ensures truncating_quotient(x + 3*k,3) == truncating_quotient(x,3)+k by { normalize() using { 0 <= k; }; } }",
             "theorem bad(a: Integer,b: Integer) { ensures (a+b)*(a-b) == a*a+b*b by { solve(); } }",
+            "theorem bad(p: int32*, q: int32*, r: int32*) { requires p == q; requires q == r; ensures p == r by { solve() using { p == q; }; } }",
         ] {
             assert!(verify_c_sources(source, &[]).is_err(), "{source}");
         }
@@ -273,7 +297,42 @@ mod historical_read_tests {
         )
         .unwrap_or_else(|e| panic!("{}", e.message()));
         assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[("counter.c", c)]))
+            .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
+    }
+    #[test]
+    #[ignore = "nightly: historical loop measure expansion and strict replay"]
+    fn historical_loop_measure_expands_and_replays_ordinary() {
+        let c = "struct box { int32 len; }; int32 drain(struct box* box) { while (box->len > 0) { box->len = box->len - 1; } return box->len; }";
+        let source = r#"verifying "drain.c";
+            int32 drain(struct box* box) {
+                owns box->len;
+                requires box->len >= 0;
+                ensures result == 0;
+            } by {
+                loop {
+                    decreases box->len;
+                    invariant 0 <= box->len;
+                    initialize by solve();
+                    preserve by {
+                        have 0 <= to_integer(box->len - 1);
+                        step();
+                    }
+                }
+                step();
+                solve();
+            }"#;
+        let expanded = expand_c_claim_source(
+            source,
+            &[("drain.c", c)],
+            "drain",
+            ContractProofClaim::Grouped,
+        )
+        .unwrap_or_else(|e| panic!("{}", e.message()));
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &[("drain.c", c)]))
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
     }
 }

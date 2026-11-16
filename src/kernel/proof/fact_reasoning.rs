@@ -223,7 +223,8 @@ pub(crate) fn normalize_using_conditions(
     // Successful endpoint checks need no general rewriting context or its
     // mirrored condition forms over each increasingly large machine term.
     for (index, premise) in premises.iter().enumerate() {
-        if !crate::kernel::listed_premise_holds(premise, |fact| facts.available(fact))
+        if !facts.available(premise)
+            && !crate::kernel::listed_premise_holds(premise, |fact| facts.available(fact))
             && !order_claim_forms(premise)
                 .iter()
                 .any(|form| facts.available(form))
@@ -231,11 +232,25 @@ pub(crate) fn normalize_using_conditions(
             return Err(ConditionalNormalizationError::UnavailablePremise(index));
         }
     }
-    if intervals::reduces_one_operation(goal, premises)
-        || super::arithmetic_special::normalizes_selected(goal, premises)
-    {
+    if intervals::reduces_one_operation(goal, premises) {
         return Ok(());
     }
+    // Ordinary cited rewrites and bounds take their established fast path.
+    // Specialized rules are a fallback, so a simple equality does not pay for
+    // conversion and matching against unrelated arithmetic rule shapes.
+    let ordinary = normalize_condition_selection(goal, premises, facts);
+    if ordinary.is_ok() || !super::arithmetic_special::normalizes_selected(goal, premises) {
+        ordinary
+    } else {
+        Ok(())
+    }
+}
+
+fn normalize_condition_selection(
+    goal: &Proposition,
+    premises: &[Proposition],
+    facts: &super::ProofFacts,
+) -> Result<(), ConditionalNormalizationError> {
     let mut conditions = std::collections::HashMap::new();
     // Keep graph admission in source order. Its bounded pointer fragment may
     // retain different coordinates after a block merge; hash iteration must

@@ -2156,8 +2156,8 @@ An unavailable premise, unsupported rule, or mismatched endpoint fails locally.
 
 ### Arithmetic certificates
 
-Migration to ordinary arithmetic proofs has begun. These certificate rules
-have named laws, applied with explicit `using` premises:
+Arithmetic automation expands to ordinary proofs. The compatibility certificate
+rules correspond to named laws, applied with explicit `using` premises:
 
 | Certificate operation | Ordinary law |
 | --- | --- |
@@ -2362,9 +2362,9 @@ premise/node lists, and the first rejected node is named by index. An
 `int32_defined` or `int64_defined` refusal names the result range found. Explicit certificates never
 invoke planning or the legacy whole-goal checker. Machine families have no
 implicit coercion between signed, unsigned, pointer, and float terms: source
-conversions must be present and checked. Expansion emits the same certificate
-that `verify`, `profile`, and `audit` inspect, so all four tools agree on the
-checked proof.
+conversions must be present and checked. Expansion preserves authored compatibility
+certificates; generated arithmetic expands to ordinary tactics. `verify`,
+`profile`, and `audit` inspect the same checked proof.
 
 **Checked examples:** [`arithmetic_certificate_surface.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_certificate_surface.md), [`integer_certificate_refutation_and_rounding.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_certificate_refutation_and_rounding.md), [`signed_int32_arithmetic_certificate_surface.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_int32_arithmetic_certificate_surface.md), [`signed_int32_certificate_composition.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_int32_certificate_composition.md), [`aligned_explicit_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/aligned_explicit_arithmetic.md), [`tagged_pointer_explicit_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/tagged_pointer_explicit_arithmetic.md), [`int64_defined_from_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/int64_defined_from_bounds.md), [`int32_defined_from_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/int32_defined_from_bounds.md), [`integer_product_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_product_bounds.md), [`integer_division_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_division_bounds.md), [`integer_cast_identity_unsigned_subword_promotion.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_cast_identity_unsigned_subword_promotion.md), [`an_in_range_machine_difference_is_its_integer_difference.md`](https://github.com/clicklang/click/blob/master/mdtests/an_in_range_machine_difference_is_its_integer_difference.md)
 

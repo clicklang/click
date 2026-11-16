@@ -1142,6 +1142,35 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_selected_arithmetic");
+        // Generated loop and execution obligations may have no written goal.
+        // Prove their Integer spelling in an ordinary have, then use that
+        // established fact to close the original obligation. Native carrier
+        // representations need not be alpha-identical to their source reading.
+        if search_input.surface_goal().is_none()
+            && let Some(goal) = search_input.goal()
+            && integer_affine_claim(goal).is_some()
+        {
+            let reading = crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(goal)
+                .into_iter()
+                .next();
+            let Some(surface) =
+                search_input.spell_integer_comparison(reading.as_ref().unwrap_or(goal), &[])
+            else {
+                return Ok(None);
+            };
+            let Some(scope) = attempt::candidate_outcome(search_input.driver().open_have(surface))?
+            else {
+                return Ok(None);
+            };
+            if let Some(closed) =
+                attempt::candidate_outcome(scope.driver().try_selected_arithmetic())?.flatten()
+            {
+                return attempt::candidate_outcome(
+                    closed.join()?.driver().apply_step(ProofStep::Known),
+                );
+            }
+            return Ok(None);
+        }
         crate::kernel::search::ProofSearch::selected_arithmetic(search_input, true, &[])
     }
 
@@ -1760,16 +1789,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && let Some(expression) = integer_composition::observed_argument(&spelled_observed)
             {
                 let domain = ClickProposition::Defined { expression };
-                // For total operands this is precisely the range pair. Keep
+                // For total operands this contains only arithmetic ranges. Keep
                 // its native spelling available to subsequent theorem arguments.
                 // A domain containing read initialization is a stronger claim
                 // and is established only when an argument requires it.
                 if proof
                     .lower_cited_surface_proposition(&domain, "native argument domain")
-                    .is_ok_and(|kernel| {
-                        crate::kernel::machine_integer::definedness::range_domain_query(&kernel)
-                            .is_some()
-                    })
+                    .is_ok_and(|kernel| signed_intervals::arithmetic_domain_only(&kernel))
                 {
                     let scope = proof.driver().open_have(domain)?;
                     proof = scope.driver().apply_step(ProofStep::Known)?.join()?;

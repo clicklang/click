@@ -2007,17 +2007,18 @@ fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("float reflexivity should expand");
-    assert!(
-        expanded.contains("arithmetic_certificate rules"),
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    assert_eq!(
+        expanded.matches("isfinite(value);").count(),
+        1,
         "{expanded}"
     );
-    assert_eq!(expanded.matches("premise ").count(), 1, "{expanded}");
     let rechecked = source.replace("by { solve(); }", &expanded);
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_click_theorems(&rechecked)
     });
     result.expect("expanded float reflexivity should recheck");
-    assert_eq!(planning, 0, "explicit special recheck must not plan");
+    assert_eq!(planning, 0, "ordinary float recheck must not plan");
 }
 
 #[test]

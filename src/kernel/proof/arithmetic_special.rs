@@ -4,8 +4,8 @@
 //! This module intentionally has no planner and does not call the legacy
 //! arithmetic decision procedure.  Every node names the exact premise
 //! positions it consumes and carries the proposition it claims to establish.
-//! The surface migration can construct these nodes later without changing the
-//! kernel boundary.
+//! Authored compatibility certificates retain these nodes. Arithmetic automation
+//! uses the same local semantic rules through selected-input normalization.
 
 use super::super::{
     ComparisonOperator, ConditionTerm, FloatClassification, FloatCondition, MachineTerm, Pointer,
@@ -2111,25 +2111,52 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
     if premises.is_empty() {
         return pointer_alignment(None, goal);
     }
-    let indices = (0..premises.len()).collect::<Vec<_>>();
-    let checks = [
-        super::integer_product_bounds::check,
-        super::integer_division_bounds::check,
-        super::integer_multiply_order::check,
-        super::integer_quotient_bound::check,
-        super::integer_bound_exclusion::check,
-        super::integer_relation_transport::check,
-        super::integer_quotient_shift::check,
-        super::integer_cast_identity::check,
-        super::integer_operation_identity::check,
-    ];
-    // A fixed rule family; no premise permutations, subset selection, or
-    // arithmetic expansion. Every checker consumes the listed inputs only.
-    if checks
-        .into_iter()
-        .any(|check| integer_rule(0, &indices, premises, goal, check).is_ok())
-    {
-        return true;
+    // Reject impossible arities before reading native operands. Convert each
+    // explicit input once, shared by the fixed rule family, rather than once
+    // per rejected checker (important for long native expression spines).
+    if matches!(premises.len(), 1 | 2 | 4) {
+        let indices = (0..premises.len()).collect::<Vec<_>>();
+        let cited = premises
+            .iter()
+            .map(|premise| {
+                crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+                    premise,
+                )
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| premise.clone())
+            })
+            .collect::<Vec<_>>();
+        type Check = fn(
+            usize,
+            &[usize],
+            &[Proposition],
+            &Proposition,
+        ) -> Result<(), SpecialArithmeticCheckError>;
+        let checks: [(usize, Check); 9] = [
+            (4, super::integer_product_bounds::check),
+            (4, super::integer_division_bounds::check),
+            (2, super::integer_multiply_order::check),
+            (2, super::integer_quotient_bound::check),
+            (1, super::integer_bound_exclusion::check),
+            (2, super::integer_relation_transport::check),
+            (2, super::integer_quotient_shift::check),
+            (2, super::integer_cast_identity::check),
+            (2, super::integer_operation_identity::check),
+        ];
+        if integer_rule_holds(goal, |result| {
+            checks
+                .iter()
+                .any(|(arity, check)| {
+                    *arity == premises.len() && check(0, &indices, &cited, result).is_ok()
+                })
+                .then_some(())
+                .ok_or(SpecialArithmeticCheckError::NodeResultMismatch(0))
+        })
+        .is_ok()
+        {
+            return true;
+        }
     }
     let inputs = premises.iter().collect::<Vec<_>>();
     if pointer_alignment(

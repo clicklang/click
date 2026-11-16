@@ -497,10 +497,7 @@ fn pointer_loop_increment_emits_checked_equality_proof() {
         verify_c_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "last_element")
         .unwrap_or_else(|e| panic!("{}", e.message()));
-    assert!(
-        expanded.contains("arithmetic_certificate rules"),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
 }
 
@@ -530,7 +527,7 @@ fn grouped_arithmetic_using_expands_to_checked_certificate() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_02")]
-fn symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planning() {
+fn symbolic_alignment_expands_to_ordinary_proof_and_rechecks_without_planning() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/aligned_symbolic_displacement.md");
     let source = std::fs::read_to_string(&path).unwrap();
@@ -549,15 +546,12 @@ fn symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planni
     let expanded =
         expand_checked_grouped_claim(&click, &verified_for_expansion, "element_is_aligned")
             .unwrap();
-    assert!(
-        expanded.contains("arithmetic_certificate rules"),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
     result.unwrap();
-    assert_eq!(planning, 0, "explicit Special recheck must not plan");
+    assert_eq!(planning, 0, "ordinary arithmetic recheck must not plan");
 }
 
 #[test]
@@ -2805,7 +2799,7 @@ test_batches! {
         grouped_arithmetic_using_expands_to_checked_certificate,
     ],
     loop_batch_02: [
-        symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planning,
+        symbolic_alignment_expands_to_ordinary_proof_and_rechecks_without_planning,
         explicit_straight_line_swap_transports_an_entry_bound,
         frontier_local_loop_verifies_and_advances_to_exit,
         individual_loop_proof_has_no_whole_claim_acceptance_check,
