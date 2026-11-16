@@ -1017,6 +1017,7 @@ impl PureFactContext {
     /// (`term < y` for any `y`). A strict signed bound pins
     /// `term < INT_MAX`, which is what discharges `term + 1` overflow
     /// is checked from exact facts alone.
+    #[cfg(test)]
     pub(in crate::kernel) fn has_exact_strict_upper_bound(&self, term: &MachineTerm) -> bool {
         self.has_exact_strict_upper_bound_view(MachineOperandView::Legacy(term))
     }
@@ -1034,6 +1035,7 @@ impl PureFactContext {
     /// maintained per fact and answers each query within `EDGE_LIMIT` edges,
     /// so it reads no collection that grows with the facts. A longer order
     /// chain is left undecided; a proof states an intermediate step.
+    #[cfg(test)]
     pub(in crate::kernel) fn difference_graph_proves_order(
         &self,
         left: &MachineTerm,
@@ -2852,14 +2854,13 @@ impl PureFactContext {
         match self.wide_order_chain_views(lower, upper, unsigned) {
             Some(true) => return Some(true),
             Some(false) if !strict => return Some(true),
-            Some(false) => {
+            Some(false)
                 if self.exact_condition_value(&equal(lower, upper)) == Some(false)
-                    || self.exact_condition_value(&equal(upper, lower)) == Some(false)
-                {
-                    return Some(true);
-                }
+                    || self.exact_condition_value(&equal(upper, lower)) == Some(false) =>
+            {
+                return Some(true);
             }
-            None => {}
+            Some(false) | None => {}
         }
         match self.wide_order_chain_views(upper, lower, unsigned) {
             Some(true) => Some(false),

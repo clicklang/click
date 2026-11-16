@@ -872,6 +872,7 @@ fn explicit_call_partition_if_stays_on_one_proof_after_scoped_open() {
                 } else {
                     step();
                 }
+                step_until(function.exit);
                 solve();
             }
         "#;
@@ -960,6 +961,7 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
             } by {
                 open(allocated_cell(owner)) {
                 }
+                step();
                 step();
                 step();
                 if c(replaced) == 0 {

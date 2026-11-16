@@ -154,15 +154,14 @@ impl VariableSubstitution for PointerSubstitution<'_> {
         substitute_pointer_variable_in_program_value(value, self.from, self.to)
     }
     fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue {
-        if let Some(root) = value.shared() {
-            if let Some(rewritten) =
+        if let Some(root) = value.shared()
+            && let Some(rewritten) =
                 crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(
                     self.from, self.to,
                 )
                 .shared_machine_operand(root)
-            {
-                return rewritten.into();
-            }
+        {
+            return rewritten.into();
         }
         self.program_value(&value.native()).into()
     }
@@ -3115,7 +3114,10 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
         | PointerBlock::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        PointerBlock::StaticObject { .. }
+        PointerBlock::ContractResult
+        | PointerBlock::ContractException
+        | PointerBlock::AggregateReturn { .. }
+        | PointerBlock::StaticObject { .. }
         | PointerBlock::AutomaticLocal { .. }
         | PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
@@ -5435,6 +5437,27 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                     return Err(());
                 };
                 let arguments = [left, right];
+                let closed_order = *relation != CompareRelation::Equal
+                    && matches!(
+                        format,
+                        MachineIntegerType::Int32
+                            | MachineIntegerType::UInt32
+                            | MachineIntegerType::Int64
+                            | MachineIntegerType::UInt64
+                    )
+                    && arguments.iter().all(|argument| {
+                        crate::kernel::MachineOperandView::Shared(argument)
+                            .literal()
+                            .is_some()
+                    });
+                if closed_order {
+                    let condition = crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+                        *format,
+                        *relation,
+                        arguments.each_ref().map(crate::kernel::MachineOperandView::Shared),
+                    );
+                    return Ok(KernelTermImport::default().condition(&condition));
+                }
                 return Ok(
                     if *format == MachineIntegerType::Int64 && *relation == CompareRelation::Equal {
                         KernelTerm::boolean_comparison_raw(*format, *relation, arguments)
@@ -5706,6 +5729,38 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
                 },
             )
             .expect("a `Bool` value form maps"),
+        ConditionTerm::Compare {
+            format,
+            relation,
+            left,
+            right,
+        } if *relation != CompareRelation::Equal
+            && matches!(
+                format,
+                MachineIntegerType::Int32
+                    | MachineIntegerType::UInt32
+                    | MachineIntegerType::Int64
+                    | MachineIntegerType::UInt64
+            ) =>
+        {
+            let left = substitute_bitvector_variable(left, from, to);
+            let right = substitute_bitvector_variable(right, from, to);
+            if format.constant_from_term(&left).is_some()
+                && format.constant_from_term(&right).is_some()
+            {
+                crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+                    *format,
+                    *relation,
+                    [
+                        crate::kernel::MachineOperandView::Legacy(&left),
+                        crate::kernel::MachineOperandView::Legacy(&right),
+                    ],
+                )
+            } else {
+                let (operator, _, _) = condition.as_bitvector_comparison().expect("native order");
+                operator.build(left, right)
+            }
+        }
         condition => {
             let (op, left, right) = condition
                 .as_bitvector_comparison()
@@ -7369,6 +7424,11 @@ fn substitute_pointer_variable_in_spec_expression(
     to: &Pointer,
 ) -> SpecExpression {
     match expression {
+        SpecExpression::ObjectAddress(address) => {
+            SpecExpression::ObjectAddress(Box::new(address.with_base(
+                substitute_pointer_variable_in_spec_expression(&address.base, from, to),
+            )))
+        }
         SpecExpression::ResourceField { .. } => expression.clone(),
         SpecExpression::IntegerToMachine { value, destination } => {
             SpecExpression::IntegerToMachine {
@@ -7987,18 +8047,6 @@ fn substitute_pointer_variable_in_spec_proposition(
                         }
                     }
                 })
-                .collect(),
-        },
-        SpecProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => SpecProposition::ChangesOnly {
-            before: substitute_pointer_variable_in_spec_memory(before, from, to),
-            after: substitute_pointer_variable_in_spec_memory(after, from, to),
-            resources: resources
-                .iter()
-                .map(|r| substitute_pointer_variable_in_spec_resource(r, from, to))
                 .collect(),
         },
         SpecProposition::ResourceSeparate { left, right } => SpecProposition::ResourceSeparate {

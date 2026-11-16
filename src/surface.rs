@@ -36,8 +36,7 @@ use crate::kernel::{
     program_function_contract_entry_state, program_function_contract_refinement_arguments,
     program_function_contract_refinement_context, program_function_entry_state,
     program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
-    program_seq, program_termination_height_plan, program_verified_function_termination_rules,
-    program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
+    program_seq, program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
     prove_owned_resource_quantity_nonnegative, prove_program_condition_fact_transport,
     prove_program_function_contract_refinement,
     prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget,
@@ -210,7 +209,6 @@ pub fn bound_diagnostic_message(message: String) -> String {
 pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "abstract",
     "address",
-    "add",
     "aligned",
     "all",
     "and",
@@ -235,10 +233,8 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "constructs",
     "consumes",
     "contains",
-    "changes_only",
     "contract",
     "contradiction",
-    "conclusion",
     "count",
     "decreases",
     "defined",
@@ -248,10 +244,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "ensuring",
     "executes",
     "entry",
-    "equal_from_bounds",
-    "less_equal_from_equal",
-    "negated_goal",
-    "divide",
     "enum",
     "enumerate",
     "execute",
@@ -272,17 +264,13 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "if",
     "import",
     "implies",
-    "arithmetic_certificate",
     "peel",
-    "signed_int32",
-    "rules",
     "rust",
     "in",
     "induct",
     "initialize",
     "instantiate",
     "int32",
-    "int32_range",
     "intro",
     "invariant",
     "known",
@@ -292,7 +280,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "load_uint8",
     "load_uint8_pointer",
     "loop",
-    "less_than_from_not_equal",
     "mark",
     "match",
     "memory",
@@ -310,7 +297,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "predicate",
     "prop",
     "preserve",
-    "premise",
     "produces",
     "read",
     "read_event",
@@ -318,8 +304,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "resource",
     "region",
     "rewrite",
-    "reverse",
-    "scale",
     "same_object",
     "little_endian",
     "scatter",
@@ -337,7 +321,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "tactic",
     "take",
     "target",
-    "trivial",
     "theorem",
     "then",
     "transport",
@@ -388,7 +371,6 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "by",
     "c-fragment",
     "contains-proposition",
-    "changes-only",
     "contract",
     "decreases",
     "defined",
@@ -465,7 +447,7 @@ fn library_module_path(identity: &str) -> String {
 /// `uint32` is to the kernel: each has no definition, only the library's
 /// bodyless functions over it and the axioms relating them. Only a library
 /// module declares one, and only one listed here.
-pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec", "ChunksExact", "SliceIter"];
+pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec", "SliceIter"];
 
 /// The name a loop's invariants and proof read its pass count by: the number
 /// of passes the loop has completed.
@@ -478,12 +460,24 @@ pub(crate) fn loop_iterations_spelling(index: usize) -> String {
 
 /// The Rust accessors a proof reads a loop's iterator through, as written
 /// after `iter.`: a call such as `len()` or a public field such as `start`.
-pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 6] =
-    ["len()", "as_slice()", "start", "end", "start()", "end()"];
+pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 11] = [
+    "len()",
+    "as_slice()",
+    "start",
+    "end",
+    "start()",
+    "end()",
+    "v",
+    "v.len()",
+    "rem",
+    "rem.len()",
+    "chunk_size",
+];
 
 /// The accessors of an iterator of `kind`, which are Rust's own:
 /// `ExactSizeIterator::len`, `slice::Iter::as_slice`, a `Range`'s `start`
-/// and `end` fields, and a `RangeInclusive`'s `start()` and `end()`.
+/// and `end` fields, a `RangeInclusive`'s `start()` and `end()`, and a
+/// `ChunksExact`'s fields `v`, `rem` and `chunk_size`.
 pub(crate) fn rust_iterator_accessors(
     kind: crate::languages::interface::RustIteratorKind,
 ) -> &'static [&'static str] {
@@ -492,8 +486,10 @@ pub(crate) fn rust_iterator_accessors(
         crate::languages::interface::RustIteratorKind::Enumerate => &["len()"],
         crate::languages::interface::RustIteratorKind::Range => &["start", "end", "len()"],
         crate::languages::interface::RustIteratorKind::RangeInclusive => &["start()", "end()"],
-        crate::languages::interface::RustIteratorKind::Chunks
-        | crate::languages::interface::RustIteratorKind::SliceLibrary(_) => &[],
+        crate::languages::interface::RustIteratorKind::Chunks => {
+            &["v", "v.len()", "rem", "rem.len()", "chunk_size", "len()"]
+        }
+        crate::languages::interface::RustIteratorKind::SliceLibrary(_) => &[],
     }
 }
 
@@ -505,28 +501,20 @@ pub(crate) fn rust_library_iterator(
 ) -> Option<&str> {
     matches!(
         iterator.kind,
-        crate::languages::interface::RustIteratorKind::Chunks
-            | crate::languages::interface::RustIteratorKind::SliceLibrary(_)
+        crate::languages::interface::RustIteratorKind::SliceLibrary(_)
     )
     .then_some(iterator.local.as_str())
 }
 
-/// The Click type of a library-valued loop iterator: `ChunksExact<uint8>`,
-/// or `SliceIter` at the slice's element type.
+/// The Click type of a library-valued loop iterator: `SliceIter` at the
+/// slice's element type.
 pub(crate) fn rust_library_iterator_type(
     iterator: &crate::languages::interface::RustLoopIterator,
 ) -> Option<ClickType> {
-    rust_library_iterator(iterator)?;
-    if let crate::languages::interface::RustIteratorKind::SliceLibrary(name) = iterator.kind {
-        return generics::primitive_instance_value_type(&ClickType::Program(
-            InterfaceType::Parameter(name),
-        ));
-    }
-    Some(ClickType::Algebraic(AlgebraicTypeApplication {
-        rigid: false,
-        name: "ChunksExact".to_string(),
-        arguments: vec![ClickType::Program(InterfaceType::UInt8)],
-    }))
+    let crate::languages::interface::RustIteratorKind::SliceLibrary(name) = iterator.kind else {
+        return None;
+    };
+    generics::primitive_instance_value_type(&ClickType::Program(InterfaceType::Parameter(name)))
 }
 
 /// `iter.<accessor>` of `iterator`, read from the state the importer keeps
@@ -556,6 +544,17 @@ pub(crate) fn rust_iterator_method(
         (K::Range, "len()") => {
             ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
         }
+        // A slice field reads as a slice parameter does: `iter.v` is its
+        // data and `iter.v.len()` its length.
+        (K::Chunks, "v") => variable("v"),
+        (K::Chunks, "v.len()") => variable("v_len"),
+        (K::Chunks, "rem") => variable("rem"),
+        (K::Chunks, "rem.len()") => variable("rem_len"),
+        (K::Chunks, "chunk_size") => variable("chunk_size"),
+        (K::Chunks, "len()") => ProgramExpression::Divide(
+            Box::new(variable("v_len")),
+            Box::new(variable("chunk_size")),
+        ),
         _ => {
             return Err(format!(
                 "`iter.{accessor}` is not an accessor of this loop's {} iterator{}",
@@ -768,10 +767,6 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/rust/slice.click",
         include_str!("../library/rust/slice.click"),
-    ),
-    (
-        "library/rust/chunks_exact.click",
-        include_str!("../library/rust/chunks_exact.click"),
     ),
     (
         "library/rust/slice_iter.click",
@@ -2357,11 +2352,6 @@ pub enum ResourceKind {
 pub enum ClickProposition {
     /// Assert a proposition-valued expression, such as a lambda application.
     Value(ContractExpression),
-    ChangesOnly {
-        before: ProgramPointSelector,
-        after: ProgramPointSelector,
-        resources: Vec<ResourceSubject>,
-    },
     Comparison {
         left: ContractExpression,
         operator: ComparisonOperator,
@@ -2445,15 +2435,6 @@ impl Clone for ClickProposition {
 fn clone_click_proposition_atom(proposition: &ClickProposition) -> ClickProposition {
     match proposition {
         ClickProposition::Value(expression) => ClickProposition::Value(expression.clone()),
-        ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => ClickProposition::ChangesOnly {
-            before: before.clone(),
-            after: after.clone(),
-            resources: resources.clone(),
-        },
 
         ClickProposition::Comparison {
             left,
@@ -3200,7 +3181,6 @@ fn collect_current_proposition_variables(
             ClickProposition::Value(expression) => {
                 collect_current_contract_expression_variables(expression, names)
             }
-            ClickProposition::ChangesOnly { .. } => {}
 
             ClickProposition::Comparison { left, right, .. } => {
                 collect_current_contract_expression_variables(left, names);
@@ -3601,9 +3581,9 @@ struct RecordedStates {
     /// `region(N)` point it is recorded at.
     source_layout: Option<lowering::SourceExecutionLayout>,
     /// The name of each recorded point, by the identity of the point its
-    /// state's path reached there ([`crate::kernel::reached_point`]): a
+    /// state's path reached there ([`crate::kernel::ProgramPoint`]): a
     /// direct lookup, independent of what the memory there holds.
-    point_names: imbl::HashMap<crate::kernel::reached_point::ProgramPointId, ProgramPointSelector>,
+    point_names: imbl::HashMap<crate::kernel::program_point::ProgramPointId, ProgramPointSelector>,
     /// The newest recorded point whose memory reads each set of program
     /// bytes, keyed by the memory's read identity. A load registered in a
     /// memory other than the one being spelled is looked up here and
@@ -4578,7 +4558,7 @@ impl RecordedStates {
     #[cfg_attr(not(test), allow(dead_code))]
     fn point_name(
         &self,
-        id: crate::kernel::reached_point::ProgramPointId,
+        id: crate::kernel::program_point::ProgramPointId,
     ) -> Option<&ProgramPointSelector> {
         self.point_names.get(&id)
     }
@@ -4879,7 +4859,7 @@ impl RecordedStates {
             .insert(selector.clone(), self.effect_log.len());
         let prior = self.get(&selector).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), Some(&state));
-        if let Some(id) = state.reached_point().id() {
+        if let Some(id) = state.program_point_id() {
             self.point_names.insert(id, selector.clone());
         }
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
@@ -4963,7 +4943,7 @@ impl RecordedStates {
             self.record_read_event_values(*index, std::iter::empty());
         }
 
-        if let Some(id) = prior.as_ref().and_then(|state| state.reached_point().id())
+        if let Some(id) = prior.as_ref().and_then(|state| state.program_point_id())
             && self.point_names.get(&id) == Some(&selector)
         {
             self.point_names.remove(&id);
@@ -5439,6 +5419,8 @@ struct SpecElaborationContext {
     /// Bare `result` names the internal contract-return binding here;
     /// explicit C bindings keep their source identifier and value.
     contract_result_in_scope: bool,
+    /// A fixed return value, separate from all lexical bindings.
+    contract_result: Option<std::sync::Arc<SpecExpression>>,
     /// Preserve native address checks inside an explicit `defined(...)`.
     checking_definedness: bool,
 }
@@ -5457,6 +5439,7 @@ impl Default for SpecElaborationContext {
             function_contract: false,
             reference_state: None,
             contract_result_in_scope: false,
+            contract_result: None,
             checking_definedness: false,
         }
     }
@@ -5511,6 +5494,7 @@ impl SpecElaborationContext {
                 at_function_entry: true,
                 reference_state: None,
                 contract_result_in_scope: false,
+                contract_result: None,
                 checking_definedness: self.checking_definedness,
             });
         }
@@ -5544,6 +5528,7 @@ impl SpecElaborationContext {
             // The return value is a logical proof binding, like `let`.
             // Historical C reads still use their own entry bindings.
             contract_result_in_scope: self.contract_result_in_scope,
+            contract_result: self.contract_result.clone(),
             checking_definedness: self.checking_definedness,
         })
     }
@@ -5906,7 +5891,7 @@ pub enum ProofTactic {
     /// This has no written spelling; explicit `solve()` selects one goal.
     ImplicitSolve,
     SolveUsing(ProofSolveUsing),
-    ArithmeticCertificate(ArithmeticCertificate),
+
     /// Dev-only proof hole. Closes the enclosing proof unit without checking
     /// anything. Parses only while `verification::with_allow_sorry` is active
     /// (set solely by `click verify --allow-sorry`); every other use is
@@ -5984,7 +5969,6 @@ pub enum SimpleTactic {
     Known,
     Extract,
     Normalize,
-    Arithmetic,
     Intro,
     Enumerate,
     Contradiction,
@@ -6313,16 +6297,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "arithmetic-certificate",
-        syntax: "arithmetic_certificate { premise ...; conclusion N; }",
-        class: "simple",
-    },
-    PublicTacticForm {
-        id: "arithmetic-certificate-signed-int32",
-        syntax: "arithmetic_certificate signed_int32 { ... }",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "intro",
         syntax: "intro()",
         class: "simple",
@@ -6540,7 +6514,7 @@ impl ProofTactic {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
-            Self::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
+
             Self::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),
             Self::Intro | Self::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
             Self::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
@@ -6928,26 +6902,11 @@ pub struct ProofSolveUsing {
     premises: Vec<ClickProposition>,
 }
 
-/// The public arithmetic-certificate envelope. The family tag is explicit in
-/// the in-memory proof object even while the source form remains compact; a
-/// future family can be added without another top-level proof tactic.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ArithmeticCertificate {
-    pub family: ArithmeticCertificateFamily,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ArithmeticCertificateFamily {
-    Integer(IntegerCertificate),
-    SignedInt32(SignedInt32Certificate),
-    Special(SpecialArithmeticCertificate),
-}
-
 /// The checked signed-int32 arithmetic rule family. Surface nodes retain
 /// source expressions so explicit certificates round-trip without erasing
 /// provenance before the kernel performs its independent validation.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SignedInt32Certificate {
+pub struct SignedIntervalPlan {
     pub nodes: Vec<SignedArithmeticStep>,
     pub conclusion: usize,
 }
@@ -7123,26 +7082,12 @@ pub enum SignedArithmeticStep {
     },
 }
 
-impl ArithmeticCertificate {
-    pub fn integer(certificate: IntegerCertificate) -> Self {
-        Self {
-            family: ArithmeticCertificateFamily::Integer(certificate),
-        }
-    }
-
-    pub fn special(certificate: SpecialArithmeticCertificate) -> Self {
-        Self {
-            family: ArithmeticCertificateFamily::Special(certificate),
-        }
-    }
-}
-
 /// Checked pointer and finite-float arithmetic rules. The premise vector is
 /// the exact source premise slice consumed by the certificate; node indices
 /// refer only to that vector and the flat node list as documented by the
 /// parser/printer.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SpecialArithmeticCertificate {
+pub struct SpecializedCompositionPlan {
     pub premises: Vec<ClickProposition>,
     pub nodes: Vec<SpecialArithmeticNode>,
     pub conclusion: usize,
@@ -7222,86 +7167,6 @@ pub enum SpecialArithmeticNode {
     SignedDefined {
         width: crate::kernel::SignedDefinedWidth,
         bounds: Vec<usize>,
-        result: ClickProposition,
-    },
-}
-
-/// The mathematical Integer rule family. Every node carries its source
-/// proposition for exact lowering and its claimed normalized result.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IntegerCertificate {
-    pub nodes: Vec<IntegerCertificateNode>,
-    pub conclusion: usize,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IntegerCertificateNode {
-    Premise {
-        index: usize,
-        proposition: ClickProposition,
-        result: ClickProposition,
-    },
-    Scale {
-        source: usize,
-        coefficient: ContractExpression,
-        result: ClickProposition,
-    },
-    Add {
-        left: usize,
-        right: usize,
-        result: ClickProposition,
-    },
-    EqualityToLessEqual {
-        source: usize,
-        reverse: bool,
-        result: ClickProposition,
-    },
-    EqualityFromBounds {
-        lower: usize,
-        upper: usize,
-        result: ClickProposition,
-    },
-    Trivial {
-        result: ClickProposition,
-    },
-    /// A machine value's type range: `MIN <= to_integer(v)` or
-    /// `to_integer(v) <= MAX`, with the type's exact endpoint.
-    TypeRange {
-        result: ClickProposition,
-    },
-    /// A bound an unsigned quotient, shift, or remainder by a constant
-    /// takes from its operand: `c * to_integer(x / c) <= to_integer(x)`,
-    /// `to_integer(x) <= c * to_integer(x / c) + (c - 1)`, or
-    /// `to_integer(x % c) <= c - 1`.
-    OperationBound {
-        result: ClickProposition,
-    },
-    /// A disequality with a machine type's endpoint, read as the bound it
-    /// gives: from premise `v != 0u64`, `1 <= to_integer(v)`.
-    ExcludedTypeBound {
-        index: usize,
-        proposition: ClickProposition,
-        result: ClickProposition,
-    },
-    /// A non-strict bound made strict by a disequality of the same
-    /// difference: from node `bound`, `l <= r`, and premise `index`,
-    /// `l != r` (either side first), `l < r`.
-    StrictFromDisequal {
-        bound: usize,
-        index: usize,
-        proposition: ClickProposition,
-        result: ClickProposition,
-    },
-    /// The integer negation of a non-strict or strict goal, assumed for a
-    /// refutation; the certificate then concludes with a contradiction.
-    NegatedGoal {
-        result: ClickProposition,
-    },
-    /// Divide a non-strict bound by a positive common factor of its
-    /// coefficients, rounding the constant.
-    Divide {
-        source: usize,
-        divisor: ContractExpression,
         result: ClickProposition,
     },
 }
@@ -8195,8 +8060,7 @@ fn click_proposition_reads_memory(
         }
         // Resource separation, containment, loadability, states, and
         // predicates all observe the C state.
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
@@ -8556,6 +8420,8 @@ struct ReportDetail {
     /// The prepared program's accessor spellings, retained for lazy reports.
     model_accessors: Option<diagnostics::CapturedModelAccessors>,
     missing_tactic_requirement: Option<String>,
+    /// Instantiated declared theorem prerequisite, for discovery diagnostics only.
+    missing_theorem_requirement: Option<String>,
     /// The Click declaration (a function block, named contract or theorem)
     /// this failure is about, when no C statement has run and no tactic has
     /// been checked: a contract that could not be set up at entry, or an
@@ -8653,11 +8519,6 @@ pub(crate) fn note_ambient_source_tactic(claim_label: &str, source_index: usize)
             ambient.tactic = Some((claim_label.to_owned(), source_index));
         }
     });
-}
-
-/// Contract certification belongs to the declaration, not its last proof step.
-pub(crate) fn clear_ambient_source_tactic() {
-    AMBIENT_PROOF_SOURCE.with(|ambient| ambient.borrow_mut().tactic = None);
 }
 
 pub(crate) fn clear_ambient_proof_source() {
@@ -11271,6 +11132,20 @@ impl ClickError {
         std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).goal = Some(goal);
         self.rendered = std::sync::OnceLock::new();
         self
+    }
+
+    pub(in crate::surface) fn with_missing_theorem_requirement(mut self, fact: String) -> Self {
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default())
+            .missing_theorem_requirement = Some(fact);
+        self.rendered = std::sync::OnceLock::new();
+        self
+    }
+
+    pub(in crate::surface) fn missing_theorem_requirement(&self) -> Option<&str> {
+        self.report_detail
+            .as_ref()?
+            .missing_theorem_requirement
+            .as_deref()
     }
 
     pub(in crate::surface) fn unresolved_requirement(&self) -> Option<&UnresolvedRequirement> {

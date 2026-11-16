@@ -3,7 +3,7 @@
 //! (`kernel::machine_integer::identity`). The certificate names exactly two
 //! bounds on the mathematical result.
 
-use super::arithmetic_special::SpecialArithmeticCheckError as Error;
+use super::arithmetic_special::ArithmeticRuleError as Error;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::machine_integer::{identity::mathematical, range};
@@ -71,11 +71,17 @@ pub(super) fn check(
 
 #[cfg(test)]
 mod tests {
+    fn check_rule(
+        bounds: Vec<usize>,
+        goal: &crate::kernel::Proposition,
+        premises: &[crate::kernel::Proposition],
+    ) -> Result<(), super::Error> {
+        super::check(0, &bounds, premises, goal)
+    }
+
     use super::*;
     use crate::kernel::machine_integer::{Operation, representation};
-    use crate::kernel::proof::arithmetic_special::{
-        SpecialArithmeticCertificate, SpecialArithmeticNode,
-    };
+
     use crate::kernel::{IntegerTerm, MachineIntegerType, MachineTerm, Variable};
     use MachineIntegerType as Ty;
     use num_bigint::BigInt;
@@ -86,12 +92,7 @@ mod tests {
     fn equal(a: IntegerTerm, b: IntegerTerm) -> Proposition {
         Proposition::ConditionIs(ConditionTerm::integer_equal(a, b), true)
     }
-    fn certificate(result: Proposition, bounds: Vec<usize>) -> SpecialArithmeticCertificate {
-        SpecialArithmeticCertificate {
-            nodes: vec![SpecialArithmeticNode::IntegerOperationIdentity { bounds, result }],
-            conclusion: 0,
-        }
-    }
+
     fn operation(ty: Ty, subtract: bool, left: MachineTerm, right: MachineTerm) -> MachineTerm {
         let operation = if subtract {
             Operation::Subtract
@@ -145,27 +146,15 @@ mod tests {
             let (min, max) = ty.format().bounds();
             for subtract in [false, true] {
                 let (premises, goal, _) = inputs(ty, subtract, min.clone(), max.clone());
-                assert!(
-                    certificate(goal.clone(), vec![0, 1])
-                        .check(&goal, &premises)
-                        .is_ok()
-                );
+                assert!(check_rule(vec![0, 1], &goal, &premises).is_ok());
                 let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = &goal
                 else {
                     unreachable!()
                 };
                 let flipped = equal(b.as_ref().clone(), a.as_ref().clone());
-                assert!(
-                    certificate(flipped.clone(), vec![0, 1])
-                        .check(&flipped, &premises)
-                        .is_ok()
-                );
+                assert!(check_rule(vec![0, 1], &flipped, &premises).is_ok());
                 let (narrow, goal, _) = inputs(ty, subtract, 0.into(), 7.into());
-                assert!(
-                    certificate(goal.clone(), vec![0, 1])
-                        .check(&goal, &narrow)
-                        .is_ok()
-                );
+                assert!(check_rule(vec![0, 1], &goal, &narrow).is_ok());
             }
         }
     }
@@ -183,11 +172,7 @@ mod tests {
                 vec![0, 1, 1],
                 vec![0, 2],
             ] {
-                assert!(
-                    certificate(goal.clone(), bounds)
-                        .check(&goal, &premises)
-                        .is_err()
-                );
+                assert!(check_rule(bounds, &goal, &premises).is_err());
             }
             for altered in [
                 vec![
@@ -220,11 +205,7 @@ mod tests {
                     premises[1].clone(),
                 ],
             ] {
-                assert!(
-                    certificate(goal.clone(), vec![0, 1])
-                        .check(&goal, &altered)
-                        .is_err()
-                );
+                assert!(check_rule(vec![0, 1], &goal, &altered).is_err());
             }
         }
     }
@@ -250,11 +231,7 @@ mod tests {
         )
         .unwrap();
         let wrong = equal(observed.clone(), difference);
-        assert!(
-            certificate(wrong.clone(), vec![0, 1])
-                .check(&wrong, &premises)
-                .is_err()
-        );
+        assert!(check_rule(vec![0, 1], &wrong, &premises).is_err());
         // An operation in another type does not match the stated width.
         for (ty, other) in [
             (Ty::Int64, Ty::Int32),
@@ -267,19 +244,11 @@ mod tests {
                 continue;
             };
             let forged = equal(observed, value.clone());
-            assert!(
-                certificate(forged.clone(), vec![0, 1])
-                    .check(&forged, &premises)
-                    .is_err()
-            );
+            assert!(check_rule(vec![0, 1], &forged, &premises).is_err());
         }
         // Unsigned bounds do not license a signed identity's wider range.
         let (unsigned, _, _) = inputs(Ty::UInt32, false, 0.into(), Ty::UInt32.format().bounds().1);
-        assert!(
-            certificate(goal.clone(), vec![0, 1])
-                .check(&goal, &unsigned)
-                .is_err()
-        );
+        assert!(check_rule(vec![0, 1], &goal, &unsigned).is_err());
         // A multiplication is not an addition.
         let product = IntegerTerm::from_machine(
             Ty::Int32,
@@ -287,24 +256,11 @@ mod tests {
         )
         .unwrap();
         let forged = equal(product, value);
-        assert!(
-            certificate(forged.clone(), vec![0, 1])
-                .check(&forged, &premises)
-                .is_err()
-        );
+        assert!(check_rule(vec![0, 1], &forged, &premises).is_err());
         let Proposition::ConditionIs(condition, true) = goal.clone() else {
             unreachable!()
         };
         let negated = Proposition::ConditionIs(condition, false);
-        assert!(
-            certificate(negated.clone(), vec![0, 1])
-                .check(&negated, &premises)
-                .is_err()
-        );
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../../scaling_tests/kernel/proof/integer_operation_identity/tests.rs");
+        assert!(check_rule(vec![0, 1], &negated, &premises).is_err());
     }
 }

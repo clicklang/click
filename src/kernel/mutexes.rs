@@ -206,7 +206,10 @@ impl StorageProvenance {
     fn of(block: &super::PointerBlock) -> Self {
         use super::PointerBlock;
         match block {
-            PointerBlock::AutomaticLocal { .. } => Self::Local,
+            PointerBlock::ContractResult
+            | PointerBlock::ContractException
+            | PointerBlock::AggregateReturn { .. }
+            | PointerBlock::AutomaticLocal { .. } => Self::Local,
             PointerBlock::Concrete(name) if PointerBlock::is_local_name(name) => Self::Local,
             PointerBlock::StaticObject { .. } | PointerBlock::Concrete(_) => Self::Global,
             PointerBlock::Heap(_) | PointerBlock::Temporary(_) => Self::Fresh,
@@ -928,7 +931,10 @@ pub(super) fn storage_retirement_refusal(
 fn may_alias_automatic_storage(block: &super::PointerBlock) -> bool {
     use super::PointerBlock;
     match block {
-        PointerBlock::StaticObject { .. }
+        PointerBlock::ContractResult
+        | PointerBlock::ContractException
+        | PointerBlock::AggregateReturn { .. }
+        | PointerBlock::StaticObject { .. }
         | PointerBlock::AutomaticLocal { .. }
         | PointerBlock::Concrete(_)
         | PointerBlock::ExternalArgument

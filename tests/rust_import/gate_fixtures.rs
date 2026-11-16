@@ -28,16 +28,24 @@ fn relocated_artifact(bytes: &[u8], source_suffix: &std::path::Path) -> serde_js
         .unwrap();
     let mut relocated = 0;
     for file in files {
-        if file["name"]["Local"]
-            .as_str()
-            .is_some_and(|name| std::path::Path::new(name).ends_with(source_suffix))
-        {
+        if file["name"]["Local"].as_str().is_some_and(|name| {
+            name == "borrow.rs" || std::path::Path::new(name).ends_with(source_suffix)
+        }) {
             file["name"]["Local"] = "borrow.rs".into();
             relocated += 1;
         }
     }
     assert_eq!(relocated, 1, "expected exactly one matching source file");
     artifact
+}
+
+#[test]
+fn an_already_relative_gate_artifact_keeps_its_source_metadata() {
+    let fixture = root().join("match-in-loop");
+    let bytes = fs::read(fixture.join(".click/borrow/borrow.rs.ullbc")).unwrap();
+    let original: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let suffix = PathBuf::from("design/charon-trial/gate-fixtures/match-in-loop/borrow.rs");
+    assert_eq!(relocated_artifact(&bytes, &suffix), original);
 }
 
 #[test]

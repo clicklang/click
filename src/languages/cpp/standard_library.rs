@@ -174,12 +174,20 @@ pub(crate) const AS_WRITABLE_BYTES_LIBRARY: &str =
 /// spells them, the library template's path, and its file. An axiom
 /// matching one is an instance of that template, written out at the
 /// template arguments its own path names.
-const LIBRARY_FUNCTIONS: &[(&str, &str, &[&str], &str)] = &[(
-    "std::as_writable_bytes",
-    "class std::span<enum std::byte> (class std::span<int>) noexcept",
-    &["std", "as_writable_bytes<T, N>"],
-    AS_WRITABLE_BYTES_LIBRARY,
-)];
+const LIBRARY_FUNCTIONS: &[(&str, &str, &[&str], &str)] = &[
+    (
+        "std::as_writable_bytes",
+        "class std::span<enum std::byte> (class std::span<int>) noexcept",
+        &["std", "as_writable_bytes<T, N>"],
+        AS_WRITABLE_BYTES_LIBRARY,
+    ),
+    (
+        "std::as_writable_bytes",
+        "class std::span<enum std::byte> (class std::span<unsigned int>) noexcept",
+        &["std", "as_writable_bytes<T, N>"],
+        AS_WRITABLE_BYTES_LIBRARY,
+    ),
+];
 
 /// The methods of `std::span<T>` and `std::span<T, N>` that
 /// [`SPAN_LIBRARY`] states, each with its canonical signature as Clang
@@ -593,9 +601,9 @@ mod tests {
     }
 
     // `std::as_writable_bytes` is an instance of the library's function
-    // template at the one signature the name table states.
+    // template at the exact dynamic int/unsigned-int signatures stated.
     #[test]
-    fn as_writable_bytes_is_a_library_instance_at_its_one_signature() {
+    fn as_writable_bytes_is_a_library_instance_at_its_stated_signatures() {
         let axiom = |signature: &str| super::super::schema::CppAxiom {
             qualified_name: "std::as_writable_bytes".into(),
             signature: signature.into(),
@@ -609,6 +617,19 @@ mod tests {
             crate::languages::cpp::names::cpp_display_name(&generic).unwrap(),
             "std::as_writable_bytes<T, N>"
         );
+        assert_eq!(
+            library_generic(&axiom(
+                "class std::span<enum std::byte> (class std::span<unsigned int>) noexcept"
+            )),
+            Some(generic.clone()),
+        );
+        for signature in [
+            "class std::span<enum std::byte> (class std::span<const unsigned int>) noexcept",
+            "class std::span<enum std::byte, 4> (class std::span<unsigned int, 1>) noexcept",
+            "class std::span<enum std::byte> (class std::span<unsigned int>)",
+        ] {
+            assert!(library_generic(&axiom(signature)).is_none());
+        }
         assert!(
             library_generic(&axiom(
                 "class std::span<enum std::byte> (class std::span<long>) noexcept"

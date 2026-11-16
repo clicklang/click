@@ -1,40 +1,7 @@
 # `int32` definedness from the operands' bounds is an explicit step
 
-This is the `int32` form of
-[`int64_defined_from_bounds.md`](int64_defined_from_bounds.md).
-`defined(a + b)` and `defined(a - b)` over `int32` lower to the negated
-signed-overflow condition. The `int32_defined` node of the `rules`
-arithmetic-certificate family proves it with the same checker as
-`int64_defined`, parameterized by width: each operand starts from the width
-range of its root constructor (a constant is itself; `char` and `short`
-values share the unconverted 32-bit term, so any other `int32` term has the
-whole `int32` range), is narrowed by the listed premises, and the rule holds
-when the exact sum or difference of the two ranges stays inside `int32`. Each
-listed premise must be a constant `int32` order or equality fact on one
-operand; the checker reads only those premises.
-
-`sum` and `difference` write the step out. `sum_by_solve`,
-`difference_by_solve`, and `sum_by_listed_solve` leave it to `solve` and
-`solve() using`, which cite the constant bounds on each operand: the facts
-indexed under that operand, or the listed ones. `sum_by_arithmetic` cites the
-listed ones through `solve() using` as well.
-
-`bump` and `caller` are the `int32` form of
-[`guarded_postcondition_int64_bounds.md`](guarded_postcondition_int64_bounds.md):
-after the call the caller holds `defined(old(st.total) + got) implies
-st.total == old(st.total) + got`, and under `result == 1` the operands are
-bounded (`old(st.total) < 100`, `got == 1`). The smart closer proves the guard
-with a nested `solve`, whose certificate is the checked `int32_defined` rule
-citing those two constant bounds; the expansion of `caller` re-verifies
-(`src/surface/tests/expansion_tests.rs`).
-
-The refusals are
-[`int32_defined_bounds_do_not_exclude_overflow.md`](int32_defined_bounds_do_not_exclude_overflow.md)
-(both operands bounded, but not enough),
-[`int32_defined_one_operand_bounded.md`](int32_defined_one_operand_bounded.md)
-(the other operand keeps its whole `int32` range), and
-[`int32_defined_unrelated_bound.md`](int32_defined_unrelated_bound.md)
-(a listed premise that bounds no operand).
+Arithmetic search expands to ordinary proof steps, with the selected premises
+stated explicitly in `solve() using { ... }`.
 
 ```c filename=int32_defined_from_bounds.c
 struct box {
@@ -90,12 +57,7 @@ int32 sum(int32 a, int32 b) {
     ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
-        arithmetic_certificate rules {
-            premise 0: a < 100 => a < 100;
-            premise 1: b == 1 => b == 1;
-            int32_defined bounds [0, 1] => defined(a + b);
-            conclusion 0;
-        }
+        solve() using { a < 100; b == 1; };
     }
 }
 
@@ -106,13 +68,7 @@ int32 difference(int32 a, int32 b) {
     ensures to_integer(result) == to_integer(a - b);
 } by {
     have defined(a - b) by {
-        arithmetic_certificate rules {
-            premise 0: -5 <= a => -5 <= a;
-            premise 1: 0 <= b => 0 <= b;
-            premise 2: not (b > 7) => not (b > 7);
-            int32_defined bounds [0, 1, 2] => defined(a - b);
-            conclusion 0;
-        }
+        solve() using { -5 <= a; 0 <= b; not (b > 7); };
     }
 }
 

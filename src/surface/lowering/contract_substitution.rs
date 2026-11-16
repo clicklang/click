@@ -65,7 +65,6 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 Ok(ClickProposition::Value(reduced.into_owned()))
             }
         }
-        ClickProposition::ChangesOnly { .. } => Ok(proposition.clone()),
 
         ClickProposition::PredicateCall { name, arguments } if selected(name) => {
             if !active.insert(name.clone()) {
@@ -339,31 +338,61 @@ fn substitute_click_proposition_logical(
     proposition: &ClickProposition,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ClickProposition, String> {
-    match proposition {
-        ClickProposition::At {
-            selector,
-            proposition,
-        } => Ok(ClickProposition::At {
-            selector: selector.clone(),
-            proposition: Box::new(substitute_click_proposition_in(proposition, substitutions)?),
-        }),
-        ClickProposition::And(left, right) => Ok(ClickProposition::And(
-            Box::new(substitute_click_proposition_in(left, substitutions)?),
-            Box::new(substitute_click_proposition_in(right, substitutions)?),
-        )),
-        ClickProposition::Or(left, right) => Ok(ClickProposition::Or(
-            Box::new(substitute_click_proposition_in(left, substitutions)?),
-            Box::new(substitute_click_proposition_in(right, substitutions)?),
-        )),
-        ClickProposition::Not(body) => Ok(ClickProposition::Not(Box::new(
-            substitute_click_proposition_in(body, substitutions)?,
-        ))),
-        ClickProposition::Implies(left, right) => Ok(ClickProposition::Implies(
-            Box::new(substitute_click_proposition_in(left, substitutions)?),
-            Box::new(substitute_click_proposition_in(right, substitutions)?),
-        )),
-        _ => unreachable!("non-logical proposition dispatched to logical substitution"),
+    let mut pending = vec![(proposition, false)];
+    let mut values = Vec::new();
+    while let Some((proposition, finish)) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        if finish {
+            let right = values.pop().expect("a logical child was substituted");
+            let value = match proposition {
+                ClickProposition::At { selector, .. } => ClickProposition::At {
+                    selector: selector.clone(),
+                    proposition: Box::new(right),
+                },
+                ClickProposition::Not(_) => ClickProposition::Not(Box::new(right)),
+                ClickProposition::And(..)
+                | ClickProposition::Or(..)
+                | ClickProposition::Implies(..) => {
+                    let left = values
+                        .pop()
+                        .expect("both logical children were substituted");
+                    let (left, right) = (Box::new(left), Box::new(right));
+                    match proposition {
+                        ClickProposition::And(..) => ClickProposition::And(left, right),
+                        ClickProposition::Or(..) => ClickProposition::Or(left, right),
+                        ClickProposition::Implies(..) => ClickProposition::Implies(left, right),
+                        _ => unreachable!(),
+                    }
+                }
+                _ => unreachable!("only logical nodes have a finish frame"),
+            };
+            values.push(value);
+            continue;
+        }
+        match proposition {
+            ClickProposition::At {
+                proposition: body, ..
+            }
+            | ClickProposition::Not(body) => {
+                pending.push((proposition, true));
+                pending.push((body, false));
+            }
+            ClickProposition::And(left, right)
+            | ClickProposition::Or(left, right)
+            | ClickProposition::Implies(left, right) => {
+                pending.push((proposition, true));
+                pending.push((right, false));
+                pending.push((left, false));
+            }
+            proposition => values.push(substitute_click_proposition_nonlogical(
+                proposition,
+                substitutions,
+            )?),
+        }
     }
+    Ok(values
+        .pop()
+        .expect("the selected proposition was substituted"))
 }
 
 fn substitute_click_proposition_nonlogical(
@@ -374,19 +403,6 @@ fn substitute_click_proposition_nonlogical(
         ClickProposition::Value(expression) => Ok(ClickProposition::Value(
             substitute_contract_expression_in(expression, substitutions)?,
         )),
-
-        ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => Ok(ClickProposition::ChangesOnly {
-            before: before.clone(),
-            after: after.clone(),
-            resources: resources
-                .iter()
-                .map(|r| substitute_resource_subject(r, substitutions))
-                .collect::<Result<_, _>>()?,
-        }),
 
         ClickProposition::Comparison {
             left,
@@ -828,11 +844,6 @@ fn collect_click_proposition_binding_names(
         ClickProposition::Value(expression) => {
             collect_contract_expression_binding_names(expression, names)
         }
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                collect_resource_subject_binding_names(r, names);
-            }
-        }
 
         ClickProposition::Comparison { left, right, .. } => {
             collect_contract_expression_binding_names(left, names);
@@ -1209,7 +1220,6 @@ fn rewrite_click_proposition_expression(
             let (value, changed) = expression(value);
             (ClickProposition::Value(value), changed)
         }
-        ClickProposition::ChangesOnly { .. } => (proposition.clone(), false),
 
         ClickProposition::Comparison {
             left,
@@ -2453,18 +2463,6 @@ fn apply_contract_let_expressions_inner(
         ClickProposition::Value(expression) => Ok(ClickProposition::Value(
             apply_contract_lets_to_expression(expression, bindings)?,
         )),
-        ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => Ok(ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources: resources
-                .into_iter()
-                .map(|r| apply_contract_lets_to_resource_subject(r, bindings))
-                .collect::<Result<_, _>>()?,
-        }),
 
         ClickProposition::Comparison {
             left,
@@ -3141,11 +3139,6 @@ fn collect_click_proposition_referenced_bindings_one<N: ReferencedBinding>(
     match proposition {
         ClickProposition::Value(expression) => {
             collect_contract_expression_referenced_bindings(expression, names)
-        }
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                collect_resource_subject_referenced_bindings(r, names);
-            }
         }
 
         ClickProposition::Comparison { left, right, .. } => {
@@ -5130,116 +5123,6 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn expression_rewrite_respects_absolute_state_boundaries() {
-        let x = ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
-        let y = ContractExpression::ProgramExpression(ProgramExpression::Variable("y".into()));
-        let old = |value| ContractExpression::Old(Box::new(value));
-        let at = |label: &str, value| ContractExpression::At {
-            selector: ProgramPointSelector::Mark(label.into()),
-            expression: Box::new(value),
-        };
-        let pair = |left, right| ContractExpression::Add(Box::new(left), Box::new(right));
-        for historical in [old(x.clone()), at("entry", x.clone())] {
-            assert_eq!(
-                rewrite_contract_expression_exact(
-                    &pair(x.clone(), historical.clone()),
-                    &x,
-                    &y,
-                    true
-                ),
-                (pair(y.clone(), historical), true),
-            );
-        }
-        assert_eq!(
-            rewrite_contract_expression_exact(
-                &old(pair(x.clone(), x.clone())),
-                &old(x.clone()),
-                &old(y.clone()),
-                true
-            ),
-            (old(pair(y.clone(), y.clone())), true),
-        );
-        assert_eq!(
-            rewrite_contract_expression_exact(
-                &at("entry", pair(x.clone(), x.clone())),
-                &at("entry", x.clone()),
-                &at("entry", y.clone()),
-                true
-            ),
-            (at("entry", pair(y.clone(), y.clone())), true),
-        );
-        let historical = at("other", pair(x.clone(), x.clone()));
-        assert_eq!(
-            rewrite_contract_expression_exact(&historical, &at("entry", x), &at("entry", y), true),
-            (historical, false),
-        );
-    }
-
-    #[test]
-    fn multidimensional_array_rewrite_updates_its_lowered_base() {
-        let source_base =
-            ContractExpression::ProgramExpression(ProgramExpression::Variable("old".into()));
-        let target_base =
-            ContractExpression::ProgramExpression(ProgramExpression::Variable("new".into()));
-        let expression = ContractExpression::ArrayIndex {
-            base: Box::new(source_base.clone()),
-            indexes: vec![
-                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
-                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
-            ],
-            dimensions: vec![2, 2],
-            lowered: ProgramExpression::Index(
-                Box::new(ProgramExpression::Variable("old".into())),
-                Box::new(ProgramExpression::Value(int32(1))),
-            ),
-        };
-        let (rewritten, changed) =
-            rewrite_contract_expression_exact(&expression, &source_base, &target_base, false);
-        assert!(changed);
-        let ContractExpression::ArrayIndex { lowered, .. } = rewritten else {
-            panic!("array rewrite must retain its presentation node");
-        };
-        assert_eq!(
-            lowered,
-            ProgramExpression::Index(
-                Box::new(ProgramExpression::Variable("new".into())),
-                Box::new(ProgramExpression::Value(int32(1))),
-            )
-        );
-    }
-
-    #[test]
-    fn multidimensional_array_rewrite_fails_closed_for_non_c_bases() {
-        let source_base =
-            ContractExpression::ProgramExpression(ProgramExpression::Variable("old".into()));
-        let expression = ContractExpression::ArrayIndex {
-            base: Box::new(source_base.clone()),
-            indexes: vec![
-                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
-                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
-            ],
-            dimensions: vec![2, 2],
-            lowered: ProgramExpression::Index(
-                Box::new(ProgramExpression::Variable("old".into())),
-                Box::new(ProgramExpression::Value(int32(1))),
-            ),
-        };
-        let target = ContractExpression::Call {
-            name: "not_a_c_fragment".into(),
-            arguments: vec![],
-        };
-        let (rewritten, changed) =
-            rewrite_contract_expression_exact(&expression, &source_base, &target, false);
-        assert!(!changed);
-        assert_eq!(rewritten, expression);
-    }
-}
-
 /// Resolve private synthesis markers in one pass over the selected output.
 /// Targets avoid every referenced and declared name, so this pass cannot
 /// capture a user binding and need not rescan each nested binder's body.
@@ -5376,4 +5259,156 @@ fn substitute_fresh_synthesis_expression(
         }
     }
     Ok(values.pop().expect("selected synthesis expression"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn logical_substitution_preserves_operators_points_and_bound_names() {
+        let variable = |name: &str| {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name.into()))
+        };
+        let atom = |left: ContractExpression| ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+        };
+        let build = |free: ContractExpression| {
+            ClickProposition::And(
+                Box::new(atom(free.clone())),
+                Box::new(ClickProposition::Or(
+                    Box::new(ClickProposition::Not(Box::new(atom(variable("y"))))),
+                    Box::new(ClickProposition::Implies(
+                        Box::new(atom(free.clone())),
+                        Box::new(ClickProposition::At {
+                            selector: ProgramPointSelector::Mark("entry".into()),
+                            proposition: Box::new(ClickProposition::And(
+                                Box::new(atom(free)),
+                                Box::new(ClickProposition::ForAll {
+                                    click_type: ClickType::Program(InterfaceType::Int32),
+                                    name: "x".into(),
+                                    written_name: None,
+                                    body: Box::new(atom(variable("x"))),
+                                }),
+                            )),
+                        }),
+                    )),
+                )),
+            )
+        };
+        let replacement = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7)));
+        let actual = substitute_click_proposition(
+            &build(variable("x")),
+            &BTreeMap::from([("x".into(), replacement.clone())]),
+        )
+        .unwrap();
+        assert_eq!(actual, build(replacement));
+    }
+
+    #[test]
+    fn expression_rewrite_respects_absolute_state_boundaries() {
+        let x = ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
+        let y = ContractExpression::ProgramExpression(ProgramExpression::Variable("y".into()));
+        let old = |value| ContractExpression::Old(Box::new(value));
+        let at = |label: &str, value| ContractExpression::At {
+            selector: ProgramPointSelector::Mark(label.into()),
+            expression: Box::new(value),
+        };
+        let pair = |left, right| ContractExpression::Add(Box::new(left), Box::new(right));
+        for historical in [old(x.clone()), at("entry", x.clone())] {
+            assert_eq!(
+                rewrite_contract_expression_exact(
+                    &pair(x.clone(), historical.clone()),
+                    &x,
+                    &y,
+                    true
+                ),
+                (pair(y.clone(), historical), true),
+            );
+        }
+        assert_eq!(
+            rewrite_contract_expression_exact(
+                &old(pair(x.clone(), x.clone())),
+                &old(x.clone()),
+                &old(y.clone()),
+                true
+            ),
+            (old(pair(y.clone(), y.clone())), true),
+        );
+        assert_eq!(
+            rewrite_contract_expression_exact(
+                &at("entry", pair(x.clone(), x.clone())),
+                &at("entry", x.clone()),
+                &at("entry", y.clone()),
+                true
+            ),
+            (at("entry", pair(y.clone(), y.clone())), true),
+        );
+        let historical = at("other", pair(x.clone(), x.clone()));
+        assert_eq!(
+            rewrite_contract_expression_exact(&historical, &at("entry", x), &at("entry", y), true),
+            (historical, false),
+        );
+    }
+
+    #[test]
+    fn multidimensional_array_rewrite_updates_its_lowered_base() {
+        let source_base =
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("old".into()));
+        let target_base =
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("new".into()));
+        let expression = ContractExpression::ArrayIndex {
+            base: Box::new(source_base.clone()),
+            indexes: vec![
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+            ],
+            dimensions: vec![2, 2],
+            lowered: ProgramExpression::Index(
+                Box::new(ProgramExpression::Variable("old".into())),
+                Box::new(ProgramExpression::Value(int32(1))),
+            ),
+        };
+        let (rewritten, changed) =
+            rewrite_contract_expression_exact(&expression, &source_base, &target_base, false);
+        assert!(changed);
+        let ContractExpression::ArrayIndex { lowered, .. } = rewritten else {
+            panic!("array rewrite must retain its presentation node");
+        };
+        assert_eq!(
+            lowered,
+            ProgramExpression::Index(
+                Box::new(ProgramExpression::Variable("new".into())),
+                Box::new(ProgramExpression::Value(int32(1))),
+            )
+        );
+    }
+
+    #[test]
+    fn multidimensional_array_rewrite_fails_closed_for_non_c_bases() {
+        let source_base =
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("old".into()));
+        let expression = ContractExpression::ArrayIndex {
+            base: Box::new(source_base.clone()),
+            indexes: vec![
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+            ],
+            dimensions: vec![2, 2],
+            lowered: ProgramExpression::Index(
+                Box::new(ProgramExpression::Variable("old".into())),
+                Box::new(ProgramExpression::Value(int32(1))),
+            ),
+        };
+        let target = ContractExpression::Call {
+            name: "not_a_c_fragment".into(),
+            arguments: vec![],
+        };
+        let (rewritten, changed) =
+            rewrite_contract_expression_exact(&expression, &source_base, &target, false);
+        assert!(!changed);
+        assert_eq!(rewritten, expression);
+    }
 }

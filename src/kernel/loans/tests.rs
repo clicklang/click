@@ -3351,7 +3351,14 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
     let loan = plan.stable_views()[0].loan;
     let head = composite("cursor", true);
     let mut escaping = BTreeMap::new();
-    escaping.insert(loan, vec![head.clone()]);
+    let (_, heads) = ResourceContext::new().unchecked_with_facts_and_occurrences([head.clone()]);
+    escaping.insert(
+        loan,
+        vec![EscapingComposite {
+            head: head.clone(),
+            occurrence: heads[0].1,
+        }],
+    );
     let planned_ledger = plan.ledger.clone();
     let recovery = plan
         .clone()
@@ -4702,5 +4709,66 @@ fn indexed_write_witness_keeps_the_least_loan_across_buckets_and_aliases() {
     assert_eq!(
         LoanLedger::new().first_active_memory_overlap(&unknown),
         Ok(None)
+    );
+}
+
+#[test]
+fn equal_returned_composite_occurrences_keep_independent_holds() {
+    let assumptions = PureFactContext::new();
+    let resources = ResourceContext::new().unchecked_with_fact(memory(0, 8, true));
+    let (ledger, caller, callee) = participants();
+    let plan = plan_stable_view_transfer(
+        &resources,
+        &[checked(memory(0, 8, false))],
+        &assumptions,
+        &ledger,
+        caller,
+        callee,
+    )
+    .unwrap();
+    let head = composite("returned_cursor", true);
+    let (_, inserted) =
+        ResourceContext::new().unchecked_with_facts_and_occurrences([head.clone(), head.clone()]);
+    let escaping: BTreeMap<LoanId, Vec<EscapingComposite>> = BTreeMap::from([(
+        plan.stable_views()[0].loan,
+        inserted
+            .into_iter()
+            .map(|(head, occurrence)| EscapingComposite { head, occurrence })
+            .collect(),
+    )]);
+    let expected = escaping
+        .values()
+        .next()
+        .unwrap()
+        .iter()
+        .map(|head| head.occurrence)
+        .collect::<Vec<_>>();
+    let recovery = plan
+        .recover_stable_views(&assumptions, &escaping, &[])
+        .unwrap();
+    assert_eq!(
+        recovery
+            .escaped_holds
+            .iter()
+            .map(|hold| hold.occurrence)
+            .collect::<Vec<_>>(),
+        expected
+    );
+    let first = &recovery.escaped_holds[0].binding;
+    let second = &recovery.escaped_holds[1].binding;
+    assert_ne!(first.hold, second.hold);
+    let after_first = recovery
+        .ledger
+        .release(first.hold.unwrap(), caller)
+        .unwrap();
+    assert_eq!(
+        after_first.end(first.scope, caller),
+        Err(LoanRefusal::ActiveDependency)
+    );
+    let after_both = after_first.release(second.hold.unwrap(), caller).unwrap();
+    assert!(after_both.end(first.scope, caller).is_ok());
+    assert_eq!(
+        recovery.ledger.held_scope(first.hold.unwrap()),
+        Some(first.scope)
     );
 }

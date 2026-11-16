@@ -3032,6 +3032,97 @@ impl ConditionTerm {
         ])
     }
 
+    /// Regroup two exact pointer displacements by full-width unsigned
+    /// indices, `(p + a) + b` and `p + (a + b)`, only when the `uint64`
+    /// addition `a + b` does not wrap: the returned condition,
+    /// `to_integer(a) + to_integer(b) <= 18446744073709551615`, for the
+    /// sum the regrouped side holds. Each
+    /// displacement is one scaled unsigned 64-bit scalar or a nonnegative
+    /// representable constant, at one stride. A full-width displacement is
+    /// exact, so its byte offset is the index times the stride with no
+    /// wrap of its own. A shared pointer base may precede them; other
+    /// nested sums are refused.
+    pub(crate) fn pointer_offset_uint64_association_guard(&self) -> Option<ConditionTerm> {
+        fn scalar(offset: &PointerOffsetTerm, width: i64) -> Option<SharedMachineIntegerTerm> {
+            match offset {
+                PointerOffsetTerm::Int64Scaled {
+                    value,
+                    byte_width,
+                    unsigned: true,
+                } if *byte_width == width => Some(value.clone()),
+                PointerOffsetTerm::Constant(value) if *value >= 0 && value % width == 0 => {
+                    Some(SharedMachineIntegerTerm::index(
+                        MachineIntegerType::Int64,
+                        MachineTerm::uint64_constant((value / width) as u64),
+                    ))
+                }
+                _ => None,
+            }
+        }
+        let (left, right) = self.pointer_offset_sides()?;
+        for (expanded, indexed) in [(left, right), (right, left)] {
+            let PointerOffsetTerm::Add(left, right) = expanded else {
+                continue;
+            };
+            let (left, indexed) = match (left.as_ref(), indexed) {
+                (PointerOffsetTerm::Add(base, index), PointerOffsetTerm::Add(other_base, sum))
+                    if base == other_base =>
+                {
+                    (index.as_ref(), sum.as_ref())
+                }
+                _ => (left.as_ref(), indexed),
+            };
+            let PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned: true,
+            } = indexed
+            else {
+                continue;
+            };
+            if *byte_width <= 0 {
+                continue;
+            }
+            let (Some(left), Some(right)) = (scalar(left, *byte_width), scalar(right, *byte_width))
+            else {
+                continue;
+            };
+            let children = [left.operand_view(), right.operand_view()]
+                .map(|view| KernelTerm::retained_machine_operand(MachineIntegerType::UInt64, view));
+            let raw = KernelTerm::machine_binary_shared(
+                MachineIntegerType::UInt64,
+                MachineBinaryOp::Add,
+                children.clone(),
+            );
+            let Some(sum) = crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node(
+                &raw, &children,
+            ) else {
+                continue;
+            };
+            let expected = KernelTerm::retained_machine_operand(
+                MachineIntegerType::UInt64,
+                value.operand_view(),
+            );
+            if crate::kernel::shared_machine_syntax_equal(&sum, &expected) {
+                // `to_integer(a) + to_integer(b) <= 18446744073709551615`:
+                // the sum's integer value fits a `uint64`.
+                let integer = |term: &MachineTerm| {
+                    IntegerTerm::from_machine(MachineIntegerType::UInt64, term.clone())
+                        .map(SharedIntegerTerm::from)
+                };
+                return Some(Self::IntegerLessEqual(
+                    IntegerTerm::Add(
+                        integer(left.structural_value())?,
+                        integer(right.structural_value())?,
+                    )
+                    .into(),
+                    IntegerTerm::Constant(num_bigint::BigInt::from(u64::MAX)).into(),
+                ));
+            }
+        }
+        None
+    }
+
     /// Regroup two exact pointer displacements into one signed-word index
     /// only when that index addition does not wrap. Each displacement is one
     /// scaled scalar or a representable constant. A shared pointer base may
@@ -4881,7 +4972,7 @@ impl Pointer {
             return stored.pointer().clone();
         }
         let read = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(memory),
             Box::new(address.clone()),
             LoadKind::Int32,
         );
@@ -4985,7 +5076,7 @@ impl Pointer {
         // Pointer values retain the selected read directly. Observation metadata
         // records the live source independently of the term's identity.
         let bits = MachineTerm::MemoryLoad(
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(memory),
             Box::new(address.clone()),
             LoadKind::Int32,
         );
@@ -5802,8 +5893,8 @@ mod shift_overflow_refusal_tests {
 }
 
 /// Whether a proposition holds with no facts at all, by a constant structural
-/// check: a condition that is the ground constant it asserts (`0 <= 0` lowers
-/// to `true is true`), or a comparison of a term with itself whose value
+/// check: a condition that is the ground constant it asserts, a closed native
+/// comparison, or a comparison of a term with itself whose value
 /// ([`ConditionTerm::reflexive_value`]) is the one asserted.
 ///
 /// Every `using` list consults this one rule, so a premise that states such a
@@ -5812,6 +5903,19 @@ mod shift_overflow_refusal_tests {
 pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool {
     match proposition {
         Proposition::ConditionIs(ConditionTerm::Constant(constant), value) => constant == value,
+        Proposition::ConditionIs(
+            condition @ ConditionTerm::Compare {
+                format,
+                left,
+                right,
+                ..
+            },
+            value,
+        ) if format.constant_from_term(left).is_some()
+            && format.constant_from_term(right).is_some() =>
+        {
+            PureFactContext::decide_intrinsically(condition) == Some(*value)
+        }
         Proposition::ConditionIs(condition, value) => condition.reflexive_value() == Some(*value),
         _ => false,
     }
@@ -6028,6 +6132,37 @@ fn listed_premise_holds_with(
 #[cfg(test)]
 mod integer_equality_citation_tests {
     use super::*;
+
+    #[test]
+    fn listed_closed_native_order_is_checked_without_facts() {
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let condition = ConditionTerm::Compare {
+                format,
+                relation: CompareRelation::LessThan,
+                left: Box::new(
+                    crate::kernel::machine_integer::range::constant_word(format, &0.into())
+                        .unwrap(),
+                ),
+                right: Box::new(
+                    crate::kernel::machine_integer::range::constant_word(format, &2.into())
+                        .unwrap(),
+                ),
+            };
+            assert!(listed_premise_holds(
+                &Proposition::ConditionIs(condition.clone(), true),
+                |_| false
+            ));
+            assert!(!listed_premise_holds(
+                &Proposition::ConditionIs(condition, false),
+                |_| false
+            ));
+        }
+    }
 
     #[test]
     fn listed_integer_constant_arithmetic_is_available_without_facts() {

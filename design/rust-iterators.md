@@ -1,5 +1,12 @@
 # Rust iterators: one generic model, per-type library contracts
 
+Superseded for `chunks_exact`: a `ChunksExact` is now held as its real
+fields `v`, `rem` and `chunk_size`, with `core`'s own `chunks_exact`, `next`
+and `remainder` run over them, as a `Range` is held as `start` and `end`.
+`library/rust/chunks_exact.click`, its axioms and the observations `nth`,
+`after_next` and `after` are removed. The adler2 compute proofs still cite
+them and are not migrated. The slice-iterator model below remains.
+
 Status: steps 1 and 2 done, step 3 under way and being revised: the
 iterator is imported through its Rust interface (`next(&mut it)` returning
 an `Option`), not as importer-made operations; see "Importing an iterator

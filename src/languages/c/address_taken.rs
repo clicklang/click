@@ -99,7 +99,7 @@ fn declare(
     if scalar_or_pointer(interface_type) {
         summary.scalar_declarations.insert(name.clone());
     } else {
-        summary.taken.insert(name.clone().into());
+        summary.taken.insert(name.clone());
     }
 }
 

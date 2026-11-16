@@ -5,8 +5,11 @@ pub(crate) use ordinary::{
 };
 pub(in crate::kernel) mod descent_completion;
 mod execution;
+pub(in crate::kernel) mod inputs;
+pub(crate) use inputs::IndependentTerminationInputs;
 pub(in crate::kernel) mod loop_evidence;
 mod recursion_authority;
+pub(crate) mod resource_descent;
 pub(crate) use loop_evidence::StatementProofInput;
 mod obligations;
 pub(in crate::kernel) use completion::ProgramBodyOwner;
@@ -65,7 +68,7 @@ fn variable_minus_positive(expression: &ProgramExpression, variable: &BindingNam
     let ProgramExpression::Subtract(left, right) = expression else {
         return None;
     };
-    if left.as_ref() != &ProgramExpression::Variable(variable.clone().into()) {
+    if left.as_ref() != &ProgramExpression::Variable(variable.clone()) {
         return None;
     }
     int32_literal(right).filter(|step| *step > 0)
@@ -1638,6 +1641,7 @@ fn collect_spec_program_variables(
                         return Visit::Stop("a subslice's bounds requirement");
                     }
                     SpecExpression::RangeFold { .. } => return Visit::Stop("a range fold"),
+                    SpecExpression::ObjectAddress(_) => return Visit::Stop("an object address"),
                     SpecExpression::Let { .. } => return Visit::Stop("a `let` expression"),
                     SpecExpression::LoopEntryState(_) => {
                         return Visit::Stop("a loop-entry state");
@@ -3170,6 +3174,24 @@ pub(super) fn program_function_recursion_anchor(
     budget: &mut ExecutionBudget,
 ) -> Result<Option<RecursionAnchor>, String> {
     let interface = function.contract_interface();
+    if let Some(requirement) = interface.recursion_resource() {
+        let descent = resource_descent::ResourceDescent::open(
+            function,
+            entry_state,
+            requirement,
+            assumptions,
+            budget,
+        )?;
+        return Ok(Some(RecursionAnchor {
+            function: function.name().to_string(),
+            components: Vec::new(),
+            peers: interface.recursion_peers().to_vec(),
+            measure: Vec::new(),
+            structural_entry: None,
+            structural_resource: Some(descent),
+            entry_obligations: Vec::new(),
+        }));
+    }
     if let Some(binder) = interface.recursion_binder() {
         // A structural measure is the instance the binder holds at entry; the
         // descent at each call compares the instance it passes with this one.
@@ -3197,6 +3219,7 @@ pub(super) fn program_function_recursion_anchor(
             peers: interface.recursion_peers().to_vec(),
             measure: Vec::new(),
             structural_entry: Some(entry),
+            structural_resource: None,
             entry_obligations: Vec::new(),
         }));
     }
@@ -3239,6 +3262,7 @@ pub(super) fn program_function_recursion_anchor(
         peers: function.contract_interface().recursion_peers().to_vec(),
         measure,
         structural_entry: None,
+        structural_resource: None,
         entry_obligations,
     }))
 }
@@ -4134,7 +4158,7 @@ pub(in crate::kernel) fn merge_checked_callees<'a>(
 /// parameter or local, so such a call goes through that object. Resolving it
 /// to the function would hand the call that function's ranking proof, so it is
 /// left unranked, which is the treatment every indirect call gets.
-fn termination_callees(function: &ProgramFunction) -> BTreeSet<String> {
+pub(in crate::kernel) fn termination_callees(function: &ProgramFunction) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
     statement_calls(&function.source_body, &mut found);
     classify_termination_callees(function, found.into_iter())
@@ -4912,9 +4936,8 @@ pub fn program_verified_function_termination_rules(
     declared_diverging: &BTreeSet<String>,
     diverging_contracts: &BTreeSet<String>,
 ) -> Result<TerminationVerdicts, TerminationError> {
-    let partial_rules = prepare_independent_loop_exits(partial_rules, verified_loop_rules);
-    obligations::TerminationObligations::generate(
-        &partial_rules,
+    obligations::TerminationObligations::generate_independent(
+        partial_rules,
         plan_entries,
         verified_loop_rules,
         inline_bodies,
@@ -6122,9 +6145,11 @@ mod local_descent_tests {
         let owner = ProgramContractProof::open(BTreeSet::new(), BTreeSet::new(), &BTreeSet::new());
         let result = owner
             .generate_termination(ProgramTerminationInputs {
-                partial_rules: &rules,
+                independent: crate::kernel::IndependentTerminationInputs {
+                    rules: &rules,
+                    bodies: &[],
+                },
                 plans: &[],
-                inline_bodies: &[],
                 assumed_terminating: &BTreeSet::new(),
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
@@ -6893,7 +6918,7 @@ mod local_descent_tests {
     fn generation_opens_recursion_and_loop_requirements_without_proving_them() {
         let rules = [self_call_in_loop_rule("drain")];
         let plans = [self_call_in_loop_plan("drain")];
-        let goals = obligations::TerminationObligations::generate(
+        let goals = obligations::TerminationObligations::generate_independent(
             &rules,
             &plans,
             &BTreeMap::new(),
@@ -6932,6 +6957,7 @@ mod local_descent_tests {
             components: vec![declared_component()],
             peers: Vec::new(),
             structural_entry: None,
+            structural_resource: None,
             measure: vec![RankingMeasureValue::Machine(MachineTerm::constant(7))],
             entry_obligations: Vec::new(),
         }

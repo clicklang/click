@@ -37,7 +37,7 @@ fn machine_call_roots_preserve_types_arguments_and_native_roundtrips() {
             KernelTermImport::default().machine_call(format, &retained)
         );
         assert_eq!(root.ty(), &KernelType::Program(format.program_type()));
-        assert_eq!(root.children(), &[input.clone()]);
+        assert_eq!(root.children(), std::slice::from_ref(&input));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert_eq!(
             KernelTermExport::machine(&root).unwrap(),

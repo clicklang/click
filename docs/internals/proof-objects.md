@@ -355,7 +355,7 @@ allocation on the retaining arm and not on the freeing arm. A conditional
 but is not published as an unconditional free effect for the joined state.
 An unrelated resource cannot hide the lifetime difference.
 
-Opaque-contract certification then reuses that checked execution at the
+The independent execution-artifact API reuses a checked execution at the
 contract entry. It authorizes each artifact premise from the reconstructed
 contract context, from the registered predicate unfoldings (an identity whose
 instantiated body the context proves), and from containment and separation
@@ -383,8 +383,9 @@ facts and resource observations once, then checks persistent fact deltas for
 successive proofs. Resource folds recompute their semantic facts; they never
 replace the path context with a proof's ambient assumptions. Explicit
 resource `known` closers and `solve` retain the same checked claim
-receipts, and certification checks their joint availability independently of
-how the certificate was printed.
+receipts. The ordinary resource-closing operation proves their joint
+availability before the outcome completes, independently of how its
+certificate is printed.
 
 Function body proofs open their contract entry before running tactics.
 `OpenedContractEntry` selects the admitted source premises, preserves their
@@ -581,13 +582,47 @@ nonnegativity and strict descent from the immutable entry value; assigning the
 C parameter does not change that entry value. A structural call passes an
 instance whose model is strictly contained in the entry model.
 
-Anonymous resource measures (`decreases list(node)`) still use the legacy
-structural body analysis. Unlike a named modeled instance, an anonymous
-composite resource has no retained finite-witness identity. Moving that last
-path requires ownership of its structural witness through unfold, fold, and
-resource-return operations; ordinary resource containment is not a strict
-well-founded order. Independent termination plans can also explicitly request
-the legacy numeric-parameter or resource-requirement analyses.
+Anonymous resource measures (`decreases list(node)`) also use call producers.
+The opening captures the exact entry occurrence of the measured resource.
+Unfold and observe retain bounds for the owned children they produce, even
+when observation projects those children to views. Folding constructs a
+parent bound from its supplied children; a leaf uses only the branch's
+established lower bound on the entry witness's height. The bounds belong to
+opaque resource occurrences, so an unrelated returned resource cannot inherit
+descent merely because its resource term is equal. Calls consume this native
+evidence through ordinary descent obligations, and completed roots require
+no structural source-body walk. Explicit legacy standalone termination plans
+retain their compatibility analyses.
+
+Ordinary and independent termination inputs have separate constructors.
+`ContractBodyProof` retains `CompletedBodyTermination`, whose loop namespace
+and descent authority are nonoptional native outputs of the whole-contract
+root. Program obligation generation selects that typed input by its body
+owner; it never probes a reusable rule for missing evidence and then runs a
+legacy analysis. Completed-body local steps consume retained loop ranking
+and exit evidence directly. Legacy numeric/resource plans are refused when
+opening an ordinary program; standalone termination APIs retain their
+explicit independent adapter. Raw rule candidates already owned by a completed
+body are excluded before that adapter runs. Conservative call inventories are
+captured at body opening, so a missing execution trace does not cause a later
+source-body walk.
+
+
+Ordinary program opening declares a body cell for every selected contract,
+including startup, source-only and diverging contracts. Only the captured native
+body producer retires that cell. A body whose entry was never opened remains
+pending; neither a recursive hypothesis nor a reused rule can substitute for it.
+Selected-function runs retain their explicit assumptions for unselected functions.
+
+Modeled pthread creation has an auxiliary termination bootstrap before body
+execution. It uses typed native inputs for bodies already completed and explicit
+independent inputs for other code. Its termination rules cannot retire body cells
+or seal the program. This preserves nested thread creation without treating an
+auxiliary termination proof as a completed ordinary contract. Synthetic one-call
+theorem proofs likewise use fresh entry sessions without a program owner; their
+extracted rules cannot close the enclosing program's body cells. Build-time guards
+keep Source and ordinary program orchestration off the standalone termination API
+and confine legacy loop preparation to the explicit input adapter.
 
 Concrete loop-exit coverage is fixed in the ordinary body's source namespace
 at opening. Loop/body source mismatch is refused before proof execution.
@@ -642,8 +677,12 @@ completion, without replaying C execution history.
 identities. Ordinary completion directly installs the outcome's current producer
 publication, path and completed exit, and retires its whole-contract cells.
 Refutation discharges the selected outcome without fabricating exit evidence.
-The completed ordinary proof hands back this execution directly; there is no
-later return/exit receipt installation or progress filter.
+The completed ordinary proof hands back this execution directly. Native outcome
+completion also projects its held resource evidence into the checked-execution
+fields required by independent execution-only consumers. Checked resource keys,
+returned owners, and boundary status are produced there, without rechecking the
+receipts. Source has no parallel per-path receipt arrays or metadata setters to
+reinstall after completion.
 Independent conditional execution artifacts have no opened-entry authority and
 retain their separate entry preparation and rule-packaging APIs.
 

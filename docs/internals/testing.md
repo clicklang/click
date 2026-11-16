@@ -1528,7 +1528,7 @@ including reversed declaration order. It uses the original eight-tactic
 reproduction, including the single-earlier-function case.
 Before return, signed-order automation selects indexed bounds before broad
 atomic premise raising. Existing named rules get first choice over that
-compact context, followed by the checked arithmetic certificate. Terminal
+compact context, followed by the checked ordinary arithmetic proof. Terminal
 outcomes retain their result-aware equality rewrites and source-anchoring
 routes before that arithmetic fallback.
 

@@ -309,6 +309,10 @@ pub enum BindingName {
     Named(String),
     Local(LocalBindingId),
     Static(StaticBindingId),
+    /// The current contract's return value; never a source declaration.
+    ContractResult,
+    /// The current exceptional postcondition's payload; never a declaration.
+    ContractException,
 }
 
 impl BindingName {
@@ -317,6 +321,8 @@ impl BindingName {
             Self::Named(name) => name,
             Self::Local(id) => id.spelling().unwrap_or(""),
             Self::Static(id) => id.spelling(),
+            Self::ContractResult => "result",
+            Self::ContractException => "exception",
         }
     }
     pub fn static_id(&self) -> Option<&StaticBindingId> {
@@ -327,6 +333,7 @@ impl BindingName {
     }
     pub fn program_type(&self) -> Option<ProgramType> {
         match self {
+            Self::ContractException => Some(ProgramType::Int32),
             Self::Local(id) => id.program_type(),
             Self::Static(id) => id.program_type(),
             _ => None,
@@ -388,6 +395,8 @@ impl From<BindingName> for BindingDeclaration {
             BindingName::Named(name) => Some(Arc::from(name.as_str())),
             BindingName::Local(id) => id.spelling().map(Arc::from),
             BindingName::Static(id) => Some(Arc::from(id.spelling())),
+            BindingName::ContractResult => Some(Arc::from("result")),
+            BindingName::ContractException => Some(Arc::from("exception")),
         };
         let scope_depth = reference.local_id().map_or(0, LocalBindingId::scope_depth);
         let array_shape = reference.array_shape().map(Arc::from);
@@ -458,6 +467,8 @@ impl std::fmt::Display for BindingName {
             Self::Named(name) => f.write_str(name),
             Self::Local(id) => id.fmt(f),
             Self::Static(id) => id.fmt(f),
+            Self::ContractResult => f.write_str("result"),
+            Self::ContractException => f.write_str("exception"),
         }
     }
 }
@@ -521,6 +532,23 @@ impl std::fmt::Display for LocalStorageInstance {
     }
 }
 
+impl From<String> for BindingDeclaration {
+    fn from(name: String) -> Self {
+        BindingName::from(name).into()
+    }
+}
+impl From<&str> for BindingDeclaration {
+    fn from(name: &str) -> Self {
+        BindingName::from(name).into()
+    }
+}
+
+impl From<StaticBindingId> for BindingName {
+    fn from(id: StaticBindingId) -> Self {
+        Self::Static(id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -529,6 +557,89 @@ mod tests {
         LocalBindingId::new(owner.clone(), false, ordinal, Some(name.into()))
             .with_scope_depth(depth)
             .into()
+    }
+
+    #[test]
+    fn contract_result_is_neither_a_source_name_nor_a_string_alias() {
+        let owner = LocalFunctionId::new(None, "f".into());
+        let source = local(&owner, 0, "result", 1);
+        let mut locals = LocalEnvironment::new();
+        locals.set(&source, int32(3));
+        locals.bind_logical_typed("result", int32(7), ProgramType::Int32);
+        locals.set(CONTRACT_RESULT, int32(11));
+        locals.set("@click:result", int32(13));
+        for (name, expected) in [
+            (source.clone(), 3),
+            (BindingName::from("result"), 7),
+            (CONTRACT_RESULT, 11),
+            (BindingName::from("@click:result"), 13),
+        ] {
+            assert_eq!(
+                locals.get(&name).unwrap().native().as_ref(),
+                &int32(expected)
+            );
+            assert_eq!(locals.resolve_binding(&name), name);
+        }
+        assert_eq!(locals.active_source_name(&CONTRACT_RESULT), None);
+        assert_eq!(CONTRACT_RESULT.named(), None);
+        assert_eq!(CONTRACT_RESULT.to_string(), "result");
+        let result_slot = Memory::local_pointer(CONTRACT_RESULT);
+        assert_eq!(result_slot.block, PointerBlock::ContractResult);
+        for binding in [
+            source,
+            BindingName::from("result"),
+            BindingName::from("@click:result"),
+        ] {
+            assert!(
+                result_slot
+                    .block
+                    .proven_distinct(&Memory::local_pointer(binding).block)
+            );
+        }
+    }
+
+    #[test]
+    fn contract_exception_is_neither_a_source_name_nor_a_string_alias() {
+        let owner = LocalFunctionId::new(None, "f".into());
+        let source = local(&owner, 0, "exception", 1);
+        let mut locals = LocalEnvironment::new();
+        locals.set(&source, int32(3));
+        locals.bind_logical_typed("exception", int32(7), ProgramType::Int32);
+        locals.set(CONTRACT_EXCEPTION, int32(11));
+        locals.set("__click_exception", int32(13));
+        for (name, expected) in [
+            (source.clone(), 3),
+            (BindingName::from("exception"), 7),
+            (CONTRACT_EXCEPTION, 11),
+            (BindingName::from("__click_exception"), 13),
+        ] {
+            assert_eq!(
+                locals.get(&name).unwrap().native().as_ref(),
+                &int32(expected)
+            );
+            assert_eq!(locals.resolve_binding(&name), name);
+        }
+        assert_eq!(locals.active_source_name(&CONTRACT_EXCEPTION), None);
+        assert_eq!(CONTRACT_EXCEPTION.named(), None);
+        assert_eq!(CONTRACT_EXCEPTION.to_string(), "exception");
+        let result_slot = Memory::local_pointer(CONTRACT_EXCEPTION);
+        assert_eq!(result_slot.block, PointerBlock::ContractException);
+        assert!(
+            result_slot
+                .block
+                .proven_distinct(&PointerBlock::ContractResult)
+        );
+        for binding in [
+            source,
+            BindingName::from("exception"),
+            BindingName::from("__click_exception"),
+        ] {
+            assert!(
+                result_slot
+                    .block
+                    .proven_distinct(&Memory::local_pointer(binding).block)
+            );
+        }
     }
 
     #[test]
@@ -588,22 +699,5 @@ mod tests {
                 assert!(address.block.proven_distinct(&other.block));
             }
         }
-    }
-}
-
-impl From<String> for BindingDeclaration {
-    fn from(name: String) -> Self {
-        BindingName::from(name).into()
-    }
-}
-impl From<&str> for BindingDeclaration {
-    fn from(name: &str) -> Self {
-        BindingName::from(name).into()
-    }
-}
-
-impl From<StaticBindingId> for BindingName {
-    fn from(id: StaticBindingId) -> Self {
-        Self::Static(id)
     }
 }

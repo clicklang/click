@@ -74,6 +74,12 @@ int32 ring_buffer_push_wrap(
     have data[0] == value by { normalize(); }
     mark filled;
     step();
+    have separate(statement(3).footprint, memory(data[0])) by {
+        normalize() using { separate(memory(data[0]), memory(owner->tail)); };
+    }
+    have data[0] == at(filled, data[0]) by {
+        preserve(separate(statement(3).footprint, memory(data[0])));
+    }
     have data[0] == value by {
         known();
     }

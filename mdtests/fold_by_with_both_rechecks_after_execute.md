@@ -37,16 +37,7 @@ void bump(struct holder* h) {
             known();
         } and {
             have h->count < 200 by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: at(function.entry, h->count < 100) => at(function.entry, h->count < 100);
-                    interval_from_affine 0 (at(function.entry, h->count)) (-2147483648) (99);
-                    interval_atom (1) (1) (1);
-                    interval_add_bounded 1, 2 (-2147483647) (100);
-                    trivial => -99 <= 0;
-                    add 0, 4 => (at(function.entry, h->count) + -99) < (at(function.entry, 100) + 0);
-                    affine_conclusion 5 3 => (h->count as int32) < (200 as int32);
-                    conclusion 6;
-                }
+                solve() using { at(function.entry, h->count < 100); };
             }
             known();
         }

@@ -3,8 +3,8 @@
 A universal's binder is fresh each time the universal is lowered, so a stated
 `forall` meets the same `forall` owed elsewhere only up to that renaming. The
 renaming reaches a binder among the arguments of a function whose result is
-a slice or a pointer, such as the chunk a library iterator yields at an
-index. Each quantified invariant below is closed at loop entry by the
+a slice or a pointer, such as the slice a library iterator over a slice
+built from the binder holds. Each quantified invariant below is closed at loop entry by the
 `have` its `initialize` script states.
 
 ```c filename=walk.c
@@ -19,7 +19,7 @@ unsigned long walk(unsigned char *p, unsigned long n) {
 
 ```click
 import click::rust::slice;
-import click::rust::chunks_exact;
+import click::rust::slice_iter;
 verifying "walk.c";
 
 unsigned long walk(unsigned char *p, unsigned long n) {
@@ -30,35 +30,19 @@ unsigned long walk(unsigned char *p, unsigned long n) {
         decreases n - i;
         invariant i <= n;
         invariant forall (j: uint64) {
-            j < n / 4u64 implies
-                chunks_exact::nth(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, n), 4u64), j).len() == 4u64
-        };
-        invariant forall (j: uint64) {
-            j < n / 4u64 implies
-                chunks_exact::nth(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, n), 4u64), j).as_ptr()
-                    == p + j * 4u64
+            j < n implies
+                slice_iter::as_slice(slice_iter::iter(Slice<uint8>::Slice(p + j, 4u64)))
+                    == Slice<uint8>::Slice(p + j, 4u64)
         };
         initialize by {
-            unfold(slice::len(Slice<uint8>::Slice(p, n)));
-            unfold(slice::as_ptr(Slice<uint8>::Slice(p, n)));
             have forall (j: uint64) {
-                j < n / 4u64 implies
-                    chunks_exact::nth(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, n), 4u64), j).len() == 4u64
+                j < n implies
+                    slice_iter::as_slice(slice_iter::iter(Slice<uint8>::Slice(p + j, 4u64)))
+                        == Slice<uint8>::Slice(p + j, 4u64)
             } by {
                 intro();
                 intro();
-                apply(chunks_exact::nth_chunks_exact(Slice<uint8>::Slice(p, n), 4u64, j));
-                solve();
-            }
-            have forall (j: uint64) {
-                j < n / 4u64 implies
-                    chunks_exact::nth(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, n), 4u64), j).as_ptr()
-                        == p + j * 4u64
-            } by {
-                intro();
-                intro();
-                apply(chunks_exact::nth_chunks_exact(Slice<uint8>::Slice(p, n), 4u64, j));
-                solve();
+                apply(slice_iter::as_slice_iter(Slice<uint8>::Slice(p + j, 4u64)));
             }
             solve();
         }

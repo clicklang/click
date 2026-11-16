@@ -93,7 +93,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 6 | Folds, binders and algebraic matches | Implemented as 6a–6n below. Common fold and numeric/algebraic match results retain scoped children; remaining native consumers are named compatibility boundaries. |
 | 7 | Complete pointers and read addresses | Implemented as 7a–7u below, one PR per slice. Supported pointer producers and execution/storage handoffs retain common roots; checking and Surface consumers preserve metadata, state identity and existing rules. |
 | 8 | Remaining Boolean and opaque expression payloads | Implemented through 8ad, ending in [PR #2920](https://github.com/clicklang/click/pull/2920); remaining native boundaries are enumerated below. |
-| 9 | Unified raising/lowering and certificate boundaries | Authorized as 9a–9z below; 9a inventory delivered and 9b common entry implemented. Remaining slices are open. |
+| 9 | Unified raising/lowering and certificate boundaries | In progress as the authorized 9a–9z sequence below; per-slice delivery and validation evidence follows. |
 | 10 | Duplicate storage removal and final closure | Open |
 
 ## Chunk 9: unified Surface and certificate boundaries
@@ -117,7 +117,7 @@ Already-shared numeric/float operations and fold/match producers are reused.
 | 9i | Match raising | Consolidate existing spelling with arm bindings. |
 | 9j | Common lowering results | Expose typed shared roots with separately scoped obligations. |
 | 9k | Integer lowering | Remove remaining native Integer result detours. |
-| 9l | Machine-integer lowering | Preserve widths, casts and definedness through the common interface. |
+| 9l | Machine-integer lowering | Integer-to-machine results and C-expression handoffs retain common roots with unchanged bounds and obligations. Comparison, quantified-fact and compound-fact consumers recognize the retained carriers; binder matching preserves free names. The handoff is covered by exact-root, disabled-retention parity, zero-export and scaling regressions. |
 | 9m | Boolean lowering | Keep logical terms distinct from C Boolean carriers. |
 | 9n | Algebraic lowering | Retain constructors, abstract types and program-parameter argument forms. |
 | 9o | Pointer lowering | Preserve complete metadata, state and address identities. |
@@ -165,6 +165,8 @@ audit collects this evidence; it does not defer testing until 9z.
 
 ### 9b common raising entry point
 
+Delivered in [PR #2934](https://github.com/clicklang/click/pull/2934).
+
 The shared dispatcher already handles supported numeric and float operations;
 this slice removes the native root clone/re-intern from its Integer adapter.
 Integer comparison operands and legacy call arguments now pass their existing
@@ -174,6 +176,92 @@ following slices. No source spelling, proof rule or budget changes.
 
 Validation: 1,837 selected Surface synthesis and scaling tests passed;
 `scripts/check.sh --ci-quality` passed.
+
+### 9c direct constructor raising
+
+Delivered in [PR #2936](https://github.com/clicklang/click/pull/2936).
+
+Shared constructors now raise their ordered fields directly instead of exporting
+an algebraic tree and walking it again. Program-parameter envelopes retain their
+algebraic spelling; int32 expressions use the shared dispatcher. Named scalar
+fields and existing refusals retain the native boundary's policy. Pointer fields
+reuse the same root-view cast logic as native constructors, without changing
+saved narrow views. Variable/read leaves remain assigned to 9d.
+
+Native/shared scalar spelling and refusal comparisons cover the field policy.
+Deterministic flat and nested constructor cases cover increasing size and assert
+that constructor trees are not exported (the nested case permits the remaining
+named-variable leaf adapter). The algebraic fixture fact-stability audit reports
+zero differences. Run work-measurement scaling tests without the audit environment:
+the audit performs extra lowering and changes those measurements.
+
+Validation on the integrated binding-ID base: 1,845 Surface/scaling tests,
+`scripts/check.sh --ci-quality`, and the algebraic fixture filter passed;
+the separate fact-stability report contains zero differences.
+
+### 9d algebraic read and variable boundaries
+
+Algebraic conditionals already raise their shared branches through the common
+dispatcher. Reads now compare their retained address directly when selecting
+parameter, held-local and recorded-state spellings. The existing selection order,
+type comparison and memory identity checks are unchanged. Variable naming uses
+its bounded typed descriptor, avoiding the general algebraic export walker.
+
+Validation: native/shared read and variable spelling parity with no tree exports;
+the nested constructor scaling regression now requires zero exports including
+its named leaf. All 1,846 Surface/scaling tests, quality checks and the algebraic
+fixture filter passed; its separate fact-stability report has zero differences.
+
+### 9e Boolean raising
+
+Algebraic equality and supported signed-overflow predicates now raise their
+shared children directly. Overflow spelling still names the operation's domain,
+not a local holding its result, and keeps the existing int32/int64 arithmetic
+profile. Logical connectives and scalar comparisons were already shared.
+Selected Boolean read descriptors retain their explicit native leaf boundary;
+legacy observation payloads are borrowed without cloning their condition tree.
+Pointer comparisons remain assigned to 9f.
+
+Validation: native/shared overflow and algebraic spelling parity; growing
+overflow operands raise with zero machine exports. All 1,848 Surface/scaling
+tests and quality checks passed. Algebraic, int32 single-overflow and int64
+signed-overflow fixture filters passed with zero fact-stability differences.
+
+### 9f pointer comparison raising
+
+Complete pointer equality now reads only the retained address and declared type
+needed by the existing spelling policy. It does not export qualifiers, evidence
+or subobject extents to construct an intermediate native condition. Raw address
+and offset comparisons use explicit selected presentation adapters; those native
+adapters remain intentional. Exact pointer call-argument naming is unchanged.
+
+Validation: native/shared complete-pointer, raw-address and null-comparison
+spelling parity; growing unused extent payloads incur constant rendering work
+and zero machine exports. All 1,850 Surface/scaling tests and quality checks
+passed. The pointer-address-equality fixture passed with zero fact-stability
+differences.
+
+### 9g common call raising
+
+Machine, Integer, algebraic and float call roots now share call assembly and
+argument rendering. Numeric result casts remain at the result boundary. The
+native call entry point uses the same argument policy, including exact proof-local
+names for complete pointer arguments, while retaining its existing work accounting.
+
+Validation: all 1,860 Surface/scaling tests and quality checks passed, including
+nested mixed-family calls and exact pointer-name admission/refusal. Pure-pointer
+call fixtures passed with zero fact-stability differences.
+
+### 9h common fold raising
+
+The native machine-fold entry now uses the existing typed fold importer and
+common renderer. Shared and native inputs therefore use the same child rendering
+and typed binder scopes. This preserves the native Int32 range-fold profile;
+no fold syntax, evaluation or result-family admission changes are introduced.
+
+Validation: all 1,860 Surface/scaling tests and quality checks passed, including
+nested fold/match/call scope scaling. The alpha-equivalence fixture passed with
+zero fact-stability differences. Nightly was not run.
 
 ## Chunk 3: machine-valued pure-function results
 

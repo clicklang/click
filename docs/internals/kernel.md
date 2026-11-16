@@ -150,19 +150,24 @@ For ordinary function contracts, the responsibilities are:
 
 | Stage | Responsibility | Implementation |
 | --- | --- | --- |
-| Entry lowering | Represent the declared parameter domain and entry resources, without specializing to a convenient call | `initial_call_state` in `src/surface/lowering/resource_lowering.rs`, called by `initial_claim_context_with_caller_owner` in `src/surface/proof.rs` |
-| Checked proof transitions | Validate execution, logical steps, branches, and completion against the supplied obligation | `src/kernel/proof/` and kernel execution APIs |
-| Contract registration | Check artifact reuse, entry-case/path coverage and retained proposition/resource/effect completions; independent execution-only APIs check the supplied execution instead | `src/kernel/api.rs` and `src/kernel/api/contract_certification/` |
-| Rule packaging | Require the complete set of certified claims for the exact function | `program_verified_function_rule` in `src/kernel/api/contract_certification/contract_claims.rs` |
+| Contract opening | Capture the entry context and declare clause, boundary, and recursive-descent obligations for every entry case | `PreparedContractEntryCases` and `WholeContractProof::open` in `src/kernel/api/contract_certification/` |
+| Ordinary proof operations | Execute the body and prove clause and closing obligations; the implicit solver supplies omitted proofs | `src/kernel/proof/`, kernel execution APIs, and `src/surface/proof/driver/claims.rs` |
+| Body completion | Consume the root's completed obligations and package its retained evidence into a body proof and, when eligible, a reusable rule | `WholeContractRoot::finish` in `src/kernel/api/contract_certification/contract_claims/completion/root.rs` |
+| Program completion | Prove the enclosing program's declared termination obligations through `program.termination`, then consume the completed proof | `src/kernel/termination/completion.rs` and `src/surface/proof/program_termination.rs` |
 
 Entry lowering gives separate scalar parameters separate symbolic variables.
 Pointer inputs have separately named symbolic addresses; different names do
 **not** establish unequal addresses or disjoint storage. Any alias restriction
-must come from the applicable contract and resource semantics. Certification
-uses the entry retained by the proof, including checked storage authorities;
-it does not replace the supplied arguments with a newly generated generic
-tuple. Rule packaging checks claim coverage and function identity, not the
-source-to-entry translation again.
+must come from the applicable contract and resource semantics. Ordinary proof
+operations use the entry retained by the proof, including checked storage
+authorities. Successful completion introduces no additional claim, resource,
+effect, or entry-coverage checks.
+
+The independent execution-only APIs accept execution artifacts without a
+completed ordinary contract root. Their artifact reuse, premise authorization,
+entry-case coverage, and rule-packaging checks belong to that separate API;
+they are not stages after an ordinary proof completes. See
+[Proof objects](proof-objects.md) for the retained evidence and completion flow.
 
 A proof about one call and a proof of a function contract have different
 scopes. Checking a body at `x = 0` can establish a property of that call. To
@@ -1038,10 +1043,14 @@ Aggregate returns supplied by a pointer-backed whole-object expression have a
 small ABI boundary: Click's struct-pointer view is `int32*`, while the internal
 address-backed return slot is `uint8*`. The return transition accepts only
 those two modeled data-pointer views, retags the address at that boundary, and
-copies every modeled leaf into a fresh `__return` block. Consequently a
+copies every modeled leaf into a fresh typed
+`PointerBlock::AggregateReturn { frame }` block. Consequently a
 postcondition such as `result.inner.flag == source.inner.flag` compares the
 fresh result cell with the source state without turning the returned
 aggregate into an alias or weakening ordinary pointer-return type checks.
+The frame counter gives successive copies distinct identities, independent of
+source local names. Exact storage addresses spell `result.storage(frame, N)`;
+o string is decoded into a return-storage identity.
 
 Positional initializers for copyable struct-valued locals use the same
 address-backed boundary. The C parser walks fields in declaration order,
@@ -1667,11 +1676,36 @@ its own permission. Historical field reads resolve the object's address in the
 selected entry state. Materialized aggregate results belong to the caller
 and survive the callee's exit.
 
-The contract return value uses an internal binding that no C identifier can
-spell. Bare `result` lowers to it, while `c(result)` resolves the source C
-binding, including inside casts, field projections, and array indices.
-Kernel post-state reconstruction and fixed-state proof lowering use
-that separate return binding, preserving a same-named parameter's value.
+Specification addresses such as `&p->field` lower to
+`SpecExpression::ObjectAddress`. Its base is a specification expression, so a
+saved-state pointer read stays in the selected memory. Typed, outside-in
+`SpecAddressStep` projections retain C byte offsets and subobject selection;
+the evaluated base feeds the ordinary C address operation, preserving its
+member designation, extent, qualifiers, and checked-address obligations.
+Evaluation introduces no execution local or lexical binder. The Surface form
+remains the original address expression, including `old(...)`/`at(...)` state
+selectors; no generated operand name or replacement syntax is required.
+
+A contract's return value is `BindingName::ContractResult`, with Surface spelling
+`result`. It is distinct from all `Named`, automatic, and static bindings,
+including source C variables named `result`. Fixed-state elaboration carries its
+value in a dedicated context field rather than a string-keyed lexical map. Its
+value-only bookkeeping slot is `PointerBlock::ContractResult`, spelled
+`result.storage()` when an exact slot address is needed; this does not declare
+C storage or grant memory ownership. Aggregate results still bind their actual
+returned object address. No string is decoded into a contract-result identity.
+
+The thrown `int32` payload likewise uses `BindingName::ContractException` and
+its own `PointerBlock::ContractException` bookkeeping slot. Exceptional
+postconditions bind `exception` to that typed payload. The exact slot address
+spells `exception.storage()` and grants no storage or ownership. Neither `exception` nor the former internal
+spelling `__click_exception` is decoded into a kernel identity, so a source
+variable of either name cannot replace the payload or alias its slot.
+
+Bare `result` lowers to that typed binding, while `c(result)` resolves the
+source C binding, including inside casts, field projections, and array indices.
+Kernel post-state reconstruction and fixed-state proof lowering preserve a
+same-named parameter's value.
 
 The positive field, array, shallow-pointer, and aggregate-return checks are in
 `mdtests/aggregate_parameter_value_fields.md`. The output-pointer, explicit

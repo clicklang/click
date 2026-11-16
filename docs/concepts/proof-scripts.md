@@ -113,7 +113,7 @@ simple rules. A miss adds arithmetic's reason. Common simple proposition
 tactics are `known()`, `normalize()`, `rewrite(...)`, `intro()`, and
 `contradiction(...)`. `known()` also closes a conjunction whose sides
 are facts and a disjunction with one side a fact. A successful
-expansion contains only those explicit rules, arithmetic certificates, and named
+expansion contains only those explicit rules, ordinary arithmetic proofs, and named
 theorem applications.
 
 Bare `apply` retains explicitly proved premises in its generated `using`

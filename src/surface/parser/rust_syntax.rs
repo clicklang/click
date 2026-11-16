@@ -1180,10 +1180,16 @@ impl Parser {
         };
         let at = self.position;
         let accessor = accessor_at(self, at).map(|(accessor, width)| {
-            // `iter.as_slice().len()` is `iter.len()`.
+            // `iter.as_slice().len()` is `iter.len()`, and a slice field's
+            // length is `iter.v.len()`.
             match accessor_at(self, at + width) {
                 Some((next, more)) if accessor == "as_slice()" && next == "len()" => {
                     (next, width + more)
+                }
+                Some((next, more))
+                    if matches!(accessor.as_str(), "v" | "rem") && next == "len()" =>
+                {
+                    (format!("{accessor}.len()"), width + more)
                 }
                 _ => (accessor, width),
             }

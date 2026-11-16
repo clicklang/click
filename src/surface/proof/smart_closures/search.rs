@@ -71,14 +71,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) = Self::try_unsigned_order_step_using(search_input, premises) {
             return Ok(proof);
         }
-        let ordinary = search_input
-            .driver()
-            .apply_step_without_outcome_wrapping_after_wide(ProofStep::ArithmeticUsing(
-                premises.to_vec(),
-            ));
-        if ordinary.is_ok() {
-            return ordinary;
-        }
+        let ordinary = search_input.arithmetic_refusal(premises);
         if let Some(refuted) = Self::disequality_by_refutation(search_input, premises) {
             return refuted;
         }
@@ -136,8 +129,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let Some(certificate) =
-            search_input.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)
+        let Some(certificate) = search_input.signed_plan_to_surface(&plan, &pairs, surface_goal)
         else {
             return Ok(None);
         };
@@ -156,14 +148,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        #[cfg(test)]
-        integer_composition::note_refusal("entered selected Integer route");
         // Plan the same Integer observation that the ordinary emitter checks.
         // A native operation goal and its observed source can have distinct
         // representations even though the observation is their exact reading.
         let observed = observed_native_surface_comparison(goal, surface_goal);
-        let observed_goal =
-            search_input.lower_cited_surface_proposition(&observed, "Integer composition goal")?;
+        let observed_goal = if matches!(
+            surface_comparison_with_anchored_operands(&observed),
+            ClickProposition::Comparison { .. }
+        ) {
+            search_input.lower_cited_surface_proposition(&observed, "Integer composition goal")?
+        } else {
+            goal.clone()
+        };
         let goal = &observed_goal;
         if integer_affine_claim(goal).is_none() {
             return Ok(None);
@@ -188,15 +184,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && crate::kernel::proof::integer_arithmetic::integer_disequality_claims(&kernel)
                     .is_empty()
             {
-                if matches!(surface, ClickProposition::Defined { .. }) {
-                    continue;
-                }
-                return Ok(None);
+                // All written citations were checked for availability above.
+                // Other selected fragments can accompany the scalar bounds;
+                // they do not prevent an Integer plan from using those bounds.
+                continue;
             }
             pairs.push((kernel, surface.clone()));
         }
-        #[cfg(test)]
-        integer_composition::note_refusal("selected Integer sources are available");
         let kernels = pairs
             .iter()
             .map(|(kernel, _)| kernel.clone())
@@ -212,6 +206,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let candidate =
                 Self::apply_integer_composition(search_input, &plan, &pairs, surface_goal, &[]);
+            #[cfg(test)]
+            if let Err(error) = &candidate {
+                integer_composition::note_refusal(format!(
+                    "construction error: {}",
+                    error.raw_summary()
+                ));
+            }
             if let Some(closed) = attempt::candidate_outcome(candidate)?.flatten() {
                 return Ok(Some(closed));
             }
@@ -221,7 +222,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), true)
         ) && specialized::needs_distribution(&observed)
         {
-            let plan = SpecialArithmeticCertificate {
+            let plan = SpecializedCompositionPlan {
                 premises: Vec::new(),
                 nodes: vec![SpecialArithmeticNode::IntegerPolynomialIdentity {
                     bounds: Vec::new(),
@@ -1249,7 +1250,26 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let direct = operation_identities(machine_observations(goal, &[]));
-        if !direct.iter().any(|(_, _, identity)| identity == goal) {
+        let equivalent = |identity: &Proposition| {
+            let (
+                Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true),
+                Proposition::ConditionIs(ConditionTerm::IntegerEqual(c, d), true),
+            ) = (identity, goal)
+            else {
+                return false;
+            };
+            let same = |left: &crate::kernel::SharedIntegerTerm,
+                        right: &crate::kernel::SharedIntegerTerm| {
+                left == right
+                    || search_input
+                        .facts()
+                        .assumptions()
+                        .decide(&ConditionTerm::IntegerEqual(left.clone(), right.clone()))
+                        == Some(true)
+            };
+            (same(a, c) && same(b, d)) || (same(a, d) && same(b, c))
+        };
+        if !direct.iter().any(|(_, _, identity)| equivalent(identity)) {
             return Ok(None);
         }
         let written = written_integer_observations(std::iter::once(surface));
@@ -1331,6 +1351,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         // The first plan reads only the native facts that observe a value
         // the goal does; the extended search below reads the rest.
+        let generated_scalar_goal = !matches!(
+            surface_comparison_with_anchored_operands(surface_goal),
+            ClickProposition::Comparison { .. }
+        );
         let goal_values =
             crate::kernel::proof::integer_arithmetic::integer_affine_machine_values(goal)
                 .into_iter()
@@ -1343,7 +1367,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let near = candidates
             .iter()
-            .filter(|premise| !native(premise) || observes_goal(premise))
+            .filter(|premise| generated_scalar_goal || !native(premise) || observes_goal(premise))
             .cloned()
             .collect::<Vec<_>>();
         let mut integer_candidates = with_native_comparisons_as_integer(&near);
@@ -1353,11 +1377,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Prefer a direct composition before introducing a negated goal.
         // Refutation remains the fallback for strictness, ranges, and the
         // other rules outside the ordinary composition fragment.
-        if goal_values.is_empty()
-            && integer_composition::parts(goal).is_some()
-            && candidates
-                .iter()
-                .all(|premise| integer_composition::parts(premise).is_some())
+        if (generated_scalar_goal
+            || (goal_values.is_empty()
+                && integer_composition::parts(goal).is_some()
+                && candidates
+                    .iter()
+                    .all(|premise| integer_composition::parts(premise).is_some())))
             && let Some(direct) =
                 plan_arithmetic(ArithmeticEngine::IntegerAffine, goal, &integer_candidates)
                     .and_then(ArithmeticPlan::integer_affine)
@@ -1461,17 +1486,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed));
         }
-        let Some(surface) = integer_plan_to_surface_certificate_with_ranges(
-            &certificate,
-            &pairs,
-            surface_goal,
-            &ranges,
-        ) else {
-            return Ok(None);
-        };
-        attempt::candidate_outcome(search_input.driver().apply_step(
-            ProofStep::ArithmeticCertificate(ArithmeticCertificate::integer(surface)),
-        ))
+        Ok(None)
     }
 
     /// Close the goal with in-range machine `+` and `-` identities. A
@@ -1629,6 +1644,37 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("prove_operation_identities");
         use crate::kernel::IntegerTerm;
         let mut proof = search_input.clone();
+        let mut written = written.to_vec();
+        // Keep the names supplied for observations, including narrow carriers.
+        // Only newly introduced intermediate operations allocate an expression
+        // from their operands; an existing source name retains its exact type.
+        let mut sources = std::collections::HashMap::new();
+        for source in &written {
+            let probe = ClickProposition::Comparison {
+                left: source.clone(),
+                operator: ComparisonOperator::LessEqual,
+                right: ContractExpression::IntegerLiteral("0".into()),
+            };
+            let Ok(lowered) =
+                search_input.lower_integer_surface_proposition(&probe, "operation source")
+            else {
+                continue;
+            };
+            let mut readings = crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(&lowered);
+            if readings.is_empty() {
+                readings.push(lowered);
+            }
+            for reading in readings {
+                if let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(value, _), true) =
+                    reading
+                {
+                    sources
+                        .entry(value.value_read().clone())
+                        .or_insert_with(|| source.clone());
+                }
+            }
+        }
+
         let mut established: Vec<(Proposition, ClickProposition)> = Vec::new();
         'identities: for (observed, value, failed) in identities.iter().rev().copied() {
             let IntegerTerm::Machine(machine) = observed else {
@@ -1641,17 +1687,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let product = matches!(value, IntegerTerm::Multiply(left, right)
                 if left.as_const().is_none() && right.as_const().is_none());
             let before_product = proof.clone();
-            let Some(spelled_observed) = search_input.spell_integer_observation(observed, written)
-            else {
-                return Ok(Err(failed.clone()));
-            };
             let conversion =
                 crate::kernel::machine_integer::conversion::integer_conversion(observed).is_some();
-            let spelled_value = match value {
+            let (spelled_observed, spelled_value) = match value {
                 // The conversion's operand as the observation itself writes
                 // it, `E` of `to_integer(to_T(E))`: lowering is fact-stable,
                 // so `E` lowers to the operand `z`, and the kernel checks it.
                 _ if conversion => {
+                    let Some(spelled_observed) =
+                        search_input.spell_integer_observation(observed, &written)
+                    else {
+                        return Ok(Err(failed.clone()));
+                    };
                     let ContractExpression::Call { name, arguments } = &spelled_observed else {
                         return Ok(Err(failed.clone()));
                     };
@@ -1670,33 +1717,78 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if name != "to_integer" {
                         return Ok(Err(failed.clone()));
                     }
-                    operand.clone()
+                    (spelled_observed.clone(), operand.clone())
                 }
                 IntegerTerm::Add(left, right)
                 | IntegerTerm::Subtract(left, right)
                 | IntegerTerm::Multiply(left, right) => {
                     let (Some(spelled_left), Some(spelled_right)) = (
-                        search_input.spell_integer_observation(left, written),
-                        search_input.spell_integer_observation(right, written),
+                        search_input.spell_integer_observation(left, &written),
+                        search_input.spell_integer_observation(right, &written),
                     ) else {
                         return Ok(Err(failed.clone()));
                     };
+                    // Introduce each intermediate operation with a source expression
+                    // built from its operands. A returned value may name only the
+                    // outer operation; its inner operations still need explicit names.
+                    let native = |source: &ContractExpression| ContractExpression::CUnary {
+                        operand: Box::new(
+                            integer_composition::observed_argument(source)
+                                .unwrap_or_else(|| source.clone()),
+                        ),
+                        lowered: ProgramExpression::Cast {
+                            expression: Box::new(ProgramExpression::Value(int32(0))),
+                            target_type: machine.ty().program_type(),
+                            integer_mode: crate::kernel::IntegerCastMode::CConversion,
+                            pointee_struct: None,
+                            pointee_volatile: false,
+                            pointee_constant: false,
+                            explicit_qualification: false,
+                        },
+                    };
+                    let operation = match value {
+                        IntegerTerm::Subtract(..) => ContractExpression::Subtract(
+                            Box::new(native(&spelled_left)),
+                            Box::new(native(&spelled_right)),
+                        ),
+                        IntegerTerm::Multiply(..) => ContractExpression::Multiply(
+                            Box::new(native(&spelled_left)),
+                            Box::new(native(&spelled_right)),
+                        ),
+                        _ => ContractExpression::Add(
+                            Box::new(native(&spelled_left)),
+                            Box::new(native(&spelled_right)),
+                        ),
+                    };
+                    let observed = sources
+                        .entry(observed.value_read().clone())
+                        .or_insert_with(|| ContractExpression::Call {
+                            name: "to_integer".into(),
+                            arguments: vec![native(&operation)],
+                        })
+                        .clone();
                     let (left, right) = (Box::new(spelled_left), Box::new(spelled_right));
-                    match value {
+                    let value = match value {
                         IntegerTerm::Subtract(..) => ContractExpression::Subtract(left, right),
                         IntegerTerm::Multiply(..) => ContractExpression::Multiply(left, right),
                         _ => ContractExpression::Add(left, right),
-                    }
+                    };
+                    (observed, value)
                 }
                 IntegerTerm::Machine(_) => {
-                    let Some(spelled) = search_input.spell_integer_observation(value, written)
+                    let Some(spelled) = search_input.spell_integer_observation(value, &written)
                     else {
                         return Ok(Err(failed.clone()));
                     };
-                    spelled
+                    let Some(observed) = search_input.spell_integer_observation(observed, &written)
+                    else {
+                        return Ok(Err(failed.clone()));
+                    };
+                    (observed, spelled)
                 }
                 _ => return Ok(Err(failed.clone())),
             };
+            written.push(spelled_observed.clone());
             let identity = ClickProposition::Comparison {
                 left: spelled_observed.clone(),
                 operator: ComparisonOperator::Equal,
@@ -1832,7 +1924,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// is the two operands' formats and four constant products.
     pub(in crate::surface::proof) fn prove_product_bound_from_ranges(
         search_input: &Proof<'a>,
-        operands: [(&crate::kernel::SharedIntegerTerm, &Box<ContractExpression>); 2],
+        operands: [(&crate::kernel::SharedIntegerTerm, &ContractExpression); 2],
         bound: &ClickProposition,
         target: &num_bigint::BigInt,
         lower: bool,
@@ -1867,10 +1959,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ClickProposition::Comparison {
                     left: surface_signed_integer_literal(min),
                     operator: ComparisonOperator::LessEqual,
-                    right: spelled.as_ref().clone(),
+                    right: (**spelled).clone(),
                 },
                 ClickProposition::Comparison {
-                    left: spelled.as_ref().clone(),
+                    left: (**spelled).clone(),
                     operator: ComparisonOperator::LessEqual,
                     right: surface_signed_integer_literal(max),
                 },
@@ -3056,40 +3148,39 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(proof));
         }
-        // Integer arithmetic has its own compact, locally checked evidence
-        // path. Keep it ahead of the legacy signed arithmetic derivation so
-        // a mathematical Integer goal cannot accidentally enter the machine
-        // overflow checker.
-        if let Some(surface_goal) = search_input.surface_goal()
-            && let Some(goal) = search_input.goal()
-            && let Some(plan) = plan_arithmetic(ArithmeticEngine::IntegerAffine, goal, &[])
-                .and_then(ArithmeticPlan::integer_affine)
-            && plan.nodes.len() == 1
-            && matches!(
-                plan.nodes.first(),
-                Some(IntegerArithmeticNode::Trivial { .. })
-            )
-        {
-            let certificate = IntegerCertificate {
-                nodes: vec![IntegerCertificateNode::Trivial {
-                    result: surface_goal.clone(),
-                }],
-                conclusion: 0,
-            };
-            if let Ok(proof) = search_input
-                .driver()
-                .apply_step(ProofStep::ArithmeticCertificate(
-                    ArithmeticCertificate::integer(certificate),
-                ))
-            {
-                return Ok(Some(proof));
-            }
+        // Context-free Integer identities require only ordinary normalization,
+        // including goals refreshed by unfold without a written comparison.
+        if search_input.goal().is_some_and(|goal| {
+            integer_affine_claim(goal).is_some() && normalizes_context_free(goal)
+        }) {
+            return Self::apply_normalization_closure(search_input, Some(Vec::new())).map(Some);
         }
         if let Some(proof) =
             crate::kernel::search::ProofSearch::try_goal_conditional_normalization(search_input)
         {
             return Ok(Some(proof));
         }
+        // Close an indexed equality rewrite before deriving a longer
+        // arithmetic proof of the same fact. Connected chains still wait
+        // until selected arithmetic has had the goal.
+        let direct_rewrite = crate::instrumentation::measure_operation(
+            "surface",
+            "solve closure",
+            "solve closure: goal equality rewrite",
+            || {
+                Ok::<_, ClickError>(
+                    crate::kernel::search::ProofSearch::try_indexed_direct_equality_rewrite(
+                        search_input,
+                        exclude_exact_goal,
+                    ),
+                )
+            },
+        )?;
+        let chain_rewrites = match direct_rewrite {
+            std::ops::ControlFlow::Break(Some(rewritten)) => return Ok(Some(rewritten)),
+            std::ops::ControlFlow::Break(None) => false,
+            std::ops::ControlFlow::Continue(()) => true,
+        };
         if let Some(surface_goal) = search_input.surface_goal()
             && let Some(proof) =
                 crate::kernel::search::ProofSearch::try_selected_unchanged_load_forall_goal(
@@ -3329,17 +3420,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 {
                     return Ok(Some(proof));
                 }
-                if let Some(certificate) =
-                    integer_plan_to_surface_certificate(&plan, &anchored_pairs, surface_goal)
-                    && let Ok(proof) =
-                        search_input
-                            .driver()
-                            .apply_step(ProofStep::ArithmeticCertificate(
-                                ArithmeticCertificate::integer(certificate),
-                            ))
-                {
-                    return Ok(Some(proof));
-                }
             }
             check_verification_deadline()?;
         }
@@ -3357,30 +3437,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(anchored));
         }
-        // One indexed rewrite can close the goal at once. The search over
-        // chains of connected equalities costs a closure attempt per
-        // rewritten goal, each over the goal's whole connected component, so
-        // it waits until arithmetic from selected premises has had the goal:
-        // a linear claim that one stated fact decides is not searched for
-        // through every equality that mentions its atoms.
-        let direct_rewrite = crate::instrumentation::measure_operation(
-            "surface",
-            "solve closure",
-            "solve closure: goal equality rewrite",
-            || {
-                Ok::<_, ClickError>(
-                    crate::kernel::search::ProofSearch::try_indexed_direct_equality_rewrite(
-                        search_input,
-                        exclude_exact_goal,
-                    ),
-                )
-            },
-        )?;
-        let chain_rewrites = match direct_rewrite {
-            std::ops::ControlFlow::Break(Some(rewritten)) => return Ok(Some(rewritten)),
-            std::ops::ControlFlow::Break(None) => false,
-            std::ops::ControlFlow::Continue(()) => true,
-        };
         // An arithmetic goal the cheap derivations above missed goes to
         // `arithmetic` from premises it selects, before the rewrite, unfold
         // and transport strategies below spend their work in the context's
@@ -3606,26 +3662,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if let Some(plan) = plan_arithmetic(ArithmeticEngine::Special, goal, &kernels)
                 .and_then(ArithmeticPlan::special)
             {
-                let certificate =
-                    special_plan_to_surface_certificate(&plan, &surfaces, surface_goal);
-                let signed_width = match &certificate.family {
-                    ArithmeticCertificateFamily::Special(c) => c.nodes.iter().find_map(|n| {
-                        if let SpecialArithmeticNode::SignedDefined { width, .. } = n {
-                            Some(*width)
-                        } else {
-                            None
-                        }
-                    }),
-                    _ => None,
-                };
+                let certificate = special_plan_to_surface(&plan, &surfaces, surface_goal);
+                let signed_width = certificate.nodes.iter().find_map(|n| {
+                    if let SpecialArithmeticNode::SignedDefined { width, .. } = n {
+                        Some(*width)
+                    } else {
+                        None
+                    }
+                });
                 if let Some(width) = signed_width {
                     if let Some(proof) =
                         Self::try_signed_definedness_bounds(search_input, width, surfaces)?
                     {
                         return Ok(Some(proof));
                     }
-                } else if let ArithmeticCertificateFamily::Special(plan) = &certificate.family
-                    && let Some(proof) = Self::apply_specialized_composition(search_input, plan)?
+                } else if let Some(proof) =
+                    Self::apply_specialized_composition(search_input, &certificate)?
                 {
                     return Ok(Some(proof));
                 }
@@ -3649,11 +3701,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .collect::<Vec<_>>(),
             )
             .and_then(ArithmeticPlan::signed_int32)
-            && let Some(certificate) = search_input.signed_plan_to_surface_certificate(
-                &plan,
-                &anchored_pairs,
-                surface_goal,
-            )
+            && let Some(certificate) =
+                search_input.signed_plan_to_surface(&plan, &anchored_pairs, surface_goal)
             && let Ok(Some(proof)) =
                 Self::apply_signed_interval_composition(search_input, &certificate)
         {
@@ -3859,12 +3908,32 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     None => search_input.raised_comparison_surface(fact),
                 })
                 .collect::<Option<Vec<_>>>();
-            if let Some(spelled) = spelled
-                && let Ok(proof) = search_input
-                    .driver()
-                    .apply_step(ProofStep::ArithmeticUsing(spelled))
-            {
-                return Some(proof);
+            if let Some(spelled) = spelled {
+                if search_input.surface_goal().is_none() {
+                    // The order law's written operands also name its equality
+                    // conclusion, even for a generated outcome obligation.
+                    let ClickProposition::Comparison { left, right, .. } =
+                        surface_comparison_with_anchored_operands(&spelled[0])
+                    else {
+                        continue;
+                    };
+                    let equality = ClickProposition::Comparison {
+                        left,
+                        operator: ComparisonOperator::Equal,
+                        right,
+                    };
+                    let Ok(scope) = search_input.driver().open_have(equality) else {
+                        continue;
+                    };
+                    if let Some(closed) = scope.driver().try_restricted_solve_closure(&spelled)
+                        && let Ok(joined) = closed.join()
+                        && let Ok(closed) = joined.driver().apply_step(ProofStep::Known)
+                    {
+                        return Some(closed);
+                    }
+                } else if let Ok(proof) = Self::apply_arithmetic_using(search_input, &spelled) {
+                    return Some(proof);
+                }
             }
         }
         None
@@ -4113,8 +4182,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &kernels)
                 .and_then(ArithmeticPlan::signed_int32)?
         };
-        let certificate =
-            search_input.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
+        let certificate = search_input.signed_plan_to_surface(&plan, &pairs, surface_goal)?;
         Self::apply_signed_interval_composition(search_input, &certificate)
             .ok()
             .flatten()
@@ -4286,12 +4354,61 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if premises.is_empty() {
             return None;
         }
-        crate::kernel::search::ProofSearch::apply_normalization_closure(
-            search_input,
-            Some(premises),
-        )
-        .ok()
-        .filter(Proof::is_complete)
+        if let Ok(closed) = Self::apply_normalization_closure(search_input, Some(premises.clone()))
+            && (closed.is_complete() || closed.focused_discharged())
+        {
+            return Some(closed);
+        }
+        // Selecting an arm and proving arithmetic in it are separate simple
+        // steps. Normalize the arm equation from its stated guard, then
+        // rewrite the goal before ordinary arithmetic composes its proof.
+        let ClickProposition::Comparison { left, right, .. } = search_input.surface_goal()? else {
+            return None;
+        };
+        for expression in [left, right] {
+            let ContractExpression::If {
+                condition,
+                then_branch,
+                else_branch,
+            } = expression
+            else {
+                continue;
+            };
+            for (guard, branch) in [
+                (condition.as_ref().clone(), then_branch),
+                (ClickProposition::Not(condition.clone()), else_branch),
+            ] {
+                let kernel = search_input
+                    .lower_cited_surface_proposition(&guard, "conditional arm")
+                    .ok()?;
+                if !search_input.facts().contains(&kernel) {
+                    continue;
+                }
+                let equality = ClickProposition::Comparison {
+                    left: expression.clone(),
+                    operator: ComparisonOperator::Equal,
+                    right: branch.as_ref().clone(),
+                };
+                let equation = search_input
+                    .driver()
+                    .apply_step(super::super::wide_arithmetic::have(
+                        equality.clone(),
+                        vec![ProofStep::NormalizeUsing(vec![guard])],
+                    ))
+                    .ok()?;
+                let rewritten = equation
+                    .driver()
+                    .apply_step(ProofStep::Rewrite(equality))
+                    .ok()?;
+                if rewritten.goal() == search_input.goal() {
+                    continue;
+                }
+                if let Some(closed) = Self::try_solve_closure(&rewritten).ok().flatten() {
+                    return Some(closed);
+                }
+            }
+        }
+        None
     }
 
     /// Uses one explicitly supplied equality before unfolding applications in
@@ -9530,7 +9647,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_single_theorem_using");
-        let goal = search_input.surface_goal()?;
+        use crate::surface::planning::theorems::TheoremConclusionMatch;
+        use attempt::SearchFailureKind;
+        let mut scope = attempt::search_scope("theorem discovery");
+        let mut matched = false;
+        let Some(goal) = search_input.surface_goal() else {
+            attempt::record_theorem_discovery_note(
+                SearchFailureKind::Unsupported,
+                "no surface goal is available for theorem discovery".into(),
+            );
+            return None;
+        };
         let environment = match search_input.context.as_ref() {
             ProofContext::Pure(context) => context.theorem_environment,
             ProofContext::FixedState(context) => context.theorem_environment,
@@ -9538,7 +9665,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         for candidate in environment.conclusion_candidates(goal) {
             if crate::instrumentation::deadline_exceeded_with_work(1) {
-                attempt::record_search_note("single theorem", "theorem discovery budget exhausted");
+                attempt::record_theorem_discovery_note(
+                    SearchFailureKind::Exhausted,
+                    "theorem discovery budget exhausted".into(),
+                );
                 return None;
             }
             if search_input
@@ -9549,11 +9679,32 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             }
             let definition = environment.get(&candidate.name)?;
-            for application in crate::surface::planning::theorems::match_theorem_conclusion(
+            for outcome in crate::surface::planning::theorems::theorem_conclusion_matches(
                 definition,
                 candidate.ensure,
                 goal,
             ) {
+                matched = true;
+                let application = match outcome {
+                    TheoremConclusionMatch::Application(application) => application,
+                    TheoremConclusionMatch::UndeterminedArgument(name) => {
+                        attempt::record_theorem_discovery_note(
+                            SearchFailureKind::UndeterminedArgument,
+                            format!(
+                                "theorem `{}`: argument `{name}` cannot be inferred from the goal; supply it with explicit apply(...) using {{ ... }}",
+                                candidate.name
+                            ),
+                        );
+                        continue;
+                    }
+                    TheoremConclusionMatch::Exhausted => {
+                        attempt::record_theorem_discovery_note(
+                            SearchFailureKind::Exhausted,
+                            "theorem discovery budget exhausted".into(),
+                        );
+                        return None;
+                    }
+                };
                 let step = ProofStep::ApplyTheoremUsing {
                     application,
                     premises: surfaces.to_vec(),
@@ -9562,6 +9713,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     attempt::candidate_outcome(search_input.driver().apply_step(step)).ok()?
                 {
                     if proof.is_complete() || proof.focused_discharged() {
+                        scope.succeed();
                         return Some(proof);
                     }
                     // The matched conclusion may use the opposite comparison
@@ -9572,10 +9724,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             .ok()?
                         && (closed.is_complete() || closed.focused_discharged())
                     {
+                        scope.succeed();
                         return Some(closed);
                     }
                 }
             }
+        }
+        // Index lookup can spend the remaining work even when its bucket is
+        // empty. Observe that exhaustion without charging another checkpoint.
+        if crate::instrumentation::deadline_exceeded_with_work(0) {
+            attempt::record_theorem_discovery_note(
+                SearchFailureKind::Exhausted,
+                "theorem discovery budget exhausted".into(),
+            );
+        } else if !matched {
+            attempt::record_theorem_discovery_note(
+                SearchFailureKind::NoMatch,
+                "no available theorem conclusion matched the goal in the supported structural fragment".into(),
+            );
         }
         None
     }
@@ -10018,7 +10184,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             && let Some(plan) = plan_arithmetic(ArithmeticEngine::Special, goal, &restricted)
                 .and_then(ArithmeticPlan::special)
         {
-            let certificate = special_plan_to_surface_certificate(
+            let certificate = special_plan_to_surface(
                 &plan,
                 &premise_pairs
                     .iter()
@@ -10026,16 +10192,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .collect::<Vec<_>>(),
                 surface_goal,
             );
-            let signed_width = match &certificate.family {
-                ArithmeticCertificateFamily::Special(c) => c.nodes.iter().find_map(|n| {
-                    if let SpecialArithmeticNode::SignedDefined { width, .. } = n {
-                        Some(*width)
-                    } else {
-                        None
-                    }
-                }),
-                _ => None,
-            };
+            let signed_width = certificate.nodes.iter().find_map(|n| {
+                if let SpecialArithmeticNode::SignedDefined { width, .. } = n {
+                    Some(*width)
+                } else {
+                    None
+                }
+            });
             if let Some(width) = signed_width {
                 if let Ok(Some(closed)) =
                     Self::try_signed_definedness_bounds(&proof, width, surfaces.to_vec())
@@ -10043,34 +10206,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     return Some(closed);
                 }
             } else {
-                if let ArithmeticCertificateFamily::Special(plan) = &certificate.family
-                    && let Ok(Some(closed)) = Self::apply_specialized_composition(&proof, plan)
+                if let Ok(Some(closed)) = Self::apply_specialized_composition(&proof, &certificate)
                     && closed.is_complete()
                 {
                     return Some(closed);
                 }
             }
-        }
-        if let Some(surface_goal) = proof.surface_goal()
-            // The kernel lowering has already established the exact carrier
-            // and checked terms for this goal.  Use that fact as the routing
-            // predicate so fixed-state and execution proofs receive the same
-            // certificate path; source-side guesses would miss converted C
-            // values and could route a machine comparison incorrectly.
-            && integer_affine_claim(goal).is_some()
-            && restricted
-                .iter()
-                .all(|premise| integer_affine_claim(premise).is_some())
-            && let Some(plan) = plan_arithmetic(ArithmeticEngine::IntegerAffine, goal, &restricted)
-.and_then(ArithmeticPlan::integer_affine)
-            && let Some(certificate) =
-                integer_plan_to_surface_certificate(&plan, &premise_pairs, surface_goal)
-            && let Ok(closed) = proof.driver().apply_step(ProofStep::ArithmeticCertificate(
-                ArithmeticCertificate::integer(certificate),
-            ))
-            && closed.is_complete()
-        {
-            return Some(closed);
         }
         // The selected context has not changed, so the ordinary derivation
         // slot need not repeat the early attempt.
@@ -10243,17 +10384,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .iter()
                     .map(|(premise, _)| premise.clone())
                     .collect::<Vec<_>>();
-                let plan = plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &kernels)
+                plan_arithmetic(ArithmeticEngine::SignedInt32, goal, &kernels)
                     .and_then(ArithmeticPlan::signed_int32)?;
-                let certificate = search_input.signed_plan_to_surface_certificate(
-                    &plan,
-                    premise_pairs,
-                    surface_goal?,
-                )?;
-                Some(vec![ProofTactic::ArithmeticCertificate(
-                    ArithmeticCertificate {
-                        family: ArithmeticCertificateFamily::SignedInt32(certificate),
-                    },
+                Some(vec![ProofTactic::ArithmeticUsing(
+                    premise_pairs.iter().map(|(_, p)| p.clone()).collect(),
                 )])
             })
             .or_else(|| {
@@ -10510,21 +10644,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .iter()
                     .map(|(premise, _)| premise.clone())
                     .collect::<Vec<_>>();
-                let surface_goal = search_input.surface_goal()?;
-                let plan = plan_arithmetic(ArithmeticEngine::Special, goal, &kernels)
-                    .and_then(ArithmeticPlan::special)?;
-                Some(vec![ProofTactic::ArithmeticCertificate(
-                    special_plan_to_surface_certificate(
-                        &plan,
-                        &premise_pairs
-                            .iter()
-                            .map(|(_, surface)| surface.clone())
-                            .collect::<Vec<_>>(),
-                        surface_goal,
-                    ),
+                crate::surface::checking::arithmetic_plans(goal, &kernels, true).next()?;
+                Some(vec![ProofTactic::ArithmeticUsing(
+                    premise_pairs.iter().map(|(_, p)| p.clone()).collect(),
                 )])
             });
-        let Some(mut tactics) = tactics else {
+        let Some(tactics) = tactics else {
             if matches!(goal, Proposition::MemoryLoadable { .. }) {
                 attempt::record_search_note(
                     "solve view certificate planning",
@@ -10533,12 +10658,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             return None;
         };
-        // Reuse the selected recorded premises and plan directly. Sending
-        // this back through ArithmeticUsing would lower and plan it again.
-        if tactics.len() == 1
-            && let Some(ProofTactic::ArithmeticUsing(listed)) = tactics.last()
-            && let Some(surface_goal) = search_input.surface_goal()
-            && let Some(pairs) = listed
+        // An arithmetic tail is a recipe for ordinary composition, not a retained proof step.
+        if let Some(ProofTactic::ArithmeticUsing(listed)) = tactics.last() {
+            let base = if tactics.len() == 1 {
+                search_input.clone()
+            } else {
+                search_input
+                    .driver()
+                    .try_generated_linear_script(&tactics[..tactics.len() - 1])
+                    .ok()??
+            };
+            let pairs = listed
                 .iter()
                 .map(|surface| {
                     premise_pairs
@@ -10546,81 +10676,44 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .find(|(_, written)| written == surface)
                         .cloned()
                 })
-                .collect::<Option<Vec<_>>>()
-        {
-            let kernels = pairs
-                .iter()
-                .map(|(kernel, _)| kernel.clone())
-                .collect::<Vec<_>>();
-            if let Some(plan) = crate::surface::checking::arithmetic_plans(goal, &kernels, true)
-                .find_map(ArithmeticPlan::integer_affine)
-                && let Ok(Some(Some(closed))) = attempt::candidate_outcome(
-                    Self::apply_integer_composition(search_input, &plan, &pairs, surface_goal, &[]),
-                )
-            {
-                return Some(closed);
-            }
-        }
-        // A rule closing with Integer arithmetic names the premises it reads;
-        // its certificate is planned from their recorded kernel forms, as
-        // `arithmetic() using` would plan it from their lowered spellings.
-        if let Some(ProofTactic::ArithmeticUsing(listed)) = tactics.last()
-            && let Some(certificate) =
-                search_input.arithmetic_certificate_from_recorded(goal, listed, premise_pairs)
-            && (search_input.surface_goal().is_none()
-                || !matches!(
-                    &certificate,
-                    ProofTactic::ArithmeticCertificate(ArithmeticCertificate {
-                        family: ArithmeticCertificateFamily::Integer(_)
-                    })
-                ))
-        {
-            *tactics.last_mut()? = certificate;
-        }
-        if let Some(ProofTactic::ArithmeticCertificate(certificate)) = tactics.last() {
-            let signed = matches!(
-                &certificate.family,
-                ArithmeticCertificateFamily::SignedInt32(_)
-            );
-            let spelled_integer = if search_input.surface_goal().is_none()
-                && matches!(&certificate.family, ArithmeticCertificateFamily::Integer(_))
-            {
-                spell_signed_goal(goal, premise_pairs)
-            } else {
-                None
+                .collect::<Option<Vec<_>>>()?;
+            let Some(surface_goal) = base.surface_goal() else {
+                let spelled = spell_signed_goal(goal, &pairs)?;
+                let scope = base.driver().open_have(spelled).ok()?;
+                let closed = scope.driver().try_restricted_solve_closure(listed)?;
+                return closed
+                    .join()
+                    .ok()?
+                    .driver()
+                    .apply_step(ProofStep::Known)
+                    .ok();
             };
-            let specialized =
-                matches!(&certificate.family, ArithmeticCertificateFamily::Special(_));
-            if signed || specialized || spelled_integer.is_some() {
-                let base = if tactics.len() == 1 {
-                    search_input.clone()
-                } else {
-                    search_input
-                        .driver()
-                        .try_generated_linear_script(&tactics[..tactics.len() - 1])
-                        .ok()??
-                };
-                if let Some(spelled) = spelled_integer {
-                    let scope = base.driver().open_have(spelled).ok()?;
-                    let listed = premise_pairs
-                        .iter()
-                        .map(|(_, p)| p.clone())
-                        .collect::<Vec<_>>();
-                    let body = scope.driver().try_restricted_solve_closure(&listed)?;
-                    return body.join().ok()?.driver().apply_step(ProofStep::Known).ok();
-                }
-                return match &certificate.family {
-                    ArithmeticCertificateFamily::SignedInt32(certificate) => {
-                        Self::apply_signed_interval_composition(&base, certificate)
+            let kernels = pairs.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>();
+            for plan in crate::surface::checking::arithmetic_plans(goal, &kernels, true) {
+                let candidate = match plan {
+                    ArithmeticPlan::IntegerAffine(plan) => {
+                        Self::apply_integer_composition(&base, &plan, &pairs, surface_goal, &[])
                             .ok()
                             .flatten()
                     }
-                    ArithmeticCertificateFamily::Special(c) => {
-                        Self::apply_specialized_composition(&base, c).ok().flatten()
+                    ArithmeticPlan::SignedInt32(plan) => {
+                        let plan = base.signed_plan_to_surface(&plan, &pairs, surface_goal)?;
+                        Self::apply_signed_interval_composition(&base, &plan)
+                            .ok()
+                            .flatten()
                     }
-                    _ => None,
+                    ArithmeticPlan::Special(plan) => {
+                        let plan = special_plan_to_surface(&plan, listed, surface_goal);
+                        Self::apply_specialized_composition(&base, &plan)
+                            .ok()
+                            .flatten()
+                    }
                 };
+                if candidate.is_some() {
+                    return candidate;
+                }
             }
+            return None;
         }
         // The planner selects only Surface-expressible explicit operations.
         // Apply those through the same recursive Proof driver used by

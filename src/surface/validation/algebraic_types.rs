@@ -1362,13 +1362,13 @@ pub(super) fn validate_algebraic_type_uses(
                                 (Some((name, format)), ClickType::Parameter(parameter))
                                     if parameter == *name =>
                                 {
-                                    ClickType::Program(format.clone())
+                                    ClickType::Program(*format)
                                 }
                                 (Some((name, format)), ClickType::Algebraic(application))
                                     if application.name == *name
                                         && application.arguments.is_empty() =>
                                 {
-                                    ClickType::Program(format.clone())
+                                    ClickType::Program(*format)
                                 }
                                 (_, click_type) => click_type,
                             },
@@ -1853,8 +1853,7 @@ fn validate_algebraic_proposition_one(
             }
             Ok(())
         }
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => Ok(()),
@@ -3212,6 +3211,89 @@ impl ScopedTypes {
     }
 }
 
+/// Keep algebraic match bindings available to condition checking. The
+/// ordinary checker still checks C comparisons and their carrier rules.
+fn validate_scalar_return_condition(
+    condition: &ClickProposition,
+    types: &mut ScopedTypes,
+    click_functions: &BTreeMap<String, ClickFunctionType>,
+    definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
+    context: &str,
+) -> Result<(), ClickError> {
+    let mut pending = vec![condition];
+    while let Some(condition) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match condition {
+            ClickProposition::And(left, right)
+            | ClickProposition::Or(left, right)
+            | ClickProposition::Implies(left, right) => {
+                pending.push(right);
+                pending.push(left);
+            }
+            ClickProposition::Not(body) => pending.push(body),
+            ClickProposition::Comparison { left, right, .. } => {
+                let mut algebraic = false;
+                for operand in [left, right] {
+                    // Arithmetic and sequence syntax cannot produce an
+                    // algebraic value. Leave those carrier checks to the
+                    // ordinary validator, including sequence comparisons.
+                    if !matches!(
+                        operand,
+                        ContractExpression::Binding(_)
+                            | ContractExpression::CBinding(_)
+                            | ContractExpression::AlgebraicVariable { .. }
+                            | ContractExpression::AlgebraicConstructor { .. }
+                            | ContractExpression::Call { .. }
+                            | ContractExpression::AlgebraicMatch { .. }
+                            | ContractExpression::If { .. }
+                            | ContractExpression::Let { .. }
+                            | ContractExpression::Apply { .. }
+                            | ContractExpression::ProgramExpression(ProgramExpression::Variable(_))
+                    ) {
+                        continue;
+                    }
+                    algebraic |= matches!(
+                        infer_generic_expression_type(
+                            operand,
+                            types,
+                            click_functions,
+                            definitions,
+                            context
+                        )?,
+                        Some(ClickType::Algebraic(_) | ClickType::Parameter(_))
+                    );
+                }
+                if algebraic {
+                    validate_generic_proposition_types(
+                        condition,
+                        types,
+                        click_functions,
+                        &BTreeMap::new(),
+                        definitions,
+                        context,
+                    )?;
+                } else {
+                    validate_theorem_proposition_expression_types(
+                        condition,
+                        &types.program_value_types,
+                        &types.integers,
+                        click_functions,
+                        context,
+                    )?;
+                }
+            }
+            _ => validate_theorem_proposition_expression_types(
+                condition,
+                &types.program_value_types,
+                &types.integers,
+                click_functions,
+                context,
+            )?,
+        }
+    }
+    Ok(())
+}
+
 /// Check every return leaf against the declared scalar result type. Expected
 /// types flow through branches so null and Integer numerals stay contextual.
 /// Bool retains its strict rule, rather than accepting an implicit truth test.
@@ -3319,11 +3401,11 @@ fn require_scalar_return_leaf(
             then_branch,
             else_branch,
         } => {
-            validate_theorem_proposition_expression_types(
+            validate_scalar_return_condition(
                 condition,
-                &types.program_value_types,
-                &types.integers,
+                types,
                 click_functions,
+                definitions,
                 context,
             )?;
             require_scalar_return_value(
@@ -4024,6 +4106,42 @@ fn validate_generic_proposition_types(
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
     context: &str,
 ) -> Result<(), ClickError> {
+    let mut pending = vec![proposition];
+    while let Some(proposition) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match proposition {
+            ClickProposition::And(left, right)
+            | ClickProposition::Or(left, right)
+            | ClickProposition::Implies(left, right) => {
+                pending.push(right);
+                pending.push(left);
+            }
+            ClickProposition::Not(body)
+            | ClickProposition::At {
+                proposition: body, ..
+            } => pending.push(body),
+            proposition => validate_generic_proposition_types_one(
+                proposition,
+                variables,
+                click_functions,
+                predicates,
+                definitions,
+                context,
+            )?,
+        }
+    }
+    Ok(())
+}
+
+#[inline(never)]
+fn validate_generic_proposition_types_one(
+    proposition: &ClickProposition,
+    variables: &mut ScopedTypes,
+    click_functions: &BTreeMap<String, ClickFunctionType>,
+    predicates: &BTreeMap<&str, &PredicateDefinition>,
+    definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
+    context: &str,
+) -> Result<(), ClickError> {
     match proposition {
         ClickProposition::Value(expression) => {
             let actual = infer_generic_expression_type(
@@ -4118,37 +4236,13 @@ fn validate_generic_proposition_types(
             }
             Ok(())
         }
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
-            validate_generic_proposition_types(
-                left,
-                variables,
-                click_functions,
-                predicates,
-                definitions,
-                context,
-            )?;
-            validate_generic_proposition_types(
-                right,
-                variables,
-                click_functions,
-                predicates,
-                definitions,
-                context,
-            )
+        ClickProposition::And(..)
+        | ClickProposition::Or(..)
+        | ClickProposition::Implies(..)
+        | ClickProposition::Not(..)
+        | ClickProposition::At { .. } => {
+            unreachable!("logical propositions are handled iteratively")
         }
-        ClickProposition::Not(body)
-        | ClickProposition::At {
-            proposition: body, ..
-        } => validate_generic_proposition_types(
-            body,
-            variables,
-            click_functions,
-            predicates,
-            definitions,
-            context,
-        ),
         ClickProposition::FloatClassification { expression, .. }
         | ClickProposition::Defined { expression } => {
             let _ = infer_generic_expression_type(
@@ -4195,8 +4289,7 @@ fn validate_generic_proposition_types(
             variables.end(scope);
             result
         }
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => Ok(()),

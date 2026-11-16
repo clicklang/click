@@ -314,7 +314,6 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/rust/usize.click",
     "library/rust/vec.click",
     "library/rust/slice.click",
-    "library/rust/chunks_exact.click",
     "library/rust/slice_iter.click",
 ];
 

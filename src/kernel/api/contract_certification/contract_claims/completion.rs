@@ -35,6 +35,7 @@ pub(crate) struct WholeContractProof {
     proof: RootProof,
     modular: bool,
     loop_exits: Arc<crate::kernel::termination::loop_evidence::PreparedLoopExits>,
+    declared_calls: Arc<BTreeSet<String>>,
 }
 
 impl std::fmt::Debug for WholeContractProof {
@@ -61,6 +62,7 @@ pub(crate) struct AdmittedContractProof {
 /// completion also needs the enclosing program's termination obligations.
 #[derive(Clone, Debug)]
 pub(crate) struct ContractBodyProof {
+    termination: crate::kernel::termination::inputs::CompletedBodyTermination,
     rule: VerifiedFunctionRule,
     modular: bool,
     loop_rules: Vec<VerifiedLoopRule>,
@@ -141,7 +143,18 @@ impl ContractExecutionOwner {
             .as_ref()
             .map(|progress| progress.finish_outcome(index, identity, claims, closing))
             .transpose()?;
+        self.execution.checked_resource_claims[index].clear();
+        self.execution.checked_returned_resources[index] = ResourceContext::new();
+        self.execution.checked_resource_transitions[index] = false;
         if let (Some(closing), Some(publication)) = (closing, publication) {
+            if let Some(claims) = claims {
+                let path = publication.path();
+                let (keys, returned) = claims.resource_projection(
+                    path.post_assumptions.as_ref().unwrap_or(&path.assumptions),
+                );
+                self.execution.checked_resource_claims[index] = keys;
+                self.execution.checked_returned_resources[index] = returned;
+            }
             let exit = closing.completed_exit(publication.path());
             self.execution.execution.paths[index] = publication.path().clone();
             self.execution.published_outcomes[index] = publication.clone();
@@ -172,10 +185,15 @@ impl ContractExecutionOwner {
 }
 
 impl ContractBodyProof {
+    pub(in crate::kernel) fn termination_input(
+        &self,
+    ) -> &crate::kernel::termination::inputs::CompletedBodyTermination {
+        &self.termination
+    }
     pub(crate) fn loop_rules(&self) -> &[VerifiedLoopRule] {
         &self.loop_rules
     }
-    pub(crate) fn into_rule(&self) -> Option<VerifiedFunctionRule> {
+    pub(crate) fn to_reusable_rule(&self) -> Option<VerifiedFunctionRule> {
         self.modular.then(|| self.rule.clone())
     }
     pub(in crate::kernel) fn termination_rule(&self) -> &VerifiedFunctionRule {
@@ -186,6 +204,7 @@ impl ContractBodyProof {
 impl WholeContractProof {
     pub(crate) fn open(entry: Arc<PreparedContractEntryCases>) -> Result<Self, String> {
         let function = &entry.function;
+        let declared_calls = Arc::new(crate::kernel::termination::termination_callees(function));
         let loop_exits =
             crate::kernel::termination::loop_evidence::PreparedLoopExits::open(function)?;
         if entry.cases.is_empty() {
@@ -243,6 +262,7 @@ impl WholeContractProof {
             .unwrap_or_else(|_| panic!("the contract root was just opened"));
         let open = goals.into_iter().zip(ids).collect();
         Ok(Self {
+            declared_calls,
             entry,
             open,
             proof,
@@ -354,7 +374,12 @@ impl AdmittedContractProof {
             checked_callees: self.execution.checked_callees.clone(),
             applied_tactics: self.execution.applied_tactics.clone(),
         };
+        let termination =
+            crate::kernel::termination::inputs::CompletedBodyTermination::from_completed_root(
+                self.owner.loop_exits.unknown(),
+            );
         Ok(ContractBodyProof {
+            termination,
             rule,
             modular: self.owner.modular,
             loop_rules: Vec::new(),
@@ -988,7 +1013,7 @@ mod tests {
                 .admit_executions(&[execution])
                 .complete()
                 .unwrap()
-                .into_rule()
+                .to_reusable_rule()
                 .is_some()
         );
     }
@@ -1079,7 +1104,7 @@ mod tests {
                 .admit_executions(&[completed_execution])
                 .complete()
                 .unwrap()
-                .into_rule()
+                .to_reusable_rule()
                 .is_some()
         );
     }

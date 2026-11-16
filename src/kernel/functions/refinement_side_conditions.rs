@@ -294,8 +294,7 @@ pub(super) fn spec_proposition_supports_stateful_memory_refinement(
 pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
     match node {
         SpecNode::Proposition(proposition) => match proposition {
-            SpecProposition::ChangesOnly { .. }
-            | SpecProposition::SequenceComparison { .. }
+            SpecProposition::SequenceComparison { .. }
             | SpecProposition::SequenceMembership { .. }
             | SpecProposition::Comparison { .. }
             | SpecProposition::AlgebraicComparison { .. }
@@ -328,6 +327,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             // current and the entry projection lower through
             // `resource_instance_at_path` against the state the caller supplies;
             // a projection the state cannot answer refuses the refinement there.
+            SpecExpression::ObjectAddress(_) => Visit::Descend,
             SpecExpression::ResourceField { .. } | SpecExpression::Value(_) => Visit::Skip,
             SpecExpression::IntegerToMachine { .. } => Visit::Stop(()),
             SpecExpression::ProgramExpression(expression) => {

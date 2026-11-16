@@ -3640,7 +3640,7 @@ fn collect_pointer_capture_variables(
         | PointerBlock::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        PointerBlock::StaticObject { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::Concrete(_)
+        PointerBlock::ContractResult | PointerBlock::ContractException | PointerBlock::AggregateReturn { .. } | PointerBlock::StaticObject { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
         | PointerBlock::ExternalArgument
@@ -5697,7 +5697,10 @@ fn collect_pointer_block_bitvector_variables(
                 collect_pointer_bitvector_variables(&address, variables);
             }
         }
-        PointerBlock::StaticObject { .. }
+        PointerBlock::ContractResult
+        | PointerBlock::ContractException
+        | PointerBlock::AggregateReturn { .. }
+        | PointerBlock::StaticObject { .. }
         | PointerBlock::AutomaticLocal { .. }
         | PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
@@ -5891,6 +5894,16 @@ pub(in crate::kernel) fn clear_shared_memory_variables() {
 
 fn remembered_memory_variables(memory: &SharedMemory) -> Option<VariableCounts> {
     SHARED_MEMORY_VARIABLES.with(|table| table.borrow().get(&memory.arena_id()).cloned())
+}
+
+/// Read an already prepared state's variable index without walking its memory.
+/// Missing metadata leaves the caller on its existing checked path.
+pub(in crate::kernel) fn indexed_memory_contains_variable(
+    memory: &SharedMemory,
+    variable: Variable,
+) -> Option<bool> {
+    crate::instrumentation::record_deterministic_work(1);
+    Some(remembered_memory_variables(memory)?.contains_key(&variable))
 }
 
 /// Establish the input state's index once, before individual C steps.
@@ -6318,7 +6331,10 @@ fn block_variables(block: &PointerBlock, contents: &MemoryBlock) -> BTreeSet<Var
         | PointerBlock::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        PointerBlock::StaticObject { .. }
+        PointerBlock::ContractResult
+        | PointerBlock::ContractException
+        | PointerBlock::AggregateReturn { .. }
+        | PointerBlock::StaticObject { .. }
         | PointerBlock::AutomaticLocal { .. }
         | PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
@@ -6624,7 +6640,10 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
             | PointerBlock::ExternalObject(variable) => {
                 variables.insert(*variable);
             }
-            PointerBlock::StaticObject { .. }
+            PointerBlock::ContractResult
+            | PointerBlock::ContractException
+            | PointerBlock::AggregateReturn { .. }
+            | PointerBlock::StaticObject { .. }
             | PointerBlock::AutomaticLocal { .. }
             | PointerBlock::Concrete(_)
             | PointerBlock::StringLiteral { .. }

@@ -132,24 +132,39 @@ fn nested_getter_arguments_are_not_revisited_for_each_enclosing_call() {
 }
 
 #[test]
-fn scalar_return_constructor_types_scale_with_definitions() {
-    let mut samples = Vec::new();
-    for size in [16, 32, 64, 128] {
-        let mut source = String::from(
-            "spec enum Color { Red, Black, } spec enum Tree { Empty, Node(Color, Tree, Tree), } ",
-        );
-        for index in 0..size {
-            source.push_str(&format!(
-                "function black{index}(t: Tree) -> int32 {{ match t {{ Tree::Empty => 1, Tree::Node(c, l, r) => if c == Color::Black {{ 1 }} else {{ 0 }}, }} }} "
-            ));
+#[ignore = "nightly: enum guard checking across definition and lexical-scope sizes"]
+fn algebraic_scalar_return_conditions_scale_with_definitions_and_scopes() {
+    for grow_scopes in [false, true] {
+        let mut samples = Vec::new();
+        for size in [16, 32, 64, 128] {
+            let mut source = String::from(
+                "spec enum Color { Red, Black } spec enum Tree { Empty, Node(Color, Tree) } ",
+            );
+            if grow_scopes {
+                source.push_str("function choose(t: Tree");
+                for index in 0..size {
+                    source.push_str(&format!(", unused{index}: Color"));
+                }
+                source.push_str(
+                    ") -> int32 { match t { Tree::Empty => 0, Tree::Node(c, tail) => if ",
+                );
+                for _ in 0..size {
+                    source.push_str("c == Color::Black and ");
+                }
+                source.push_str("0 == 0 { 1 } else { 0 }, } }");
+            } else {
+                for index in 0..size {
+                    source.push_str(&format!("function choose{index}(t: Tree) -> int32 {{ match t {{ Tree::Empty => 0, Tree::Node(c, tail) => if c == Color::Black {{ 1 }} else {{ 0 }}, }} }} "));
+                }
+            }
+            let (result, work) =
+                crate::instrumentation::measure_deterministic_work(|| parser::parse(&source));
+            result.unwrap();
+            assert!(work > 0);
+            samples.push(work);
         }
-        let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| parser::parse(&source));
-        result.unwrap();
-        assert!(work > 0);
-        samples.push(work);
-    }
-    for pair in samples.windows(2) {
-        assert!(pair[1] <= pair[0] * 3, "{samples:?}");
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 3, "scopes={grow_scopes}: {samples:?}");
+        }
     }
 }

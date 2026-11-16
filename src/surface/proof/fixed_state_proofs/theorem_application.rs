@@ -71,10 +71,9 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
                 ))
             })?,
         };
-        // A listed premise the lowering folded to a ground constant needs no
-        // fact when that constant is the value it asserts: `0 <= 0` at an
-        // instance is `true is true`, and the availability check below
-        // accepts it by the rule every `using` list shares
+        // A true ground premise needs no ambient fact. The availability check
+        // below evaluates retained literal comparisons by the rule every
+        // `using` list shares
         // (`listed_premise_holds`), which also accepts an equality listed in
         // the other orientation from the fact held.
         if !available.listed_premise_available(&premise, &[], true) {
@@ -84,6 +83,20 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
             // neither which `using` entry was refused nor why.
             let constant_note = match &premise {
                 Proposition::ConditionIs(ConditionTerm::Constant(_), _) => {
+                    " (it is false at this instance)"
+                }
+                Proposition::ConditionIs(
+                    condition @ ConditionTerm::Compare {
+                        format,
+                        left,
+                        right,
+                        ..
+                    },
+                    expected,
+                ) if format.constant_from_term(left).is_some()
+                    && format.constant_from_term(right).is_some()
+                    && PureFactContext::new().decide(condition) == Some(!expected) =>
+                {
                     " (it is false at this instance)"
                 }
                 _ => "",
@@ -130,6 +143,7 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
             },
         )?;
     let application_context = TheoremApplicationContext {
+        parameters: parameter_binding,
         values: &values,
         array_refs: &array_refs,
         algebraic_values,

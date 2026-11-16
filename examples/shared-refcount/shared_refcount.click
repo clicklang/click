@@ -9,6 +9,8 @@ resource control(obj: struct object*) {
     owns obj->refs;
     owns authority(reference(obj));
     owns authority(permit(obj));
+    fact 0 <= refs;
+    fact 0 <= slack;
     fact obj->refs == refs;
     fact refs == count(reference(obj));
     fact slack == count(permit(obj));

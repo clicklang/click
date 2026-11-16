@@ -397,10 +397,10 @@ pub(crate) fn machine_operand_syntax_cmp(
             }
             continue;
         }
-        if let (V::Shared(a), V::Shared(b)) = (a, b) {
-            if a == b || !seen.insert((a.id(), b.id())) {
-                continue;
-            }
+        if let (V::Shared(a), V::Shared(b)) = (a, b)
+            && (a == b || !seen.insert((a.id(), b.id())))
+        {
+            continue;
         }
         if let (Some((ag, [at, ae])), Some((bg, [bt, be]))) = (a.conditional(), b.conditional()) {
             let order = ag.cmp(&bg);

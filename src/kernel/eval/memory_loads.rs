@@ -71,6 +71,7 @@ impl MemoryLoadAliasCache {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(in crate::kernel) fn evaluate_memory_load_paths(
     memory: &Memory,
     pointer: Pointer,
@@ -1413,7 +1414,7 @@ fn evaluate_retained_memory_load_case(
                     source,
                     purpose,
                 ) {
-                    Some(value) => ExpressionOutcome::Value(value.into()),
+                    Some(value) => ExpressionOutcome::Value(value),
                     None => ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
                         pointer: pointer.clone(),
                         value_type,
@@ -4510,7 +4511,7 @@ pub(crate) mod duplicate_read_names {
         };
         let stored = version.memory().known_value(pointer);
         let read = |memory: &SharedMemory| {
-            MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer.clone()), kind)
+            MachineTerm::MemoryLoad(ProgramPoint::at(memory), Box::new(pointer.clone()), kind)
         };
         let empty = PureFactContext::new();
         let duplicate = earlier.iter().any(|earlier| {
@@ -4683,7 +4684,7 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Machin
             .get(&(epoch, *variable))
             .map(|(memory, pointer)| {
                 MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&memory),
+                    ProgramPoint::at(memory),
                     Box::new(pointer.clone()),
                     LoadKind::Bits64,
                 )
@@ -4871,6 +4872,7 @@ fn mint_load_variable(
 /// stream, deduplicated by proposition. The equation is kernel-certified by
 /// construction: the load variable represents this load. It must not demand
 /// a checkable assumption derivation downstream.
+#[cfg(test)]
 pub(crate) fn record_load_variable_defining_fact(
     variable: Variable,
     load: MachineTerm,
@@ -4879,6 +4881,7 @@ pub(crate) fn record_load_variable_defining_fact(
     record_load_variable_defining_fact_with_source(variable, load, facts, None);
 }
 
+#[cfg(test)]
 pub(crate) fn record_load_variable_defining_fact_with_source(
     variable: Variable,
     load: MachineTerm,

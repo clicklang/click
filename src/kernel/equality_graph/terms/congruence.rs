@@ -383,28 +383,27 @@ impl TermClasses {
                     if a == Some(0) {
                         break right;
                     }
-                    if let Some((base, removed)) = subtraction(right) {
-                        if removed == left {
-                            break base;
-                        }
+                    if let Some((base, removed)) = subtraction(right)
+                        && removed == left
+                    {
+                        break base;
                     }
-                    if let Some((base, removed)) = subtraction(left) {
-                        if removed == right {
-                            break base;
-                        }
+                    if let Some((base, removed)) = subtraction(left)
+                        && removed == right
+                    {
+                        break base;
                     }
                     let mut cancelled = None;
                     for (negation, sum) in [(left, right), (right, left)] {
                         if let (Some((zero, removed)), Some((a, b))) =
                             (subtraction(negation), addition(sum))
+                            && constant(zero) == Some(0)
                         {
-                            if constant(zero) == Some(0) {
-                                if removed == a {
-                                    cancelled = Some(b);
-                                }
-                                if removed == b {
-                                    cancelled = Some(a);
-                                }
+                            if removed == a {
+                                cancelled = Some(b);
+                            }
+                            if removed == b {
+                                cancelled = Some(a);
                             }
                         }
                     }

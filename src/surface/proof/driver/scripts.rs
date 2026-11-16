@@ -392,6 +392,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     proof = closed;
                 }
                 ProofTactic::SolveUsing(solve) => {
+                    let mut search = attempt::search_scope("written solve using");
                     let (selected, checks) =
                         crate::surface::proof_diagnostics::capture_check_observations(|| {
                             crate::kernel::search::ProofSearch::try_restricted_solve_closure(
@@ -406,10 +407,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         }) {
                             return Err(proof.step_error(
                                 "checked `solve` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
-                            ));
+                            ).with_search_failures(search.finish()));
                         }
-                        // Arithmetic is the last closer `solve() using`
-                        // tries; its own refusal says why the listed
+                        // Preserve arithmetic's own refusal alongside theorem
+                        // discovery: it says why the listed
                         // premises fall short, as `arithmetic() using`
                         // reported it.
                         let arithmetic = match proof
@@ -435,8 +436,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             Ok(_) => String::new(),
                         };
                         check_verification_deadline()?;
-                        return Err(proof.step_error(format!("`solve() using` could not prove the current goal from only its listed premises{arithmetic}")).with_check_observations(checks));
+                        return Err(proof.step_error(format!("`solve() using` could not prove the current goal from only its listed premises{arithmetic}")).with_check_observations(checks).with_search_failures(search.finish()));
                     };
+                    search.succeed();
                     proof = closed;
                 }
                 ProofTactic::Have(have) => {

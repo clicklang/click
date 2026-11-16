@@ -7,8 +7,8 @@ use crate::kernel::int32_constant;
 use crate::kernel::{CompareRelation, MachineCastSpelling, MachineIntegerType, OverflowOperation};
 mod observable;
 mod ownership_admission;
-pub(crate) use ownership_admission::OwnershipAdmission;
 use ownership_admission::PendingOwnershipAdmission;
+pub(crate) use ownership_admission::{FlatBodyAdmission, OwnershipAdmission};
 
 /// A proof-aware composition query in progress on this thread. Bridging a
 /// query's state form to a carrier entry can itself ask whether a
@@ -360,9 +360,7 @@ fn memory_base_variable(base: &Pointer) -> Option<Variable> {
                 pending.push(left);
             }
             PointerOffsetTerm::Int32Scaled { value, byte_width } if *byte_width > 0 => {
-                let Some(candidate) = value.operand_view().variable() else {
-                    return None;
-                };
+                let candidate = value.operand_view().variable()?;
                 if variable.is_some() || crate::kernel::is_load_variable(candidate) {
                     return None;
                 }
@@ -3444,6 +3442,48 @@ impl ResourceContext {
         matches!(fact, ResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
     }
 
+    /// Select one actual occurrence, retaining a projection's own identity.
+    /// Descent belongs to that witness, not to its equal resource term.
+    pub(crate) fn structural_witness_occurrence(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceOccurrenceId> {
+        crate::instrumentation::record_deterministic_work(1);
+        let owner = required
+            .is_view()
+            .then(|| ResourceFact::own(required.resource().clone()));
+        let exact = self.storage.index.exact.get(required).or_else(|| {
+            owner
+                .as_ref()
+                .and_then(|owned| self.storage.index.exact.get(owned))
+        });
+        let entry = if let Some(entries) = exact {
+            if entries.len() != 1 {
+                return None;
+            }
+            *entries.iter().next()?
+        } else {
+            let entries = self.class_shape_candidates(required, assumptions)?;
+            if entries.len() != 1 {
+                return None;
+            }
+            *entries.iter().next()?
+        };
+        resource_fact_entails(self.fact(entry), required, assumptions)
+            .then(|| self.occurrence(entry))
+    }
+
+    pub(crate) fn structural_fact_at_occurrence(
+        &self,
+        occurrence: ResourceOccurrenceId,
+    ) -> Option<&ResourceFact> {
+        self.storage
+            .entry_by_occurrence
+            .get(&occurrence)
+            .map(|entry| self.fact(*entry))
+    }
+
     /// Select an exact owned occurrence for a fact-only API. Equal owned
     /// facts are distinct authorities, so callers that need to attach a
     /// projection must reject an ambiguous value-only lookup.
@@ -5988,6 +6028,32 @@ impl ResourceContext {
             source,
             destination: frame.occurrence(entry),
             consumed_input: Some(input),
+            fresh_allocation: None,
+        };
+        frame.advance_prepared_memory_equalities(assumptions);
+        (frame, transfer)
+    }
+
+    /// Apply allocator-established separation to one returned owned piece.
+    /// Actual output custody remains checked at body exit; freshness removes
+    /// only discovery of overlap with the caller's pre-allocation frame.
+    pub(in crate::kernel) fn return_fresh_allocation(
+        transfer: crate::kernel::functions::ReturnedFreshAllocation,
+        assumptions: &PureFactContext,
+    ) -> (Self, crate::kernel::functions::ReturnResourceTransfer) {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("fresh allocation return");
+        let (mut frame, output, source, allocation) = transfer.into_parts();
+        if frame.storage.facts.is_empty() {
+            frame.synchronize_memory_equalities(assumptions);
+        }
+        let entry = frame.storage.next_entry_id;
+        frame.insert_fact(output);
+        let transfer = crate::kernel::functions::ReturnResourceTransfer {
+            source,
+            destination: frame.occurrence(entry),
+            consumed_input: None,
+            fresh_allocation: Some(allocation),
         };
         frame.advance_prepared_memory_equalities(assumptions);
         (frame, transfer)
@@ -7183,9 +7249,7 @@ impl ResourceContext {
     ) -> Option<Self> {
         let range = required.memory_own_range().expect("unit ownership query");
         let candidates = self.memory_fact_candidates(range, true, assumptions);
-        let Some(first) = candidates.entries.single_supplier() else {
-            return None;
-        };
+        let first = candidates.entries.single_supplier()?;
         let mut next = first;
         let mut visited = BTreeSet::new();
         let mut joined: Option<ResourceFact> = None;
@@ -7197,9 +7261,7 @@ impl ResourceContext {
             if available.owned_quantity_term().and_then(|q| q.as_const()) != Some(1) {
                 return None;
             }
-            let Some(piece) = candidates.supplier_at_base(next, range.base()) else {
-                return None;
-            };
+            let piece = candidates.supplier_at_base(next, range.base())?;
             // A selected cell such as (p + i)[0..1] must use the request's
             // coordinates before containment and adjacency. This restates one
             // supplied footprint; it never discovers another owner or alias.
@@ -7218,9 +7280,7 @@ impl ResourceContext {
                 }
                 _ => piece,
             };
-            let Some(piece_range) = piece.memory_own_range() else {
-                return None;
-            };
+            let piece_range = piece.memory_own_range()?;
             if range.typed_carrier
                 && !assumptions.access_designations_match(range.access_designation(), piece_range)
             {
@@ -7228,17 +7288,9 @@ impl ResourceContext {
             }
             let combined = match joined {
                 None => piece,
-                Some(ref prior) => {
-                    let Some(combined) = normalize_resource_fact_pair(prior, &piece, assumptions)
-                    else {
-                        return None;
-                    };
-                    combined
-                }
+                Some(ref prior) => normalize_resource_fact_pair(prior, &piece, assumptions)?,
             };
-            let Some(combined_range) = combined.memory_own_range() else {
-                return None;
-            };
+            let combined_range = combined.memory_own_range()?;
             // Do not continue a chain outside the footprint the query names.
             if !memory_range_covers(range, combined_range, assumptions) {
                 return None;
@@ -7257,9 +7309,7 @@ impl ResourceContext {
             if resource_fact_entails(&combined, required, assumptions) {
                 return Some(self);
             }
-            let Some(successor) = candidates.sole_owned_start(&combined_range.end_pointer()) else {
-                return None;
-            };
+            let successor = candidates.sole_owned_start(&combined_range.end_pointer())?;
             joined = Some(combined);
             next = successor;
         }
@@ -7565,6 +7615,14 @@ impl ResourceContext {
             }
         }
         for entries in buckets {
+            // Proof-relevant witnesses, like loan-bound views, keep their
+            // native occurrences instead of being folded into equal facts.
+            if let Some(entry) = entries.iter().next()
+                && self.protects_structural_resource(self.fact(*entry).resource())
+            {
+                continue;
+            }
+
             let original = entries
                 .iter()
                 .map(|entry| self.fact(*entry).clone())
@@ -7914,9 +7972,13 @@ impl ResourceContext {
         // representation is the checked one; keep it. The map is empty under
         // legacy semantics, so this costs nothing and changes nothing there.
         let loan_bound = |occurrence: &Option<ResourceOccurrenceId>| {
-            !self.loan_dependencies.map.is_empty()
-                && occurrence
-                    .is_some_and(|occurrence| self.loan_dependencies.map.get(&occurrence).is_some())
+            occurrence.is_some_and(|occurrence| {
+                self.loan_dependencies.map.get(&occurrence).is_some()
+                    || self
+                        .structural_witnesses
+                        .as_ref()
+                        .is_some_and(|witnesses| witnesses.contains(occurrence))
+            })
         };
         let mut i = 0;
         while i < slots.len() {

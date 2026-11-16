@@ -228,7 +228,7 @@ fn private_owner_projection_does_not_republish_discarded_pairings() {
         let mut resources = base;
         for index in 0..size {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-                Memory::local_pointer(&format!("hidden_{index}")),
+                Memory::local_pointer(format!("hidden_{index}")),
                 0u32.into(),
                 1u32.into(),
             )));
@@ -1968,7 +1968,7 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
         let (_, sequence_work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
                 resources = resources.clone().unchecked_with_fact(owned_range(
-                    Memory::local_pointer(&format!("hidden_{index}")),
+                    Memory::local_pointer(format!("hidden_{index}")),
                     0,
                     4,
                 ));
@@ -2008,7 +2008,7 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
                 resources = resources
                     .clone()
                     .without_exact_representation(&owned_range(
-                        Memory::local_pointer(&format!("hidden_{index}")),
+                        Memory::local_pointer(format!("hidden_{index}")),
                         0,
                         4,
                     ))
@@ -2078,7 +2078,7 @@ fn observable_projection_shares_first_projection_across_cold_forks() {
                 ]
                 .into_iter()
                 .chain((0..size).map(|index| {
-                    owned_range(Memory::local_pointer(&format!("hidden_{index}")), 0, 4)
+                    owned_range(Memory::local_pointer(format!("hidden_{index}")), 0, 4)
                 })),
             );
         let forks = [root.clone(), root.clone(), root.clone()];
@@ -2124,7 +2124,7 @@ fn observable_projection_reuses_local_edits_across_sibling_paths() {
         ]);
         for i in 0..size {
             source = source.unchecked_with_fact(owned_range(
-                Memory::local_pointer(&format!("hidden_{i}")),
+                Memory::local_pointer(format!("hidden_{i}")),
                 0,
                 4,
             ));
@@ -2174,7 +2174,7 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
             .unchecked_with_facts([owner.clone(), owned_range(heap_base(2), 0, 4)]);
         for i in 0..size {
             source = source.unchecked_with_fact(owned_range(
-                Memory::local_pointer(&format!("hidden_{i}")),
+                Memory::local_pointer(format!("hidden_{i}")),
                 0,
                 4,
             ));

@@ -18,6 +18,9 @@ fn old_collect_spec_expression_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match expression {
+        SpecExpression::ObjectAddress(address) => {
+            old_collect_spec_expression_bitvector_variables(&address.base, variables)
+        }
         SpecExpression::ResourceField { .. } => {}
         SpecExpression::IntegerToMachine { value, .. } => {
             old_collect_spec_integer_variables(value, variables);
@@ -116,11 +119,6 @@ fn old_collect_spec_proposition_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match proposition {
-        SpecProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                old_collect_spec_resource_bitvector_variables(r, variables);
-            }
-        }
         SpecProposition::IntegerComparison { left, right, .. } => {
             old_collect_spec_integer_variables(left, variables);
             old_collect_spec_integer_variables(right, variables);
@@ -402,6 +400,9 @@ fn old_collect_spec_integer_bound_expression(
     integer_seen: &mut SeenTerms,
 ) {
     match expression {
+        SpecExpression::ObjectAddress(address) => {
+            old_collect_spec_integer_bound_expression(&address.base, variables, integer_seen)
+        }
         SpecExpression::Value(value) => {
             collect_program_value_bound_identities(value, variables, integer_seen);
         }
@@ -608,11 +609,6 @@ fn old_collect_spec_proposition_bound_identities(
     integer_seen: &mut SeenTerms,
 ) {
     match proposition {
-        SpecProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                old_collect_spec_resource_bound_identities(r, variables, integer_seen);
-            }
-        }
         SpecProposition::IntegerComparison { left, right, .. } => {
             old_collect_spec_integer_bound_variables_inner(left, variables, integer_seen);
             old_collect_spec_integer_bound_variables_inner(right, variables, integer_seen);

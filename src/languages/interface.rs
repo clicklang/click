@@ -1771,9 +1771,9 @@ pub enum RustIteratorKind {
     /// a value of the library's `SliceIter` at this type, which a proof
     /// names `iter` and reads with that type's methods.
     SliceLibrary(crate::kernel::TypeParameterName),
-    /// `ChunksExact<u8>`: one local holding a value of the library's
-    /// `ChunksExact<uint8>`, which a proof names `iter` and reads with that
-    /// type's methods.
+    /// `ChunksExact<u8>`: its fields `_v`, `_v_len`, `_rem`, `_rem_len`
+    /// and `_chunk_size`, which a proof reads as `iter.v`, `iter.v.len()`,
+    /// `iter.rem`, `iter.rem.len()` and `iter.chunk_size`.
     Chunks,
     /// `Range`: `_start` and `_end`.
     Range,

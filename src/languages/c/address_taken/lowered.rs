@@ -140,7 +140,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             }
             ProgramExpression::Variable(name) => {
                 if addressed {
-                    summary.taken.insert(name.clone().into());
+                    summary.taken.insert(name.clone());
                 }
             }
             ProgramExpression::StringLiteral(_)

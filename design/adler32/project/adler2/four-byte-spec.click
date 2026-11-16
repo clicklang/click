@@ -7,35 +7,19 @@ theorem adler_four_byte_native_result(x0: uint8, x1: uint8, x2: uint8, x3: uint8
  ensures to_integer(((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) + x3 as uint32) % 65521u32) == truncating_remainder(1 + to_integer(x0 as int32) + to_integer(x1 as int32) + to_integer(x2 as int32) + to_integer(x3 as int32), 65521)
      and to_integer(((((4u32 + (x0 as uint32 * 4u32)) + ((x1 as uint32 * 4u32) + (65521u32 - x1 as uint32))) + ((x2 as uint32 * 4u32) + ((65521u32 - x2 as uint32) * 2u32))) + ((x3 as uint32 * 4u32) + ((65521u32 - x3 as uint32) * 3u32))) % 65521u32) == truncating_remainder(4 + 4 * to_integer(x0 as int32) + 3 * to_integer(x1 as int32) + 2 * to_integer(x2 as int32) + to_integer(x3 as int32), 65521) by {
  apply(adler_byte_bounds(x0));
- have to_integer(x0 as uint32) == to_integer(x0 as int32) by { arithmetic_certificate rules {
-  premise 0: 0 <= to_integer(x0 as int32) => 0 <= to_integer(x0 as int32);
-  premise 1: to_integer(x0 as int32) <= 255 => to_integer(x0 as int32) <= 255;
-  integer_cast_identity bounds [0, 1] => to_integer(x0 as uint32) == to_integer(x0 as int32); conclusion 0;
- } }
+ have to_integer(x0 as uint32) == to_integer(x0 as int32) by { solve() using { 0 <= to_integer(x0 as int32); to_integer(x0 as int32) <= 255; }; }
  have 0 <= to_integer(x0 as uint32) by solve() using { to_integer(x0 as uint32) == to_integer(x0 as int32); 0 <= to_integer(x0 as int32); to_integer(x0 as int32) <= 255; };
  have to_integer(x0 as uint32) <= 255 by solve() using { to_integer(x0 as uint32) == to_integer(x0 as int32); 0 <= to_integer(x0 as int32); to_integer(x0 as int32) <= 255; };
  apply(adler_byte_bounds(x1));
- have to_integer(x1 as uint32) == to_integer(x1 as int32) by { arithmetic_certificate rules {
-  premise 0: 0 <= to_integer(x1 as int32) => 0 <= to_integer(x1 as int32);
-  premise 1: to_integer(x1 as int32) <= 255 => to_integer(x1 as int32) <= 255;
-  integer_cast_identity bounds [0, 1] => to_integer(x1 as uint32) == to_integer(x1 as int32); conclusion 0;
- } }
+ have to_integer(x1 as uint32) == to_integer(x1 as int32) by { solve() using { 0 <= to_integer(x1 as int32); to_integer(x1 as int32) <= 255; }; }
  have 0 <= to_integer(x1 as uint32) by solve() using { to_integer(x1 as uint32) == to_integer(x1 as int32); 0 <= to_integer(x1 as int32); to_integer(x1 as int32) <= 255; };
  have to_integer(x1 as uint32) <= 255 by solve() using { to_integer(x1 as uint32) == to_integer(x1 as int32); 0 <= to_integer(x1 as int32); to_integer(x1 as int32) <= 255; };
  apply(adler_byte_bounds(x2));
- have to_integer(x2 as uint32) == to_integer(x2 as int32) by { arithmetic_certificate rules {
-  premise 0: 0 <= to_integer(x2 as int32) => 0 <= to_integer(x2 as int32);
-  premise 1: to_integer(x2 as int32) <= 255 => to_integer(x2 as int32) <= 255;
-  integer_cast_identity bounds [0, 1] => to_integer(x2 as uint32) == to_integer(x2 as int32); conclusion 0;
- } }
+ have to_integer(x2 as uint32) == to_integer(x2 as int32) by { solve() using { 0 <= to_integer(x2 as int32); to_integer(x2 as int32) <= 255; }; }
  have 0 <= to_integer(x2 as uint32) by solve() using { to_integer(x2 as uint32) == to_integer(x2 as int32); 0 <= to_integer(x2 as int32); to_integer(x2 as int32) <= 255; };
  have to_integer(x2 as uint32) <= 255 by solve() using { to_integer(x2 as uint32) == to_integer(x2 as int32); 0 <= to_integer(x2 as int32); to_integer(x2 as int32) <= 255; };
  apply(adler_byte_bounds(x3));
- have to_integer(x3 as uint32) == to_integer(x3 as int32) by { arithmetic_certificate rules {
-  premise 0: 0 <= to_integer(x3 as int32) => 0 <= to_integer(x3 as int32);
-  premise 1: to_integer(x3 as int32) <= 255 => to_integer(x3 as int32) <= 255;
-  integer_cast_identity bounds [0, 1] => to_integer(x3 as uint32) == to_integer(x3 as int32); conclusion 0;
- } }
+ have to_integer(x3 as uint32) == to_integer(x3 as int32) by { solve() using { 0 <= to_integer(x3 as int32); to_integer(x3 as int32) <= 255; }; }
  have 0 <= to_integer(x3 as uint32) by solve() using { to_integer(x3 as uint32) == to_integer(x3 as int32); 0 <= to_integer(x3 as int32); to_integer(x3 as int32) <= 255; };
  have to_integer(x3 as uint32) <= 255 by solve() using { to_integer(x3 as uint32) == to_integer(x3 as int32); 0 <= to_integer(x3 as int32); to_integer(x3 as int32) <= 255; };
  have to_integer(1u32) + to_integer(x0 as uint32) <= 4294967295 by solve() using { to_integer(x0 as uint32) <= 255; };

@@ -3574,7 +3574,6 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
             ClickProposition::PredicateCall { arguments, .. } => expressions.extend(arguments),
             // A state proposition reads its own state.
             ClickProposition::At { .. }
-            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
@@ -4962,7 +4961,7 @@ pub(super) fn describe_memory_block(
         // A block's spelling carries where the storage lives, which is the
         // verifier's business; the reader wrote only the name. `local:` covers
         // the re-declaration and call-frame forms too (`local:lifetime:2:q`,
-        // `local:frame:3:__return`), whose last segment is that name.
+        // `local:frame:3:parameter`), whose last segment is that name.
         PointerBlock::Concrete(name) => Some(
             name.strip_prefix("global:")
                 .or_else(|| {
@@ -5088,7 +5087,11 @@ pub(in crate::surface) fn describe_pointer(
 ) -> String {
     if matches!(
         pointer.block,
-        PointerBlock::AutomaticLocal { .. } | PointerBlock::StaticObject { .. }
+        PointerBlock::ContractResult
+            | PointerBlock::ContractException
+            | PointerBlock::AggregateReturn { .. }
+            | PointerBlock::AutomaticLocal { .. }
+            | PointerBlock::StaticObject { .. }
     ) {
         return if pointer.offset == PointerOffsetTerm::Constant(0) {
             pointer.block.to_string()
@@ -5714,7 +5717,10 @@ pub(super) fn describe_program_value(
         ProgramValue::Pointer(pointer)
             if matches!(
                 pointer.pointer().block,
-                PointerBlock::StringLiteral { .. }
+                PointerBlock::ContractResult
+                    | PointerBlock::ContractException
+                    | PointerBlock::AggregateReturn { .. }
+                    | PointerBlock::StringLiteral { .. }
                     | PointerBlock::AutomaticLocal { .. }
                     | PointerBlock::StaticObject { .. }
             ) =>

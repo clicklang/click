@@ -1610,6 +1610,40 @@ permitted stores or a transition that drops the fact:
   Exact flat borrows retain the caller's original checked partition instead
   of reconstructing and validating every old owner. Returned flat resources
   use incremental composition, checking each new owner and its conflicts.
+  Ordinary unit returned composites carry one constructed body per emitted
+  source occurrence, including acyclic owned/viewed nesting and decided
+  conditional bodies. `ConstructedReturnBodies` retains each child's producer-assigned ID
+  and parent, before normalization. Fixed consumed-input paths are selected
+  from contract parameter bindings at entry; invariant borrowed footprints
+  and actual allocation provenance supply the other explicit transfers.
+  Post-call loads do not acquire invariant-borrow authority. Body custody,
+  allocation extent and lifetime checks still apply to executed returns.
+  Admission uses only the remaining unclassified ownership boundary, so cold
+  or symbolic fallback cannot rediscover separation for transferred children.
+  Prepared constant-coordinate memory leaves query the frame's address-class
+  interval index; conflicts name the selected original held fact. Cold and
+  symbolic boundary checks retain explicitly named legacy discovery, comparing
+  only each new piece with retained owners. They never install a temporary
+  combined context, revalidate the unchanged frame or the constructed body's
+  internal partition, or scan the frame again to name a conflict. Exclusive
+  boundaries select the retained occurrence by resource or instance identity.
+  Projections, packaged views and expansion caches reuse the same construction. Flat memory
+  and token returns project directly, without generic composite expansion.
+  An undecided body condition retains the opaque head; a decided false body
+  produces emp. Viewed children keep their emitted source identities and
+  stay views even when their definitions contain ownership clauses; they
+  never acquire consumed-input, invariant-owner or fresh-allocation custody.
+  A selected viewed expansion transfers only its exact source dependency,
+  without enumerating equal-looking heads. Escaping loan recovery retains the
+  installed owner occurrence and gives each returned owner its own hold;
+  consuming one equal-looking owner cannot release another's hold. Repackaging
+  a borrowing head retains its selected input hold by ID even when the returned
+  head's name changes; further returned owners receive additional holds.
+  Loan backing
+  selection still uses the existing call-plan compatibility checks.
+  Recursive, existential, matched and authority cases retain explicitly
+  classified legacy routes. Failure constructing a
+  migrated body refuses the return rather than retrying legacy reconstruction.
   Monotone memory-evidence admission walks a smaller incoming contract or a
   shared persistent delta, without enumerating absent caller facts. Scalar
   refresh seeks only the equality class's concrete `local:` block interval,

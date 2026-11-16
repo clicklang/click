@@ -54,18 +54,10 @@ int32 sum(int32 a[], int32 n) {
         };
     }
     have 0 <= (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-        arithmetic_certificate {
-            premise 0: (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0 => (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0;
-            less_equal_from_equal 0 reverse => 0 <= (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-            conclusion 1;
-        }
+        solve() using { (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0; };
     }
     have (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= 0 by {
-        arithmetic_certificate {
-            premise 0: (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0 => (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0;
-            less_equal_from_equal 0 => (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= 0;
-            conclusion 1;
-        }
+        solve() using { (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0; };
     }
     loop as sum {
         decreases (n - i);
@@ -101,25 +93,13 @@ int32 sum(int32 a[], int32 n) {
                 have (-1000 * to_integer(i)) == 0 by {
                     normalize();
                 }
-                arithmetic_certificate {
-                    premise 0: (-1000 * to_integer(i)) == 0 => (-1000 * to_integer(i)) == 0;
-                    less_equal_from_equal 0 => (-1000 * to_integer(i)) <= 0;
-                    premise 1: 0 <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => 0 <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    add 1, 2 => ((-1000 * to_integer(i)) + 0) <= (0 + (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }));
-                    conclusion 3;
-                }
+                solve() using { (-1000 * to_integer(i)) == 0; 0 <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); };
             }
             have (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i)) by {
                 have (1000 * to_integer(i)) == 0 by {
                     normalize();
                 }
-                arithmetic_certificate {
-                    premise 0: (1000 * to_integer(i)) == 0 => (1000 * to_integer(i)) == 0;
-                    less_equal_from_equal 0 reverse => 0 <= (1000 * to_integer(i));
-                    premise 1: (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= 0 => (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= 0;
-                    add 2, 1 => ((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + 0) <= (0 + (1000 * to_integer(i)));
-                    conclusion 3;
-                }
+                solve() using { (1000 * to_integer(i)) == 0; (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= 0; };
             }
         }
         preserve by {
@@ -133,68 +113,25 @@ int32 sum(int32 a[], int32 n) {
             have to_integer(i) <= 1000 by {
                 have to_integer(i) <= to_integer(n);
                 have to_integer(n) <= 1000;
-                arithmetic_certificate {
-                    premise 0: to_integer(i) <= to_integer(n) => to_integer(i) <= to_integer(n);
-                    premise 1: to_integer(n) <= 1000 => to_integer(n) <= 1000;
-                    add 0, 1 => (to_integer(i) + to_integer(n)) <= (to_integer(n) + 1000);
-                    conclusion 2;
-                }
+                solve() using { to_integer(i) <= to_integer(n); to_integer(n) <= 1000; };
             }
             have (-1000 * to_integer(i)) <= to_integer(total) by {
-                arithmetic_certificate {
-                    premise 0: to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    less_equal_from_equal 0 reverse => (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= to_integer(total);
-                    premise 1: (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    add 1, 2 => ((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + (-1000 * to_integer(i))) <= (to_integer(total) + (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }));
-                    conclusion 3;
-                }
+                solve() using { to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); };
             }
             have to_integer(total) <= (1000 * to_integer(i)) by {
-                arithmetic_certificate {
-                    premise 0: to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    less_equal_from_equal 0 => to_integer(total) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    premise 1: (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i)) => (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i));
-                    add 1, 2 => (to_integer(total) + (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) })) <= ((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + (1000 * to_integer(i)));
-                    conclusion 3;
-                }
+                solve() using { to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i)); };
             }
             have ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])) by {
-                arithmetic_certificate {
-                    premise 0: (-1000 * to_integer(i)) <= to_integer(total) => (-1000 * to_integer(i)) <= to_integer(total);
-                    premise 1: -1000 <= to_integer(a[i]) => -1000 <= to_integer(a[i]);
-                    add 0, 1 => ((-1000 * to_integer(i)) + -1000) <= (to_integer(total) + to_integer(a[i]));
-                    conclusion 2;
-                }
+                solve() using { (-1000 * to_integer(i)) <= to_integer(total); -1000 <= to_integer(a[i]); };
             }
             have (to_integer(total) + to_integer(a[i])) >= -2147483648 by {
-                arithmetic_certificate {
-                    premise 0: ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])) => ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i]));
-                    premise 1: to_integer(i) <= 1000 => to_integer(i) <= 1000;
-                    scale 1 by 1000 => (1000 * to_integer(i)) <= to_integer((1000 * 1000));
-                    add 0, 2 => (((-1000 * to_integer(i)) - 1000) + (1000 * to_integer(i))) <= ((to_integer(total) + to_integer(a[i])) + (1000 * 1000));
-                    trivial => -2146482648 <= 0;
-                    add 3, 4 => ((((-1000 * to_integer(i)) - 1000) + (1000 * to_integer(i))) + -2146482648) <= (((to_integer(total) + to_integer(a[i])) + (1000 * 1000)) + 0);
-                    conclusion 5;
-                }
+                solve() using { ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])); to_integer(i) <= 1000; };
             }
             have (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000) by {
-                arithmetic_certificate {
-                    premise 0: to_integer(total) <= (1000 * to_integer(i)) => to_integer(total) <= (1000 * to_integer(i));
-                    premise 1: to_integer(a[i]) <= 1000 => to_integer(a[i]) <= 1000;
-                    add 0, 1 => (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000);
-                    conclusion 2;
-                }
+                solve() using { to_integer(total) <= (1000 * to_integer(i)); to_integer(a[i]) <= 1000; };
             }
             have (to_integer(total) + to_integer(a[i])) <= 2147483647 by {
-                arithmetic_certificate {
-                    premise 0: (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000) => (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000);
-                    premise 1: to_integer(i) <= 1000 => to_integer(i) <= 1000;
-                    scale 1 by 1000 => (1000 * to_integer(i)) <= to_integer((1000 * 1000));
-                    add 0, 2 => ((to_integer(total) + to_integer(a[i])) + (1000 * to_integer(i))) <= (((1000 * to_integer(i)) + 1000) + (1000 * 1000));
-                    trivial => -2146482647 <= 0;
-                    add 3, 4 => (((to_integer(total) + to_integer(a[i])) + (1000 * to_integer(i))) + -2146482647) <= ((((1000 * to_integer(i)) + 1000) + (1000 * 1000)) + 0);
-                    conclusion 5;
-                }
+                solve() using { (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000); to_integer(i) <= 1000; };
             }
             have defined(a[i]) by {
                 transport(viewable(a[0..n]), defined(a[i])) using {
@@ -215,12 +152,7 @@ int32 sum(int32 a[], int32 n) {
             }
             have to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i]));
             have to_integer((total + a[i])) == ((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[i])) by {
-                arithmetic_certificate {
-                    premise 0: to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])) => to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i]));
-                    premise 1: to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    add 0, 1 => (to_integer((total + a[i])) + to_integer(total)) == ((to_integer(total) + to_integer(a[i])) + (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }));
-                    conclusion 2;
-                }
+                solve() using { to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])); to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); };
             }
             have i < 2147483647 by {
                 have i < 1000;
@@ -233,42 +165,16 @@ int32 sum(int32 a[], int32 n) {
             have defined((i + 1));
             have to_integer((i + 1)) == (to_integer(i) + to_integer(1));
             have (-1000 * to_integer((i + 1))) <= (to_integer(total) + to_integer(a[i])) by {
-                arithmetic_certificate {
-                    premise 0: ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])) => ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i]));
-                    premise 1: to_integer((i + 1)) == (to_integer(i) + to_integer(1)) => to_integer((i + 1)) == (to_integer(i) + to_integer(1));
-                    less_equal_from_equal 1 reverse => (to_integer(i) + to_integer(1)) <= to_integer((i + 1));
-                    scale 2 by 1000 => (1000 * (to_integer(i) + to_integer(1))) <= (1000 * to_integer((i + 1)));
-                    add 0, 3 => (((-1000 * to_integer(i)) - 1000) + (1000 * (to_integer(i) + to_integer(1)))) <= ((to_integer(total) + to_integer(a[i])) + (1000 * to_integer((i + 1))));
-                    conclusion 4;
-                }
+                solve() using { ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])); to_integer((i + 1)) == (to_integer(i) + to_integer(1)); };
             }
             have (-1000 * to_integer((i + 1))) <= to_integer((total + a[i])) by {
-                arithmetic_certificate {
-                    premise 0: (-1000 * to_integer((i + 1))) <= (to_integer(total) + to_integer(a[i])) => (-1000 * to_integer((i + 1))) <= (to_integer(total) + to_integer(a[i]));
-                    premise 1: to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])) => to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i]));
-                    less_equal_from_equal 1 reverse => (to_integer(total) + to_integer(a[i])) <= to_integer((total + a[i]));
-                    add 0, 2 => ((-1000 * to_integer((i + 1))) + (to_integer(total) + to_integer(a[i]))) <= ((to_integer(total) + to_integer(a[i])) + to_integer((total + a[i])));
-                    conclusion 3;
-                }
+                solve() using { (-1000 * to_integer((i + 1))) <= (to_integer(total) + to_integer(a[i])); to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])); };
             }
             have (to_integer(total) + to_integer(a[i])) <= (1000 * to_integer((i + 1))) by {
-                arithmetic_certificate {
-                    premise 0: (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000) => (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000);
-                    premise 1: to_integer((i + 1)) == (to_integer(i) + to_integer(1)) => to_integer((i + 1)) == (to_integer(i) + to_integer(1));
-                    less_equal_from_equal 1 reverse => (to_integer(i) + to_integer(1)) <= to_integer((i + 1));
-                    scale 2 by 1000 => (1000 * (to_integer(i) + to_integer(1))) <= (1000 * to_integer((i + 1)));
-                    add 0, 3 => ((to_integer(total) + to_integer(a[i])) + (1000 * (to_integer(i) + to_integer(1)))) <= (((1000 * to_integer(i)) + 1000) + (1000 * to_integer((i + 1))));
-                    conclusion 4;
-                }
+                solve() using { (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000); to_integer((i + 1)) == (to_integer(i) + to_integer(1)); };
             }
             have to_integer((total + a[i])) <= (1000 * to_integer((i + 1))) by {
-                arithmetic_certificate {
-                    premise 0: to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])) => to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i]));
-                    less_equal_from_equal 0 => to_integer((total + a[i])) <= (to_integer(total) + to_integer(a[i]));
-                    premise 1: (to_integer(total) + to_integer(a[i])) <= (1000 * to_integer((i + 1))) => (to_integer(total) + to_integer(a[i])) <= (1000 * to_integer((i + 1)));
-                    add 1, 2 => (to_integer((total + a[i])) + (to_integer(total) + to_integer(a[i]))) <= ((to_integer(total) + to_integer(a[i])) + (1000 * to_integer((i + 1))));
-                    conclusion 3;
-                }
+                solve() using { to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])); (to_integer(total) + to_integer(a[i])) <= (1000 * to_integer((i + 1))); };
             }
             step();
             step();
@@ -289,35 +195,17 @@ int32 sum(int32 a[], int32 n) {
             have 0 <= i;
             have i <= n;
             have to_integer(total) == (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-                arithmetic_certificate {
-                    premise 0: to_integer(total) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)])) => to_integer(total) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)]));
-                    premise 1: (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)])) => (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)]));
-                    scale 1 by -1 => (-1 * (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) })) == (-1 * ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)])));
-                    add 0, 2 => (to_integer(total) + (-1 * (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }))) == (((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)])) + (-1 * ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)]))));
-                    conclusion 3;
-                }
+                solve() using { to_integer(total) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)])); (0..(at(region(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == ((0..at(region(5).entry, i)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[at(region(5).entry, i)])); };
             }
             have to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
                 rewrite(to_integer(i), to_integer((at(region(5).entry, i) + 1)));
                 known();
             }
             have (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-                arithmetic_certificate {
-                    premise 0: (-1000 * to_integer(i)) <= to_integer(total) => (-1000 * to_integer(i)) <= to_integer(total);
-                    premise 1: to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    less_equal_from_equal 1 => to_integer(total) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    add 0, 2 => ((-1000 * to_integer(i)) + to_integer(total)) <= (to_integer(total) + (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }));
-                    conclusion 3;
-                }
+                solve() using { (-1000 * to_integer(i)) <= to_integer(total); to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); };
             }
             have (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i)) by {
-                arithmetic_certificate {
-                    premise 0: to_integer(total) <= (1000 * to_integer(i)) => to_integer(total) <= (1000 * to_integer(i));
-                    premise 1: to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-                    less_equal_from_equal 1 reverse => (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= to_integer(total);
-                    add 0, 2 => (to_integer(total) + (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) })) <= ((1000 * to_integer(i)) + to_integer(total));
-                    conclusion 3;
-                }
+                solve() using { to_integer(total) <= (1000 * to_integer(i)); to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); };
             }
             have forall (k: int32) { k >= 0 and k < i implies defined(a[k]) } by {
                 intro();

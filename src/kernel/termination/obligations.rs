@@ -20,6 +20,7 @@ pub(super) enum TerminationCallObligation {
 
 #[derive(Debug)]
 pub(super) struct FunctionTerminationObligations {
+    pub input: super::inputs::LocalTerminationInput,
     pub recursive_callees: BTreeSet<String>,
     pub recursion: super::recursion_authority::RecursionAuthority,
     pub loop_indices: Vec<usize>,
@@ -50,7 +51,7 @@ pub(super) struct TerminationObligations {
 
 impl TerminationObligations {
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn generate(
+    pub(super) fn generate_independent(
         partial_rules: &[VerifiedFunctionRule],
         plan_entries: &[FunctionTerminationPlan],
         loop_rules: &BTreeMap<String, Vec<VerifiedLoopRule>>,
@@ -61,8 +62,9 @@ impl TerminationObligations {
         diverging_contracts: &BTreeSet<String>,
         allow_unused_recursive_measure: bool,
     ) -> Result<Self, TerminationError> {
-        Self::generate_with_recursion(
-            partial_rules,
+        let inputs = super::inputs::TerminationBodyInputs::independent(partial_rules, loop_rules);
+        Self::generate_from_inputs(
+            &inputs,
             plan_entries,
             loop_rules,
             inline_bodies,
@@ -76,8 +78,8 @@ impl TerminationObligations {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn generate_with_recursion(
-        partial_rules: &[VerifiedFunctionRule],
+    pub(super) fn generate_from_inputs(
+        inputs: &super::inputs::TerminationBodyInputs,
         plan_entries: &[FunctionTerminationPlan],
         loop_rules: &BTreeMap<String, Vec<VerifiedLoopRule>>,
         inline_bodies: &[&ProgramFunction],
@@ -88,6 +90,7 @@ impl TerminationObligations {
         allow_unused_recursive_measure: bool,
         declarations: Option<&super::recursion_authority::RecursionDeclarations>,
     ) -> Result<Self, TerminationError> {
+        let partial_rules = &inputs.rules;
         let (functions, calls) = termination_call_graph(partial_rules, inline_bodies);
         charge_termination_work(plan_entries.len());
         let mut plans = plan_entries
@@ -188,14 +191,19 @@ impl TerminationObligations {
             {
                 plan.clear_recursive_measure();
             }
-            let lowered_loop_body = contains_natural_control_loop(function.body());
+            let input = inputs.local(name);
+            let lowered_loop_body =
+                matches!(input, super::inputs::LocalTerminationInput::Independent)
+                    && contains_natural_control_loop(function.body());
             let loop_body = if lowered_loop_body {
                 function.body()
             } else {
                 &function.source_body
             };
             let mut loop_indices = Vec::new();
-            if let Some(exits) = retained_exits.get(name.as_str()) {
+            if let super::inputs::LocalTerminationInput::Completed(completed) = &input {
+                loop_indices.extend(0..completed.exits.count);
+            } else if let Some(exits) = retained_exits.get(name.as_str()) {
                 loop_indices.extend(0..exits.count);
             } else {
                 visit_loop_obligations(loop_body, &mut 0, &mut |index| {
@@ -203,7 +211,9 @@ impl TerminationObligations {
                     Ok(())
                 })?;
             }
-            if let Some(plan) = plans.get(name) {
+            if matches!(input, super::inputs::LocalTerminationInput::Independent)
+                && let Some(plan) = plans.get(name)
+            {
                 let addressed = std::cell::OnceCell::new();
                 let owned = loop_rules
                     .get(name)
@@ -250,6 +260,7 @@ impl TerminationObligations {
             function_goals.insert(
                 name.clone(),
                 FunctionTerminationObligations {
+                    input,
                     recursive_callees,
                     recursion,
                     loop_indices,

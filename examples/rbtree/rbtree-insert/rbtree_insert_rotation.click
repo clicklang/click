@@ -35,17 +35,22 @@ struct rb_node* rb_red_parent(struct rb_node* red) {
     }
 }
 
+resource insert_saved_tag(p: struct rb_node*, up: struct rb_node*) {
+    field word: uint64;
+    owns p->__rb_parent_color;
+    fact p->__rb_parent_color == word;
+    fact ((p->__rb_parent_color & ~3) as (struct rb_node*)) == up;
+}
+
 void __rb_change_child(struct rb_node* old, struct rb_node* new,
     struct rb_node* parent, struct rb_root* root) {
     consumes before: ctx_at(old, root);
-    owns old->__rb_parent_color;
+    owns saved: insert_saved_tag(old, new);
     requires old != 0;
     requires ctx_node_is(before.model, parent) == 1;
     produces after: ctx_at(new, root);
     ensures after.model == old(before.model);
-    ensures old->__rb_parent_color == old(old->__rb_parent_color);
-    ensures ((old->__rb_parent_color & ~3) as (struct rb_node *))
-    == old((old->__rb_parent_color & ~3) as (struct rb_node *));
+    ensures saved.word == old(saved.word);
 } by {
     match before.model {
         Context::Top => {
@@ -118,7 +123,12 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     solve();
                 },
                 RbTree::Node(sid, sp, sc, sl, sr) => {
+                    unfold(saved);
                     let { left: left, right: right } = unfold(sibling);
+                    have separate(memory(sid->__rb_parent_color), memory(old->__rb_parent_color)) by known();
+                    have sid != old by known();
+                    have address(sid) != address(old);
+                    let saved = fold(insert_saved_tag(old, new), { word: old->__rb_parent_color });
                     have sid == identity->rb_left by known();
                     have sid->rb_left == identity->rb_left->rb_left by { rewrite(sid, identity->rb_left); normalize(); }
                     have sid->rb_right == identity->rb_left->rb_right by { rewrite(sid, identity->rb_left); normalize(); }
@@ -188,11 +198,7 @@ theorem aligned_parent_word_from_bit(p: void*, bit: int32) {
             have 1 <= bit by { solve() using { 0 <= bit; not(bit == 0); }; }
             have bit == 1 by { solve() using { 1 <= bit; bit <= 1; }; }
             rewrite(bit, 1);
-            arithmetic_certificate rules {
-                premise 0: aligned(p, 8) => aligned(p, 8);
-                pointer_word_from_alignment alignments [0] => (address(p) | 1) == address(p) + 1;
-                conclusion 0;
-            }
+            solve() using { aligned(p, 8); };
         }
     }
 }
@@ -246,7 +252,9 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 rewrite(old->__rb_parent_color, (address(new) | color)); known();
             }
             mark words;
-            let { after: after } = step(__rb_change_child, { before: d });
+            let saved = fold(insert_saved_tag(old, new), { word: old->__rb_parent_color });
+            let { after: after } = step(__rb_change_child, { before: d, saved: saved });
+            unfold(saved);
             step_until(function.exit);
         },
         Context::Left(id, above, pc, sibling, up) => {
@@ -288,7 +296,9 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 rewrite(old->__rb_parent_color, (address(new) | color)); known();
             }
             mark words;
-            let { after: after } = step(__rb_change_child, { before: d });
+            let saved = fold(insert_saved_tag(old, new), { word: old->__rb_parent_color });
+            let { after: after } = step(__rb_change_child, { before: d, saved: saved });
+            unfold(saved);
             step_until(function.exit);
         },
         Context::Right(id, above, pc, sibling, up) => {
@@ -330,7 +340,9 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 rewrite(old->__rb_parent_color, (address(new) | color)); known();
             }
             mark words;
-            let { after: after } = step(__rb_change_child, { before: d });
+            let saved = fold(insert_saved_tag(old, new), { word: old->__rb_parent_color });
+            let { after: after } = step(__rb_change_child, { before: d, saved: saved });
+            unfold(saved);
             step_until(function.exit);
         },
     }
@@ -348,18 +360,10 @@ void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
     ensures ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p;
 } by {
     have aligned(p, 2) by {
-        arithmetic_certificate rules {
-            premise 0: aligned(p, 8) => aligned(p, 8);
-            pointer_alignment premise 0 => aligned(p, 2);
-            conclusion 0;
-        }
+        solve() using { aligned(p, 8); };
     }
     have aligned(p, 4) by {
-        arithmetic_certificate rules {
-            premise 0: aligned(p, 8) => aligned(p, 8);
-            pointer_alignment premise 0 => aligned(p, 4);
-            conclusion 0;
-        }
+        solve() using { aligned(p, 8); };
     }
     step();
     have rb->__rb_parent_color == (address(p) | color) by known();

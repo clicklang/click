@@ -33,13 +33,7 @@ int32 cursor(const uint8* p, int32 n) {
    have p == old(p) + (old(n) - n) by {
     rewrite(p, at(head, p) + 1);
     rewrite(to_integer(old(n) - n), to_integer((old(n) - at(head, n)) + 1));
-    arithmetic_certificate rules {
-     premise 0: at(head, p) == old(p) + (old(n) - at(head, n)) => at(head, p) == old(p) + (old(n) - at(head, n));
-     premise 1: 0 <= to_integer(old(n) - at(head, n)) => 0 <= to_integer(old(n) - at(head, n));
-     premise 2: to_integer(old(n) - at(head, n)) <= 14 => to_integer(old(n) - at(head, n)) <= 14;
-     pointer_translation relation 0 bounds [1, 2] => at(head, p) + 1 == old(p) + ((old(n) - at(head, n)) + 1);
-     conclusion 0;
-    }
+    solve() using { at(head, p) == old(p) + (old(n) - at(head, n)); 0 <= to_integer(old(n) - at(head, n)); to_integer(old(n) - at(head, n)) <= 14; };
    }
    have 0 <= n by solve() using { at(head, n) > 0; at(head, n) <= old(n); old(n) <= 15; };
    have n < at(head, n) by solve() using { at(head, n) > 0; at(head, n) <= old(n); old(n) <= 15; };

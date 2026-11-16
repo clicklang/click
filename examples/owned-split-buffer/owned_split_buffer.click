@@ -250,10 +250,7 @@ int32 owned_split_buffer_pipeline(
     have owner->len == length by { known(); }
     have owner->data == data by { known(); }
     have 1 < length by {
-        arithmetic_certificate {
-            premise 0: at(function.entry, 2 <= length) => at(function.entry, 2 <= length);
-            conclusion 0;
-        }
+        solve() using { at(function.entry, 2 <= length); };
     }
     have 1 < owner->len by {
         known();
@@ -270,6 +267,20 @@ int32 owned_split_buffer_pipeline(
     }
     step();
     step();
+    have separate(memory(owner->split), memory(data[1])) by { solve(); }
+    have separate(statement(5).call(0).footprint, memory(data[1])) by {
+        normalize() using { separate(memory(owner->split), memory(data[1])); };
+    }
+    have at(statement(5).call(0).exit, data[1]) == at(statement(5).call(0).entry, data[1]) by {
+        preserve(separate(statement(5).call(0).footprint, memory(data[1])));
+    }
+    have separate(memory(ignored), memory(data[1])) by { known(); }
+    have separate(statement(5).assignment(ignored, 0).footprint, memory(data[1])) by {
+        normalize() using { separate(memory(ignored), memory(data[1])); };
+    }
+    have at(statement(5).assignment(ignored, 0).exit, data[1]) == at(statement(5).assignment(ignored, 0).entry, data[1]) by {
+        preserve(separate(statement(5).assignment(ignored, 0).footprint, memory(data[1])));
+    }
     have to_integer(at(statement(5).exit, owner->split)) == (to_integer(at(statement(5).entry, owner->split)) + 1) by {
         known();
     }
@@ -281,6 +292,13 @@ int32 owned_split_buffer_pipeline(
     fold(owned_split_buffer(owner));
     step();
     step();
+    have separate(memory(result), memory(data[1])) by { known(); }
+    have separate(statement(6).assignment(result, 0).footprint, memory(data[1])) by {
+        normalize() using { separate(memory(result), memory(data[1])); };
+    }
+    have at(statement(6).assignment(result, 0).exit, data[1]) == at(statement(6).assignment(result, 0).entry, data[1]) by {
+        preserve(separate(statement(6).assignment(result, 0).footprint, memory(data[1])));
+    }
     have data[1] == right_value by { known(); }
     apply(int32_equality_transitive(c(result), data[1], right_value)) using {
         c(result) == data[1];

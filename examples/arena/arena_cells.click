@@ -486,10 +486,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             extract(0 <= k);
             extract(k < arena->capacity);
-            transport(old(arena->occupied[k]) == old(arena->occupied[k]), arena->occupied[k] == old(arena->occupied[k])) using {
-                0 <= k;
-                k < arena->capacity;
-            };
+            known();
         }
         known();
         have result == 0 or result == 1 by {
@@ -606,10 +603,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             extract(0 <= k);
             extract(k < arena->capacity);
-            transport(old(arena->occupied[k]) == old(arena->occupied[k]), arena->occupied[k] == old(arena->occupied[k])) using {
-                0 <= k;
-                k < arena->capacity;
-            };
+            known();
         }
         known();
         have result == 0 or result == 1 by {
@@ -740,14 +734,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         intro();
         extract(0 <= k);
         extract(k < arena->capacity);
-        transport(old(arena->occupied[k]) == old(arena->occupied[k]), arena->occupied[k] == old(arena->occupied[k])) using {
-            0 <= k;
-            k < arena->capacity;
-        };
+        known();
     }
     have viewable(arena->occupied[0..arena->capacity]) by {
-        transport(at(function.entry, viewable(arena->occupied[0..arena->capacity])), viewable(arena->occupied[0..arena->capacity])) using {
-        };
+        observe(old(arena->occupied)[0..old(arena->capacity)]);
     }
     let run = fold(arena_scan(arena->data, arena->occupied, arena->capacity), { lo: 0, hi: 0 });
     loop as find_first_free_run {
@@ -770,14 +760,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 both {
                     normalize();
                 } and {
-                    arithmetic_certificate {
-                        premise 0: at(function.entry, 0) < at(function.entry, count) =>
-                            at(function.entry, 0) < at(function.entry, count);
-                        trivial => -1 <= 0;
-                        add 0, 1 => (at(function.entry, 0) + -1) < (at(function.entry,
-                            to_integer((count as int32))) + 0);
-                        conclusion 2;
-                    }
+                    solve() using { at(function.entry, 0) < at(function.entry, count); };
                 }
             }
             have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k]) } by {
@@ -803,36 +786,14 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have 0 <= i by {
-                arithmetic_certificate {
-                    premise 0: 0 <= lo => 0 <= lo;
-                    premise 1: at(function.entry, lo) <= at(function.entry, i) => at(function.entry,
-                        lo) <= at(function.entry, i);
-                    add 0, 1 => (to_integer((0 as int32)) + at(function.entry, to_integer((lo as
-                        int32)))) <= (to_integer((lo as int32)) + at(function.entry, to_integer((i
-                        as int32))));
-                    conclusion 2;
-                }
+                solve() using { 0 <= lo; at(function.entry, lo) <= at(function.entry, i); };
             }
             have (to_integer(i) + 1) <= to_integer(arena->capacity) by {
-                arithmetic_certificate {
-                    negated_goal => to_integer(arena->capacity) < (to_integer(i) + 1);
-                    premise 0: to_integer(i) < to_integer(arena->capacity) => to_integer(i) <
-                        to_integer(arena->capacity);
-                    add 0, 1 => (to_integer(arena->capacity) + 1 + (to_integer(i) + 1)) <=
-                        (to_integer(i) + 1 + to_integer(arena->capacity));
-                    conclusion 2;
-                }
+                solve() using { to_integer(i) < to_integer(arena->capacity); };
             }
             if arena->occupied[i] == 0 {
                 have (to_integer(run_length) + 1) <= to_integer(count) by {
-                    arithmetic_certificate {
-                        negated_goal => to_integer(count) < (to_integer(run_length) + 1);
-                        premise 0: to_integer(run_length) < to_integer(count) =>
-                            to_integer(run_length) < to_integer(count);
-                        add 0, 1 => (to_integer(count) + 1 + (to_integer(run_length) + 1)) <=
-                            (to_integer(run_length) + 1 + to_integer(count));
-                        conclusion 2;
-                    }
+                    solve() using { to_integer(run_length) < to_integer(count); };
                 }
                 if at(region(13).entry, arena->occupied[i]) == at(region(13).entry, 0) {
                     step();
@@ -855,42 +816,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         };
                     } else {
                         have k <= at(iteration, i) by {
-                            arithmetic_certificate signed_int32 {
-                                premise 0: (at(region(13).entry, i) as int32) <
-                                    (at(region(13).entry, arena->capacity) as int32) =>
-                                    (at(region(13).entry, i) as int32) < (at(region(13).entry,
-                                    arena->capacity) as int32);
-                                premise 1: (k as int32) < (i as int32) => (k as int32) < (i as
-                                    int32);
-                                premise 2: (0 as int32) <= (at(region(13).entry, i) as int32) => (0
-                                    as int32) <= (at(region(13).entry, i) as int32);
-                                premise 3: (at(function.entry, arena->capacity) as int32) <=
-                                    (at(function.entry, 536870911) as int32) => (at(function.entry,
-                                    arena->capacity) as int32) <= (at(function.entry, 536870911) as
-                                    int32);
-                                add 0, 3 => (to_integer((at(region(13).entry, i) as int32)) +
-                                    to_integer((at(function.entry, arena->capacity) as int32))) <
-                                    (to_integer((at(region(13).entry, arena->capacity) as int32)) +
-                                    to_integer((at(function.entry, 536870911) as int32)));
-                                interval_from_affine 2 (at(region(13).entry, i)) (0) (2147483647);
-                                interval_from_affine 4 (at(region(13).entry, i)) (-2147483648)
-                                    (536870910);
-                                interval_intersect 5, 6 (0) (536870910);
-                                interval_atom (1) (1) (1);
-                                interval_add_bounded 7, 8 (1) (536870911);
-                                affine_premise 1 9 9 => to_integer((k as int32)) < to_integer((i as
-                                    int32));
-                                conclusion 10;
-                            }
+                            solve() using { (at(region(13).entry, i) as int32) <
+                                    (at(region(13).entry, arena->capacity) as int32); (k as int32) < (i as int32); (0 as int32) <= (at(region(13).entry, i) as int32); (at(function.entry, arena->capacity) as int32) <=
+                                    (at(function.entry, 536870911) as int32); };
                         }
                         have k == at(iteration, i) by {
-                            arithmetic_certificate {
-                                premise 0: k <= at(iteration, i) => k <= at(iteration, i);
-                                premise 1: not k < at(region(13).entry, i) => not k <
-                                    at(region(13).entry, i);
-                                equal_from_bounds 0, 1 => k == at(iteration, i);
-                                conclusion 2;
-                            }
+                            solve() using { k <= at(iteration, i); not k < at(region(13).entry, i); };
                         }
                         rewrite(k, at(iteration, i));
                         known();
@@ -900,142 +831,33 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     normalize();
                 }
                 have at(iteration, i) < i by {
-                    arithmetic_certificate signed_int32 {
-                        premise 0: (at(region(13).entry, i) as int32) < (at(region(13).entry,
-                            arena->capacity) as int32) => (at(region(13).entry, i) as int32) <
-                            (at(region(13).entry, arena->capacity) as int32);
-                        int32_range => to_integer((arena->capacity as int32)) <=
-                            to_integer((2147483647 as int32));
-                        add 0, 1 => (to_integer((at(region(13).entry, i) as int32)) +
-                            to_integer((arena->capacity as int32))) <
-                            (to_integer((at(region(13).entry, arena->capacity) as int32)) +
-                            to_integer((2147483647 as int32)));
-                        interval_from_affine 2 (at(region(13).entry, i)) (-2147483648) (2147483646);
-                        interval_atom (1) (1) (1);
-                        interval_add_bounded 3, 4 (-2147483647) (2147483647);
-                        trivial => 0 <= 0;
-                        affine_conclusion 6 5 => (at(iteration, i) as int32) < (i as int32);
-                        conclusion 7;
-                    }
+                    solve() using { (at(region(13).entry, i) as int32) < (at(region(13).entry,
+                            arena->capacity) as int32); };
                 }
                 have at(iteration, i) <= i by {
-                    arithmetic_certificate {
-                        premise 0: at(iteration, i) < i => at(iteration, i) < i;
-                        trivial => -1 <= 0;
-                        add 0, 1 => (at(iteration, to_integer((i as int32))) + -1) < (to_integer((i
-                            as int32)) + 0);
-                        conclusion 2;
-                    }
+                    solve() using { at(iteration, i) < i; };
                 }
                 have lo <= i by {
-                    arithmetic_certificate {
-                        premise 0: lo <= at(region(13).entry, i) => lo <= at(region(13).entry, i);
-                        premise 1: at(iteration, i) < i => at(iteration, i) < i;
-                        add 0, 1 => (to_integer((lo as int32)) + at(iteration, to_integer((i as
-                            int32)))) < (at(region(13).entry, to_integer((i as int32))) +
-                            to_integer((i as int32)));
-                        trivial => -1 <= 0;
-                        add 2, 3 => (to_integer((lo as int32)) + at(iteration, to_integer((i as
-                            int32))) + -1) < (at(region(13).entry, to_integer((i as int32))) +
-                            to_integer((i as int32)) + 0);
-                        conclusion 4;
-                    }
+                    solve() using { lo <= at(region(13).entry, i); at(iteration, i) < i; };
                 }
                 have i <= arena->capacity by {
-                    arithmetic_certificate signed_int32 {
-                        premise 0: (at(region(13).entry, i) as int32) < (at(region(13).entry,
-                            arena->capacity) as int32) => (at(region(13).entry, i) as int32) <
-                            (at(region(13).entry, arena->capacity) as int32);
-                        int32_range => to_integer((arena->capacity as int32)) <=
-                            to_integer((2147483647 as int32));
-                        add 0, 1 => (to_integer((at(region(13).entry, i) as int32)) +
-                            to_integer((arena->capacity as int32))) <
-                            (to_integer((at(region(13).entry, arena->capacity) as int32)) +
-                            to_integer((2147483647 as int32)));
-                        interval_from_affine 2 (at(region(13).entry, i)) (-2147483648) (2147483646);
-                        interval_atom (1) (1) (1);
-                        interval_add_bounded 3, 4 (-2147483647) (2147483647);
-                        affine_conclusion 0 5 => (i as int32) <= (arena->capacity as int32);
-                        conclusion 6;
-                    }
+                    solve() using { (at(region(13).entry, i) as int32) < (at(region(13).entry,
+                            arena->capacity) as int32); };
                 }
                 have to_integer(run_length) == (to_integer(at(iteration, run_length)) + 1) by {
                     have -2147483648 <= (to_integer(at(iteration, run_length)) + 1) by {
-                        arithmetic_certificate {
-                            negated_goal => (to_integer(at(iteration, run_length)) + 1) <
-                                -2147483648;
-                            premise 0: 0 <= to_integer(at(iteration, run_length)) => 0 <=
-                                to_integer(at(iteration, run_length));
-                            add 0, 1 => (to_integer(at(iteration, run_length)) + 1 + 0) <
-                                (-2147483648 + to_integer(at(iteration, run_length)));
-                            conclusion 2;
-                        }
+                        solve() using { 0 <= to_integer(at(iteration, run_length)); };
                     }
                     have (to_integer(at(iteration, run_length)) + 1) <= 2147483647 by {
-                        arithmetic_certificate {
-                            negated_goal => 2147483647 < (to_integer(at(iteration, run_length)) +
-                                1);
-                            premise 0: (let integer_value: Integer = to_integer(at(region(13).entry,
+                        solve() using { (let integer_value: Integer = to_integer(at(region(13).entry,
                                 (i as int32))) + 1; integer_value) <= to_integer(at(region(0).entry,
-                                (arena->capacity as int32))) => (let integer_value: Integer =
-                                to_integer(at(region(13).entry, (i as int32))) + 1; integer_value)
-                                <= to_integer(at(region(0).entry, (arena->capacity as int32)));
-                            premise 1: (let integer_value: Integer = to_integer((lo as int32)) +
+                                (arena->capacity as int32))); (let integer_value: Integer = to_integer((lo as int32)) +
                                 to_integer(at(region(13).entry, (run_length as int32)));
-                                integer_value) == to_integer(at(region(13).entry, (i as int32))) =>
-                                (let integer_value: Integer = to_integer((lo as int32)) +
-                                to_integer(at(region(13).entry, (run_length as int32)));
-                                integer_value) == to_integer(at(region(13).entry, (i as int32)));
-                            less_equal_from_equal 2 => (let integer_value: Integer = to_integer((lo
-                                as int32)) + to_integer(at(region(13).entry, (run_length as
-                                int32))); integer_value) <= to_integer(at(region(13).entry, (i as
-                                int32)));
-                            premise 2: 0 <= to_integer((lo as int32)) => 0 <= to_integer((lo as
-                                int32));
-                            premise 3: to_integer(at(region(0).entry, (arena->capacity as int32)))
-                                <= 536870911 => to_integer(at(region(0).entry, (arena->capacity as
-                                int32))) <= 536870911;
-                            add 0, 1 => (2147483647 + (let integer_value: Integer =
-                                to_integer(at(region(13).entry, (i as int32))) + 1; integer_value))
-                                < (to_integer(at(iteration, run_length)) + 1 +
-                                to_integer(at(region(0).entry, (arena->capacity as int32))));
-                            add 6, 3 => (2147483647 + (let integer_value: Integer =
-                                to_integer(at(region(13).entry, (i as int32))) + 1; integer_value) +
-                                (let integer_value: Integer = to_integer((lo as int32)) +
-                                to_integer(at(region(13).entry, (run_length as int32)));
-                                integer_value)) < (to_integer(at(iteration, run_length)) + 1 +
-                                to_integer(at(region(0).entry, (arena->capacity as int32))) +
-                                to_integer(at(region(13).entry, (i as int32))));
-                            add 7, 4 => (2147483647 + (let integer_value: Integer =
-                                to_integer(at(region(13).entry, (i as int32))) + 1; integer_value) +
-                                (let integer_value: Integer = to_integer((lo as int32)) +
-                                to_integer(at(region(13).entry, (run_length as int32)));
-                                integer_value) + 0) < (to_integer(at(iteration, run_length)) + 1 +
-                                to_integer(at(region(0).entry, (arena->capacity as int32))) +
-                                to_integer(at(region(13).entry, (i as int32))) + to_integer((lo as
-                                int32)));
-                            add 8, 5 => (2147483647 + (let integer_value: Integer =
-                                to_integer(at(region(13).entry, (i as int32))) + 1; integer_value) +
-                                (let integer_value: Integer = to_integer((lo as int32)) +
-                                to_integer(at(region(13).entry, (run_length as int32)));
-                                integer_value) + 0 + to_integer(at(region(0).entry, (arena->capacity
-                                as int32)))) < (to_integer(at(iteration, run_length)) + 1 +
-                                to_integer(at(region(0).entry, (arena->capacity as int32))) +
-                                to_integer(at(region(13).entry, (i as int32))) + to_integer((lo as
-                                int32)) + 536870911);
-                            conclusion 9;
-                        }
+                                integer_value) == to_integer(at(region(13).entry, (i as int32))); 0 <= to_integer((lo as int32)); to_integer(at(region(0).entry, (arena->capacity as int32)))
+                                <= 536870911; };
                     }
                     have to_integer(run_length) == (to_integer(at(iteration, run_length)) + 1) by {
-                        arithmetic_certificate rules {
-                            premise 0: -2147483648 <= (to_integer(at(iteration, run_length)) + 1) =>
-                                -2147483648 <= (to_integer(at(iteration, run_length)) + 1);
-                            premise 1: (to_integer(at(iteration, run_length)) + 1) <= 2147483647 =>
-                                (to_integer(at(iteration, run_length)) + 1) <= 2147483647;
-                            integer_operation_identity bounds [0, 1] => to_integer(run_length) ==
-                                (to_integer(at(iteration, run_length)) + 1);
-                            conclusion 0;
-                        }
+                        solve() using { -2147483648 <= (to_integer(at(iteration, run_length)) + 1); (to_integer(at(iteration, run_length)) + 1) <= 2147483647; };
                     }
                     known();
                 }
@@ -1044,227 +866,50 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have (to_integer(lo) + to_integer(run_length)) == to_integer(i) by {
                     have (to_integer(lo) + to_integer(run_length)) <= to_integer(i) by {
-                        arithmetic_certificate {
-                            negated_goal => to_integer(i) < (to_integer(lo) +
-                                to_integer(run_length));
-                            premise 0: (to_integer(lo) + to_integer(at(iteration, run_length))) ==
-                                to_integer(at(iteration, i)) => (to_integer(lo) +
-                                to_integer(at(iteration, run_length))) == to_integer(at(iteration,
-                                i));
-                            less_equal_from_equal 1 => (to_integer(lo) + to_integer(at(iteration,
-                                run_length))) <= to_integer(at(iteration, i));
-                            premise 1: to_integer(run_length) == (to_integer(at(iteration,
-                                run_length)) + 1) => to_integer(run_length) ==
-                                (to_integer(at(iteration, run_length)) + 1);
-                            less_equal_from_equal 3 => to_integer(run_length) <=
-                                (to_integer(at(iteration, run_length)) + 1);
-                            premise 2: to_integer(at(iteration, i)) < to_integer(i) =>
-                                to_integer(at(iteration, i)) < to_integer(i);
-                            add 0, 2 => (to_integer(i) + (to_integer(lo) + to_integer(at(iteration,
-                                run_length)))) < (to_integer(lo) + to_integer(run_length) +
-                                to_integer(at(iteration, i)));
-                            add 6, 4 => (to_integer(i) + (to_integer(lo) + to_integer(at(iteration,
-                                run_length))) + to_integer(run_length)) < (to_integer(lo) +
-                                to_integer(run_length) + to_integer(at(iteration, i)) +
-                                (to_integer(at(iteration, run_length)) + 1));
-                            add 7, 5 => (to_integer(i) + (to_integer(lo) + to_integer(at(iteration,
-                                run_length))) + to_integer(run_length) + 1 +
-                                (to_integer(at(iteration, i)) + 1)) <= (to_integer(lo) +
-                                to_integer(run_length) + to_integer(at(iteration, i)) +
-                                (to_integer(at(iteration, run_length)) + 1) + to_integer(i));
-                            conclusion 8;
-                        }
+                        solve() using { (to_integer(lo) + to_integer(at(iteration, run_length))) ==
+                                to_integer(at(iteration, i)); to_integer(run_length) == (to_integer(at(iteration,
+                                run_length)) + 1); to_integer(at(iteration, i)) < to_integer(i); };
                     }
                     have to_integer(i) <= (to_integer(lo) + to_integer(run_length)) by {
                         have -2147483648 <= (to_integer(at(iteration, run_length)) + 1) by {
-                            arithmetic_certificate {
-                                negated_goal => (to_integer(at(iteration, run_length)) + 1) <
-                                    -2147483648;
-                                premise 0: 0 <= to_integer(at(iteration, run_length)) => 0 <=
-                                    to_integer(at(iteration, run_length));
-                                add 0, 1 => (to_integer(at(iteration, run_length)) + 1 + 0) <
-                                    (-2147483648 + to_integer(at(iteration, run_length)));
-                                conclusion 2;
-                            }
+                            solve() using { 0 <= to_integer(at(iteration, run_length)); };
                         }
                         have (to_integer(at(iteration, run_length)) + 1) <= 2147483647 by {
-                            arithmetic_certificate {
-                                negated_goal => 2147483647 < (to_integer(at(iteration, run_length))
-                                    + 1);
-                                premise 0: (let integer_value: Integer =
+                            solve() using { (let integer_value: Integer =
                                     to_integer(at(region(13).entry, (i as int32))) + 1;
                                     integer_value) <= to_integer(at(region(0).entry,
-                                    (arena->capacity as int32))) => (let integer_value: Integer =
-                                    to_integer(at(region(13).entry, (i as int32))) + 1;
-                                    integer_value) <= to_integer(at(region(0).entry,
-                                    (arena->capacity as int32)));
-                                premise 1: (to_integer(lo) + to_integer(at(iteration, run_length)))
-                                    == to_integer(at(iteration, i)) => (to_integer(lo) +
-                                    to_integer(at(iteration, run_length))) ==
-                                    to_integer(at(iteration, i));
-                                less_equal_from_equal 2 => (to_integer(lo) +
-                                    to_integer(at(iteration, run_length))) <=
-                                    to_integer(at(iteration, i));
-                                premise 2: 0 <= to_integer(lo) => 0 <= to_integer(lo);
-                                premise 3: to_integer(at(region(0).entry, (arena->capacity as
-                                    int32))) <= 536870911 => to_integer(at(region(0).entry,
-                                    (arena->capacity as int32))) <= 536870911;
-                                add 0, 1 => (2147483647 + (let integer_value: Integer =
-                                    to_integer(at(region(13).entry, (i as int32))) + 1;
-                                    integer_value)) < (to_integer(at(iteration, run_length)) + 1 +
-                                    to_integer(at(region(0).entry, (arena->capacity as int32))));
-                                add 6, 3 => (2147483647 + (let integer_value: Integer =
-                                    to_integer(at(region(13).entry, (i as int32))) + 1;
-                                    integer_value) + (to_integer(lo) + to_integer(at(iteration,
-                                    run_length)))) < (to_integer(at(iteration, run_length)) + 1 +
-                                    to_integer(at(region(0).entry, (arena->capacity as int32))) +
-                                    to_integer(at(iteration, i)));
-                                add 7, 4 => (2147483647 + (let integer_value: Integer =
-                                    to_integer(at(region(13).entry, (i as int32))) + 1;
-                                    integer_value) + (to_integer(lo) + to_integer(at(iteration,
-                                    run_length))) + 0) < (to_integer(at(iteration, run_length)) + 1
-                                    + to_integer(at(region(0).entry, (arena->capacity as int32))) +
-                                    to_integer(at(iteration, i)) + to_integer(lo));
-                                add 8, 5 => (2147483647 + (let integer_value: Integer =
-                                    to_integer(at(region(13).entry, (i as int32))) + 1;
-                                    integer_value) + (to_integer(lo) + to_integer(at(iteration,
-                                    run_length))) + 0 + to_integer(at(region(0).entry,
-                                    (arena->capacity as int32)))) < (to_integer(at(iteration,
-                                    run_length)) + 1 + to_integer(at(region(0).entry,
-                                    (arena->capacity as int32))) + to_integer(at(iteration, i)) +
-                                    to_integer(lo) + 536870911);
-                                conclusion 9;
-                            }
+                                    (arena->capacity as int32))); (to_integer(lo) + to_integer(at(iteration, run_length)))
+                                    == to_integer(at(iteration, i)); 0 <= to_integer(lo); to_integer(at(region(0).entry, (arena->capacity as
+                                    int32))) <= 536870911; };
                         }
                         have to_integer(run_length) == (to_integer(at(iteration, run_length)) + 1) by {
-                            arithmetic_certificate rules {
-                                premise 0: -2147483648 <= (to_integer(at(iteration, run_length)) +
-                                    1) => -2147483648 <= (to_integer(at(iteration, run_length)) +
-                                    1);
-                                premise 1: (to_integer(at(iteration, run_length)) + 1) <= 2147483647
-                                    => (to_integer(at(iteration, run_length)) + 1) <= 2147483647;
-                                integer_operation_identity bounds [0, 1] => to_integer(run_length)
-                                    == (to_integer(at(iteration, run_length)) + 1);
-                                conclusion 0;
-                            }
+                            solve() using { -2147483648 <= (to_integer(at(iteration, run_length)) +
+                                    1); (to_integer(at(iteration, run_length)) + 1) <= 2147483647; };
                         }
                         have -2147483648 <= (to_integer(at(iteration, i)) + 1) by {
-                            arithmetic_certificate {
-                                negated_goal => (to_integer(at(iteration, i)) + 1) < -2147483648;
-                                premise 0: 0 <= to_integer(at(iteration, i)) => 0 <=
-                                    to_integer(at(iteration, i));
-                                add 0, 1 => (to_integer(at(iteration, i)) + 1 + 0) < (-2147483648 +
-                                    to_integer(at(iteration, i)));
-                                conclusion 2;
-                            }
+                            solve() using { 0 <= to_integer(at(iteration, i)); };
                         }
                         have (to_integer(at(iteration, i)) + 1) <= 2147483647 by {
-                            arithmetic_certificate {
-                                negated_goal => 2147483647 < (to_integer(at(iteration, i)) + 1);
-                                premise 0: (let integer_value: Integer =
+                            solve() using { (let integer_value: Integer =
                                     to_integer(at(region(13).entry, (i as int32))) + 1;
                                     integer_value) <= to_integer(at(region(0).entry,
-                                    (arena->capacity as int32))) => (let integer_value: Integer =
-                                    to_integer(at(region(13).entry, (i as int32))) + 1;
-                                    integer_value) <= to_integer(at(region(0).entry,
-                                    (arena->capacity as int32)));
-                                premise 1: to_integer(at(region(0).entry, (arena->capacity as
-                                    int32))) <= 536870911 => to_integer(at(region(0).entry,
-                                    (arena->capacity as int32))) <= 536870911;
-                                add 0, 1 => (2147483647 + (let integer_value: Integer =
-                                    to_integer(at(region(13).entry, (i as int32))) + 1;
-                                    integer_value)) < (to_integer(at(iteration, i)) + 1 +
-                                    to_integer(at(region(0).entry, (arena->capacity as int32))));
-                                add 3, 2 => (2147483647 + (let integer_value: Integer =
-                                    to_integer(at(region(13).entry, (i as int32))) + 1;
-                                    integer_value) + to_integer(at(region(0).entry, (arena->capacity
-                                    as int32)))) < (to_integer(at(iteration, i)) + 1 +
-                                    to_integer(at(region(0).entry, (arena->capacity as int32))) +
-                                    536870911);
-                                conclusion 4;
-                            }
+                                    (arena->capacity as int32))); to_integer(at(region(0).entry, (arena->capacity as
+                                    int32))) <= 536870911; };
                         }
                         have to_integer(i) == (to_integer(at(iteration, i)) + 1) by {
-                            arithmetic_certificate rules {
-                                premise 0: -2147483648 <= (to_integer(at(iteration, i)) + 1) =>
-                                    -2147483648 <= (to_integer(at(iteration, i)) + 1);
-                                premise 1: (to_integer(at(iteration, i)) + 1) <= 2147483647 =>
-                                    (to_integer(at(iteration, i)) + 1) <= 2147483647;
-                                integer_operation_identity bounds [0, 1] => to_integer(i) ==
-                                    (to_integer(at(iteration, i)) + 1);
-                                conclusion 0;
-                            }
+                            solve() using { -2147483648 <= (to_integer(at(iteration, i)) + 1); (to_integer(at(iteration, i)) + 1) <= 2147483647; };
                         }
-                        arithmetic_certificate {
-                            negated_goal => (to_integer(lo) + to_integer(run_length)) <
-                                to_integer(i);
-                            premise 0: (to_integer(lo) + to_integer(at(iteration, run_length))) ==
-                                to_integer(at(iteration, i)) => (to_integer(lo) +
-                                to_integer(at(iteration, run_length))) == to_integer(at(iteration,
-                                i));
-                            less_equal_from_equal 1 reverse => to_integer(at(iteration, i)) <=
-                                (to_integer(lo) + to_integer(at(iteration, run_length)));
-                            premise 1: to_integer(i) == (to_integer(at(iteration, i)) + 1) =>
-                                to_integer(i) == (to_integer(at(iteration, i)) + 1);
-                            less_equal_from_equal 3 => to_integer(i) <= (to_integer(at(iteration,
-                                i)) + 1);
-                            premise 2: to_integer(run_length) == (to_integer(at(iteration,
-                                run_length)) + 1) => to_integer(run_length) ==
-                                (to_integer(at(iteration, run_length)) + 1);
-                            less_equal_from_equal 5 reverse => (to_integer(at(iteration,
-                                run_length)) + 1) <= to_integer(run_length);
-                            add 0, 2 => (to_integer(lo) + to_integer(run_length) +
-                                to_integer(at(iteration, i))) < (to_integer(i) + (to_integer(lo) +
-                                to_integer(at(iteration, run_length))));
-                            add 7, 4 => (to_integer(lo) + to_integer(run_length) +
-                                to_integer(at(iteration, i)) + to_integer(i)) < (to_integer(i) +
-                                (to_integer(lo) + to_integer(at(iteration, run_length))) +
-                                (to_integer(at(iteration, i)) + 1));
-                            add 8, 6 => (to_integer(lo) + to_integer(run_length) +
-                                to_integer(at(iteration, i)) + to_integer(i) +
-                                (to_integer(at(iteration, run_length)) + 1)) < (to_integer(i) +
-                                (to_integer(lo) + to_integer(at(iteration, run_length))) +
-                                (to_integer(at(iteration, i)) + 1) + to_integer(run_length));
-                            conclusion 9;
-                        }
+                        solve() using { (to_integer(lo) + to_integer(at(iteration, run_length))) ==
+                                to_integer(at(iteration, i)); to_integer(i) == (to_integer(at(iteration, i)) + 1); to_integer(run_length) == (to_integer(at(iteration,
+                                run_length)) + 1); };
                     }
-                    arithmetic_certificate {
-                        premise 0: (to_integer(lo) + to_integer(run_length)) <= to_integer(i) =>
-                            (to_integer(lo) + to_integer(run_length)) <= to_integer(i);
-                        premise 1: to_integer(i) <= (to_integer(lo) + to_integer(run_length)) =>
-                            to_integer(i) <= (to_integer(lo) + to_integer(run_length));
-                        equal_from_bounds 0, 1 => (to_integer(lo) + to_integer(run_length)) ==
-                            to_integer(i);
-                        conclusion 2;
-                    }
+                    solve() using { (to_integer(lo) + to_integer(run_length)) <= to_integer(i); to_integer(i) <= (to_integer(lo) + to_integer(run_length)); };
                 }
                 have 0 <= run_length and run_length <= count by {
                     both {
-                        arithmetic_certificate signed_int32 {
-                            premise 0: (at(region(13).entry, 0) as int32) <= (at(region(13).entry,
-                                run_length) as int32) => (at(region(13).entry, 0) as int32) <=
-                                (at(region(13).entry, run_length) as int32);
-                            premise 1: (at(region(13).entry, run_length) as int32) <
-                                (at(region(13).entry, count) as int32) => (at(region(13).entry,
-                                run_length) as int32) < (at(region(13).entry, count) as int32);
-                            int32_range => to_integer((count as int32)) <= to_integer((2147483647 as
-                                int32));
-                            add 1, 2 => (to_integer((at(region(13).entry, run_length) as int32)) +
-                                to_integer((count as int32))) < (to_integer((at(region(13).entry,
-                                count) as int32)) + to_integer((2147483647 as int32)));
-                            interval_from_affine 0 (at(region(13).entry, run_length)) (0)
-                                (2147483647);
-                            interval_from_affine 3 (at(region(13).entry, run_length)) (-2147483648)
-                                (2147483646);
-                            interval_intersect 4, 5 (0) (2147483646);
-                            interval_atom (1) (1) (1);
-                            interval_add_bounded 6, 7 (1) (2147483647);
-                            trivial => -1 <= 0;
-                            add 0, 9 => (to_integer((at(region(13).entry, 0) as int32)) + -1) <=
-                                (to_integer((at(region(13).entry, run_length) as int32)) + 0);
-                            affine_conclusion 10 8 => (0 as int32) <= (run_length as int32);
-                            conclusion 11;
-                        }
+                        solve() using { (at(region(13).entry, 0) as int32) <= (at(region(13).entry,
+                                run_length) as int32); (at(region(13).entry, run_length) as int32) <
+                                (at(region(13).entry, count) as int32); };
                     } and {
                         known();
                     }
@@ -1284,76 +929,24 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration, i)) + 1) by {
                     have -2147483648 <= (to_integer(at(iteration, i)) + 1) by {
-                        arithmetic_certificate {
-                            negated_goal => (to_integer(at(iteration, i)) + 1) < -2147483648;
-                            premise 0: 0 <= to_integer(at(iteration, i)) => 0 <=
-                                to_integer(at(iteration, i));
-                            add 0, 1 => (to_integer(at(iteration, i)) + 1 + 0) < (-2147483648 +
-                                to_integer(at(iteration, i)));
-                            conclusion 2;
-                        }
+                        solve() using { 0 <= to_integer(at(iteration, i)); };
                     }
                     have (to_integer(at(iteration, i)) + 1) <= 2147483647 by {
-                        arithmetic_certificate {
-                            negated_goal => 2147483647 < (to_integer(at(iteration, i)) + 1);
-                            premise 0: (let integer_value: Integer = to_integer(at(region(13).entry,
+                        solve() using { (let integer_value: Integer = to_integer(at(region(13).entry,
                                 (i as int32))) + 1; integer_value) <= to_integer(at(region(0).entry,
-                                (arena->capacity as int32))) => (let integer_value: Integer =
-                                to_integer(at(region(13).entry, (i as int32))) + 1; integer_value)
-                                <= to_integer(at(region(0).entry, (arena->capacity as int32)));
-                            premise 1: to_integer(at(region(0).entry, (arena->capacity as int32)))
-                                <= 536870911 => to_integer(at(region(0).entry, (arena->capacity as
-                                int32))) <= 536870911;
-                            add 0, 1 => (2147483647 + (let integer_value: Integer =
-                                to_integer(at(region(13).entry, (i as int32))) + 1; integer_value))
-                                < (to_integer(at(iteration, i)) + 1 + to_integer(at(region(0).entry,
-                                (arena->capacity as int32))));
-                            add 3, 2 => (2147483647 + (let integer_value: Integer =
-                                to_integer(at(region(13).entry, (i as int32))) + 1; integer_value) +
-                                to_integer(at(region(0).entry, (arena->capacity as int32)))) <
-                                (to_integer(at(iteration, i)) + 1 + to_integer(at(region(0).entry,
-                                (arena->capacity as int32))) + 536870911);
-                            conclusion 4;
-                        }
+                                (arena->capacity as int32))); to_integer(at(region(0).entry, (arena->capacity as int32)))
+                                <= 536870911; };
                     }
                     have to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration, i)) + 1) by {
-                        arithmetic_certificate rules {
-                            premise 0: -2147483648 <= (to_integer(at(iteration, i)) + 1) =>
-                                -2147483648 <= (to_integer(at(iteration, i)) + 1);
-                            premise 1: (to_integer(at(iteration, i)) + 1) <= 2147483647 =>
-                                (to_integer(at(iteration, i)) + 1) <= 2147483647;
-                            integer_operation_identity bounds [0, 1] => to_integer((at(iteration, i)
-                                + 1)) == (to_integer(at(iteration, i)) + 1);
-                            conclusion 0;
-                        }
+                        solve() using { -2147483648 <= (to_integer(at(iteration, i)) + 1); (to_integer(at(iteration, i)) + 1) <= 2147483647; };
                     }
                     known();
                 }
                 have 0 <= (to_integer(arena->capacity) - to_integer((at(iteration, i) + 1))) by {
-                    arithmetic_certificate {
-                        negated_goal => (to_integer(arena->capacity) - to_integer((at(iteration, i)
-                            + 1))) < 0;
-                        premise 0: (let integer_value: Integer = to_integer(at(region(13).entry, (i
+                    solve() using { (let integer_value: Integer = to_integer(at(region(13).entry, (i
                             as int32))) + 1; integer_value) <= to_integer(at(region(0).entry,
-                            (arena->capacity as int32))) => (let integer_value: Integer =
-                            to_integer(at(region(13).entry, (i as int32))) + 1; integer_value) <=
-                            to_integer(at(region(0).entry, (arena->capacity as int32)));
-                        premise 1: to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration,
-                            i)) + 1) => to_integer((at(iteration, i) + 1)) ==
-                            (to_integer(at(iteration, i)) + 1);
-                        less_equal_from_equal 2 => to_integer((at(iteration, i) + 1)) <=
-                            (to_integer(at(iteration, i)) + 1);
-                        add 0, 1 => ((to_integer(arena->capacity) - to_integer((at(iteration, i) +
-                            1))) + (let integer_value: Integer = to_integer(at(region(13).entry, (i
-                            as int32))) + 1; integer_value)) < (0 + to_integer(at(region(0).entry,
-                            (arena->capacity as int32))));
-                        add 4, 3 => ((to_integer(arena->capacity) - to_integer((at(iteration, i) +
-                            1))) + (let integer_value: Integer = to_integer(at(region(13).entry, (i
-                            as int32))) + 1; integer_value) + to_integer((at(iteration, i) + 1))) <
-                            (0 + to_integer(at(region(0).entry, (arena->capacity as int32))) +
-                            (to_integer(at(iteration, i)) + 1));
-                        conclusion 5;
-                    }
+                            (arena->capacity as int32))); to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration,
+                            i)) + 1); };
                 }
                 have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k]) } by {
                     intro();
@@ -1396,47 +989,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     contradiction(k < i);
                 }
                 have 0 <= i by {
-                    arithmetic_certificate signed_int32 {
-                        premise 0: (0 as int32) <= (at(region(13).entry, i) as int32) => (0 as
-                            int32) <= (at(region(13).entry, i) as int32);
-                        premise 1: (at(region(13).entry, i) as int32) < (at(region(13).entry,
-                            arena->capacity) as int32) => (at(region(13).entry, i) as int32) <
-                            (at(region(13).entry, arena->capacity) as int32);
-                        int32_range => to_integer((arena->capacity as int32)) <=
-                            to_integer((2147483647 as int32));
-                        add 1, 2 => (to_integer((at(region(13).entry, i) as int32)) +
-                            to_integer((arena->capacity as int32))) <
-                            (to_integer((at(region(13).entry, arena->capacity) as int32)) +
-                            to_integer((2147483647 as int32)));
-                        interval_from_affine 0 (at(region(13).entry, i)) (0) (2147483647);
-                        interval_from_affine 3 (at(region(13).entry, i)) (-2147483648) (2147483646);
-                        interval_intersect 4, 5 (0) (2147483646);
-                        interval_atom (1) (1) (1);
-                        interval_add_bounded 6, 7 (1) (2147483647);
-                        trivial => -1 <= 0;
-                        add 0, 9 => (to_integer((0 as int32)) + -1) <=
-                            (to_integer((at(region(13).entry, i) as int32)) + 0);
-                        affine_conclusion 10 8 => (0 as int32) <= (i as int32);
-                        conclusion 11;
-                    }
+                    solve() using { (0 as int32) <= (at(region(13).entry, i) as int32); (at(region(13).entry, i) as int32) < (at(region(13).entry,
+                            arena->capacity) as int32); };
                 }
                 have i <= arena->capacity by {
-                    arithmetic_certificate signed_int32 {
-                        premise 0: (at(region(13).entry, i) as int32) < (at(region(13).entry,
-                            arena->capacity) as int32) => (at(region(13).entry, i) as int32) <
-                            (at(region(13).entry, arena->capacity) as int32);
-                        int32_range => to_integer((arena->capacity as int32)) <=
-                            to_integer((2147483647 as int32));
-                        add 0, 1 => (to_integer((at(region(13).entry, i) as int32)) +
-                            to_integer((arena->capacity as int32))) <
-                            (to_integer((at(region(13).entry, arena->capacity) as int32)) +
-                            to_integer((2147483647 as int32)));
-                        interval_from_affine 2 (at(region(13).entry, i)) (-2147483648) (2147483646);
-                        interval_atom (1) (1) (1);
-                        interval_add_bounded 3, 4 (-2147483647) (2147483647);
-                        affine_conclusion 0 5 => (i as int32) <= (arena->capacity as int32);
-                        conclusion 6;
-                    }
+                    solve() using { (at(region(13).entry, i) as int32) < (at(region(13).entry,
+                            arena->capacity) as int32); };
                 }
                 have viewable(arena->occupied[0..arena->capacity]) by {
                     observe(at(find_first_free_run.entry, arena->occupied)[0..at(find_first_free_run.entry, arena->capacity)]);
@@ -1447,76 +1005,24 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration, i)) + 1) by {
                     have -2147483648 <= (to_integer(at(iteration, i)) + 1) by {
-                        arithmetic_certificate {
-                            negated_goal => (to_integer(at(iteration, i)) + 1) < -2147483648;
-                            premise 0: 0 <= to_integer(at(iteration, i)) => 0 <=
-                                to_integer(at(iteration, i));
-                            add 0, 1 => (to_integer(at(iteration, i)) + 1 + 0) < (-2147483648 +
-                                to_integer(at(iteration, i)));
-                            conclusion 2;
-                        }
+                        solve() using { 0 <= to_integer(at(iteration, i)); };
                     }
                     have (to_integer(at(iteration, i)) + 1) <= 2147483647 by {
-                        arithmetic_certificate {
-                            negated_goal => 2147483647 < (to_integer(at(iteration, i)) + 1);
-                            premise 0: (let integer_value: Integer = to_integer(at(region(13).entry,
+                        solve() using { (let integer_value: Integer = to_integer(at(region(13).entry,
                                 (i as int32))) + 1; integer_value) <= to_integer(at(region(0).entry,
-                                (arena->capacity as int32))) => (let integer_value: Integer =
-                                to_integer(at(region(13).entry, (i as int32))) + 1; integer_value)
-                                <= to_integer(at(region(0).entry, (arena->capacity as int32)));
-                            premise 1: to_integer(at(region(0).entry, (arena->capacity as int32)))
-                                <= 536870911 => to_integer(at(region(0).entry, (arena->capacity as
-                                int32))) <= 536870911;
-                            add 0, 1 => (2147483647 + (let integer_value: Integer =
-                                to_integer(at(region(13).entry, (i as int32))) + 1; integer_value))
-                                < (to_integer(at(iteration, i)) + 1 + to_integer(at(region(0).entry,
-                                (arena->capacity as int32))));
-                            add 3, 2 => (2147483647 + (let integer_value: Integer =
-                                to_integer(at(region(13).entry, (i as int32))) + 1; integer_value) +
-                                to_integer(at(region(0).entry, (arena->capacity as int32)))) <
-                                (to_integer(at(iteration, i)) + 1 + to_integer(at(region(0).entry,
-                                (arena->capacity as int32))) + 536870911);
-                            conclusion 4;
-                        }
+                                (arena->capacity as int32))); to_integer(at(region(0).entry, (arena->capacity as int32)))
+                                <= 536870911; };
                     }
                     have to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration, i)) + 1) by {
-                        arithmetic_certificate rules {
-                            premise 0: -2147483648 <= (to_integer(at(iteration, i)) + 1) =>
-                                -2147483648 <= (to_integer(at(iteration, i)) + 1);
-                            premise 1: (to_integer(at(iteration, i)) + 1) <= 2147483647 =>
-                                (to_integer(at(iteration, i)) + 1) <= 2147483647;
-                            integer_operation_identity bounds [0, 1] => to_integer((at(iteration, i)
-                                + 1)) == (to_integer(at(iteration, i)) + 1);
-                            conclusion 0;
-                        }
+                        solve() using { -2147483648 <= (to_integer(at(iteration, i)) + 1); (to_integer(at(iteration, i)) + 1) <= 2147483647; };
                     }
                     known();
                 }
                 have 0 <= (to_integer(arena->capacity) - to_integer((at(iteration, i) + 1))) by {
-                    arithmetic_certificate {
-                        negated_goal => (to_integer(arena->capacity) - to_integer((at(iteration, i)
-                            + 1))) < 0;
-                        premise 0: (let integer_value: Integer = to_integer(at(region(13).entry, (i
+                    solve() using { (let integer_value: Integer = to_integer(at(region(13).entry, (i
                             as int32))) + 1; integer_value) <= to_integer(at(region(0).entry,
-                            (arena->capacity as int32))) => (let integer_value: Integer =
-                            to_integer(at(region(13).entry, (i as int32))) + 1; integer_value) <=
-                            to_integer(at(region(0).entry, (arena->capacity as int32)));
-                        premise 1: to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration,
-                            i)) + 1) => to_integer((at(iteration, i) + 1)) ==
-                            (to_integer(at(iteration, i)) + 1);
-                        less_equal_from_equal 2 => to_integer((at(iteration, i) + 1)) <=
-                            (to_integer(at(iteration, i)) + 1);
-                        add 0, 1 => ((to_integer(arena->capacity) - to_integer((at(iteration, i) +
-                            1))) + (let integer_value: Integer = to_integer(at(region(13).entry, (i
-                            as int32))) + 1; integer_value)) < (0 + to_integer(at(region(0).entry,
-                            (arena->capacity as int32))));
-                        add 4, 3 => ((to_integer(arena->capacity) - to_integer((at(iteration, i) +
-                            1))) + (let integer_value: Integer = to_integer(at(region(13).entry, (i
-                            as int32))) + 1; integer_value) + to_integer((at(iteration, i) + 1))) <
-                            (0 + to_integer(at(region(0).entry, (arena->capacity as int32))) +
-                            (to_integer(at(iteration, i)) + 1));
-                        conclusion 5;
-                    }
+                            (arena->capacity as int32))); to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration,
+                            i)) + 1); };
                 }
                 have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k]) } by {
                     intro();
@@ -1544,14 +1050,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     both {
                         normalize();
                     } and {
-                        arithmetic_certificate {
-                            premise 0: at(function.entry, 0) < at(function.entry, count) =>
-                                at(function.entry, 0) < at(function.entry, count);
-                            trivial => -1 <= 0;
-                            add 0, 1 => (at(function.entry, 0) + -1) < (at(function.entry,
-                                to_integer((count as int32))) + 0);
-                            conclusion 2;
-                        }
+                        solve() using { at(function.entry, 0) < at(function.entry, count); };
                     }
                 }
                 have run.hi == i implies (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) implies 0 <= run_length and run_length <= count implies forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k]) } by {
@@ -1622,11 +1121,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     k < arena->capacity;
                 };
             }
-            transport(at(scanned, arena->occupied[k]) == old(arena->occupied[k]), arena->occupied[k] == old(arena->occupied[k])) using {
-                at(scanned, arena->occupied[k]) == old(arena->occupied[k]);
-                0 <= k;
-                k < arena->capacity;
-            };
+            known();
         }
         known();
         have result == 0 or result == 1 by {
@@ -1731,13 +1226,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         step();
         have run_length == count by {
             extract(at(loop(0).exit, run_length) <= at(loop(0).exit, count));
-            arithmetic_certificate {
-                premise 0: at(loop(0).exit, run_length) <= at(loop(0).exit, count) =>
-                    at(loop(0).exit, run_length) <= at(loop(0).exit, count);
-                premise 1: not run_length < count => not run_length < count;
-                equal_from_bounds 0, 1 => run_length == count;
-                conclusion 2;
-            }
+            solve() using { at(loop(0).exit, run_length) <= at(loop(0).exit, count); not run_length < count; };
         }
         have count == run_length by {
             known();
@@ -1750,58 +1239,16 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         have defined((run_lo + count)) by {
             have (to_integer(run_lo) + to_integer(count)) >= -2147483648 by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(run_lo) + to_integer(count)) < -2147483648;
-                    premise 0: 0 < to_integer(count) => 0 < to_integer(count);
-                    premise 1: 0 <= to_integer(run_lo) => 0 <= to_integer(run_lo);
-                    add 0, 1 => (to_integer(run_lo) + to_integer(count) + 1 + (0 + 1)) <=
-                        (-2147483648 + to_integer(count));
-                    add 3, 2 => (to_integer(run_lo) + to_integer(count) + 1 + (0 + 1) + 0) <=
-                        (-2147483648 + to_integer(count) + to_integer(run_lo));
-                    conclusion 4;
-                }
+                solve() using { 0 < to_integer(count); 0 <= to_integer(run_lo); };
             }
             have (to_integer(run_lo) + to_integer(count)) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(run_lo) + to_integer(count));
-                    premise 0: to_integer(count) <= to_integer(at(region(7).entry, arena->capacity))
-                        => to_integer(count) <= to_integer(at(region(7).entry, arena->capacity));
-                    premise 1: to_integer(run_lo) <= to_integer(run_hi) => to_integer(run_lo) <=
-                        to_integer(run_hi);
-                    premise 2: to_integer(run_hi) <= to_integer(at(region(7).entry,
-                        arena->capacity)) => to_integer(run_hi) <= to_integer(at(region(7).entry,
-                        arena->capacity));
-                    premise 3: to_integer(at(region(7).entry, arena->capacity)) <= 536870911 =>
-                        to_integer(at(region(7).entry, arena->capacity)) <= 536870911;
-                    scale 4 by 2 => (2 * to_integer(at(region(7).entry, arena->capacity))) <= (2 *
-                        536870911);
-                    add 0, 1 => (2147483647 + to_integer(count)) < (to_integer(run_lo) +
-                        to_integer(count) + to_integer(at(region(7).entry, arena->capacity)));
-                    add 6, 2 => (2147483647 + to_integer(count) + to_integer(run_lo)) <
-                        (to_integer(run_lo) + to_integer(count) + to_integer(at(region(7).entry,
-                        arena->capacity)) + to_integer(run_hi));
-                    add 7, 3 => (2147483647 + to_integer(count) + to_integer(run_lo) +
-                        to_integer(run_hi)) < (to_integer(run_lo) + to_integer(count) +
-                        to_integer(at(region(7).entry, arena->capacity)) + to_integer(run_hi) +
-                        to_integer(at(region(7).entry, arena->capacity)));
-                    add 8, 5 => (2147483647 + to_integer(count) + to_integer(run_lo) +
-                        to_integer(run_hi) + (2 * to_integer(at(region(7).entry, arena->capacity))))
-                        < (to_integer(run_lo) + to_integer(count) + to_integer(at(region(7).entry,
-                        arena->capacity)) + to_integer(run_hi) + to_integer(at(region(7).entry,
-                        arena->capacity)) + (2 * 536870911));
-                    conclusion 9;
-                }
+                solve() using { to_integer(count) <= to_integer(at(region(7).entry, arena->capacity)); to_integer(run_lo) <= to_integer(run_hi); to_integer(run_hi) <= to_integer(at(region(7).entry,
+                        arena->capacity)); to_integer(at(region(7).entry, arena->capacity)) <= 536870911; };
             }
             known();
         }
         have to_integer(count) <= (to_integer(run_lo) + to_integer(count)) by {
-            arithmetic_certificate {
-                negated_goal => (to_integer(run_lo) + to_integer(count)) < to_integer(count);
-                premise 0: 0 <= to_integer(run_lo) => 0 <= to_integer(run_lo);
-                add 0, 1 => (to_integer(run_lo) + to_integer(count) + 0) < (to_integer(count) +
-                    to_integer(run_lo));
-                conclusion 2;
-            }
+            solve() using { 0 <= to_integer(run_lo); };
         }
         have to_integer(i) == (to_integer(run_lo) + to_integer(count)) by {
             known();
@@ -1816,31 +1263,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             extract((let integer_value: Integer = to_integer((run_lo as int32)) + to_integer((count as int32)); integer_value) <= 2147483647);
             extract((let integer_value: Integer = to_integer((run_lo as int32)) + to_integer((count as int32)); integer_value) >= -2147483648);
             have to_integer(at(function.entry, i)) <= 2147483647 by {
-                arithmetic_certificate {
-                    type_range => to_integer(at(function.entry, i)) <= 2147483647;
-                    conclusion 0;
-                }
+                solve() using {  };
             }
             have -2147483648 <= (to_integer(at(function.entry, i)) - to_integer(at(function.entry, count))) by {
-                arithmetic_certificate {
-                    premise 0: at(function.entry, count) <= at(function.entry, i) =>
-                        at(function.entry, count) <= at(function.entry, i);
-                    trivial => -2147483648 <= 0;
-                    add 0, 1 => (at(function.entry, to_integer((count as int32))) + -2147483648) <=
-                        (at(function.entry, to_integer((i as int32))) + 0);
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, count) <= at(function.entry, i); };
             }
             have (to_integer(at(function.entry, i)) - to_integer(at(function.entry, count))) <= 2147483647 by {
-                arithmetic_certificate {
-                    premise 0: at(function.entry, 0) <= at(function.entry, count) =>
-                        at(function.entry, 0) <= at(function.entry, count);
-                    premise 1: to_integer(at(function.entry, i)) <= 2147483647 =>
-                        to_integer(at(function.entry, i)) <= 2147483647;
-                    add 0, 1 => (at(function.entry, 0) + to_integer(at(function.entry, i))) <=
-                        (at(function.entry, to_integer((count as int32))) + 2147483647);
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, 0) <= at(function.entry, count); to_integer(at(function.entry, i)) <= 2147483647; };
             }
             known();
         }
@@ -1853,15 +1282,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have to_integer((i - count)) == (to_integer(i) - to_integer(count)) by {
-                arithmetic_certificate rules {
-                    premise 0: -2147483648 <= (to_integer(i) - to_integer(count)) => -2147483648 <=
-                        (to_integer(i) - to_integer(count));
-                    premise 1: (to_integer(i) - to_integer(count)) <= 2147483647 => (to_integer(i) -
-                        to_integer(count)) <= 2147483647;
-                    integer_operation_identity bounds [0, 1] => to_integer((i - count)) ==
-                        (to_integer(i) - to_integer(count));
-                    conclusion 0;
-                }
+                solve() using { -2147483648 <= (to_integer(i) - to_integer(count)); (to_integer(i) - to_integer(count)) <= 2147483647; };
             }
             known();
         }
@@ -1877,43 +1298,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             normalize();
         }
         have run_lo <= arena->capacity by {
-            arithmetic_certificate {
-                premise 0: run_lo <= run_hi => run_lo <= run_hi;
-                premise 1: run_hi <= at(region(0).entry, arena->capacity) => run_hi <=
-                    at(region(0).entry, arena->capacity);
-                add 0, 1 => (to_integer((run_lo as int32)) + to_integer((run_hi as int32))) <=
-                    (to_integer((run_hi as int32)) + at(region(0).entry, to_integer((arena->capacity
-                    as int32))));
-                conclusion 2;
-            }
+            solve() using { run_lo <= run_hi; run_hi <= at(region(0).entry, arena->capacity); };
         }
         have start < end by {
-            arithmetic_certificate signed_int32 {
-                premise 0: (at(function.entry, 0) as int32) < (at(function.entry, count) as int32)
-                    => (at(function.entry, 0) as int32) < (at(function.entry, count) as int32);
-                premise 1: (at(function.entry, count) as int32) <= (at(function.entry, i) as int32)
-                    => (at(function.entry, count) as int32) <= (at(function.entry, i) as int32);
-                premise 2: (at(region(7).entry, count) as int32) <= (at(region(7).entry,
-                    arena->capacity) as int32) => (at(region(7).entry, count) as int32) <=
-                    (at(region(7).entry, arena->capacity) as int32);
-                premise 3: (at(function.entry, arena->capacity) as int32) <= (at(function.entry,
-                    536870911) as int32) => (at(function.entry, arena->capacity) as int32) <=
-                    (at(function.entry, 536870911) as int32);
-                add 1, 0 => (to_integer((at(function.entry, count) as int32)) +
-                    to_integer((at(function.entry, 0) as int32))) < (to_integer((at(function.entry,
-                    i) as int32)) + to_integer((at(function.entry, count) as int32)));
-                interval_from_affine 4 (i) (1) (2147483647);
-                add 2, 3 => (to_integer((at(region(7).entry, count) as int32)) +
-                    to_integer((at(function.entry, arena->capacity) as int32))) <=
-                    (to_integer((at(region(7).entry, arena->capacity) as int32)) +
-                    to_integer((at(function.entry, 536870911) as int32)));
-                interval_from_affine 0 (count) (1) (2147483647);
-                interval_from_affine 6 (count) (-2147483648) (536870911);
-                interval_intersect 7, 8 (1) (536870911);
-                interval_subtract 5, 9 5 (-536870910) (2147483646);
-                affine_conclusion 0 10 => (start as int32) < (end as int32);
-                conclusion 11;
-            }
+            solve() using { (at(function.entry, 0) as int32) < (at(function.entry, count) as int32); (at(function.entry, count) as int32) <= (at(function.entry, i) as int32); (at(region(7).entry, count) as int32) <= (at(region(7).entry,
+                    arena->capacity) as int32); (at(function.entry, arena->capacity) as int32) <= (at(function.entry,
+                    536870911) as int32); };
         }
         have forall (k: int32) { start <= k and k < end implies arena->occupied[k] == 0 } by {
             rewrite(start, run_lo);
@@ -1955,11 +1345,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     k < arena->capacity;
                 };
             }
-            transport(at(scanned, arena->occupied[k]) == old(arena->occupied[k]), arena->occupied[k] == old(arena->occupied[k])) using {
-                at(scanned, arena->occupied[k]) == old(arena->occupied[k]);
-                0 <= k;
-                k < arena->capacity;
-            };
+            known();
         }
         have forall (k: int32) { start <= k and k < end implies old(arena->occupied[k]) == 0 } by {
             intro();
@@ -1967,59 +1353,15 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             extract(start <= k);
             extract(k < end);
             have 0 <= k by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: (at(function.entry, 0) as int32) < (at(function.entry, count) as
-                        int32) => (at(function.entry, 0) as int32) < (at(function.entry, count) as
-                        int32);
-                    premise 1: (at(function.entry, start) as int32) < (at(function.entry, end) as
-                        int32) => (at(function.entry, start) as int32) < (at(function.entry, end) as
-                        int32);
-                    premise 2: (count as int32) <= (end as int32) => (count as int32) <= (end as
-                        int32);
-                    premise 3: (at(function.entry, end) as int32) <= (at(function.entry,
-                        arena->capacity) as int32) => (at(function.entry, end) as int32) <=
-                        (at(function.entry, arena->capacity) as int32);
-                    premise 4: (at(function.entry, arena->capacity) as int32) <= (at(function.entry,
-                        536870911) as int32) => (at(function.entry, arena->capacity) as int32) <=
-                        (at(function.entry, 536870911) as int32);
-                    premise 5: (at(function.entry, start) as int32) <= (at(function.entry, end) as
-                        int32) => (at(function.entry, start) as int32) <= (at(function.entry, end)
-                        as int32);
-                    premise 6: (i as int32) <= (k as int32) => (i as int32) <= (k as int32);
-                    add 2, 0 => (to_integer((count as int32)) + to_integer((at(function.entry, 0) as
-                        int32))) < (to_integer((end as int32)) + to_integer((at(function.entry,
-                        count) as int32)));
-                    add 3, 4 => (to_integer((at(function.entry, end) as int32)) +
-                        to_integer((at(function.entry, arena->capacity) as int32))) <=
-                        (to_integer((at(function.entry, arena->capacity) as int32)) +
-                        to_integer((at(function.entry, 536870911) as int32)));
-                    interval_from_affine 7 (end) (1) (2147483647);
-                    interval_from_affine 8 (end) (-2147483648) (536870911);
-                    interval_intersect 9, 10 (1) (536870911);
-                    add 2, 8 => (to_integer((count as int32)) + (to_integer((at(function.entry, end)
-                        as int32)) + to_integer((at(function.entry, arena->capacity) as int32)))) <=
-                        (to_integer((end as int32)) + (to_integer((at(function.entry,
-                        arena->capacity) as int32)) + to_integer((at(function.entry, 536870911) as
-                        int32))));
-                    interval_from_affine 0 (count) (1) (2147483647);
-                    interval_from_affine 12 (count) (-2147483648) (536870911);
-                    interval_intersect 13, 14 (1) (536870911);
-                    interval_subtract 11, 15 11 (-536870910) (536870910);
-                    affine_premise 6 16 16 => to_integer((i as int32)) <= to_integer((k as int32));
-                    add 2, 17 => 0 <= k;
-                    conclusion 18;
-                }
+                solve() using { (at(function.entry, 0) as int32) < (at(function.entry, count) as
+                        int32); (at(function.entry, start) as int32) < (at(function.entry, end) as
+                        int32); (count as int32) <= (end as int32); (at(function.entry, end) as int32) <= (at(function.entry,
+                        arena->capacity) as int32); (at(function.entry, arena->capacity) as int32) <= (at(function.entry,
+                        536870911) as int32); (at(function.entry, start) as int32) <= (at(function.entry, end) as
+                        int32); (i as int32) <= (k as int32); };
             }
             have k < arena->capacity by {
-                arithmetic_certificate {
-                    premise 0: k < end => k < end;
-                    premise 1: at(function.entry, end) <= at(function.entry, arena->capacity) =>
-                        at(function.entry, end) <= at(function.entry, arena->capacity);
-                    add 0, 1 => (to_integer((k as int32)) + at(function.entry, to_integer((end as
-                        int32)))) < (to_integer((end as int32)) + at(function.entry,
-                        to_integer((arena->capacity as int32))));
-                    conclusion 2;
-                }
+                solve() using { k < end; at(function.entry, end) <= at(function.entry, arena->capacity); };
             }
             have old(arena->occupied[k]) == 0 by {
                 instantiate(forall (j: int32) { start <= j and j < end implies arena->occupied[j] == 0 }, k) using {
@@ -2037,9 +1379,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             };
         }
         have viewable(arena->occupied[0..arena->capacity]) by {
-            transport(at(find_first_free_run.entry, viewable(arena->occupied[0..arena->capacity])), viewable(arena->occupied[0..arena->capacity])) using {
-                at(find_first_free_run.entry, viewable(arena->occupied[0..arena->capacity]));
-            };
+            observe(old(arena->occupied)[0..old(arena->capacity)]);
         }
         let w = fold(arena_window(arena->data, arena->occupied, arena->capacity, start, end), { next: start });
         loop as mark_free_run {
@@ -2077,20 +1417,8 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     known();
                 }
                 have m <= i by {
-                    arithmetic_certificate signed_int32 {
-                        premise 0: end == end => end == end;
-                        premise 1: (at(region(24).entry, w.next) as int32) == (at(region(24).entry,
-                            i) as int32) => (at(region(24).entry, w.next) as int32) ==
-                            (at(region(24).entry, i) as int32);
-                        less_equal_from_equal 0 => to_integer((end as int32)) <= to_integer((end as
-                            int32));
-                        less_equal_from_equal 1 => to_integer((at(region(24).entry, w.next) as
-                            int32)) <= to_integer((at(region(24).entry, i) as int32));
-                        add 2, 3 => (to_integer((end as int32)) + to_integer((at(region(24).entry,
-                            w.next) as int32))) <= (to_integer((end as int32)) +
-                            to_integer((at(region(24).entry, i) as int32)));
-                        conclusion 4;
-                    }
+                    solve() using { end == end; (at(region(24).entry, w.next) as int32) == (at(region(24).entry,
+                            i) as int32); };
                 }
                 have i < end by {
                     known();
@@ -2109,66 +1437,16 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     known();
                 }
                 have 0 <= i by {
-                    arithmetic_certificate signed_int32 {
-                        premise 0: (at(function.entry, 0) as int32) < (at(function.entry, count) as
-                            int32) => (at(function.entry, 0) as int32) < (at(function.entry, count)
-                            as int32);
-                        premise 1: (at(function.entry, start) as int32) < (at(function.entry, end)
-                            as int32) => (at(function.entry, start) as int32) < (at(function.entry,
-                            end) as int32);
-                        premise 2: (count as int32) <= (end as int32) => (count as int32) <= (end as
-                            int32);
-                        premise 3: (at(function.entry, end) as int32) <= (at(function.entry,
-                            arena->capacity) as int32) => (at(function.entry, end) as int32) <=
-                            (at(function.entry, arena->capacity) as int32);
-                        premise 4: (at(function.entry, arena->capacity) as int32) <=
-                            (at(function.entry, 536870911) as int32) => (at(function.entry,
-                            arena->capacity) as int32) <= (at(function.entry, 536870911) as int32);
-                        premise 5: (at(function.entry, start) as int32) <= (at(function.entry, end)
-                            as int32) => (at(function.entry, start) as int32) <= (at(function.entry,
-                            end) as int32);
-                        premise 6: (at(function.entry, start) as int32) <= (at(function.entry, i) as
-                            int32) => (at(function.entry, start) as int32) <= (at(function.entry, i)
-                            as int32);
-                        premise 7: (start as int32) <= (m as int32) => (start as int32) <= (m as
-                            int32);
-                        add 2, 0 => (to_integer((count as int32)) + to_integer((at(function.entry,
-                            0) as int32))) < (to_integer((end as int32)) +
-                            to_integer((at(function.entry, count) as int32)));
-                        add 3, 4 => (to_integer((at(function.entry, end) as int32)) +
-                            to_integer((at(function.entry, arena->capacity) as int32))) <=
-                            (to_integer((at(function.entry, arena->capacity) as int32)) +
-                            to_integer((at(function.entry, 536870911) as int32)));
-                        interval_from_affine 8 (end) (1) (2147483647);
-                        interval_from_affine 9 (end) (-2147483648) (536870911);
-                        interval_intersect 10, 11 (1) (536870911);
-                        add 2, 9 => (to_integer((count as int32)) + (to_integer((at(function.entry,
-                            end) as int32)) + to_integer((at(function.entry, arena->capacity) as
-                            int32)))) <= (to_integer((end as int32)) +
-                            (to_integer((at(function.entry, arena->capacity) as int32)) +
-                            to_integer((at(function.entry, 536870911) as int32))));
-                        interval_from_affine 0 (count) (1) (2147483647);
-                        interval_from_affine 13 (count) (-2147483648) (536870911);
-                        interval_intersect 14, 15 (1) (536870911);
-                        interval_subtract 12, 16 12 (-536870910) (536870910);
-                        affine_premise 6 17 17 => to_integer((at(function.entry, start) as int32))
-                            <= to_integer((at(function.entry, i) as int32));
-                        add 2, 18 => 0 <= i;
-                        conclusion 19;
-                    }
+                    solve() using { (at(function.entry, 0) as int32) < (at(function.entry, count) as
+                            int32); (at(function.entry, start) as int32) < (at(function.entry, end)
+                            as int32); (count as int32) <= (end as int32); (at(function.entry, end) as int32) <= (at(function.entry,
+                            arena->capacity) as int32); (at(function.entry, arena->capacity) as int32) <=
+                            (at(function.entry, 536870911) as int32); (at(function.entry, start) as int32) <= (at(function.entry, end)
+                            as int32); (at(function.entry, start) as int32) <= (at(function.entry, i) as
+                            int32); (start as int32) <= (m as int32); };
                 }
                 have i < arena->capacity by {
-                    arithmetic_certificate {
-                        premise 0: at(region(24).entry, i) < at(region(24).entry, end) =>
-                            at(region(24).entry, i) < at(region(24).entry, end);
-                        premise 1: at(function.entry, end) <= at(function.entry, arena->capacity) =>
-                            at(function.entry, end) <= at(function.entry, arena->capacity);
-                        add 0, 1 => (at(region(24).entry, to_integer((i as int32))) +
-                            at(function.entry, to_integer((end as int32)))) < (at(region(24).entry,
-                            to_integer((end as int32))) + at(function.entry,
-                            to_integer((arena->capacity as int32))));
-                        conclusion 2;
-                    }
+                    solve() using { at(region(24).entry, i) < at(region(24).entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
                 }
                 mark opened;
                 have contains(memory(*arena), memory(arena->occupied)) by {
@@ -2250,27 +1528,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     extract((to_integer(at(opened, i)) + 1) <= to_integer(k));
                     extract(k < end);
                     have at(opened, i) < k by {
-                        arithmetic_certificate {
-                            negated_goal => to_integer((k as int32)) <= at(opened, to_integer((i as
-                                int32)));
-                            premise 0: (let integer_value: Integer = to_integer((i as int32)) + 1;
-                                integer_value) <= to_integer((k as int32)) => (let integer_value:
-                                Integer = to_integer((i as int32)) + 1; integer_value) <=
-                                to_integer((k as int32));
-                            add 0, 1 => (to_integer((k as int32)) + (let integer_value: Integer =
-                                to_integer((i as int32)) + 1; integer_value)) <= (at(opened,
-                                to_integer((i as int32))) + to_integer((k as int32)));
-                            conclusion 2;
-                        }
+                        solve() using { (let integer_value: Integer = to_integer((i as int32)) + 1;
+                                integer_value) <= to_integer((k as int32)); };
                     }
                     have at(opened, i) <= k by {
-                        arithmetic_certificate {
-                            premise 0: at(opened, i) < k => at(opened, i) < k;
-                            trivial => -1 <= 0;
-                            add 0, 1 => (at(opened, to_integer((i as int32))) + -1) < (to_integer((k
-                                as int32)) + 0);
-                            conclusion 2;
-                        }
+                        solve() using { at(opened, i) < k; };
                     }
                     have m <= k by {
                         known();
@@ -2282,30 +1544,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         };
                     }
                     have 0 <= k by {
-                        arithmetic_certificate signed_int32 {
-                            premise 0: (at(function.entry, 0) as int32) <= (at(function.entry, i) as
-                                int32) => (at(function.entry, 0) as int32) <= (at(function.entry, i)
-                                as int32);
-                            premise 1: (at(opened, i) as int32) <= (k as int32) => (at(opened, i) as
-                                int32) <= (k as int32);
-                            add 0, 1 => (to_integer((at(function.entry, 0) as int32)) +
-                                to_integer((at(opened, i) as int32))) <=
-                                (to_integer((at(function.entry, i) as int32)) + to_integer((k as
-                                int32)));
-                            conclusion 2;
-                        }
+                        solve() using { (at(function.entry, 0) as int32) <= (at(function.entry, i) as
+                                int32); (at(opened, i) as int32) <= (k as int32); };
                     }
                     have k < at(opened, arena->capacity) by {
-                        arithmetic_certificate {
-                            premise 0: k < end => k < end;
-                            premise 1: at(function.entry, end) <= at(function.entry,
-                                arena->capacity) => at(function.entry, end) <= at(function.entry,
-                                arena->capacity);
-                            add 0, 1 => (to_integer((k as int32)) + at(function.entry,
-                                to_integer((end as int32)))) < (to_integer((end as int32)) +
-                                at(function.entry, to_integer((arena->capacity as int32))));
-                            conclusion 2;
-                        }
+                        solve() using { k < end; at(function.entry, end) <= at(function.entry,
+                                arena->capacity); };
                     }
                     have at(opened, i) != k by { solve() using { at(opened, i) < k; }; }
                     have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
@@ -2333,64 +1577,15 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             };
                         }
                         have 0 <= k by {
-                            arithmetic_certificate signed_int32 {
-                                premise 0: (at(function.entry, 0) as int32) < (at(function.entry,
-                                    count) as int32) => (at(function.entry, 0) as int32) <
-                                    (at(function.entry, count) as int32);
-                                premise 1: (at(region(24).entry, i) as int32) <
-                                    (at(region(24).entry, end) as int32) => (at(region(24).entry, i)
-                                    as int32) < (at(region(24).entry, end) as int32);
-                                premise 2: (at(function.entry, start) as int32) <
-                                    (at(function.entry, end) as int32) => (at(function.entry, start)
-                                    as int32) < (at(function.entry, end) as int32);
-                                premise 3: (at(function.entry, 0) as int32) <= (at(function.entry,
-                                    i) as int32) => (at(function.entry, 0) as int32) <=
-                                    (at(function.entry, i) as int32);
-                                premise 4: (count as int32) <= (end as int32) => (count as int32) <=
-                                    (end as int32);
-                                premise 5: (at(function.entry, end) as int32) <= (at(function.entry,
-                                    arena->capacity) as int32) => (at(function.entry, end) as int32)
-                                    <= (at(function.entry, arena->capacity) as int32);
-                                premise 6: (at(function.entry, arena->capacity) as int32) <=
-                                    (at(function.entry, 536870911) as int32) => (at(function.entry,
-                                    arena->capacity) as int32) <= (at(function.entry, 536870911) as
-                                    int32);
-                                premise 7: (at(function.entry, start) as int32) <=
-                                    (at(function.entry, end) as int32) => (at(function.entry, start)
-                                    as int32) <= (at(function.entry, end) as int32);
-                                premise 8: (at(function.entry, start) as int32) <=
-                                    (at(function.entry, i) as int32) => (at(function.entry, start)
-                                    as int32) <= (at(function.entry, i) as int32);
-                                premise 9: (start as int32) <= (m as int32) => (start as int32) <=
-                                    (m as int32);
-                                premise 10: (start as int32) <= (k as int32) => (start as int32) <=
-                                    (k as int32);
-                                add 1, 3 => (to_integer((at(region(24).entry, i) as int32)) +
-                                    to_integer((at(function.entry, 0) as int32))) <
-                                    (to_integer((at(region(24).entry, end) as int32)) +
-                                    to_integer((at(function.entry, i) as int32)));
-                                add 5, 6 => (to_integer((at(function.entry, end) as int32)) +
-                                    to_integer((at(function.entry, arena->capacity) as int32))) <=
-                                    (to_integer((at(function.entry, arena->capacity) as int32)) +
-                                    to_integer((at(function.entry, 536870911) as int32)));
-                                interval_from_affine 11 (end) (1) (2147483647);
-                                interval_from_affine 12 (end) (-2147483648) (536870911);
-                                interval_intersect 13, 14 (1) (536870911);
-                                add 4, 12 => (to_integer((count as int32)) +
-                                    (to_integer((at(function.entry, end) as int32)) +
-                                    to_integer((at(function.entry, arena->capacity) as int32)))) <=
-                                    (to_integer((end as int32)) + (to_integer((at(function.entry,
-                                    arena->capacity) as int32)) + to_integer((at(function.entry,
-                                    536870911) as int32))));
-                                interval_from_affine 0 (count) (1) (2147483647);
-                                interval_from_affine 16 (count) (-2147483648) (536870911);
-                                interval_intersect 17, 18 (1) (536870911);
-                                interval_subtract 15, 19 15 (-536870910) (536870910);
-                                affine_premise 10 20 20 => to_integer((start as int32)) <=
-                                    to_integer((k as int32));
-                                add 4, 21 => 0 <= k;
-                                conclusion 22;
-                            }
+                            solve() using { (at(function.entry, 0) as int32) < (at(function.entry,
+                                    count) as int32); (at(region(24).entry, i) as int32) <
+                                    (at(region(24).entry, end) as int32); (at(function.entry, start) as int32) <
+                                    (at(function.entry, end) as int32); (at(function.entry, 0) as int32) <= (at(function.entry,
+                                    i) as int32); (count as int32) <= (end as int32); (at(function.entry, end) as int32) <= (at(function.entry,
+                                    arena->capacity) as int32); (at(function.entry, arena->capacity) as int32) <=
+                                    (at(function.entry, 536870911) as int32); (at(function.entry, start) as int32) <=
+                                    (at(function.entry, end) as int32); (at(function.entry, start) as int32) <=
+                                    (at(function.entry, i) as int32); (start as int32) <= (m as int32); (start as int32) <= (k as int32); };
                         }
                         have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
                         have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
@@ -2403,27 +1598,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         known();
                     } else {
                         have k <= at(opened, i) by {
-                            arithmetic_certificate {
-                                negated_goal => at(opened, to_integer((i as int32))) < to_integer((k
-                                    as int32));
-                                premise 0: (let integer_value: Integer = to_integer((k as int32));
-                                    integer_value) < (to_integer((i as int32)) + 1) => (let
-                                    integer_value: Integer = to_integer((k as int32));
-                                    integer_value) < (to_integer((i as int32)) + 1);
-                                add 0, 1 => (at(opened, to_integer((i as int32))) + 1 + ((let
-                                    integer_value: Integer = to_integer((k as int32));
-                                    integer_value) + 1)) <= (to_integer((k as int32)) +
-                                    (to_integer((i as int32)) + 1));
-                                conclusion 2;
-                            }
+                            solve() using { (let integer_value: Integer = to_integer((k as int32));
+                                    integer_value) < (to_integer((i as int32)) + 1); };
                         }
                         have k == at(opened, i) by {
-                            arithmetic_certificate {
-                                premise 0: k <= at(opened, i) => k <= at(opened, i);
-                                premise 1: not k < i => not k < i;
-                                equal_from_bounds 0, 1 => k == at(opened, i);
-                                conclusion 2;
-                            }
+                            solve() using { k <= at(opened, i); not k < i; };
                         }
                         rewrite(k, at(opened, i));
                         normalize() using {
@@ -2444,15 +1623,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         };
                     }
                     have k < at(opened, i) by {
-                        arithmetic_certificate {
-                            premise 0: k < start => k < start;
-                            premise 1: start <= at(region(24).entry, i) => start <=
-                                at(region(24).entry, i);
-                            add 0, 1 => (to_integer((k as int32)) + to_integer((start as int32))) <
-                                (to_integer((start as int32)) + at(region(24).entry, to_integer((i
-                                as int32))));
-                            conclusion 2;
-                        }
+                        solve() using { k < start; start <= at(region(24).entry, i); };
                     }
                     have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
                     have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
@@ -2479,37 +1650,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         };
                     }
                     have at(opened, i) < k by {
-                        arithmetic_certificate {
-                            premise 0: at(region(24).entry, i) < at(region(24).entry, end) =>
-                                at(region(24).entry, i) < at(region(24).entry, end);
-                            premise 1: end <= k => end <= k;
-                            add 0, 1 => (at(region(24).entry, to_integer((i as int32))) +
-                                to_integer((end as int32))) < (at(region(24).entry, to_integer((end
-                                as int32))) + to_integer((k as int32)));
-                            conclusion 2;
-                        }
+                        solve() using { at(region(24).entry, i) < at(region(24).entry, end); end <= k; };
                     }
                     have at(opened, i) <= k by {
-                        arithmetic_certificate signed_int32 {
-                            premise 0: (at(opened, i) as int32) < (k as int32) => (at(opened, i) as
-                                int32) < (k as int32);
-                            trivial => -1 <= 0;
-                            add 0, 1 => (to_integer((at(opened, i) as int32)) + -1) < (to_integer((k
-                                as int32)) + 0);
-                            conclusion 2;
-                        }
+                        solve() using { (at(opened, i) as int32) < (k as int32); };
                     }
                     have 0 <= k by {
-                        arithmetic_certificate signed_int32 {
-                            premise 0: (0 as int32) <= (at(region(24).entry, i) as int32) => (0 as
-                                int32) <= (at(region(24).entry, i) as int32);
-                            premise 1: (at(opened, i) as int32) <= (k as int32) => (at(opened, i) as
-                                int32) <= (k as int32);
-                            add 0, 1 => (to_integer((0 as int32)) + to_integer((at(opened, i) as
-                                int32))) <= (to_integer((at(region(24).entry, i) as int32)) +
-                                to_integer((k as int32)));
-                            conclusion 2;
-                        }
+                        solve() using { (0 as int32) <= (at(region(24).entry, i) as int32); (at(opened, i) as int32) <= (k as int32); };
                     }
                     have at(opened, i) != k by { solve() using { at(opened, i) < k; }; }
                     have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
@@ -2528,82 +1675,21 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     extract(k < end);
                     have (to_integer(at(opened, i)) + 1) <= to_integer(k) by {
                         have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                            arithmetic_certificate {
-                                negated_goal => (to_integer(at(opened, i)) + 1) < -2147483648;
-                                premise 0: 0 <= to_integer(at(opened, i)) => 0 <=
-                                    to_integer(at(opened, i));
-                                add 0, 1 => (to_integer(at(opened, i)) + 1 + 0) < (-2147483648 +
-                                    to_integer(at(opened, i)));
-                                conclusion 2;
-                            }
+                            solve() using { 0 <= to_integer(at(opened, i)); };
                         }
                         have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                            arithmetic_certificate {
-                                negated_goal => 2147483647 < (to_integer(at(opened, i)) + 1);
-                                premise 0: (let integer_value: Integer = to_integer((run_lo as
+                            solve() using { (let integer_value: Integer = to_integer((run_lo as
                                     int32)) + to_integer((count as int32)); integer_value) <=
-                                    2147483647 => (let integer_value: Integer = to_integer((run_lo
-                                    as int32)) + to_integer((count as int32)); integer_value) <=
-                                    2147483647;
-                                premise 1: (let integer_value: Integer = to_integer((end as int32));
+                                    2147483647; (let integer_value: Integer = to_integer((end as int32));
                                     integer_value) == (to_integer((run_lo as int32)) +
-                                    to_integer((count as int32))) => (let integer_value: Integer =
-                                    to_integer((end as int32)); integer_value) ==
-                                    (to_integer((run_lo as int32)) + to_integer((count as int32)));
-                                less_equal_from_equal 2 => (let integer_value: Integer =
-                                    to_integer((end as int32)); integer_value) <=
-                                    (to_integer((run_lo as int32)) + to_integer((count as int32)));
-                                premise 2: to_integer(at(opened, i)) < to_integer((let
+                                    to_integer((count as int32))); to_integer(at(opened, i)) < to_integer((let
                                     integer_value: Integer = to_integer((end as int32));
-                                    integer_value)) => to_integer(at(opened, i)) < to_integer((let
-                                    integer_value: Integer = to_integer((end as int32));
-                                    integer_value));
-                                add 0, 1 => (2147483647 + (let integer_value: Integer =
-                                    to_integer((run_lo as int32)) + to_integer((count as int32));
-                                    integer_value)) < (to_integer(at(opened, i)) + 1 + 2147483647);
-                                add 5, 3 => (2147483647 + (let integer_value: Integer =
-                                    to_integer((run_lo as int32)) + to_integer((count as int32));
-                                    integer_value) + (let integer_value: Integer = to_integer((end
-                                    as int32)); integer_value)) < (to_integer(at(opened, i)) + 1 +
-                                    2147483647 + (to_integer((run_lo as int32)) + to_integer((count
-                                    as int32))));
-                                add 6, 4 => (2147483647 + (let integer_value: Integer =
-                                    to_integer((run_lo as int32)) + to_integer((count as int32));
-                                    integer_value) + (let integer_value: Integer = to_integer((end
-                                    as int32)); integer_value) + 1 + (to_integer(at(opened, i)) +
-                                    1)) <= (to_integer(at(opened, i)) + 1 + 2147483647 +
-                                    (to_integer((run_lo as int32)) + to_integer((count as int32))) +
-                                    to_integer((let integer_value: Integer = to_integer((end as
-                                    int32)); integer_value)));
-                                conclusion 7;
-                            }
+                                    integer_value)); };
                         }
                         have to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) by {
-                            arithmetic_certificate rules {
-                                premise 0: -2147483648 <= (to_integer(at(opened, i)) + 1) =>
-                                    -2147483648 <= (to_integer(at(opened, i)) + 1);
-                                premise 1: (to_integer(at(opened, i)) + 1) <= 2147483647 =>
-                                    (to_integer(at(opened, i)) + 1) <= 2147483647;
-                                integer_operation_identity bounds [0, 1] => to_integer((i as int32))
-                                    == (to_integer(at(opened, i)) + 1);
-                                conclusion 0;
-                            }
+                            solve() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
                         }
-                        arithmetic_certificate {
-                            negated_goal => to_integer(k) < (to_integer(at(opened, i)) + 1);
-                            premise 0: to_integer((i as int32)) == (to_integer(at(opened, i)) + 1)
-                                => to_integer((i as int32)) == (to_integer(at(opened, i)) + 1);
-                            less_equal_from_equal 1 reverse => (to_integer(at(opened, i)) + 1) <=
-                                to_integer((i as int32));
-                            premise 1: to_integer((i as int32)) <= to_integer(k) => to_integer((i as
-                                int32)) <= to_integer(k);
-                            add 0, 2 => (to_integer(k) + (to_integer(at(opened, i)) + 1)) <
-                                (to_integer(at(opened, i)) + 1 + to_integer((i as int32)));
-                            add 4, 3 => (to_integer(k) + (to_integer(at(opened, i)) + 1) +
-                                to_integer((i as int32))) < (to_integer(at(opened, i)) + 1 +
-                                to_integer((i as int32)) + to_integer(k));
-                            conclusion 5;
-                        }
+                        solve() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer((i as int32)) <= to_integer(k); };
                     }
                     instantiate(forall (j: int32) { (to_integer(at(opened, i)) + 1) <= to_integer(j) and j < end implies arena->occupied[j] == 0 }, k) using {
                         (to_integer(at(opened, i)) + 1) <= to_integer(k);
@@ -2617,82 +1703,21 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     extract(k < i);
                     have to_integer(k) < (to_integer(at(opened, i)) + 1) by {
                         have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                            arithmetic_certificate {
-                                negated_goal => (to_integer(at(opened, i)) + 1) < -2147483648;
-                                premise 0: 0 <= to_integer(at(opened, i)) => 0 <=
-                                    to_integer(at(opened, i));
-                                add 0, 1 => (to_integer(at(opened, i)) + 1 + 0) < (-2147483648 +
-                                    to_integer(at(opened, i)));
-                                conclusion 2;
-                            }
+                            solve() using { 0 <= to_integer(at(opened, i)); };
                         }
                         have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                            arithmetic_certificate {
-                                negated_goal => 2147483647 < (to_integer(at(opened, i)) + 1);
-                                premise 0: (let integer_value: Integer = to_integer((run_lo as
+                            solve() using { (let integer_value: Integer = to_integer((run_lo as
                                     int32)) + to_integer((count as int32)); integer_value) <=
-                                    2147483647 => (let integer_value: Integer = to_integer((run_lo
-                                    as int32)) + to_integer((count as int32)); integer_value) <=
-                                    2147483647;
-                                premise 1: (let integer_value: Integer = to_integer((end as int32));
+                                    2147483647; (let integer_value: Integer = to_integer((end as int32));
                                     integer_value) == (to_integer((run_lo as int32)) +
-                                    to_integer((count as int32))) => (let integer_value: Integer =
-                                    to_integer((end as int32)); integer_value) ==
-                                    (to_integer((run_lo as int32)) + to_integer((count as int32)));
-                                less_equal_from_equal 2 => (let integer_value: Integer =
-                                    to_integer((end as int32)); integer_value) <=
-                                    (to_integer((run_lo as int32)) + to_integer((count as int32)));
-                                premise 2: to_integer(at(opened, i)) < to_integer((let
+                                    to_integer((count as int32))); to_integer(at(opened, i)) < to_integer((let
                                     integer_value: Integer = to_integer((end as int32));
-                                    integer_value)) => to_integer(at(opened, i)) < to_integer((let
-                                    integer_value: Integer = to_integer((end as int32));
-                                    integer_value));
-                                add 0, 1 => (2147483647 + (let integer_value: Integer =
-                                    to_integer((run_lo as int32)) + to_integer((count as int32));
-                                    integer_value)) < (to_integer(at(opened, i)) + 1 + 2147483647);
-                                add 5, 3 => (2147483647 + (let integer_value: Integer =
-                                    to_integer((run_lo as int32)) + to_integer((count as int32));
-                                    integer_value) + (let integer_value: Integer = to_integer((end
-                                    as int32)); integer_value)) < (to_integer(at(opened, i)) + 1 +
-                                    2147483647 + (to_integer((run_lo as int32)) + to_integer((count
-                                    as int32))));
-                                add 6, 4 => (2147483647 + (let integer_value: Integer =
-                                    to_integer((run_lo as int32)) + to_integer((count as int32));
-                                    integer_value) + (let integer_value: Integer = to_integer((end
-                                    as int32)); integer_value) + 1 + (to_integer(at(opened, i)) +
-                                    1)) <= (to_integer(at(opened, i)) + 1 + 2147483647 +
-                                    (to_integer((run_lo as int32)) + to_integer((count as int32))) +
-                                    to_integer((let integer_value: Integer = to_integer((end as
-                                    int32)); integer_value)));
-                                conclusion 7;
-                            }
+                                    integer_value)); };
                         }
                         have to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) by {
-                            arithmetic_certificate rules {
-                                premise 0: -2147483648 <= (to_integer(at(opened, i)) + 1) =>
-                                    -2147483648 <= (to_integer(at(opened, i)) + 1);
-                                premise 1: (to_integer(at(opened, i)) + 1) <= 2147483647 =>
-                                    (to_integer(at(opened, i)) + 1) <= 2147483647;
-                                integer_operation_identity bounds [0, 1] => to_integer((i as int32))
-                                    == (to_integer(at(opened, i)) + 1);
-                                conclusion 0;
-                            }
+                            solve() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
                         }
-                        arithmetic_certificate {
-                            negated_goal => (to_integer(at(opened, i)) + 1) <= to_integer(k);
-                            premise 0: to_integer((i as int32)) == (to_integer(at(opened, i)) + 1)
-                                => to_integer((i as int32)) == (to_integer(at(opened, i)) + 1);
-                            less_equal_from_equal 1 => to_integer((i as int32)) <=
-                                (to_integer(at(opened, i)) + 1);
-                            premise 1: to_integer(k) < to_integer((i as int32)) => to_integer(k) <
-                                to_integer((i as int32));
-                            add 0, 2 => (to_integer(at(opened, i)) + 1 + to_integer((i as int32)))
-                                <= (to_integer(k) + (to_integer(at(opened, i)) + 1));
-                            add 4, 3 => (to_integer(at(opened, i)) + 1 + to_integer((i as int32)) +
-                                to_integer(k)) < (to_integer(k) + (to_integer(at(opened, i)) + 1) +
-                                to_integer((i as int32)));
-                            conclusion 5;
-                        }
+                        solve() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer(k) < to_integer((i as int32)); };
                     }
                     instantiate(forall (j: int32) { start <= j and to_integer(j) < (to_integer(at(opened, i)) + 1) implies arena->occupied[j] == 1 }, k) using {
                         start <= k;
@@ -2726,64 +1751,17 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have to_integer(i) == (to_integer(at(opened, i)) + 1) by {
                     have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                        arithmetic_certificate {
-                            negated_goal => (to_integer(at(opened, i)) + 1) < -2147483648;
-                            premise 0: 0 <= to_integer(at(opened, i)) => 0 <= to_integer(at(opened,
-                                i));
-                            add 0, 1 => (to_integer(at(opened, i)) + 1 + 0) < (-2147483648 +
-                                to_integer(at(opened, i)));
-                            conclusion 2;
-                        }
+                        solve() using { 0 <= to_integer(at(opened, i)); };
                     }
                     have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                        arithmetic_certificate {
-                            negated_goal => 2147483647 < (to_integer(at(opened, i)) + 1);
-                            premise 0: (let integer_value: Integer = to_integer((run_lo as int32)) +
-                                to_integer((count as int32)); integer_value) <= 2147483647 => (let
-                                integer_value: Integer = to_integer((run_lo as int32)) +
-                                to_integer((count as int32)); integer_value) <= 2147483647;
-                            premise 1: (let integer_value: Integer = to_integer((end as int32));
+                        solve() using { (let integer_value: Integer = to_integer((run_lo as int32)) +
+                                to_integer((count as int32)); integer_value) <= 2147483647; (let integer_value: Integer = to_integer((end as int32));
                                 integer_value) == (to_integer((run_lo as int32)) + to_integer((count
-                                as int32))) => (let integer_value: Integer = to_integer((end as
-                                int32)); integer_value) == (to_integer((run_lo as int32)) +
-                                to_integer((count as int32)));
-                            less_equal_from_equal 2 => (let integer_value: Integer = to_integer((end
-                                as int32)); integer_value) <= (to_integer((run_lo as int32)) +
-                                to_integer((count as int32)));
-                            premise 2: to_integer(at(opened, i)) < to_integer((let integer_value:
-                                Integer = to_integer((end as int32)); integer_value)) =>
-                                to_integer(at(opened, i)) < to_integer((let integer_value: Integer =
-                                to_integer((end as int32)); integer_value));
-                            add 0, 1 => (2147483647 + (let integer_value: Integer =
-                                to_integer((run_lo as int32)) + to_integer((count as int32));
-                                integer_value)) < (to_integer(at(opened, i)) + 1 + 2147483647);
-                            add 5, 3 => (2147483647 + (let integer_value: Integer =
-                                to_integer((run_lo as int32)) + to_integer((count as int32));
-                                integer_value) + (let integer_value: Integer = to_integer((end as
-                                int32)); integer_value)) < (to_integer(at(opened, i)) + 1 +
-                                2147483647 + (to_integer((run_lo as int32)) + to_integer((count as
-                                int32))));
-                            add 6, 4 => (2147483647 + (let integer_value: Integer =
-                                to_integer((run_lo as int32)) + to_integer((count as int32));
-                                integer_value) + (let integer_value: Integer = to_integer((end as
-                                int32)); integer_value) + 1 + (to_integer(at(opened, i)) + 1)) <=
-                                (to_integer(at(opened, i)) + 1 + 2147483647 + (to_integer((run_lo as
-                                int32)) + to_integer((count as int32))) + to_integer((let
-                                integer_value: Integer = to_integer((end as int32));
-                                integer_value)));
-                            conclusion 7;
-                        }
+                                as int32))); to_integer(at(opened, i)) < to_integer((let integer_value:
+                                Integer = to_integer((end as int32)); integer_value)); };
                     }
                     have to_integer(i) == (to_integer(at(opened, i)) + 1) by {
-                        arithmetic_certificate rules {
-                            premise 0: -2147483648 <= (to_integer(at(opened, i)) + 1) => -2147483648
-                                <= (to_integer(at(opened, i)) + 1);
-                            premise 1: (to_integer(at(opened, i)) + 1) <= 2147483647 =>
-                                (to_integer(at(opened, i)) + 1) <= 2147483647;
-                            integer_operation_identity bounds [0, 1] => to_integer(i) ==
-                                (to_integer(at(opened, i)) + 1);
-                            conclusion 0;
-                        }
+                        solve() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
                     }
                     known();
                 }
@@ -2795,11 +1773,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 let w = fold(arena_window(old(arena->data), old(arena->occupied), old(arena->capacity), start, end), { next: i });
                 have 0 <= (to_integer(end) - to_integer(i)) by {
-                    arithmetic_certificate {
-                        premise 0: to_integer(i) <= to_integer(end) => 0 <= (to_integer(end) -
-                            to_integer(i));
-                        conclusion 0;
-                    }
+                    solve() using { to_integer(i) <= to_integer(end); };
                 }
                 have (to_integer(end) - to_integer(i)) < (to_integer(end) - to_integer(at(opened, i))) by {
                     rewrite(to_integer(i), (to_integer(at(opened, i)) + 1));
@@ -2843,14 +1817,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             known();
         }
         have m == end by {
-            arithmetic_certificate {
-                premise 0: at(function.entry, m) <= at(function.entry, end) => at(function.entry, m)
-                    <= at(function.entry, end);
-                premise 1: not at(function.entry, m) < at(function.entry, end) => not
-                    at(function.entry, m) < at(function.entry, end);
-                equal_from_bounds 0, 1 => m == end;
-                conclusion 2;
-            }
+            solve() using { at(function.entry, m) <= at(function.entry, end); not at(function.entry, m) < at(function.entry, end); };
         }
         have forall (k: int32) { start <= k and k < end implies arena->occupied[k] == 1 } by {
             intro();
@@ -2877,31 +1844,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have k < end by {
-                arithmetic_certificate {
-                    premise 0: k < start => k < start;
-                    premise 1: at(function.entry, start) < at(function.entry, end) =>
-                        at(function.entry, start) < at(function.entry, end);
-                    add 0, 1 => (to_integer((k as int32)) + 1 + (at(function.entry,
-                        to_integer((start as int32))) + 1)) <= (to_integer((start as int32)) +
-                        at(function.entry, to_integer((end as int32))));
-                    trivial => -1 <= 0;
-                    add 2, 3 => (to_integer((k as int32)) + 1 + (at(function.entry,
-                        to_integer((start as int32))) + 1) + -1) <= (to_integer((start as int32)) +
-                        at(function.entry, to_integer((end as int32))) + 0);
-                    conclusion 4;
-                }
+                solve() using { k < start; at(function.entry, start) < at(function.entry, end); };
             }
             have k < arena->capacity by {
-                arithmetic_certificate {
-                    premise 0: at(function.entry, k) < at(function.entry, end) => at(function.entry,
-                        k) < at(function.entry, end);
-                    premise 1: at(function.entry, end) <= at(function.entry, arena->capacity) =>
-                        at(function.entry, end) <= at(function.entry, arena->capacity);
-                    add 0, 1 => (at(function.entry, to_integer((k as int32))) + at(function.entry,
-                        to_integer((end as int32)))) < (at(function.entry, to_integer((end as
-                        int32))) + at(function.entry, to_integer((arena->capacity as int32))));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, k) < at(function.entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
             }
             instantiate(forall (j: int32) { at(mark_free_run.entry, 0) <= at(mark_free_run.entry, j) and at(mark_free_run.entry, j) < at(mark_free_run.entry, arena->capacity) implies at(mark_free_run.entry, arena->occupied[j]) == old(arena->occupied[j]) }, k) using {
                 0 <= k;
@@ -2924,29 +1870,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have 0 <= end by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: (at(function.entry, 0) as int32) <= (at(function.entry, count) as
-                        int32) => (at(function.entry, 0) as int32) <= (at(function.entry, count) as
-                        int32);
-                    premise 1: (count as int32) <= (end as int32) => (count as int32) <= (end as
-                        int32);
-                    add 0, 1 => (to_integer((at(function.entry, 0) as int32)) + to_integer((count as
-                        int32))) <= (to_integer((at(function.entry, count) as int32)) +
-                        to_integer((end as int32)));
-                    conclusion 2;
-                }
+                solve() using { (at(function.entry, 0) as int32) <= (at(function.entry, count) as
+                        int32); (count as int32) <= (end as int32); };
             }
             have 0 <= k by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: (at(function.entry, 0) as int32) <= (at(function.entry, end) as
-                        int32) => (at(function.entry, 0) as int32) <= (at(function.entry, end) as
-                        int32);
-                    premise 1: (end as int32) <= (k as int32) => (end as int32) <= (k as int32);
-                    add 0, 1 => (to_integer((at(function.entry, 0) as int32)) + to_integer((end as
-                        int32))) <= (to_integer((at(function.entry, end) as int32)) + to_integer((k
-                        as int32)));
-                    conclusion 2;
-                }
+                solve() using { (at(function.entry, 0) as int32) <= (at(function.entry, end) as
+                        int32); (end as int32) <= (k as int32); };
             }
             instantiate(forall (j: int32) { at(mark_free_run.entry, 0) <= at(mark_free_run.entry, j) and at(mark_free_run.entry, j) < at(mark_free_run.entry, arena->capacity) implies at(mark_free_run.entry, arena->occupied[j]) == old(arena->occupied[j]) }, k) using {
                 0 <= k;
@@ -2975,12 +1904,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             extract((let integer_value: Integer = (to_integer((end as int32)) - to_integer((count as int32))); integer_value) <= 2147483647);
             extract((let integer_value: Integer = to_integer((run_lo as int32)) + to_integer((count as int32)); integer_value) >= -2147483648);
             extract((let integer_value: Integer = (to_integer((end as int32)) - to_integer((count as int32))); integer_value) >= -2147483648);
-            arithmetic_certificate rules {
-                premise 0: at(function.entry, st.live) < at(function.entry, 2147483647) =>
-                    at(function.entry, st.live) < at(function.entry, 2147483647);
-                int32_defined bounds [0] => defined((n + 1));
-                conclusion 0;
-            }
+            solve() using { at(function.entry, st.live) < at(function.entry, 2147483647); };
         }
         step();
         have region->start == start by {
@@ -3001,74 +1925,78 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have 0 <= k by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: (at(function.entry, 0) as int32) < (at(function.entry, count) as
-                        int32) => (at(function.entry, 0) as int32) < (at(function.entry, count) as
-                        int32);
-                    premise 1: (at(function.entry, start) as int32) < (at(function.entry, end) as
-                        int32) => (at(function.entry, start) as int32) < (at(function.entry, end) as
-                        int32);
-                    premise 2: (count as int32) <= (end as int32) => (count as int32) <= (end as
-                        int32);
-                    premise 3: (at(function.entry, end) as int32) <= (at(function.entry,
-                        arena->capacity) as int32) => (at(function.entry, end) as int32) <=
-                        (at(function.entry, arena->capacity) as int32);
-                    premise 4: (at(function.entry, arena->capacity) as int32) <= (at(function.entry,
-                        536870911) as int32) => (at(function.entry, arena->capacity) as int32) <=
-                        (at(function.entry, 536870911) as int32);
-                    premise 5: (at(function.entry, start) as int32) <= (at(function.entry, end) as
-                        int32) => (at(function.entry, start) as int32) <= (at(function.entry, end)
-                        as int32);
-                    premise 6: (at(function.entry, start) as int32) <= (at(function.entry, k) as
-                        int32) => (at(function.entry, start) as int32) <= (at(function.entry, k) as
-                        int32);
-                    add 2, 0 => (to_integer((count as int32)) + to_integer((at(function.entry, 0) as
-                        int32))) < (to_integer((end as int32)) + to_integer((at(function.entry,
-                        count) as int32)));
-                    add 3, 4 => (to_integer((at(function.entry, end) as int32)) +
-                        to_integer((at(function.entry, arena->capacity) as int32))) <=
-                        (to_integer((at(function.entry, arena->capacity) as int32)) +
-                        to_integer((at(function.entry, 536870911) as int32)));
-                    interval_from_affine 7 (end) (1) (2147483647);
-                    interval_from_affine 8 (end) (-2147483648) (536870911);
-                    interval_intersect 9, 10 (1) (536870911);
-                    add 2, 8 => (to_integer((count as int32)) + (to_integer((at(function.entry, end)
-                        as int32)) + to_integer((at(function.entry, arena->capacity) as int32)))) <=
-                        (to_integer((end as int32)) + (to_integer((at(function.entry,
-                        arena->capacity) as int32)) + to_integer((at(function.entry, 536870911) as
-                        int32))));
-                    interval_from_affine 0 (count) (1) (2147483647);
-                    interval_from_affine 12 (count) (-2147483648) (536870911);
-                    interval_intersect 13, 14 (1) (536870911);
-                    interval_subtract 11, 15 11 (-536870910) (536870910);
-                    affine_premise 6 16 16 => to_integer((at(function.entry, start) as int32)) <=
-                        to_integer((at(function.entry, k) as int32));
-                    add 2, 17 => 0 <= k;
-                    conclusion 18;
-                }
+                solve() using { (at(function.entry, 0) as int32) < (at(function.entry, count) as
+                        int32); (at(function.entry, start) as int32) < (at(function.entry, end) as
+                        int32); (count as int32) <= (end as int32); (at(function.entry, end) as int32) <= (at(function.entry,
+                        arena->capacity) as int32); (at(function.entry, arena->capacity) as int32) <= (at(function.entry,
+                        536870911) as int32); (at(function.entry, start) as int32) <= (at(function.entry, end) as
+                        int32); (at(function.entry, start) as int32) <= (at(function.entry, k) as
+                        int32); };
             }
             have k < arena->capacity by {
-                arithmetic_certificate {
-                    premise 0: at(function.entry, k) < at(function.entry, end) => at(function.entry,
-                        k) < at(function.entry, end);
-                    premise 1: at(function.entry, end) <= at(function.entry, arena->capacity) =>
-                        at(function.entry, end) <= at(function.entry, arena->capacity);
-                    add 0, 1 => (at(function.entry, to_integer((k as int32))) + at(function.entry,
-                        to_integer((end as int32)))) < (at(function.entry, to_integer((end as
-                        int32))) + at(function.entry, to_integer((arena->capacity as int32))));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, k) < at(function.entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
             }
             instantiate(forall (j: int32) { at(marked, start) <= at(marked, j) and at(marked, j) < at(marked, end) implies at(marked, arena->occupied[j]) == at(marked, 1) }, k) using {
                 start <= k;
                 k < end;
             };
-            transport(at(marked, arena->occupied[k]) == at(marked, 1), arena->occupied[k] == 1) using {
-                at(marked, arena->occupied[k]) == at(marked, 1);
-                0 <= k;
-                k < arena->capacity;
-                separate(memory(*arena), memory(arena->occupied[0..arena->capacity]));
-            };
+            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { known(); }
+            have contains(memory(*region), memory(region->arena)) by { normalize(); }
+            have separate(memory(region->arena), memory(at(marked, arena->occupied)[k])) by {
+                apply(selected_array_cell(memory(*region), memory(region->arena), at(marked, arena->occupied), at(marked, arena->capacity), k)) using {
+                    separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)]));
+                    contains(memory(*region), memory(region->arena)); 0 <= k; k < at(marked, arena->capacity);
+                };
+            }
+            have separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])) by {
+                normalize() using { separate(memory(region->arena), memory(at(marked, arena->occupied)[k])); };
+            }
+            have at(statement(14).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(14).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                preserve(separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])));
+            }
+            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { known(); }
+            have contains(memory(*region), memory(region->start)) by { normalize(); }
+            have separate(memory(region->start), memory(at(marked, arena->occupied)[k])) by {
+                apply(selected_array_cell(memory(*region), memory(region->start), at(marked, arena->occupied), at(marked, arena->capacity), k)) using {
+                    separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)]));
+                    contains(memory(*region), memory(region->start)); 0 <= k; k < at(marked, arena->capacity);
+                };
+            }
+            have separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])) by {
+                normalize() using { separate(memory(region->start), memory(at(marked, arena->occupied)[k])); };
+            }
+            have at(statement(15).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(15).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                preserve(separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])));
+            }
+            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { known(); }
+            have contains(memory(*region), memory(region->end)) by { normalize(); }
+            have separate(memory(region->end), memory(at(marked, arena->occupied)[k])) by {
+                apply(selected_array_cell(memory(*region), memory(region->end), at(marked, arena->occupied), at(marked, arena->capacity), k)) using {
+                    separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)]));
+                    contains(memory(*region), memory(region->end)); 0 <= k; k < at(marked, arena->capacity);
+                };
+            }
+            have separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])) by {
+                normalize() using { separate(memory(region->end), memory(at(marked, arena->occupied)[k])); };
+            }
+            have at(statement(16).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(16).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                preserve(separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])));
+            }
+            have separate(memory(*arena), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { known(); }
+            have contains(memory(*arena), memory(arena->live_regions)) by { normalize(); }
+            have separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])) by {
+                apply(selected_array_cell(memory(*arena), memory(arena->live_regions), at(marked, arena->occupied), at(marked, arena->capacity), k)) using {
+                    separate(memory(*arena), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)]));
+                    contains(memory(*arena), memory(arena->live_regions)); 0 <= k; k < at(marked, arena->capacity);
+                };
+            }
+            have separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])) by {
+                normalize() using { separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])); };
+            }
+            have at(statement(17).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(17).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                preserve(separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])));
+            }
+            known();
         }
         have forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == old(arena->occupied[k]) } by {
             intro();
@@ -3079,45 +2007,72 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have k < end by {
-                arithmetic_certificate {
-                    premise 0: at(function.entry, k) < at(function.entry, start) =>
-                        at(function.entry, k) < at(function.entry, start);
-                    premise 1: at(function.entry, start) < at(function.entry, end) =>
-                        at(function.entry, start) < at(function.entry, end);
-                    add 0, 1 => (at(function.entry, to_integer((k as int32))) + 1 +
-                        (at(function.entry, to_integer((start as int32))) + 1)) <=
-                        (at(function.entry, to_integer((start as int32))) + at(function.entry,
-                        to_integer((end as int32))));
-                    trivial => -1 <= 0;
-                    add 2, 3 => (at(function.entry, to_integer((k as int32))) + 1 +
-                        (at(function.entry, to_integer((start as int32))) + 1) + -1) <=
-                        (at(function.entry, to_integer((start as int32))) + at(function.entry,
-                        to_integer((end as int32))) + 0);
-                    conclusion 4;
-                }
+                solve() using { at(function.entry, k) < at(function.entry, start); at(function.entry, start) < at(function.entry, end); };
             }
             have k < arena->capacity by {
-                arithmetic_certificate {
-                    premise 0: at(function.entry, k) < at(function.entry, end) => at(function.entry,
-                        k) < at(function.entry, end);
-                    premise 1: at(function.entry, end) <= at(function.entry, arena->capacity) =>
-                        at(function.entry, end) <= at(function.entry, arena->capacity);
-                    add 0, 1 => (at(function.entry, to_integer((k as int32))) + at(function.entry,
-                        to_integer((end as int32)))) < (at(function.entry, to_integer((end as
-                        int32))) + at(function.entry, to_integer((arena->capacity as int32))));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, k) < at(function.entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
             }
             instantiate(forall (j: int32) { at(marked, 0) <= at(marked, j) and at(marked, j) < at(marked, start) implies at(marked, arena->occupied[j]) == old(arena->occupied[j]) }, k) using {
                 0 <= k;
                 k < start;
             };
-            transport(at(marked, arena->occupied[k]) == old(arena->occupied[k]), arena->occupied[k] == old(arena->occupied[k])) using {
-                at(marked, arena->occupied[k]) == old(arena->occupied[k]);
-                0 <= k;
-                k < arena->capacity;
-                separate(memory(*arena), memory(arena->occupied[0..arena->capacity]));
-            };
+            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { known(); }
+            have contains(memory(*region), memory(region->arena)) by { normalize(); }
+            have separate(memory(region->arena), memory(at(marked, arena->occupied)[k])) by {
+                apply(selected_array_cell(memory(*region), memory(region->arena), at(marked, arena->occupied), at(marked, arena->capacity), k)) using {
+                    separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)]));
+                    contains(memory(*region), memory(region->arena)); 0 <= k; k < at(marked, arena->capacity);
+                };
+            }
+            have separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])) by {
+                normalize() using { separate(memory(region->arena), memory(at(marked, arena->occupied)[k])); };
+            }
+            have at(statement(14).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(14).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                preserve(separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])));
+            }
+            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { known(); }
+            have contains(memory(*region), memory(region->start)) by { normalize(); }
+            have separate(memory(region->start), memory(at(marked, arena->occupied)[k])) by {
+                apply(selected_array_cell(memory(*region), memory(region->start), at(marked, arena->occupied), at(marked, arena->capacity), k)) using {
+                    separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)]));
+                    contains(memory(*region), memory(region->start)); 0 <= k; k < at(marked, arena->capacity);
+                };
+            }
+            have separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])) by {
+                normalize() using { separate(memory(region->start), memory(at(marked, arena->occupied)[k])); };
+            }
+            have at(statement(15).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(15).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                preserve(separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])));
+            }
+            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { known(); }
+            have contains(memory(*region), memory(region->end)) by { normalize(); }
+            have separate(memory(region->end), memory(at(marked, arena->occupied)[k])) by {
+                apply(selected_array_cell(memory(*region), memory(region->end), at(marked, arena->occupied), at(marked, arena->capacity), k)) using {
+                    separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)]));
+                    contains(memory(*region), memory(region->end)); 0 <= k; k < at(marked, arena->capacity);
+                };
+            }
+            have separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])) by {
+                normalize() using { separate(memory(region->end), memory(at(marked, arena->occupied)[k])); };
+            }
+            have at(statement(16).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(16).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                preserve(separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])));
+            }
+            have separate(memory(*arena), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { known(); }
+            have contains(memory(*arena), memory(arena->live_regions)) by { normalize(); }
+            have separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])) by {
+                apply(selected_array_cell(memory(*arena), memory(arena->live_regions), at(marked, arena->occupied), at(marked, arena->capacity), k)) using {
+                    separate(memory(*arena), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)]));
+                    contains(memory(*arena), memory(arena->live_regions)); 0 <= k; k < at(marked, arena->capacity);
+                };
+            }
+            have separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])) by {
+                normalize() using { separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])); };
+            }
+            have at(statement(17).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(17).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                preserve(separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])));
+            }
+            known();
         }
         have forall (k: int32) { region->end <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
             intro();
@@ -3128,43 +2083,75 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have 0 <= end by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: (at(function.entry, 0) as int32) <= (at(function.entry, count) as
-                        int32) => (at(function.entry, 0) as int32) <= (at(function.entry, count) as
-                        int32);
-                    premise 1: (count as int32) <= (end as int32) => (count as int32) <= (end as
-                        int32);
-                    add 0, 1 => (to_integer((at(function.entry, 0) as int32)) + to_integer((count as
-                        int32))) <= (to_integer((at(function.entry, count) as int32)) +
-                        to_integer((end as int32)));
-                    conclusion 2;
-                }
+                solve() using { (at(function.entry, 0) as int32) <= (at(function.entry, count) as
+                        int32); (count as int32) <= (end as int32); };
             }
             have 0 <= k by {
-                arithmetic_certificate signed_int32 {
-                    premise 0: (at(function.entry, 0) as int32) <= (at(function.entry, end) as
-                        int32) => (at(function.entry, 0) as int32) <= (at(function.entry, end) as
-                        int32);
-                    premise 1: (at(function.entry, end) as int32) <= (at(function.entry, k) as
-                        int32) => (at(function.entry, end) as int32) <= (at(function.entry, k) as
-                        int32);
-                    add 0, 1 => (to_integer((at(function.entry, 0) as int32)) +
-                        to_integer((at(function.entry, end) as int32))) <=
-                        (to_integer((at(function.entry, end) as int32)) +
-                        to_integer((at(function.entry, k) as int32)));
-                    conclusion 2;
-                }
+                solve() using { (at(function.entry, 0) as int32) <= (at(function.entry, end) as
+                        int32); (at(function.entry, end) as int32) <= (at(function.entry, k) as
+                        int32); };
             }
             instantiate(forall (j: int32) { at(marked, end) <= at(marked, j) and at(marked, j) < at(marked, arena->capacity) implies at(marked, arena->occupied[j]) == old(arena->occupied[j]) }, k) using {
                 end <= k;
                 k < arena->capacity;
             };
-            transport(at(marked, arena->occupied[k]) == old(arena->occupied[k]), arena->occupied[k] == old(arena->occupied[k])) using {
-                at(marked, arena->occupied[k]) == old(arena->occupied[k]);
-                0 <= k;
-                k < arena->capacity;
-                separate(memory(*arena), memory(arena->occupied[0..arena->capacity]));
-            };
+            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { known(); }
+            have contains(memory(*region), memory(region->arena)) by { normalize(); }
+            have separate(memory(region->arena), memory(at(marked, arena->occupied)[k])) by {
+                apply(selected_array_cell(memory(*region), memory(region->arena), at(marked, arena->occupied), at(marked, arena->capacity), k)) using {
+                    separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)]));
+                    contains(memory(*region), memory(region->arena)); 0 <= k; k < at(marked, arena->capacity);
+                };
+            }
+            have separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])) by {
+                normalize() using { separate(memory(region->arena), memory(at(marked, arena->occupied)[k])); };
+            }
+            have at(statement(14).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(14).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                preserve(separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])));
+            }
+            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { known(); }
+            have contains(memory(*region), memory(region->start)) by { normalize(); }
+            have separate(memory(region->start), memory(at(marked, arena->occupied)[k])) by {
+                apply(selected_array_cell(memory(*region), memory(region->start), at(marked, arena->occupied), at(marked, arena->capacity), k)) using {
+                    separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)]));
+                    contains(memory(*region), memory(region->start)); 0 <= k; k < at(marked, arena->capacity);
+                };
+            }
+            have separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])) by {
+                normalize() using { separate(memory(region->start), memory(at(marked, arena->occupied)[k])); };
+            }
+            have at(statement(15).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(15).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                preserve(separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])));
+            }
+            have separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { known(); }
+            have contains(memory(*region), memory(region->end)) by { normalize(); }
+            have separate(memory(region->end), memory(at(marked, arena->occupied)[k])) by {
+                apply(selected_array_cell(memory(*region), memory(region->end), at(marked, arena->occupied), at(marked, arena->capacity), k)) using {
+                    separate(memory(*region), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)]));
+                    contains(memory(*region), memory(region->end)); 0 <= k; k < at(marked, arena->capacity);
+                };
+            }
+            have separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])) by {
+                normalize() using { separate(memory(region->end), memory(at(marked, arena->occupied)[k])); };
+            }
+            have at(statement(16).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(16).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                preserve(separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])));
+            }
+            have separate(memory(*arena), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)])) by { known(); }
+            have contains(memory(*arena), memory(arena->live_regions)) by { normalize(); }
+            have separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])) by {
+                apply(selected_array_cell(memory(*arena), memory(arena->live_regions), at(marked, arena->occupied), at(marked, arena->capacity), k)) using {
+                    separate(memory(*arena), memory(at(marked, arena->occupied)[0..at(marked, arena->capacity)]));
+                    contains(memory(*arena), memory(arena->live_regions)); 0 <= k; k < at(marked, arena->capacity);
+                };
+            }
+            have separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])) by {
+                normalize() using { separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])); };
+            }
+            have at(statement(17).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(17).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
+                preserve(separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])));
+            }
+            known();
         }
         mark stored;
         have forall (k: int32) { region->start <= k and k < region->end implies old(arena->occupied[k]) == 0 } by {
@@ -3213,15 +2200,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have to_integer(st.live) == (to_integer(old(st.live)) + 1) by {
-                arithmetic_certificate rules {
-                    premise 0: -2147483648 <= (to_integer(old(st.live)) + 1) => -2147483648 <=
-                        (to_integer(old(st.live)) + 1);
-                    premise 1: (to_integer(old(st.live)) + 1) <= 2147483647 =>
-                        (to_integer(old(st.live)) + 1) <= 2147483647;
-                    integer_operation_identity bounds [0, 1] => to_integer(st.live) ==
-                        (to_integer(old(st.live)) + 1);
-                    conclusion 0;
-                }
+                solve() using { -2147483648 <= (to_integer(old(st.live)) + 1); (to_integer(old(st.live)) + 1) <= 2147483647; };
             }
             known();
         }
@@ -3284,9 +2263,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     k < region->end;
                 };
             }
-            transport(at(stored, arena->occupied[k]) == at(stored, 1), arena->occupied[k] == 1) using {
-                at(stored, arena->occupied[k]) == at(stored, 1);
-            };
+            known();
         }
         known();
         have forall (k: int32) { result == 1 and 0 <= k and k < region->start implies arena->occupied[k] == old(arena->occupied[k]) } by {
@@ -3300,9 +2277,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     k < region->start;
                 };
             }
-            transport(at(stored, arena->occupied[k]) == old(arena->occupied[k]), arena->occupied[k] == old(arena->occupied[k])) using {
-                at(stored, arena->occupied[k]) == old(arena->occupied[k]);
-            };
+            known();
         }
         known();
         have forall (k: int32) { result == 1 and region->end <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
@@ -3316,9 +2291,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     k < arena->capacity;
                 };
             }
-            transport(at(stored, arena->occupied[k]) == old(arena->occupied[k]), arena->occupied[k] == old(arena->occupied[k])) using {
-                at(stored, arena->occupied[k]) == old(arena->occupied[k]);
-            };
+            known();
         }
         known();
         have forall (k: int32) { result == 1 and region->start <= k and k < region->end implies old(arena->occupied[k]) == 0 } by {
@@ -3556,34 +2529,14 @@ void arena_free(struct region* region) {
                 known();
             }
             have 0 <= i by {
-                arithmetic_certificate {
-                    premise 0: at(function.entry, 0) <= at(function.entry, region->start) =>
-                        at(function.entry, 0) <= at(function.entry, region->start);
-                    premise 1: at(function.entry, region->start) <= at(function.entry, i) =>
-                        at(function.entry, region->start) <= at(function.entry, i);
-                    add 0, 1 => (at(function.entry, 0) + at(function.entry,
-                        to_integer((region->start as int32)))) <= (at(function.entry,
-                        to_integer((region->start as int32))) + at(function.entry, to_integer((i as
-                        int32))));
-                    conclusion 2;
-                }
+                solve() using { at(function.entry, 0) <= at(function.entry, region->start); at(function.entry, region->start) <= at(function.entry, i); };
             }
             have region->end <= arena->capacity by {
                 known();
             }
             have i < arena->capacity by {
-                arithmetic_certificate {
-                    premise 0: at(region(5).entry, i) < at(region(5).entry, region->end) =>
-                        at(region(5).entry, i) < at(region(5).entry, region->end);
-                    premise 1: at(function.entry, region->end) <= at(function.entry,
-                        arena->capacity) => at(function.entry, region->end) <= at(function.entry,
-                        arena->capacity);
-                    add 0, 1 => (at(region(5).entry, to_integer((i as int32))) + at(function.entry,
-                        to_integer((region->end as int32)))) < (at(region(5).entry,
-                        to_integer((region->end as int32))) + at(function.entry,
-                        to_integer((arena->capacity as int32))));
-                    conclusion 2;
-                }
+                solve() using { at(region(5).entry, i) < at(region(5).entry, region->end); at(function.entry, region->end) <= at(function.entry,
+                        arena->capacity); };
             }
             mark opened;
             have contains(memory(*arena), memory(arena->occupied)) by {
@@ -3702,21 +2655,7 @@ void arena_free(struct region* region) {
             give(at(opened, arena->data)[i..(i + 1)]);
             step();
             have to_integer(region->start) <= (to_integer(at(opened, i)) + 1) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(at(opened, i)) + 1) < to_integer(region->start);
-                    premise 0: to_integer(old(region->start)) <= to_integer(at(opened, i)) =>
-                        to_integer(old(region->start)) <= to_integer(at(opened, i));
-                    premise 1: to_integer(region->start) == to_integer(old(region->start)) =>
-                        to_integer(region->start) == to_integer(old(region->start));
-                    less_equal_from_equal 2 => to_integer(region->start) <=
-                        to_integer(old(region->start));
-                    add 0, 1 => (to_integer(at(opened, i)) + 1 + to_integer(old(region->start))) <
-                        (to_integer(region->start) + to_integer(at(opened, i)));
-                    add 4, 3 => (to_integer(at(opened, i)) + 1 + to_integer(old(region->start)) +
-                        to_integer(region->start)) < (to_integer(region->start) +
-                        to_integer(at(opened, i)) + to_integer(old(region->start)));
-                    conclusion 5;
-                }
+                solve() using { to_integer(old(region->start)) <= to_integer(at(opened, i)); to_integer(region->start) == to_integer(old(region->start)); };
             }
             have forall (k: int32) { region->start <= k and to_integer(k) < (to_integer(at(opened, i)) + 1) implies arena->occupied[k] == 0 } by {
                 intro();
@@ -3735,57 +2674,13 @@ void arena_free(struct region* region) {
                         };
                     }
                     have 0 <= k by {
-                        arithmetic_certificate signed_int32 {
-                            premise 0: (at(function.entry, 0) as int32) <= (at(function.entry,
-                                region->start) as int32) => (at(function.entry, 0) as int32) <=
-                                (at(function.entry, region->start) as int32);
-                            premise 1: (region->start as int32) <= (k as int32) => (region->start as
-                                int32) <= (k as int32);
-                            premise 2: (region->start as int32) == (at(opened, region->start) as
-                                int32) => (region->start as int32) == (at(opened, region->start) as
-                                int32);
-                            interval_atom (0) (0) (0);
-                            less_equal_from_equal 2 reverse => to_integer((at(opened, region->start)
-                                as int32)) <= to_integer((region->start as int32));
-                            add 4, 0 => (to_integer((at(opened, region->start) as int32)) +
-                                to_integer((at(function.entry, 0) as int32))) <=
-                                (to_integer((region->start as int32)) +
-                                to_integer((at(function.entry, region->start) as int32)));
-                            add 1, 5 => (to_integer((region->start as int32)) +
-                                (to_integer((at(opened, region->start) as int32)) +
-                                to_integer((at(function.entry, 0) as int32)))) <= (to_integer((k as
-                                int32)) + (to_integer((region->start as int32)) +
-                                to_integer((at(function.entry, region->start) as int32))));
-                            interval_from_affine 6 (k) (0) (2147483647);
-                            interval_compare 3, 7 le => 0 <= k;
-                            conclusion 8;
-                        }
+                        solve() using { (at(function.entry, 0) as int32) <= (at(function.entry,
+                                region->start) as int32); (region->start as int32) <= (k as int32); (region->start as int32) == (at(opened, region->start) as
+                                int32); };
                     }
                     have k < at(opened, arena->capacity) by {
-                        arithmetic_certificate {
-                            premise 0: at(region(5).entry, i) < at(region(5).entry, region->end) =>
-                                at(region(5).entry, i) < at(region(5).entry, region->end);
-                            premise 1: at(function.entry, region->end) <= at(function.entry,
-                                arena->capacity) => at(function.entry, region->end) <=
-                                at(function.entry, arena->capacity);
-                            add 0, 1 => (at(region(5).entry, to_integer((i as int32))) +
-                                at(function.entry, to_integer((region->end as int32)))) <
-                                (at(region(5).entry, to_integer((region->end as int32))) +
-                                at(function.entry, to_integer((arena->capacity as int32))));
-                            trivial => -1 <= 0;
-                            add 2, 3 => (at(region(5).entry, to_integer((i as int32))) +
-                                at(function.entry, to_integer((region->end as int32))) + -1) <
-                                (at(region(5).entry, to_integer((region->end as int32))) +
-                                at(function.entry, to_integer((arena->capacity as int32))) + 0);
-                            premise 2: k < at(region(5).entry, i) => k < at(region(5).entry, i);
-                            add 4, 5 => (at(region(5).entry, to_integer((i as int32))) +
-                                at(function.entry, to_integer((region->end as int32))) + -1 + 1 +
-                                (to_integer((k as int32)) + 1)) <= (at(region(5).entry,
-                                to_integer((region->end as int32))) + at(function.entry,
-                                to_integer((arena->capacity as int32))) + 0 + at(region(5).entry,
-                                to_integer((i as int32))));
-                            conclusion 6;
-                        }
+                        solve() using { at(region(5).entry, i) < at(region(5).entry, region->end); at(function.entry, region->end) <= at(function.entry,
+                                arena->capacity); k < at(region(5).entry, i); };
                     }
                     have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
                     have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
@@ -3798,13 +2693,7 @@ void arena_free(struct region* region) {
                     known();
                 } else {
                     have to_integer(k) == to_integer(at(opened, i)) by {
-                        arithmetic_certificate {
-                            premise 0: to_integer(k) < (to_integer(at(opened, i)) + 1) =>
-                                to_integer(k) < (to_integer(at(opened, i)) + 1);
-                            premise 1: not k < at(opened, i) => not k < at(opened, i);
-                            equal_from_bounds 0, 1 => to_integer(k) == to_integer(at(opened, i));
-                            conclusion 2;
-                        }
+                        solve() using { to_integer(k) < (to_integer(at(opened, i)) + 1); not k < at(opened, i); };
                     }
                     rewrite(k, at(opened, i));
                     rewrite(arena->occupied, at(opened, arena->occupied));
@@ -3824,25 +2713,7 @@ void arena_free(struct region* region) {
                     };
                 }
                 have k < at(opened, i) by {
-                    arithmetic_certificate {
-                        premise 0: at(region(3).exit, i) <= at(region(5).entry, i) =>
-                            at(region(3).exit, i) <= at(region(5).entry, i);
-                        premise 1: region->start == at(opened, region->start) => region->start ==
-                            at(opened, region->start);
-                        less_equal_from_equal 1 => to_integer((region->start as int32)) <=
-                            at(opened, to_integer((region->start as int32)));
-                        add 0, 2 => (at(region(3).exit, to_integer((i as int32))) +
-                            to_integer((region->start as int32))) <= (at(region(5).entry,
-                            to_integer((i as int32))) + at(opened, to_integer((region->start as
-                            int32))));
-                        premise 2: k < region->start => k < region->start;
-                        add 3, 4 => (at(region(3).exit, to_integer((i as int32))) +
-                            to_integer((region->start as int32)) + to_integer((k as int32))) <
-                            (at(region(5).entry, to_integer((i as int32))) + at(opened,
-                            to_integer((region->start as int32))) + to_integer((region->start as
-                            int32)));
-                        conclusion 5;
-                    }
+                    solve() using { at(region(3).exit, i) <= at(region(5).entry, i); region->start == at(opened, region->start); k < region->start; };
                 }
                 have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
                 have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
@@ -3868,44 +2739,13 @@ void arena_free(struct region* region) {
                     };
                 }
                 have at(opened, i) < k by {
-                    arithmetic_certificate {
-                        premise 0: region->end <= k => region->end <= k;
-                        premise 1: region->end == at(opened, region->end) => region->end ==
-                            at(opened, region->end);
-                        less_equal_from_equal 1 reverse => at(opened, to_integer((region->end as
-                            int32))) <= to_integer((region->end as int32));
-                        add 0, 2 => (to_integer((region->end as int32)) + at(opened,
-                            to_integer((region->end as int32)))) <= (to_integer((k as int32)) +
-                            to_integer((region->end as int32)));
-                        premise 2: at(region(5).entry, i) < at(region(5).entry, region->end) =>
-                            at(region(5).entry, i) < at(region(5).entry, region->end);
-                        add 3, 4 => (to_integer((region->end as int32)) + at(opened,
-                            to_integer((region->end as int32))) + at(region(5).entry, to_integer((i
-                            as int32)))) < (to_integer((k as int32)) + to_integer((region->end as
-                            int32)) + at(region(5).entry, to_integer((region->end as int32))));
-                        conclusion 5;
-                    }
+                    solve() using { region->end <= k; region->end == at(opened, region->end); at(region(5).entry, i) < at(region(5).entry, region->end); };
                 }
                 have at(opened, i) <= k by {
-                    arithmetic_certificate {
-                        premise 0: at(opened, i) < k => at(opened, i) < k;
-                        trivial => -1 <= 0;
-                        add 0, 1 => (at(opened, to_integer((i as int32))) + -1) < (to_integer((k as
-                            int32)) + 0);
-                        conclusion 2;
-                    }
+                    solve() using { at(opened, i) < k; };
                 }
                 have 0 <= k by {
-                    arithmetic_certificate signed_int32 {
-                        premise 0: (0 as int32) <= (at(region(5).entry, i) as int32) => (0 as int32)
-                            <= (at(region(5).entry, i) as int32);
-                        premise 1: (at(opened, i) as int32) <= (k as int32) => (at(opened, i) as
-                            int32) <= (k as int32);
-                        add 0, 1 => (to_integer((0 as int32)) + to_integer((at(opened, i) as
-                            int32))) <= (to_integer((at(region(5).entry, i) as int32)) +
-                            to_integer((k as int32)));
-                        conclusion 2;
-                    }
+                    solve() using { (0 as int32) <= (at(region(5).entry, i) as int32); (at(opened, i) as int32) <= (k as int32); };
                 }
                 have at(opened, i) != k by { solve() using { at(opened, i) < k; }; }
                 have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
@@ -3924,59 +2764,16 @@ void arena_free(struct region* region) {
                 extract(k < i);
                 have to_integer(k) < (to_integer(at(opened, i)) + 1) by {
                     have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                        arithmetic_certificate {
-                            negated_goal => (to_integer(at(opened, i)) + 1) < -2147483648;
-                            premise 0: 0 <= to_integer(at(opened, i)) => 0 <= to_integer(at(opened,
-                                i));
-                            add 0, 1 => (to_integer(at(opened, i)) + 1 + 0) < (-2147483648 +
-                                to_integer(at(opened, i)));
-                            conclusion 2;
-                        }
+                        solve() using { 0 <= to_integer(at(opened, i)); };
                     }
                     have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                        arithmetic_certificate {
-                            negated_goal => 2147483647 < (to_integer(at(opened, i)) + 1);
-                            premise 0: to_integer(at(opened, i)) < to_integer(at(region(5).entry,
-                                arena->capacity)) => to_integer(at(opened, i)) <
-                                to_integer(at(region(5).entry, arena->capacity));
-                            premise 1: to_integer(at(region(5).entry, arena->capacity)) <= 536870911
-                                => to_integer(at(region(5).entry, arena->capacity)) <= 536870911;
-                            add 0, 1 => (2147483647 + 1 + (to_integer(at(opened, i)) + 1)) <=
-                                (to_integer(at(opened, i)) + 1 + to_integer(at(region(5).entry,
-                                arena->capacity)));
-                            add 3, 2 => (2147483647 + 1 + (to_integer(at(opened, i)) + 1) +
-                                to_integer(at(region(5).entry, arena->capacity))) <=
-                                (to_integer(at(opened, i)) + 1 + to_integer(at(region(5).entry,
-                                arena->capacity)) + 536870911);
-                            conclusion 4;
-                        }
+                        solve() using { to_integer(at(opened, i)) < to_integer(at(region(5).entry,
+                                arena->capacity)); to_integer(at(region(5).entry, arena->capacity)) <= 536870911; };
                     }
                     have to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) by {
-                        arithmetic_certificate rules {
-                            premise 0: -2147483648 <= (to_integer(at(opened, i)) + 1) => -2147483648
-                                <= (to_integer(at(opened, i)) + 1);
-                            premise 1: (to_integer(at(opened, i)) + 1) <= 2147483647 =>
-                                (to_integer(at(opened, i)) + 1) <= 2147483647;
-                            integer_operation_identity bounds [0, 1] => to_integer((i as int32)) ==
-                                (to_integer(at(opened, i)) + 1);
-                            conclusion 0;
-                        }
+                        solve() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
                     }
-                    arithmetic_certificate {
-                        negated_goal => (to_integer(at(opened, i)) + 1) <= to_integer(k);
-                        premise 0: to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) =>
-                            to_integer((i as int32)) == (to_integer(at(opened, i)) + 1);
-                        less_equal_from_equal 1 => to_integer((i as int32)) <=
-                            (to_integer(at(opened, i)) + 1);
-                        premise 1: to_integer(k) < to_integer((i as int32)) => to_integer(k) <
-                            to_integer((i as int32));
-                        add 0, 2 => (to_integer(at(opened, i)) + 1 + to_integer((i as int32))) <=
-                            (to_integer(k) + (to_integer(at(opened, i)) + 1));
-                        add 4, 3 => (to_integer(at(opened, i)) + 1 + to_integer((i as int32)) +
-                            to_integer(k)) < (to_integer(k) + (to_integer(at(opened, i)) + 1) +
-                            to_integer((i as int32)));
-                        conclusion 5;
-                    }
+                    solve() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer(k) < to_integer((i as int32)); };
                 }
                 instantiate(forall (j: int32) { region->start <= j and to_integer(j) < (to_integer(at(opened, i)) + 1) implies arena->occupied[j] == 0 }, k) using {
                     region->start <= k;
@@ -4016,61 +2813,19 @@ void arena_free(struct region* region) {
             }
             have to_integer(i) == (to_integer(at(opened, i)) + 1) by {
                 have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                    arithmetic_certificate {
-                        negated_goal => (to_integer(at(opened, i)) + 1) < -2147483648;
-                        premise 0: 0 <= to_integer(at(opened, i)) => 0 <= to_integer(at(opened, i));
-                        add 0, 1 => (to_integer(at(opened, i)) + 1 + 0) < (-2147483648 +
-                            to_integer(at(opened, i)));
-                        conclusion 2;
-                    }
+                    solve() using { 0 <= to_integer(at(opened, i)); };
                 }
                 have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                    arithmetic_certificate {
-                        negated_goal => 2147483647 < (to_integer(at(opened, i)) + 1);
-                        premise 0: to_integer(at(opened, i)) < to_integer(at(region(5).entry,
-                            arena->capacity)) => to_integer(at(opened, i)) <
-                            to_integer(at(region(5).entry, arena->capacity));
-                        premise 1: to_integer(at(region(5).entry, arena->capacity)) <= 536870911 =>
-                            to_integer(at(region(5).entry, arena->capacity)) <= 536870911;
-                        add 0, 1 => (2147483647 + 1 + (to_integer(at(opened, i)) + 1)) <=
-                            (to_integer(at(opened, i)) + 1 + to_integer(at(region(5).entry,
-                            arena->capacity)));
-                        add 3, 2 => (2147483647 + 1 + (to_integer(at(opened, i)) + 1) +
-                            to_integer(at(region(5).entry, arena->capacity))) <=
-                            (to_integer(at(opened, i)) + 1 + to_integer(at(region(5).entry,
-                            arena->capacity)) + 536870911);
-                        conclusion 4;
-                    }
+                    solve() using { to_integer(at(opened, i)) < to_integer(at(region(5).entry,
+                            arena->capacity)); to_integer(at(region(5).entry, arena->capacity)) <= 536870911; };
                 }
                 have to_integer(i) == (to_integer(at(opened, i)) + 1) by {
-                    arithmetic_certificate rules {
-                        premise 0: -2147483648 <= (to_integer(at(opened, i)) + 1) => -2147483648 <=
-                            (to_integer(at(opened, i)) + 1);
-                        premise 1: (to_integer(at(opened, i)) + 1) <= 2147483647 =>
-                            (to_integer(at(opened, i)) + 1) <= 2147483647;
-                        integer_operation_identity bounds [0, 1] => to_integer(i) ==
-                            (to_integer(at(opened, i)) + 1);
-                        conclusion 0;
-                    }
+                    solve() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
                 }
                 known();
             }
             have 0 <= (to_integer(region->end) - to_integer(i)) by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(region->end) - to_integer(i)) < 0;
-                    premise 0: to_integer(i) <= to_integer(old(region->end)) => to_integer(i) <=
-                        to_integer(old(region->end));
-                    premise 1: to_integer(region->end) == to_integer(old(region->end)) =>
-                        to_integer(region->end) == to_integer(old(region->end));
-                    less_equal_from_equal 2 reverse => to_integer(old(region->end)) <=
-                        to_integer(region->end);
-                    add 0, 1 => ((to_integer(region->end) - to_integer(i)) + to_integer(i)) < (0 +
-                        to_integer(old(region->end)));
-                    add 4, 3 => ((to_integer(region->end) - to_integer(i)) + to_integer(i) +
-                        to_integer(old(region->end))) < (0 + to_integer(old(region->end)) +
-                        to_integer(region->end));
-                    conclusion 5;
-                }
+                solve() using { to_integer(i) <= to_integer(old(region->end)); to_integer(region->end) == to_integer(old(region->end)); };
             }
             have (to_integer(region->end) - to_integer(i)) < (to_integer(region->end) - to_integer(at(opened, i))) by {
                 rewrite(to_integer(i), (to_integer(at(opened, i)) + 1));
@@ -4122,34 +2877,13 @@ void arena_free(struct region* region) {
         known();
     }
     have m == region->end by {
-        arithmetic_certificate {
-            premise 0: at(function.entry, m) <= at(function.entry, region->end) =>
-                at(function.entry, m) <= at(function.entry, region->end);
-            premise 1: not at(function.entry, m) < at(function.entry, region->end) => not
-                at(function.entry, m) < at(function.entry, region->end);
-            equal_from_bounds 0, 1 => m == region->end;
-            conclusion 2;
-        }
+        solve() using { at(function.entry, m) <= at(function.entry, region->end); not at(function.entry, m) < at(function.entry, region->end); };
     }
     have region->start <= region->end by {
         known();
     }
     have 0 <= region->end by {
-        arithmetic_certificate {
-            premise 0: at(region(3).exit, i) <= m => at(region(3).exit, i) <= m;
-            premise 1: at(function.entry, m) <= at(function.entry, region->end) =>
-                at(function.entry, m) <= at(function.entry, region->end);
-            add 0, 1 => (at(region(3).exit, to_integer((i as int32))) + at(function.entry,
-                to_integer((m as int32)))) <= (to_integer((m as int32)) + at(function.entry,
-                to_integer((region->end as int32))));
-            premise 2: at(function.entry, 0) <= at(function.entry, region->start) =>
-                at(function.entry, 0) <= at(function.entry, region->start);
-            add 2, 3 => (at(region(3).exit, to_integer((i as int32))) + at(function.entry,
-                to_integer((m as int32))) + at(function.entry, to_integer((0 as int32)))) <=
-                (to_integer((m as int32)) + at(function.entry, to_integer((region->end as int32))) +
-                at(function.entry, to_integer((region->start as int32))));
-            conclusion 4;
-        }
+        solve() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); at(function.entry, 0) <= at(function.entry, region->start); };
     }
     have region->end <= arena->capacity by {
         known();
@@ -4179,33 +2913,10 @@ void arena_free(struct region* region) {
             };
         }
         have k < region->end by {
-            arithmetic_certificate {
-                premise 0: at(region(3).exit, i) <= m => at(region(3).exit, i) <= m;
-                premise 1: at(function.entry, m) <= at(function.entry, region->end) =>
-                    at(function.entry, m) <= at(function.entry, region->end);
-                add 0, 1 => (at(region(3).exit, to_integer((i as int32))) + at(function.entry,
-                    to_integer((m as int32)))) <= (to_integer((m as int32)) + at(function.entry,
-                    to_integer((region->end as int32))));
-                premise 2: k < at(region(3).exit, i) => k < at(region(3).exit, i);
-                add 2, 3 => (at(region(3).exit, to_integer((i as int32))) + at(function.entry,
-                    to_integer((m as int32))) + to_integer((k as int32))) < (to_integer((m as
-                    int32)) + at(function.entry, to_integer((region->end as int32))) +
-                    at(region(3).exit, to_integer((i as int32))));
-                conclusion 4;
-            }
+            solve() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); k < at(region(3).exit, i); };
         }
         have k < arena->capacity by {
-            arithmetic_certificate {
-                premise 0: at(function.entry, k) < at(function.entry, region->end) =>
-                    at(function.entry, k) < at(function.entry, region->end);
-                premise 1: at(function.entry, region->end) <= at(function.entry, arena->capacity) =>
-                    at(function.entry, region->end) <= at(function.entry, arena->capacity);
-                add 0, 1 => (at(function.entry, to_integer((k as int32))) + at(function.entry,
-                    to_integer((region->end as int32)))) < (at(function.entry,
-                    to_integer((region->end as int32))) + at(function.entry,
-                    to_integer((arena->capacity as int32))));
-                conclusion 2;
-            }
+            solve() using { at(function.entry, k) < at(function.entry, region->end); at(function.entry, region->end) <= at(function.entry, arena->capacity); };
         }
         instantiate(forall (j: int32) { at(clear_occupied.entry, 0) <= at(clear_occupied.entry, j) and at(clear_occupied.entry, j) < at(clear_occupied.entry, arena->capacity) implies at(clear_occupied.entry, arena->occupied[j]) == old(region->arena->occupied[j]) }, k) using {
             0 <= k;
@@ -4228,16 +2939,7 @@ void arena_free(struct region* region) {
             };
         }
         have 0 <= k by {
-            arithmetic_certificate {
-                premise 0: at(function.entry, 0) <= at(function.entry, region->end) =>
-                    at(function.entry, 0) <= at(function.entry, region->end);
-                premise 1: at(region(0).entry, region->end) <= k => at(region(0).entry, region->end)
-                    <= k;
-                add 0, 1 => (at(function.entry, 0) + at(region(0).entry, to_integer((region->end as
-                    int32)))) <= (at(function.entry, to_integer((region->end as int32))) +
-                    to_integer((k as int32)));
-                conclusion 2;
-            }
+            solve() using { at(function.entry, 0) <= at(function.entry, region->end); at(region(0).entry, region->end) <= k; };
         }
         instantiate(forall (j: int32) { at(clear_occupied.entry, 0) <= at(clear_occupied.entry, j) and at(clear_occupied.entry, j) < at(clear_occupied.entry, arena->capacity) implies at(clear_occupied.entry, arena->occupied[j]) == old(region->arena->occupied[j]) }, k) using {
             0 <= k;
@@ -4292,27 +2994,10 @@ void arena_free(struct region* region) {
         extract(region->start <= k);
         extract(k < region->end);
         have 0 <= k by {
-            arithmetic_certificate {
-                premise 0: at(function.entry, 0) <= at(function.entry, region->start) =>
-                    at(function.entry, 0) <= at(function.entry, region->start);
-                premise 1: at(region(3).exit, i) <= k => at(region(3).exit, i) <= k;
-                add 0, 1 => (at(function.entry, to_integer((0 as int32))) + at(region(3).exit,
-                    to_integer((i as int32)))) <= (at(function.entry, to_integer((region->start as
-                    int32))) + to_integer((k as int32)));
-                conclusion 2;
-            }
+            solve() using { at(function.entry, 0) <= at(function.entry, region->start); at(region(3).exit, i) <= k; };
         }
         have k < arena->capacity by {
-            arithmetic_certificate {
-                premise 0: k < at(region(0).entry, region->end) => k < at(region(0).entry,
-                    region->end);
-                premise 1: at(function.entry, region->end) <= at(function.entry, arena->capacity) =>
-                    at(function.entry, region->end) <= at(function.entry, arena->capacity);
-                add 0, 1 => (to_integer((k as int32)) + at(function.entry, to_integer((region->end
-                    as int32)))) < (at(region(0).entry, to_integer((region->end as int32))) +
-                    at(function.entry, to_integer((arena->capacity as int32))));
-                conclusion 2;
-            }
+            solve() using { k < at(region(0).entry, region->end); at(function.entry, region->end) <= at(function.entry, arena->capacity); };
         }
         instantiate(forall (j: int32) { at(cleared, region->start) <= at(cleared, j) and at(cleared, j) < at(cleared, region->end) implies at(cleared, arena->occupied[j]) == at(cleared, 0) }, k) using {
             region->start <= k;
@@ -4341,33 +3026,10 @@ void arena_free(struct region* region) {
         extract(0 <= k);
         extract(k < region->start);
         have k < region->end by {
-            arithmetic_certificate {
-                premise 0: at(region(3).exit, i) <= m => at(region(3).exit, i) <= m;
-                premise 1: at(function.entry, m) <= at(function.entry, region->end) =>
-                    at(function.entry, m) <= at(function.entry, region->end);
-                add 0, 1 => (at(region(3).exit, to_integer((i as int32))) + at(function.entry,
-                    to_integer((m as int32)))) <= (to_integer((m as int32)) + at(function.entry,
-                    to_integer((region->end as int32))));
-                premise 2: k < at(region(3).exit, i) => k < at(region(3).exit, i);
-                add 2, 3 => (at(region(3).exit, to_integer((i as int32))) + at(function.entry,
-                    to_integer((m as int32))) + to_integer((k as int32))) < (to_integer((m as
-                    int32)) + at(function.entry, to_integer((region->end as int32))) +
-                    at(region(3).exit, to_integer((i as int32))));
-                conclusion 4;
-            }
+            solve() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); k < at(region(3).exit, i); };
         }
         have k < arena->capacity by {
-            arithmetic_certificate {
-                premise 0: at(function.entry, k) < at(function.entry, region->end) =>
-                    at(function.entry, k) < at(function.entry, region->end);
-                premise 1: at(function.entry, region->end) <= at(function.entry, arena->capacity) =>
-                    at(function.entry, region->end) <= at(function.entry, arena->capacity);
-                add 0, 1 => (at(function.entry, to_integer((k as int32))) + at(function.entry,
-                    to_integer((region->end as int32)))) < (at(function.entry,
-                    to_integer((region->end as int32))) + at(function.entry,
-                    to_integer((arena->capacity as int32))));
-                conclusion 2;
-            }
+            solve() using { at(function.entry, k) < at(function.entry, region->end); at(function.entry, region->end) <= at(function.entry, arena->capacity); };
         }
         instantiate(forall (j: int32) { at(cleared, 0) <= at(cleared, j) and at(cleared, j) < at(cleared, region->start) implies at(cleared, arena->occupied[j]) == old(region->arena->occupied[j]) }, k) using {
             0 <= k;
@@ -4396,16 +3058,7 @@ void arena_free(struct region* region) {
         extract(region->end <= k);
         extract(k < arena->capacity);
         have 0 <= k by {
-            arithmetic_certificate {
-                premise 0: at(function.entry, 0) <= at(function.entry, region->end) =>
-                    at(function.entry, 0) <= at(function.entry, region->end);
-                premise 1: at(region(0).entry, region->end) <= k => at(region(0).entry, region->end)
-                    <= k;
-                add 0, 1 => (at(function.entry, 0) + at(region(0).entry, to_integer((region->end as
-                    int32)))) <= (at(function.entry, to_integer((region->end as int32))) +
-                    to_integer((k as int32)));
-                conclusion 2;
-            }
+            solve() using { at(function.entry, 0) <= at(function.entry, region->end); at(region(0).entry, region->end) <= k; };
         }
         instantiate(forall (j: int32) { at(cleared, region->end) <= at(cleared, j) and at(cleared, j) < at(cleared, arena->capacity) implies at(cleared, arena->occupied[j]) == old(region->arena->occupied[j]) }, k) using {
             region->end <= k;
@@ -4441,33 +3094,13 @@ void arena_free(struct region* region) {
     }
     have to_integer(after.live) == (to_integer(old(st.live)) - 1) by {
         have -2147483648 <= (to_integer(old(st.live)) - 1) by {
-            arithmetic_certificate {
-                negated_goal => (to_integer(old(st.live)) - 1) < -2147483648;
-                premise 0: 0 <= to_integer(old(st.live)) => 0 <= to_integer(old(st.live));
-                add 0, 1 => ((to_integer(old(st.live)) - 1) + 0) < (-2147483648 +
-                    to_integer(old(st.live)));
-                conclusion 2;
-            }
+            solve() using { 0 <= to_integer(old(st.live)); };
         }
         have (to_integer(old(st.live)) - 1) <= 2147483647 by {
-            arithmetic_certificate {
-                negated_goal => 2147483647 < (to_integer(old(st.live)) - 1);
-                type_range => to_integer(old(st.live)) <= 2147483647;
-                add 0, 1 => (2147483647 + to_integer(old(st.live))) < ((to_integer(old(st.live)) -
-                    1) + 2147483647);
-                conclusion 2;
-            }
+            solve() using {  };
         }
         have to_integer(after.live) == (to_integer(old(st.live)) - 1) by {
-            arithmetic_certificate rules {
-                premise 0: -2147483648 <= (to_integer(old(st.live)) - 1) => -2147483648 <=
-                    (to_integer(old(st.live)) - 1);
-                premise 1: (to_integer(old(st.live)) - 1) <= 2147483647 => (to_integer(old(st.live))
-                    - 1) <= 2147483647;
-                integer_operation_identity bounds [0, 1] => to_integer(after.live) ==
-                    (to_integer(old(st.live)) - 1);
-                conclusion 0;
-            }
+            solve() using { -2147483648 <= (to_integer(old(st.live)) - 1); (to_integer(old(st.live)) - 1) <= 2147483647; };
         }
         known();
     }
@@ -4694,7 +3327,20 @@ int32 arena_read(struct region* region, int32 index) {
     have region->start + index + 1 <= e;
     have s + index < c;
     have region->start + index < region->arena->capacity;
-    have 0 <= to_integer(region->start + index);
+    have 0 <= to_integer(s) + to_integer(index) by {
+        solve() using { 0 <= s; 0 <= index; };
+    }
+    have to_integer(region->start + index) == to_integer(s) + to_integer(index) by {
+        rewrite(region->start, s);
+        normalize() using {
+            0 <= to_integer(s) + to_integer(index);
+            to_integer(s) + to_integer(index) <= 2147483647;
+        };
+    }
+    have 0 <= to_integer(region->start + index) by {
+        rewrite(to_integer(region->start + index), to_integer(s) + to_integer(index));
+        known();
+    }
     have to_integer(region->start + index) < to_integer(region->arena->capacity);
     have to_integer(s) <= to_integer(s + index);
     have to_integer(s + index) < to_integer(e);
@@ -4823,8 +3469,7 @@ int32 arena_pipeline(
         step();
         known();
         have result == 0 or result == 33 by {
-            transport(at(function.exit, result == 0 or result == 33), result == 0 or result == 33) using {
-            };
+            known();
         }
         known();
         known();
@@ -4861,8 +3506,18 @@ int32 arena_pipeline(
     }
     mark a1;
     let { outcome: o1 } = step(arena_alloc, { st: s0 });
+    mark after_first_alloc;
     step();
+    have separate(memory(allocated), memory(first->arena)) by { solve(); }
+    have separate(statement(7).assignment(allocated, 0).footprint, memory(first->arena)) by {
+        normalize() using { separate(memory(allocated), memory(first->arena)); };
+    }
+    have first->arena == at(after_first_alloc, first->arena) by {
+        preserve(separate(statement(7).assignment(allocated, 0).footprint, memory(first->arena)));
+    }
     have allocated == 1 implies first->arena == arena by {
+        intro();
+        extract(at(after_first_alloc, first->arena) == arena);
         known();
     }
     have arena->capacity == at(a1, arena->capacity) by {
@@ -5029,8 +3684,18 @@ int32 arena_pipeline(
     have first->arena == at(a2, first->arena) by {
         preserve(separate(statement(9).call(0).footprint, memory(first->arena)));
     }
+    mark after_second_alloc;
     step();
+    have separate(memory(allocated), memory(second->arena)) by { solve(); }
+    have separate(statement(9).assignment(allocated, 0).footprint, memory(second->arena)) by {
+        normalize() using { separate(memory(allocated), memory(second->arena)); };
+    }
+    have second->arena == at(after_second_alloc, second->arena) by {
+        preserve(separate(statement(9).assignment(allocated, 0).footprint, memory(second->arena)));
+    }
     have allocated == 1 implies second->arena == arena by {
+        intro();
+        extract(at(after_second_alloc, second->arena) == arena);
         known();
     }
     have arena->capacity == at(a2, arena->capacity) by {
@@ -5082,14 +3747,8 @@ int32 arena_pipeline(
             known();
         }
         have 1 <= s0.live by {
-            arithmetic_certificate signed_int32 {
-                premise 0: (at(region(19).entry, s0.live) as int32) == (at(region(19).entry, 1) as
-                    int32) => (at(region(19).entry, s0.live) as int32) == (at(region(19).entry, 1)
-                    as int32);
-                less_equal_from_equal 0 reverse => to_integer((at(region(19).entry, 1) as int32)) <=
-                    to_integer((at(region(19).entry, s0.live) as int32));
-                conclusion 1;
-            }
+            solve() using { (at(region(19).entry, s0.live) as int32) == (at(region(19).entry, 1) as
+                    int32); };
         }
         have first->arena == arena by {
             known();
@@ -5366,14 +4025,7 @@ int32 arena_pipeline(
             both {
                 normalize();
             } and {
-                arithmetic_certificate {
-                    negated_goal => to_integer(r1.end) <= (to_integer(r1.start) + to_integer(0));
-                    premise 0: to_integer(r1.start) < to_integer(r1.end) => to_integer(r1.start) <
-                        to_integer(r1.end);
-                    add 0, 1 => (to_integer(r1.end) + to_integer(r1.start)) < (to_integer(r1.start) +
-                        to_integer(0) + to_integer(r1.end));
-                    conclusion 2;
-                }
+                solve() using { to_integer(r1.start) < to_integer(r1.end); };
             }
         }
     }
@@ -5578,14 +4230,7 @@ int32 arena_pipeline(
             both {
                 normalize();
             } and {
-                arithmetic_certificate {
-                    negated_goal => to_integer(r2.end) <= (to_integer(r2.start) + to_integer(0));
-                    premise 0: to_integer(r2.start) < to_integer(r2.end) => to_integer(r2.start) <
-                        to_integer(r2.end);
-                    add 0, 1 => (to_integer(r2.end) + to_integer(r2.start)) < (to_integer(r2.start) +
-                        to_integer(0) + to_integer(r2.end));
-                    conclusion 2;
-                }
+                solve() using { to_integer(r2.start) < to_integer(r2.end); };
             }
         }
     }
@@ -6208,17 +4853,8 @@ int32 arena_pipeline(
         known();
     }
     have 1 <= s0.live by {
-        arithmetic_certificate signed_int32 {
-            premise 0: (at(region(30).entry, s0.live) as int32) == (at(region(30).entry, 2) as
-                int32) => (at(region(30).entry, s0.live) as int32) == (at(region(30).entry, 2) as
-                int32);
-            less_equal_from_equal 0 reverse => to_integer((at(region(30).entry, 2) as int32)) <=
-                to_integer((at(region(30).entry, s0.live) as int32));
-            trivial => -1 <= 0;
-            add 1, 2 => (to_integer((at(region(30).entry, 2) as int32)) + -1) <=
-                (to_integer((at(region(30).entry, s0.live) as int32)) + 0);
-            conclusion 3;
-        }
+        solve() using { (at(region(30).entry, s0.live) as int32) == (at(region(30).entry, 2) as
+                int32); };
     }
     have r2.end <= s0.capacity by {
         known();
@@ -6471,14 +5107,8 @@ int32 arena_pipeline(
         known();
     }
     have 1 <= g2.live by {
-        arithmetic_certificate signed_int32 {
-            premise 0: (at(region(31).entry, g2.live) as int32) == (at(region(31).entry, 1) as
-                int32) => (at(region(31).entry, g2.live) as int32) == (at(region(31).entry, 1) as
-                int32);
-            less_equal_from_equal 0 reverse => to_integer((at(region(31).entry, 1) as int32)) <=
-                to_integer((at(region(31).entry, g2.live) as int32));
-            conclusion 1;
-        }
+        solve() using { (at(region(31).entry, g2.live) as int32) == (at(region(31).entry, 1) as
+                int32); };
     }
     have g2.capacity == at(f2, s0.capacity) by {
         known();
@@ -6677,8 +5307,18 @@ int32 arena_pipeline(
     }
     mark a3;
     let { outcome: o3 } = step(arena_alloc, { st: g3 });
+    mark after_combined_alloc;
     step();
+    have separate(memory(allocated), memory(combined->arena)) by { solve(); }
+    have separate(statement(18).assignment(allocated, 0).footprint, memory(combined->arena)) by {
+        normalize() using { separate(memory(allocated), memory(combined->arena)); };
+    }
+    have combined->arena == at(after_combined_alloc, combined->arena) by {
+        preserve(separate(statement(18).assignment(allocated, 0).footprint, memory(combined->arena)));
+    }
     have allocated == 1 implies combined->arena == arena by {
+        intro();
+        extract(at(after_combined_alloc, combined->arena) == arena);
         known();
     }
     have arena->capacity == at(a3, arena->capacity) by {
@@ -6755,27 +5395,9 @@ int32 arena_pipeline(
             known();
         }
         have combined->start < 536870911 by {
-            arithmetic_certificate {
-                premise 0: at(region(38).entry, combined->end) <= at(region(38).entry,
-                    arena->capacity) => at(region(38).entry, combined->end) <= at(region(38).entry,
-                    arena->capacity);
-                premise 1: at(region(38).entry, arena->capacity) <= at(region(38).entry, 536870911)
-                    => at(region(38).entry, arena->capacity) <= at(region(38).entry, 536870911);
-                add 0, 1 => (at(region(38).entry, to_integer((combined->end as int32))) +
-                    at(region(38).entry, to_integer((arena->capacity as int32)))) <=
-                    (at(region(38).entry, to_integer((arena->capacity as int32))) +
-                    at(region(38).entry, to_integer((536870911 as int32))));
-                premise 2: at(region(38).entry, combined->start) < at(region(38).entry,
-                    combined->end) => at(region(38).entry, combined->start) < at(region(38).entry,
-                    combined->end);
-                add 2, 3 => (at(region(38).entry, to_integer((combined->end as int32))) +
-                    at(region(38).entry, to_integer((arena->capacity as int32))) +
-                    at(region(38).entry, to_integer((combined->start as int32)))) <
-                    (at(region(38).entry, to_integer((arena->capacity as int32))) +
-                    at(region(38).entry, to_integer((536870911 as int32))) + at(region(38).entry,
-                    to_integer((combined->end as int32))));
-                conclusion 4;
-            }
+            solve() using { at(region(38).entry, combined->end) <= at(region(38).entry,
+                    arena->capacity); at(region(38).entry, arena->capacity) <= at(region(38).entry, 536870911); at(region(38).entry, combined->start) < at(region(38).entry,
+                    combined->end); };
         }
         have g3.live == 1 by {
             known();
@@ -6850,44 +5472,18 @@ int32 arena_pipeline(
             known();
         }
         have r3.start < 2147483643 by {
-            arithmetic_certificate {
-                premise 0: at(region(38).entry, combined->start) < at(region(38).entry, 536870911)
-                    => at(region(38).entry, combined->start) < at(region(38).entry, 536870911);
-                trivial => -1610612732 <= 0;
-                add 0, 1 => (at(region(38).entry, to_integer((combined->start as int32))) +
-                    -1610612732) < (at(region(38).entry, 536870911) + 0);
-                conclusion 2;
-            }
+            solve() using { at(region(38).entry, combined->start) < at(region(38).entry, 536870911); };
         }
         have r3.start <= 2147483643 by {
-            arithmetic_certificate signed_int32 {
-                premise 0: (at(region(38).entry, combined->start) as int32) < (at(region(38).entry,
-                    536870911) as int32) => (at(region(38).entry, combined->start) as int32) <
-                    (at(region(38).entry, 536870911) as int32);
-                trivial => -1610612733 <= 0;
-                add 0, 1 => (to_integer((at(region(38).entry, combined->start) as int32)) +
-                    -1610612733) < (to_integer((at(region(38).entry, 536870911) as int32)) + 0);
-                conclusion 2;
-            }
+            solve() using { (at(region(38).entry, combined->start) as int32) < (at(region(38).entry,
+                    536870911) as int32); };
         }
         have defined((r3.start + 4)) by {
             have (to_integer(r3.start) + to_integer(4)) >= -2147483648 by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(r3.start) + to_integer(4)) < -2147483648;
-                    premise 0: 0 <= to_integer(r3.start) => 0 <= to_integer(r3.start);
-                    add 0, 1 => (to_integer(r3.start) + to_integer(4) + 0) < (-2147483648 +
-                        to_integer(r3.start));
-                    conclusion 2;
-                }
+                solve() using { 0 <= to_integer(r3.start); };
             }
             have (to_integer(r3.start) + to_integer(4)) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(r3.start) + to_integer(4));
-                    premise 0: to_integer(r3.start) < 536870911 => to_integer(r3.start) < 536870911;
-                    add 0, 1 => (2147483647 + 1 + (to_integer(r3.start) + 1)) <=
-                        (to_integer(r3.start) + to_integer(4) + 536870911);
-                    conclusion 2;
-                }
+                solve() using { to_integer(r3.start) < 536870911; };
             }
             known();
         }
@@ -6904,15 +5500,7 @@ int32 arena_pipeline(
                 known();
             }
             have to_integer((at(z3, combined->start) + 4)) == (to_integer(at(z3, combined->start)) + 4) by {
-                arithmetic_certificate rules {
-                    premise 0: -2147483648 <= (to_integer(at(z3, combined->start)) + 4) =>
-                        -2147483648 <= (to_integer(at(z3, combined->start)) + 4);
-                    premise 1: (to_integer(at(z3, combined->start)) + 4) <= 2147483647 =>
-                        (to_integer(at(z3, combined->start)) + 4) <= 2147483647;
-                    integer_operation_identity bounds [0, 1] => to_integer((at(z3, combined->start)
-                        + 4)) == (to_integer(at(z3, combined->start)) + 4);
-                    conclusion 0;
-                }
+                solve() using { -2147483648 <= (to_integer(at(z3, combined->start)) + 4); (to_integer(at(z3, combined->start)) + 4) <= 2147483647; };
             }
             known();
         }
@@ -6938,37 +5526,16 @@ int32 arena_pipeline(
             known();
         }
         have r3.start <= 2147483644 by {
-            arithmetic_certificate signed_int32 {
-                premise 0: (at(region(38).entry, combined->start) as int32) < (at(region(38).entry,
-                    536870911) as int32) => (at(region(38).entry, combined->start) as int32) <
-                    (at(region(38).entry, 536870911) as int32);
-                trivial => -1610612734 <= 0;
-                add 0, 1 => (to_integer((at(region(38).entry, combined->start) as int32)) +
-                    -1610612734) < (to_integer((at(region(38).entry, 536870911) as int32)) + 0);
-                conclusion 2;
-            }
+            solve() using { (at(region(38).entry, combined->start) as int32) < (at(region(38).entry,
+                    536870911) as int32); };
         }
         have defined((r3.start + 3)) by {
             have (to_integer(r3.start) + to_integer(3)) >= -2147483648 by {
-                arithmetic_certificate {
-                    negated_goal => (to_integer(r3.start) + to_integer(3)) < -2147483648;
-                    premise 0: 0 <= to_integer(r3.start) => 0 <= to_integer(r3.start);
-                    add 0, 1 => (to_integer(r3.start) + to_integer(3) + 0) < (-2147483648 +
-                        to_integer(r3.start));
-                    conclusion 2;
-                }
+                solve() using { 0 <= to_integer(r3.start); };
             }
             have (to_integer(r3.start) + to_integer(3)) <= 2147483647 by {
-                arithmetic_certificate {
-                    negated_goal => 2147483647 < (to_integer(r3.start) + to_integer(3));
-                    premise 0: (let integer_value: Integer = to_integer((combined->start as int32))
-                        + 4; integer_value) <= 2147483647 => (let integer_value: Integer =
-                        to_integer((combined->start as int32)) + 4; integer_value) <= 2147483647;
-                    add 0, 1 => (2147483647 + (let integer_value: Integer =
-                        to_integer((combined->start as int32)) + 4; integer_value)) <
-                        (to_integer(r3.start) + to_integer(3) + 2147483647);
-                    conclusion 2;
-                }
+                solve() using { (let integer_value: Integer = to_integer((combined->start as int32))
+                        + 4; integer_value) <= 2147483647; };
             }
             known();
         }

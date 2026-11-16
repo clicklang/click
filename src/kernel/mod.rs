@@ -136,7 +136,7 @@ pub use spec::required_constructions::is_required_construction;
 pub(crate) use spec::{
     SpecCaptureRefusal, algebraic_argument_evaluation_guards, capture_spec_algebraic_value,
     capture_spec_integer_value, capture_spec_integer_value_with_guards,
-    refine_object_pointer_argument_using_facts, with_preserved_integer_comparisons,
+    refine_object_pointer_argument_using_facts,
 };
 mod termination;
 pub(crate) use termination::StatementProofInput;
@@ -172,6 +172,7 @@ pub(crate) use eval::is_store_fact;
 pub(crate) use eval::load_access_width_at_address_or_widest;
 pub(crate) use eval::load_access_width_or_widest;
 pub(crate) use eval::load_term_access_width;
+#[cfg(test)]
 pub(crate) use eval::load_variable_for_cell_with_origin;
 pub(crate) use eval::load_variable_for_term;
 pub(crate) use eval::offsets_have_same_canonical_form;
@@ -180,6 +181,7 @@ pub(crate) use eval::proposition_mentions_load_variable;
 pub(crate) use eval::proposition_mentions_scalar_read;
 pub(crate) use eval::read_over_write_program_value;
 pub(crate) use eval::read_over_write_value;
+#[cfg(test)]
 #[cfg(test)]
 pub(crate) use eval::record_load_variable_defining_fact;
 pub(crate) use eval::registered_load_bytes_for_variable;
@@ -261,10 +263,10 @@ pub(crate) use reasoning::{
 pub(crate) use spec::is_verified_load_variable_defining_fact;
 pub(crate) use spec::program_value_word32_term;
 pub(crate) use termination::{
-    OrdinaryTerminationScope, ProgramContractBodies, ProgramContractFailure, ProgramContractGoal,
-    ProgramContractProof, ProgramTerminationInputs, ProgramTerminationProof,
-    ProvedProgramContracts, TerminationAtomKind, TerminationCause, TerminationCheck,
-    TerminationCheckReport, termination_predicate_spelling,
+    IndependentTerminationInputs, OrdinaryTerminationScope, ProgramContractBodies,
+    ProgramContractFailure, ProgramContractGoal, ProgramContractProof, ProgramTerminationInputs,
+    ProgramTerminationProof, ProvedProgramContracts, TerminationAtomKind, TerminationCause,
+    TerminationCheck, TerminationCheckReport, termination_predicate_spelling,
 };
 pub use termination::{
     TerminationRefusal, TerminationVerdicts, UnsuitableCallback, program_function_callees,

@@ -44,6 +44,28 @@ pub(super) struct RecursionAuthority {
 }
 
 impl RecursionDeclarations {
+    pub fn open_ordinary(
+        functions: &[&ProgramFunction],
+        plans: &[FunctionTerminationPlan],
+    ) -> Result<Arc<Self>, TerminationError> {
+        for plan in plans {
+            charge_termination_work(1);
+            if matches!(
+                plan.recursive_measure,
+                Some(
+                    FunctionTerminationMeasure::NumericParameter(_)
+                        | FunctionTerminationMeasure::ResourceRequirement(_)
+                )
+            ) {
+                return Err(declaration_error(
+                    &plan.function_name,
+                    "legacy termination measures require independent termination inputs; ordinary contracts declare call-ranked recursion",
+                ));
+            }
+        }
+        Self::open(functions, plans)
+    }
+
     pub fn open(
         functions: &[&ProgramFunction],
         plans: &[FunctionTerminationPlan],
@@ -261,17 +283,37 @@ mod tests {
     #[test]
     fn declaration_opening_refuses_an_expression_plan_without_a_declared_measure() {
         let function = expression("f", &[]).with_recursion_measure(vec![]);
-        let result = ProgramContractProof::open_with_recursion_declarations(
+        let result = ProgramContractProof::open_ordinary(
             BTreeSet::from(["f".into()]),
             BTreeSet::new(),
             &BTreeSet::new(),
             &[&function],
             &[expression_plan("f")],
+            BTreeSet::from(["f".into()]),
         );
         assert!(
             matches!(result, Err(error) if error.message.contains("carries no declared measure"))
         );
     }
+    #[test]
+    fn ordinary_opening_refuses_legacy_measures_before_body_execution() {
+        let function = ProgramFunction::new(
+            ProgramType::Void,
+            "f",
+            vec![ProgramParameter::new("n", ProgramType::Int32)],
+            ProgramStatement::Skip,
+        );
+        for measure in [
+            FunctionTerminationMeasure::NumericParameter(0),
+            FunctionTerminationMeasure::ResourceRequirement(0),
+        ] {
+            let plans = [plan("f", measure)];
+            assert!(RecursionDeclarations::open(&[&function], &plans).is_ok());
+            let error = RecursionDeclarations::open_ordinary(&[&function], &plans).unwrap_err();
+            assert!(error.message.contains("independent termination inputs"));
+        }
+    }
+
     #[test]
     fn declaration_opening_resolves_numeric_parameters_before_any_descent_proof() {
         let function = ProgramFunction::new(

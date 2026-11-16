@@ -1521,10 +1521,10 @@ lookup checks that premise directly instead of enumerating class members.
 This supports symbolic aliases as well as concrete storage coordinates.
 The formation rule retains any explicit alignment premise and still checks
 byte displacement, intrinsic alignment, and requested alignment. The existing
-single-premise arithmetic alignment certificate continues to encode only
-formation arithmetic; its evidence producer refuses a class witness whose
-supporting equalities that certificate cannot express. Ambient alignment
-checking does not label such incomplete evidence as a complete certificate.
+explicit alignment normalization step encodes only formation arithmetic;
+its evidence producer refuses a class witness whose supporting equalities
+are absent from the selected premises. Ambient alignment checking does not
+label such incomplete evidence as a complete proof.
 
 Block-index visits apply effects or check all affected occurrences; they do
 not search for an implicit memory supplier. Explicit composition/publication and fragment

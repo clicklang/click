@@ -875,9 +875,7 @@ fn collect_pointer_block_carriers(block: &PointerBlock, variables: &mut CarrierV
         PointerBlock::LoadedPointer(identity) if variables.pointer_loads.insert(*identity) => {
             if let Some((_, address)) = crate::kernel::eval::registered_pointer_load(*identity) {
                 collect_pointer_carriers(&address, variables);
-                if variables.exhausted() {
-                    return;
-                }
+                if variables.exhausted() {}
             }
         }
         _ => {}
@@ -2029,6 +2027,7 @@ impl<'a> TermRewrite<'a> {
 
     /// Simultaneous one-step read comparison. Only selected syntax is visited;
     /// inserted values and the contents of states remain opaque.
+    #[cfg(test)]
     pub(crate) fn comparison_read_batch(
         proposition: &Proposition,
         replacements: impl IntoIterator<Item = (MachineTerm, MachineTerm)>,
@@ -5789,6 +5788,19 @@ impl<'a> TermRewrite<'a> {
                 false
             };
             if known_false {
+                return ConditionTerm::Constant(true);
+            }
+        }
+        if let Some(guard) = result.pointer_offset_uint64_association_guard() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.push(guard.clone());
+            }
+            // One exact lookup, keyed by the guard the regrouped sum spells.
+            if guard == ConditionTerm::Constant(true)
+                || self
+                    .conditions
+                    .is_some_and(|conditions| conditions.get(&guard) == Some(&true))
+            {
                 return ConditionTerm::Constant(true);
             }
         }

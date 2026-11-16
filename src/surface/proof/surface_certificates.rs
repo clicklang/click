@@ -691,38 +691,10 @@ fn plan_explicit_signed_antisymmetry(
         &[forward.0.clone(), reverse.0.clone()],
     )
     .and_then(crate::surface::checking::ArithmeticPlan::signed_int32)?;
-    let (goal_left, goal_right) = match &forward.1 {
-        ClickProposition::Comparison { left, right, .. } => (left.clone(), right.clone()),
-        _ => return None,
-    };
-    Some(vec![ProofTactic::ArithmeticCertificate(
-        ArithmeticCertificate {
-            family: ArithmeticCertificateFamily::SignedInt32(SignedInt32Certificate {
-                nodes: vec![
-                    SignedArithmeticStep::Premise {
-                        index: 0,
-                        proposition: forward.1.clone(),
-                        result: forward.1.clone(),
-                    },
-                    SignedArithmeticStep::Premise {
-                        index: 1,
-                        proposition: reverse.1.clone(),
-                        result: reverse.1.clone(),
-                    },
-                    SignedArithmeticStep::EqualityFromBounds {
-                        lower: 0,
-                        upper: 1,
-                        result: ClickProposition::Comparison {
-                            left: goal_left,
-                            operator: ComparisonOperator::Equal,
-                            right: goal_right,
-                        },
-                    },
-                ],
-                conclusion: 2,
-            }),
-        },
-    )])
+    Some(vec![ProofTactic::ArithmeticUsing(vec![
+        forward.1.clone(),
+        reverse.1.clone(),
+    ])])
 }
 
 pub(super) fn plan_explicit_le_and_neq_implies_lt(
@@ -2940,7 +2912,7 @@ pub(super) fn plan_recorded_pointer_word(
     goal: &Proposition,
     derivation: &PropositionDerivation,
     premise_pairs: &[(Proposition, ClickProposition)],
-    surface_goal: &ClickProposition,
+    _surface_goal: &ClickProposition,
 ) -> Option<Vec<ProofTactic>> {
     let premises = derivation.pointer_word_premises()?;
     if premises.is_empty() {
@@ -2956,19 +2928,13 @@ pub(super) fn plan_recorded_pointer_word(
         })
         .collect::<Option<Vec<_>>>()?;
     let kernels = premises.to_vec();
-    let plan = crate::surface::checking::plan_arithmetic(
+    crate::surface::checking::plan_arithmetic(
         crate::surface::checking::ArithmeticEngine::Special,
         goal,
         &kernels,
     )
     .and_then(crate::surface::checking::ArithmeticPlan::special)?;
-    Some(vec![ProofTactic::ArithmeticCertificate(
-        crate::surface::checking::special_plan_to_surface_certificate(
-            &plan,
-            &surfaces,
-            surface_goal,
-        ),
-    )])
+    Some(vec![ProofTactic::ArithmeticUsing(surfaces)])
 }
 
 /// A pointer-alignment decision is certified by a checked special certificate
@@ -2978,25 +2944,19 @@ pub(super) fn plan_recorded_pointer_alignment(
     goal: &Proposition,
     derivation: &PropositionDerivation,
     premise_pairs: &[(Proposition, ClickProposition)],
-    surface_goal: &ClickProposition,
+    _surface_goal: &ClickProposition,
 ) -> Option<Vec<ProofTactic>> {
     match derivation.pointer_alignment_premise()? {
         None => plan_context_free_closer(goal).map(|closer| vec![closer]),
         Some(premise) => {
             let (_, surface) = premise_pairs.iter().find(|(kernel, _)| kernel == premise)?;
-            let plan = crate::surface::checking::plan_arithmetic(
+            crate::surface::checking::plan_arithmetic(
                 crate::surface::checking::ArithmeticEngine::Special,
                 goal,
                 std::slice::from_ref(premise),
             )
             .and_then(crate::surface::checking::ArithmeticPlan::special)?;
-            Some(vec![ProofTactic::ArithmeticCertificate(
-                crate::surface::checking::special_plan_to_surface_certificate(
-                    &plan,
-                    std::slice::from_ref(surface),
-                    surface_goal,
-                ),
-            )])
+            Some(vec![ProofTactic::ArithmeticUsing(vec![surface.clone()])])
         }
     }
 }

@@ -93,7 +93,7 @@ pub(super) fn set_contract_result(
             || crate::kernel::FloatOperandView::from_shared(root).is_some()
     }) {
         state.locals.set_retained_typed_with_all_qualifiers(
-            C_CONTRACT_RESULT_NAME,
+            CONTRACT_RESULT,
             value,
             interface.return_type(),
             false,
@@ -128,7 +128,7 @@ pub(super) fn set_contract_result(
             );
         }
         state.locals.set_aggregate_object_at(
-            C_CONTRACT_RESULT_NAME.to_string(),
+            CONTRACT_RESULT,
             layout.clone(),
             pointer.pointer().clone(),
         );
@@ -138,7 +138,7 @@ pub(super) fn set_contract_result(
         .with_pointer_pointee_constant(interface.return_pointee_is_constant())
         .with_pointer_declared_object_class(interface.return_pointee_class());
     state.locals.set_retained_typed_with_all_qualifiers(
-        C_CONTRACT_RESULT_NAME.to_string(),
+        CONTRACT_RESULT,
         source.retain_checked_pointer(value),
         interface.return_type(),
         false,
@@ -179,7 +179,7 @@ pub(super) fn complete_aggregate_return(
         return Err(AggregateReturnRefusal::UninitializedRead);
     }
     let frame = state.next_local_frame;
-    let destination = Memory::frame_local_pointer(frame, "__return");
+    let destination = Memory::aggregate_return_pointer(frame);
     state.set_memory(
         state
             .memory
@@ -1233,13 +1233,15 @@ mod pointer_argument_tests {
         let callee = bind_program_function_arguments_retained(
             &state,
             &function,
-            &[native.clone()],
-            &[source.clone()],
+            std::slice::from_ref(&native),
+            std::slice::from_ref(&source),
         )
         .unwrap();
         let bound = callee.locals.get("x").unwrap();
         assert_eq!(bound.shared(), Some(&root));
-        let legacy = bind_program_function_arguments(&state, &function, &[native.clone()]).unwrap();
+        let legacy =
+            bind_program_function_arguments(&state, &function, std::slice::from_ref(&native))
+                .unwrap();
         assert_eq!(bound, legacy.locals.get("x").unwrap());
         let returned = coerce_retained_function_return_value(
             bound.clone(),
@@ -1252,7 +1254,7 @@ mod pointer_argument_tests {
         let mut caller = ExecutionState::new();
         set_function_result(&mut caller, &function, returned.clone());
         assert_eq!(
-            caller.locals.get(C_CONTRACT_RESULT_NAME).unwrap().shared(),
+            caller.locals.get(CONTRACT_RESULT).unwrap().shared(),
             Some(&root)
         );
         crate::kernel::loops::assign_call_result(
@@ -1286,14 +1288,15 @@ mod pointer_argument_tests {
             let callee = bind_program_function_arguments_retained(
                 &state,
                 &function,
-                &[native.clone()],
-                &[source.clone()],
+                std::slice::from_ref(&native),
+                std::slice::from_ref(&source),
             )
             .unwrap();
             let bound = callee.locals.get("x").unwrap();
             assert_eq!(bound.shared(), Some(&root));
             let legacy =
-                bind_program_function_arguments(&state, &function, &[native.clone()]).unwrap();
+                bind_program_function_arguments(&state, &function, std::slice::from_ref(&native))
+                    .unwrap();
             assert_eq!(bound, legacy.locals.get("x").unwrap());
             let returned = coerce_retained_function_return_value(
                 bound.clone(),
@@ -1306,7 +1309,7 @@ mod pointer_argument_tests {
             let mut caller = ExecutionState::new();
             set_function_result(&mut caller, &function, returned.clone());
             assert_eq!(
-                caller.locals.get(C_CONTRACT_RESULT_NAME).unwrap().shared(),
+                caller.locals.get(CONTRACT_RESULT).unwrap().shared(),
                 Some(&root)
             );
             crate::kernel::loops::assign_call_result(
@@ -1340,13 +1343,15 @@ mod pointer_argument_tests {
         let callee = bind_program_function_arguments_retained(
             &state,
             &function,
-            &[native.clone()],
-            &[source.clone()],
+            std::slice::from_ref(&native),
+            std::slice::from_ref(&source),
         )
         .unwrap();
         let bound = callee.locals.get("x").unwrap();
         assert_eq!(bound.shared(), Some(&root));
-        let legacy = bind_program_function_arguments(&state, &function, &[native.clone()]).unwrap();
+        let legacy =
+            bind_program_function_arguments(&state, &function, std::slice::from_ref(&native))
+                .unwrap();
         assert_eq!(bound, legacy.locals.get("x").unwrap());
         let returned = coerce_retained_function_return_value(
             bound.clone(),
@@ -1359,7 +1364,7 @@ mod pointer_argument_tests {
         let mut caller = ExecutionState::new();
         set_function_result(&mut caller, &function, returned.clone());
         assert_eq!(
-            caller.locals.get(C_CONTRACT_RESULT_NAME).unwrap().shared(),
+            caller.locals.get(CONTRACT_RESULT).unwrap().shared(),
             Some(&root)
         );
         crate::kernel::loops::assign_call_result(
@@ -1518,7 +1523,7 @@ mod pointer_return_tests {
         assert_eq!(result.native().as_ref(), &expected);
         let mut state = ExecutionState::new();
         set_function_result(&mut state, &constant, result.clone());
-        let bound = state.locals.get(C_CONTRACT_RESULT_NAME).unwrap();
+        let bound = state.locals.get(CONTRACT_RESULT).unwrap();
         assert!(bound.shared().is_some());
         assert!(bound.pointer().unwrap().pointee_constant());
         assert!(!bound.pointer().unwrap().pointee_volatile());

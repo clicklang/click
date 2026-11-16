@@ -35,12 +35,7 @@ int32 never_negative(char buf[], int32 len, uint32 value, char name[]) {
 } by {
     have 0 <= len and len <= 2147483647 by solve();
     have to_integer(len as uint64) == to_integer(len) by {
-        arithmetic_certificate rules {
-            premise 0: 0 <= to_integer(len) => 0 <= to_integer(len);
-            premise 1: to_integer(len) <= 2147483647 => to_integer(len) <= 2147483647;
-            integer_cast_identity bounds [0, 1] => to_integer(len as uint64) == to_integer(len);
-            conclusion 0;
-        }
+        solve() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
     }
     have len as uint64 != 0u64;
     step(snprintf, { n1: 8u64 });

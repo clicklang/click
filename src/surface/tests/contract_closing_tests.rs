@@ -17,8 +17,21 @@ fn proof(steps: &str) -> String {
 #[test]
 fn explicit_contract_closing_uses_ordinary_known_steps() {
     let source = proof("normalize(); known(); known(); known();");
-    without_implicit_solve(|| verify_c_sources(&source, C))
+    let mut verified = without_implicit_solve(|| verify_c_sources(&source, C))
         .unwrap_or_else(|error| panic!("{}", error.message()));
+    // Reuse the completed artifact: losing its ordinary root must refuse,
+    // rather than admitting a reusable rule through the legacy adapter.
+    let function = verified[0].function_block.clone();
+    for theorem in &mut verified {
+        let mut entry = (**theorem.entry_context.as_ref().unwrap()).clone();
+        entry.completion = None;
+        theorem.entry_context = Some(std::sync::Arc::new(entry));
+    }
+    let error = crate::surface::proof::finish_contract_body_root(&function, &verified).unwrap_err();
+    assert!(
+        error.message().contains("lost its contract root"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -285,5 +298,23 @@ fn reassigned_numeric_parameter_descent_expands_into_ordinary_steps() {
     verify_c_sources(source, &c).unwrap();
     let expanded = expand_function_proof_source(source, &c, "countdown").unwrap();
     without_implicit_solve(|| verify_c_sources(&expanded, &c))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[test]
+#[ignore = "nightly: anonymous resource verification, expansion, and cold recheck"]
+fn anonymous_resource_descent_completes_and_expands_without_a_source_walk() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/c_decreases_resource_avoids_recursive_loop.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.unwrap();
+    let inputs = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c_sources(&source, &inputs).unwrap();
+    let expanded = expand_function_proof_source(&source, &inputs, "walk").unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &inputs))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }

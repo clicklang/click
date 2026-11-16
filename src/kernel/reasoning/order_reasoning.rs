@@ -1,9 +1,9 @@
 use super::*;
-use crate::kernel::CompareRelation;
 use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey;
 use crate::kernel::binary_term;
 use crate::kernel::{bits32_constant, constant_u32};
 
+#[cfg(test)]
 pub(in crate::kernel) fn condition_as_order_fact(
     condition: &ConditionTerm,
     value: bool,
@@ -705,6 +705,7 @@ pub(in crate::kernel) fn integer_range_exhausted(range: &IntegerRangeFacts) -> b
     upper - lower <= 256 && (lower..=upper).all(|value| range.excluded.contains(&value))
 }
 
+#[cfg(test)]
 pub(in crate::kernel) fn bitvector_variable(term: &MachineTerm) -> Option<Variable> {
     match term {
         MachineTerm::Variable(variable) => Some(*variable),
@@ -741,6 +742,7 @@ pub(in crate::kernel) fn nonnegative_int32_value(word: u32) -> Option<i64> {
     i32::try_from(word).ok().map(i64::from)
 }
 
+#[cfg(test)]
 pub(in crate::kernel) fn bitvector_variable_and_constant(
     left: &MachineTerm,
     right: &MachineTerm,

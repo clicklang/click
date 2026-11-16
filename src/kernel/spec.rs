@@ -4,30 +4,6 @@ use crate::kernel::CompareRelation;
 use crate::kernel::eval::SpecDivision;
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
-thread_local! {
-    static PRESERVE_INTEGER_COMPARISONS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Certificate operands retain their written machine observations. Ordinary
-/// lowering still stores the equivalent native comparison as its single fact.
-pub(crate) fn with_preserved_integer_comparisons<T>(operation: impl FnOnce() -> T) -> T {
-    with_integer_comparisons_preserved(true, operation)
-}
-
-/// A condition inside a term, such as an `if` condition, is part of the
-/// term's value rather than a certificate operand: it takes the one form
-/// ordinary lowering gives it, so a term reads the same wherever it is cited.
-fn with_integer_comparisons_preserved<T>(preserve: bool, operation: impl FnOnce() -> T) -> T {
-    struct Restore(bool);
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.set(self.0));
-        }
-    }
-    let _restore = Restore(PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.replace(preserve)));
-    operation()
-}
-
 mod existential;
 pub(in crate::kernel) mod predicate_dependencies;
 mod quantifier_polarity;
@@ -56,6 +32,7 @@ pub(super) struct SpecPropositionPath {
 
 mod algebraic_result;
 mod bindings;
+mod object_address;
 use algebraic_result::{AlgebraicFieldResult, AlgebraicResult};
 mod result;
 use result::{SpecCallArgument, SpecValue, call_arguments};
@@ -1456,46 +1433,6 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     match proposition {
-        SpecProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => {
-            let (SpecMemory::Fixed(before), SpecMemory::Fixed(after)) = (before, after) else {
-                return Ok(Vec::new());
-            };
-            let mut writes = Vec::with_capacity(resources.len());
-            let mut facts = ExecutionFacts::default();
-            let mut obligations = Vec::new();
-            for resource in resources {
-                let mut paths =
-                    evaluate_spec_resource_at_state_in(scope, resource, assumptions, budget)?;
-                if paths.len() != 1 {
-                    return Ok(Vec::new());
-                }
-                let (resource, path_facts, path_obligations) = paths.pop().unwrap();
-                let Resource::Memory(range) = resource else {
-                    return Ok(Vec::new());
-                };
-                let (pointer, bytes) = range.byte_footprint();
-                let Some(bytes) = bytes.as_const() else {
-                    return Ok(Vec::new());
-                };
-                writes.push((pointer, bytes));
-                facts.extend_shared(&path_facts);
-                obligations.extend(path_obligations);
-            }
-            Ok(vec![SpecPropositionPath {
-                proposition: Proposition::MemoryMutatesOnly {
-                    before: before.clone(),
-                    after: after.clone(),
-                    writes,
-                },
-                facts,
-                obligations,
-                introductions: Vec::new(),
-            }])
-        }
         SpecProposition::IntegerComparison {
             left,
             operator,
@@ -1565,16 +1502,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     // `to_integer(x) <= 4294967295` is trivially true of the
                     // carrier but is what Integer reasoning cites, so it
                     // keeps its Integer form.
-                    let (condition, truth) = if PRESERVE_INTEGER_COMPARISONS.with(|flag| flag.get())
-                    {
-                        (condition, true)
-                    } else {
-                        match crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(
-                            &condition, true,
-                        ) {
-                            Some((ConditionTerm::Constant(_), _)) | None => (condition, true),
-                            Some(native) => native,
-                        }
+                    let (condition, truth) = match crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(&condition, true) {
+                        Some((ConditionTerm::Constant(_), _)) | None => (condition, true),
+                        Some(native) => native,
                     };
                     result.push(SpecPropositionPath {
                         introductions: Vec::new(),
@@ -3292,7 +3222,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 .find(|schema| schema.name == arm.variant)
                 .ok_or(ExecutionLimit::Paths)?;
             let bindings = symbolic_algebraic_match_binders_in(
-                &scrutinee_path.value.algebraic_type(),
+                scrutinee_path.value.algebraic_type(),
                 schema,
                 budget,
             )?;
@@ -4094,7 +4024,7 @@ fn evaluate_spec_algebraic_non_call_in(
                             return Err(ExecutionLimit::Paths);
                         };
                         let bindings = symbolic_algebraic_match_binders_in(
-                            &scrutinee_path.value.algebraic_type(),
+                            scrutinee_path.value.algebraic_type(),
                             schema,
                             budget,
                         )?;
@@ -5665,14 +5595,16 @@ fn lower_spec_disjunction_at_state_in(
             &right_assumptions,
             budget,
         )?;
-        // A literally true left side leaves no case for the right, which then
-        // need not denote anything (`0u32 == 0u32 or a <= MAX / 0u32`).
-        if right_paths.is_empty()
-            && matches!(
-                &left_path.proposition,
-                Proposition::ConditionIs(ConditionTerm::Constant(value), expected)
-                    if value == expected
-            )
+        // Preserve a defined disjunction even when its left side is true:
+        // its logical structure still belongs to the proof. An intrinsically
+        // undefined right side need not denote anything when the left holds.
+        if constant_spec_condition_value(&left_path.proposition) == Some(true)
+            && right_paths.iter().all(|path| {
+                path.obligations.iter().any(|obligation| {
+                    obligation.evaluation_domain
+                        && constant_spec_condition_value(obligation.proposition()) == Some(false)
+                })
+            })
         {
             paths.push(left_path);
             continue;
@@ -6628,7 +6560,7 @@ fn evaluate_resource_count_paths(
                         let no_overflow = Proposition::signed_arithmetic_domain(
                             MachineIntegerType::Int32,
                             MachineBinaryOp::Add,
-                            &quantity,
+                            quantity,
                             &MachineTerm::constant(symbolic.delta as u32),
                         );
                         if !path_assumptions.proves_exact(&no_overflow)
@@ -6827,16 +6759,26 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 );
                 retain_required_integer_obligation(&mut obligations, assumptions, lower_bound);
                 retain_required_integer_obligation(&mut obligations, assumptions, upper_bound);
-                let value = program_value_from_bitvector_term(
-                    destination.program_type(),
-                    MachineTerm::IntegerToMachine {
-                        value: path.value.into(),
-                        destination: *destination,
-                    },
-                )
-                .ok_or(ExecutionLimit::Paths)?;
+                let value: SpecValue = if budget.machine_result_production_disabled {
+                    program_value_from_bitvector_term(
+                        destination.program_type(),
+                        MachineTerm::IntegerToMachine {
+                            value: path.value.into(),
+                            destination: *destination,
+                        },
+                    )
+                    .ok_or(ExecutionLimit::Paths)?
+                    .into()
+                } else {
+                    KernelTerm::integer_to_machine(
+                        *destination,
+                        KernelTermImport::default().integer(&path.value.into()),
+                    )
+                    .expect("typed Integer conversion operand")
+                    .into()
+                };
                 paths.push(SpecExpressionPath {
-                    value: value.into(),
+                    value,
                     facts: path.facts,
                     obligations,
                 });
@@ -6920,7 +6862,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         };
                         let mut variables = Vec::with_capacity(schema.fields.len());
                         let bindings = symbolic_algebraic_fields(
-                            &scrutinee_path.value.algebraic_type(),
+                            scrutinee_path.value.algebraic_type(),
                             schema,
                             || {
                                 let variable = budget.allocate_match_binder_variable()?;
@@ -7207,11 +7149,12 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let native_state = scope.native_expression_state(expression);
             let paths =
                 evaluate_expression_value_paths(&native_state, expression, assumptions, budget)?;
-            let retain_floats = !budget.machine_result_production_disabled;
+            let retain_results = !budget.machine_result_production_disabled;
             spec_execution_value_paths_in(
                 paths.into_iter().map(|path| {
                     path.map_value(|value| {
-                        if retain_floats && value.float().is_some() {
+                        if retain_results && (value.machine().is_some() || value.float().is_some())
+                        {
                             value
                         } else {
                             SpecValue::Native(value.into_native())
@@ -7735,6 +7678,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             assumptions,
             budget,
         )?,
+        SpecExpression::ObjectAddress(address) => {
+            object_address::evaluate(scope, address, assumptions, budget)?
+        }
         SpecExpression::Let { .. } => bindings::evaluate(scope, expression, assumptions, budget)?,
         SpecExpression::PureFunctionApplication {
             name,
@@ -8720,6 +8666,10 @@ fn spec_expression_pointer_step_width(
     expression: &SpecExpression,
 ) -> Option<u32> {
     match expression {
+        SpecExpression::ObjectAddress(address) => address
+            .value_type
+            .pointer_to()
+            .map(|_| address.value_type.byte_width()),
         SpecExpression::ProgramExpression(expression) => {
             program_expression_pointer_step_width(state, expression)
         }
@@ -8981,14 +8931,14 @@ fn evaluate_spec_requires_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
-    let requirement_paths = with_integer_comparisons_preserved(false, || {
+    let requirement_paths = {
         lower_spec_proposition_at_state_with_algebraic_bindings_in(
             scope,
             requirement,
             assumptions,
             budget,
         )
-    })?;
+    }?;
     for requirement_path in requirement_paths {
         let mut obligations = requirement_path.obligations;
         if !assumptions.proves_exact(&requirement_path.proposition) {
@@ -9032,14 +8982,14 @@ fn evaluate_spec_if_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
-    let condition_paths = with_integer_comparisons_preserved(false, || {
+    let condition_paths = {
         lower_spec_proposition_at_state_with_algebraic_bindings_in(
             scope,
             condition,
             assumptions,
             budget,
         )
-    })?;
+    }?;
     for condition_path in condition_paths {
         let branch_assumptions = assumptions_with_path_context(
             assumptions,
@@ -9117,7 +9067,7 @@ fn evaluate_spec_if_paths_in(
                             continue;
                         };
                         branch_paths.push(SpecExpressionPath {
-                            value: value.into(),
+                            value,
                             facts,
                             obligations,
                         });
@@ -9320,14 +9270,14 @@ fn evaluate_spec_integer_if_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecIntegerPath>> {
     let mut paths = Vec::new();
-    for condition_path in with_integer_comparisons_preserved(false, || {
+    for condition_path in {
         lower_spec_proposition_at_state_with_algebraic_bindings_in(
             scope,
             condition,
             assumptions,
             budget,
         )
-    })? {
+    }? {
         let branch_assumptions = assumptions_with_path_context(
             assumptions,
             &condition_path.facts,
@@ -9829,12 +9779,12 @@ pub(super) fn proposition_as_single_condition(
     }
 }
 
-/// The truth value a lowered specification condition folds to on its own,
+/// The truth value a lowered specification condition establishes on its own,
 /// or `None` when deciding it would need an ambient fact.
 ///
-/// This is exact constant folding: context-free builtin solving of the
+/// This checks intrinsic truth: context-free builtin solving of the
 /// lowered proposition, plus the frozen condition checker on the empty
-/// context for a bare `ConditionIs`, which is where a folded comparison of
+/// context for a bare `ConditionIs`, which is where a retained comparison of
 /// two constants is decided. Nothing here reads the surrounding proof
 /// context, so a specification `if` lowers to the same shape wherever it is
 /// written and wherever it is applied; a condition that holds only under
@@ -10445,50 +10395,6 @@ mod pointer_integer_observation_tests {
 
 #[cfg(test)]
 mod pointer_coercion_tests;
-
-#[cfg(test)]
-mod certificate_observation_tests {
-    use super::*;
-
-    #[test]
-    fn certificate_lowering_preserves_types_without_changing_ordinary_facts() {
-        for ty in [
-            MachineIntegerType::Int32,
-            MachineIntegerType::UInt32,
-            MachineIntegerType::Int64,
-            MachineIntegerType::UInt64,
-        ] {
-            let observe =
-                |id| IntegerTerm::from_machine(ty, MachineTerm::Variable(Variable(id))).unwrap();
-            let left = observe(994_011);
-            let right = observe(994_012);
-            let written = SpecProposition::IntegerComparison {
-                left: SpecIntegerExpression::Term(left.clone()),
-                operator: IntegerComparisonOperator::Equal,
-                right: SpecIntegerExpression::Term(right.clone()),
-            };
-            let lower = || {
-                crate::kernel::program_lower_spec_proposition_with_checked_obligations(
-                    &ExecutionState::new(),
-                    &written,
-                    None,
-                    &PureFactContext::new(),
-                )
-                .unwrap()
-                .0
-            };
-            let ordinary = lower();
-            let typed = Proposition::ConditionIs(ConditionTerm::integer_equal(left, right), true);
-            assert_ne!(ordinary, typed);
-            with_preserved_integer_comparisons(|| {
-                assert_eq!(lower(), typed);
-                with_preserved_integer_comparisons(|| assert_eq!(lower(), typed));
-                assert_eq!(lower(), typed);
-            });
-            assert_eq!(lower(), ordinary);
-        }
-    }
-}
 
 #[cfg(test)]
 mod arithmetic_domain_scaling_tests {

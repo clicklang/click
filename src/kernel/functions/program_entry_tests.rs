@@ -168,7 +168,7 @@ fn startup_permission_partition_visits_scale_with_cells_and_blocks() {
     for count in [16u32, 64, 256] {
         let mut memory = Memory::new();
         for index in 0..count {
-            let pointer = Memory::global_pointer(&format!("state_{index}"));
+            let pointer = Memory::global_pointer(format!("state_{index}"));
             memory = memory
                 .with_block(pointer.block.clone(), 4)
                 .store(pointer, int32(7));

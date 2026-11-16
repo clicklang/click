@@ -2476,17 +2476,29 @@ fn verify_program_in_context(
                 function_environment = function_environment.with_external_function_rule(assumption);
             }
         }
-        let program_contracts =
-            crate::kernel::ProgramContractProof::open_with_recursion_declarations(
-                requested_contracts,
-                declared_diverging.clone(),
-                &bodyless_declarations,
-                &function_environment.linked_functions(),
-                &termination_plans,
-            )
-            .map_err(|error| {
-                ClickError::new(format!("could not open C recursion declarations: {error}"))
-            })?;
+        let program_contracts = crate::kernel::ProgramContractProof::open_ordinary(
+            requested_contracts,
+            declared_diverging.clone(),
+            &bodyless_declarations,
+            &function_environment.linked_functions(),
+            &termination_plans,
+            file.function_blocks()
+                .iter()
+                .filter(|function| {
+                    !function.is_external()
+                        && selected_functions
+                            .as_ref()
+                            .is_none_or(|selected| selected.contains(function.signature().name()))
+                })
+                .map(|function| {
+                    executing_function_name(&termination_kernel_names, function.signature().name())
+                })
+                .filter(|name| !admitted_functions.contains(name))
+                .collect(),
+        )
+        .map_err(|error| {
+            ClickError::new(format!("could not open C recursion declarations: {error}"))
+        })?;
         drop(_timing);
         let verified_theorems = verify_theorem_definitions(
             theorem_dependencies,
@@ -2668,7 +2680,6 @@ fn verify_program_in_context(
             {
                 let partial_rules = function_environment.verified_function_rules();
                 let inline_bodies = function_environment.linked_functions();
-                let heights = program_termination_height_plan(&partial_rules, &inline_bodies);
                 let declared_diverging = external_and_user_function_blocks
                     .iter()
                     .filter(|function| function.signature().diverges())
@@ -2697,21 +2708,22 @@ fn verify_program_in_context(
                 assumed_terminating.extend(closure_instance_names(&parsed_sources));
                 assumed_terminating.extend(object_coercion_names(&parsed_sources));
                 assumed_terminating.extend(modeled_thread_runtime_names());
-                let preliminary = program_verified_function_termination_rules(
-                    &partial_rules,
-                    &termination_plans,
-                    &termination_loop_rules,
-                    &inline_bodies,
-                    &heights,
-                    &assumed_terminating,
-                    &declared_diverging,
-                    &diverging_contracts,
-                )
-                .map_err(|error| {
-                    ClickError::new(format!(
-                        "could not certify C termination before pthread create: {error}"
-                    ))
-                })?;
+                let preliminary = program_contracts
+                    .bootstrap_termination_rules(crate::kernel::ProgramTerminationInputs {
+                        independent: crate::kernel::IndependentTerminationInputs {
+                            rules: &partial_rules,
+                            bodies: &inline_bodies,
+                        },
+                        plans: &termination_plans,
+                        assumed_terminating: &assumed_terminating,
+                        diverging_contracts: &diverging_contracts,
+                        has_unselected_functions: false,
+                    })
+                    .map_err(|error| {
+                        ClickError::new(format!(
+                            "could not certify C termination before pthread create: {error}"
+                        ))
+                    })?;
                 function_environment = function_environment
                     .with_verified_function_termination_rules(preliminary.rules);
                 early_thread_termination_published = true;
@@ -2958,32 +2970,14 @@ fn verify_program_in_context(
         // scripts have already joined their own checked completions into it.
         let body_proof =
             crate::surface::proof::finish_contract_body_root(&function_block, &function_verified)?;
-        if let Some(body_proof) = body_proof {
-            let executing_name = executing_function_name(
-                &termination_kernel_names,
-                function_block.signature().name(),
-            );
-            termination_loop_rules
-                .entry(executing_name)
-                .or_default()
-                .extend_from_slice(body_proof.loop_rules());
-            if let Some(rule) = body_proof.into_rule() {
-                function_environment = function_environment.with_verified_function_rule(rule);
-            }
-        } else {
-            // Contracts without an ordinary body root still expose their
-            // native loop-proof outputs; no source measure is reconstructed.
-            termination_loop_rules
-                .entry(executing_function_name(
-                    &termination_kernel_names,
-                    function_block.signature().name(),
-                ))
-                .or_default()
-                .extend(
-                    function_verified
-                        .iter()
-                        .flat_map(|theorem| theorem.frontier_loop_rules.iter().cloned()),
-                );
+        let executing_name =
+            executing_function_name(&termination_kernel_names, function_block.signature().name());
+        termination_loop_rules
+            .entry(executing_name)
+            .or_default()
+            .extend_from_slice(body_proof.loop_rules());
+        if let Some(rule) = body_proof.to_reusable_rule() {
+            function_environment = function_environment.with_verified_function_rule(rule);
         }
         if instrumentation::enabled() {
             instrumentation::emit(VerificationEvent::FunctionFinished {
@@ -3043,9 +3037,11 @@ fn verify_program_in_context(
     }
     let generated_program = program_contracts
         .generate_termination(crate::kernel::ProgramTerminationInputs {
-            partial_rules: &partial_rules,
+            independent: crate::kernel::IndependentTerminationInputs {
+                rules: &partial_rules,
+                bodies: &inline_bodies,
+            },
             plans: &termination_plans,
-            inline_bodies: &inline_bodies,
             assumed_terminating: &assumed_terminating,
             diverging_contracts: &diverging_contracts,
             has_unselected_functions: !unselected_executing_names.is_empty(),
@@ -4511,6 +4507,53 @@ fn executing_function_name(names: &BTreeMap<String, String>, source_name: &str) 
         .unwrap_or_else(|| source_name.to_string())
 }
 
+pub(in crate::surface) fn function_recursion_resource_requirement(
+    function: &FunctionBlock,
+) -> Result<Option<usize>, ClickError> {
+    let Some(FunctionDecrease::Resource(measure)) = function.decreases() else {
+        return Ok(None);
+    };
+    let ResourceClause::Declared {
+        kind: ResourceKind::Composite,
+        name: measure_name,
+        arguments: measure_arguments,
+        ..
+    } = measure
+    else {
+        return Err(ClickError::new(format!(
+            "function-level `decreases` in `{}` must name one composite resource",
+            function.signature().name()
+        )));
+    };
+    let mut resource_index = 0;
+    let mut matched = None;
+    for requirement in function.requires() {
+        let Requirement::Resource(required) = requirement else {
+            continue;
+        };
+        if matches!(
+            required,
+            ResourceClause::Declared {
+                kind: ResourceKind::Composite,
+                name,
+                arguments,
+                ..
+            } if name == measure_name && arguments == measure_arguments
+        ) {
+            matched = Some(resource_index);
+            break;
+        }
+        resource_index += 1;
+    }
+    let index = matched.ok_or_else(|| {
+        ClickError::new(format!(
+            "function-level `decreases {measure_name}(...)` in `{}` must exactly match an owned or viewed entry resource",
+            function.signature().name()
+        ))
+    })?;
+    Ok(Some(index))
+}
+
 pub(in crate::surface) fn program_function_termination_plans(
     file: &ClickFile,
     selected_functions: Option<&BTreeSet<String>>,
@@ -4561,45 +4604,10 @@ pub(in crate::surface) fn program_function_termination_plans(
                     )))
                 }
                 FunctionDecrease::Resource(measure) => {
-                    let ResourceClause::Declared {
-                        kind: ResourceKind::Composite,
-                        name: measure_name,
-                        arguments: measure_arguments,
-                        ..
-                    } = measure
-                    else {
-                        return Err(ClickError::new(format!(
-                            "function-level `decreases` in `{}` must name one composite resource",
-                            function.signature().name()
-                        )));
-                    };
-                    let mut resource_index = 0;
-                    let mut matched = None;
-                    for requirement in function.requires() {
-                        let Requirement::Resource(required) = requirement else {
-                            continue;
-                        };
-                        if matches!(
-                            required,
-                            ResourceClause::Declared {
-                                kind: ResourceKind::Composite,
-                                name,
-                                arguments,
-                                ..
-                            } if name == measure_name && arguments == measure_arguments
-                        ) {
-                            matched = Some(resource_index);
-                            break;
-                        }
-                        resource_index += 1;
-                    }
-                    let index = matched.ok_or_else(|| {
-                        ClickError::new(format!(
-                            "function-level `decreases {measure_name}(...)` in `{}` must exactly match an owned or viewed entry resource",
-                            function.signature().name()
-                        ))
-                    })?;
-                    Ok(crate::kernel::FunctionTerminationMeasure::ResourceRequirement(index))
+                    function_recursion_resource_requirement(function)?;
+                    Ok(crate::kernel::FunctionTerminationMeasure::Expression(
+                        describe_resource_clause(measure),
+                    ))
                 }
             })
             .transpose()?;
@@ -5516,11 +5524,17 @@ pub(in crate::surface) fn build_function_environment(
                     Some(FunctionDecrease::Binder(binder)) => Some(binder.clone()),
                     _ => None,
                 };
-                if !recursion_measure.is_empty() || recursion_binder.is_some() {
+                let recursion_resource = function_recursion_resource_requirement(function_block)?;
+                if !recursion_measure.is_empty()
+                    || recursion_binder.is_some()
+                    || recursion_resource.is_some()
+                {
                     function =
                         function.with_recursion_peers(function_block.recursion_peers().to_vec());
                 }
-                function = function.with_recursion_binder(recursion_binder);
+                function = function
+                    .with_recursion_binder(recursion_binder)
+                    .with_recursion_resource(recursion_resource);
                 function = function.with_recursion_measure(recursion_measure);
                 function = function
                     .with_trailing_value_parameters(function_block.witness_count())
@@ -5844,7 +5858,7 @@ fn with_closure_instance(
     let parameters = contract.interface().value_parameters().to_vec();
     let mut arguments = vec![SpecPredicateArgument::Value(
         SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            crate::kernel::C_CONTRACT_RESULT_NAME,
+            crate::kernel::CONTRACT_RESULT,
         )),
     )];
     arguments.extend(parameters.iter().map(|parameter| {
@@ -5993,7 +6007,7 @@ pub(in crate::surface) fn function_resource_summary(
         let result_binding = BTreeMap::from([(
             "result".to_string(),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
+                crate::kernel::CONTRACT_RESULT,
             )),
         )]);
         let result_substitutions = ContractSubstitutions::for_contract_result(&result_binding);
@@ -6090,7 +6104,7 @@ pub(in crate::surface) fn function_resource_constructors(
             let result_binding = BTreeMap::from([(
                 "result".to_string(),
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    (crate::kernel::C_CONTRACT_RESULT_NAME.to_string()).into(),
+                    crate::kernel::CONTRACT_RESULT,
                 )),
             )]);
             let resource = substitute_resource_clause_for_summary_in(
@@ -8663,10 +8677,10 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     {
         return crate::languages::rust::names::vec_type_name(&spelling(element));
     }
-    // The library's `ChunksExact<uint8>`, which a sidecar names
-    // `ChunksExact<u8>`.
+    // The library's `SliceIter<uint8>`, which a sidecar names
+    // `SliceIter<u8>`.
     if let Some((primitive, arguments)) = generics::primitive_instance_of(&algebraic_type.name)
-        && (primitive == "ChunksExact" || primitive == "SliceIter")
+        && primitive == "SliceIter"
         && let [element] = arguments.as_slice()
     {
         let mut name = primitive;
@@ -8674,8 +8688,7 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
         return name;
     }
     match algebraic_type.arguments.as_slice() {
-        // The library's `Slice<T>`, which `ChunksExact::remainder` returns,
-        // is named `Slice<u8>`.
+        // The library's `Slice<T>` is named `Slice<u8>`.
         [element] if algebraic_type.name == "Slice" => {
             let mut name = "Slice".to_string();
             crate::languages::rust::names::push_type_argument(&mut name, &spelling(element));
@@ -8741,9 +8754,9 @@ pub(in crate::surface) fn program_contract_failure(
                             &callback,
                             refusal,
                             &verdicts.refusals,
-                            &declared_diverging,
+                            declared_diverging,
                             None,
-                            &tactic_names,
+                            tactic_names,
                         ),
                         None => "it has no termination evidence".to_string(),
                     };
@@ -8758,16 +8771,17 @@ pub(in crate::surface) fn program_contract_failure(
                             &name,
                             refusal,
                             &verdicts.refusals,
-                            &declared_diverging,
+                            declared_diverging,
                             verdicts.unsuitable_callbacks.first(),
-                            &tactic_names
+                            tactic_names
                         )
                     ))
                     .at_declaration(&name)
                 }
                 ProgramContractGoal::Program
                 | ProgramContractGoal::Body { .. }
-                | ProgramContractGoal::BodyOpening => {
+                | ProgramContractGoal::BodyOpening
+                | ProgramContractGoal::DeclaredBody(_) => {
                     unreachable!("the program root was opened into its declared goals")
                 }
             }

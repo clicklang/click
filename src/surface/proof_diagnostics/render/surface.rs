@@ -3322,7 +3322,7 @@ mod tests {
     #[test]
     fn the_contract_result_local_prints_as_result() {
         let state = ExecutionState::new().with_local(
-            crate::kernel::C_CONTRACT_RESULT_NAME,
+            crate::kernel::CONTRACT_RESULT,
             ProgramValue::Int32(MachineTerm::Variable(Variable(7))),
         );
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &state);

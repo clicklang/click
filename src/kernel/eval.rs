@@ -73,6 +73,8 @@ pub(crate) use memory_loads::count_canonical_at_creation_violations;
 pub(in crate::kernel) use memory_loads::declare_load_access_width;
 #[cfg(test)]
 pub(crate) use memory_loads::duplicate_read_names;
+#[cfg(test)]
+pub(super) use memory_loads::evaluate_memory_load_paths;
 pub(crate) use memory_loads::is_load_variable;
 pub(crate) use memory_loads::is_load_variable_defining_fact;
 pub(crate) use memory_loads::is_store_fact;
@@ -83,6 +85,7 @@ pub(crate) use memory_loads::load_registry_entry_count;
 pub(crate) use memory_loads::load_term_access_width;
 #[cfg(test)]
 pub(crate) use memory_loads::load_variable_for_cell;
+#[cfg(test)]
 pub(crate) use memory_loads::load_variable_for_cell_with_origin;
 pub(crate) use memory_loads::load_variable_for_exact_cell;
 pub(crate) use memory_loads::load_variable_for_term;
@@ -91,6 +94,7 @@ pub(crate) use memory_loads::offsets_have_same_canonical_form;
 pub(crate) use memory_loads::proposition_mentions_scalar_read;
 pub(crate) use memory_loads::read_over_write_program_value;
 pub(in crate::kernel) use memory_loads::record_load_access_width;
+#[cfg(test)]
 #[cfg(test)]
 pub(crate) use memory_loads::record_load_variable_defining_fact;
 #[cfg(test)]
@@ -116,8 +120,8 @@ pub(in crate::kernel) use memory_loads::{
 };
 pub(crate) use memory_loads::{canonical_cell_load, canonical_form_of_load};
 pub(super) use memory_loads::{
-    canonical_offset_term, evaluate_logical_memory_load_paths, evaluate_memory_load_paths,
-    evaluate_retained_memory_load_paths, evaluate_spec_memory_load_paths, symbolic_load_value,
+    canonical_offset_term, evaluate_logical_memory_load_paths, evaluate_retained_memory_load_paths,
+    evaluate_spec_memory_load_paths, symbolic_load_value,
 };
 pub(crate) use memory_loads::{
     is_selected_scalar_read, latest_scalar_read_observation, registered_scalar_read_term,

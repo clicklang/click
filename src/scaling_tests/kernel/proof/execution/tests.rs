@@ -874,7 +874,7 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
             ));
         }
         assert!(
-            crate::kernel::search::ProofSearch::proves(&(facts.assumptions()), &weak),
+            crate::kernel::search::ProofSearch::proves(facts.assumptions(), &weak),
             "the old general route could derive this missing fact"
         );
         let exact = facts.with_fact(weak.clone());

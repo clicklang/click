@@ -138,7 +138,20 @@ impl Gen {
             return self.expr_leaf();
         }
         let d = depth - 1;
-        match self.pick(21) {
+        match self.pick(22) {
+            21 => SpecExpression::ObjectAddress(Box::new(SpecObjectAddress {
+                base: Box::new(self.pointer(d)),
+                steps: vec![
+                    SpecAddressStep::Subobject { width: 4 },
+                    SpecAddressStep::OffsetBytes { bytes: 8 },
+                ],
+                value_type: ProgramType::Int32,
+                volatile: false,
+                pointee_constant: false,
+                access_class: None,
+                source: Default::default(),
+                checked: false,
+            })),
             0 => self.expr_leaf(),
             1 => SpecExpression::ProgramExpression(self.c()),
             2 => SpecExpression::IntegerToMachine {

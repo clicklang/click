@@ -4580,7 +4580,7 @@ fn range_fold_surface_preserves_scope_and_alpha_identity() {
         };
         assert!(
             synthesized_surface_matches_proposition(
-                &spelled,
+                spelled,
                 &lowered,
                 ParameterBinding::default(),
                 &state
@@ -6152,6 +6152,20 @@ fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
             );
             let shared = raise_call_argument(&root, ParameterBinding::default(), &state, &bound);
             assert_eq!(shared, native);
+            let call = synthesize_surface_call(
+                "pointer_probe",
+                std::slice::from_ref(&argument),
+                ParameterBinding::default(),
+                &state,
+                &bound,
+            );
+            assert_eq!(
+                call,
+                native.map(|argument| SurfaceTerm::Call {
+                    name: "pointer_probe".into(),
+                    arguments: vec![argument],
+                })
+            );
         });
     }
 }
@@ -6272,4 +6286,464 @@ fn unsigned_small_bound_recovers_an_already_converted_signed_source() {
         true,
     );
     assert!(facts.contains_assumed_exact(&raw_signed_nonnegative(signed)));
+}
+
+#[test]
+fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
+    use crate::kernel::{
+        AlgebraicTermNode, AlgebraicValue, KernelMatch, KernelTermExport, KernelTermImport,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(999981);
+    let names = BTreeMap::from([(variable, "item".into())]);
+    let state = ExecutionState::new();
+    let word = MachineTerm::Variable(variable);
+    for value in [
+        ProgramValue::Int32(word.clone()),
+        ProgramValue::UInt32(word.clone()),
+        ProgramValue::Int64(word.clone()),
+        ProgramValue::UInt64(word.clone()),
+        ProgramValue::Int8(word.clone()),
+        ProgramValue::UInt8(word.clone()),
+        ProgramValue::Int16(word.clone()),
+        ProgramValue::UInt16(word.clone()),
+        ProgramValue::Bool(word),
+        int32(7),
+        ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
+    ] {
+        let mut native =
+            KernelMatch::test_scrutinee(vec![crate::kernel::AlgebraicValueType::Program(
+                value.program_type(),
+            )]);
+        native.node = AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields: vec![AlgebraicValue::Program(value)],
+        };
+        let expected =
+            synthesize_surface_algebraic(&native, ParameterBinding::default(), &state, &names);
+        let root = KernelTermImport::default().algebraic(&native);
+        let exports = KernelTermExport::algebraic_export_count();
+        assert_eq!(
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &names),
+            expected
+        );
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+    }
+}
+
+#[test]
+fn shared_algebraic_reads_and_variables_raise_without_tree_exports() {
+    use crate::kernel::{
+        AlgebraicTerm, AlgebraicTermNode, KernelTermExport, KernelTermImport, TypeParameterName,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = TypeParameterName::intern("ReadBoundary");
+    let state = ExecutionState::new();
+    let pointer = Pointer::symbolic(Variable(999983));
+    let parameters = vec![crate::languages::interface::ImportedParameter::new(
+        InterfaceType::ParameterPointer(ty),
+        "p".into(),
+        None,
+    )];
+    let arguments = vec![ProgramExpression::Value(ProgramValue::typed_pointer(
+        pointer.clone(),
+        ProgramType::ParameterPointer(ty),
+    ))];
+    let binding = ParameterBinding::new(&parameters, &arguments);
+    let variable = Variable(999984);
+    let names = BTreeMap::from([(variable, "value".into())]);
+    for node in [
+        AlgebraicTermNode::Variable(variable),
+        AlgebraicTermNode::MemoryLoad {
+            memory: crate::kernel::intern_memory_ref(state.memory()),
+            pointer: Box::new(pointer.clone()),
+        },
+    ] {
+        let native = AlgebraicTerm {
+            algebraic_type: ty.algebraic_type(),
+            node,
+        };
+        let expected = synthesize_surface_algebraic(&native, binding, &state, &names).unwrap();
+        let root = KernelTermImport::default().algebraic(&native);
+        let exports = KernelTermExport::algebraic_export_count();
+        assert_eq!(
+            raise_kernel_term(&root, binding, &state, &names),
+            Some(expected)
+        );
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+    }
+}
+
+#[test]
+fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
+    use crate::kernel::{
+        AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, KernelMatch, KernelTermExport,
+        KernelTermImport,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(999986);
+    let names = BTreeMap::from([(variable, "x".into())]);
+    let mut conditions = vec![];
+    for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+        for op in [
+            OverflowOperation::Add,
+            OverflowOperation::Subtract,
+            OverflowOperation::Multiply,
+        ] {
+            conditions.push(ConditionTerm::Overflows {
+                format,
+                op,
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(MachineTerm::Variable(variable)),
+            });
+        }
+    }
+    let mut constructor =
+        KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Int32)]);
+    constructor.node = AlgebraicTermNode::Constructor {
+        variant: "Arm".into(),
+        fields: vec![AlgebraicValue::Program(int32(7))],
+    };
+    conditions.push(ConditionTerm::AlgebraicEqual(
+        Box::new(constructor.clone()),
+        Box::new(constructor),
+    ));
+    for native in conditions {
+        let state = ExecutionState::new();
+        let expected =
+            synthesize_surface_bool(&native, ParameterBinding::default(), &state, &names).unwrap();
+        let root = KernelTermImport::default().condition(&native);
+        let exports = (
+            KernelTermExport::machine_export_count(),
+            KernelTermExport::algebraic_export_count(),
+        );
+        assert_eq!(
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &names),
+            Some(expected)
+        );
+        assert_eq!(
+            (
+                KernelTermExport::machine_export_count(),
+                KernelTermExport::algebraic_export_count()
+            ),
+            exports
+        );
+    }
+}
+
+#[test]
+fn shared_pointer_comparisons_preserve_native_spelling() {
+    use crate::kernel::{KernelTermImport, PointerValue};
+    let _session = crate::kernel::VerificationSession::enter();
+    let left = PointerValue::new(
+        Pointer::symbolic(Variable(999988)),
+        ProgramType::Int32Pointer,
+    );
+    let right = PointerValue::new(
+        Pointer::symbolic(Variable(999989)),
+        ProgramType::Int32Pointer,
+    );
+    let parameters = ["p", "q"].map(|name| {
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            name.into(),
+            None,
+        )
+    });
+    let arguments = [left.clone(), right.clone()]
+        .map(|value| ProgramExpression::Value(ProgramValue::Pointer(value)));
+    let binding = ParameterBinding::new(&parameters, &arguments);
+    let state = ExecutionState::new();
+    let names = BTreeMap::new();
+    for native in [
+        ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())),
+        ConditionTerm::PointerEqual(
+            Box::new(left.pointer().clone()),
+            Box::new(right.pointer().clone()),
+        ),
+        ConditionTerm::PointerEqual(Box::new(left.pointer().clone()), Box::new(Pointer::null())),
+    ] {
+        let expected = synthesize_surface_bool(&native, binding, &state, &names).unwrap();
+        let root = KernelTermImport::default().condition(&native);
+        assert_eq!(
+            raise_kernel_term(&root, binding, &state, &names),
+            Some(expected)
+        );
+    }
+}
+
+#[test]
+fn closed_machine_orders_round_trip_after_checked_rewrite() {
+    use crate::kernel::proof::ProofFacts;
+    for (spelling, suffix, value) in [
+        (
+            "uint32",
+            "u32",
+            ProgramValue::UInt32(MachineTerm::Variable(Variable(999701))),
+        ),
+        (
+            "int64",
+            "i64",
+            ProgramValue::Int64(MachineTerm::Variable(Variable(999701))),
+        ),
+        (
+            "uint64",
+            "u64",
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(999701))),
+        ),
+    ] {
+        for bound in [5, 100] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let state = ExecutionState::new().with_local("x", value.clone());
+            let values = BTreeMap::from([("x".to_string(), value.clone())]);
+            let empty = BTreeMap::new();
+            let lower = |surface: &ClickProposition| {
+                crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+                    surface, &PureFactContext::new(), ContractEnvironment::new(&values, &empty),
+                    FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+                    SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
+                    FixedStateLoweringOptions::default(),
+                ).unwrap().0
+            };
+            let file = parser::parse(&format!("theorem probe(x: {spelling}) {{ requires x == 9{suffix}; ensures x <= {bound}{suffix}; }}")).unwrap();
+            let theorem = &file.theorem_definitions()[0];
+            let Requirement::Proposition(equality) = &theorem.requires()[0] else {
+                panic!("requirement")
+            };
+            let Ensure::Proposition(goal) = theorem.ensures()[0].ensure() else {
+                panic!("ensure")
+            };
+            let equality = lower(equality);
+            let produced = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+                .check_equality_rewrite(&lower(goal), &equality)
+                .unwrap()
+                .proposition()
+                .clone();
+            let Proposition::ConditionIs(condition @ ConditionTerm::Compare { .. }, true) =
+                &produced
+            else {
+                panic!("retained native comparison: {produced:?}")
+            };
+            assert_eq!(PureFactContext::new().decide(condition), Some(9 <= bound));
+            let raised =
+                synthesize_surface_proposition(&produced, ParameterBinding::default(), &state)
+                    .unwrap();
+            let text = crate::surface::printing::source_click_proposition(&raised);
+            let file = parser::parse(&format!(
+                "theorem probe(x: {spelling}) {{ requires {text}; ensures true; }}"
+            ))
+            .unwrap();
+            let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0]
+            else {
+                panic!("requirement")
+            };
+            assert_eq!(
+                lower(written),
+                produced,
+                "{spelling}, bound {bound}: {text}"
+            );
+        }
+    }
+}
+
+#[test]
+fn closed_machine_order_keeps_a_defined_right_disjunct() {
+    let file = parser::parse(
+        "theorem probe() { requires 64u64 >= 64u64 or (1u64 << 1u64) == 2u64; ensures true; }",
+    )
+    .unwrap();
+    let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+        panic!("requirement")
+    };
+    let lowered = relower_written_proposition(written, &ExecutionState::new()).unwrap();
+    assert!(matches!(lowered, Proposition::Or(..)));
+}
+
+#[test]
+fn closed_machine_order_short_circuits_undefined_right_operand() {
+    let file = parser::parse(
+        "theorem probe() { requires 64u64 >= 64u64 or (1u64 << 64u64) == 2u64; ensures true; }",
+    )
+    .unwrap();
+    let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+        panic!("requirement")
+    };
+    let lowered = relower_written_proposition(written, &ExecutionState::new()).unwrap();
+    assert!(matches!(
+        lowered,
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: crate::kernel::MachineIntegerType::UInt64,
+                relation: CompareRelation::GreaterEqual,
+                ..
+            },
+            true
+        )
+    ));
+}
+
+#[test]
+fn closed_machine_order_lowering_preserves_relations_and_truth_checking() {
+    use crate::kernel::MachineIntegerType as T;
+    let state = ExecutionState::new();
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for (operator, relation, truth) in [
+            ("<", CompareRelation::LessThan, false),
+            ("<=", CompareRelation::LessEqual, false),
+            (">", CompareRelation::GreaterThan, true),
+            (">=", CompareRelation::GreaterEqual, true),
+        ] {
+            let file = parser::parse(&format!("theorem probe() {{ requires (9 as {spelling}) {operator} (5 as {spelling}); ensures true; }}")).unwrap();
+            let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0]
+            else {
+                panic!("requirement")
+            };
+            let lowered = relower_written_proposition(written, &state).unwrap();
+            let Proposition::ConditionIs(
+                condition @ ConditionTerm::Compare {
+                    format: actual,
+                    relation: actual_relation,
+                    ..
+                },
+                true,
+            ) = &lowered
+            else {
+                panic!("{spelling} {operator}: {lowered:?}")
+            };
+            assert_eq!((*actual, *actual_relation), (format, relation));
+            assert_eq!(PureFactContext::new().decide(condition), Some(truth));
+            assert_eq!(
+                crate::kernel::proof::checked_branch_fact_is_available(
+                    &crate::kernel::proof::ProofFacts::from_ordered(&[]),
+                    &lowered,
+                ),
+                truth,
+            );
+        }
+    }
+}
+
+/// Parsed arithmetic, checked rewriting, and the ordinary speller retain one
+/// exact form after a substitution exposes literal operands.
+#[test]
+fn machine_arithmetic_round_trips_after_checked_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    use crate::kernel::proof::ProofFacts;
+    let mut failures = Vec::new();
+    for (format, spelling, suffix) in [
+        (T::Int32, "int32", ""),
+        (T::UInt32, "uint32", "u32"),
+        (T::Int64, "int64", "i64"),
+        (T::UInt64, "uint64", "u64"),
+    ] {
+        for bound in [5, 100] {
+            for operator in [
+                None,
+                Some("+"),
+                Some("-"),
+                Some("*"),
+                Some("/"),
+                Some("%"),
+                Some("<<"),
+                Some(">>"),
+            ] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let value = MachineTerm::Variable(Variable(999701));
+                let value = match format {
+                    T::Int32 => ProgramValue::Int32(value),
+                    T::UInt32 => ProgramValue::UInt32(value),
+                    T::Int64 => ProgramValue::Int64(value),
+                    T::UInt64 => ProgramValue::UInt64(value),
+                    _ => unreachable!(),
+                };
+                let state = ExecutionState::new().with_local("x", value.clone());
+                let values = BTreeMap::from([("x".to_string(), value)]);
+                let empty = BTreeMap::new();
+                let lower = |surface: &ClickProposition| {
+                    crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+                        surface, &PureFactContext::new(), ContractEnvironment::new(&values, &empty),
+                        FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+                        SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
+                        FixedStateLoweringOptions::default(),
+                    ).unwrap().0
+                };
+                let expression = operator.map_or_else(
+                    || "x".to_string(),
+                    |op| format!("(x {op} 3{suffix}) as {spelling}"),
+                );
+                let file = parser::parse(&format!("theorem probe(x: {spelling}) {{ requires x == 9{suffix}; ensures {expression} <= {bound}{suffix}; }}")).unwrap();
+                let theorem = &file.theorem_definitions()[0];
+                let Requirement::Proposition(equality) = &theorem.requires()[0] else {
+                    panic!("requirement")
+                };
+                let Ensure::Proposition(goal) = theorem.ensures()[0].ensure() else {
+                    panic!("ensure")
+                };
+                let equality = lower(equality);
+                let original = lower(goal);
+                let facts = ProofFacts::from_ordered(std::slice::from_ref(&equality));
+                let produced = facts
+                    .check_equality_rewrite(&original, &equality)
+                    .unwrap()
+                    .proposition()
+                    .clone();
+                let value = match operator {
+                    None => 9,
+                    Some("+") => 12,
+                    Some("-") => 6,
+                    Some("*") => 27,
+                    Some("/") => 3,
+                    Some("%") => 0,
+                    Some("<<") => 72,
+                    Some(">>") => 1,
+                    _ => unreachable!(),
+                };
+                let Proposition::ConditionIs(condition, truth) = &produced else {
+                    panic!("expected an arithmetic comparison: {produced:?}")
+                };
+                assert_eq!(
+                    PureFactContext::new()
+                        .decide(condition)
+                        .map(|value| value == *truth),
+                    Some(value <= bound)
+                );
+                let Some(raised) =
+                    synthesize_surface_proposition(&produced, ParameterBinding::default(), &state)
+                else {
+                    println!("UNSPELLABLE {format:?} {operator:?} bound={bound}: {produced:?}");
+                    failures.push(format!(
+                        "{format:?} {operator:?} bound={bound} (unspellable)"
+                    ));
+                    continue;
+                };
+                let text = crate::surface::printing::source_click_proposition(&raised);
+                let file = parser::parse(&format!(
+                    "theorem probe(x: {spelling}) {{ requires {text}; ensures true; }}"
+                ))
+                .unwrap();
+                let Requirement::Proposition(written) =
+                    &file.theorem_definitions()[0].requires()[0]
+                else {
+                    panic!("requirement")
+                };
+                let restored = lower(written);
+                if restored != produced {
+                    println!(
+                        "BROKEN {format:?} {operator:?} bound={bound}: {text}\n  produced: {produced:?}\n  restored: {restored:?}"
+                    );
+                    failures.push(format!("{format:?} {operator:?} bound={bound}"));
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "round-trip failures: {}",
+        failures.join(", ")
+    );
 }

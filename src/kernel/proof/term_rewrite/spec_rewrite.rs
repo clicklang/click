@@ -36,12 +36,6 @@ fn collect_spec_proposition_carriers(
         return;
     }
     match proposition {
-        SpecProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                collect_spec_resource_carriers(r, variables, integer_seen);
-            }
-        }
-
         SpecProposition::IntegerComparison { left, right, .. } => {
             collect_spec_integer_carriers(left, variables, integer_seen);
             if variables.exhausted() {
@@ -297,6 +291,9 @@ fn collect_spec_expression_carriers(
         return;
     }
     match expression {
+        SpecExpression::ObjectAddress(address) => {
+            collect_spec_expression_carriers(&address.base, variables, integer_seen)
+        }
         SpecExpression::Value(value) => collect_program_value_carriers(value, variables),
         SpecExpression::IntegerToMachine { value, .. } => {
             collect_spec_integer_carriers(value, variables, integer_seen)
@@ -822,19 +819,6 @@ impl<'a> TermRewrite<'a> {
     ) -> Result<SpecProposition, SpecRewriteError> {
         self.spec_visit()?;
         let result = match proposition {
-            SpecProposition::ChangesOnly {
-                before,
-                after,
-                resources,
-            } => SpecProposition::ChangesOnly {
-                before: before.clone(),
-                after: after.clone(),
-                resources: resources
-                    .iter()
-                    .map(|r| self.rewrite_spec_resource(r))
-                    .collect::<Result<_, _>>()?,
-            },
-
             SpecProposition::IntegerComparison {
                 left,
                 operator,
@@ -1129,6 +1113,9 @@ impl<'a> TermRewrite<'a> {
     ) -> Result<SpecExpression, SpecRewriteError> {
         self.spec_visit()?;
         let result = match expression {
+            SpecExpression::ObjectAddress(address) => SpecExpression::ObjectAddress(Box::new(
+                address.with_base(self.rewrite_spec_expression(&address.base)?),
+            )),
             SpecExpression::Value(value) => SpecExpression::Value(self.value(value)),
             SpecExpression::IntegerToMachine { value, destination } => {
                 SpecExpression::IntegerToMachine {

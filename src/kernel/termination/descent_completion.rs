@@ -6,6 +6,7 @@ use super::*;
 #[derive(Clone, Debug)]
 pub(crate) struct DescentStep {
     anchor: Arc<RecursionAnchor>,
+    witnesses: Option<Arc<super::resource_descent::ResourceWitnesses>>,
 }
 impl PartialEq for DescentStep {
     fn eq(&self, other: &Self) -> bool {
@@ -16,9 +17,20 @@ impl Eq for DescentStep {}
 
 impl DescentStep {
     pub(in crate::kernel) fn under(environment: &ExecutionEnvironment) -> Option<Self> {
-        environment
-            .recursion_anchor_handle()
-            .map(|anchor| Self { anchor })
+        environment.recursion_anchor_handle().map(|anchor| Self {
+            anchor,
+            witnesses: None,
+        })
+    }
+    pub(in crate::kernel) fn under_state(
+        environment: &ExecutionEnvironment,
+        state: &ExecutionState,
+    ) -> Option<Self> {
+        let mut step = Self::under(environment)?;
+        if step.anchor.structural_resource.is_some() {
+            step.witnesses = state.resources().structural_witnesses.clone();
+        }
+        Some(step)
     }
 }
 
@@ -77,6 +89,27 @@ impl OpenedDescent {
             Err("statement transition belongs to another recursion descent context")
         }
     }
+    pub fn accept_at_state(
+        &self,
+        step: Option<&DescentStep>,
+        state: &ExecutionState,
+    ) -> Result<(), &'static str> {
+        self.accept(step)?;
+        if self.anchor.structural_resource.is_some() {
+            let step = step.expect("accepted native descent step");
+            match (&step.witnesses, &state.resources().structural_witnesses) {
+                (Some(left), Some(right)) if Arc::ptr_eq(left, right) => {}
+                (None, None) => {}
+                _ => {
+                    return Err(
+                        "statement transition belongs to another structural witness context",
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn accept_environment(
         &self,
         environment: &ExecutionEnvironment,
@@ -149,7 +182,7 @@ mod tests {
         assert!(
             root.finish()
                 .unwrap()
-                .into_rule()
+                .to_reusable_rule()
                 .unwrap()
                 .descent_completion
                 .is_some()

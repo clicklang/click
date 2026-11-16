@@ -95,12 +95,6 @@ fn validate_proposition_expression_types_one(
         ClickProposition::Value(expression) => require_proposition_value_type(
             infer_spec_value_type(expression, variables, click_functions, context)?,
         ),
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                validate_resource_subject_expression_types(r, variables, click_functions, context)?;
-            }
-            Ok(())
-        }
 
         ClickProposition::Comparison {
             left,
@@ -662,12 +656,11 @@ fn integer_expression_kind(
     }
     match expression {
         ContractExpression::Apply { function, .. } => {
-            if let ContractExpression::Binding(name) = function.as_ref() {
-                if let Some(ClickType::Function { result, .. }) =
+            if let ContractExpression::Binding(name) = function.as_ref()
+                && let Some(ClickType::Function { result, .. }) =
                     callback_binding_type(name, click_functions)
-                {
-                    return Some(*result == ClickType::Integer);
-                }
+            {
+                return Some(*result == ClickType::Integer);
             }
             lambdas::application_result_type(function)
                 .ok()
@@ -732,12 +725,11 @@ fn integer_expression_kind(
                 if let Ok(result) = lambdas::application_result_type(step) {
                     return Some(result == ClickType::Integer);
                 }
-                if let ContractExpression::Binding(name) = step {
-                    if let Some(ClickType::Function { result, .. }) =
+                if let ContractExpression::Binding(name) = step
+                    && let Some(ClickType::Function { result, .. }) =
                         callback_binding_type(name, click_functions)
-                    {
-                        return Some(*result == ClickType::Integer);
-                    }
+                {
+                    return Some(*result == ClickType::Integer);
                 }
             }
             let start_kind =
@@ -3169,41 +3161,40 @@ fn validate_pure_theorem_tactics(
                 validate_pure_theorem_tactics(theorem_name, std::slice::from_ref(inner))?;
             }
             ProofTactic::UnfoldPredicate(_)
-            | ProofTactic::UnfoldFunction(_)
-            | ProofTactic::PeelFunction { .. }
-            | ProofTactic::Induct { .. }
-            | ProofTactic::ApplyInduction { .. }
-            | ProofTactic::ApplyInductionUsing { .. }
-            | ProofTactic::ApplyTheorem(_)
-            | ProofTactic::ApplyTheoremUsing { .. }
-            | ProofTactic::CheckTerminationLocal(_)
-            | ProofTactic::CheckTerminationComponent { .. }
-            | ProofTactic::CheckTerminationCallbacks
-            | ProofTactic::Known
-            | ProofTactic::Extract(_)
-            | ProofTactic::Normalize
-            | ProofTactic::NormalizeUsing(_)
-            | ProofTactic::ArithmeticCertificate(_)
-            | ProofTactic::ArithmeticUsing(_)
-            | ProofTactic::Intro
-            | ProofTactic::IntroAs(_)
-            | ProofTactic::Enumerate
-            | ProofTactic::Contradiction(_)
-            | ProofTactic::Preserve(_)
-            | ProofTactic::Rewrite(_)
-            | ProofTactic::InstantiateUsing { .. }
-            | ProofTactic::Witness(_)
-            | ProofTactic::LetSatisfy(_)
-            | ProofTactic::Choose(_)
-            | ProofTactic::Solve
-            | ProofTactic::ImplicitSolve
+             |  ProofTactic::UnfoldFunction(_)
+             |  ProofTactic::PeelFunction { .. }
+             |  ProofTactic::Induct { .. }
+             |  ProofTactic::ApplyInduction { .. }
+             |  ProofTactic::ApplyInductionUsing { .. }
+             |  ProofTactic::ApplyTheorem(_)
+             |  ProofTactic::ApplyTheoremUsing { .. }
+             |  ProofTactic::CheckTerminationLocal(_)
+             |  ProofTactic::CheckTerminationComponent { .. }
+             |  ProofTactic::CheckTerminationCallbacks
+             |  ProofTactic::Known
+             |  ProofTactic::Extract(_)
+             |  ProofTactic::Normalize
+             |  ProofTactic::NormalizeUsing(_)
+             |  ProofTactic::ArithmeticUsing(_)
+             |  ProofTactic::Intro
+             |  ProofTactic::IntroAs(_)
+             |  ProofTactic::Enumerate
+             |  ProofTactic::Contradiction(_)
+             |  ProofTactic::Preserve(_)
+             |  ProofTactic::Rewrite(_)
+             |  ProofTactic::InstantiateUsing { .. }
+             |  ProofTactic::Witness(_)
+             |  ProofTactic::LetSatisfy(_)
+             |  ProofTactic::Choose(_)
+             |  ProofTactic::Solve
+             |  ProofTactic::ImplicitSolve
             // `transport(P, Q) using { ... }` names its source, its target,
             // and every premise, so it needs no state: the explicit facts
             // decide it. The smart `transport(P, Q)` form still does not
             // belong here, because it selects its premises from a fixed
             // state's ambient facts.
-            | ProofTactic::TransportUsing { .. }
-            | ProofTactic::SolveUsing(_) => {}
+             |  ProofTactic::TransportUsing { .. }
+             |  ProofTactic::SolveUsing(_) => {}
             ProofTactic::Match(proof_match) => {
                 for arm in &proof_match.arms {
                     validate_pure_theorem_tactics(theorem_name, &arm.tactics)?;
@@ -3331,7 +3322,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Solve => "solve",
         ProofTactic::ImplicitSolve => "implicit tail",
         ProofTactic::SolveUsing(_) => "solve",
-        ProofTactic::ArithmeticCertificate(_) => "arithmetic_certificate",
     }
 }
 
@@ -3829,12 +3819,11 @@ pub(super) fn infer_contract_expression_type(
             "a specification lambda is not a scalar value",
         )),
         ContractExpression::Apply { function, .. } => {
-            if let ContractExpression::Binding(name) = function.as_ref() {
-                if let Some(ClickType::Function { result, .. }) =
+            if let ContractExpression::Binding(name) = function.as_ref()
+                && let Some(ClickType::Function { result, .. }) =
                     callback_binding_type(name, click_functions)
-                {
-                    return Ok(result.interface_type());
-                }
+            {
+                return Ok(result.interface_type());
             }
             Ok(lambdas::application_result_type(function)
                 .map_err(ClickError::new)?
@@ -4374,6 +4363,8 @@ pub(in crate::surface) fn infer_program_expression_type(
         ProgramExpression::Value(ProgramValue::Pointer(_)) => None,
         ProgramExpression::Variable(name) => match name {
             crate::kernel::BindingName::Named(name) => variables.get(name).copied(),
+            crate::kernel::BindingName::ContractResult => variables.get("result").copied(),
+            crate::kernel::BindingName::ContractException => Some(InterfaceType::Int32),
             crate::kernel::BindingName::Local(_) | crate::kernel::BindingName::Static(_) => name
                 .program_type()
                 .and_then(|ty| interface_type_from_program_type(&ty)),
@@ -5011,12 +5002,6 @@ fn validate_predicate_calls_in_proposition_one(
         ClickProposition::Value(expression) => {
             validate_contract_expression_calls(expression, click_functions, context)
         }
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                validate_resource_subject_calls(r, click_functions, context)?;
-            }
-            Ok(())
-        }
 
         ClickProposition::Comparison { left, right, .. } => {
             validate_contract_expression_calls(left, click_functions, context)?;
@@ -5206,13 +5191,12 @@ fn validate_contract_expression_calls(
         function,
         arguments,
     } = expression
+        && matches!(function.as_ref(), ContractExpression::Binding(_))
     {
-        if matches!(function.as_ref(), ContractExpression::Binding(_)) {
-            for argument in arguments {
-                validate_contract_expression_calls(argument, click_functions, context)?;
-            }
-            return Ok(());
+        for argument in arguments {
+            validate_contract_expression_calls(argument, click_functions, context)?;
         }
+        return Ok(());
     }
     if let Some(reduced) = lambdas::reduce_head(expression).map_err(ClickError::new)? {
         if let ContractExpression::Let { value, .. } = expression {
@@ -5409,12 +5393,6 @@ fn validate_value_proposition_calls(
         ClickProposition::Value(expression) => {
             validate_contract_expression_calls(expression, click_functions, context)
         }
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                validate_resource_subject_calls(r, click_functions, context)?;
-            }
-            Ok(())
-        }
 
         ClickProposition::Comparison { left, right, .. } => {
             validate_contract_expression_calls(left, click_functions, context)?;
@@ -5573,8 +5551,8 @@ fn validate_lambda_value(
         context,
         *result == ClickType::Integer,
     )?;
-    if !spec_value_matches_click_type(&actual, result) {
-        if let Some(narrow) =
+    if !spec_value_matches_click_type(&actual, result)
+        && let Some(narrow) =
             narrow_arithmetic_value_type(body, result, "lambda result", &mut |leaf| {
                 infer_scoped_spec_value_type(
                     leaf,
@@ -5585,9 +5563,8 @@ fn validate_lambda_value(
                     false,
                 )
             })?
-        {
-            actual = narrow;
-        }
+    {
+        actual = narrow;
     }
     if !spec_value_matches_click_type(&actual, result)
         || (*result == ClickType::Program(InterfaceType::Bool)

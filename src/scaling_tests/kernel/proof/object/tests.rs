@@ -615,3 +615,52 @@ fn known_computation_work_is_linear_in_shared_integer_terms() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn known_compound_comparison_work_is_linear_in_selected_clauses() {
+    use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
+    use crate::kernel::{ConditionTerm, KernelTermExport};
+    let mut costs = Vec::new();
+    for size in [8, 16, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let clause = |id: u64, shared| {
+            let leaf = |bound| {
+                let native = ConditionTerm::equal(
+                    MachineTerm::Binary {
+                        format: crate::kernel::MachineIntegerType::Int32,
+                        op: crate::kernel::MachineBinaryOp::Add,
+                        left: Box::new(MachineTerm::Variable(Variable(989_000 + id))),
+                        right: Box::new(MachineTerm::constant(1)),
+                    },
+                    MachineTerm::constant(bound),
+                );
+                Proposition::ConditionIs(
+                    if shared {
+                        retained_arithmetic_comparison(&native).unwrap()
+                    } else {
+                        native
+                    },
+                    true,
+                )
+            };
+            Proposition::Or(Box::new(leaf(0)), Box::new(leaf(1)))
+        };
+        let sources = (0..size).map(|id| clause(id, false)).collect::<Vec<_>>();
+        let facts = ProofFacts::from_ordered(&sources);
+        let goal = (1..size).fold(clause(0, true), |goal, id| {
+            Proposition::And(Box::new(goal), Box::new(clause(id, true)))
+        });
+        let proof = known_computation_proof(goal, facts);
+        let exports = KernelTermExport::machine_export_count();
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            proof.apply_known(PropositionKnownContext::Exact)
+        });
+        assert!(result.is_ok());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{costs:?}"
+    );
+}

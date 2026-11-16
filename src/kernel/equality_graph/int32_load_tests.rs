@@ -172,7 +172,7 @@ fn int32_load_defining_state_is_independent_of_live_origin() {
     assert!(!graph.are_int32_equal(&left, &right));
     let raw = |m: &SharedMemory| {
         MachineTerm::MemoryLoad(
-            ProgramPoint::at(&m),
+            ProgramPoint::at(m),
             Box::new(address(1)),
             crate::kernel::LoadKind::Int32,
         )

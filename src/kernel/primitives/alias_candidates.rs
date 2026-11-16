@@ -8,7 +8,7 @@
 //! ```text
 //! Concrete < StringLiteral < Function < FunctionSymbolic < ExternalArgument
 //!          < ExternalObject < Symbolic < LoadedPointer < PureFunctionApplication
-//!          < Heap < Temporary < AutomaticLocal < StaticObject
+//!          < Heap < Temporary < AutomaticLocal < StaticObject < ContractResult < AggregateReturn < ContractException
 //! ```
 //!
 //! So the entries of one block are one contiguous key range, every
@@ -279,7 +279,10 @@ impl AliasCandidates {
             PointerBlock::Heap(_) | PointerBlock::Temporary(_) => vec![symbolic(), own()],
             // Distinct concrete names are distinct; a `local:` block is also
             // distinct from the external variants.
-            PointerBlock::AutomaticLocal { .. } => vec![
+            PointerBlock::ContractResult
+            | PointerBlock::ContractException
+            | PointerBlock::AggregateReturn { .. }
+            | PointerBlock::AutomaticLocal { .. } => vec![
                 own(),
                 BlockInterval {
                     start: Some(first_function()),
@@ -633,6 +636,10 @@ mod tests {
             PointerBlock::Heap(9),
             PointerBlock::Temporary(0),
             PointerBlock::Temporary(2),
+            PointerBlock::ContractResult,
+            PointerBlock::ContractException,
+            PointerBlock::AggregateReturn { frame: 0 },
+            PointerBlock::AggregateReturn { frame: 1 },
             PointerBlock::AutomaticLocal {
                 binding: crate::kernel::LocalBindingId::new(
                     crate::kernel::LocalFunctionId::new(Some("a.c".into()), "f".into()),

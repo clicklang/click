@@ -53,7 +53,7 @@ impl Parser {
         }
         let store = |index: u32, value: CExpression| CStatement::Store {
             pointer: CExpression::Add(
-                Box::new(CExpression::Variable(name.clone().into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(CExpression::Int32Literal(index)),
             ),
             value,
@@ -136,7 +136,7 @@ impl Parser {
                     element_width,
                     count,
                     &self.zero_struct_initializer_level(
-                        CExpression::Variable(name.clone().into()),
+                        CExpression::Variable(name.clone()),
                         struct_name,
                     ),
                 )
@@ -145,7 +145,7 @@ impl Parser {
         let start = self.position;
         if let Some(zero_fill) = zero_fill {
             let stores = self.parse_embedded_struct_array_initializer_level(
-                CExpression::Variable(name.clone().into()),
+                CExpression::Variable(name.clone()),
                 struct_name,
                 array_shape,
                 0,
@@ -165,7 +165,7 @@ impl Parser {
             self.position = start;
         }
         let stores = self.parse_embedded_struct_array_initializer_level(
-            CExpression::Variable(name.clone().into()),
+            CExpression::Variable(name.clone()),
             struct_name,
             array_shape,
             0,
@@ -741,10 +741,8 @@ impl Parser {
         target: &BindingName,
         struct_name: &str,
     ) -> Result<CStatement, CSyntaxError> {
-        let stores = self.parse_struct_initializer_level(
-            CExpression::Variable(target.clone().into()),
-            struct_name,
-        )?;
+        let stores = self
+            .parse_struct_initializer_level(CExpression::Variable(target.clone()), struct_name)?;
         Ok(balanced_statement_sequence(stores).unwrap_or(CStatement::Skip))
     }
 

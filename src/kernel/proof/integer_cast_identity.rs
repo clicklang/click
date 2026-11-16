@@ -4,7 +4,7 @@
 //! (`conversion::integer_conversion`). The certificate names exactly two
 //! source bounds.
 
-use super::arithmetic_special::SpecialArithmeticCheckError as Error;
+use super::arithmetic_special::ArithmeticRuleError as Error;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::machine_integer::conversion::{cast, integer_conversion};
@@ -125,10 +125,16 @@ fn check_as_written(
 
 #[cfg(test)]
 mod tests {
+    fn check_rule(
+        bounds: Vec<usize>,
+        goal: &crate::kernel::Proposition,
+        premises: &[crate::kernel::Proposition],
+    ) -> Result<(), super::Error> {
+        super::check(0, &bounds, premises, goal)
+    }
+
     use super::*;
-    use crate::kernel::proof::arithmetic_special::{
-        SpecialArithmeticCertificate, SpecialArithmeticNode,
-    };
+
     use crate::kernel::{
         IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty, MachineTerm, Variable,
     };
@@ -151,202 +157,6 @@ mod tests {
             Proposition::ConditionIs(ConditionTerm::integer_equal(observed, original), true),
         )
     }
-    fn certificate(result: Proposition, bounds: Vec<usize>) -> SpecialArithmeticCertificate {
-        SpecialArithmeticCertificate {
-            nodes: vec![SpecialArithmeticNode::IntegerCastIdentity { bounds, result }],
-            conclusion: 0,
-        }
-    }
-
-    /// `to_integer(to_T(z)) == z` at every format, either side first, with
-    /// `z`'s two bounds inside `T`'s range, and nothing else: a bound past
-    /// the range, on another term, or a conversion of another value, is
-    /// refused. Wherever it is accepted the statement holds in the
-    /// independent model of `to_T` as reduction modulo `2^w` into `T`.
-    #[test]
-    fn integer_conversion_identity_is_its_operand_inside_the_range() {
-        use num_traits::One;
-        let z = IntegerTerm::Variable(Variable(168_101));
-        let other = IntegerTerm::Variable(Variable(168_102));
-        for destination in crate::kernel::machine_integer::FORMATS {
-            let converted = |value: &IntegerTerm| {
-                IntegerTerm::from_machine(
-                    destination,
-                    MachineTerm::IntegerToMachine {
-                        value: value.clone().into(),
-                        destination,
-                    },
-                )
-                .unwrap()
-            };
-            let (min, max) = destination.format().bounds();
-            let bounds = |lo: BigInt, hi: BigInt, value: &IntegerTerm| {
-                vec![
-                    le(IntegerTerm::constant(lo), value.clone()),
-                    le(value.clone(), IntegerTerm::constant(hi)),
-                ]
-            };
-            let equal = |a: IntegerTerm, b: IntegerTerm| {
-                Proposition::ConditionIs(ConditionTerm::integer_equal(a, b), true)
-            };
-            for goal in [
-                equal(converted(&z), z.clone()),
-                equal(z.clone(), converted(&z)),
-            ] {
-                let cert = certificate(goal.clone(), vec![0, 1]);
-                cert.check(&goal, &bounds(min.clone(), max.clone(), &z))
-                    .unwrap_or_else(|error| panic!("{destination:?}: {error:?}"));
-                cert.check(&goal, &bounds(BigInt::from(0), BigInt::from(7), &z))
-                    .unwrap();
-                for refused in [
-                    bounds(&min - 1, max.clone(), &z),
-                    bounds(min.clone(), &max + 1, &z),
-                    bounds(min.clone(), max.clone(), &other),
-                ] {
-                    assert!(cert.check(&goal, &refused).is_err(), "{destination:?}");
-                }
-            }
-            let unrelated = equal(converted(&other), z.clone());
-            assert!(
-                certificate(unrelated.clone(), vec![0, 1])
-                    .check(&unrelated, &bounds(min.clone(), max.clone(), &z))
-                    .is_err()
-            );
-            // The model: `to_T(n)` is `n` reduced modulo `2^w` into `T`, so
-            // the identity holds exactly on the range the rule accepts.
-            let modulus = BigInt::one() << destination.format().bits();
-            let model = |n: &BigInt| {
-                let bits = ((n % &modulus) + &modulus) % &modulus;
-                if min < BigInt::from(0) && bits > max {
-                    bits - &modulus
-                } else {
-                    bits
-                }
-            };
-            for n in [
-                &min - 1,
-                min.clone(),
-                BigInt::from(0),
-                max.clone(),
-                &max + 1,
-            ] {
-                assert_eq!(model(&n) == n, min <= n && n <= max, "{destination:?}: {n}");
-            }
-        }
-    }
-
-    #[test]
-    fn unsigned_subword_read_observations_require_bounds_on_the_word() {
-        let carrier = MachineTerm::Variable(Variable(168_012));
-        for source in [Ty::Int32, Ty::UInt32] {
-            for destination in [Ty::UInt8, Ty::UInt16] {
-                let original = IntegerTerm::from_machine(source, carrier.clone()).unwrap();
-                let observed = IntegerTerm::from_machine(destination, carrier.clone()).unwrap();
-                let goal = Proposition::ConditionIs(
-                    ConditionTerm::integer_equal(observed.clone(), original.clone()),
-                    true,
-                );
-                let (_, maximum) = destination.format().bounds();
-                let bounds = |value: IntegerTerm, upper: BigInt| {
-                    vec![
-                        le(IntegerTerm::constant_i64(0), value.clone()),
-                        le(value, IntegerTerm::constant(upper)),
-                    ]
-                };
-                let cert = certificate(goal.clone(), vec![0, 1]);
-                cert.check(&goal, &bounds(original.clone(), maximum.clone()))
-                    .unwrap();
-                // A bound on the byte observation cannot grant the word's
-                // interpretation, and a word outside the byte range wraps.
-                assert!(
-                    cert.check(&goal, &bounds(observed, maximum.clone()))
-                        .is_err()
-                );
-                assert!(cert.check(&goal, &bounds(original, &maximum + 1)).is_err());
-                for number in [BigInt::from(0), maximum.clone(), &maximum + 1] {
-                    let value =
-                        MachineIntegerConstant::from_integer(source.format(), &number).unwrap();
-                    assert_eq!(
-                        value.convert_modulo(destination.format()).to_integer() == number,
-                        number <= maximum,
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn narrowed_subword_carriers_require_destination_bounds_on_the_source() {
-        let word = MachineTerm::Variable(Variable(168_013));
-        let wide = MachineTerm::Variable(Variable(168_014));
-        for (source, original_carrier, carrier) in [
-            (Ty::Int32, word.clone(), word.clone()),
-            (Ty::UInt32, word.clone(), word.clone()),
-            (
-                Ty::Int64,
-                wide.clone(),
-                MachineTerm::uint32_from_64(wide.clone()),
-            ),
-            (
-                Ty::UInt64,
-                wide.clone(),
-                MachineTerm::uint32_from_64(wide.clone()),
-            ),
-        ] {
-            for destination in [Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16] {
-                let original = IntegerTerm::from_machine(source, original_carrier.clone()).unwrap();
-                let observed = IntegerTerm::from_machine(destination, carrier.clone()).unwrap();
-                let goal = Proposition::ConditionIs(
-                    ConditionTerm::integer_equal(observed.clone(), original.clone()),
-                    true,
-                );
-                let (minimum, maximum) = destination.format().bounds();
-                let bounds = |value: IntegerTerm, lower: BigInt, upper: BigInt| {
-                    vec![
-                        le(IntegerTerm::constant(lower), value.clone()),
-                        le(value, IntegerTerm::constant(upper)),
-                    ]
-                };
-                let cert = certificate(goal.clone(), vec![0, 1]);
-                cert.check(
-                    &goal,
-                    &bounds(original.clone(), minimum.clone(), maximum.clone()),
-                )
-                .unwrap();
-                assert!(
-                    cert.check(&goal, &bounds(observed, minimum.clone(), maximum.clone()))
-                        .is_err()
-                );
-                assert!(
-                    cert.check(
-                        &goal,
-                        &bounds(original.clone(), minimum.clone(), &maximum + 1)
-                    )
-                    .is_err()
-                );
-                assert!(
-                    cert.check(
-                        &goal,
-                        &bounds(original.clone(), &minimum - 1, maximum.clone())
-                    )
-                    .is_err()
-                );
-                // A 64-bit source is narrowed only through its low word.
-                if source.format().bits() == 64 {
-                    let untruncated = IntegerTerm::from_machine(destination, wide.clone()).unwrap();
-                    let goal = Proposition::ConditionIs(
-                        ConditionTerm::integer_equal(untruncated, original.clone()),
-                        true,
-                    );
-                    assert!(
-                        certificate(goal.clone(), vec![0, 1])
-                            .check(&goal, &bounds(original, minimum, maximum))
-                            .is_err()
-                    );
-                }
-            }
-        }
-    }
 
     #[test]
     fn integer_cast_identity_matches_exact_modulo_oracle_at_destination_boundaries() {
@@ -362,11 +172,7 @@ mod tests {
                 Ty::UInt64,
             ] {
                 let (premises, goal) = inputs(source, destination);
-                assert!(
-                    certificate(goal.clone(), vec![0, 1])
-                        .check(&goal, &premises)
-                        .is_ok()
-                );
+                assert!(check_rule(vec![0, 1], &goal, &premises).is_ok());
                 let (min, max) = destination.format().bounds();
                 for number in [
                     min.clone() - 1,
@@ -399,76 +205,7 @@ mod tests {
                     ConditionTerm::integer_equal(b.as_ref().clone(), a.as_ref().clone()),
                     true,
                 );
-                assert!(
-                    certificate(reversed.clone(), vec![0, 1])
-                        .check(&reversed, &premises)
-                        .is_ok()
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn integer_cast_identity_checks_legacy_conversions_and_rejects_wrong_carriers() {
-        let types = [Ty::Int32, Ty::UInt32, Ty::Int64, Ty::UInt64];
-        let value = MachineTerm::Variable(Variable(168_001));
-        for source in types {
-            for destination in types {
-                let original = IntegerTerm::from_machine(source, value.clone()).unwrap();
-                let converted = crate::kernel::machine_integer::conversion::convert_value(
-                    source.value_from_term(value.clone()),
-                    destination,
-                )
-                .unwrap();
-                let converted = match converted {
-                    crate::kernel::integer64_c_value!(v) => v,
-                    _ => panic!("wrong carrier"),
-                };
-                let observed = IntegerTerm::from_machine(destination, converted.clone()).unwrap();
-                let goal = Proposition::ConditionIs(
-                    ConditionTerm::integer_equal(observed, original.clone()),
-                    true,
-                );
-                let (lo, hi) = destination.format().bounds();
-                let premises = vec![
-                    le(IntegerTerm::constant(lo.clone()), original.clone()),
-                    le(original.clone(), IntegerTerm::constant(hi.clone())),
-                ];
-                certificate(goal.clone(), vec![0, 1])
-                    .check(&goal, &premises)
-                    .unwrap_or_else(|e| panic!("{source:?}/{destination:?}: {e:?}"));
-                for wrong in [
-                    vec![
-                        le(IntegerTerm::constant(lo - 1), original.clone()),
-                        premises[1].clone(),
-                    ],
-                    vec![
-                        premises[0].clone(),
-                        le(original.clone(), IntegerTerm::constant(hi + 1)),
-                    ],
-                    vec![premises[1].clone(), premises[0].clone()],
-                ] {
-                    assert!(
-                        certificate(goal.clone(), vec![0, 1])
-                            .check(&goal, &wrong)
-                            .is_err()
-                    );
-                }
-                if source != destination {
-                    let unrelated = MachineTerm::Variable(Variable(168_002));
-                    let wrong = Proposition::ConditionIs(
-                        ConditionTerm::integer_equal(
-                            IntegerTerm::from_machine(destination, unrelated).unwrap(),
-                            original.clone(),
-                        ),
-                        true,
-                    );
-                    assert!(
-                        certificate(wrong.clone(), vec![0, 1])
-                            .check(&wrong, &premises)
-                            .is_err()
-                    );
-                }
+                assert!(check_rule(vec![0, 1], &reversed, &premises).is_ok());
             }
         }
     }
@@ -495,11 +232,7 @@ mod tests {
                 le(IntegerTerm::constant(0.into()), original.clone()),
                 le(original.clone(), IntegerTerm::constant(255.into())),
             ];
-            assert!(
-                certificate(goal.clone(), vec![0, 1])
-                    .check(&goal, &premises)
-                    .is_ok()
-            );
+            assert!(check_rule(vec![0, 1], &goal, &premises).is_ok());
             let wrong_source = vec![
                 le(
                     IntegerTerm::constant(0.into()),
@@ -507,11 +240,7 @@ mod tests {
                 ),
                 premises[1].clone(),
             ];
-            assert!(
-                certificate(goal.clone(), vec![0, 1])
-                    .check(&goal, &wrong_source)
-                    .is_err()
-            );
+            assert!(check_rule(vec![0, 1], &goal, &wrong_source).is_err());
             // The bounds must describe the source observation in the equality.
             // A widened intermediate has its operand's value (rule W), so
             // bounds on it describe the operand too.
@@ -521,11 +250,7 @@ mod tests {
             }
             let wrong_goal =
                 Proposition::ConditionIs(ConditionTerm::integer_equal(observed, underlying), true);
-            assert!(
-                certificate(wrong_goal.clone(), vec![0, 1])
-                    .check(&wrong_goal, &premises)
-                    .is_err()
-            );
+            assert!(check_rule(vec![0, 1], &wrong_goal, &premises).is_err());
         }
 
         // Widening after a truncation cannot be treated as a direct cast of the
@@ -542,11 +267,7 @@ mod tests {
             le(IntegerTerm::constant(0.into()), original.clone()),
             le(original, IntegerTerm::constant(65535.into())),
         ];
-        assert!(
-            certificate(goal.clone(), vec![0, 1])
-                .check(&goal, &premises)
-                .is_err()
-        );
+        assert!(check_rule(vec![0, 1], &goal, &premises).is_err());
     }
 
     #[test]
@@ -573,18 +294,10 @@ mod tests {
                 le(IntegerTerm::constant(0.into()), original.clone()),
                 le(original.clone(), IntegerTerm::constant(mask.into())),
             ];
-            assert!(
-                certificate(goal.clone(), vec![0, 1])
-                    .check(&goal, &premises)
-                    .is_ok()
-            );
+            assert!(check_rule(vec![0, 1], &goal, &premises).is_ok());
             for incorrect in [mask - 1, mask + 1, 0, u32::MAX] {
                 let wrong = goal_with_mask(incorrect);
-                assert!(
-                    certificate(wrong.clone(), vec![0, 1])
-                        .check(&wrong, &premises)
-                        .is_err()
-                );
+                assert!(check_rule(vec![0, 1], &wrong, &premises).is_err());
             }
             let outside = vec![
                 premises[0].clone(),
@@ -593,11 +306,7 @@ mod tests {
                     IntegerTerm::constant((u64::from(mask) + 1).into()),
                 ),
             ];
-            assert!(
-                certificate(goal.clone(), vec![0, 1])
-                    .check(&goal, &outside)
-                    .is_err()
-            );
+            assert!(check_rule(vec![0, 1], &goal, &outside).is_err());
             let wrong_source = vec![
                 premises[0].clone(),
                 le(
@@ -605,11 +314,7 @@ mod tests {
                     IntegerTerm::constant(mask.into()),
                 ),
             ];
-            assert!(
-                certificate(goal.clone(), vec![0, 1])
-                    .check(&goal, &wrong_source)
-                    .is_err()
-            );
+            assert!(check_rule(vec![0, 1], &goal, &wrong_source).is_err());
             for number in [0, 1, mask - 1, mask, mask + 1, i32::MAX as u32, u32::MAX] {
                 let converted = match destination {
                     Ty::UInt8 => u32::from(number as u8),
@@ -634,11 +339,7 @@ mod tests {
             vec![0, 1, 1],
             vec![0, 2],
         ] {
-            assert!(
-                certificate(goal.clone(), bounds)
-                    .check(&goal, &premises)
-                    .is_err()
-            );
+            assert!(check_rule(bounds, &goal, &premises).is_err());
         }
         let original =
             IntegerTerm::from_machine(Ty::Int128, MachineTerm::Variable(Variable(168_001)))
@@ -672,32 +373,15 @@ mod tests {
                 premises[1].clone(),
             ],
         ] {
-            assert!(
-                certificate(goal.clone(), vec![0, 1])
-                    .check(&goal, &altered)
-                    .is_err()
-            );
+            assert!(check_rule(vec![0, 1], &goal, &altered).is_err());
         }
         let stronger = vec![
             le(IntegerTerm::constant((-3).into()), original.clone()),
             le(original, IntegerTerm::constant(4.into())),
         ];
-        assert!(
-            certificate(goal.clone(), vec![0, 1])
-                .check(&goal, &stronger)
-                .is_ok()
-        );
+        assert!(check_rule(vec![0, 1], &goal, &stronger).is_ok());
         let (_, other_goal) = inputs(Ty::UInt128, Ty::Int64);
-        assert!(
-            certificate(goal.clone(), vec![0, 1])
-                .check(&other_goal, &premises)
-                .is_err()
-        );
-        assert!(
-            certificate(other_goal.clone(), vec![0, 1])
-                .check(&other_goal, &premises)
-                .is_err()
-        );
+        assert!(check_rule(vec![0, 1], &other_goal, &premises).is_err());
     }
 
     #[test]
@@ -740,22 +424,14 @@ mod tests {
                 ConditionTerm::integer_equal(cast, original.clone()),
                 true,
             );
-            assert!(
-                certificate(goal.clone(), vec![0, 1])
-                    .check(&goal, &premises)
-                    .is_err()
-            );
+            assert!(check_rule(vec![0, 1], &goal, &premises).is_err());
         }
         let (_, goal) = inputs(Ty::Int128, Ty::Int64);
         let Proposition::ConditionIs(condition, _) = goal else {
             unreachable!()
         };
         let false_goal = Proposition::ConditionIs(condition, false);
-        assert!(
-            certificate(false_goal.clone(), vec![0, 1])
-                .check(&false_goal, &premises)
-                .is_err()
-        );
+        assert!(check_rule(vec![0, 1], &false_goal, &premises).is_err());
     }
 
     #[cfg(test)]

@@ -479,51 +479,7 @@ id = "language.word.import"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.add"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.conclusion"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.equal_from_bounds"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.less_than_from_not_equal"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.int32_range"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.less_equal_from_equal"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.negated_goal"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.divide"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.arithmetic_certificate"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.peel"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.signed_int32"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.rules"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -531,19 +487,7 @@ id = "language.word.rust"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.premise"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.region"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.reverse"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.scale"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -552,10 +496,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.sorry"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.trivial"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1410,10 +1350,6 @@ id = "tactic.normalize"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
-id = "tactic.arithmetic_certificate"
-path = "reference/tactics/index.md#proposition-reasoning"
-
-[[item]]
 id = "tactic.rewrite"
 path = "reference/tactics/index.md#proposition-reasoning"
 
@@ -1650,12 +1586,6 @@ id = "tactic-form.normalize"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.normalize-using"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.arithmetic-certificate"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.arithmetic-certificate-signed-int32"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.intro"
@@ -2555,42 +2485,6 @@ id = "library.cpp.std::span<T>::subspan"
 path = "reference/library/index.md#stdspant"
 
 [[item]]
-id = "library.rust.ChunksExact::after_next"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::item_len"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::item_ptr"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::len"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::new"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::next"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::remainder"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::remainder_len"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
-id = "library.rust.ChunksExact::remainder_ptr"
-path = "reference/library/index.md#chunksexactt-methods"
-
-[[item]]
 id = "library.rust.Option::expect"
 path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
 
@@ -2861,14 +2755,6 @@ path = "reference/library/index.md#integer-wrapping-arithmetic"
 [[item]]
 id = "library.rust.isize::wrapping_sub"
 path = "reference/library/index.md#integer-wrapping-arithmetic"
-
-[[item]]
-id = "library.rust.slice::as_ptr"
-path = "reference/library/index.md#slice-value-methods"
-
-[[item]]
-id = "library.rust.slice::len"
-path = "reference/library/index.md#slice-value-methods"
 
 [[item]]
 id = "library.rust.slice::swap"
@@ -4348,14 +4234,6 @@ id = "library.theorem.separation::separate_restrict"
 path = "reference/library/index.md#separationseparate_restrict"
 
 [[item]]
-id = "language.word.changes_only"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.changes-only"
-path = "reference/language/index.md#propositions"
-
-[[item]]
 id = "language.region-footprint"
 path = "reference/language/index.md#at"
 
@@ -4830,78 +4708,6 @@ path = "reference/library/index.md#slicefrom_raw_parts"
 [[item]]
 id = "library.function.slice::subslice_len"
 path = "reference/library/index.md#slicesubslice_len"
-
-[[item]]
-id = "library.type.ChunksExact"
-path = "reference/library/index.md#chunksexact"
-
-[[item]]
-id = "library.function.chunks_exact::chunks_exact"
-path = "reference/library/index.md#chunks_exactchunks_exact"
-
-[[item]]
-id = "library.function.chunks_exact::len"
-path = "reference/library/index.md#chunks_exactlen"
-
-[[item]]
-id = "library.function.chunks_exact::nth"
-path = "reference/library/index.md#chunks_exactnth"
-
-[[item]]
-id = "library.function.chunks_exact::remainder"
-path = "reference/library/index.md#chunks_exactremainder"
-
-[[item]]
-id = "library.function.chunks_exact::after_next"
-path = "reference/library/index.md#chunks_exactafter_next"
-
-[[item]]
-id = "library.function.chunks_exact::after"
-path = "reference/library/index.md#chunks_exactafter"
-
-[[item]]
-id = "library.theorem.chunks_exact::len_chunks_exact"
-path = "reference/library/index.md#chunks_exactlen_chunks_exact"
-
-[[item]]
-id = "library.theorem.chunks_exact::nth_chunks_exact"
-path = "reference/library/index.md#chunks_exactnth_chunks_exact"
-
-[[item]]
-id = "library.theorem.chunks_exact::remainder_chunks_exact"
-path = "reference/library/index.md#chunks_exactremainder_chunks_exact"
-
-[[item]]
-id = "library.theorem.chunks_exact::len_after_next"
-path = "reference/library/index.md#chunks_exactlen_after_next"
-
-[[item]]
-id = "library.theorem.chunks_exact::nth_after_next"
-path = "reference/library/index.md#chunks_exactnth_after_next"
-
-[[item]]
-id = "library.theorem.chunks_exact::remainder_after_next"
-path = "reference/library/index.md#chunks_exactremainder_after_next"
-
-[[item]]
-id = "library.theorem.chunks_exact::after_zero"
-path = "reference/library/index.md#chunks_exactafter_zero"
-
-[[item]]
-id = "library.theorem.chunks_exact::after_next_after"
-path = "reference/library/index.md#chunks_exactafter_next_after"
-
-[[item]]
-id = "library.theorem.chunks_exact::len_after"
-path = "reference/library/index.md#chunks_exactlen_after"
-
-[[item]]
-id = "library.theorem.chunks_exact::nth_after"
-path = "reference/library/index.md#chunks_exactnth_after"
-
-[[item]]
-id = "library.theorem.chunks_exact::remainder_after"
-path = "reference/library/index.md#chunks_exactremainder_after"
 
 [[item]]
 id = "library.type.SliceIter"

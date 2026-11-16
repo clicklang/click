@@ -126,6 +126,8 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions(
         parameter_binding,
         fixed_state,
         spec_definitions,
+        &BTreeMap::new(),
+        &crate::persistent::PersistentMap::default(),
     )
     .map(|(proposition, _)| proposition)
 }
@@ -214,6 +216,8 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
+    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
     let names = proposition_referenced_names(proposition);
     let (values, array_refs) =
@@ -226,6 +230,8 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_
         fixed_state,
         spec_definitions,
         FixedStateLoweringOptions {
+            algebraic_values: Some(algebraic_values),
+            integer_values: Some(integer_values),
             pointer_element_widths: parameter_pointer_element_widths_named(
                 parameter_binding,
                 &names,
@@ -410,6 +416,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
         states.element_types,
         bound_array_memories.cloned().unwrap_or_default(),
         &states.entry_state,
+        &states.lowering_state,
         states.entry_values,
         states.current_values,
         algebraic_values.cloned().unwrap_or_default(),
@@ -636,6 +643,7 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression(
         contract_environment,
         fixed_state,
         spec_definitions,
+        BTreeMap::new(),
     )
     .map(|(value, _)| value)
 }
@@ -647,6 +655,7 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
+    algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
 ) -> Result<(crate::kernel::IntegerTerm, Vec<Proposition>), String> {
     let states = FixedStateLowering::for_expression(
         expression,
@@ -663,6 +672,7 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
             states.entry_values,
             states.current_values,
             integer_values,
+            algebraic_values,
             fixed_state.result,
             fixed_state.recorded_states,
             spec_definitions,
@@ -676,9 +686,9 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
         crate::kernel::capture_spec_integer_value_with_guards
     };
     let captured = capture(
-        fixed_state.state,
+        &states.lowering_state,
         &spec,
-        Some(fixed_state.pre_state),
+        Some(&states.entry_state),
         assumptions,
     )
     .map_err(|refusal| {
@@ -1279,6 +1289,12 @@ impl FixedStateLowering {
                 .get(&name)
                 .map(|value| value.clone().into_native())
                 .or_else(|| entry_state.held_local_value(&name))
+                .or_else(|| {
+                    entry_state
+                        .locals()
+                        .array_object_value(&name)
+                        .map(|(value, _)| value)
+                })
             {
                 entry_values.insert(name.clone(), value);
             }
@@ -1287,13 +1303,19 @@ impl FixedStateLowering {
                 .get(&name)
                 .map(|value| value.clone().into_native())
                 .or_else(|| lowering_state.held_local_value(&name))
+                .or_else(|| {
+                    lowering_state
+                        .locals()
+                        .array_object_value(&name)
+                        .map(|(value, _)| value)
+                })
             {
                 current_values.insert(name, value);
             }
         }
         if let Some(result) = result {
             lowering_state =
-                lowering_state.with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone());
+                lowering_state.with_local(crate::kernel::CONTRACT_RESULT, result.clone());
         }
         Self {
             entry_state,
@@ -1325,7 +1347,7 @@ impl FixedStateLowering {
         let mut lowering_state = bound(state);
         if let Some(result) = result {
             lowering_state =
-                lowering_state.with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone());
+                lowering_state.with_local(crate::kernel::CONTRACT_RESULT, result.clone());
         }
         let mut element_types = contract_environment
             .array_refs

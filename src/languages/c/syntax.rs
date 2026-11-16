@@ -1003,9 +1003,7 @@ fn pointer_array_element(
     })
 }
 
-/// The element pointer type of a pointer array; `rank` is the `long`/`long
-/// long` rank of a 64-bit integer pointee, which the kernel element erases.
-
+/// A literal initializer's kernel value at its declared interface type.
 fn kernel_integer_literal_value(
     interface_type: InterfaceType,
     initializer: &CExpression,
@@ -1668,10 +1666,10 @@ impl CZeroFill {
 /// A typed store into the object named `base` at a constant byte offset
 /// from it: the offset, the stored type, its pointee qualification and the
 /// stored expression. `None` for any other statement.
-fn typed_store_at<'a>(
+fn typed_store_at(
     base: impl Into<BindingName>,
-    store: &'a CStatement,
-) -> Option<(u32, InterfaceType, bool, &'a CExpression)> {
+    store: &CStatement,
+) -> Option<(u32, InterfaceType, bool, &CExpression)> {
     let base = base.into();
     let CStatement::Store {
         pointer,
@@ -8793,21 +8791,18 @@ impl Parser {
         self.next_static_binding = self.next_static_binding.saturating_add(1);
         let previous_visible = self.visible_bindings.insert(
             name.to_owned(),
-            (
-                self.scopes.len().saturating_sub(1),
-                kernel_name.clone().into(),
-            ),
+            (self.scopes.len().saturating_sub(1), kernel_name.clone()),
         );
         match self.scopes.last_mut() {
             Some(scope) => scope.push(ScopeBinding {
                 source_name: Some(name.to_string()),
-                kernel_name: kernel_name.clone().into(),
+                kernel_name: kernel_name.clone(),
                 shadowed: None,
                 previous_visible: previous_visible.clone(),
             }),
             None => self.scopes.push(vec![ScopeBinding {
                 source_name: Some(name.to_string()),
-                kernel_name: kernel_name.clone().into(),
+                kernel_name: kernel_name.clone(),
                 shadowed: None,
                 previous_visible: previous_visible.clone(),
             }]),
@@ -8885,6 +8880,7 @@ impl Parser {
                         | InterfaceType::Int32Pointer
                         | InterfaceType::CharPointer(_)
                         | InterfaceType::UInt8Pointer
+                        | InterfaceType::UInt32Pointer
                         | InterfaceType::Float32Pointer
                         | InterfaceType::Float64Pointer
                         | InterfaceType::Int32PointerPointer
@@ -10051,8 +10047,8 @@ impl Parser {
                 binding
             } else {
                 let name = self.expect_ident("parameter name")?;
-                let binding = self.declare_name(&name)?;
-                binding
+
+                self.declare_name(&name)?
             };
             if parsed_type.is_volatile && self.peek() == Some(&Token::LBracket) {
                 return Err(self.error_here(
@@ -10111,11 +10107,10 @@ impl Parser {
                     .insert(kernel_name.clone(), signature.clone());
             }
             if object_constant {
-                self.variable_constants.insert(kernel_name.clone().into());
+                self.variable_constants.insert(kernel_name.clone());
             }
             if pointee_constant {
-                self.variable_pointee_constants
-                    .insert(kernel_name.clone().into());
+                self.variable_pointee_constants.insert(kernel_name.clone());
             }
             let struct_name = parsed_type.struct_name;
             if struct_name.is_some() {
@@ -12578,13 +12573,13 @@ impl Parser {
                         .checked_mul(layout.size_bytes())
                         .ok_or_else(|| self.error_here("static aggregate array size overflows"))?;
                     self.variable_types
-                        .insert(kernel_name.clone().into(), InterfaceType::UInt8Array(bytes));
+                        .insert(kernel_name.clone(), InterfaceType::UInt8Array(bytes));
                     self.variable_array_shapes
-                        .insert(kernel_name.clone().into(), vec![length]);
+                        .insert(kernel_name.clone(), vec![length]);
                     self.variable_structs
-                        .insert(kernel_name.clone().into(), struct_name.clone());
+                        .insert(kernel_name.clone(), struct_name.clone());
                     if parsed_type.is_constant {
-                        self.variable_constants.insert(kernel_name.clone().into());
+                        self.variable_constants.insert(kernel_name.clone());
                     }
                     self.static_aggregate_arrays.insert(
                         kernel_name.clone(),
@@ -12611,11 +12606,11 @@ impl Parser {
                     Vec::new()
                 };
                 self.variable_types
-                    .insert(kernel_name.clone().into(), record_value_type(layout));
+                    .insert(kernel_name.clone(), record_value_type(layout));
                 self.variable_structs
-                    .insert(kernel_name.clone().into(), struct_name.clone());
+                    .insert(kernel_name.clone(), struct_name.clone());
                 if parsed_type.is_constant {
-                    self.variable_constants.insert(kernel_name.clone().into());
+                    self.variable_constants.insert(kernel_name.clone());
                 }
                 self.static_aggregates.insert(
                     kernel_name.clone(),
@@ -12706,14 +12701,14 @@ impl Parser {
                     .try_fold(1u32, |n, d| n.checked_mul(*d))
                     .ok_or_else(|| self.error_here("static array size overflows"))?;
                 self.variable_array_shapes
-                    .insert(kernel_name.clone().into(), shape.clone());
+                    .insert(kernel_name.clone(), shape.clone());
                 self.variable_types.insert(
-                    kernel_name.clone().into(),
+                    kernel_name.clone(),
                     array_type_for_element(parsed_type.interface_type, length)
                         .expect("validated static array element type"),
                 );
                 if parsed_type.is_constant {
-                    self.variable_constants.insert(kernel_name.clone().into());
+                    self.variable_constants.insert(kernel_name.clone());
                 }
                 self.static_arrays.insert(
                     kernel_name.clone(),
@@ -12730,13 +12725,12 @@ impl Parser {
                 );
             } else {
                 self.variable_types
-                    .insert(kernel_name.clone().into(), parsed_type.interface_type);
+                    .insert(kernel_name.clone(), parsed_type.interface_type);
                 if parsed_type.is_constant {
-                    self.variable_constants.insert(kernel_name.clone().into());
+                    self.variable_constants.insert(kernel_name.clone());
                 }
                 if parsed_type.pointee_constant {
-                    self.variable_pointee_constants
-                        .insert(kernel_name.clone().into());
+                    self.variable_pointee_constants.insert(kernel_name.clone());
                 }
                 let initializer = if self.peek() == Some(&Token::Equal) {
                     self.position += 1;
@@ -12800,7 +12794,7 @@ impl Parser {
             .cloned()
             .ok_or_else(|| self.error_here(format!("`{target}` is not a struct value")))?;
         self.aggregate_copy_statement(
-            CExpression::Variable(target.clone().into()),
+            CExpression::Variable(target.clone()),
             &target_struct,
             expression,
         )
@@ -13091,7 +13085,7 @@ impl Parser {
         let expression = self.parse_expression()?;
         self.validate_function_pointer_assignment(&name, &expression)?;
         Ok(CStatement::Assign {
-            name: (name).into(),
+            name: (name),
             expression,
             site: CSite::NONE,
             prior_result: None,
@@ -13213,51 +13207,51 @@ impl Parser {
                 }
             }
             Token::PlusPlus => CExpression::Add(
-                Box::new(CExpression::Variable((name.clone()).into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(CExpression::Int32Literal(1)),
             ),
             Token::MinusMinus => CExpression::Subtract(
-                Box::new(CExpression::Variable((name.clone()).into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(CExpression::Int32Literal(1)),
             ),
             Token::PlusEqual => CExpression::Add(
-                Box::new(CExpression::Variable((name.clone()).into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(self.parse_expression()?),
             ),
             Token::MinusEqual => CExpression::Subtract(
-                Box::new(CExpression::Variable((name.clone()).into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(self.parse_expression()?),
             ),
             Token::StarEqual => CExpression::Multiply(
-                Box::new(CExpression::Variable((name.clone()).into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(self.parse_expression()?),
             ),
             Token::SlashEqual => CExpression::Divide(
-                Box::new(CExpression::Variable((name.clone()).into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(self.parse_expression()?),
             ),
             Token::PercentEqual => CExpression::Remainder(
-                Box::new(CExpression::Variable((name.clone()).into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(self.parse_expression()?),
             ),
             Token::ShiftLeftEqual => CExpression::ShiftLeft(
-                Box::new(CExpression::Variable((name.clone()).into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(self.parse_expression()?),
             ),
             Token::ShiftRightEqual => CExpression::ShiftRight(
-                Box::new(CExpression::Variable((name.clone()).into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(self.parse_expression()?),
             ),
             Token::AmpEqual => CExpression::BitwiseAnd(
-                Box::new(CExpression::Variable((name.clone()).into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(self.parse_expression()?),
             ),
             Token::PipeEqual => CExpression::BitwiseOr(
-                Box::new(CExpression::Variable((name.clone()).into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(self.parse_expression()?),
             ),
             Token::CaretEqual => CExpression::BitwiseXor(
-                Box::new(CExpression::Variable((name.clone()).into())),
+                Box::new(CExpression::Variable(name.clone())),
                 Box::new(self.parse_expression()?),
             ),
             token => {
@@ -13289,7 +13283,7 @@ impl Parser {
             self.validate_function_pointer_assignment(&name, &expression)?;
         }
         Ok(CStatement::Assign {
-            name: (name).into(),
+            name: (name),
             expression,
             site: CSite::NONE,
             prior_result: None,
@@ -13582,7 +13576,7 @@ impl Parser {
                         site: CSite::NONE,
                     }),
                     Box::new(CStatement::Assign {
-                        name: (target.clone()).into(),
+                        name: (target.clone()),
                         expression: CExpression::StepResult {
                             step: call,
                             origin: crate::kernel::StepOrigin::Call(function_name),
@@ -13614,7 +13608,7 @@ impl Parser {
                 // embedded call, which lowering assigns to a temporary.
                 if value != call {
                     return Ok(CStatement::Assign {
-                        name: (target).into(),
+                        name: (target),
                         expression: value,
                         site: CSite::NONE,
                         prior_result: None,
@@ -13636,7 +13630,7 @@ impl Parser {
                 let (mut prefix, source) =
                     self.lower_aggregate_call_result(function_name, arguments, struct_name)?;
                 prefix.push(CStatement::AggregateCopy {
-                    target: CExpression::Variable((target).into()),
+                    target: CExpression::Variable(target),
                     source,
                     layout,
                     site: CSite::NONE,
@@ -13649,7 +13643,7 @@ impl Parser {
                 return Ok(balanced_statement_sequence(prefix).expect("call and aggregate copy"));
             }
             return Ok(CStatement::Assign {
-                name: (target).into(),
+                name: (target),
                 expression: CExpression::Call {
                     function_name,
                     arguments,
@@ -13810,7 +13804,7 @@ impl Parser {
                 })
             });
         Ok(CStatement::HeapAllocate {
-            target: (target).into(),
+            target: (target),
             bytes,
             zeroed,
             object_type,
@@ -14487,7 +14481,7 @@ impl Parser {
     }
 
     fn variable_has_static_storage(&self, name: &BindingName) -> bool {
-        self.static_locals.get(name).is_some()
+        self.static_locals.contains_key(name)
             || self
                 .globals
                 .values()
@@ -15395,14 +15389,14 @@ impl Parser {
             prefix.push(CStatement::StepValue {
                 aggregate_layout: None,
                 steps: vec![step],
-                expression: CExpression::Variable((name.clone()).into()),
+                expression: CExpression::Variable(name.clone()),
                 interface_type: Some(interface_type),
                 pointee_constant,
                 site: CSite::NONE,
             });
             checks.push(CStatement::Assert {
                 condition: CExpression::Equal(
-                    Box::new(CExpression::Variable((name.clone()).into())),
+                    Box::new(CExpression::Variable(name.clone())),
                     Box::new(CExpression::StepResult {
                         step,
                         origin: crate::kernel::StepOrigin::Value("the read before the call"),
@@ -19227,7 +19221,7 @@ impl Parser {
                     .ok_or_else(|| self.error_here(format!("unknown struct declaration `{name}`")))?
                     .size_bytes;
                 return Ok(CExpression::SizeOfStruct {
-                    name: (name.clone()).into(),
+                    name: (name.clone()),
                     bytes,
                 });
             }
@@ -19240,7 +19234,7 @@ impl Parser {
                     .ok_or_else(|| self.error_here(format!("unknown union declaration `{name}`")))?
                     .size_bytes;
                 return Ok(CExpression::SizeOfUnion {
-                    name: (name.clone()).into(),
+                    name: (name.clone()),
                     bytes,
                 });
             }
@@ -19268,7 +19262,7 @@ impl Parser {
                     Ok(address)
                 } else {
                     Ok(CExpression::Variable(
-                        (self.resolve_object_name(&name, at.position)?).into(),
+                        self.resolve_object_name(&name, at.position)?,
                     ))
                 }
             }
@@ -20842,118 +20836,6 @@ fn is_ident_continue(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
 }
 
-/// The locals `body` declares with pointer type in every declaration.
-
-#[cfg(test)]
-mod scope_metadata_tests {
-    use super::*;
-
-    #[test]
-    fn explicit_halfword_fields_check_width_alignment_and_separation() {
-        let fields = vec![
-            ("a".into(), InterfaceType::UInt16, 0, 2),
-            ("b".into(), InterfaceType::UInt16, 2, 2),
-        ];
-        let layout = RecordLayout::from_explicit_fields(fields.clone(), 4, 2).unwrap();
-        assert_eq!(layout.field("b").unwrap().offset_bytes, 2);
-        assert_eq!(layout.field("b").unwrap().byte_width, 2);
-        for (offset, width) in [(1, 2), (0, 2), (2, 1), (4, 2)] {
-            let mut invalid = fields.clone();
-            invalid[1].2 = offset;
-            invalid[1].3 = width;
-            assert!(RecordLayout::from_explicit_fields(invalid, 4, 2).is_err());
-        }
-    }
-
-    #[test]
-    fn explicit_scalar_array_fields_preserve_extent_and_check_full_layout() {
-        for length in [1, 1024, 1_000_000] {
-            let width = length * 4;
-            let fields = vec![
-                (
-                    "values".into(),
-                    InterfaceType::UInt32Array(length),
-                    0,
-                    width,
-                ),
-                ("marker".into(), InterfaceType::UInt8, width, 1),
-            ];
-            let layout = RecordLayout::from_explicit_fields(fields.clone(), width + 4, 4).unwrap();
-            assert_eq!(
-                layout.field("values").unwrap().array_shape(),
-                Some(&[length][..])
-            );
-            assert_eq!(layout.to_kernel_aggregate_layout().fields().len(), 2);
-            for (offset, bytes) in [(1, width), (0, width - 1), (4, width)] {
-                let mut bad = fields.clone();
-                bad[0].2 = offset;
-                bad[0].3 = bytes;
-                assert!(RecordLayout::from_explicit_fields(bad, width + 4, 4).is_err());
-            }
-        }
-        let empty = RecordLayout::from_explicit_fields(
-            vec![
-                ("marker".into(), InterfaceType::UInt8, 0, 1),
-                ("empty".into(), InterfaceType::UInt8Array(0), 0, 0),
-            ],
-            1,
-            1,
-        )
-        .unwrap();
-        assert_eq!(empty.field("empty").unwrap().byte_width(), 0);
-        assert!(
-            RecordLayout::from_explicit_fields(
-                vec![("too_big".into(), InterfaceType::UInt32Array(u32::MAX), 0, 0)],
-                4,
-                4
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn shadow_metadata_storage_is_independent_of_unrelated_globals() {
-        for count in [16, 64, 256] {
-            let mut parser = Parser::new("", CAbi::SUPPORTED).unwrap();
-            for index in 0..count {
-                parser.variable_types.insert(
-                    format!("global{index}").into(),
-                    InterfaceType::UInt64(LongRank::Long),
-                );
-            }
-            parser
-                .variable_types
-                .insert("p".into(), InterfaceType::UInt32Array(2));
-            parser.variable_array_shapes.insert("p".into(), vec![2]);
-            parser.variable_constants.insert("p".into());
-            parser.push_scope();
-            assert_eq!(parser.declare_name("p").unwrap(), ("p").into());
-            assert_eq!(parser.scopes.last().unwrap().len(), 1);
-            let saved = parser.scopes.last().unwrap()[0].shadowed.as_ref().unwrap();
-            assert_eq!(saved.interface_type, InterfaceType::UInt32Array(2));
-            assert_eq!(saved.array_shape.as_deref(), Some([2].as_slice()));
-            assert!(saved.constant);
-            assert_eq!(parser.variable_types.len(), count);
-            parser
-                .variable_types
-                .insert("p".into(), InterfaceType::Int32Pointer);
-            parser.pop_scope();
-            assert_eq!(parser.variable_types.len(), count + 1);
-            assert_eq!(
-                parser.variable_types[&("p").into()],
-                InterfaceType::UInt32Array(2)
-            );
-            assert_eq!(parser.variable_array_shapes[&("p").into()], vec![2]);
-            assert!(parser.variable_constants.contains(&("p").into()));
-        }
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../../scaling_tests/languages/c/syntax/scope_metadata_tests.rs");
-    }
-}
-
 impl ImportedFunction {
     /// The class of the object a returned pointer designates
     /// (`design/effective-types.md`): its struct for a struct pointer,
@@ -21167,7 +21049,7 @@ impl CGlobalAggregate {
         id.initialize_metadata(StaticBindingMetadata {
             program_type: InterfaceType::UInt8Array(self.layout.size_bytes()).to_kernel_type(),
             array_shape: None,
-            struct_name: (Some(self.struct_name.as_str())).map(std::sync::Arc::from),
+            struct_name: Some(std::sync::Arc::from(self.struct_name.as_str())),
             aggregate: true,
             volatile: false,
             pointee_volatile: false,
@@ -21188,8 +21070,8 @@ impl CGlobalAggregateArray {
         id.initialize_metadata(StaticBindingMetadata {
             program_type: InterfaceType::UInt8Array(length * self.layout.size_bytes())
                 .to_kernel_type(),
-            array_shape: (Some(&[length][..])).map(std::sync::Arc::from),
-            struct_name: (Some(self.struct_name.as_str())).map(std::sync::Arc::from),
+            array_shape: Some(std::sync::Arc::from(&[length][..])),
+            struct_name: Some(std::sync::Arc::from(self.struct_name.as_str())),
             aggregate: true,
             volatile: false,
             pointee_volatile: false,
@@ -21232,7 +21114,7 @@ impl CStaticArray {
             program_type: array_type_for_element(self.element_type, self.length)
                 .expect("complete static array type")
                 .to_kernel_type(),
-            array_shape: (Some(self.shape.as_slice())).map(std::sync::Arc::from),
+            array_shape: Some(std::sync::Arc::from(self.shape.as_slice())),
             struct_name: None,
             aggregate: false,
             volatile: false,
@@ -21252,7 +21134,7 @@ impl CStaticAggregate {
         id.initialize_metadata(StaticBindingMetadata {
             program_type: InterfaceType::UInt8Array(self.layout.size_bytes()).to_kernel_type(),
             array_shape: None,
-            struct_name: (Some(self.struct_name.as_str())).map(std::sync::Arc::from),
+            struct_name: Some(std::sync::Arc::from(self.struct_name.as_str())),
             aggregate: true,
             volatile: false,
             pointee_volatile: false,
@@ -21271,8 +21153,8 @@ impl CStaticAggregateArray {
         id.initialize_metadata(StaticBindingMetadata {
             program_type: InterfaceType::UInt8Array(self.length * self.layout.size_bytes())
                 .to_kernel_type(),
-            array_shape: (Some(&[self.length][..])).map(std::sync::Arc::from),
-            struct_name: (Some(self.struct_name.as_str())).map(std::sync::Arc::from),
+            array_shape: Some(std::sync::Arc::from(&[self.length][..])),
+            struct_name: Some(std::sync::Arc::from(self.struct_name.as_str())),
             aggregate: true,
             volatile: false,
             pointee_volatile: false,
@@ -21296,5 +21178,115 @@ impl Parser {
         for object in self.global_aggregate_arrays.values() {
             object.prepare_static_binding();
         }
+    }
+}
+
+#[cfg(test)]
+mod scope_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_halfword_fields_check_width_alignment_and_separation() {
+        let fields = vec![
+            ("a".into(), InterfaceType::UInt16, 0, 2),
+            ("b".into(), InterfaceType::UInt16, 2, 2),
+        ];
+        let layout = RecordLayout::from_explicit_fields(fields.clone(), 4, 2).unwrap();
+        assert_eq!(layout.field("b").unwrap().offset_bytes, 2);
+        assert_eq!(layout.field("b").unwrap().byte_width, 2);
+        for (offset, width) in [(1, 2), (0, 2), (2, 1), (4, 2)] {
+            let mut invalid = fields.clone();
+            invalid[1].2 = offset;
+            invalid[1].3 = width;
+            assert!(RecordLayout::from_explicit_fields(invalid, 4, 2).is_err());
+        }
+    }
+
+    #[test]
+    fn explicit_scalar_array_fields_preserve_extent_and_check_full_layout() {
+        for length in [1, 1024, 1_000_000] {
+            let width = length * 4;
+            let fields = vec![
+                (
+                    "values".into(),
+                    InterfaceType::UInt32Array(length),
+                    0,
+                    width,
+                ),
+                ("marker".into(), InterfaceType::UInt8, width, 1),
+            ];
+            let layout = RecordLayout::from_explicit_fields(fields.clone(), width + 4, 4).unwrap();
+            assert_eq!(
+                layout.field("values").unwrap().array_shape(),
+                Some(&[length][..])
+            );
+            assert_eq!(layout.to_kernel_aggregate_layout().fields().len(), 2);
+            for (offset, bytes) in [(1, width), (0, width - 1), (4, width)] {
+                let mut bad = fields.clone();
+                bad[0].2 = offset;
+                bad[0].3 = bytes;
+                assert!(RecordLayout::from_explicit_fields(bad, width + 4, 4).is_err());
+            }
+        }
+        let empty = RecordLayout::from_explicit_fields(
+            vec![
+                ("marker".into(), InterfaceType::UInt8, 0, 1),
+                ("empty".into(), InterfaceType::UInt8Array(0), 0, 0),
+            ],
+            1,
+            1,
+        )
+        .unwrap();
+        assert_eq!(empty.field("empty").unwrap().byte_width(), 0);
+        assert!(
+            RecordLayout::from_explicit_fields(
+                vec![("too_big".into(), InterfaceType::UInt32Array(u32::MAX), 0, 0)],
+                4,
+                4
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn shadow_metadata_storage_is_independent_of_unrelated_globals() {
+        for count in [16, 64, 256] {
+            let mut parser = Parser::new("", CAbi::SUPPORTED).unwrap();
+            for index in 0..count {
+                parser.variable_types.insert(
+                    format!("global{index}").into(),
+                    InterfaceType::UInt64(LongRank::Long),
+                );
+            }
+            parser
+                .variable_types
+                .insert("p".into(), InterfaceType::UInt32Array(2));
+            parser.variable_array_shapes.insert("p".into(), vec![2]);
+            parser.variable_constants.insert("p".into());
+            parser.push_scope();
+            assert_eq!(parser.declare_name("p").unwrap(), ("p").into());
+            assert_eq!(parser.scopes.last().unwrap().len(), 1);
+            let saved = parser.scopes.last().unwrap()[0].shadowed.as_ref().unwrap();
+            assert_eq!(saved.interface_type, InterfaceType::UInt32Array(2));
+            assert_eq!(saved.array_shape.as_deref(), Some([2].as_slice()));
+            assert!(saved.constant);
+            assert_eq!(parser.variable_types.len(), count);
+            parser
+                .variable_types
+                .insert("p".into(), InterfaceType::Int32Pointer);
+            parser.pop_scope();
+            assert_eq!(parser.variable_types.len(), count + 1);
+            assert_eq!(
+                parser.variable_types[&("p").into()],
+                InterfaceType::UInt32Array(2)
+            );
+            assert_eq!(parser.variable_array_shapes[&("p").into()], vec![2]);
+            assert!(parser.variable_constants.contains(&("p").into()));
+        }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../../scaling_tests/languages/c/syntax/scope_metadata_tests.rs");
     }
 }
