@@ -1966,83 +1966,31 @@ fn merge_facts_with_changes(
     let mut facts = prefix.clone();
     let mut share_append = true;
     let mut appended = Vec::new();
-    let mut saw_memory_effect = false;
     for (source_index, fact) in suffix.iter().enumerate() {
         let before = facts.len();
-        // These private records describe completed, checked accesses, not
-        // conditions selecting a path. Keep each producer occurrence even
-        // when another access has the same semantic memory proposition.
-        // Appending the selected delta also avoids searching old facts for
-        // a source observation that must not be deduplicated.
-        if fact.is_certified()
-            && (fact.has_checked_pointer_read()
-                || !fact.is_public()
-                    && (fact.reference_observation.is_some()
-                        || fact
-                            .certified_store_data()
-                            .is_some_and(|store| store.source.as_ref().is_some())))
-        {
+        // A certified fact is output of the checked producer, not a condition
+        // selecting this path. Retain its record directly, including repeated
+        // propositions with distinct producer metadata. Rechecking its truth
+        // or finding a slot to overwrite scans the shared prefix and can lose
+        // evidence the producer supplied. Logical deduplication belongs to the
+        // receiving fact context; this stream keeps producer occurrences.
+        if fact.is_certified() {
             crate::instrumentation::record_deterministic_work(1);
-            saw_memory_effect |= fact.certified_store_data().is_some();
             facts.push(fact.clone());
             appended.push(source_index);
             changed.push(before);
             continue;
         }
-        add_path_fact_with_visibility_after_effect(
+        add_path_fact_with_visibility(
             &mut facts,
             assumptions,
             fact.proposition().clone(),
             fact.is_public(),
-            saw_memory_effect && fact.is_certified(),
         )?;
-        let existing_index = fact
-            .is_certified()
-            .then(|| {
-                facts
-                    .iter()
-                    .position(|existing| existing.proposition() == fact.proposition())
-            })
-            .flatten();
-        // A redundant proposition can still carry new checked producer
-        // evidence. In particular, a load variable's defining equation is
-        // intrinsically true, but its typed pointer binding must survive
-        // composition into an assignment or call's fact stream.
-        if existing_index.is_none()
-            && fact.is_certified()
-            && matches!(
-                fact.generated_load_binding(),
-                Some(GeneratedLoadBinding::Exact {
-                    typed_pointer_value: Some(_),
-                    ..
-                })
-            )
-        {
-            facts.push(fact.clone());
-        }
-        if let Some(index) = existing_index
-            && &facts[index] != fact
-        {
-            share_append &= index >= before;
-            *facts.get_mut(index) = fact.clone();
-            changed.push(index);
-        }
         if facts.len() == before + 1 {
             share_append &= &facts[before] == fact;
             appended.push(source_index);
             changed.push(before);
-        }
-        // A verified call emits its effect before its certified
-        // postconditions. Entry-state condition facts cannot reject those
-        // theorem-backed postconditions after memory has changed, although
-        // agreeing entry facts can still make a postcondition redundant.
-        if matches!(
-            fact.proposition(),
-            Proposition::MemoryMutatesOnly { .. }
-                | Proposition::MemoryEffectSummary { .. }
-                | Proposition::HeapAllocationFreed { .. }
-        ) {
-            saw_memory_effect = true;
         }
     }
     if share_append {
@@ -2524,7 +2472,7 @@ mod mandatory_integer_obligation_tests {
     // A cached path must retain canonical source metadata and must not turn
     // an unresolved verification condition into a fact for the next member.
     #[test]
-    fn prepared_path_delta_matches_fresh_context_and_complete_source_replacement() {
+    fn prepared_path_delta_matches_fresh_context_with_retained_producer_records() {
         let predicate = |name: &str| Proposition::Predicate {
             name: name.to_string(),
             arguments: vec![],
@@ -2574,8 +2522,10 @@ mod mandatory_integer_obligation_tests {
         )
         .unwrap();
         assert_eq!(merged.facts, fresh_facts);
-        assert_eq!(merged.facts[0], upgraded);
-        assert_eq!(merged.facts[1], new_fact);
+        assert_eq!(merged.facts.len(), 3);
+        assert_eq!(merged.facts[0], left_facts[0]);
+        assert_eq!(merged.facts[1], upgraded);
+        assert_eq!(merged.facts[2], new_fact);
         assert_eq!(merged.obligations, fresh_obligations);
         assert_eq!(merged.changed_obligations, vec![0, 2]);
         assert_eq!(
@@ -3126,5 +3076,43 @@ mod shared_reconstruction_tests {
     mod scaling_tests {
         use super::*;
         include!("../../scaling_tests/kernel/reasoning/path_facts/shared_reconstruction_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod certified_merge_tests {
+    use super::*;
+
+    #[test]
+    fn certified_merge_keeps_already_known_facts_and_the_original_prefix() {
+        let condition = ConditionTerm::equal(
+            MachineTerm::Variable(Variable(1024000)),
+            MachineTerm::constant(7),
+        );
+        let proposition = Proposition::ConditionIs(condition.clone(), true);
+        let context = PureFactContext::new().assume_condition(condition, true);
+        let prefix: ExecutionFacts = vec![ExecutionPureFact::new(proposition.clone())].into();
+        let produced: ExecutionFacts = vec![ExecutionPureFact::certified(proposition)].into();
+        let (merged, changed) = merge_facts_with_changes(&prefix, &produced, &context).unwrap();
+        assert_eq!(changed, vec![1]);
+        assert_eq!(merged.len(), 2);
+        assert!(!prefix[0].is_certified());
+        assert!(!merged[0].is_certified());
+        assert!(merged[1].is_certified());
+        assert!(std::sync::Arc::ptr_eq(
+            merged.plain_fact_at(0).unwrap(),
+            prefix.plain_fact_at(0).unwrap(),
+        ));
+        assert!(std::sync::Arc::ptr_eq(
+            merged.plain_fact_at(1).unwrap(),
+            produced.plain_fact_at(0).unwrap(),
+        ));
+        let retained = assumptions_with_path_context(&context, &merged, &[]);
+        assert!(retained.proves_exact(merged[1].proposition()));
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/reasoning/path_facts/certified_merge_tests.rs");
     }
 }
