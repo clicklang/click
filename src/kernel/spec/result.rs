@@ -181,13 +181,21 @@ impl SpecValue {
         if let (Some((format, left)), Some((right_format, right))) =
             (self.machine(), right.machine())
             && format == right_format
-            && matches!(
+            && (matches!(
                 format,
                 MachineIntegerType::Int32
                     | MachineIntegerType::UInt32
                     | MachineIntegerType::Int64
                     | MachineIntegerType::UInt64
-            )
+            ) || (matches!(
+                format,
+                MachineIntegerType::Int8
+                    | MachineIntegerType::UInt8
+                    | MachineIntegerType::Int16
+                    | MachineIntegerType::UInt16
+            ) && !matches!(op, ComparisonOperator::Equal | ComparisonOperator::NotEqual)
+                && left.literal().is_some()
+                && right.literal().is_some()))
         {
             let relation = match op {
                 ComparisonOperator::Equal | ComparisonOperator::NotEqual => CompareRelation::Equal,
@@ -344,6 +352,29 @@ impl SpecCallArgument {
             }
         }
     }
+}
+
+/// Assemble supported typed arguments without a native call payload. Exact
+/// opaque descriptors keep the existing application-owned compatibility path.
+pub(super) fn common_call_arguments(arguments: &[SpecCallArgument]) -> Option<Vec<KernelTerm>> {
+    let mut importer = KernelTermImport::default();
+    arguments
+        .iter()
+        .map(|argument| match argument {
+            SpecCallArgument::Shared(root) => Some(root.clone()),
+            SpecCallArgument::Native(PureFunctionArgument::Value(
+                ProgramValue::Pointer(_) | ProgramValue::PointerInteger(_) | ProgramValue::Void,
+            ))
+            | SpecCallArgument::Native(PureFunctionArgument::ArrayRef { .. }) => None,
+            SpecCallArgument::Native(PureFunctionArgument::Value(
+                crate::kernel::integer_c_value!(term),
+            )) if matches!(term, MachineTerm::PointerAddress(..)) => None,
+            SpecCallArgument::Native(value) => {
+                let root = importer.argument(value);
+                (!matches!(root.node(), KernelTermNode::Legacy(_))).then_some(root)
+            }
+        })
+        .collect()
 }
 
 /// Call payloads retain word expressions and preserve opaque descriptors.

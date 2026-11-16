@@ -1243,7 +1243,7 @@ fn flat_composite_return_carries_its_body_through_frontier_and_projection() {
     .unwrap();
     let mut views = Vec::new();
     for projection in projected {
-        assert_eq!(projection.frontier.as_ref().unwrap().len(), 3);
+        assert_eq!(projection.frontier.len(), 3);
         let (next, inserted) = destination
             .unchecked_with_supported_facts_from_occurrence_with_memory_and_occurrences(
                 projection.destination,

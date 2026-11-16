@@ -900,3 +900,83 @@ fn pointer_comparison_spelling_does_not_export_extent_payloads() {
         );
     }
 }
+
+#[test]
+fn narrow_literal_comparison_spelling_ignores_unrelated_locals() {
+    use crate::kernel::{CompareRelation as R, MachineIntegerType as T};
+    for format in [T::Int8, T::UInt8, T::Int16, T::UInt16] {
+        let mut first_work = None;
+        for size in [0, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut state = ExecutionState::new();
+            for index in 0..size {
+                state = state.with_local(format!("unused_{index}"), int32(index));
+            }
+            let word = |n: i64| {
+                crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
+            };
+            let proposition = Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format,
+                    relation: R::LessEqual,
+                    left: Box::new(word(9)),
+                    right: Box::new(word(100)),
+                },
+                true,
+            );
+            let (raised, work) = crate::instrumentation::measure_deterministic_work(|| {
+                synthesize_surface_proposition(&proposition, ParameterBinding::default(), &state)
+                    .unwrap()
+            });
+            let baseline = *first_work.get_or_insert(work);
+            assert_eq!(work, baseline, "{format:?}, {size} unrelated locals");
+            assert_eq!(
+                relower_written_proposition(&raised, &state).unwrap(),
+                proposition
+            );
+        }
+    }
+}
+
+#[test]
+fn narrow_comparison_spelling_scales_with_the_selected_proposition() {
+    use crate::kernel::{CompareRelation as R, MachineIntegerType as T};
+    for size in [8, 32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state = ExecutionState::new();
+        let word = |n: i64| {
+            crate::kernel::machine_integer::range::constant_word(T::UInt8, &n.into()).unwrap()
+        };
+        let atom = Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: T::UInt8,
+                relation: R::GreaterEqual,
+                left: Box::new(word(9)),
+                right: Box::new(word(5)),
+            },
+            true,
+        );
+        // Grow explicit input without hitting the independent spelling-depth
+        // limit: a balanced tree has logarithmic nesting.
+        let mut layer = vec![atom; size];
+        while layer.len() > 1 {
+            layer = layer
+                .chunks_exact(2)
+                .map(|pair| Proposition::And(Box::new(pair[0].clone()), Box::new(pair[1].clone())))
+                .collect();
+        }
+        let proposition = layer.pop().unwrap();
+        let (raised, work) = crate::instrumentation::measure_deterministic_work(|| {
+            synthesize_surface_proposition(&proposition, ParameterBinding::default(), &state)
+                .unwrap()
+        });
+        assert!(
+            work >= size && work <= 64 * size,
+            "{size} comparisons: {work} work"
+        );
+        assert_eq!(
+            relower_written_proposition(&raised, &state).unwrap(),
+            proposition
+        );
+    }
+}

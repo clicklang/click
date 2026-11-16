@@ -2944,9 +2944,8 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
-    // A native 8- or 16-bit comparison is spelled as the Integer comparison
-    // of its operands' values, which lowers back to it (the Integer form of
-    // exact observations of one format is its native comparison).
+    // Keep the narrow interpretation even when rewriting removed the last
+    // symbolic operand. Observing a literal as Integer would discard its type.
     if let ConditionTerm::Compare {
         format:
             format @ (MachineIntegerType::Int8
@@ -2958,23 +2957,59 @@ fn synthesize_surface_atomic_proposition(
         right,
     } = condition
     {
-        let observe = |term: &MachineTerm| -> Option<crate::kernel::SharedIntegerTerm> {
-            crate::kernel::IntegerTerm::from_machine(*format, term.clone()).map(Into::into)
+        // Symbolic observations retain their established Integer spelling.
+        // A literal beside one such observation is recovered at that format.
+        if format.constant_from_term(left).is_none() || format.constant_from_term(right).is_none() {
+            let observe = |term: &MachineTerm| -> Option<crate::kernel::SharedIntegerTerm> {
+                crate::kernel::IntegerTerm::from_machine(*format, term.clone()).map(Into::into)
+            };
+            let (l, r) = (observe(left)?, observe(right)?);
+            let integer = match relation {
+                CompareRelation::LessThan => ConditionTerm::IntegerLessThan(l, r),
+                CompareRelation::LessEqual => ConditionTerm::IntegerLessEqual(l, r),
+                CompareRelation::GreaterThan => ConditionTerm::IntegerGreaterThan(l, r),
+                CompareRelation::GreaterEqual => ConditionTerm::IntegerGreaterEqual(l, r),
+                CompareRelation::Equal => ConditionTerm::IntegerEqual(l, r),
+            };
+            return synthesize_surface_atomic_proposition(
+                &Proposition::ConditionIs(integer, *value),
+                parameter_binding,
+                state,
+                bound_variables,
+            );
+        }
+        let operand = |term: &MachineTerm| {
+            // Narrow suffixes such as `9u8` require a Rust sidecar. Every
+            // narrow value fits an ordinary int32 literal under this cast.
+            let value: i32 = format
+                .constant_from_term(term)
+                .expect("both narrow operands are literal")
+                .to_integer()
+                .try_into()
+                .expect("a narrow value fits int32");
+            synthesize_observation_operand(
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(
+                    value as u32,
+                ))),
+                format.program_type(),
+            )
         };
-        let (l, r) = (observe(left)?, observe(right)?);
-        let integer = match relation {
-            CompareRelation::LessThan => ConditionTerm::IntegerLessThan(l, r),
-            CompareRelation::LessEqual => ConditionTerm::IntegerLessEqual(l, r),
-            CompareRelation::GreaterThan => ConditionTerm::IntegerGreaterThan(l, r),
-            CompareRelation::GreaterEqual => ConditionTerm::IntegerGreaterEqual(l, r),
-            CompareRelation::Equal => ConditionTerm::IntegerEqual(l, r),
+        let comparison = ClickProposition::Comparison {
+            left: operand(left)?,
+            operator: match relation {
+                CompareRelation::LessThan => ComparisonOperator::LessThan,
+                CompareRelation::LessEqual => ComparisonOperator::LessEqual,
+                CompareRelation::GreaterThan => ComparisonOperator::GreaterThan,
+                CompareRelation::GreaterEqual => ComparisonOperator::GreaterEqual,
+                CompareRelation::Equal => ComparisonOperator::Equal,
+            },
+            right: operand(right)?,
         };
-        return synthesize_surface_atomic_proposition(
-            &Proposition::ConditionIs(integer, *value),
-            parameter_binding,
-            state,
-            bound_variables,
-        );
+        return Some(if *value {
+            comparison
+        } else {
+            ClickProposition::Not(Box::new(comparison))
+        });
     }
     let (left, operator, right) = match condition {
         ConditionTerm::Compare {

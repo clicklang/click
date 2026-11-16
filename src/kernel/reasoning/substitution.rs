@@ -5346,6 +5346,44 @@ mod spec_carrier_substitution_binder_tests {
 mod machine_integer_substitution_tests {
     use super::*;
 
+    #[test]
+    fn narrow_order_substitution_retains_literal_comparisons_in_both_carriers() {
+        use crate::kernel::{CompareRelation as R, MachineIntegerType as T};
+        for format in [T::Int8, T::UInt8, T::Int16, T::UInt16] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let variable = Variable(999705);
+            let word = |n: i64| {
+                crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
+            };
+            for relation in [R::LessThan, R::LessEqual, R::GreaterThan, R::GreaterEqual] {
+                let condition = ConditionTerm::Compare {
+                    format,
+                    relation,
+                    left: Box::new(MachineTerm::Variable(variable)),
+                    right: Box::new(word(5)),
+                };
+                let expected = ConditionTerm::Compare {
+                    format,
+                    relation,
+                    left: Box::new(word(9)),
+                    right: Box::new(word(5)),
+                };
+                assert_eq!(
+                    substitute_bitvector_variable_in_condition(&condition, variable, &word(9)),
+                    expected
+                );
+                let root = crate::kernel::KernelTermImport::default().condition(&condition);
+                let mapped =
+                    substitute_bitvector_variable_in_common_condition(&root, variable, &word(9))
+                        .unwrap();
+                assert_eq!(
+                    crate::kernel::KernelTermExport::condition(&mapped).unwrap(),
+                    expected
+                );
+            }
+        }
+    }
+
     #[cfg(test)]
     mod scaling_tests {
         include!(
@@ -5440,7 +5478,11 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                 let closed_order = *relation != CompareRelation::Equal
                     && matches!(
                         format,
-                        MachineIntegerType::Int32
+                        MachineIntegerType::Int8
+                    | MachineIntegerType::UInt8
+                    | MachineIntegerType::Int16
+                    | MachineIntegerType::UInt16
+                    | MachineIntegerType::Int32
                             | MachineIntegerType::UInt32
                             | MachineIntegerType::Int64
                             | MachineIntegerType::UInt64
@@ -5737,7 +5779,11 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
         } if *relation != CompareRelation::Equal
             && matches!(
                 format,
-                MachineIntegerType::Int32
+                MachineIntegerType::Int8
+                    | MachineIntegerType::UInt8
+                    | MachineIntegerType::Int16
+                    | MachineIntegerType::UInt16
+                    | MachineIntegerType::Int32
                     | MachineIntegerType::UInt32
                     | MachineIntegerType::Int64
                     | MachineIntegerType::UInt64

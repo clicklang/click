@@ -3,6 +3,9 @@ use super::*;
 use crate::kernel::MachineCastSpelling as E;
 
 pub(in crate::kernel::spec) fn cast(value: &SpecValue, target: ProgramType) -> Option<KernelTerm> {
+    if let Some(result) = float_producing_cast(value, target) {
+        return Some(result);
+    }
     if let Some(boolean) = value.boolean() {
         return Some(KernelTerm::boolean_cast(
             MachineIntegerType::from_program_type(target)?,
@@ -13,6 +16,45 @@ pub(in crate::kernel::spec) fn cast(value: &SpecValue, target: ProgramType) -> O
         .or_else(|| cast_widening(value, target))
         .or_else(|| cast_narrowing(value, target))
         .or_else(|| cast_wide(value, target))
+}
+
+/// Float-producing conversions preserve shared operands. Float-to-integer
+/// conversion keeps the existing finite/range-obligation producer boundary.
+fn float_producing_cast(value: &SpecValue, target: ProgramType) -> Option<KernelTerm> {
+    let target_format = KernelFloatType::from_program_type(target)?;
+    let root = value.shared()?;
+    let source = value.program_type();
+    if let Some(float) = value.float() {
+        if source == target {
+            return Some(root.clone());
+        }
+        if let Some(bits) = float.constant_bits() {
+            let literal = match float.format() {
+                KernelFloatType::Float32 => MachineTerm::constant(bits as u32),
+                KernelFloatType::Float64 => MachineTerm::uint64_constant(bits),
+            };
+            let native = MachineTerm::opaque_conversion(
+                format!(
+                    "c_{}_to_{}",
+                    crate::kernel::program_type_spelling(source),
+                    crate::kernel::program_type_spelling(target)
+                ),
+                literal,
+            );
+            return Some(KernelTermImport::default().float(target_format, &native));
+        }
+    } else {
+        let format = MachineIntegerType::from_program_type(source)?;
+        if format.format().bits() > 64
+            || !root.is_shared_machine_operand()
+            || root.machine_constant_reading().is_some()
+        {
+            // The existing literal producer owns integer rounding. Its native
+            // input is a scalar result, not a symbolic prefix to reconstruct.
+            return None;
+        }
+    }
+    KernelTerm::numeric_float_convert(target, source, root.clone()).ok()
 }
 
 /// Narrowing retains the existing modular truncation and low-word rules.
