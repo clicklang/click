@@ -68,13 +68,7 @@ int32 walk(const uint8* p, int32 n) {
    have p == old(p) + (old(n) - n) by {
     rewrite(p, at(before_pointer, p) + 1);
     rewrite(to_integer(old(n) - n), to_integer((old(n) - at(before_pointer, n)) + 1));
-    arithmetic_certificate rules {
-     premise 0: at(before_pointer, p) == old(p) + (old(n) - at(before_pointer, n)) => at(before_pointer, p) == old(p) + (old(n) - at(before_pointer, n));
-     premise 1: 0 <= to_integer(old(n) - at(before_pointer, n)) => 0 <= to_integer(old(n) - at(before_pointer, n));
-     premise 2: to_integer(old(n) - at(before_pointer, n)) <= 14 => to_integer(old(n) - at(before_pointer, n)) <= 14;
-     pointer_translation relation 0 bounds [1, 2] => at(before_pointer, p) + 1 == old(p) + ((old(n) - at(before_pointer, n)) + 1);
-     conclusion 0;
-    }
+    solve() using { at(before_pointer, p) == old(p) + (old(n) - at(before_pointer, n)); 0 <= to_integer(old(n) - at(before_pointer, n)); to_integer(old(n) - at(before_pointer, n)) <= 14; };
    }
    have 0 <= to_integer(old(n) - n) by solve() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
    have to_integer(old(n) - n + n) == to_integer(old(n)) by solve() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };

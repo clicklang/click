@@ -388,8 +388,7 @@ pub(super) fn verify_execution_theorem(
         Arc::new(function_source_registry.for_contract_proof()),
         tactics,
     )?;
-    let completed = finish_contract_body_root(&block, &verified)?
-        .ok_or_else(|| error("the one-call proof did not open a whole-contract root"))?;
+    let completed = finish_contract_body_root(&block, &verified)?;
     let rule = completed
         .to_reusable_rule()
         .expect("a synthetic one-call function is never a program entry");

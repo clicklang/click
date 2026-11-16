@@ -5,7 +5,6 @@ use super::*;
 use crate::kernel::proof::quantified_equivalence_index_key;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{IntegerRangeFoldIndex, IntegerTerm, LoweringIntroduction, SharedIntegerTerm};
-use crate::surface::SignedArithmeticStep;
 
 // These tests measure local proof updates rather than fixture setup.
 // A 64-fold fact increase still rejects linear copies through the existing
@@ -14826,100 +14825,6 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
         Some(&surface_goal("chosen")),
         "internal captured values must not replace authored proof names"
     );
-}
-
-#[test]
-fn signed_certificate_premise_keeps_machine_addition_when_printed() {
-    use crate::kernel::proof::signed_arithmetic::{
-        SignedArithmeticCertificate, SignedArithmeticNode, signed_arithmetic_claim,
-    };
-    let x = MachineTerm::Variable(Variable(985_600));
-    let y = MachineTerm::Variable(Variable(985_601));
-    let z = MachineTerm::Variable(Variable(985_602));
-    let compare = |relation, left, right| {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation,
-                left: Box::new(left),
-                right: Box::new(right),
-            },
-            true,
-        )
-    };
-    let sum = MachineTerm::add_at(MachineIntegerType::Int32, y.clone(), z.clone());
-    let premise = compare(CompareRelation::Equal, x.clone(), sum);
-    let mut facts = vec![premise.clone()];
-    for term in [y.clone(), z.clone()] {
-        facts.push(compare(
-            CompareRelation::LessEqual,
-            MachineTerm::constant(0),
-            term.clone(),
-        ));
-        facts.push(compare(
-            CompareRelation::LessEqual,
-            term,
-            MachineTerm::constant(100),
-        ));
-    }
-    let mut context = pure_identity_fixture();
-    context.values = BTreeMap::from([
-        ("x".into(), ProgramValue::Int32(x)),
-        ("y".into(), ProgramValue::Int32(y)),
-        ("z".into(), ProgramValue::Int32(z)),
-    ]);
-    let predicates = PredicateEnvironment::new(&[]);
-    let functions = ClickFunctionEnvironment::new(&[]);
-    let theorems = TheoremEnvironment::new(&[]);
-    let root = Proof::for_pure_goal(
-        "native premise",
-        &facts,
-        premise.clone(),
-        &context,
-        SpecDefinitions::new(&predicates, &functions),
-        &theorems,
-    );
-    let variable = |name: &str| {
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name.into()))
-    };
-    let surface = ClickProposition::Comparison {
-        left: variable("x"),
-        operator: ComparisonOperator::Equal,
-        right: ContractExpression::Add(Box::new(variable("y")), Box::new(variable("z"))),
-    };
-    let plan = SignedArithmeticCertificate {
-        nodes: vec![SignedArithmeticNode::Premise {
-            index: 0,
-            result: signed_arithmetic_claim(&premise).unwrap(),
-        }],
-        conclusion: 0,
-    };
-    let certificate = root
-        .signed_plan_to_surface_certificate(&plan, &[(premise.clone(), surface.clone())], &surface)
-        .unwrap();
-    let SignedArithmeticStep::Premise { proposition, .. } = &certificate.nodes[0] else {
-        panic!("expected premise");
-    };
-    let printed = crate::surface::printing::source_click_proposition(proposition);
-    let file = crate::surface::parser::parse_file_items(&format!(
-        "theorem t() {{ requires {printed}; ensures true; }}"
-    ))
-    .unwrap();
-    let reparsed = file.theorem_definitions()[0].requires()[0]
-        .theorem_proposition()
-        .unwrap();
-    let lowered = root
-        .lower_surface_proposition_direct(&reparsed, "printed premise")
-        .unwrap();
-    let Proposition::ConditionIs(condition, truth) = &premise else {
-        unreachable!()
-    };
-    let retained = Proposition::ConditionIs(
-        crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(condition)
-            .unwrap(),
-        *truth,
-    );
-    assert_eq!(lowered, retained, "{printed}");
 }
 
 #[test]

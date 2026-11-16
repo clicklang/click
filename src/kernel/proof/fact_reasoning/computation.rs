@@ -309,7 +309,7 @@ fn integer_product_identity(term: &IntegerTerm) -> Option<&SharedIntegerTerm> {
 /// expands a polynomial or chooses a rewrite location.
 pub(super) fn integer_distribution_step(condition: &ConditionTerm) -> bool {
     fn product(a: &SharedIntegerTerm, b: &SharedIntegerTerm) -> SharedIntegerTerm {
-        IntegerTerm::multiply(a.as_ref().clone(), b.as_ref().clone()).into()
+        IntegerTerm::Multiply(a.clone(), b.clone()).into()
     }
     fn direction(a: &SharedIntegerTerm, b: &SharedIntegerTerm) -> bool {
         let IntegerTerm::Multiply(x, y) = a.as_ref() else {
@@ -327,9 +327,9 @@ pub(super) fn integer_distribution_step(condition: &ConditionTerm) -> bool {
                 (product(factor, p), product(factor, q))
             };
             let expected = if subtract {
-                IntegerTerm::subtract(u.as_ref().clone(), v.as_ref().clone())
+                IntegerTerm::Subtract(u, v)
             } else {
-                IntegerTerm::add(u.as_ref().clone(), v.as_ref().clone())
+                IntegerTerm::Add(u, v)
             };
             if &expected == b.as_ref() {
                 return true;
@@ -357,6 +357,11 @@ pub(super) fn integer_linear_comparison(condition: &ConditionTerm) -> Option<boo
         | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
         _ => return None,
     };
+    // Intrinsic widening and literal observations have cached value readings.
+    // Use the same fact-independent atoms as affine planning; no surrounding
+    // context or machine operation identity is imported by this computation.
+    let left = left.read_through_ref();
+    let right = right.read_through_ref();
     let mut seen = HashSet::new();
     let mut order = Vec::new();
     let mut pending = vec![(left.clone(), false), (right.clone(), false)];

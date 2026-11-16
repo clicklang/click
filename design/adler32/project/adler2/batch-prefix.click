@@ -43,7 +43,7 @@ theorem adler_native_deferred_b_step(pos: int32, a: uint32, b: uint32, a0: uint3
   rewrite(to_integer(b3 + (a3 + v3)), to_integer(b3) + to_integer(a3 + v3));
   rewrite(to_integer(a3 + v3), to_integer(a3) + to_integer(v3));
   rewrite(to_integer(pos + 4), to_integer(pos) + to_integer(4));
-  have to_integer(b) + (to_integer(pos) + 4) * to_integer(a) == (to_integer(b) + to_integer(pos) * to_integer(a)) + 4 * to_integer(a) by { arithmetic_certificate rules { integer_polynomial_identity bounds [] => to_integer(b) + (to_integer(pos) + 4) * to_integer(a) == (to_integer(b) + to_integer(pos) * to_integer(a)) + 4 * to_integer(a); conclusion 0; } }
+  have to_integer(b) + (to_integer(pos) + 4) * to_integer(a) == (to_integer(b) + to_integer(pos) * to_integer(a)) + 4 * to_integer(a) by { solve() using {  }; }
   rewrite(to_integer(b) + (to_integer(pos) + 4) * to_integer(a), (to_integer(b) + to_integer(pos) * to_integer(a)) + 4 * to_integer(a));
   have to_integer(b0) + (to_integer(a0) + to_integer(v0)) == to_integer(b0) + to_integer(a0) + to_integer(v0) by solve() using {};
   rewrite(to_integer(b0) + (to_integer(a0) + to_integer(v0)), to_integer(b0) + to_integer(a0) + to_integer(v0));
@@ -90,26 +90,9 @@ theorem adler_nonnegative_deferred_b_step(pos: int32, a: uint32, b: uint32, a0: 
   have 0 <= to_integer(v1);
   have 0 <= to_integer(v2);
   have 0 <= to_integer(v3);
-  have 0 <= adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)) by { unfold(adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3))); arithmetic_certificate { premise 0: 0 <= to_integer(a) => 0 <= to_integer(a); premise 1: 0 <= to_integer(a0) => 0 <= to_integer(a0); premise 2: 0 <= to_integer(a1) => 0 <= to_integer(a1); premise 3: 0 <= to_integer(a2) => 0 <= to_integer(a2); premise 4: 0 <= to_integer(a3) => 0 <= to_integer(a3); add 0, 1 => 0 <= to_integer(a) + to_integer(a0); add 5, 2 => 0 <= to_integer(a) + to_integer(a0) + to_integer(a1); add 6, 3 => 0 <= to_integer(a) + to_integer(a0) + to_integer(a1) + to_integer(a2); add 7, 4 => 0 <= to_integer(a) + to_integer(a0) + to_integer(a1) + to_integer(a2) + to_integer(a3); conclusion 8; } }
+  have 0 <= adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)) by { unfold(adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3))); solve() using { 0 <= to_integer(a); 0 <= to_integer(a0); 0 <= to_integer(a1); 0 <= to_integer(a2); 0 <= to_integer(a3); }; }
   rewrite(adler_lane_b(to_integer(b) + to_integer(pos + 4) * to_integer(a), to_integer(a1 + v1), to_integer(a2 + v2), to_integer(a3 + v3), to_integer(b0 + (a0 + v0)), to_integer(b1 + (a1 + v1)), to_integer(b2 + (a2 + v2)), to_integer(b3 + (a3 + v3))), adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)) + 4 * adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)) + 4 * to_integer(v0) + 3 * to_integer(v1) + 2 * to_integer(v2) + to_integer(v3));
-  arithmetic_certificate {
-   premise 0: 0 <= adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)) => 0 <= adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3));
-   premise 1: 0 <= adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)) => 0 <= adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3));
-   premise 2: 0 <= to_integer(v0) => 0 <= to_integer(v0);
-   premise 3: 0 <= to_integer(v1) => 0 <= to_integer(v1);
-   premise 4: 0 <= to_integer(v2) => 0 <= to_integer(v2);
-   premise 5: 0 <= to_integer(v3) => 0 <= to_integer(v3);
-   scale 1 by 4 => 0 <= 4 * adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3));
-   scale 2 by 4 => 0 <= 4 * to_integer(v0);
-   scale 3 by 3 => 0 <= 3 * to_integer(v1);
-   scale 4 by 2 => 0 <= 2 * to_integer(v2);
-   add 0, 6 => 0 <= adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)) + 4 * adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3));
-   add 10, 7 => 0 <= adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)) + 4 * adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)) + 4 * to_integer(v0);
-   add 11, 8 => 0 <= adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)) + 4 * adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)) + 4 * to_integer(v0) + 3 * to_integer(v1);
-   add 12, 9 => 0 <= adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)) + 4 * adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)) + 4 * to_integer(v0) + 3 * to_integer(v1) + 2 * to_integer(v2);
-   add 13, 5 => 0 <= adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)) + 4 * adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)) + 4 * to_integer(v0) + 3 * to_integer(v1) + 2 * to_integer(v2) + to_integer(v3);
-   conclusion 14;
-  }
+  solve() using { 0 <= adler_lane_b(to_integer(b) + to_integer(pos) * to_integer(a), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)); 0 <= adler_lane_a(to_integer(a), to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)); 0 <= to_integer(v0); 0 <= to_integer(v1); 0 <= to_integer(v2); 0 <= to_integer(v3); };
  }
 }
 
@@ -124,34 +107,10 @@ theorem adler_canonical_lane_b_floor(b: Integer, a1: Integer, a2: Integer, a3: I
  requires 0 <= b3;
  ensures 0 <= adler_lane_b(b, a1, a2, a3, b0, b1, b2, b3) by {
   have 0 <= b + 4 * (b0 + b1 + b2 + b3) by {
-   arithmetic_certificate {
-   premise 0: 0 <= b => 0 <= b;
-   premise 1: 0 <= b0 => 0 <= b0;
-   premise 2: 0 <= b1 => 0 <= b1;
-   premise 3: 0 <= b2 => 0 <= b2;
-   premise 4: 0 <= b3 => 0 <= b3;
-   scale 1 by 4 => 0 <= 4 * b0;
-   scale 2 by 4 => 0 <= 4 * b1;
-   scale 3 by 4 => 0 <= 4 * b2;
-   scale 4 by 4 => 0 <= 4 * b3;
-   add 0, 5 => 0 <= b + 4 * b0;
-   add 9, 6 => 0 <= b + 4 * b0 + 4 * b1;
-   add 10, 7 => 0 <= b + 4 * b0 + 4 * b1 + 4 * b2;
-   add 11, 8 => 0 <= b + 4 * b0 + 4 * b1 + 4 * b2 + 4 * b3;
-   conclusion 12;
-  }
+   solve() using { 0 <= b; 0 <= b0; 0 <= b1; 0 <= b2; 0 <= b3; };
   }
   have a1 + 2 * a2 + 3 * a3 <= 393120 by {
-   arithmetic_certificate {
-    premise 0: a1 <= 65520 => a1 <= 65520;
-    premise 1: a2 <= 65520 => a2 <= 65520;
-    premise 2: a3 <= 65520 => a3 <= 65520;
-    scale 1 by 2 => 2 * a2 <= 131040;
-    scale 2 by 3 => 3 * a3 <= 196560;
-    add 0, 3 => a1 + 2 * a2 <= 196560;
-    add 5, 4 => a1 + 2 * a2 + 3 * a3 <= 393120;
-    conclusion 6;
-   }
+   solve() using { a1 <= 65520; a2 <= 65520; a3 <= 65520; };
   }
   unfold(adler_lane_b(b, a1, a2, a3, b0, b1, b2, b3));
   solve() using { 0 <= b + 4 * (b0 + b1 + b2 + b3); a1 + 2 * a2 + 3 * a3 <= 393120; };
@@ -210,10 +169,7 @@ theorem adler_native_deferred_b_prefix_step(bytes: uint8[], n: int32, pos: int32
   have to_integer(pos + 4) == to_integer(pos) + to_integer(4);
   rewrite(to_integer(pos + 4), to_integer(pos) + to_integer(4));
   have to_integer(b) + (to_integer(pos) + 4) * to_integer(a) == (to_integer(b) + to_integer(pos) * to_integer(a)) + 4 * to_integer(a) by {
-   arithmetic_certificate rules {
-    integer_polynomial_identity bounds [] => to_integer(b) + (to_integer(pos) + 4) * to_integer(a) == (to_integer(b) + to_integer(pos) * to_integer(a)) + 4 * to_integer(a);
-    conclusion 0;
-   }
+   solve() using {  };
   }
   rewrite(to_integer(b) + (to_integer(pos) + 4) * to_integer(a), (to_integer(b) + to_integer(pos) * to_integer(a)) + 4 * to_integer(a));
   known();

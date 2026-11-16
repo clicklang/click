@@ -50,3 +50,39 @@ fn selected_root_goal_and_script_join_do_not_scan_other_obligations() {
         assert!(state.goal.first_open().is_some());
     }
 }
+
+#[test]
+fn completing_a_body_retires_only_its_own_declared_cell() {
+    for size in [1usize, 16, 64, 256, 1024] {
+        let (entry, execution) =
+            crate::kernel::api::contract_certification::entry_authority_tests::checked_execution(
+                0, None,
+            )
+            .unwrap();
+        let function = entry.function.clone();
+        let names = (0..size)
+            .map(|index| format!("unrelated{index}"))
+            .chain([function.name().to_string()])
+            .collect::<BTreeSet<_>>();
+        let program = crate::kernel::ProgramContractProof::open_ordinary(
+            names.clone(),
+            BTreeSet::new(),
+            &BTreeSet::new(),
+            &[&function],
+            &[],
+            names,
+        )
+        .unwrap();
+        let root = WholeContractRoot::open_in_program(entry, &program.bodies()).unwrap();
+        let attempt = root.begin_attempt();
+        prove_strategy(attempt.root(), execution).publish(false);
+        attempt.commit();
+        let (body, work) =
+            crate::instrumentation::measure_deterministic_work(|| root.finish().unwrap());
+        assert!(work <= 96, "{size}: {work} body completion work");
+        assert!(matches!(
+            finish_program(program, body.termination_rule().clone()),
+            Err(crate::kernel::ProgramContractFailure::UnfinishedBody(_))
+        ));
+    }
+}

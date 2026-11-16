@@ -282,29 +282,6 @@ impl CompletedContractExecution {
     pub(crate) fn execution(&self) -> &Arc<CheckedFunctionExecution> {
         &self.execution
     }
-    pub(crate) fn with_checked_resource_claims(
-        mut self,
-        claims: Vec<Vec<FunctionContractClaimKey>>,
-    ) -> Self {
-        self.execution =
-            Arc::new(Arc::unwrap_or_clone(self.execution).with_checked_resource_claims(claims));
-        self
-    }
-    pub(crate) fn with_checked_resource_transitions(mut self, transitions: Vec<bool>) -> Self {
-        self.execution = Arc::new(
-            Arc::unwrap_or_clone(self.execution).with_checked_resource_transitions(transitions),
-        );
-        self
-    }
-    pub(crate) fn with_checked_returned_resources(
-        mut self,
-        resources: Vec<ResourceContext>,
-    ) -> Self {
-        self.execution = Arc::new(
-            Arc::unwrap_or_clone(self.execution).with_checked_returned_resources(resources),
-        );
-        self
-    }
     pub(crate) fn publish(self, preferred: bool) {
         if let Some(root) = self.root {
             root.publish(self.execution, preferred, self.loop_rules);
@@ -422,6 +399,116 @@ mod tests {
                 Err(crate::kernel::ProgramContractFailure::UnfinishedBody(_))
             ),
             "another root's completed body cannot close the captured parent goal"
+        );
+    }
+
+    #[test]
+    fn unopened_ordinary_body_cannot_be_replaced_by_an_independent_rule() {
+        let (entry, _) =
+            crate::kernel::api::contract_certification::entry_authority_tests::checked_execution(
+                0, None,
+            )
+            .unwrap();
+        let function = entry.function.clone();
+        let names = BTreeSet::from([function.name().to_string()]);
+        let program = crate::kernel::ProgramContractProof::open_ordinary(
+            names.clone(),
+            BTreeSet::new(),
+            &BTreeSet::new(),
+            &[&function],
+            &[],
+            names,
+        )
+        .unwrap();
+        let raw = function;
+        let rules = [VerifiedFunctionRule {
+            pointer_result: None,
+            function: raw,
+            descent_completion: None,
+            concrete_loop_exits: None,
+            loop_semantics: LoopSemantics::ApplyVerifiedRules,
+            checked_callees: None,
+            applied_tactics: BTreeSet::new(),
+        }];
+        let early = program
+            .bootstrap_termination_rules(crate::kernel::ProgramTerminationInputs {
+                independent: crate::kernel::IndependentTerminationInputs {
+                    rules: &rules,
+                    bodies: &[&rules[0].function],
+                },
+                plans: &[],
+                assumed_terminating: &BTreeSet::new(),
+                diverging_contracts: &BTreeSet::new(),
+                has_unselected_functions: false,
+            })
+            .unwrap();
+        assert_eq!(
+            early.rules.len(),
+            1,
+            "an auxiliary C termination proof is not an ordinary contract-body proof"
+        );
+        assert!(matches!(
+            finish_program(program, rules[0].clone()),
+            Err(crate::kernel::ProgramContractFailure::UnfinishedBody(_))
+        ));
+    }
+
+    #[test]
+    fn early_termination_uses_owned_bodies_and_preserves_pending_declarations() {
+        let (entry, execution) =
+            crate::kernel::api::contract_certification::entry_authority_tests::checked_execution(
+                0, None,
+            )
+            .unwrap();
+        let function = entry.function.clone();
+        let pending = ProgramFunction::new(
+            ProgramType::Void,
+            "not_yet_opened",
+            vec![],
+            ProgramStatement::Skip,
+        );
+        let names = BTreeSet::from([function.name().to_string(), pending.name().to_string()]);
+        let program = crate::kernel::ProgramContractProof::open_ordinary(
+            names.clone(),
+            BTreeSet::new(),
+            &BTreeSet::new(),
+            &[&function, &pending],
+            &[],
+            names,
+        )
+        .unwrap();
+        let root = WholeContractRoot::open_in_program(entry, &program.bodies()).unwrap();
+        let attempt = root.begin_attempt();
+        prove_strategy(attempt.root(), execution).publish(false);
+        attempt.commit();
+        let body = root.finish().unwrap();
+        let mut shadow = body.termination_rule().clone();
+        shadow.descent_completion = None;
+        shadow.concrete_loop_exits = None;
+        shadow.function.source_body = crate::kernel::program_while(
+            crate::kernel::program_expression::int32_literal(1),
+            vec![],
+            ProgramStatement::Skip,
+        );
+        let early = program
+            .bootstrap_termination_rules(crate::kernel::ProgramTerminationInputs {
+                independent: crate::kernel::IndependentTerminationInputs {
+                    rules: &[shadow],
+                    bodies: &[&pending],
+                },
+                plans: &[],
+                assumed_terminating: &BTreeSet::new(),
+                diverging_contracts: &BTreeSet::new(),
+                has_unselected_functions: false,
+            })
+            .unwrap();
+        assert_eq!(
+            early.rules.len(),
+            1,
+            "the completed body remains available without legacy evidence"
+        );
+        assert!(
+            matches!(finish_program(program, body.termination_rule().clone()), Err(crate::kernel::ProgramContractFailure::UnfinishedBody(name)) if name == "not_yet_opened")
         );
     }
 

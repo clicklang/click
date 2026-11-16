@@ -65,7 +65,7 @@ multiplication, negation, truncating quotient/remainder, and comparison
 nodes, including constant operands. It does not compute `1 + 1` or replace
 its equality with `2` by `true`. Arithmetic checking evaluates these claims;
 constant subexpressions are evaluated once per shared node in the arithmetic
-certificate's comparison form, with numeric work charged before computation.
+proof's comparison form, with numeric work charged before computation.
 Each shared node records whether it contains only literal arithmetic, computed
 from its immediate children at construction. This lets checking keep symbolic
 nonlinear atoms opaque without traversing their operand DAGs. A signed numeral such as `-2`
@@ -167,11 +167,11 @@ holds (`examples/rust-slices`).
 The `Integer` arithmetic family reads a native comparison as the Integer
 comparison of its operands' observations (`integer_affine_claims`). A 64-bit or
 32-bit equality records no signedness, so it has both readings and a
-certificate may use either; an order names its signedness, so a `uint32`
+proof may use either; an order names its signedness, so a `uint32`
 order reads as the `uint32` observations of its operands. The
 special Integer rules read only the premises a node cites. `solve` refutes a
 native goal as its Integer reading and spells each cited native fact through
-its written operands, so an expanded certificate cites the facts as written
+its written operands, so an expanded proof cites the facts as written
 (`mdtests/solve_observes_an_operation_term_by_term.md`,
 `mdtests/solve_proves_a_64_bit_equality_from_bounds.md`).
 
@@ -207,7 +207,7 @@ arithmetic does not overflow. Bitwise operations remain machine operations.
 Checked Integer equality rewriting preserves lowering's multiplication by zero
 and one identities. These folds only remove expression nodes; other products
 retain their shared symbolic structure. Rewritten native observations therefore
-keep a checked source spelling for arithmetic certificates, including unsigned
+keep a checked source spelling for ordinary arithmetic proofs, including unsigned
 values above the sign bit. See the [identity rewrite regression](https://github.com/clicklang/click/blob/master/mdtests/integer_observed_product_identity_rewrite.md).
 
 Division and remainder are deliberately deferred from the current supported
@@ -221,7 +221,7 @@ toward zero. A zero divisor is a definedness obligation.
 
 Every checked conversion and every future checked division must establish its
 definedness in the current proof context before a theorem or execution
-certificate is accepted. Evaluation facts are not arbitrary assumptions.
+proof step is accepted. Evaluation facts are not arbitrary assumptions.
 
 A statement whose evaluation condition is not established where the statement is
 written is refused as it is lowered, and the refusal is written for whoever wrote
@@ -349,66 +349,37 @@ undefined-counterexample cases.
 
 ## Arithmetic automation and trust boundary
 
-The supported arithmetic automation is linear: addition, subtraction, order,
-and multiplication by constants, together with explicit machine-conversion
-and checked C-arithmetic laws. Complete symbolic products, truncating quotients
-and remainders are opaque affine atoms keyed by exact shared Integer identity.
-Linear certificates can add, subtract, scale and compare those values using
-explicit premises, without opening their operands or deriving nonlinear laws.
-Evaluation guards remain mandatory before a term can enter a proposition or
-certificate. There is no promise of general nonlinear automation.
+Arithmetic search plans over exact observations, linear combinations, strict
+orders, disequalities, type ranges, and the supported guarded machine laws.
+Products with symbolic factors, quotients, remainders and folds remain opaque
+affine atoms unless an explicit law opens them. This is bounded search, not a
+promise of arbitrary nonlinear automation.
 
-Pure theorem requirements lower in source order. Earlier requirements supply
-evaluation evidence for later Integer observations, such as `defined(n + 1)`
-before `to_integer(n + 1) == value`. Every requirement remains in the exported
-theorem premises, so an application must establish the guards as well as the
-observations. Lowering shares the persistent premise context between clauses.
+Private plans are search data. They are not a source tactic, serialized proof
+step, or kernel graph interpreter. Surface emits ordinary `have`, `apply ...
+using`, `rewrite`, `normalize() using`, and logical steps. Expansion prints
+those steps and fresh verification checks them without arithmetic discovery.
+No certificate fallback remains.
 
+Integer composition uses the library's order laws. Strict inequalities use
+integer discreteness; disequalities split the relevant order cases;
+refutations introduce the negated claim and derive a contradiction. Rounding
+uses the existing truncation and order laws. Scaling is constant-coefficient
+Integer normalization, with explicit distributivity rewrites where needed.
 
-Arithmetic planning emits explicit, inspectable evidence. The kernel validates
-operators, coefficients, terms, premises, and range claims independently;
-zero-premise tautologies are valid, while sparse or altered premise indices
-fail locally. Expansion prints ordinary proof steps, and ordinary verification
-rechecks those steps without rerunning the planner. Profiling and audit use the
-same checked boundary.
+A selected product range is checked from four operand endpoint bounds, using
+the four corner products. A selected cast or operation identity cites its
+exact range or definedness evidence. Such a normalization reads only its
+explicit operands and listed premises; unrelated facts cannot repair a missing
+premise. Numeric work is charged before computation.
 
-Two rules make the mathematical `Integer` family complete for refutations
-over the integers, the form a simplex-based planner produces (see the
-[historical solver design](https://github.com/clicklang/click/blob/2175760b9/design/smt-auto-stage1.md)). `negated_goal`
-assumes the integer negation of a bound goal: for the goal `t <= 0` it is
-`-t + 1 <= 0`, and an equality goal is refused. A conclusion node may then be a
-contradiction, a constant claim such as `1 <= 0`. This is sound with or
-without the negated goal: if the premises and the negation are inconsistent,
-the goal holds, and if the premises alone are inconsistent, every goal holds.
-`divide` divides a non-strict bound `g*t + k <= 0` by a positive `g` that
-divides every coefficient, giving `t + ceil(k / g) <= 0`. Over the integers
-this is equivalent to its source, which is the Chvatal-Gomory rounding step
-(`mdtests/integer_certificate_refutation_and_rounding.md`). Both are local
-node checks charged by bit size, like `scale`.
-
-A bounded nonlinear rule is available explicitly: the `integer_product_bounds`
-node in the `rules` arithmetic family consumes four named constant-endpoint
-inequalities for the two operands. Multiplication is monotone in each operand
-when the other is fixed, with its direction set by that operand's sign; its
-extrema on a rectangle therefore occur at the four corners. The kernel checks
-those four exact products against the claimed constant lower or upper bound,
-including intervals crossing zero. This does not extend the arithmetic planner
-or reinterpret a machine product as an exact Integer product. The rule also
-checks interval ordering, proposition polarity, references, operand identity,
-and the selected conclusion.
-
-Operand comparison uses shared Integer node identities. One node reads exactly
-four premises; unused premises and deep operand subtrees do not increase its
-checking work. Big-integer multiplication and comparisons are charged from the
-numeric bit lengths before arithmetic starts. Deterministic regressions measure
-node inventories, unused facts, operand depth, magnitude, and the work-budget
-boundary. Pure Integer certificates round-trip and expand/reverify. A synthetic
-unchanged C identity wrapper checks a mathematical machine-observer product range
-across
-verification, expansion/reverification, profiling, and retained audit.
+Pure theorem requirements lower in source order. Earlier requirements can
+supply evaluation evidence for later observations, but every requirement
+remains an application obligation. Facts can justify evaluation; they cannot
+change the term an expression lowers to.
 
 Fold reasoning uses explicit empty-range and next-element laws. Fold terms are
-opaque affine atoms in the bounded certificate fragment. The planner accepts
+opaque affine atoms in selected arithmetic. The planner accepts
 selected checked premises and explicit constant scaling; it does not enumerate
 a symbolic range or invent an arithmetic assumption. The unchanged C
 summation regression proves exact functional correctness with an `Integer`
@@ -583,7 +554,7 @@ the source type fits the destination. Narrowing and signedness changes that
 can change the numeric value stay machine observations of the converted
 value; they are not equated with the source's mathematical Integer.
 
-The `integer_cast_identity` certificate also recognizes the legacy 32/64-bit
+Selected cast normalization also recognizes the legacy 32/64-bit
 conversion terms used by ordinary C and the shared modulo boundary. It compares
 the converted observation with the existing typed conversion policy, retaining
 the canonical typed-cast check and the two explicit source bounds. Signedness
@@ -801,7 +772,7 @@ computes its Integer product, and checks both signed 128-bit bounds. Unknown
 bounds retain separate normal and signed-overflow paths; known failed bounds
 produce signed overflow. The normal symbolic result uses the shared checked
 Integer-to-machine node, retaining its machine type rather than erasing it to
-an Integer. Existing product-bounds certificates can discharge these guards.
+an Integer. Explicit product-bound normalizations can discharge these guards.
 At least one operand must already be signed 128-bit; a later widening cast
 cannot rescue overflow in an earlier narrow multiplication. Operand undefined
 behavior and proof obligations remain attached to the result.
@@ -841,26 +812,21 @@ Wide source pointers, references, arrays, and record fields
 remain unsupported, as do ordinary C and Rust wide source spellings. Internal
 C identities model the wider memory profile without granting source admission.
 
-## Work budgets and certificate scaling
+## Work budgets and proof scaling
 
-Numeric work has two independent costs: reachable expression visits and
-magnitude-dependent arithmetic work, including numeric bit length. A numeric
-operation consumes the active verification budget before doing the operation.
-Lowering also checks the configured simple-operation allowance. A counter added
-after arithmetic is insufficient, and a weighted charge must not be simulated
-by a loop of unit checkpoints.
+Arithmetic planning and source construction run under the existing smart
+work budget. A miss must remain prompt; do not increase limits to accommodate
+an expanded proof. Explicit checking is charged against the written proof,
+selected syntax, and relevant state delta, never unrelated environment size.
 
-Shared DAG traversals, substitution, alpha comparison, certificate checking,
-and state matching must scale with the selected expression and certificate,
-not unrelated proof state. Premise references are explicit and checked before
-storage allocation. Large constants do not silently truncate, and enormous
-mathematical ranges do not trigger uncontrolled enumeration.
+Integer linear normalization uses cached intrinsic readings of literals and
+widenings before its existing DAG traversal. Conditional guard substitution
+reconstructs only the changed comparison's two operand roots. Neither reads
+ambient facts. Deterministic regressions cover growing related and unrelated
+inputs; source expansion and fresh replay must also pass.
 
-The trust boundary is independent kernel checking of the resulting proof
-object and certificate. C source remains the verification boundary: the
-unchanged summation program is the regression, and proof authors must not add
-no-op C branches, proof-only locals, helper rerouting, or renamed identifiers
-to make an Integer proof succeed.
+C, C++ and Rust source remain the verification boundary. Adapt proofs or fix
+the verifier rather than rewriting a correct program to suit search.
 
 ## Related references
 
@@ -1030,7 +996,7 @@ copy the proof history.
 
 Smart `apply` proposes source evidence for argument evaluation as well as the
 callee's declared requirements. It rechecks capture using only that proposed
-evidence before emitting a simple `apply ... using` certificate. Removing a
+evidence before emitting a simple `apply ... using` proof step. Removing a
 required guard makes expansion/reverification fail. A guard without a supported
 source spelling produces a bounded search refusal; explicit `using` evidence
 can supply it. Capturing an observation supplies no native range or narrowing
@@ -1079,396 +1045,133 @@ artifacts, and retained audit use the shared kernel behavior.
 
 ## Truncating division bounds
 
-The explicit `integer_division_bounds` node in the `rules` arithmetic family
-checks a non-strict constant bound on `truncating_quotient(n, d)` or
-`truncating_remainder(n, d)`. Four named premises supply constant-endpoint
-numerator lower/upper and divisor lower/upper bounds, in that order. Both
-intervals must be ordered, and the divisor interval must exclude zero. Positive
-and negative divisor intervals are supported; an interval crossing zero is
-refused even when another ambient fact says the divisor is nonzero.
+The explicit normalizer checks supported quotient and remainder bounds from
+listed dividend and divisor ranges. Both evaluation and the mathematical law
+keep their guards: a nonzero divisor, the signed `MIN / -1` exception when
+applicable, and any source or destination range obligations.
 
-Quotient extrema are the four corner quotients, computed with truncation toward
-zero. Remainder bounds use the largest divisor magnitude minus one, narrowed by
-the numerator's magnitude and sign. These remainder bounds are conservative.
-When every numerator magnitude is strictly below every divisor magnitude, the
-remainder equals the numerator and its input interval is retained exactly.
-
-The checker reads only its four named premises and uses shared Integer operand
-identities. It validates polarity, endpoints, operand correspondence, references,
-and the selected conclusion. Magnitude-dependent work is charged before
-arbitrary-precision division. Regressions compare signed small-value oracles,
-large bounds, false claims, zero-crossing and inverted ranges, malformed
-certificates, unused premise populations, certificate node counts, and exact
-work-budget boundaries.
-
-The companion `integer_relation_transport bounds [i, j] => P` node names an
-Integer equality followed by either an Integer equality or a non-strict bound.
-It replaces exactly one whole operand of the second relation by its equal;
-equality orientation may be reversed, but relation kind and truth polarity are
-preserved. It does not rewrite inside an expression, search ambient facts, or
-reinterpret a nonlinear term as affine arithmetic. Its checking work is constant
-per node and independent of unused premises. This supplies explicit composition
-from a native operation observation to its mathematical bound, and then from a
-range-checked cast observation to the exact quotient/remainder result.
-
-Expression lowering still requires the operation's nonzero guard in scope.
-A numeric interval does not silently supply that evaluation guard. The fixture
-states it explicitly, while the division-bound checker separately validates that
-its own divisor interval excludes zero.
-
-This is a mathematical truncating-division rule, separate from the planned
-Euclidean division laws. It supplies no implicit machine observer ranges and
-proves no native definedness or cast identity. Compose it with the existing
-native division guards, exact quotient/remainder observations, and
-`integer_cast_identity` for range-checked narrowing. See the checked
-[division-bound fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_division_bounds.md).
-
+The planner can select these rules and emit `normalize() using { ... }`.
+It does not publish an arithmetic graph node. Rewriting a relation through
+proved Integer equalities is ordinary congruence; every equality and bound
+it cites remains visible in the expanded proof. Missing guards, mismatched
+operands, false endpoints and unsupported interval crossings are refused.
 
 ## Observing defined signed 64-bit operations
 
-`integer::int64_subtract_to_integer` extends the signed int32 observation laws to the
-full signed 64-bit carrier. Like the int32 laws, it is a proved library
-theorem: its pinned proof turns `defined(left - right)` into the Integer range
-of the difference and applies the `integer_operation_identity` certificate
-rule. The exact observation requires the native `defined(left - right)` fact.
-Modular machine terms alone do not establish mathematical subtraction, and an
-overflow case cannot discharge the guard. Declaration checks retain the signed
-width, operation, guard polarity and exact conclusion. The in-range addition
-identity `to_integer(left + right) == to_integer(left) + to_integer(right)`
-needs no library law: `solve()` proves it from `defined(left + right)`.
+A defined signed native addition or subtraction has its exact Integer
+observation. The `integer::int64_add_to_integer` and corresponding subtraction
+laws expose this fact through ordinary application. The argument's native
+definedness is a separate premise, not a consequence of merely observing it.
 
-The unchanged Bitcoin division sidecar states that addition identity as a
-`have` with its proof omitted for the three possible correction
-values after proving each native sum is defined. Explicit Integer arithmetic then bounds those corrected observations
-before the original short-circuit expression executes. Signed order reflection
-restores native bounds on the actual returned value. This proves output bounds
-for both rounding branches; identifying the result as a mathematical
-floor/ceiling remains separate. Missing and false guards, expansion,
-reverification and deterministic application scaling cover the subtraction
-law.
-See the checked
-[operation fixture](https://github.com/clicklang/click/blob/master/mdtests/int64_integer_operation_bridges.md).
-
+The normalizer can check the observation identity using the exact lower and
+upper bounds for its mathematical result. Planning proves those bounds first
+and then emits the explicit normalization. It does not infer machine safety
+from a later desired equality.
 
 ## Exact unsigned 64-bit observations
 
-The shared `uint64` observation bridges preserve unsigned semantics, including
-values above `INT64_MAX`. Their premise is explicit; `defined(a + b)` alone
-cannot exclude unsigned wrapping.
+Unsigned operations wrap in the program. An Integer observation agrees with
+an exact sum, difference or product only when the corresponding mathematical
+result is in the unsigned range. The ordinary `integer::uint64_add_to_integer`,
+`integer::uint64_subtract_to_integer`, and multiplication laws require that
+evidence. A subtraction therefore needs its operands in the appropriate order.
 
-| Standard theorem | Required premise | Exact observation |
-| --- | --- | --- |
-| `integer::uint64_add_to_integer` | `A + B <= UINT64_MAX` | `to_integer(a + b) == A + B` |
-| `integer::uint64_multiply_to_integer` | `A * B <= UINT64_MAX` | `to_integer(a * b) == A * B` |
-| `integer::uint64_subtract_to_integer` | `B <= A` | `to_integer(a - b) == A - B` |
-| `integer::uint64_divide_to_integer` | `b != 0u64 and B != 0` | `to_integer(a / b) == truncating_quotient(A, B)` |
-| `integer::uint64_remainder_to_integer` | `b != 0u64 and B != 0` | `to_integer(a % b) == truncating_remainder(A, B)` |
-| `integer::uint64_to_integer_less_equal_implies_less_equal` | `A <= B` | `a <= b` |
-
-Here `A = to_integer(a)`, `B = to_integer(b)` and
-`UINT64_MAX = 18446744073709551615`. The divide and remainder laws
-are kernel standard theorems with checked parameter types, declaration shape,
-exact premise and conclusion. The add, multiply and subtract laws are proved:
-their pinned proofs derive the Integer range of the exact result from the
-premise and the operand ranges (`integer_product_bounds` for the product's
-lower bound) and apply the `integer_operation_identity` certificate rule. The order law is proved by `known()`: a
-machine comparison and the Integer comparison of its operands' observations
-lower to one fact, so its conclusion is its premise. The forward
-direction needs no lemma: `known()` or `solve` reads `a <= b` as
-`A <= B` directly.
-These laws use the same observation model and theorem application path as the
-existing uint32 and signed bridges, without changing source-language arithmetic. Division states both the native
-and observed nonzero facts so the machine operation and mathematical
-truncation each have an explicit evaluation domain. The bridge does not
-infer either domain from the other.
-They apply to the shared machine model used by C, C++ and Rust.
-
-Boundary models cover zero, the sign bit, UINT64_MAX, wrapping and the Bitcoin
-fast-path operand limits. Regressions reject forged declarations, omitted or
-weakened guards, wrong widths and signed carriers. Ordinary C functions and
-modular callers verify all five operation laws; expansion reverifies, and
-explicit order-bridge applications retain deterministic scaling. See the checked
-[unsigned fixture](https://github.com/clicklang/click/blob/master/mdtests/unsigned_integer_bridges.md).
-
+Type-range facts are explicit premise-free normalizations. A selected
+operation identity reads its exact range pair. Guarded native division and
+remainder retain their nonzero-divisor obligations; a value-preserving
+narrowing retains its destination bounds. These facts do not make all native
+arithmetic exact.
 
 ## Restoring signed native facts
 
-Signed `int32` and `int64` observations preserve and reflect non-strict order.
-The standard-library `integer::int32_to_integer_less_equal_implies_less_equal` and
-`integer::int64_to_integer_less_equal_implies_less_equal` lemmas restore native order from an exact
-Integer comparison. The forward direction, and injectivity at `int64`, need no
-lemma: the machine comparison and the Integer comparison of the observations
-lower to one fact, so `known()` or `solve` reads one as the other.
-`integer::uint32_to_integer_equal_implies_equal` is an injectivity bridge for the unsigned
-32-bit carrier: equal pattern bits do not depend on signedness, and every
-pattern has one unsigned Integer value.
+A proved Integer comparison can supply the corresponding native comparison
+when it refers to the same exact observations and carrier. The expanded proof
+uses ordinary normalization or the existing library laws, retaining the
+written source operands and signedness. Native evaluation and conversion
+obligations remain separate.
 
-These are width-specific library theorems proved by `known()`: the
-native comparison and the Integer comparison of the observations lower to one
-fact. They require no overflow fact because an already-existing bit pattern
-has one exact Integer value.
-They infer neither implicit ranges nor narrowing identities. Prove the cast
-identity and transport its Integer bounds before applying the reverse order
-bridge to the narrowed native result. The C++ regression uses a range strictly
-smaller than either native carrier, retains expansion/reverification and audit,
-and frames unrelated memory through a modular caller.
-
-Regressions refuse missing or reversed premises, wrong carriers, false native
-bounds, and incorrect certificate references. See the checked
-[signed bridge fixture](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
-
+Planner comparisons may use several carrier readings of one machine value.
+Source construction selects the reading of the actual claim; it must not
+silently substitute the signed reading for an unsigned order. Refusal controls
+cover missing bounds and false native comparisons.
 
 ## Bounds excluding constants
 
-The explicit `integer_bound_exclusion bounds [i] => P` `rules` certificate
-excludes a constant strictly outside one named non-strict Integer bound. From
-`lo <= x` it can establish `x != c` when `c < lo`; from `x <= hi` it can
-establish `x != c` when `hi < c`. Equality at the endpoint is refused. The
-result may reverse the disequality operands; a false equality has the same
-meaning, while a true equality or false disequality is refused.
+A machine type's range together with excluded endpoint constants can sharpen
+an Integer bound. Selected arithmetic names each exclusion, and ordinary
+proof steps establish the sharpened bound. A disequality alone gives no
+arbitrary order between two symbolic values.
 
-The checker reads one premise and compares shared Integer operand identities.
-It accepts nonlinear operands without collecting affine terms. Endpoint and
-excluded-constant comparison work is charged from their bit lengths before the
-comparison. Unused facts do not change checking work, and certificate checking
-scales linearly with its node count. This rule supplies no implicit machine
-range or evaluation guard.
-
-For a positive `int32` divisor, first prove `1 <= d` and use the existing
-`integer::int32_less_equal_to_integer` bridge. Excluding `0` and `-1` from
-`1 <= to_integer(d)` then proves the wide signed division guards without adding
-them to the contract. See the checked
-[bound-exclusion fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_bound_exclusion.md).
-
+Checking uses the selected exclusions and the operand's intrinsic format.
+It neither searches ambient exclusions nor accepts omitted evidence. The
+strictness and refutation fixtures exercise both valid deductions and missing
+premise controls.
 
 ## Range-checked modulo cast identities
 
-The explicit `integer_cast_identity` node in the `rules` arithmetic certificate
-family proves that a typed modulo cast preserves its mathematical value.
-Its result equates the cast's full-width Integer observation with the exact
-source observation, in either direction. Two named premises must have the
-forms `lo <= source` and `source <= hi`, with constant endpoints in that order.
-The kernel checks that the interval is ordered and entirely inside the
-cast destination's signed or unsigned range. Stronger intervals are allowed.
+A native integral conversion preserves numeric value when its source lies
+in the destination range. `normalize() using { lower_bound; upper_bound; }`
+checks the matching observation identity using those explicit bounds. A
+widening may need only its intrinsic source range; a narrowing needs the
+actual destination range. Signedness and conversion encoding remain part of
+the term.
 
-The rule checks the cast's source and destination metadata, operand format,
-observation type, proposition polarity, referenced premises, and selected
-conclusion. It reads only the two named premises. Integer node identities
-avoid ambient searches, and endpoint comparisons charge numeric bit lengths.
-Regressions check boundary modulo oracles, forged formats and payloads,
-missing or altered bounds, unrelated equality claims, constant checking work
-with growing unused premise populations, and linear work with certificate nodes.
-
-The Integer-to-machine conversion is a conversion too: `to_integer(to_T(z))
-== z`, either side first, from `lo <= z` and `z <= hi` inside `T`'s range,
-at every format, 128 bits included (`conversion::integer_conversion`, one
-match on the observation's root). `to_T(z)` denotes an element of `T` that
-is `z` whenever `z` lies in `T`, and its lowering owes `z`'s range wherever
-it appears, so the rule states that meaning and nothing more. `solve` plans
-it as it plans a cast's identity, spelling `z` as the operand the
-observation writes, and the eight library `to_*_round_trip` laws are proved
-by it
-(`mdtests/an_integer_converted_to_a_machine_type_reads_back.md`).
-
-Nested conversions are compared with the canonical modulo cast of the source
-observation, including a narrowing cast that discards an intermediate cast.
-Unsigned byte readback also admits an exact low-bit mask: a `uint32` source
-masked by `255` for a `uint8` observation or `65535` for a `uint16` observation.
-Both forms require the same two range bounds. A narrow observation of the
-source's 32-bit carrier, or of the low word of a 64-bit source, is admitted
-too, again with bounds on the source observation inside the destination
-range; every narrowing the kernel produces is a conversion node, so such an
-observation arises only from a word already known to lie in the range. A
-widening of an 8- or 16-bit value into a type that contains it is admitted
-when the observation reads the same word, or its 32-to-64-bit sign
-extension (zero extension for an unsigned source); the word is the value's
-canonical carrier, so the source's own range serves as the two bounds. C's narrowing into those types is a typed
-generic `Cast` node; the rule compares it with the canonical cast, and
-also looks through a C conversion from a 32-bit type that contains the
-destination (`w as int32 as uint16`) to the carrier beneath it, under the same
-bounds. A different mask, operand, or destination is refused; widening after an intervening truncation cannot be
-mistaken for a direct cast of the original value. These forms connect native
-Rust narrowing stores to their full-width modulo results.
-
-This is a shared proof rule, not a change to C++ conversion semantics or an
-automatic range inference rule. Outside the destination range, native modulo
-casts remain defined and may change the mathematical value. Proof-side checked
-conversions retain their existing range obligations; C conversions owe none. The certificate does not establish that its source arithmetic is
-defined: observing a native quotient or remainder still requires its nonzero
-and signed overflow guards.
-
-C++ regressions cover signed/unsigned 128-bit values narrowed to signed/unsigned
-32/64-bit values, explicit casts and implicit returns, guarded native quotient
-and remainder narrowing, modular caller framing, offline artifacts, expansion,
-and retained audit. The source profile remains unchanged; the current artifact schema is 45.
-
+This does not turn a C modulo conversion into a checked conversion, discharge
+an enclosing native operation's definedness, or justify an out-of-range
+identity. Rust checked operations and C++ conversion profiles retain their
+own obligations. The wide-narrowing import tests cover symbolic values,
+quotients and remainders with positive and negative controls.
 
 ## In-range machine sums, differences and products
 
-The `integer_operation_identity` node in the `rules` family proves that a
-machine `+`, `-` or `*` that does not wrap is the same operation on its
-operands' Integer values: `to_integer(a + b) == to_integer(a) +
-to_integer(b)`, or with `-` or `*`, in either orientation. The operation is
-of any format of 8 to 64 bits (`int`, `unsigned int`, `int64`, `uint64`, and
-the narrow formats, whose operations are the 32-bit word's), and each operand
-is observed in that same format. Two named premises `lo <= S` and `S <= hi`
-bound the stated Integer result `S` by constants inside the format's range,
-in that order. The kernel recomputes `S` from the observed operation
-(`kernel::machine_integer::identity::mathematical`) and reads only the two
-named premises (`mdtests/an_in_range_machine_difference_is_its_integer_difference.md`,
-`mdtests/an_operation_identity_bound_outside_its_type_is_refused.md`,
-`mdtests/integer_operation_identity_of_a_product.md`,
-`mdtests/a_product_identity_bound_outside_its_type_is_refused.md`).
+Selected arithmetic can prove observation identities for native sums,
+differences and supported products. Each identity has two ordinary premises:
+the mathematical result lies between its carrier's minimum and maximum.
+Planning proves inner operations before outer ones, so an outer bound can
+cite the already established inner observation identity.
 
-The Integer certificate's `type_range => MIN <= to_integer(v);` (or
-`to_integer(v) <= MAX`) states the range of a machine observation's type,
-with the type's exact endpoint. It needs no premise.
+Source construction retains the names and types supplied for observations.
+A newly introduced intermediate operation receives a source expression built
+from its named operands. Historical operands keep their recorded point or
+`old` anchor. The producer must carry these expressions into every generated
+`have` and application, including argument-domain obligations.
 
-`operation_bound => P;` states the bound a machine quotient, right shift,
-or remainder by a positive constant takes from its operand. Unsigned
-division truncates, which is the floor, so `q = x / c` with constant `c > 0`
-has `c * q <= x` and `x <= c * q + (c - 1)`; `x >> k`, for a constant `k`
-below the width, is `x / 2^k`; and `x % c <= c - 1`. Signed division
-truncates toward zero, so its remainder has the sign of `x`: `c * q - (c -
-1) <= x <= c * q + (c - 1)`, and `-(c - 1) <= x % c <= c - 1`. A signed
-arithmetic shift is still the floor, with the unsigned form. The kernel
-finds the operation among `P`'s machine observations and recomputes the
-bound (`kernel::machine_integer::bounds::operation_bound`). A divisor that
-is not a positive constant of the operation's format (a signed `0xfffffff8`
-is `-8`), a symbolic divisor, a shift by the width or more, and a narrow or
-128-bit operation give none
-(`mdtests/solve_bounds_a_signed_quotient_by_its_operand.md`).
-`excluded_bound N: D => P;` cites premise `N`, a disequality of a
-machine value with its type's minimum or maximum, as the bound it gives: an
-unsigned `v != 0` is `1 <= to_integer(v)` (`excluded_type_bound`).
-`less_than_from_not_equal i, N: D => P;` makes node `i`'s non-strict bound
-`t <= 0` strict, `t + 1 <= 0`, by premise `N`, a disequality whose
-difference is `t` or `-t` (`integer_disequality_claims`): over the integers
-`t <= 0` and `t != 0` leave `t <= -1`. It reads the one bound node and the
-one premise, as written or as a native comparison's Integer reading, so it
-holds at every format and over `Integer`. The refutation planner adds the
-strict rows only when the linear facts leave a counterexample, from an index
-of the premise and negated-goal bounds keyed by their difference, one
-lookup per disequality
-(`mdtests/a_bound_and_a_disequality_give_a_strict_64_bit_bound.md`).
+Exact comparisons of observations lower to the corresponding native
+comparison. Integer normalization reads intrinsic literal and widening values;
+it imports no arithmetic identity from ambient facts. Explicit selected
+premises supply all non-intrinsic identities.
 
-An Integer certificate premise that compares exact observations of one
-machine type, such as `1 <= to_integer(x)`, is also available when its native
-comparison (`1u32 <= x`) is: the two hold together, which is the converse of
-filing the native comparison beside an Integer fact.
+Product bounds can come from four operand range endpoints. That local check
+does not start a nonlinear search or make an overflowing product exact.
+Quotients, remainders, folds and opaque function applications remain atoms
+until an appropriate explicit law is applied.
 
-`solve`'s selected-premise arithmetic uses all three. When the Integer facts
-leave its refutation a
-counterexample, it retries with the facts' native comparisons read as
-Integer ones and with the type range of each machine observation, the
-operation bound of each quotient, shift, or remainder by a constant,
-and the bound each disequality with a type endpoint gives
-(`mdtests/solve_bounds_an_unsigned_quotient_by_its_operand.md`,
-`mdtests/solve_refuses_a_quotient_bound_past_the_floor.md`). When that
-also fails, it may assume the identity of each machine `+`, `-` or `*` it
-sees, reading a product of two observations as one opaque atom;
-for each identity the refutation uses, it proves the two bounds with the
-same arithmetic, applies `integer_operation_identity`, and then proves the
-goal. When the arithmetic misses a bound of a product `to_integer(a) *
-to_integer(b)`, the bound may still follow from the operands' type ranges:
-`solve` compares the four corner products with it and, when they give it,
-states each operand's two range bounds and proves the bound by
-`integer_product_bounds` over them, which is what `click expand` writes. So
-a `uint64` product's `0 <= to_integer(w) * to_integer(h)` needs no
-requirement, and `to_integer(w * h) == to_integer(w) * to_integer(h)`
-follows from the upper bound alone
-(`mdtests/a_product_of_64_bit_values_is_its_exact_product.md`,
-`mdtests/a_wrapping_64_bit_product_is_not_its_exact_product.md`). A product
-whose bounds still miss is left unplanned and the other identities are kept.
-So
-`ensures result == x - 1;` for an unsigned
-`x - 1u` verifies from `requires 1 <= x;` alone
-(`mdtests/solve_proves_an_in_range_machine_sum_is_its_integer_sum.md`). The
-retries run only after a miss, so a proof that needs none keeps its
-certificate. An operand that is itself an operation gets its own identity,
-proved first, so the bounds of `(a + b) + c` read `to_integer(a + b) ==
-to_integer(a) + to_integer(b)` and `result == a + b + c` needs no stated step
-(`mdtests/solve_observes_a_nested_sum_under_integer_arithmetic.md`). An
-equality goal is proved from its two bounds, each inside its own `have`; when
-the facts alone miss the first bound, the goal's own identities are proved
-once beforehand, so both bounds read them, and a goal that is one of them
-closes by `known`.
-
-A typed integral cast is assumed the same way: `to_integer((T)x) ==
-to_integer(x)`, proved by `integer_cast_identity` from `x`'s bounds inside
-`T`'s range. With `1u64 <= x` and `x < 1000u64`, `1u32 <= x as uint32` follows,
-and an `int` narrowed from a `long` reads its value the same way. A 64-to-32-bit
-word narrowing does not record its operand's signedness, so the identity names
-the operand the facts observe. An identity whose spelling names a different
-observation, such as the signed reading of an unsigned narrowing's word, which
-spells as the unsigned cast, is dropped and the refutation planned again
-(`mdtests/solve_reads_a_narrowing_cast_inside_its_range.md`,
-`mdtests/solve_does_not_read_a_narrowing_cast_outside_its_range.md`).
-`solve() using` plans `integer_cast_identity` for an identity goal from two
-listed constant bounds on the operand.
-
-These are the shapes `solve`'s selected-premise arithmetic reads: linear claims over observations, the
-facts' native comparisons, type ranges, operation and excluded bounds, and the identities of the in-range
-`+` and `-` the goal and facts observe, nested or not. A miss on a claim of
-that shape is a defect. A step that needs a choice is not in it: a cast that
-keeps its value only under a range condition (`int32` to `uint32`), a
-nonlinear fact, or a lemma to apply is written explicitly, as with
-`integer_cast_identity`.
-
-After its other searches, `solve` also closes a native comparison of exact
-observations, such as a machine `result <= 50`, by proving its Integer
-reading `to_integer(result) <= 50` this way; the Integer fact then supplies
-the native one. To cite a fact, `solve` needs a source spelling for it. A
-callee's Integer postcondition at the call site is spelled from the current
-state, an observation of a value the proof has since replaced is spelled at
-function entry (`old(*p)` for a written `*p`), and a native fact read as an
-Integer one is spelled from the native fact's own operands
-(`mdtests/solve_reads_a_call_postcondition_for_a_machine_bound.md`,
-`mdtests/solve_spells_a_replaced_value_at_function_entry.md`).
+Fresh expansion/replay regressions cover nested sums, narrow carriers,
+products, historical reads, called results, and missing range evidence.
 
 ## Bounded polynomial identities and quotient shifts
 
-The explicit `rules` node
-`integer_polynomial_identity bounds [] => L == R;` checks an equality in the
-Integer ring. It expands addition, subtraction, negation, and multiplication;
-all other roots, including truncating quotients, pure applications, folds, and
-machine observations, are opaque atoms identified by shared Integer DAG nodes.
-It never distributes native machine operations or cancels a denominator.
-Its bounds list must be empty: it reads no premise or ambient environment.
+Polynomial proof generation is a bounded slow strategy. It emits ordinary
+distributivity rewrites, linear normalizations and library applications.
+The simple checker recognizes the selected distributivity step; it does not
+expand an arbitrary polynomial. The retired polynomial graph checker and its
+independent expansion limits are gone.
 
-The checker uses an iterative DAG traversal with local memoized polynomial
-maps. Each node is expanded once, with hard limits of 256 ring DAG nodes,
-256 monomials per intermediate polynomial, degree 16, and 4096-bit
-coefficients. These limits bound each local map operation; exceeding a limit
-returns a prompt structural-limit refusal. Magnitude-dependent arithmetic, map
-operations, and monomial construction are charged before the work. There is
-no unbounded polynomial expansion or nonlinear search. Kernel regressions
-check fixed-width DAG growth, certificate-node growth, unrelated premise
-populations, expansion caps, and exact deterministic budget boundaries.
+Non-ring roots, including truncating quotients, pure applications, folds and
+machine observations, stay opaque. Polynomial reasoning does not distribute
+native operations or cancel a denominator.
 
-The companion node `integer_quotient_shift bounds [i, j] => P;` checks exactly
+The guarded quotient-shift identity is
 
 ```text
 truncating_quotient(x + d * k, d) == truncating_quotient(x, d) + k
 ```
 
-where `d` is a positive constant, premise `i` is `0 <= x`, and premise `j`
-is `0 <= k`. Operand identities, guard polarity, and references must match
-exactly. This follows from floor division on nonnegative numerators; it needs
-no divisibility or parity premise. Both guards matter because truncation can
-cross zero. Forms normalized away at lowering, such as division by one, are
-proved with `normalize` instead. The checker performs only the two explicit
-premise lookups and root-local shape checks; its work is independent of the
-unused premise population.
+for a positive constant `d`, `0 <= x` and `0 <= k`. The normalizer checks this
+selected identity from those explicit guards; `solve` can emit that ordinary
+step. Both guards matter because truncation can cross zero. No divisibility
+or parity assumption is introduced.
 
-`rewrite` accepts exact available mathematical Integer equalities as well as
-machine equalities. Integer substitution follows the arithmetic spine through
-products and quotients and pure-function arguments, refuses entry into internal binders,
-and uses the existing equality-admission and binder-capture checks. It does
-not infer an equality or rewrite ambient facts. Together these rules prove
-adler2's triangular successor and weighted lane-bound recurrence without
-changing its Rust source. See the
-[checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_polynomial_and_quotient_shift.md).
 ## Checked equality rewriting
 
 `rewrite(a, b)` accepts mathematical Integer equality alongside native,
@@ -1549,7 +1252,7 @@ characterizations and wider mode-specific result-fit profiles follow below.
 
 `integer::multiply_add(a, b, c)` is the exact Integer distributivity law
 `(a + b) * c == a * c + b * c`. It is a proof-backed library lemma using the
-shared bounded `integer_polynomial_identity` certificate, with no new axiom.
+ordinary distributivity rewrites and normalization, with no new axiom.
 It establishes no native multiplication safety and does not expand products
 during ordinary affine normalization.
 
@@ -1581,8 +1284,8 @@ that boundary.
 
 ## Scaled positive-divisor quotient bounds
 
-`integer_quotient_bound bounds [i, j] => b <= truncating_quotient(n, d);`
-checks exactly two named Integer premises: `b * d <= n`, followed by
+The normalizer checks a selected lower quotient bound from two explicit
+Integer premises: `b * d <= n`, followed by
 `1 <= d`. The upper form checks `n <= b * d` and concludes
 `truncating_quotient(n, d) <= b`. The bound `b` may be negative or symbolic.
 For a positive divisor, truncating division is monotone in its dividend and
@@ -1593,8 +1296,8 @@ normalized order; the checker does not search for polynomial equivalents.
 The proof-backed `integer::positive_divisor_quotient_lower` and
 `integer::positive_divisor_quotient_upper` library lemmas expose the rule.
 Division's nonzero guard and all native evaluation/narrowing guards remain
-separate obligations. The node reads two premise indices and shared operand
-identities; its work does not grow with unrelated premises or shared DAG depth.
+separate obligations. The check reads the two listed premises and shared operand identities; its
+work does not grow with unrelated premises or shared DAG depth.
 Opaque operands are never cloned; constant-product folding is charged before
 computation.
 See the [checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_quotient_bound.md).
@@ -1652,11 +1355,11 @@ endpoints. The modular caller frames unrelated memory. Neither `quot + 1` nor
 `quot - 1` is asserted to be defined unconditionally at those endpoints.
 See the [checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_correction_endpoint_bounds.md).
 
-Integer equality certificates produced from normalized opposite bounds now
+Integer equality proofs produced from normalized opposite bounds now
 retain the checked goal's spelling at their conclusion. For example, `b <= x`
 and `not (b + 1 <= x)` prove `x == b` even though the source operands are not
 syntactic opposites. The kernel still recomputes every premise and node; this
-adds no search or unchecked equality. Expansion preserves the certificate and
+adds no search or unchecked equality. Expansion preserves the ordinary proof and
 reverifies, including rejection of forged equality results.
 
 
@@ -1670,8 +1373,7 @@ operation and still requires definedness. See the
 
 ### Explicit multiplication ordering
 
-`integer_multiply_order bounds [i, j] => a * factor <= b * factor;`
-reads exactly `a <= b` and `0 <= factor`. With `factor <= 0` as the
+A selected multiplication-order normalization reads exactly `a <= b` and `0 <= factor`. With `factor <= 0` as the
 second premise it instead checks `b * factor <= a * factor`. Each product
 may put its factor on either side. Root-local constant, zero and one folding
 is matched without traversing opaque operands; constant multiplication work
@@ -1693,11 +1395,6 @@ the caller's fast paths remain separate obligations. See the
 When `peel` removes the final Integer fold application from a goal, ordinary
 source lowering may reduce its spelling to `true` while the kernel retains
 an Integer comparison such as `0 - 0 == 0` or `0 <= 0`.
-A trivial certificate preserves the constant comparison’s relation when it
-matches that kernel goal, including at the conclusion. The refreshed spelling
-is retained
-when its lowered Integer claim matches the kernel checker's normalized claim,
-or after a premise-free Integer certificate checks a truth reduced to a
-Boolean constant. Later arithmetic certificates still discharge the original
-kernel obligation; refreshing its presentation supplies no premise or memory
-authority.
+Ordinary normalization checks that retained constant comparison directly,
+even when the source presentation has reduced to `true`. Refreshing the
+presentation supplies no premise or memory authority.

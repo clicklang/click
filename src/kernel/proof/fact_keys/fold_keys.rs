@@ -11,6 +11,7 @@ pub(super) fn bindings() -> AlphaBindings {
         bitvector_scope: 0,
         next_scope_id: 1,
         state_aware: true,
+        checked_state_binder: None,
         raw_state_load_seen: false,
         registered_load_stack: BTreeSet::new(),
         registered_load_memo: HashMap::new(),

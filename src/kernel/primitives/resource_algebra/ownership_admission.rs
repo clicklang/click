@@ -28,7 +28,51 @@ pub(crate) struct PendingOwnershipAdmission<'a> {
     pub(super) assumptions: &'a PureFactContext,
 }
 
+/// The only new obligation for a constructed flat composite body is its
+/// boundary with the retained caller frame. Unsupported geometry stays on
+/// the compatibility path; it never counts as established separation.
+pub(crate) enum FlatBodyAdmission {
+    Admitted,
+    Conflict {
+        piece: Box<ResourceFact>,
+        held: Box<ResourceFact>,
+    },
+    Unsupported,
+}
+
 impl ResourceContext {
+    /// Admit a returned composite's already-constructed flat body against
+    /// this frame. The body producer established its own composition; query
+    /// only cross-boundary memory overlap, without inserting temporary child
+    /// owners or validating either side again. Tokens add and views duplicate.
+    pub(in crate::kernel) fn admit_returned_flat_body(
+        &self,
+        body: &crate::kernel::functions::ConstructedReturnBody,
+        assumptions: &PureFactContext,
+    ) -> FlatBodyAdmission {
+        #[cfg(test)]
+        let _fast =
+            crate::kernel::search::FastOperationScope::enter("returned flat body admission");
+        for piece in body.owned_memory_frontier() {
+            let _checking = crate::instrumentation::CheckingWorkScope::new(
+                "admit returned flat memory leaf",
+                1,
+            );
+            crate::instrumentation::record_deterministic_work(1);
+            match self.constant_owned_overlap(piece, assumptions) {
+                ConstantOwnedOverlap::Clear => {}
+                ConstantOwnedOverlap::Overlap(entry) => {
+                    return FlatBodyAdmission::Conflict {
+                        piece: Box::new(piece.clone()),
+                        held: Box::new(self.fact(entry).clone()),
+                    };
+                }
+                ConstantOwnedOverlap::Unsupported => return FlatBodyAdmission::Unsupported,
+            }
+        }
+        FlatBodyAdmission::Admitted
+    }
+
     /// Admit explicit resources using maintained indexes only. This operation
     /// never invokes discovery when the index cannot decide an overlap.
     pub(crate) fn admit_without_discovery(

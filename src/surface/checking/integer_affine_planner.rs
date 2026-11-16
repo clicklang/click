@@ -9,8 +9,8 @@
 
 use crate::kernel::Proposition;
 use crate::kernel::proof::integer_arithmetic::{
-    IntegerAffineAtom, IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticCertificate,
-    IntegerArithmeticNode, integer_affine_claims,
+    IntegerAffineAtom, IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticNode,
+    IntegerArithmeticPlan, integer_affine_claims,
 };
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
@@ -25,10 +25,10 @@ const MAX_PAIR_ATTEMPTS: usize = 4_096;
 /// written for one step, not an ambient context.
 const MAX_TRIPLE_CLAIMS: usize = 16;
 
-pub(super) fn plan_integer_affine_certificate(
+pub(super) fn plan_integer_affine(
     goal: &Proposition,
     premises: &[Proposition],
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     if premises.len() > MAX_SELECTED_PREMISES {
         return None;
     }
@@ -36,15 +36,15 @@ pub(super) fn plan_integer_affine_certificate(
     // kernel accepts a conclusion in either.
     integer_affine_claims(goal)
         .into_iter()
-        .find_map(|expected| plan_integer_affine_certificate_for(expected, premises))
+        .find_map(|expected| plan_integer_affine_for(expected, premises))
 }
 
-fn plan_integer_affine_certificate_for(
+fn plan_integer_affine_for(
     expected: IntegerAffineClaim,
     premises: &[Proposition],
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     if claim_is_integer_trivial(&expected) {
-        return Some(IntegerArithmeticCertificate {
+        return Some(IntegerArithmeticPlan {
             nodes: vec![IntegerArithmeticNode::Trivial { result: expected }],
             conclusion: 0,
         });
@@ -114,9 +114,9 @@ fn plan_integer_affine_certificate_for(
 fn plan_from_selected_claims(
     claims: &[(usize, IntegerAffineClaim)],
     expected: &IntegerAffineClaim,
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     if let Some((index, _)) = claims.iter().find(|(_, claim)| claim.eq(expected)) {
-        return Some(IntegerArithmeticCertificate {
+        return Some(IntegerArithmeticPlan {
             nodes: vec![IntegerArithmeticNode::Premise {
                 index: *index,
                 result: expected.clone(),
@@ -172,7 +172,7 @@ fn plan_from_selected_claims(
 fn plan_from_three_premises(
     claims: &[(usize, IntegerAffineClaim)],
     expected: &IntegerAffineClaim,
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     if expected.relation != IntegerAffineRelation::LessEqual || claims.len() > MAX_TRIPLE_CLAIMS {
         return None;
     }
@@ -258,7 +258,7 @@ struct EliminationRow {
 fn plan_by_equality_elimination(
     claims: &[(usize, IntegerAffineClaim)],
     expected: &IntegerAffineClaim,
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     let mut nodes = Vec::new();
     let mut rows: Vec<EliminationRow> = Vec::new();
     for (index, claim) in claims {
@@ -353,7 +353,7 @@ fn plan_by_equality_elimination(
 fn reachable_certificate(
     nodes: Vec<IntegerArithmeticNode>,
     conclusion: usize,
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     charge_planner_work(nodes.len().saturating_add(1))?;
     let mut needed = vec![false; nodes.len()];
     *needed.get_mut(conclusion)? = true;
@@ -386,7 +386,7 @@ fn reachable_certificate(
         renumbered[index] = retained.len();
         retained.push(node);
     }
-    Some(IntegerArithmeticCertificate {
+    Some(IntegerArithmeticPlan {
         conclusion: renumbered[conclusion],
         nodes: retained,
     })
@@ -402,7 +402,6 @@ fn for_each_node_source(node: &IntegerArithmeticNode, mut visit: impl FnMut(usiz
         | IntegerArithmeticNode::NegatedGoal { .. } => {}
         IntegerArithmeticNode::Scale { source, .. }
         | IntegerArithmeticNode::EqualityToLessEqual { source, .. }
-        | IntegerArithmeticNode::Divide { source, .. }
         | IntegerArithmeticNode::StrictFromDisequal { bound: source, .. } => visit(*source),
         IntegerArithmeticNode::Add { left, right, .. }
         | IntegerArithmeticNode::EqualityFromBounds {
@@ -466,15 +465,7 @@ fn remapped_node(
         IntegerArithmeticNode::NegatedGoal { result } => IntegerArithmeticNode::NegatedGoal {
             result: result.clone(),
         },
-        IntegerArithmeticNode::Divide {
-            source: from,
-            divisor,
-            result,
-        } => IntegerArithmeticNode::Divide {
-            source: source(*from)?,
-            divisor: divisor.clone(),
-            result: result.clone(),
-        },
+
         IntegerArithmeticNode::Trivial { result } => IntegerArithmeticNode::Trivial {
             result: result.clone(),
         },
@@ -560,7 +551,7 @@ fn plan_reduced_order_claim(
 /// premise node; every other node is copied with its references remapped.
 fn splice_certificate(
     nodes: &mut Vec<IntegerArithmeticNode>,
-    plan: &IntegerArithmeticCertificate,
+    plan: &IntegerArithmeticPlan,
     leaves: &[usize],
 ) -> Option<usize> {
     let mut mapping: Vec<usize> = Vec::with_capacity(plan.nodes.len());
@@ -718,7 +709,7 @@ fn integer_gcd(left: &BigInt, right: &BigInt) -> Option<BigInt> {
 fn plan_equality_from_opposite_bounds(
     claims: &[(usize, IntegerAffineClaim)],
     expected: &IntegerAffineClaim,
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     if expected.relation != IntegerAffineRelation::Equal {
         return None;
     }
@@ -741,7 +732,7 @@ fn plan_equality_from_opposite_bounds(
                 && upper.terms == opposite_terms
                 && upper.constant == -&expected.constant
             {
-                return Some(IntegerArithmeticCertificate {
+                return Some(IntegerArithmeticPlan {
                     nodes: vec![
                         IntegerArithmeticNode::Premise {
                             index: *lower_index,
@@ -769,7 +760,7 @@ fn plan_from_one_premise(
     index: usize,
     source: &IntegerAffineClaim,
     expected: &IntegerAffineClaim,
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     if source.relation == expected.relation
         && let Some(coefficient) = scale_factor(source, expected)
         && (source.relation == IntegerAffineRelation::Equal || coefficient >= BigInt::zero())
@@ -797,7 +788,7 @@ fn plan_from_one_premise(
     for reverse in [false, true] {
         let direction = equality_direction(source, reverse);
         if direction == *expected {
-            return Some(IntegerArithmeticCertificate {
+            return Some(IntegerArithmeticPlan {
                 nodes: vec![
                     IntegerArithmeticNode::Premise {
                         index,
@@ -832,9 +823,9 @@ fn scaled_certificate(
     source: &IntegerAffineClaim,
     coefficient: BigInt,
     expected: &IntegerAffineClaim,
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     if coefficient == BigInt::one() {
-        return Some(IntegerArithmeticCertificate {
+        return Some(IntegerArithmeticPlan {
             nodes: vec![IntegerArithmeticNode::Premise {
                 index,
                 result: source.clone(),
@@ -842,7 +833,7 @@ fn scaled_certificate(
             conclusion: 0,
         });
     }
-    Some(IntegerArithmeticCertificate {
+    Some(IntegerArithmeticPlan {
         nodes: vec![
             IntegerArithmeticNode::Premise {
                 index,
@@ -864,11 +855,11 @@ fn scaled_direction_certificate(
     reverse: bool,
     coefficient: BigInt,
     expected: &IntegerAffineClaim,
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     if coefficient.is_zero() {
         return None;
     }
-    Some(IntegerArithmeticCertificate {
+    Some(IntegerArithmeticPlan {
         nodes: vec![
             IntegerArithmeticNode::Premise {
                 index,
@@ -894,14 +885,14 @@ fn weakened_direction_certificate(
     source: &IntegerAffineClaim,
     reverse: bool,
     expected: &IntegerAffineClaim,
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     let direction = equality_direction(source, reverse);
     if direction.terms != expected.terms || expected.constant > direction.constant {
         return None;
     }
     let weakening = &expected.constant - &direction.constant;
     if weakening.is_zero() {
-        return Some(IntegerArithmeticCertificate {
+        return Some(IntegerArithmeticPlan {
             nodes: vec![
                 IntegerArithmeticNode::Premise {
                     index,
@@ -916,7 +907,7 @@ fn weakened_direction_certificate(
             conclusion: 1,
         });
     }
-    Some(IntegerArithmeticCertificate {
+    Some(IntegerArithmeticPlan {
         nodes: vec![
             IntegerArithmeticNode::Premise {
                 index,
@@ -948,13 +939,13 @@ fn weakened_order_certificate(
     index: usize,
     source: &IntegerAffineClaim,
     expected: &IntegerAffineClaim,
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     let weakening = &expected.constant - &source.constant;
     if weakening.is_positive() {
         return None;
     }
     if weakening.is_zero() {
-        return Some(IntegerArithmeticCertificate {
+        return Some(IntegerArithmeticPlan {
             nodes: vec![IntegerArithmeticNode::Premise {
                 index,
                 result: source.clone(),
@@ -962,7 +953,7 @@ fn weakened_order_certificate(
             conclusion: 0,
         });
     }
-    Some(IntegerArithmeticCertificate {
+    Some(IntegerArithmeticPlan {
         nodes: vec![
             IntegerArithmeticNode::Premise {
                 index,
@@ -989,7 +980,7 @@ fn plan_from_two_premises(
     left: &(usize, IntegerAffineClaim),
     right: &(usize, IntegerAffineClaim),
     expected: &IntegerAffineClaim,
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     if expected.relation == IntegerAffineRelation::Equal {
         if left.1.relation != IntegerAffineRelation::Equal
             || right.1.relation != IntegerAffineRelation::Equal
@@ -1057,7 +1048,7 @@ fn combination_certificate(
     left_direction: IntegerAffineClaim,
     right_direction: IntegerAffineClaim,
     inequality: bool,
-) -> Option<IntegerArithmeticCertificate> {
+) -> Option<IntegerArithmeticPlan> {
     if left_coefficient.is_zero() || right_coefficient.is_zero() {
         return None;
     }
@@ -1135,12 +1126,12 @@ fn combination_certificate(
             });
         } else {
             // The exact combination already is the requested conclusion.
-            return Some(IntegerArithmeticCertificate {
+            return Some(IntegerArithmeticPlan {
                 conclusion: combined_index,
                 nodes,
             });
         }
-        return Some(IntegerArithmeticCertificate {
+        return Some(IntegerArithmeticPlan {
             conclusion: nodes.len() - 1,
             nodes,
         });
@@ -1153,7 +1144,7 @@ fn combination_certificate(
         right: right_scaled,
         result: expected.clone(),
     });
-    Some(IntegerArithmeticCertificate {
+    Some(IntegerArithmeticPlan {
         conclusion: nodes.len() - 1,
         nodes,
     })
@@ -1532,104 +1523,6 @@ mod tests {
         (equal(variable(0), variable(length)), premises)
     }
 
-    /// The two directions use distinct bounds after substitution. Check the
-    /// resulting certificate, and ensure dropping either selected bound cannot
-    /// produce a certificate or validate the original one.
-    #[test]
-    fn substituted_equality_requires_both_checked_order_directions() {
-        let a = IntegerTerm::var(Variable(190));
-        let d = IntegerTerm::var(Variable(191));
-        let two = IntegerTerm::constant_i64(2);
-        let premises = [
-            equal(a.clone(), d.clone()),
-            less_equal(d.clone(), two.clone()),
-            less_equal(two.clone(), d),
-        ];
-        let goal = equal(a, two);
-        let certificate = plan_integer_affine_certificate(&goal, &premises)
-            .expect("both substituted bounds should prove equality");
-        certificate.check(&goal, &premises).unwrap();
-        for omitted in [1, 2] {
-            let incomplete = premises
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| *index != omitted)
-                .map(|(_, premise)| premise.clone())
-                .collect::<Vec<_>>();
-            assert!(plan_integer_affine_certificate(&goal, &incomplete).is_none());
-            assert!(certificate.check(&goal, &incomplete).is_err());
-        }
-    }
-
-    #[test]
-    fn planner_eliminates_a_chain_of_equalities() {
-        let t = IntegerTerm::var(Variable(200));
-        let a = IntegerTerm::var(Variable(201));
-        let b = IntegerTerm::var(Variable(202));
-        let x = IntegerTerm::var(Variable(203));
-        let y = IntegerTerm::var(Variable(204));
-        let premises = [
-            equal(t.clone(), IntegerTerm::add(a.clone(), x.clone())),
-            equal(a, b.clone()),
-            equal(x, y.clone()),
-        ];
-        let goal = equal(t, IntegerTerm::add(b, y));
-        let certificate = plan_integer_affine_certificate(&goal, &premises)
-            .expect("three listed equalities should be eliminated into the goal");
-        certificate
-            .check(&goal, &premises)
-            .expect("the elimination certificate should verify");
-    }
-
-    #[test]
-    fn elimination_keeps_only_the_nodes_the_conclusion_reads() {
-        let t = IntegerTerm::var(Variable(240));
-        let a = IntegerTerm::var(Variable(241));
-        let b = IntegerTerm::var(Variable(242));
-        let x = IntegerTerm::var(Variable(243));
-        let y = IntegerTerm::var(Variable(244));
-        let premises = [
-            equal(t.clone(), IntegerTerm::add(a.clone(), x.clone())),
-            less_equal(a, b.clone()),
-            less_equal(x, y.clone()),
-            less_equal(
-                IntegerTerm::var(Variable(245)),
-                IntegerTerm::var(Variable(246)),
-            ),
-        ];
-        let goal = less_equal(t, IntegerTerm::add(b, y));
-        let certificate = plan_integer_affine_certificate(&goal, &premises)
-            .expect("an extra listed bound should not prevent the plan");
-        certificate
-            .check(&goal, &premises)
-            .expect("the pruned certificate should verify");
-        assert!(
-            !certificate
-                .nodes
-                .iter()
-                .any(|node| matches!(node, IntegerArithmeticNode::Premise { index: 3, .. })),
-            "a listed premise the conclusion never reads should not appear: {:?}",
-            certificate.nodes
-        );
-    }
-
-    #[test]
-    fn planner_cross_multiplies_two_coprime_pivots() {
-        let a = IntegerTerm::var(Variable(220));
-        let b = IntegerTerm::var(Variable(221));
-        let c = IntegerTerm::var(Variable(222));
-        let premises = [
-            equal(times(2, a.clone()), b.clone()),
-            equal(times(3, a), c.clone()),
-        ];
-        let goal = equal(times(3, b), times(2, c));
-        let certificate = plan_integer_affine_certificate(&goal, &premises)
-            .expect("coprime pivot coefficients should cancel by cross multiplication");
-        certificate
-            .check(&goal, &premises)
-            .expect("the cross-multiplied certificate should verify");
-    }
-
     #[test]
     fn planner_refuses_to_divide_a_goal_coefficient_out() {
         let a = IntegerTerm::var(Variable(230));
@@ -1637,7 +1530,7 @@ mod tests {
         let premises = [equal(times(2, a.clone()), times(2, b.clone()))];
         let goal = equal(a, b);
         assert!(
-            plan_integer_affine_certificate(&goal, &premises).is_none(),
+            plan_integer_affine(&goal, &premises).is_none(),
             "no certificate node divides a factor out of the goal, so this plan must fall through"
         );
     }
@@ -1664,42 +1557,10 @@ mod tests {
                     source_index: 0,
                 };
                 instrumentation::emit(VerificationEvent::TacticStarted(tactic.clone()));
-                assert!(plan_integer_affine_certificate(&goal, &premises).is_none());
+                assert!(plan_integer_affine(&goal, &premises).is_none());
                 instrumentation::emit(VerificationEvent::TacticFailed(tactic));
             },
         );
-    }
-
-    #[test]
-    fn planner_matches_normalized_equality_and_order_direction() {
-        let x = IntegerTerm::var(Variable(81));
-        let y = IntegerTerm::var(Variable(82));
-        let equality = proposition(ConditionTerm::IntegerEqual(
-            x.clone().into(),
-            y.clone().into(),
-        ));
-        let goal = less_equal(x, y);
-        let certificate = plan_integer_affine_certificate(&goal, std::slice::from_ref(&equality))
-            .expect("an equality should supply one checked order direction");
-        certificate
-            .check(&goal, &[equality])
-            .expect("the equality-direction certificate should verify");
-    }
-
-    #[test]
-    fn planner_scales_one_order_premise() {
-        let x = IntegerTerm::var(Variable(83));
-        let y = IntegerTerm::var(Variable(84));
-        let premise = less_equal(x.clone(), y.clone());
-        let goal = less_equal(
-            IntegerTerm::multiply(IntegerTerm::constant_i64(2), x),
-            IntegerTerm::multiply(IntegerTerm::constant_i64(2), y),
-        );
-        let certificate = plan_integer_affine_certificate(&goal, std::slice::from_ref(&premise))
-            .expect("a nonnegative scale should be planned");
-        certificate
-            .check(&goal, &[premise])
-            .expect("the scaled certificate should verify");
     }
 
     #[test]
@@ -1712,75 +1573,9 @@ mod tests {
             IntegerTerm::multiply(IntegerTerm::constant_i64(-2), y),
         );
         assert!(
-            plan_integer_affine_certificate(&goal, &[premise]).is_none(),
+            plan_integer_affine(&goal, &[premise]).is_none(),
             "a negative scale cannot preserve an order premise"
         );
-    }
-
-    #[test]
-    fn planner_applies_one_premise_order_constant_weakening() {
-        let x = IntegerTerm::var(Variable(843));
-        let source = less_equal(
-            IntegerTerm::add(x.clone(), IntegerTerm::constant_i64(4)),
-            IntegerTerm::constant_i64(0),
-        );
-        let goal = less_equal(
-            IntegerTerm::add(x, IntegerTerm::constant_i64(1)),
-            IntegerTerm::constant_i64(0),
-        );
-        let certificate = plan_integer_affine_certificate(&goal, std::slice::from_ref(&source))
-            .expect("a stronger order premise should admit constant weakening");
-        certificate
-            .check(&goal, &[source])
-            .expect("the weakened order certificate should verify");
-    }
-
-    #[test]
-    fn planner_adds_two_premises_and_weakens_a_constant() {
-        let x = IntegerTerm::var(Variable(85));
-        let y = IntegerTerm::var(Variable(86));
-        let a = IntegerTerm::var(Variable(87));
-        let b = IntegerTerm::var(Variable(88));
-        let first = less_equal(x.clone(), y.clone());
-        let second = less_equal(a.clone(), b.clone());
-        let goal = less_equal(
-            IntegerTerm::add(x, a),
-            IntegerTerm::add(IntegerTerm::add(y, b), IntegerTerm::constant_i64(1)),
-        );
-        let premises = [first, second];
-        let certificate = plan_integer_affine_certificate(&goal, &premises)
-            .expect("two selected bounds should support a constant weakening");
-        certificate
-            .check(&goal, &premises)
-            .expect("the two-premise certificate should verify");
-    }
-
-    #[test]
-    fn planner_combines_an_equality_direction_with_an_order_premise() {
-        let total = IntegerTerm::var(Variable(89));
-        let prefix = IntegerTerm::var(Variable(90));
-        let index = IntegerTerm::var(Variable(91));
-        let equality = proposition(ConditionTerm::IntegerEqual(
-            total.clone().into(),
-            prefix.clone().into(),
-        ));
-        let lower = less_equal(
-            IntegerTerm::multiply(IntegerTerm::constant_i64(-1000), index),
-            prefix,
-        );
-        let goal = less_equal(
-            IntegerTerm::multiply(
-                IntegerTerm::constant_i64(-1000),
-                IntegerTerm::var(Variable(91)),
-            ),
-            total,
-        );
-        let premises = [equality, lower];
-        let certificate = plan_integer_affine_certificate(&goal, &premises)
-            .expect("the reverse equality direction should cancel the prefix atom");
-        certificate
-            .check(&goal, &premises)
-            .expect("the equality-plus-order certificate should verify");
     }
 
     #[test]
@@ -1821,7 +1616,7 @@ mod tests {
                     source_index: 0,
                 };
                 instrumentation::emit(VerificationEvent::TacticStarted(tactic.clone()));
-                assert!(plan_integer_affine_certificate(&goal, &premises).is_none());
+                assert!(plan_integer_affine(&goal, &premises).is_none());
                 instrumentation::emit(VerificationEvent::TacticFailed(tactic));
             },
         );
@@ -1865,10 +1660,5 @@ mod tests {
                 instrumentation::emit(VerificationEvent::TacticFailed(tactic));
             },
         );
-    }
-
-    #[cfg(test)]
-    mod scaling_tests {
-        include!("../../scaling_tests/surface/checking/integer_affine_planner/tests.rs");
     }
 }

@@ -32,5 +32,33 @@ fn every_byte() -> u32 {
         invariant 0 <= iter_done and iter_done <= 1;
         invariant iter_done != 0 implies total == 256u32;
         invariant total == iter_start + iter_done;
+        preserve by {
+            mark iteration;
+            have at(iteration, iter_done) == 0;
+            if at(iteration, iter_start) < 255u8 {
+                step_until(back_edge());
+                have to_integer(total) == to_integer(at(iteration, total)) + 1;
+                have iter_done == 0;
+                have to_integer(iter_start) == to_integer(at(iteration, iter_start)) + 1;
+                have to_integer(total) == to_integer(iter_start) + to_integer(iter_done);
+                have iter_done != 0 implies total == 256u32 by {
+                    intro();
+                    contradiction(iter_done == 0);
+                }
+            } else {
+                step_until(back_edge());
+                have to_integer(total) == to_integer(at(iteration, total)) + 1;
+                have iter_done == 1;
+                have iter_start == at(iteration, iter_start);
+                have to_integer(total) == to_integer(iter_start) + to_integer(iter_done);
+                have to_integer(at(iteration, iter_start)) == 255;
+                have to_integer(at(iteration, total)) == 255;
+                have to_integer(total) == 256;
+                have iter_done != 0 implies total == 256u32 by {
+                    intro();
+                    solve() using { to_integer(total) == 256; };
+                }
+            }
+        }
     }
 }

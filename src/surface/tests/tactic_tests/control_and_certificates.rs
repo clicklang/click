@@ -222,35 +222,6 @@ fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_03")]
-fn integer_relation_certificate_matches_its_native_cast_conclusion() {
-    let source = r#"import click::integer;
-        theorem cast_bound(a: int128) {
-            requires -99 <= to_integer(a);
-            requires to_integer(a) <= 99;
-            ensures -99 <= to_integer(a as int64) by {
-                have to_integer(a as int64) == to_integer(a) by {
-                    arithmetic_certificate rules {
-                        premise 0: -99 <= to_integer(a) => -99 <= to_integer(a);
-                        premise 1: to_integer(a) <= 99 => to_integer(a) <= 99;
-                        integer_cast_identity bounds [0, 1] => to_integer(a as int64) == to_integer(a);
-                        conclusion 0;
-                    }
-                }
-                arithmetic_certificate rules {
-                    premise 0: to_integer(a as int64) == to_integer(a) => to_integer(a as int64) == to_integer(a);
-                    premise 1: -99 <= to_integer(a) => -99 <= to_integer(a);
-                    integer_relation_transport bounds [0, 1] => -99 <= to_integer(a as int64);
-                    conclusion 0;
-                }
-            }
-        }"#;
-    verify_c_sources(source, &[]).expect("the checked bound has the requested cast operand");
-    let false_claim = source.replace("ensures -99 <=", "ensures -98 <=");
-    assert!(verify_c_sources(&false_claim, &[]).is_err());
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_03")]
 fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     let source = r#"
         theorem pair(x: int32) {
@@ -1421,7 +1392,6 @@ test_batches! {
     ],
     control_batch_03: [
         integer_certificate_keeps_negative_observation_bounds_when_adding,
-        integer_relation_certificate_matches_its_native_cast_conclusion,
         both_and_proves_exact_conjuncts_and_rejects_incomplete_arms,
         both_and_outcome_expands_and_rechecks,
     ],

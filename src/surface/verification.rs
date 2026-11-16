@@ -2482,6 +2482,19 @@ fn verify_program_in_context(
             &bodyless_declarations,
             &function_environment.linked_functions(),
             &termination_plans,
+            file.function_blocks()
+                .iter()
+                .filter(|function| {
+                    !function.is_external()
+                        && selected_functions
+                            .as_ref()
+                            .is_none_or(|selected| selected.contains(function.signature().name()))
+                })
+                .map(|function| {
+                    executing_function_name(&termination_kernel_names, function.signature().name())
+                })
+                .filter(|name| !admitted_functions.contains(name))
+                .collect(),
         )
         .map_err(|error| {
             ClickError::new(format!("could not open C recursion declarations: {error}"))
@@ -2667,7 +2680,6 @@ fn verify_program_in_context(
             {
                 let partial_rules = function_environment.verified_function_rules();
                 let inline_bodies = function_environment.linked_functions();
-                let heights = program_termination_height_plan(&partial_rules, &inline_bodies);
                 let declared_diverging = external_and_user_function_blocks
                     .iter()
                     .filter(|function| function.signature().diverges())
@@ -2696,21 +2708,22 @@ fn verify_program_in_context(
                 assumed_terminating.extend(closure_instance_names(&parsed_sources));
                 assumed_terminating.extend(object_coercion_names(&parsed_sources));
                 assumed_terminating.extend(modeled_thread_runtime_names());
-                let preliminary = program_verified_function_termination_rules(
-                    &partial_rules,
-                    &termination_plans,
-                    &termination_loop_rules,
-                    &inline_bodies,
-                    &heights,
-                    &assumed_terminating,
-                    &declared_diverging,
-                    &diverging_contracts,
-                )
-                .map_err(|error| {
-                    ClickError::new(format!(
-                        "could not certify C termination before pthread create: {error}"
-                    ))
-                })?;
+                let preliminary = program_contracts
+                    .bootstrap_termination_rules(crate::kernel::ProgramTerminationInputs {
+                        independent: crate::kernel::IndependentTerminationInputs {
+                            rules: &partial_rules,
+                            bodies: &inline_bodies,
+                        },
+                        plans: &termination_plans,
+                        assumed_terminating: &assumed_terminating,
+                        diverging_contracts: &diverging_contracts,
+                        has_unselected_functions: false,
+                    })
+                    .map_err(|error| {
+                        ClickError::new(format!(
+                            "could not certify C termination before pthread create: {error}"
+                        ))
+                    })?;
                 function_environment = function_environment
                     .with_verified_function_termination_rules(preliminary.rules);
                 early_thread_termination_published = true;
@@ -2957,32 +2970,14 @@ fn verify_program_in_context(
         // scripts have already joined their own checked completions into it.
         let body_proof =
             crate::surface::proof::finish_contract_body_root(&function_block, &function_verified)?;
-        if let Some(body_proof) = body_proof {
-            let executing_name = executing_function_name(
-                &termination_kernel_names,
-                function_block.signature().name(),
-            );
-            termination_loop_rules
-                .entry(executing_name)
-                .or_default()
-                .extend_from_slice(body_proof.loop_rules());
-            if let Some(rule) = body_proof.to_reusable_rule() {
-                function_environment = function_environment.with_verified_function_rule(rule);
-            }
-        } else {
-            // Contracts without an ordinary body root still expose their
-            // native loop-proof outputs; no source measure is reconstructed.
-            termination_loop_rules
-                .entry(executing_function_name(
-                    &termination_kernel_names,
-                    function_block.signature().name(),
-                ))
-                .or_default()
-                .extend(
-                    function_verified
-                        .iter()
-                        .flat_map(|theorem| theorem.frontier_loop_rules.iter().cloned()),
-                );
+        let executing_name =
+            executing_function_name(&termination_kernel_names, function_block.signature().name());
+        termination_loop_rules
+            .entry(executing_name)
+            .or_default()
+            .extend_from_slice(body_proof.loop_rules());
+        if let Some(rule) = body_proof.to_reusable_rule() {
+            function_environment = function_environment.with_verified_function_rule(rule);
         }
         if instrumentation::enabled() {
             instrumentation::emit(VerificationEvent::FunctionFinished {
@@ -8682,10 +8677,10 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     {
         return crate::languages::rust::names::vec_type_name(&spelling(element));
     }
-    // The library's `ChunksExact<uint8>`, which a sidecar names
-    // `ChunksExact<u8>`.
+    // The library's `SliceIter<uint8>`, which a sidecar names
+    // `SliceIter<u8>`.
     if let Some((primitive, arguments)) = generics::primitive_instance_of(&algebraic_type.name)
-        && (primitive == "ChunksExact" || primitive == "SliceIter")
+        && primitive == "SliceIter"
         && let [element] = arguments.as_slice()
     {
         let mut name = primitive;
@@ -8693,8 +8688,7 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
         return name;
     }
     match algebraic_type.arguments.as_slice() {
-        // The library's `Slice<T>`, which `ChunksExact::remainder` returns,
-        // is named `Slice<u8>`.
+        // The library's `Slice<T>` is named `Slice<u8>`.
         [element] if algebraic_type.name == "Slice" => {
             let mut name = "Slice".to_string();
             crate::languages::rust::names::push_type_argument(&mut name, &spelling(element));
@@ -8786,7 +8780,8 @@ pub(in crate::surface) fn program_contract_failure(
                 }
                 ProgramContractGoal::Program
                 | ProgramContractGoal::Body { .. }
-                | ProgramContractGoal::BodyOpening => {
+                | ProgramContractGoal::BodyOpening
+                | ProgramContractGoal::DeclaredBody(_) => {
                     unreachable!("the program root was opened into its declared goals")
                 }
             }

@@ -698,26 +698,6 @@ fn signed_int32_equality_chains_expand_and_recheck() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_05")]
-fn special_integer_certificates_keep_native_premises_available() {
-    let source = r#"import click::integer;
-theorem native_premise(a: uint64, b: uint64) {
-    requires to_integer(a) == to_integer(b);
-    ensures (to_integer(a) + 1) * (to_integer(a) + 2) == to_integer(a) * (to_integer(a) + 1) + 2 * (to_integer(a) + 1) by {
-        arithmetic_certificate rules {
-            premise 0: to_integer(a) == to_integer(b) => to_integer(a) == to_integer(b);
-            integer_polynomial_identity bounds [] => (to_integer(a) + 1) * (to_integer(a) + 2) == to_integer(a) * (to_integer(a) + 1) + 2 * (to_integer(a) + 1);
-            conclusion 0;
-        }
-    }
-}
-"#;
-    verify_click_theorems(source).unwrap();
-    let false_identity = source.replace("+ 2 * (to_integer(a) + 1)", "+ 3 * (to_integer(a) + 1)");
-    assert!(verify_click_theorems(&false_identity).is_err());
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_05")]
 fn integer_equality_does_not_identify_signed_and_unsigned_observations() {
     // seed = -1, adler = value = UINT64_MAX, specification = -1 satisfies
     // every premise and refutes the conclusion.
@@ -4044,12 +4024,7 @@ theorem unsigned_compound(n: int32) {
         .expect("compound unsigned arithmetic should expand to a source certificate");
     // `solve() using` tries arithmetic last, so a closer before it may
     // prove the goal; either way the expansion is an explicit proof.
-    assert!(
-        expanded.contains("normalize() using")
-            || (expanded.contains("arithmetic_certificate signed_int32")
-                && expanded.contains("interval_from_affine_direct")),
-        "{expanded}"
-    );
+    assert!(expanded.contains("normalize() using"), "{expanded}");
 
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &[])
@@ -7378,7 +7353,7 @@ fn restricted_solve_after_unfold_expands_explicit_conjunction_extraction() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_36")]
-fn restricted_solve_expands_strict_order_to_nonstrict_arithmetic_certificate() {
+fn restricted_solve_expands_strict_order_to_nonstrict_arithmetic() {
     let click_source = r#"
             theorem strict_order_implies_nonstrict(x: int32, y: int32) {
                 requires x < y;
@@ -8190,7 +8165,7 @@ fn pure_solve_retains_one_selected_equality_rewrite_before_known() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_41")]
-fn restricted_solve_expands_increment_upper_bound_to_arithmetic_certificate() {
+fn restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem increment_stays_bounded(value: int32, upper: int32) {
             requires value < upper;
@@ -8270,7 +8245,7 @@ fn restricted_solve_expands_positive_to_nonnegative_arithmetic_certificate() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_41")]
-fn restricted_solve_expands_positive_predecessor_to_arithmetic_certificate() {
+fn restricted_solve_expands_positive_predecessor_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem positive_predecessor_is_nonnegative(value: int32) {
             requires 0 < value;
@@ -8308,7 +8283,7 @@ fn restricted_solve_expands_positive_predecessor_to_arithmetic_certificate() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_42")]
-fn restricted_solve_expands_positive_predecessor_decrease_to_arithmetic_certificate() {
+fn restricted_solve_expands_positive_predecessor_decrease_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem positive_predecessor_decreases(value: int32) {
             requires 0 < value;
@@ -8346,7 +8321,7 @@ fn restricted_solve_expands_positive_predecessor_decrease_to_arithmetic_certific
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_42")]
-fn restricted_solve_expands_predecessor_upper_bound_to_arithmetic_certificate() {
+fn restricted_solve_expands_predecessor_upper_bound_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem predecessor_keeps_upper_bound(value: int32, bound: int32) {
             requires 0 <= value;
@@ -8484,7 +8459,7 @@ fn restricted_solve_retains_equal_one_predecessor_zero_path() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_43")]
-fn restricted_solve_expands_strict_increment_to_arithmetic_certificate() {
+fn restricted_solve_expands_strict_increment_to_ordinary_arithmetic() {
     let click_source = r#"
             theorem increment_is_greater(value: int32, upper: int32) {
                 requires value < upper;
@@ -8521,7 +8496,7 @@ fn restricted_solve_expands_strict_increment_to_arithmetic_certificate() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_43")]
-fn solve_expands_increment_definedness_to_arithmetic_certificate() {
+fn solve_expands_increment_definedness_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem increment_is_defined(value: int32) {
             requires value < 2147483647;
@@ -8545,7 +8520,7 @@ fn solve_expands_increment_definedness_to_arithmetic_certificate() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
-fn restricted_solve_expands_increment_lower_bound_to_arithmetic_certificate() {
+fn restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem increment_preserves_lower_bound(
             value: int32,
@@ -8590,7 +8565,7 @@ fn restricted_solve_expands_increment_lower_bound_to_arithmetic_certificate() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
-fn restricted_solve_expands_increment_order_to_arithmetic_certificate() {
+fn restricted_solve_expands_increment_order_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem increment_preserves_order(
             value: int32,
@@ -8768,7 +8743,7 @@ fn restricted_solve_certifies_unchanged_prefix_after_indexed_store() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
-fn restricted_solve_expands_adjacent_order_to_arithmetic_certificate() {
+fn restricted_solve_expands_adjacent_order_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem two_at_most_implies_one_below(value: int32) {
             requires 2 <= value;
@@ -9043,7 +9018,7 @@ fn outcome_solve_closes_its_recorded_order_path_by_arithmetic() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_46")]
-fn restricted_solve_expands_constant_order_weakening_to_arithmetic_certificate() {
+fn restricted_solve_expands_constant_order_weakening_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem three_at_least_implies_nonnegative(value: int32) {
             requires 3 <= value;
@@ -9085,7 +9060,7 @@ fn restricted_solve_expands_constant_order_weakening_to_arithmetic_certificate()
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_46")]
-fn restricted_solve_expands_constant_strict_upper_bound_to_arithmetic_certificate() {
+fn restricted_solve_expands_constant_strict_upper_bound_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem three_at_most_implies_below_five(value: int32) {
             requires value <= 3;
@@ -17962,61 +17937,6 @@ fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() 
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_75")]
-fn uint32_arithmetic_bound_weakening_expands_and_rechecks() {
-    let (source, _) = mdtest_sources("mdtests/uint32_arithmetic_bound_weakening.md");
-    verify_c_sources(&source, &[]).expect("unsigned weakened bounds should verify");
-    for name in [
-        "lane_ceiling",
-        "crossing_sign_bit",
-        "high_unsigned_ceiling",
-        "high_unsigned_floor",
-        "crossing_sign_bit_floor",
-    ] {
-        let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
-            .expect("unsigned weakening should expand");
-        // An unsigned bound is the Integer bound of its observation, so the
-        // step has no sign-bit encoding: `normalize() using` proves it, or an
-        // Integer certificate when arithmetic, which `solve() using` tries
-        // last, is the closer that does.
-        assert!(
-            expanded.contains("normalize() using") || expanded.contains("arithmetic_certificate {"),
-            "{expanded}"
-        );
-        assert!(!expanded.contains("signed_int32"), "{expanded}");
-        let (result, planning) =
-            crate::surface::proof::count_planning_statement_transitions(|| {
-                verify_c_sources(&expanded, &[])
-            });
-        result.expect("unsigned certificate should independently recheck");
-        assert_eq!(planning, 0, "explicit recheck must not plan");
-        if name == "lane_ceiling" {
-            let forged = expanded.replace("1073741823u32", "65519u32");
-            verify_c_sources(&forged, &[])
-                .expect_err("a strengthened conclusion must not reuse the original certificate");
-        }
-    }
-    for (premise, goal) in [
-        ("lane <= 1073741823u32", "lane <= 65520u32"),
-        ("lane <= 2147483648u32", "lane <= 2147483647u32"),
-        ("2147483647u32 <= lane", "2147483648u32 <= lane"),
-        ("lane <= 65520u32", "1073741823u32 <= lane"),
-    ] {
-        let invalid = format!(
-            "theorem invalid(lane: uint32) {{ requires {premise}; \
-             ensures {goal} by {{ solve() using {{ {premise}; }} }} }}"
-        );
-        verify_c_sources(&invalid, &[]).expect_err("insufficient unsigned bounds must fail");
-    }
-    let missing = source.replacen(
-        "solve() using { lane <= 65520u32; }",
-        "solve() using {};",
-        1,
-    );
-    verify_c_sources(&missing, &[]).expect_err("unlisted bounds must not prove the ceiling");
-}
-
-#[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn uint32_mul_observations_and_true_disjunction_expand_and_recheck() {
     let (guarded, _) =
@@ -21578,7 +21498,6 @@ test_batches! {
         signed_int32_equality_chains_expand_and_recheck,
     ],
     expansion_batch_05: [
-        special_integer_certificates_keep_native_premises_available,
         integer_equality_does_not_identify_signed_and_unsigned_observations,
         member_pointer_addresses_retain_subobject_extents_through_expansion,
         member_pointer_addresses_with_equal_numeric_addresses_expand,
@@ -21767,7 +21686,7 @@ test_batches! {
         uint64_bit_test_inequality_rejects_missing_false_and_malformed_evidence,
         pure_rewrite_retains_a_structural_surface_successor_for_solve,
         restricted_solve_after_unfold_expands_explicit_conjunction_extraction,
-        restricted_solve_expands_strict_order_to_nonstrict_arithmetic_certificate,
+        restricted_solve_expands_strict_order_to_nonstrict_arithmetic,
     ],
     expansion_batch_37: [
         post_execution_solve_applies_strict_order_rule,
@@ -21795,27 +21714,27 @@ test_batches! {
     ],
     expansion_batch_41: [
         pure_solve_retains_one_selected_equality_rewrite_before_known,
-        restricted_solve_expands_increment_upper_bound_to_arithmetic_certificate,
+        restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic,
         restricted_solve_expands_positive_to_nonnegative_arithmetic_certificate,
-        restricted_solve_expands_positive_predecessor_to_arithmetic_certificate,
+        restricted_solve_expands_positive_predecessor_to_ordinary_arithmetic,
     ],
     expansion_batch_42: [
-        restricted_solve_expands_positive_predecessor_decrease_to_arithmetic_certificate,
-        restricted_solve_expands_predecessor_upper_bound_to_arithmetic_certificate,
+        restricted_solve_expands_positive_predecessor_decrease_to_ordinary_arithmetic,
+        restricted_solve_expands_predecessor_upper_bound_to_ordinary_arithmetic,
         restricted_solve_retains_nested_one_le_predecessor_nonnegative_proof,
         restricted_solve_retains_nested_one_le_predecessor_decrease_proof,
     ],
     expansion_batch_43: [
         restricted_solve_retains_equal_one_predecessor_path,
         restricted_solve_retains_equal_one_predecessor_zero_path,
-        restricted_solve_expands_strict_increment_to_arithmetic_certificate,
-        solve_expands_increment_definedness_to_arithmetic_certificate,
+        restricted_solve_expands_strict_increment_to_ordinary_arithmetic,
+        solve_expands_increment_definedness_to_ordinary_arithmetic,
     ],
     expansion_batch_44: [
-        restricted_solve_expands_increment_lower_bound_to_arithmetic_certificate,
-        restricted_solve_expands_increment_order_to_arithmetic_certificate,
+        restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic,
+        restricted_solve_expands_increment_order_to_ordinary_arithmetic,
         restricted_solve_rewrites_a_named_successor_before_increment_order,
-        restricted_solve_expands_adjacent_order_to_arithmetic_certificate,
+        restricted_solve_expands_adjacent_order_to_ordinary_arithmetic,
     ],
     expansion_batch_45: [
         smart_solve_transcribes_a_three_edge_signed_order_path,
@@ -21825,8 +21744,8 @@ test_batches! {
     ],
     expansion_batch_46: [
         outcome_solve_closes_its_recorded_order_path_by_arithmetic,
-        restricted_solve_expands_constant_order_weakening_to_arithmetic_certificate,
-        restricted_solve_expands_constant_strict_upper_bound_to_arithmetic_certificate,
+        restricted_solve_expands_constant_order_weakening_to_ordinary_arithmetic,
+        restricted_solve_expands_constant_strict_upper_bound_to_ordinary_arithmetic,
         restricted_solve_retains_increment_under_a_larger_constant,
     ],
     expansion_batch_47: [
@@ -21998,7 +21917,6 @@ test_batches! {
     ],
     expansion_batch_75: [
         the_implicit_grouped_proof_expands_after_the_contract_and_reverifies,
-        uint32_arithmetic_bound_weakening_expands_and_rechecks,
         integer_equality_rewrite_expands_rechecks_and_rejects_forged_claims,
         symbolic_upper_arithmetic_premises_expand_and_cold_recheck,
     ],

@@ -54,11 +54,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
     }
     have (old->__rb_parent_color & ~3) == address(new) by {
         rewrite(old->__rb_parent_color, address(new));
-        arithmetic_certificate rules {
-            premise 0: aligned(new, 8) => aligned(new, 8);
-            pointer_word_from_alignment alignments [0] => (address(new) & ~3) == address(new);
-            conclusion 0;
-        }
+        solve() using { aligned(new, 8); };
     }
     have ((old->__rb_parent_color & ~3) as (struct rb_node *)) == new by { known(); }
     let demoted = fold(mirrored_parent_word(old, new), { bits: address(new) });

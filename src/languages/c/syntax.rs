@@ -8880,6 +8880,7 @@ impl Parser {
                         | InterfaceType::Int32Pointer
                         | InterfaceType::CharPointer(_)
                         | InterfaceType::UInt8Pointer
+                        | InterfaceType::UInt32Pointer
                         | InterfaceType::Float32Pointer
                         | InterfaceType::Float64Pointer
                         | InterfaceType::Int32PointerPointer

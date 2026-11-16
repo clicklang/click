@@ -225,10 +225,8 @@ a `branch` arm whose C path verification proved infeasible expands the same
 way: the arm never runs, so the rewrite removes the tactic rather than
 reporting a missing source occurrence.
 
-The written certificate is kept short where verification allows. An
-`arithmetic_certificate` writes each repeated derivation once and leaves out
-derivations its conclusion does not use; premises and a refutation's
-`negated_goal` stay. A grouped closure proves each open claim in a `have` and
+Arithmetic expansion writes each intermediate derivation once as an ordinary
+`have`, then reuses the established fact through explicit premises. A grouped closure proves each open claim in a `have` and
 then closes every goal with its own `known();`. When some of those
 `have`s are proved by `normalize();` alone and their run of closers ends the
 block, the command drops those `have`s and closes their claims with
