@@ -324,7 +324,7 @@ word-representation rule to other storage or scalar types. The separate
 `as_writable_bytes` currently fails on both the saved pre-change binary and
 this implementation; its returned-pointer state path remains unresolved.
 
-## Bitcoin read32 import and remaining cursor refusal
+## Bitcoin read32 serialization composition
 
 The pinned Bitcoin v31.1 `ser_readdata32<FixtureReader>` graph now imports
 unchanged, including its nested pointer/count span construction,
@@ -334,14 +334,20 @@ the fixture reader separately from Bitcoin source. It copies four source
 bytes to the output span and advances its pointer/count cursor. It does not
 stand for Bitcoin's `SpanReader` or its exception behavior.
 
-This is **cursor execution coverage, not a completed serialization proof**.
-`pinned_bitcoin_read32_executes_cursor_but_byte_values_are_not_yet_verified_offline`
-pins the exact source digest and executes all four byte stores and both cursor
-updates. The original source and four byte-value/cursor postconditions remain
-unchanged. Checking reaches the reader's exit, then exhausts the bounded smart
-budget on the third byte's value equality; it must not regress to an
-uninitialized source read. No ordinary/expanded/cold/retained serialization
-proof is claimed.
+The complete selected graph has a positive serialization witness in
+`pinned_bitcoin_read32_serialization_verifies_offline`: the unchanged reader
+copies all four bytes, the serializer's local `uint32_t` becomes `0x12345678`,
+`le32toh_internal` returns that word, and the wrapper proves the same result
+and both cursor updates. The contracts retain the source view, destination
+initialization transfer, exact byte values and pointer/count outcomes.
+
+The proof matrix expands all four source bodies and compares the generated
+`bitcoin-read32-expanded.click` fixture for freshness. A separate cold check
+requires no smart sites and verifies that complete source with implicit solving
+disabled. Four separate retained-session tests replay each body's certificate
+with implicit solving disabled. Negative controls remove or shorten the source
+view, remove output permission, shorten the output span, change a source byte,
+change the serialized result, or demand the wrong cursor advance.
 
 The former uninitialized read was an initialization-bookkeeping defect. Input
 pointer-field observations could precede the marker for unwritten output.
@@ -354,11 +360,25 @@ preserves the compact recording of contiguous constant-offset runs. Unit
 controls cover absent/partial observations and unwritten output; deterministic
 scaling grows unrelated cached cells and dropped runs through 65,536 slots.
 
-The next boundary is the byte-value preservation proof. The first two
-output-byte equalities close; the third exhausts bounded smart work. The
-selected intermediate pointer facts also expose source-spelling gaps. Reduce
-those gaps before continuing the proof, then require a positive
-ordinary/expanded/cold/retained witness before counting serialization coverage.
+The reader spells each store's footprint separation and carries source bytes,
+previously written output bytes and the remaining count through individual
+transitions. Footprint normalization retains scoped address congruence while
+accepting resource separation only from its selected premises; controls cover
+missing separation, missing aliases and insufficient extents. Deterministic
+scaling grows alias and separation buckets.
+
+Composition also requires unsigned-word pointer fields to survive by-value
+copies, construction-return span fields to retain their names, saved copied
+parameter pointers to retain their element widths, and declared output storage
+to remain addressable before initialization. These are checked operations and
+type metadata; none grants backing authority. Dynamic-extent
+`as_writable_bytes(std::span<unsigned int>)` now uses the same stated library
+template as the existing `int` profile. Construction-result field metadata is
+shared across calls with indexed reads and a deterministic scaling regression.
+
+The next application boundary is Bitcoin's real throwing cursor. This fixture
+does not cover `SpanReader`, malformed-input exceptions, arbitrary serialization
+formats or general C++ object lifetimes.
 
 The delivered prerequisites are narrower:
 
@@ -384,8 +404,8 @@ unrelated facts, same-pair widths and alias history at the same sizes. The
 spelling regression round-trips byte, halfword, int32 and uint64 pointer fields.
 The existing writable-span composition still passes its complete proof modes
 and rejection controls. The separate by-value returned-pointer state
-identity failure above remains open; neither failure is evidence for restoring the
-archived universal object model.
+identity failure above remains open. This selected composition is not evidence
+for restoring the archived universal object model.
 
 ## Native-interface evidence matrix
 

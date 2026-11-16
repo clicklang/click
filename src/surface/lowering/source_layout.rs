@@ -642,7 +642,7 @@ impl SourceExecutionLayout {
         }
         if let Some(value) = function.return_aggregate_layout() {
             aggregate_objects.insert(
-                crate::kernel::C_CONTRACT_RESULT_NAME.into(),
+                crate::kernel::CONTRACT_RESULT,
                 aggregate_result_fields(value),
             );
         }
