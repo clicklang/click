@@ -365,9 +365,8 @@ saved states that can be restored. In particular, `step_until(name)` does
 not target a proof mark.
 
 Expansion of execution automation emits one `step();` line per executed
-statement, followed by the outcome closers. Expansion recurses through `loop` and materializes omitted
-phase proofs at the loop keyword. The older numbered-loop summary syntax
-remains migration compatibility and should not be used in new proofs.
+statement, followed by the outcome closers. Expansion recurses through `loop`
+and materializes omitted phase proofs at the loop keyword.
 
 ### Proof marks
 
