@@ -32,7 +32,7 @@ fn integer_certificate_lowering_scales_with_nodes_not_unrelated_bindings() {
         for nodes in [8, 16, 32, 64] {
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..nodes {
-                    lower_integer_certificate_proposition(&surface, &bindings).unwrap();
+                    lower_integer_arithmetic_proposition(&surface, &bindings).unwrap();
                 }
             });
             node_costs.push(work);

@@ -1,5 +1,4 @@
-// Foundational Integer order laws. These expose rules previously available
-// only inside arithmetic certificates, through ordinary explicit application.
+// Foundational Integer order laws, available through ordinary explicit application.
 axiom add_le(a: Integer, b: Integer, c: Integer, d: Integer) {
     requires a <= b;
     requires c <= d;

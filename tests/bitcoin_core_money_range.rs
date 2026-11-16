@@ -379,16 +379,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     ensures 0 == 0;
 } by {
     have 1 <= d by { solve() using { d > 0; } }
-    have to_integer(d) != 0 by { arithmetic_certificate rules {
-        premise 0: 1 <= to_integer(d) => 1 <= to_integer(d);
-        integer_bound_exclusion bounds [0] => to_integer(d) != 0;
-        conclusion 0;
-    } }
-    have to_integer(d) != -1 by { arithmetic_certificate rules {
-        premise 0: 1 <= to_integer(d) => 1 <= to_integer(d);
-        integer_bound_exclusion bounds [0] => to_integer(d) != -1;
-        conclusion 0;
-    } }
+    have to_integer(d) != 0 by { solve() using { 1 <= to_integer(d); }; }
+    have to_integer(d) != -1 by { solve() using { 1 <= to_integer(d); }; }
     step_until(function.exit); solve();
 }"#;
         let parsed = read_click_project(&sidecar, guard_proof).unwrap();
@@ -1072,10 +1064,6 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             source.replace(inclusive, &inclusive.replace(" <= ", " < ")),
             source.replace(correction, ""),
             source.replace(
-                "integer_cast_identity bounds [0, 1]",
-                "integer_cast_identity bounds [1, 0]",
-            ),
-            source.replace(
                 "ensures -9223372036854775808 <= to_integer(result);",
                 "ensures to_integer(result) == 9223372036854775808;",
             ),
@@ -1121,10 +1109,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 "ensures -9223372036854775808 <= to_integer(result);",
                 "ensures to_integer(result) == 9223372036854775808;",
             ),
-            source.replace(
-                "integer_cast_identity bounds [0, 1]",
-                "integer_cast_identity bounds [1, 0]",
-            ),
+
         ] {
             let parsed = read_click_project(&sidecar, &hostile).unwrap();
             let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
@@ -1151,9 +1136,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 .unwrap()
                 .strip_suffix(';')
                 .unwrap();
-            intrinsic_proofs.push_str(&format!(
-                "have {bound} by {{ arithmetic_certificate {{ type_range => {bound}; conclusion 0; }} }}\n"
-            ));
+            intrinsic_proofs.push_str(&format!("have {bound} by {{ solve() using {{  }}; }}\n"));
         }
         full_domain = full_domain.replacen("} by {", &format!("}} by {{\n{intrinsic_proofs}"), 1);
         let parsed = read_click_project(&sidecar, &full_domain).unwrap();

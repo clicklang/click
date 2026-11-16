@@ -209,7 +209,6 @@ pub fn bound_diagnostic_message(message: String) -> String {
 pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "abstract",
     "address",
-    "add",
     "aligned",
     "all",
     "and",
@@ -236,7 +235,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "contains",
     "contract",
     "contradiction",
-    "conclusion",
     "count",
     "decreases",
     "defined",
@@ -246,10 +244,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "ensuring",
     "executes",
     "entry",
-    "equal_from_bounds",
-    "less_equal_from_equal",
-    "negated_goal",
-    "divide",
     "enum",
     "enumerate",
     "execute",
@@ -270,17 +264,13 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "if",
     "import",
     "implies",
-    "arithmetic_certificate",
     "peel",
-    "signed_int32",
-    "rules",
     "rust",
     "in",
     "induct",
     "initialize",
     "instantiate",
     "int32",
-    "int32_range",
     "intro",
     "invariant",
     "known",
@@ -290,7 +280,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "load_uint8",
     "load_uint8_pointer",
     "loop",
-    "less_than_from_not_equal",
     "mark",
     "match",
     "memory",
@@ -308,7 +297,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "predicate",
     "prop",
     "preserve",
-    "premise",
     "produces",
     "read",
     "read_event",
@@ -316,8 +304,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "resource",
     "region",
     "rewrite",
-    "reverse",
-    "scale",
     "same_object",
     "little_endian",
     "scatter",
@@ -335,7 +321,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "tactic",
     "take",
     "target",
-    "trivial",
     "theorem",
     "then",
     "transport",
@@ -5906,7 +5891,7 @@ pub enum ProofTactic {
     /// This has no written spelling; explicit `solve()` selects one goal.
     ImplicitSolve,
     SolveUsing(ProofSolveUsing),
-    ArithmeticCertificate(ArithmeticCertificate),
+
     /// Dev-only proof hole. Closes the enclosing proof unit without checking
     /// anything. Parses only while `verification::with_allow_sorry` is active
     /// (set solely by `click verify --allow-sorry`); every other use is
@@ -5984,7 +5969,6 @@ pub enum SimpleTactic {
     Known,
     Extract,
     Normalize,
-    Arithmetic,
     Intro,
     Enumerate,
     Contradiction,
@@ -6313,16 +6297,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "arithmetic-certificate",
-        syntax: "arithmetic_certificate { premise ...; conclusion N; }",
-        class: "simple",
-    },
-    PublicTacticForm {
-        id: "arithmetic-certificate-signed-int32",
-        syntax: "arithmetic_certificate signed_int32 { ... }",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "intro",
         syntax: "intro()",
         class: "simple",
@@ -6540,7 +6514,7 @@ impl ProofTactic {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
-            Self::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
+
             Self::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),
             Self::Intro | Self::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
             Self::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
@@ -6928,26 +6902,11 @@ pub struct ProofSolveUsing {
     premises: Vec<ClickProposition>,
 }
 
-/// The public arithmetic-certificate envelope. The family tag is explicit in
-/// the in-memory proof object even while the source form remains compact; a
-/// future family can be added without another top-level proof tactic.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ArithmeticCertificate {
-    pub family: ArithmeticCertificateFamily,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ArithmeticCertificateFamily {
-    Integer(IntegerCertificate),
-    SignedInt32(SignedInt32Certificate),
-    Special(SpecialArithmeticCertificate),
-}
-
 /// The checked signed-int32 arithmetic rule family. Surface nodes retain
 /// source expressions so explicit certificates round-trip without erasing
 /// provenance before the kernel performs its independent validation.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SignedInt32Certificate {
+pub struct SignedIntervalPlan {
     pub nodes: Vec<SignedArithmeticStep>,
     pub conclusion: usize,
 }
@@ -7123,26 +7082,12 @@ pub enum SignedArithmeticStep {
     },
 }
 
-impl ArithmeticCertificate {
-    pub fn integer(certificate: IntegerCertificate) -> Self {
-        Self {
-            family: ArithmeticCertificateFamily::Integer(certificate),
-        }
-    }
-
-    pub fn special(certificate: SpecialArithmeticCertificate) -> Self {
-        Self {
-            family: ArithmeticCertificateFamily::Special(certificate),
-        }
-    }
-}
-
 /// Checked pointer and finite-float arithmetic rules. The premise vector is
 /// the exact source premise slice consumed by the certificate; node indices
 /// refer only to that vector and the flat node list as documented by the
 /// parser/printer.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SpecialArithmeticCertificate {
+pub struct SpecializedCompositionPlan {
     pub premises: Vec<ClickProposition>,
     pub nodes: Vec<SpecialArithmeticNode>,
     pub conclusion: usize,
@@ -7222,86 +7167,6 @@ pub enum SpecialArithmeticNode {
     SignedDefined {
         width: crate::kernel::SignedDefinedWidth,
         bounds: Vec<usize>,
-        result: ClickProposition,
-    },
-}
-
-/// The mathematical Integer rule family. Every node carries its source
-/// proposition for exact lowering and its claimed normalized result.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IntegerCertificate {
-    pub nodes: Vec<IntegerCertificateNode>,
-    pub conclusion: usize,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IntegerCertificateNode {
-    Premise {
-        index: usize,
-        proposition: ClickProposition,
-        result: ClickProposition,
-    },
-    Scale {
-        source: usize,
-        coefficient: ContractExpression,
-        result: ClickProposition,
-    },
-    Add {
-        left: usize,
-        right: usize,
-        result: ClickProposition,
-    },
-    EqualityToLessEqual {
-        source: usize,
-        reverse: bool,
-        result: ClickProposition,
-    },
-    EqualityFromBounds {
-        lower: usize,
-        upper: usize,
-        result: ClickProposition,
-    },
-    Trivial {
-        result: ClickProposition,
-    },
-    /// A machine value's type range: `MIN <= to_integer(v)` or
-    /// `to_integer(v) <= MAX`, with the type's exact endpoint.
-    TypeRange {
-        result: ClickProposition,
-    },
-    /// A bound an unsigned quotient, shift, or remainder by a constant
-    /// takes from its operand: `c * to_integer(x / c) <= to_integer(x)`,
-    /// `to_integer(x) <= c * to_integer(x / c) + (c - 1)`, or
-    /// `to_integer(x % c) <= c - 1`.
-    OperationBound {
-        result: ClickProposition,
-    },
-    /// A disequality with a machine type's endpoint, read as the bound it
-    /// gives: from premise `v != 0u64`, `1 <= to_integer(v)`.
-    ExcludedTypeBound {
-        index: usize,
-        proposition: ClickProposition,
-        result: ClickProposition,
-    },
-    /// A non-strict bound made strict by a disequality of the same
-    /// difference: from node `bound`, `l <= r`, and premise `index`,
-    /// `l != r` (either side first), `l < r`.
-    StrictFromDisequal {
-        bound: usize,
-        index: usize,
-        proposition: ClickProposition,
-        result: ClickProposition,
-    },
-    /// The integer negation of a non-strict or strict goal, assumed for a
-    /// refutation; the certificate then concludes with a contradiction.
-    NegatedGoal {
-        result: ClickProposition,
-    },
-    /// Divide a non-strict bound by a positive common factor of its
-    /// coefficients, rounding the constant.
-    Divide {
-        source: usize,
-        divisor: ContractExpression,
         result: ClickProposition,
     },
 }

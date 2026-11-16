@@ -1,5 +1,5 @@
-//! Bounded selection of typed certificates for pointer and finite-float facts.
-//! The kernel checker, not this selector, is authoritative.
+//! Bounded planning for pointer, finite-float, and native arithmetic facts.
+//! Plans expand into ordinary library applications and normalization.
 
 use super::*;
 use crate::kernel::MachineBinaryOp;
@@ -8,7 +8,7 @@ use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::cast_term;
 use crate::kernel::proof::arithmetic_special::{
-    SpecialArithmeticCertificate as KernelCertificate, SpecialArithmeticNode as KernelNode,
+    SpecialArithmeticNode as KernelNode, SpecialArithmeticPlan as KernelPlan,
     signed_constant_bound_on_view, signed_definedness_query,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
@@ -16,12 +16,12 @@ use crate::kernel::{ConditionTerm, FloatClassification, FloatCondition, Proposit
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
 };
-use crate::surface::{ArithmeticCertificate, SpecialArithmeticCertificate, SpecialArithmeticNode};
+use crate::surface::{SpecialArithmeticNode, SpecializedCompositionPlan};
 
-pub(super) fn plan_special_arithmetic_certificate(
+pub(super) fn plan_special_arithmetic(
     goal: &Proposition,
     premises: &[Proposition],
-) -> Option<KernelCertificate> {
+) -> Option<KernelPlan> {
     if !charge_proposition(goal) {
         return None;
     }
@@ -36,7 +36,7 @@ pub(super) fn plan_special_arithmetic_certificate(
                 context.assume_proposition(premise.clone())
             });
         if context.decide_widened_sum_bound(condition) == Some(*value) {
-            return Some(KernelCertificate {
+            return Some(KernelPlan {
                 nodes: vec![KernelNode::UnsignedSumBound {
                     bounds: (0..premises.len()).collect(),
                     result: goal.clone(),
@@ -62,7 +62,7 @@ pub(super) fn plan_special_arithmetic_certificate(
                 .then_some(i)
             })
             .collect();
-        return Some(KernelCertificate {
+        return Some(KernelPlan {
             nodes: vec![KernelNode::SignedDefined {
                 width,
                 bounds,
@@ -72,7 +72,7 @@ pub(super) fn plan_special_arithmetic_certificate(
         });
     }
     if let Some(finite) = float_finite_premise(goal, premises) {
-        return Some(KernelCertificate {
+        return Some(KernelPlan {
             nodes: vec![KernelNode::FloatReflexive {
                 finite,
                 result: goal.clone(),
@@ -81,7 +81,7 @@ pub(super) fn plan_special_arithmetic_certificate(
         });
     }
     if is_alignment_goal(goal) {
-        return Some(KernelCertificate {
+        return Some(KernelPlan {
             nodes: vec![KernelNode::PointerAlignment {
                 premise: premises
                     .iter()
@@ -104,7 +104,7 @@ pub(super) fn plan_special_arithmetic_certificate(
                     .then_some(i)
             })
             .collect();
-        return Some(KernelCertificate {
+        return Some(KernelPlan {
             nodes: vec![KernelNode::PointerTranslation {
                 relation,
                 bounds,
@@ -130,7 +130,7 @@ pub(super) fn plan_special_arithmetic_certificate(
             })
             .collect();
         if !alignments.is_empty() {
-            return Some(KernelCertificate {
+            return Some(KernelPlan {
                 nodes: vec![KernelNode::PointerWordEquality {
                     relation,
                     alignments,
@@ -141,7 +141,7 @@ pub(super) fn plan_special_arithmetic_certificate(
         }
     }
     if let Some(bounds) = cast_identity_bounds(goal, premises) {
-        return Some(KernelCertificate {
+        return Some(KernelPlan {
             nodes: vec![KernelNode::IntegerCastIdentity {
                 bounds,
                 result: goal.clone(),
@@ -161,7 +161,7 @@ pub(super) fn plan_special_arithmetic_certificate(
             })
             .collect::<Vec<_>>();
         if !alignments.is_empty() {
-            return Some(KernelCertificate {
+            return Some(KernelPlan {
                 nodes: vec![KernelNode::PointerWordFromAlignment {
                     alignments,
                     result: goal.clone(),
@@ -173,11 +173,11 @@ pub(super) fn plan_special_arithmetic_certificate(
     None
 }
 
-pub(in crate::surface) fn special_plan_to_surface_certificate(
-    plan: &KernelCertificate,
+pub(in crate::surface) fn special_plan_to_surface(
+    plan: &KernelPlan,
     premises: &[ClickProposition],
     goal: &ClickProposition,
-) -> ArithmeticCertificate {
+) -> SpecializedCompositionPlan {
     let nodes = plan
         .nodes
         .iter()
@@ -226,60 +226,7 @@ pub(in crate::surface) fn special_plan_to_surface_certificate(
                     result: goal.clone(),
                 }
             }
-            KernelNode::IntegerOperationIdentity { bounds, .. } => {
-                SpecialArithmeticNode::IntegerOperationIdentity {
-                    bounds: bounds.clone(),
-                    result: goal.clone(),
-                }
-            }
-            KernelNode::IntegerProductBounds { bounds, .. } => {
-                SpecialArithmeticNode::IntegerProductBounds {
-                    bounds: bounds.clone(),
-                    result: goal.clone(),
-                }
-            }
-            KernelNode::IntegerDivisionBounds { bounds, .. } => {
-                SpecialArithmeticNode::IntegerDivisionBounds {
-                    bounds: bounds.clone(),
-                    result: goal.clone(),
-                }
-            }
-            KernelNode::IntegerMultiplyOrder { bounds, .. } => {
-                SpecialArithmeticNode::IntegerMultiplyOrder {
-                    bounds: bounds.clone(),
-                    result: goal.clone(),
-                }
-            }
-            KernelNode::IntegerQuotientBound { bounds, .. } => {
-                SpecialArithmeticNode::IntegerQuotientBound {
-                    bounds: bounds.clone(),
-                    result: goal.clone(),
-                }
-            }
-            KernelNode::IntegerBoundExclusion { bounds, .. } => {
-                SpecialArithmeticNode::IntegerBoundExclusion {
-                    bounds: bounds.clone(),
-                    result: goal.clone(),
-                }
-            }
-            KernelNode::IntegerRelationTransport { bounds, .. } => {
-                SpecialArithmeticNode::IntegerRelationTransport {
-                    bounds: bounds.clone(),
-                    result: goal.clone(),
-                }
-            }
-            KernelNode::IntegerPolynomialIdentity { bounds, .. } => {
-                SpecialArithmeticNode::IntegerPolynomialIdentity {
-                    bounds: bounds.clone(),
-                    result: goal.clone(),
-                }
-            }
-            KernelNode::IntegerQuotientShift { bounds, .. } => {
-                SpecialArithmeticNode::IntegerQuotientShift {
-                    bounds: bounds.clone(),
-                    result: goal.clone(),
-                }
-            }
+
             KernelNode::SignedDefined { width, bounds, .. } => {
                 SpecialArithmeticNode::SignedDefined {
                     width: *width,
@@ -290,11 +237,11 @@ pub(in crate::surface) fn special_plan_to_surface_certificate(
         })
         .collect();
     let (premises, nodes) = cited_premises_only(premises, nodes);
-    ArithmeticCertificate::special(SpecialArithmeticCertificate {
+    SpecializedCompositionPlan {
         premises,
         nodes,
         conclusion: plan.conclusion,
-    })
+    }
 }
 
 /// The premise indices a node cites, for renumbering.
@@ -1154,69 +1101,7 @@ mod tests {
             }),
             true,
         );
-        assert!(plan_special_arithmetic_certificate(&goal, &[finite]).is_none());
-    }
-
-    #[test]
-    fn finite_read_certificate_preserves_state_address_and_kind() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(crate::kernel::Memory::new());
-        let pointer = crate::kernel::Pointer::symbolic(Variable(22_104));
-        let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
-        let value = read(
-            crate::kernel::ProgramPoint::at(&memory),
-            pointer.clone(),
-            crate::kernel::LoadKind::Float64,
-        );
-        let goal = Proposition::ConditionIs(
-            ConditionTerm::float64_compare(
-                value.clone(),
-                value.clone(),
-                crate::kernel::ComparisonOperator::Equal,
-            ),
-            true,
-        );
-        for (value, valid) in [
-            (value, true),
-            (
-                read(
-                    crate::kernel::ProgramPoint::at(&memory),
-                    pointer.offset_by_bytes(8),
-                    crate::kernel::LoadKind::Float64,
-                ),
-                false,
-            ),
-            (
-                read(
-                    crate::kernel::ProgramPoint::at(&memory),
-                    pointer.clone(),
-                    crate::kernel::LoadKind::Bits64,
-                ),
-                false,
-            ),
-            (
-                read(
-                    crate::kernel::ProgramPoint::at(
-                        &(crate::kernel::intern_memory(
-                            crate::kernel::Memory::new().with_block("other", 8),
-                        )),
-                    ),
-                    pointer,
-                    crate::kernel::LoadKind::Float64,
-                ),
-                false,
-            ),
-        ] {
-            let premise = Proposition::ConditionIs(
-                ConditionTerm::float64_classification(value, FloatClassification::Finite),
-                true,
-            );
-            let plan = plan_special_arithmetic_certificate(&goal, std::slice::from_ref(&premise));
-            assert_eq!(plan.is_some(), valid);
-            if let Some(plan) = plan {
-                plan.check(&goal, &[premise]).unwrap();
-            }
-        }
+        assert!(plan_special_arithmetic(&goal, &[finite]).is_none());
     }
 
     #[test]
@@ -1250,7 +1135,7 @@ mod tests {
             }),
             true,
         ));
-        let plan = plan_special_arithmetic_certificate(&goal, &premises).expect("finite plan");
+        let plan = plan_special_arithmetic(&goal, &premises).expect("finite plan");
         assert!(matches!(
             plan.nodes[0],
             KernelNode::FloatReflexive { finite: 64, .. }

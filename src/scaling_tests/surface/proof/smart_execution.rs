@@ -107,6 +107,7 @@ fn model_argument_guard_work(prepare: bool) {
         let algebraic = BTreeMap::new();
         let retained_states = RecordedStates::new();
         let application_context = TheoremApplicationContext {
+            parameters: ParameterBinding::default(),
             values: &context.values,
             array_refs: &context.array_refs,
             algebraic_values: &algebraic,

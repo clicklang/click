@@ -5,20 +5,11 @@ theorem zlib_batch_count_bounds(n: uint32) {
  requires n <= 347u32;
  ensures to_integer(n as int32) == to_integer(n) by {
   have 0 <= to_integer(n); have to_integer(n) <= 4294967295;
-  arithmetic_certificate rules {
-   premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
-   premise 1: to_integer(n) <= 347 => to_integer(n) <= 347;
-   integer_cast_identity bounds [0, 1] => to_integer(n as int32) == to_integer(n);
-   conclusion 0;
-  }
+  solve() using { 0 <= to_integer(n); to_integer(n) <= 347; };
  }
  ensures 0 <= n as int32 and n as int32 <= 347 by {
   have 0 <= to_integer(n); have to_integer(n) <= 4294967295;
-  have to_integer(n as int32) == to_integer(n) by { arithmetic_certificate rules {
-   premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
-   premise 1: to_integer(n) <= 347 => to_integer(n) <= 347;
-   integer_cast_identity bounds [0, 1] => to_integer(n as int32) == to_integer(n); conclusion 0;
-  } }
+  have to_integer(n as int32) == to_integer(n) by { solve() using { 0 <= to_integer(n); to_integer(n) <= 347; }; }
   have 0 <= to_integer(n as int32) by solve() using { 0 <= to_integer(n); to_integer(n as int32) == to_integer(n); };
   have to_integer(n as int32) <= 347 by solve() using { to_integer(n) <= 347; to_integer(n as int32) == to_integer(n); };
   solve();
@@ -28,11 +19,7 @@ theorem zlib_batch_native_capacity_observation(n: uint32) {
  requires n <= 347u32;
  ensures to_integer(16u64 * n as uint64) == 16 * to_integer(n) by {
   have 0 <= to_integer(n); have to_integer(n) <= 4294967295;
-  have to_integer(n as uint64) == to_integer(n) by { arithmetic_certificate rules {
-   premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
-   premise 1: to_integer(n) <= 347 => to_integer(n) <= 347;
-   integer_cast_identity bounds [0, 1] => to_integer(n as uint64) == to_integer(n); conclusion 0;
-  } }
+  have to_integer(n as uint64) == to_integer(n) by { solve() using { 0 <= to_integer(n); to_integer(n) <= 347; }; }
   have to_integer(16u64) * to_integer(n as uint64) <= 18446744073709551615 by solve() using { to_integer(n) <= 347; to_integer(n as uint64) == to_integer(n); };
   apply(integer::uint64_multiply_to_integer(16u64, n as uint64));
   solve() using { to_integer(16u64 * n as uint64) == to_integer(16u64) * to_integer(n as uint64); to_integer(n as uint64) == to_integer(n); };
@@ -42,11 +29,7 @@ theorem zlib_batch_remaining_bounds(n: uint32) {
  requires n <= 347u32;
  ensures to_integer(zlib_batch_remaining(n)) == 16 * to_integer(n) by {
   have 0 <= to_integer(n); have to_integer(n) <= 4294967295;
-  have to_integer(n as uint64) == to_integer(n) by { arithmetic_certificate rules {
-   premise 0: 0 <= to_integer(n) => 0 <= to_integer(n);
-   premise 1: to_integer(n) <= 347 => to_integer(n) <= 347;
-   integer_cast_identity bounds [0, 1] => to_integer(n as uint64) == to_integer(n); conclusion 0;
-  } }
+  have to_integer(n as uint64) == to_integer(n) by { solve() using { 0 <= to_integer(n); to_integer(n) <= 347; }; }
   have to_integer(16u64) * to_integer(n as uint64) <= 18446744073709551615 by solve() using { to_integer(n) <= 347; to_integer(n as uint64) == to_integer(n); };
   apply(integer::uint64_multiply_to_integer(16u64, n as uint64));
   unfold(zlib_batch_remaining(n));

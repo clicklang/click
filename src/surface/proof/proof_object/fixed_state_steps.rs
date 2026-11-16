@@ -903,6 +903,7 @@ impl<'a> Proof<'a> {
             })
             .collect();
         let application_context = TheoremApplicationContext {
+            parameters: ParameterBinding::default(),
             values: &context.theorem_context.values,
             array_refs: &context.theorem_context.array_refs,
             algebraic_values: &algebraic_values,

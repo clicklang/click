@@ -24,12 +24,7 @@ int64 add_byte(uint32 sum, uint8 byte) {
         solve() using { (byte as uint32) <= 255u32; sum <= 4294967040u32; };
     }
     have result <= 4294967295i64 by {
-        arithmetic_certificate rules {
-            premise 0: (byte as uint32) <= 255u32 => (byte as uint32) <= 255u32;
-            premise 1: sum <= 4294967040u32 => sum <= 4294967040u32;
-            unsigned_sum_bound bounds [0, 1] => result <= 4294967295i64;
-            conclusion 0;
-        }
+        solve() using { (byte as uint32) <= 255u32; sum <= 4294967040u32; };
     }
     solve();
 }

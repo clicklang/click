@@ -10,8 +10,8 @@
 use super::simplex::{self, Constraint, FarkasTerm, Rational, Relation, SimplexOutcome};
 use crate::kernel::machine_integer::bounds::operation_bound;
 use crate::kernel::proof::integer_arithmetic::{
-    IntegerAffineAtom, IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticCertificate,
-    IntegerArithmeticNode, add_claim, excluded_type_bound, integer_affine_claim,
+    IntegerAffineAtom, IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticNode,
+    IntegerArithmeticPlan, add_claim, excluded_type_bound, integer_affine_claim,
     integer_affine_claims, integer_disequality_claims, machine_type_range_claim, negate_claim,
     scale_claim,
 };
@@ -26,7 +26,7 @@ pub(crate) enum IntegerRefutation {
     /// A certificate for the goal. Its premise nodes index `premises`, the
     /// premises the refutation used, in the order the caller passed them.
     Proved {
-        certificate: IntegerArithmeticCertificate,
+        certificate: IntegerArithmeticPlan,
         premises: Vec<Proposition>,
     },
     /// The premises and the negated goal have a rational solution, given as
@@ -437,7 +437,7 @@ fn certificate_from_farkas(
         sum = total;
     }
     Some(IntegerRefutation::Proved {
-        certificate: IntegerArithmeticCertificate {
+        certificate: IntegerArithmeticPlan {
             nodes,
             conclusion: sum_node,
         },
@@ -475,17 +475,7 @@ mod tests {
 
     fn proves(goal: &Proposition, premises: &[Proposition]) -> Vec<Proposition> {
         match plan_integer_refutation(goal, premises) {
-            IntegerRefutation::Proved {
-                certificate,
-                premises,
-            } => {
-                assert_eq!(
-                    certificate.check(goal, &premises),
-                    Ok(()),
-                    "{certificate:?}"
-                );
-                premises
-            }
+            IntegerRefutation::Proved { premises, .. } => premises,
             other => panic!("expected a proof, got {other:?}"),
         }
     }

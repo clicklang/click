@@ -1,7 +1,7 @@
 # A stored unsigned sub-word retains its promoted observation
 
-An unsigned 16-bit store retains a low-bit mask in its word carrier. The
-explicit cast certificate preserves that value when it is promoted to int32.
+Arithmetic search expands to ordinary proof steps, with the selected premises
+stated explicitly in `solve() using { ... }`.
 
 ```c filename=lane.c
 void store_lane(uint16 *out, uint32 value) {
@@ -20,16 +20,8 @@ void store_lane(uint16 *out, uint32 value) {
     ensures to_integer(*out as int32) == to_integer(*out);
 } by {
     step_until(function.exit);
-    have to_integer(*out) == to_integer(old(value)) by { arithmetic_certificate rules {
-        premise 0: 0 <= to_integer(old(value)) => 0 <= to_integer(old(value));
-        premise 1: to_integer(old(value)) <= 65535 => to_integer(old(value)) <= 65535;
-        integer_cast_identity bounds [0, 1] => to_integer(*out) == to_integer(old(value)); conclusion 0;
-    } }
-    have to_integer(*out as int32) == to_integer(*out) by { arithmetic_certificate rules {
-        premise 0: 0 <= to_integer(*out) => 0 <= to_integer(*out);
-        premise 1: to_integer(*out) <= 65535 => to_integer(*out) <= 65535;
-        integer_cast_identity bounds [0, 1] => to_integer(*out as int32) == to_integer(*out); conclusion 0;
-    } }
+    have to_integer(*out) == to_integer(old(value)) by { solve() using { 0 <= to_integer(old(value)); to_integer(old(value)) <= 65535; }; }
+    have to_integer(*out as int32) == to_integer(*out) by { solve() using { 0 <= to_integer(*out); to_integer(*out) <= 65535; }; }
     solve() using { to_integer(*out as int32) == to_integer(*out); };
 }
 ```

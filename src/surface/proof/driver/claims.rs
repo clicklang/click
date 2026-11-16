@@ -2058,16 +2058,14 @@ fn apply_post_execution_arithmetic_using<'a>(
             .ok_or_else(|| {
                 focused.step_error("post-execution arithmetic certificate could not be constructed")
             })?;
-        let certificate = match plan {
+        match plan {
             ArithmeticPlan::Special(plan) => {
-                let certificate = crate::surface::checking::special_plan_to_surface_certificate(
+                let certificate = crate::surface::checking::special_plan_to_surface(
                     &plan,
                     surface_premises,
                     surface_goal,
                 );
-                let ArithmeticCertificateFamily::Special(plan) = &certificate.family else {
-                    unreachable!()
-                };
+                let plan = &certificate;
                 return crate::kernel::search::ProofSearch::apply_specialized_composition(
                     focused, plan,
                 )?
@@ -2108,22 +2106,13 @@ fn apply_post_execution_arithmetic_using<'a>(
                 {
                     return Ok(closed);
                 }
-                let certificate =
-                    crate::surface::proof::smart_closures::integer_plan_to_surface_certificate(
-                        &plan,
-                        &integer_pairs,
-                        surface_goal,
-                    )
-                    .ok_or_else(|| {
-                        focused.step_error(
-                            "post-execution Integer arithmetic certificate could not be transcribed",
-                        )
-                    })?;
-                ArithmeticCertificate::integer(certificate)
+                return Err(focused.step_error(
+                    "post-execution Integer arithmetic needs an ordinary composition",
+                ));
             }
             ArithmeticPlan::SignedInt32(plan) => {
                 let certificate = focused
-                    .signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)
+                    .signed_plan_to_surface(&plan, &pairs, surface_goal)
                     .ok_or_else(|| {
                         focused.step_error(
                             "post-execution signed arithmetic certificate could not be transcribed",
@@ -2139,10 +2128,7 @@ fn apply_post_execution_arithmetic_using<'a>(
                     )
                 });
             }
-        };
-        focused
-            .driver()
-            .apply_step(ProofStep::ArithmeticCertificate(certificate))
+        }
     })())
 }
 
@@ -3960,7 +3946,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     | ProofTactic::NormalizeUsing(_)
                                     | ProofTactic::ArithmeticUsing(_)
                                     | ProofTactic::Preserve(_)
-                                    | ProofTactic::ArithmeticCertificate(_)
                             ) | PostExecutionTactic::Both(_)
                         ) {
                             return_claim_context = None;
@@ -4049,8 +4034,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 tactic @ (ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
                                 | ProofTactic::ArithmeticUsing(_)
-                                | ProofTactic::Preserve(_)
-                                | ProofTactic::ArithmeticCertificate(_)),
+                                | ProofTactic::Preserve(_)),
                             ) => Some(tactic_name(tactic)),
                             PostExecutionTactic::Both(_) => Some("both"),
                             _ => None,
@@ -4545,8 +4529,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
                                 | ProofTactic::ArithmeticUsing(_)
-                                | ProofTactic::Preserve(_)
-                                | ProofTactic::ArithmeticCertificate(_),
+                                | ProofTactic::Preserve(_),
                             )
                             | PostExecutionTactic::Both(_) => {
                                 // The written closers that apply one step to

@@ -1032,8 +1032,8 @@ cannot establish Rust panic freedom.
 is a synthetic scalar regression covering byte accumulation, multiplication,
 modular reduction, shifts, packing, truncation, and unsigned comparison. Its
 [sidecar](https://github.com/clicklang/click/blob/master/examples/rust-unsigned/arithmetic.click)
-uses ordinary Click contracts and tactics. Expansion can use the shared
-`unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
+uses ordinary Click contracts and tactics. Expansion uses ordinary Integer laws and explicit normalization for widened
+word bounds.
 The [unchanged Adler2 computation](https://github.com/clicklang/click/blob/master/design/adler32/project/adler2/README.md)
 is verified separately against the common checksum specification for every
 slice length from canonical initial states. The unchanged `write_slice` and

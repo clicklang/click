@@ -10,12 +10,7 @@ theorem adler_count_observation(r: uint64) {
  requires r <= 22208u64;
  ensures to_integer(r as uint32 as int32) == to_integer(r) by {
   have 0u64 <= r by normalize();
-  arithmetic_certificate rules {
-   premise 0: 0 <= to_integer(r) => 0 <= to_integer(r);
-   premise 1: to_integer(r) <= 22208 => to_integer(r) <= 22208;
-   integer_cast_identity bounds [0, 1] => to_integer(r as uint32 as int32) == to_integer(r);
-   conclusion 0;
-  }
+  solve() using { 0 <= to_integer(r); to_integer(r) <= 22208; };
  }
 }
 theorem adler_count_bounds(r: uint64) {

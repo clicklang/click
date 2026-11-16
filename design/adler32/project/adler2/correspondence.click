@@ -6,12 +6,7 @@ theorem adler_result_widen(word: uint32) {
  ensures to_integer(word as uint64) == to_integer(word) by {
   have 0 <= to_integer(word);
   have to_integer(word) <= 4294967295;
-  arithmetic_certificate rules {
-   premise 0: 0 <= to_integer(word) => 0 <= to_integer(word);
-   premise 1: to_integer(word) <= 4294967295 => to_integer(word) <= 4294967295;
-   integer_cast_identity bounds [0, 1] => to_integer(word as uint64) == to_integer(word);
-   conclusion 0;
-  }
+  solve() using { 0 <= to_integer(word); to_integer(word) <= 4294967295; };
  }
 }
 

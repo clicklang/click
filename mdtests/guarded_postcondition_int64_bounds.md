@@ -1,18 +1,7 @@
 # An `int64` guarded postcondition closes from its operands' bounds
 
-This is the `int64` form of
-[`guarded_postcondition_closes_after_call.md`](guarded_postcondition_closes_after_call.md).
-`bump` promises `st.total == old(st.total) + result` over `int64`, so after
-the call the caller holds `defined(old(st.total) + got) implies st.total ==
-old(st.total) + got`. Under `result == 1` the operands are bounded
-(`old(st.total) < 100`, `got == 1`), so the sum cannot overflow.
-
-The smart closer selects the guarded equality and proves its guard with a
-nested `solve`. For an `int64` sum that proof is the checked `int64_defined`
-rule of the `rules` arithmetic-certificate family: each operand's range is
-its width range narrowed by the constant bounds the context indexes under
-that operand, and the rule concludes definedness when the exact result range
-stays inside `int64`. Expansion renders the discharge as
+Arithmetic search expands to ordinary proof steps, with the selected premises
+stated explicitly in `solve() using { ... }`.
 
 ```text
 have defined((old(st.total) + at(region(2).exit, got))) by {

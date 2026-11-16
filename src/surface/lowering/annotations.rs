@@ -2279,6 +2279,7 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression(
         entry_values,
         current_values,
         &crate::persistent::PersistentMap::default(),
+        BTreeMap::new(),
         result,
         retained_states,
         spec_definitions,
@@ -2300,6 +2301,7 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression_with_integer_
     entry_values: BTreeMap<String, ProgramValue>,
     current_values: BTreeMap<String, ProgramValue>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     result: Option<&ProgramValue>,
     retained_states: &RecordedStates,
     spec_definitions: SpecDefinitions<'_>,
@@ -2329,6 +2331,7 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression_with_integer_
         }
     }
     context.integer_values = referenced_integer_values.clone();
+    context.algebraic_values = algebraic_values.into_iter().collect();
     lowerer.capture_referenced_names = Some(contract_expression_referenced_names(expression));
 
     // Fold binders allocate from the fixed-state elaborator's local range.
@@ -3292,7 +3295,7 @@ pub(in crate::surface) fn click_parameter_pointer_element_widths_with_layouts(
 
 /// Lower explicit arithmetic evidence without constructing or cloning a C
 /// state. Its only environment is the already captured mathematical bindings.
-pub(in crate::surface) fn lower_integer_certificate_proposition(
+pub(in crate::surface) fn lower_integer_arithmetic_proposition(
     proposition: &ClickProposition,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
 ) -> Result<Proposition, String> {
@@ -3344,7 +3347,7 @@ pub(in crate::surface) fn lower_integer_certificate_proposition(
             Ok(Proposition::ConditionIs(condition, true))
         }
         ClickProposition::Not(body) => Ok(Proposition::Not(Box::new(
-            lower_integer_certificate_proposition(body, integer_values)?,
+            lower_integer_arithmetic_proposition(body, integer_values)?,
         ))),
         _ => Err("an Integer certificate requires a mathematical comparison".into()),
     }
@@ -3427,9 +3430,8 @@ pub(in crate::surface) fn lower_contract_integer_to_spec(
     ))
 }
 
-/// The first migrated lowering boundary: arithmetic certificate operands.
-/// Bindings are looked up by name; neither facts nor unrelated bindings are
-/// traversed. The checker bridge above is removed as certificates migrate.
+/// Lower a mathematical Integer expression through indexed lexical bindings.
+/// Neither facts nor unrelated bindings are traversed.
 pub(in crate::surface) fn lower_surface_integer_term(
     expression: &SurfaceTerm,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
@@ -3474,7 +3476,7 @@ pub(in crate::surface) fn lower_surface_integer_term(
                     .ok_or_else(|| format!("`{name}` is not an Integer binding"))?;
                 let SpecIntegerExpression::Term(term) = value else {
                     return Err(
-                        "machine-backed Integer bindings are not yet certificate atoms".into(),
+                        "machine-backed Integer bindings require fixed-state capture".into(),
                     );
                 };
                 check_integer_lowering_work(integer_root_work(term))?;

@@ -18,12 +18,7 @@ uint32 decrement(uint32 x) {
     step_until(function.exit);
     have 0 <= to_integer(old(x)) - 1;
     have to_integer(old(x)) - 1 <= 4294967295;
-    arithmetic_certificate rules {
-        premise 0: 0 <= to_integer(old(x)) - 1 => 0 <= to_integer(old(x)) - 1;
-        premise 1: to_integer(old(x)) - 1 <= 4294967295 => to_integer(old(x)) - 1 <= 4294967295;
-        integer_operation_identity bounds [0, 1] => to_integer(result) == to_integer(old(x)) - 1;
-        conclusion 0;
-    }
+    solve() using { 0 <= to_integer(old(x)) - 1; to_integer(old(x)) - 1 <= 4294967295; };
 }
 ```
 

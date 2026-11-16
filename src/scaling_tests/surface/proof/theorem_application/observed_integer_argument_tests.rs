@@ -31,6 +31,7 @@ fn integer_theorem_argument_capture_scales_with_unused_bindings_and_applications
         let integer_values = crate::persistent::PersistentMap::default();
         let retained_states = RecordedStates::default();
         let context = TheoremApplicationContext {
+            parameters: ParameterBinding::default(),
             values: &values,
             array_refs: &array_refs,
             algebraic_values: &algebraic_values,

@@ -2,87 +2,6 @@ use super::diagnostics::describe_contract_expression;
 use super::*;
 use crate::kernel::{AlgebraicValueType, int32};
 
-// Arithmetic composition stays explicit: only the individual Integer leaves
-// replacing normalize are allowed, never an opaque multi-node proof.
-fn assert_only_integer_arithmetic_leaves(source: &str) {
-    let tokens = parser::source_tokens(source).unwrap();
-    for (index, token) in tokens.iter().enumerate() {
-        if token.text != "arithmetic_certificate" {
-            continue;
-        }
-        let rules = tokens[index + 1].text == "rules";
-        let open = index + if rules { 2 } else { 1 };
-        assert_eq!(tokens[open].text, "{", "{source}");
-        let mut depth = 1;
-        let mut end = open + 1;
-        while depth != 0 {
-            match tokens[end].text.as_str() {
-                "{" => depth += 1,
-                "}" => depth -= 1,
-                _ => {}
-            }
-            end += 1;
-        }
-        let body = &tokens[open + 1..end - 1];
-        // Ignore separators inside a result expression's let or match.
-        let mut nested = 0;
-        let mut start = 0;
-        let mut statements = Vec::new();
-        for (index, token) in body.iter().enumerate() {
-            match token.text.as_str() {
-                "(" | "[" | "{" => nested += 1,
-                ")" | "]" | "}" => nested -= 1,
-                ";" if nested == 0 => {
-                    statements.push(
-                        body[start..index]
-                            .iter()
-                            .map(|token| token.text.as_str())
-                            .collect::<Vec<_>>(),
-                    );
-                    start = index + 1;
-                }
-                _ => {}
-            }
-        }
-        assert_eq!(start, body.len(), "{source}");
-        if rules {
-            assert_eq!(statements.len(), 4, "{source}");
-            assert!(
-                statements[0].starts_with(&["premise", "0", ":"]),
-                "{source}"
-            );
-            assert!(
-                statements[1].starts_with(&["premise", "1", ":"]),
-                "{source}"
-            );
-            assert!(
-                statements[2].starts_with(&[
-                    "integer_operation_identity",
-                    "bounds",
-                    "[",
-                    "0",
-                    ",",
-                    "1",
-                    "]",
-                    "=>"
-                ]),
-                "{source}"
-            );
-        } else {
-            assert_eq!(statements.len(), 2, "{source}");
-            assert!(
-                matches!(
-                    statements[0][0],
-                    "trivial" | "type_range" | "operation_bound"
-                ),
-                "{source}"
-            );
-            assert_eq!(statements[0][1], "=>", "{source}");
-        }
-        assert_eq!(statements.last().unwrap(), &["conclusion", "0"], "{source}");
-    }
-}
-
 // Semantic fixtures cold-check both the original and written output. Reuse the
 // original certificate here instead of searching for that same proof again.
 fn expand_checked_grouped_claim(
@@ -2455,8 +2374,8 @@ int32 keep(int32 x, int32 y) {
     let expanded = expand_checked_function_claim(source, &verified_for_label, "keep.weakened")
         .expect("Integer weakening should expand to a checked certificate");
     assert!(
-        !expanded.contains("normalize("),
-        "execution-context Integer composition should expand without normalization: {expanded}"
+        !expanded.contains("arithmetic_certificate"),
+        "execution-context expansion should use ordinary Integer composition: {expanded}"
     );
     verify_c_sources(&expanded, &c_sources)
         .expect("expanded execution-context Integer weakening should recheck");
@@ -2485,8 +2404,8 @@ theorem integer_affine_two_premise_constant_weakening(x: Integer, y: Integer) {
     )
     .expect("two-premise Integer weakening should expand");
     assert!(
-        !expanded.contains("normalize("),
-        "two-premise Integer composition should expand without normalization: {expanded}"
+        !expanded.contains("arithmetic_certificate"),
+        "two-premise expansion should use ordinary Integer composition: {expanded}"
     );
     verify_click_theorems(&expanded)
         .expect("expanded two-premise Integer weakening should recheck");
@@ -2527,77 +2446,6 @@ int32 fixed_c_params(int32 i, int32 total, int32 value) {
     );
     verify_c_sources(&expanded, &c_sources)
         .expect("expanded fixed execution scaled lower bound should recheck");
-}
-
-#[test]
-fn integer_affine_terminal_constant_certificate_preserves_true_goal() {
-    let source = r#"
-theorem integer_affine_terminal_constant(x: Integer) {
-    ensures x == x by {
-        arithmetic_certificate {
-            trivial => 0 <= 1;
-            conclusion 0;
-        }
-    }
-}
-"#;
-    verify_click_theorems(source).expect("a true terminal constant should close an Integer goal");
-    let expanded =
-        expand_c_claim_source_by_label(source, &[], "integer_affine_terminal_constant.ensures_0")
-            .expect("the terminal constant certificate should expand");
-    verify_click_theorems(&expanded)
-        .expect("expanded terminal constant certificate should recheck");
-}
-
-#[test]
-fn integer_affine_terminal_false_constant_certificate_is_rejected() {
-    let source = r#"
-theorem integer_affine_terminal_false_constant(x: Integer) {
-    ensures x == x by {
-        arithmetic_certificate {
-            trivial => 1 <= 0;
-            conclusion 0;
-        }
-    }
-}
-"#;
-    let error = verify_click_theorems(source)
-        .expect_err("a false terminal constant must not close an Integer goal");
-    assert!(
-        error
-            .message()
-            .contains("does not state what its rule derives")
-            || error.message().contains("does not establish the goal"),
-        "unexpected false-constant diagnostic: {}",
-        error.message()
-    );
-}
-
-#[test]
-fn integer_affine_intermediate_false_constant_certificate_is_rejected() {
-    let source = r#"
-theorem integer_affine_intermediate_false_constant(x: Integer) {
-    requires 0 <= x;
-    ensures 0 <= x by {
-        arithmetic_certificate {
-            premise 0: 0 <= x => 0 <= x;
-            trivial => 1 <= 0;
-            add 0, 1 => 0 <= x;
-            conclusion 2;
-        }
-    }
-}
-"#;
-    let error = verify_click_theorems(source)
-        .expect_err("a false intermediate constant must not enter an Integer certificate");
-    assert!(
-        error
-            .message()
-            .contains("does not state what its rule derives")
-            || error.message().contains("does not establish the goal"),
-        "unexpected false-intermediate diagnostic: {}",
-        error.message()
-    );
 }
 
 fn old_index(base: &str, index: u32) -> ContractExpression {
