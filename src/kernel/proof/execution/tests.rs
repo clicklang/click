@@ -754,7 +754,7 @@ fn returned_proposition_event(
             Some(super::super::OutcomeProofCore {
                 publication: None,
                 identity: super::super::OutcomeIdentity::fresh(),
-                result: Arc::new(int32(0)),
+                result: int32(0).into(),
                 state: state.clone().into(),
                 store_consequences_available: false,
                 is_exceptional: false,
