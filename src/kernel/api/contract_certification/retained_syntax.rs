@@ -1,8 +1,10 @@
 //! Allocation-independent written syntax at the certification boundary.
-//! No arithmetic observation, fact lookup, read resolution, or DAG export.
+//! No arithmetic observation, fact lookup, or read resolution. Selected native
+//! adapters preserve the existing certification admission policy.
 use super::*;
 use crate::kernel::{KernelTermNode as N, PureFunctionArgument as A};
 use std::collections::HashSet;
+mod pointers;
 
 #[derive(Clone, Copy)]
 enum CallArgument<'a> {
@@ -307,95 +309,6 @@ impl Comparison {
         true
     }
 
-    fn pointer(&mut self, a: &crate::kernel::Pointer, b: &crate::kernel::Pointer) -> bool {
-        use crate::kernel::{PointerBlock as B, PointerOffsetTerm as O};
-        let blocks = match (&a.block, &b.block) {
-            (B::PureFunctionApplication(a), B::PureFunctionApplication(b)) => {
-                a.name() == b.name()
-                    && a.arguments().len() == b.arguments().len()
-                    && a.arguments()
-                        .iter()
-                        .zip(b.arguments())
-                        .all(|(a, b)| self.argument(a, b))
-            }
-            _ => a.block == b.block,
-        };
-        if !blocks {
-            return false;
-        }
-        let mut pending = vec![(&a.offset, &b.offset)];
-        while let Some((a, b)) = pending.pop() {
-            crate::instrumentation::record_deterministic_work(1);
-            match (a, b) {
-                (O::Constant(a), O::Constant(b)) if a == b => {}
-                (O::Variable(a), O::Variable(b)) if a == b => {}
-                (O::Add(al, ar), O::Add(bl, br)) => {
-                    pending.extend([(al.as_ref(), bl.as_ref()), (ar.as_ref(), br.as_ref())])
-                }
-                (
-                    O::Int32Scaled {
-                        value: a,
-                        byte_width: aw,
-                    },
-                    O::Int32Scaled {
-                        value: b,
-                        byte_width: bw,
-                    },
-                ) if aw == bw => {
-                    if a.ty() != b.ty() || !self.machine(a.operand_view(), b.operand_view()) {
-                        return false;
-                    }
-                }
-                (
-                    O::Int64Scaled {
-                        value: a,
-                        byte_width: aw,
-                        unsigned: au,
-                    },
-                    O::Int64Scaled {
-                        value: b,
-                        byte_width: bw,
-                        unsigned: bu,
-                    },
-                ) if aw == bw && au == bu => {
-                    if a.ty() != b.ty() || !self.machine(a.operand_view(), b.operand_view()) {
-                        return false;
-                    }
-                }
-                _ => return false,
-            }
-        }
-        true
-    }
-
-    fn pointer_value(
-        &mut self,
-        a: &crate::kernel::PointerValue,
-        b: &crate::kernel::PointerValue,
-    ) -> bool {
-        if !a.retained_nonaddress_metadata_eq(b) {
-            return false;
-        }
-        if !self.pointer(a.pointer(), b.pointer())
-            || !self.pointer(a.designation(), b.designation())
-        {
-            return false;
-        }
-        match (a.opaque_extent(), b.opaque_extent()) {
-            (Some(a), Some(b)) if self.pointer(a, b) => {}
-            (None, None) => {}
-            _ => return false,
-        }
-        match (a.extent(), b.extent()) {
-            (Some(a), Some(b)) => {
-                self.pointer(&a.start, &b.start)
-                    && self.machine(Operand::Legacy(&a.width), Operand::Legacy(&b.width))
-            }
-            (None, None) => true,
-            _ => false,
-        }
-    }
-
     fn call_argument(&mut self, left: CallArgument<'_>, right: CallArgument<'_>) -> bool {
         use CallArgument::{Native, Shared};
         if let Shared(root) = left
@@ -433,18 +346,8 @@ impl Comparison {
             };
             return self.call_argument(left, Native(&A::Value(ProgramValue::Bool(word))));
         }
-        // Complete pointer arguments retain their established native admission
-        // policy at this selected boundary.
-
-        if let Shared(root) = left
-            && let Some(argument) = root.pointer_argument_native()
-        {
-            return self.call_argument(Native(argument), right);
-        }
-        if let Shared(root) = right
-            && let Some(argument) = root.pointer_argument_native()
-        {
-            return self.call_argument(left, Native(argument));
+        if let Some(equal) = self.pointer_arguments(left, right) {
+            return equal;
         }
         match (left, right) {
             (Native(a), Native(b)) => self.argument(a, b),
@@ -527,11 +430,7 @@ impl Comparison {
             (N::AlgebraicRead(a), N::AlgebraicRead(b)) => {
                 let (am, ap) = a.parts();
                 let (bm, bp) = b.parts();
-                am.arena_id() == bm.arena_id()
-                    && self.pointer(
-                        &ap.export().expect("read address"),
-                        &bp.export().expect("read address"),
-                    )
+                am.arena_id() == bm.arena_id() && self.shared_addresses(ap, bp)
             }
             _ => false,
         }
@@ -659,6 +558,211 @@ fn numeric_conversion(view: Operand<'_>) -> Option<((ProgramType, ProgramType), 
 mod tests {
     use super::*;
     use crate::kernel::{KernelTermExport, VerificationSession};
+
+    #[test]
+    fn shared_pointer_certification_preserves_complete_metadata_and_extent_admission() {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        use crate::kernel::{
+            IntegerTerm, ObjectTypeEvidence, Pointer, PointerValue, SharedPointerValue,
+            SubobjectExtent,
+        };
+        let _session = VerificationSession::enter();
+        let base = PointerValue::new(
+            Pointer::symbolic(Variable(999980)),
+            ProgramType::Int32Pointer,
+        );
+        let class = CAccessClass::Scalar(CScalarClass::Int);
+        let extent = SubobjectExtent {
+            start: base.pointer().clone(),
+            width: MachineTerm::constant(4),
+        };
+        let values = vec![
+            base.clone(),
+            base.clone()
+                .with_pointee_constant(true)
+                .with_pointee_constant(false),
+            base.clone().with_pointee_constant(true),
+            base.clone().with_pointee_volatile(true),
+            base.clone().with_type(ProgramType::VoidPointer),
+            base.clone()
+                .with_designation(std::sync::Arc::new(Pointer::symbolic(Variable(999979)))),
+            base.clone()
+                .with_opaque_extent(Some(std::sync::Arc::new(Pointer::symbolic(Variable(
+                    999978,
+                ))))),
+            base.clone().with_extent(Some(extent)),
+            base.clone().with_extent(Some(SubobjectExtent {
+                start: base.pointer().clone(),
+                width: MachineTerm::IntegerToMachine {
+                    destination: MachineIntegerType::Int32,
+                    value: IntegerTerm::Variable(Variable(999977)).into(),
+                },
+            })),
+            base.clone()
+                .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(
+                    class.clone(),
+                    3,
+                    1,
+                    false,
+                ))),
+            base.clone()
+                .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(class, 3, 2, false))),
+            base.clone()
+                .with_declared_object_class(Some(CAccessClass::Scalar(CScalarClass::Short))),
+            base.with_local_reference(
+                crate::kernel::loans::LocalScalarReference::fresh_for_payload_test(),
+            ),
+        ];
+        for a in &values {
+            for b in &values {
+                let expected = Comparison::default().pointer_value(a, b);
+                let (ar, br) = (
+                    KernelTerm::shared_pointer_value(SharedPointerValue::import(a)),
+                    KernelTerm::shared_pointer_value(SharedPointerValue::import(b)),
+                );
+                let (an, bn) = (
+                    A::Value(ProgramValue::Pointer(a.clone())),
+                    A::Value(ProgramValue::Pointer(b.clone())),
+                );
+                for (a, b) in [
+                    (CallArgument::Shared(&ar), CallArgument::Shared(&br)),
+                    (CallArgument::Shared(&ar), CallArgument::Native(&bn)),
+                    (CallArgument::Native(&an), CallArgument::Shared(&br)),
+                ] {
+                    assert_eq!(Comparison::default().call_argument(a, b), expected);
+                }
+            }
+        }
+        // A shared extent must not acquire the numeric identity shortcut.
+        assert!(!Comparison::default().pointer_value(&values[8], &values[8]));
+    }
+
+    #[test]
+    fn shared_captured_pointer_certification_preserves_memory_state() {
+        use crate::kernel::{Memory, Pointer, PointerValue, SharedPointerValue};
+        let _session = VerificationSession::enter();
+        let memory = Memory::new();
+        let changed = memory.clone().store(
+            Pointer::null(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        );
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(999976)),
+            ProgramType::Int32Pointer,
+        );
+        let root = KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer));
+        let shared = |memory: &Memory| {
+            KernelTerm::shared_array_reference(
+                crate::kernel::intern_memory_ref(memory),
+                root.clone(),
+                ProgramType::Int32,
+            )
+        };
+        let a = shared(&memory);
+        for (memory, expected) in [(&memory, true), (&changed, false)] {
+            let b = shared(memory);
+            let native = A::ArrayRef {
+                memory: memory.clone(),
+                pointer: ProgramValue::Pointer(pointer.clone()),
+                element_type: ProgramType::Int32,
+            };
+            assert_eq!(
+                Comparison::default()
+                    .call_argument(CallArgument::Shared(&a), CallArgument::Shared(&b)),
+                expected
+            );
+            assert_eq!(
+                Comparison::default()
+                    .call_argument(CallArgument::Shared(&a), CallArgument::Native(&native)),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn shared_algebraic_read_certification_preserves_address_and_state_identity() {
+        use crate::kernel::{
+            AlgebraicTermNode, AlgebraicType, Memory, Pointer, SharedPointerAddress,
+        };
+        let _session = VerificationSession::enter();
+        let memory = crate::kernel::intern_memory_ref(&Memory::new());
+        let changed = crate::kernel::intern_memory_ref(&memory.memory().clone().store(
+            Pointer::null(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        ));
+        let pointer = Pointer::symbolic(Variable(999974));
+        let other = Pointer::symbolic(Variable(999973));
+        let ty = AlgebraicType::parameter("T".into());
+        let root = KernelTerm::algebraic_read(
+            ty.clone(),
+            memory.clone(),
+            SharedPointerAddress::import(&pointer),
+        );
+        for (state, address, expected) in [
+            (&memory, &pointer, true),
+            (&changed, &pointer, false),
+            (&memory, &other, false),
+        ] {
+            let right = KernelTerm::algebraic_read(
+                ty.clone(),
+                state.clone(),
+                SharedPointerAddress::import(address),
+            );
+            let native = AlgebraicTerm {
+                algebraic_type: ty.clone(),
+                node: AlgebraicTermNode::MemoryLoad {
+                    memory: state.clone(),
+                    pointer: Box::new(address.clone()),
+                },
+            };
+            assert_eq!(
+                Comparison::default().common_algebraic(&root, &right),
+                expected
+            );
+            assert_eq!(
+                Comparison::default().mixed_algebraic(&root, &native),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn shared_pointer_opaque_indices_keep_the_native_refusal() {
+        use crate::kernel::{
+            IntegerTerm, KernelPointerOffset, Pointer, PointerValue, SharedPointerAddress,
+            SharedPointerValue,
+        };
+        let _session = VerificationSession::enter();
+        let native = MachineTerm::PureFunctionApplication {
+            name: "opaque_index".into(),
+            arguments: vec![MachineTerm::IntegerToMachine {
+                destination: MachineIntegerType::Int32,
+                value: IntegerTerm::Variable(Variable(999975)).into(),
+            }],
+        };
+        let index = KernelTerm::retained_native_machine_operand(MachineIntegerType::Int32, &native);
+        assert!(matches!(index.node(), N::Legacy(_)));
+        let base = SharedPointerValue::import(&PointerValue::new(
+            Pointer::null(),
+            ProgramType::Int32Pointer,
+        ));
+        let mut value = base.node().clone();
+        value.address = SharedPointerAddress::new(
+            value.address.node().block.clone(),
+            KernelPointerOffset::Int32Scaled {
+                value: index,
+                byte_width: 4,
+            }
+            .into_shared()
+            .unwrap(),
+        );
+        value.designation = value.address.clone();
+        let root = KernelTerm::shared_pointer_value(SharedPointerValue::new(value));
+        assert!(
+            !Comparison::default()
+                .call_argument(CallArgument::Shared(&root), CallArgument::Shared(&root))
+        );
+    }
 
     #[test]
     fn boolean_argument_certification_keeps_literal_raw_word_and_logical_admission() {
