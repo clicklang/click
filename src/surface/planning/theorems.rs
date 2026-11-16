@@ -12,9 +12,10 @@ enum ExpressionHead {
 
 fn parameter_name(expression: &ContractExpression) -> Option<&str> {
     match expression {
-        ContractExpression::Binding(name)
-        | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Some(name),
+        ContractExpression::Binding(name) | ContractExpression::AlgebraicVariable { name, .. } => {
+            Some(name)
+        }
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => name.named(),
         _ => None,
     }
 }

@@ -140,3 +140,28 @@ fn discovery_respects_library_imports_and_prefixes() {
             .any(|candidate| candidate.name == law)
     );
 }
+
+#[test]
+fn theorem_matching_retains_typed_c_binding_identity() {
+    let owner = crate::kernel::LocalFunctionId::new(Some("caller.c".into()), "caller".into());
+    let local = crate::kernel::LocalBindingId::new(owner, false, 1, Some("x".into()));
+    let local = ContractExpression::ProgramExpression(ProgramExpression::Variable(local.into()));
+    assert_eq!(parameter_name(&local), None);
+    let named = ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
+    assert_eq!(parameter_name(&named), Some("x"));
+    let file = parser::parse("function shifted(x: int32) -> Integer { to_integer(x) + 7 } theorem law(x: int32) { ensures 7 <= shifted(x); }").unwrap();
+    let theorem = &file.theorem_definitions()[0];
+    let Ensure::Proposition(mut goal) = theorem.ensures()[0].ensure().clone() else {
+        panic!()
+    };
+    let ClickProposition::Comparison {
+        right: ContractExpression::Call { arguments, .. },
+        ..
+    } = &mut goal
+    else {
+        panic!()
+    };
+    arguments[0] = local.clone();
+    let application = match_theorem_conclusion(theorem, 0, &goal).unwrap();
+    assert_eq!(application.arguments, vec![local]);
+}
