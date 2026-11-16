@@ -112,6 +112,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         {
             driver_proof.record_spellability_census(next, tactic);
         }
+        if let Ok(next) = &result
+            && crate::surface::proof::raise_lower_audit::enabled()
+            && !Arc::ptr_eq(&driver_proof.node, &next.node)
+        {
+            driver_proof.record_raise_lower_audit(next, tactic);
+        }
         result
     }
 

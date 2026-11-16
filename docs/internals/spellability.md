@@ -304,6 +304,34 @@ not anonymous variables.
 Making a proposition kind authority is a design decision, never a way to
 avoid spelling a fact a proof could need to cite.
 
+## The raise-lower principle
+
+Raising turns a kernel term into Click text; lowering turns Click text into
+a kernel term. Three rules relate them. Each has a target form, stronger
+than what the verifier enforces today, and an audit that measures the gap.
+
+| Rule | Target | Enforced today | Audit |
+| --- | --- | --- | --- |
+| Lowering undoes raising | `lower(raise(x)) == x` for every term a proof state holds, so a raised spelling needs no checking | Required, but spellers lower each candidate again and drop a mismatch (`surface_lowers_to`, the premise speller's `matches_kernel`) | `scripts/raise-lower.sh` |
+| Lowering is fact-stable | Lowering reads no facts: one text, state and set of resources lower to one term | Facts may refuse the term, discharge its obligations, add side facts, or select one of several paths; they may not change the term | `scripts/fact-stability.sh`, `differs` lines |
+| Definedness is an obligation | Lowering returns the term, its definedness obligations and its side facts; checking discharges the obligations | Ordinary arithmetic returns obligations beside the term, but lowering drops one the facts already prove, and some lowerings are refused instead of owing one | `scripts/fact-stability.sh`, `refused` and `paths:N` lines |
+
+`scripts/fact-stability.sh` reports three kinds of fact-dependent lowering.
+A `differs` line breaks the enforced rule. A `refused` line is a proposition
+that lowers with facts and not without them; a `paths:N` line is one the
+facts selected from `N` fact-free paths. Both are allowed today, and both
+are where the facts, not an obligation, decide definedness. The target
+form removes them.
+
+`scripts/raise-lower.sh` raises each fact a checked step adds, and the goal
+it leaves focused, with `synthesize_surface_proposition` at the step's
+fixed state, lowers that spelling again, and records `same`, `polarity`
+(the same comparison at the other polarity), `differs`, `unlowered`,
+`unraised`, or `no-state`. It measures the raiser alone, not the premise
+speller, which searches recorded spellings first and keeps only one that
+lowers back. It observes the steps the [census](#measuring-the-gap) does; a
+fact a `have` publishes to its enclosing proof is not among them.
+
 ## Lowering is structural
 
 A lowered term has the structure of the surface text it lowers: each
@@ -365,11 +393,11 @@ producer's read equations; its address, bounds, and designation are not folded
 into the lowered term. The cached-prefix route also excludes logical reads
 from fact-supported recovery, even outside specification scope.
 
-Remaining violations include legacy stored-pointer folds outside this logical
-read route (`complete_pointer_read_value` and `Pointer::loaded`), comparisons
-folded to constants, decided guards and disjuncts dropped, and comparison kinds
-chosen by known provenance. The logical-read switch does not establish complete
-fact stability or spelling coverage.
+The legacy stored-pointer fold (`complete_pointer_read_value`) remains only
+for C program reads outside specification scope
+(`kernel::eval::memory_loads`); logical reads and specification-scope C
+expressions retain the read. C evaluation computes with stored values, as
+[a read names its version point](#a-read-names-its-version-point) describes.
 
 ## Lowering is fact-stable
 
@@ -444,12 +472,14 @@ Those facts accompany evaluation instead of replacing its result. Explicit
 ordinary arithmetic proofs must conclude the full written goal (after explicit
 rewrites), rather than depend on tag removal during lowering.
 
-`CLICK_FACT_STABILITY=<path>` lowers each checked proof proposition again
-under the same policy with no facts (`kernel::fact_stability`) and records
-every lowering whose term differs. `scripts/fact-stability.sh` runs the
-mdtest corpus under it and groups the differences by where the two terms
-first diverge. The recent ordinary-corpus audits record zero differences;
-[the handoff](https://github.com/clicklang/click/blob/master/roadmap/unspellable-facts.md) tracks their exact scope.
+`CLICK_FACT_STABILITY=<path>` lowers each checked proof proposition, and
+each assumed interface proposition, again under the same policy with no
+facts (`kernel::fact_stability`). It records a `differs`, `refused` or
+`paths:N` line for every lowering whose fact-free result is not the same
+term ([the raise-lower principle](#the-raise-lower-principle)).
+`scripts/fact-stability.sh` runs the mdtest corpus under it, counts each
+kind, and groups the differences by where the two terms first diverge. It
+does not observe C execution, which may depend on facts.
 Historical defects included comparisons folded using facts, pointer and aliased
 reads resolved through known values, comparison kinds chosen by provenance,
 and decided guards dropped. Such equalities belong in checking, not in the

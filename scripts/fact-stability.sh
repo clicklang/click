@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Runs the mdtest corpus under CLICK_FACT_STABILITY and summarizes the
-# lowerings whose term changes when facts are available, grouped by where
-# the two terms first differ.
+# lowerings whose result depends on the facts available: `differs` (another
+# term, which breaks the rule), `refused` (no term without facts), and
+# `paths:N` (several paths the facts chose among). Differences are grouped by
+# where the two terms first differ.
 #
 #   scripts/fact-stability.sh [MDTEST_FILTER] [OUTPUT]
 #
@@ -22,6 +24,9 @@ set -e
 echo "report: $output"
 echo "mdtest run exit status: $status (log: $log)"
 echo "fact-dependent lowerings: $(wc -l < "$output")"
+echo "  differs (term changed): $(grep -c '^differs' "$output" || true)"
+echo "  refused without facts: $(grep -c '^refused' "$output" || true)"
+echo "  facts chose among paths: $(grep -c '^paths:' "$output" || true)"
 python3 -I - "$output" <<'PY'
 import collections, re, sys
 def tokens(text):
@@ -31,7 +36,12 @@ examples = {}
 for line in open(sys.argv[1]):
     fields = line.rstrip('\n').split('\t')
     if fields[0] != 'differs':
-        groups[(fields[0], '', '')] += 1
+        # Group by the outer forms of the term lowered under facts.
+        head = [t for t in tokens(fields[2]) if t[:1].isupper()][:3]
+        key = (fields[0], ' > '.join(head), '')
+        groups[key] += 1
+        if len(fields) > 4:
+            examples.setdefault(key, fields[4])
         continue
     left, right = tokens(fields[2]), tokens(fields[3])
     index = 0
