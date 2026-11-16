@@ -7,8 +7,8 @@
 // The function template is `as_writable_bytes<T, N>`, `N` its argument's
 // extent, and an instance is named by both: `as_writable_bytes<int,
 // 18446744073709551615>`. It is written out at each instance a call names
-// that the C++ importer's name table states: element `int` and dynamic
-// extent, `std::dynamic_extent`.
+// that the C++ importer's name table states: elements `int` and `unsigned
+// int` with dynamic extent, `std::dynamic_extent`.
 template<class T, std::size_t N> extern std::span<std::byte> std::as_writable_bytes<T, N>(std::span<T> s) {
     ensures std_span_data(result) == old(std_span_data(s) as (uint8 *));
     ensures std_span_size(result) == old(std_span_size(s)) * sizeof(T);

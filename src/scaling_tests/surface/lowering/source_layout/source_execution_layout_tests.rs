@@ -60,3 +60,40 @@ fn assignment_frontiers_build_and_resolve_without_scanning_unrelated_stores() {
         }
     }
 }
+
+#[test]
+fn construction_result_metadata_shares_fields_across_calls_and_uses_indexed_reads() {
+    for size in [4, 16, 64, 256] {
+        let function = construction_result_function(size, size, 0);
+        let (layout, work) = crate::instrumentation::measure_deterministic_work(|| {
+            SourceExecutionLayout::for_function(&function).unwrap()
+        });
+        assert!(work > 0 && work <= 16 * size + 64, "{size}: {work}");
+        assert!(std::sync::Arc::ptr_eq(
+            &layout.data.aggregate_results[&1],
+            &layout.data.aggregate_results[&size]
+        ));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(
+                layout
+                    .aggregate_result_field(size, "nested.field_3")
+                    .unwrap()
+                    .offset_bytes(),
+                24
+            );
+        });
+        assert_eq!(work, 1);
+        let function = construction_result_function(4, 1, size);
+        let layout = SourceExecutionLayout::for_function(&function).unwrap();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(
+                layout
+                    .aggregate_result_field(size + 1, "nested.field_3")
+                    .unwrap()
+                    .offset_bytes(),
+                24
+            );
+        });
+        assert_eq!(work, 1);
+    }
+}

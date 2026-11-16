@@ -324,7 +324,7 @@ impl PureTheoremContext {
                                 left: promoted,
                                 operator: ComparisonOperator::Equal,
                                 right: ContractExpression::IntegerLiteral("0".into()),
-                            }, BTreeMap::new(), BTreeMap::new(), &state, BTreeMap::new(), BTreeMap::new(),
+                            }, BTreeMap::new(), BTreeMap::new(), &state, &state, BTreeMap::new(), BTreeMap::new(),
                             BTreeMap::new(), &integer_values, None, &RecordedStates::new(), spec_definitions,
                             BTreeSet::new(), BTreeMap::new(),).map_err(ClickError::new)?;
                         let crate::kernel::SpecProposition::IntegerComparison { left, .. } = spec

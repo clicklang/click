@@ -1556,3 +1556,38 @@ fn aggregate_return_temporary_copy_requires_its_recorded_extent() {
         );
     }
 }
+
+#[test]
+fn copying_unknown_uint32_pointer_field_keeps_its_value_and_initialization_check() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Memory::local_pointer("unsigned_pointer_source");
+    let target = Memory::local_pointer("unsigned_pointer_target");
+    let layout = AggregateLayout::new(
+        16,
+        8,
+        vec![
+            AggregateField::new("data", 0, ProgramType::UInt32Pointer),
+            AggregateField::new("size", 8, ProgramType::UInt64),
+        ],
+    );
+    let memory = Memory::new()
+        .with_block(source.block.clone(), 16)
+        .with_block(target.block.clone(), 16)
+        .with_initialized_object(&source, 16);
+    let expected = crate::kernel::eval::symbolic_storage_cell_value(
+        &memory,
+        &source,
+        ProgramType::UInt32Pointer,
+        true,
+    )
+    .unwrap();
+    let copied = copy_aggregate_fields_checked(memory, &source, &target, &layout)
+        .unwrap()
+        .without_local_block(&source.block);
+    assert_eq!(copied.known_value(&target), Some(expected));
+    let uninitialized = Memory::new().with_uninitialized_block(source.block.clone(), 16);
+    assert!(matches!(
+        copy_aggregate_fields_checked(uninitialized, &source, &target, &layout),
+        Err(UndefinedBehavior::UninitializedRead),
+    ));
+}

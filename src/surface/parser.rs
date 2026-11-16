@@ -6687,6 +6687,7 @@ impl Parser {
                         | InterfaceType::Int32Pointer
                         | InterfaceType::CharPointer(_)
                         | InterfaceType::UInt8Pointer
+                        | InterfaceType::UInt32Pointer
                         | InterfaceType::Float32Pointer
                         | InterfaceType::Float64Pointer
                         | InterfaceType::Int32PointerPointer
@@ -16470,9 +16471,10 @@ impl Parser {
             self.position += 2;
             let pointer = self.parse_contract_expression()?;
             let source_pointer = pointer;
-            let Some(pointer) = contract_expression_as_program_expression(&source_pointer) else {
-                return Err(self.error("address expects a current C pointer expression"));
-            };
+            // As with numeric casts, the contract operand supplies the value.
+            // Saved reads and named call results need not have a current C AST.
+            let pointer = contract_expression_as_program_expression(&source_pointer)
+                .unwrap_or(ProgramExpression::Value(int32(0)));
             self.expect(Token::RParen)?;
             let cast = ProgramExpression::Cast {
                 expression: Box::new(pointer),
@@ -16484,10 +16486,10 @@ impl Parser {
                 explicit_qualification: false,
             };
             self.address_casts.insert(cast.clone());
-            return Ok(crate::surface::lowering::contract_c_unary(
-                source_pointer,
-                cast,
-            ));
+            return Ok(ContractExpression::CUnary {
+                operand: Box::new(source_pointer),
+                lowered: cast,
+            });
         }
 
         if self.peek_ident() == Some("byte_offset") && self.peek_next() == Some(&Token::LParen) {

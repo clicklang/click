@@ -2177,6 +2177,7 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
     array_element_types: BTreeMap<String, ProgramType>,
     bound_array_memories: BTreeMap<String, SpecMemory>,
     entry_state: &ExecutionState,
+    current_type_state: &ExecutionState,
     entry_values: BTreeMap<String, ProgramValue>,
     current_values: BTreeMap<String, ProgramValue>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
@@ -2199,6 +2200,9 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
         opaque_click_functions,
         pointer_element_widths,
     );
+    // A declared object has a type before it has a value. In particular,
+    // forming and casting its address must not read uninitialized storage.
+    lowerer.local_type_state = Some(current_type_state);
     let mut context = context;
     context.algebraic_values = algebraic_values.into_iter().collect();
     context.integer_values = integer_values.clone();
@@ -8463,10 +8467,26 @@ impl AnnotationLowerer<'_> {
             ResourceSubject::Captured { value, .. } => Ok(SpecResource::Value(value.clone())),
 
             ResourceSubject::SavedMemory { base, start, end } => {
-                let element_width = self
-                    .contract_pointer_element_width(base, environment)
-                    .ok_or("saved memory base must be a pointer with a known element width")?;
+                let declared_width = self.contract_pointer_element_width(base, environment);
                 let base = self.lower_contract_expression_to_spec(base, environment)?;
+                // Recorded aggregate parameter reads carry their declared field
+                // type in the lowered load, rather than in the parser's C
+                // fragment. These unsigned pointer carriers are unambiguous;
+                // nominal record pointers use a different carrier and still
+                // require their physical layout metadata above.
+                let element_width = declared_width
+                    .or_else(|| match &base {
+                        SpecExpression::MemoryLoad { value_type, .. }
+                        | SpecExpression::AggregateFieldValue { value_type, .. } => {
+                            match value_type {
+                                ProgramType::UInt8Pointer => Some(1),
+                                ProgramType::UInt32Pointer => Some(4),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    })
+                    .ok_or("saved memory base must be a pointer with a known element width")?;
                 let start = self.lower_contract_expression_to_spec(start, environment)?;
                 Ok(match end {
                     Some(end) => SpecResource::Memory {
@@ -9874,6 +9894,14 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<u32> {
         match expression {
+            ContractExpression::RegionResult(region) => {
+                let ProgramValue::Pointer(pointer) =
+                    self.retained_states?.region_result_value(region).ok()?
+                else {
+                    return None;
+                };
+                self.spec_definitions.pointer_element_width(&pointer).ok()
+            }
             ContractExpression::CBinding(name) => self.program_expression_array_element_width(
                 &ProgramExpression::Variable((name.clone()).into()),
                 environment,
@@ -10523,6 +10551,7 @@ mod integer_source_quantifier_tests {
                 proposition,
                 BTreeMap::new(),
                 BTreeMap::new(),
+                &state,
                 &state,
                 BTreeMap::new(),
                 BTreeMap::new(),

@@ -489,6 +489,7 @@ pub(super) fn aggregate_zero_fields(
             | ProgramType::UInt128PointerPointer
             | ProgramType::Int32Pointer
             | ProgramType::UInt8Pointer
+            | ProgramType::UInt32Pointer
             // A signed plain `char` pointer field is an `int8*` cell.
             | ProgramType::Int8Pointer
             | ProgramType::Float32Pointer
@@ -553,6 +554,7 @@ pub(super) fn aggregate_zero_fields(
                 | ProgramType::UInt128PointerPointer
                 | ProgramType::Int32Pointer
                 | ProgramType::UInt8Pointer
+                | ProgramType::UInt32Pointer
                 | ProgramType::Int8Pointer
                 | ProgramType::Float32Pointer
                 | ProgramType::Float64Pointer
@@ -586,7 +588,6 @@ pub(super) fn aggregate_zero_fields(
                 }
                 ProgramType::Int16Pointer
                 | ProgramType::UInt16Pointer
-                | ProgramType::UInt32Pointer
                 | ProgramType::Int64Pointer
                 | ProgramType::UInt64Pointer
                 | ProgramType::Int16PointerPointer
@@ -652,6 +653,7 @@ pub(super) fn zero_union_member_value(program_type: ProgramType) -> Option<Progr
         ProgramType::UInt8 => uint8(0),
         ProgramType::Int32Pointer
         | ProgramType::UInt8Pointer
+        | ProgramType::UInt32Pointer
         | ProgramType::Int32PointerPointer
         | ProgramType::UInt8PointerPointer
         | ProgramType::FunctionPointer(_) => {
@@ -899,6 +901,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
             ProgramType::UInt8Array(length) => (ProgramType::UInt8, length),
             ProgramType::Int32Pointer
             | ProgramType::UInt8Pointer
+            | ProgramType::UInt32Pointer
             | ProgramType::Int32PointerPointer
             | ProgramType::UInt8PointerPointer
             | ProgramType::FunctionPointer(_) => (field.program_type(), 1),
@@ -1102,6 +1105,7 @@ pub(super) fn copy_aggregate_fields(
             ProgramType::UInt8Array(length) => (ProgramType::UInt8, length),
             ProgramType::Int32Pointer
             | ProgramType::UInt8Pointer
+            | ProgramType::UInt32Pointer
             | ProgramType::Int32PointerPointer
             | ProgramType::UInt8PointerPointer
             // A callback field is an eight-byte pointer value; carry it so a
@@ -1144,6 +1148,7 @@ pub(super) fn copy_aggregate_fields(
                         ProgramType::UInt8 => Some(uint8(0)),
                         ProgramType::Int32Pointer
                         | ProgramType::UInt8Pointer
+                        | ProgramType::UInt32Pointer
                         | ProgramType::Int32PointerPointer
                         | ProgramType::UInt8PointerPointer => {
                             Some(ProgramValue::typed_pointer(Pointer::null(), element_type))
@@ -1199,6 +1204,7 @@ pub(super) fn copy_aggregate_fields(
                     }
                     ProgramType::Int32Pointer
                     | ProgramType::UInt8Pointer
+                    | ProgramType::UInt32Pointer
                     | ProgramType::Int32PointerPointer
                     | ProgramType::UInt8PointerPointer => {
                         // An unknown pointer is the value read from this cell,
@@ -1337,6 +1343,7 @@ pub(super) fn copy_retained_aggregate_union_member(
             ProgramType::UInt8 => ProgramValue::UInt8(load),
             ProgramType::Int32Pointer
             | ProgramType::UInt8Pointer
+            | ProgramType::UInt32Pointer
             | ProgramType::Int32PointerPointer
             | ProgramType::UInt8PointerPointer
             | ProgramType::FunctionPointer(_) => {

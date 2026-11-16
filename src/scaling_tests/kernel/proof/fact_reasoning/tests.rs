@@ -264,3 +264,56 @@ fn integer_coefficient_normalization_visits_shared_nodes_once() {
 }
 
 include!("intrinsic_normalization_tests.rs");
+
+#[test]
+fn footprint_normalization_does_not_scan_ambient_aliases_or_separations() {
+    check_footprint_normalization_scaling([4, 8, 16, 32]);
+}
+
+#[test]
+#[ignore = "nightly: footprint normalization with 512 related spans and aliases"]
+fn footprint_normalization_ignores_large_alias_and_separation_buckets() {
+    check_footprint_normalization_scaling([8, 32, 128, 512]);
+}
+
+fn check_footprint_normalization_scaling(sizes: [u64; 4]) {
+    let costs = sizes.map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (goal, separation, alias) = footprint_alias_fixture();
+        let mut facts = ProofFacts::from_ordered(&[separation.clone(), alias]);
+        let pointer = |id| Pointer::symbolic(Variable(id));
+        for i in 0..size {
+            // Grow the selected address class and a related separation bucket.
+            facts = facts.with_fact(Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(pointer(96_140), pointer(97_000 + i)),
+                true,
+            ));
+            let range = |p, bytes: u32| {
+                Resource::Memory(MemoryRange::new_with_element_width(
+                    p,
+                    0u32.into(),
+                    bytes.into(),
+                    1,
+                ))
+            };
+            facts = facts.with_fact(Proposition::ResourceSeparate {
+                left: Box::new(range(pointer(96_140), 1)),
+                right: Box::new(range(pointer(96_142), 16 + i as u32)),
+            });
+            facts = facts.with_fact(Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(pointer(99_000 + i * 2), pointer(99_001 + i * 2)),
+                true,
+            ));
+        }
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            normalize_using_conditions(&goal, std::slice::from_ref(&separation), &facts)
+        });
+        result.unwrap();
+        work
+    });
+    assert!(costs[0] > 0);
+    assert!(
+        costs.iter().all(|cost| *cost <= costs[0] * 2 + 32),
+        "{costs:?}"
+    );
+}
