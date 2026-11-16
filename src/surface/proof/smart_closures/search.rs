@@ -2643,6 +2643,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             scope.succeed();
             return Ok(Some(proof));
         }
+        if let Some(goal) = search_input.surface_goal() {
+            for premises in quotient_shifts::guard_candidates(goal) {
+                if let Some(proof) = Self::try_quotient_shift_using(search_input, &premises)? {
+                    scope.succeed();
+                    return Ok(Some(proof));
+                }
+            }
+        }
         if let Some(proof) = Self::try_integer_algebra(search_input)? {
             scope.succeed();
             return Ok(Some(proof));

@@ -778,6 +778,8 @@ mod tests {
             "function f(x:Integer)->Integer {x+1} theorem bridge(x:Integer) { ensures 3*f(x)-f(x) == 2*f(x) by solve(); }",
             "theorem bridge(x:Integer,k:Integer) { requires 0<=x; requires 0<=k; ensures truncating_quotient(x+3*k,3)==truncating_quotient(x,3)+k by {solve() using {0<=x;0<=k;};} }",
             "theorem bridge(x:Integer,k:Integer) { requires 0<=x; requires 0<=k; ensures k+truncating_quotient(x,3)==truncating_quotient(k*3+x,3) by {solve() using {0<=x;0<=k;};} }",
+            "theorem bridge(x:Integer,k:Integer) { requires 0<=x; requires 0<=k; ensures k+truncating_quotient(x,3)==truncating_quotient(k*3+x,3) by solve(); }",
+            "theorem bridge(x:Integer,k:Integer) { requires 0<=x; requires 0<=k; ensures truncating_quotient(x+3*k,3)==truncating_quotient(x,3)+k; }",
         ] {
             let check = (|| -> Result<(), String> {
                 verify_c_sources(source, &[]).map_err(|e| e.message().to_owned())?;

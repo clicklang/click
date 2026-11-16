@@ -46,6 +46,33 @@ fn arguments(e: &ContractExpression) -> Option<(&ContractExpression, &ContractEx
     };
     Some((a, b))
 }
+// Plain solve proposes only the guards named by the goal's shift shape.
+// The selected emitter checks their availability and writes them explicitly.
+pub(super) fn guard_candidates(goal: &ClickProposition) -> Vec<Vec<ClickProposition>> {
+    let ClickProposition::Comparison {
+        left,
+        operator: ComparisonOperator::Equal,
+        right,
+    } = goal
+    else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    for (lhs, rhs) in [(left, right), (right, left)] {
+        if arguments(lhs).is_none() {
+            continue;
+        }
+        let ContractExpression::Add(a, b) = rhs else {
+            continue;
+        };
+        for (q, k) in [(a.as_ref(), b.as_ref()), (b.as_ref(), a.as_ref())] {
+            if let Some((x, _)) = arguments(q) {
+                candidates.push(vec![le(number(0), x.clone()), le(number(0), k.clone())]);
+            }
+        }
+    }
+    candidates
+}
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_quotient_shift_using(
         input: &Proof<'a>,

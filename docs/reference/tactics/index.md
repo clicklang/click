@@ -4312,7 +4312,7 @@ missing premise. Establish that premise in a `have` proof or use `solve()` to
 plan the required steps. The checked example is
 `mdtests/termination_ordinary_proof_steps.md`.
 
-### Explicit Integer algebra expansion
+### Explicit `Integer` algebra expansion
 
 Coefficient algebra and polynomial identities selected by `solve()` expand
 to applications of Integer distributivity, associativity, commutativity and

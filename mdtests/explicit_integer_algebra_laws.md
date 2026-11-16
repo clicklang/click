@@ -18,6 +18,7 @@ theorem shift(x: Integer,k:Integer) {
     requires 0 <= x;
     requires 0 <= k;
     ensures truncating_quotient(x + 3*k,3) == truncating_quotient(x,3)+k by { solve() using { 0 <= x; 0 <= k; }; }
+    ensures k + truncating_quotient(x,3) == truncating_quotient(k*3 + x,3) by solve();
 }
 ```
 
