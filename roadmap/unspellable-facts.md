@@ -92,7 +92,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 6 | Folds, binders and algebraic matches | Implemented as 6a–6n below. Common fold and numeric/algebraic match results retain scoped children; remaining native consumers are named compatibility boundaries. |
 | 7 | Complete pointers and read addresses | Implemented as 7a–7u below, one PR per slice. Supported pointer producers and execution/storage handoffs retain common roots; checking and Surface consumers preserve metadata, state identity and existing rules. |
 | 8 | Remaining Boolean and opaque expression payloads | Implemented through 8ad, ending in [PR #2920](https://github.com/clicklang/click/pull/2920); remaining native boundaries are enumerated below. |
-| 9 | Unified raising/lowering and certificate boundaries | Authorized as 9a–9z below; 9a inventory delivered and 9b common entry implemented. Remaining slices are open. |
+| 9 | Unified raising/lowering and certificate boundaries | In progress as the authorized 9a–9z sequence below; per-slice delivery and validation evidence follows. |
 | 10 | Duplicate storage removal and final closure | Open |
 
 ## Chunk 9: unified Surface and certificate boundaries
@@ -178,6 +178,8 @@ Validation: 1,837 selected Surface synthesis and scaling tests passed;
 
 ### 9c direct constructor raising
 
+Delivered in [PR #2936](https://github.com/clicklang/click/pull/2936).
+
 Shared constructors now raise their ordered fields directly instead of exporting
 an algebraic tree and walking it again. Program-parameter envelopes retain their
 algebraic spelling; int32 expressions use the shared dispatcher. Named scalar
@@ -195,6 +197,19 @@ the audit performs extra lowering and changes those measurements.
 Validation on the integrated binding-ID base: 1,845 Surface/scaling tests,
 `scripts/check.sh --ci-quality`, and the algebraic fixture filter passed;
 the separate fact-stability report contains zero differences.
+
+### 9d algebraic read and variable boundaries
+
+Algebraic conditionals already raise their shared branches through the common
+dispatcher. Reads now compare their retained address directly when selecting
+parameter, held-local and recorded-state spellings. The existing selection order,
+type comparison and memory identity checks are unchanged. Variable naming uses
+its bounded typed descriptor, avoiding the general algebraic export walker.
+
+Validation: native/shared read and variable spelling parity with no tree exports;
+the nested constructor scaling regression now requires zero exports including
+its named leaf. All 1,846 Surface/scaling tests, quality checks and the algebraic
+fixture filter passed; its separate fact-stability report has zero differences.
 
 ## Chunk 3: machine-valued pure-function results
 

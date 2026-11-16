@@ -3314,6 +3314,72 @@ pub(super) fn raise_kernel_term(
     raise_kernel_term_dispatch(term, parameter_binding, state, bound_variables)
 }
 
+// Read spelling keeps the native boundary's selection order and state
+// equality, but compares the common address without exporting its index DAG.
+fn raise_algebraic_read(
+    term: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::{AlgebraicTermNode, KernelTermNode, KernelType, SharedPointerAddress};
+    let (KernelType::Algebraic(ty), KernelTermNode::AlgebraicRead(read)) = (term.ty(), term.node())
+    else {
+        return None;
+    };
+    let (memory, address) = read.parts();
+    let same_address =
+        |pointer: &Pointer| address.syntax_equal(&SharedPointerAddress::import(pointer));
+    if let Some((parameter, _)) = parameter_binding
+        .parameters
+        .iter()
+        .zip(parameter_binding.arguments)
+        .find(|(_, argument)| {
+            matches!(argument, ProgramExpression::Value(ProgramValue::Pointer(value))
+                if same_address(value.pointer()))
+        })
+    {
+        return Some(SurfaceTerm::ProgramExpression(ProgramExpression::Load(
+            Box::new(ProgramExpression::Variable(
+                parameter.name().to_string().into(),
+            )),
+        )));
+    }
+    let held_at = |state: &ExecutionState| {
+        let (name, _, _) = state.locals().held_value_locals().find(|(_, _, slot)| {
+            crate::instrumentation::record_deterministic_work(1);
+            same_address(slot)
+        })?;
+        let Some(ProgramValue::Parameter(held)) = state.held_local_value(name) else {
+            return None;
+        };
+        let AlgebraicTermNode::MemoryLoad {
+            memory: held_memory,
+            pointer,
+        } = &held.node
+        else {
+            return None;
+        };
+        (ty == &held.algebraic_type && memory == held_memory && same_address(pointer))
+            .then(|| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())))
+    };
+    held_at(state).or_else(|| {
+        SYNTHESIS_RECORDED_POINTS.with(|slot| {
+            let slot = slot.borrow();
+            let points = slot.as_ref()?;
+            points
+                .point_reading_memory(memory)
+                .into_iter()
+                .chain(points.points_near_memory(memory))
+                .find_map(|(selector, recorded)| {
+                    Some(SurfaceTerm::At {
+                        selector: selector.clone(),
+                        expression: Box::new(held_at(recorded)?),
+                    })
+                })
+        })
+    })
+}
+
 // Constructor fields retain their existing spelling policy independently of
 // call arguments: pointer fields can need a root-view cast, and non-int32
 // scalar fields currently require a named variable.
@@ -3480,17 +3546,13 @@ fn raise_kernel_term_dispatch(
                 })
                 .collect::<Option<Vec<_>>>()?,
         },
-        Node::AlgebraicRead(_) => {
-            let argument = crate::kernel::KernelTermExport::default()
-                .argument(term)
-                .ok()?;
-            synthesize_legacy_call_argument(&argument, parameter_binding, state, bound_variables)?
-        }
+        Node::AlgebraicRead(_) => raise_algebraic_read(term, parameter_binding, state)?,
         Node::Variable(_) if matches!(term.ty(), KernelType::Algebraic(_)) => {
-            let argument = crate::kernel::KernelTermExport::default()
-                .argument(term)
-                .ok()?;
-            synthesize_legacy_call_argument(&argument, parameter_binding, state, bound_variables)?
+            // Variable naming uses a bounded typed descriptor, not a tree export.
+            let ProgramValue::Parameter(variable) = term.algebraic_native_value()? else {
+                unreachable!("algebraic variable descriptor")
+            };
+            synthesize_surface_algebraic(variable, parameter_binding, state, bound_variables)?
         }
         Node::IntegerLiteral(value) if value.sign() == num_bigint::Sign::Minus => {
             SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral((-value).to_string())))
