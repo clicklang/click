@@ -1281,10 +1281,15 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
                     super::tests::constructed_flat_return(&pointer, 1, &facts);
                 let source = evaluated.occurrences[0].source;
                 let body = bodies.get(source).unwrap();
-                assert!(matches!(
-                    frame.admit_returned_flat_body(body, &facts),
-                    FlatBodyAdmission::Unsupported
-                ));
+                let admission = frame.admit_returned_flat_body(body, &facts);
+                if axis == "cold related" {
+                    assert_eq!(
+                        matches!(admission, FlatBodyAdmission::Conflict { .. }),
+                        overlap
+                    );
+                } else {
+                    assert!(matches!(admission, FlatBodyAdmission::Unsupported));
+                }
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     let error = produced_composite_frontier_conflict(
                         &frame,
@@ -1793,5 +1798,74 @@ fn matched_return_constructor_hits_and_opaque_misses_do_not_walk_model_aliases()
             samples.iter().all(|work| *work <= samples[0] + 96),
             "known={known}: {samples:?}"
         );
+    }
+}
+
+#[test]
+fn multiple_returned_witnesses_and_nested_children_scale_with_the_selected_body() {
+    use super::existential_return_tests::{existential_definition, existential_outputs};
+    use crate::kernel::program_expression::variable;
+    for grow_body in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = PureFactContext::new();
+            let p = Pointer::symbolic(Variable(8_885_000));
+            let mut outer = existential_definition(0);
+            let mut definitions = vec![CompositeResourceDefinition::new(
+                "leaf",
+                vec![program_parameter("p", ProgramType::Int32Pointer)],
+                None,
+                false,
+                vec![],
+                vec![],
+            )];
+            let size = if grow_body { count } else { 2 };
+            for index in 0..size {
+                let name = format!("w_{index}");
+                outer
+                    .witnesses
+                    .push(program_parameter(&name, ProgramType::Int32Pointer));
+                outer.contains.push(super::tests::composite_spec(
+                    "leaf",
+                    variable(&name),
+                    ResourceTransferRole::Borrow,
+                ));
+            }
+            let mut frame = ResourceContext::new();
+            for index in 0..count {
+                frame = frame.unchecked_with_fact(ResourceFact::own_composite(
+                    "leaf".into(),
+                    vec![ProgramValue::pointer(Pointer::symbolic(Variable(
+                        8_885_100 + u64::from(index),
+                    )))],
+                ));
+            }
+            definitions.push(outer);
+            definitions.sort_by(|a, b| a.name().cmp(b.name()));
+            let evaluated = existential_outputs(p, 1, &facts);
+            let state = ExecutionState::new().with_resource_context(frame);
+            let (bodies, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "multiple explicit returned witnesses",
+                );
+                ConstructedReturnBodies::construct(&evaluated, &definitions, &state, &facts)
+            });
+            let body = bodies.get(evaluated.occurrences[0].source).unwrap();
+            assert_eq!(
+                body.witnesses[&evaluated.occurrences[0].source].len(),
+                size as usize + 1
+            );
+            assert_eq!(body.transfers.len(), size as usize + 1);
+            samples.push(work);
+        }
+        if grow_body {
+            assert!(samples[2] <= samples[0] * 24 + 128, "{samples:?}");
+        } else {
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 64),
+                "{samples:?}"
+            );
+        }
     }
 }

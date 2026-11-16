@@ -13588,7 +13588,7 @@ pub(super) fn prepare_function_contract_entry_state_with_values(
 /// to that word's recorded origin, so folding and unfolding the same body
 /// agree on it; a witness with no recorded origin yet (an unfold whose facts
 /// are about to introduce it) is bound to a fresh symbolic pointer chosen
-/// deterministically from the variables already in use.
+/// from the selected definition, witness position, arguments, and word term.
 pub(super) fn bind_composite_witnesses(
     definition: &CompositeResourceDefinition,
     arguments: &[AlgebraicValue],
@@ -13608,33 +13608,48 @@ pub(super) fn bind_composite_witnesses_with_held(
     held: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<Vec<ProgramValue>> {
+    bind_composite_witness_values(definition, arguments, state, Some(held), assumptions)
+}
+
+/// Shared witness producer. Returned bodies pass no held context: their
+/// bindings come from declared word origins or the producer's symbolic names.
+/// Explicit folds retain their separate legacy child-description discovery.
+fn bind_composite_witness_values(
+    definition: &CompositeResourceDefinition,
+    arguments: &[AlgebraicValue],
+    state: &mut ExecutionState,
+    held: Option<&ResourceContext>,
+    assumptions: &PureFactContext,
+) -> Option<Vec<ProgramValue>> {
     if definition.witnesses().is_empty() {
         return Some(Vec::new());
     }
+    let words = indexed_witness_origin_words(definition.facts());
+    use std::hash::{Hash, Hasher};
+    let mut argument_hasher = std::collections::hash_map::DefaultHasher::new();
+    arguments.hash(&mut argument_hasher);
+    let argument_identity = argument_hasher.finish();
     let mut values = Vec::new();
     for (index, witness) in definition.witnesses().iter().enumerate() {
-        let word = definition
-            .facts()
-            .iter()
-            .find_map(|fact| witness_origin_word(fact, witness.name()))
-            .and_then(|word| {
-                let mut budget = ExecutionBudget::beside_live_state();
-                let paths = super::spec::evaluate_spec_expression_paths_with_loop_entry(
-                    state,
-                    word,
-                    None,
-                    assumptions,
-                    &mut budget,
-                )
-                .ok()?;
-                let [path] = paths.as_slice() else {
-                    return None;
-                };
-                match path.value.native().as_ref() {
-                    ProgramValue::UInt64(term) | ProgramValue::Int64(term) => Some(term.clone()),
-                    _ => None,
-                }
-            });
+        crate::instrumentation::record_deterministic_work(1);
+        let word = words.get(witness.name()).copied().and_then(|word| {
+            let mut budget = ExecutionBudget::beside_live_state();
+            let paths = super::spec::evaluate_spec_expression_paths_with_loop_entry(
+                state,
+                word,
+                None,
+                assumptions,
+                &mut budget,
+            )
+            .ok()?;
+            let [path] = paths.as_slice() else {
+                return None;
+            };
+            match path.value.native().as_ref() {
+                ProgramValue::UInt64(term) | ProgramValue::Int64(term) => Some(term.clone()),
+                _ => None,
+            }
+        });
         let origin = word
             .as_ref()
             .and_then(|term| {
@@ -13645,13 +13660,13 @@ pub(super) fn bind_composite_witnesses_with_held(
                 super::eval::pointer_tags::tagged_address_form(term, assumptions, &mut used)
                     .map(|form| form.pointer)
             })
-            // A body that contains a composite resource under the witness
-            // names it through the resource context: when exactly one held
-            // fact of that composite exists, its argument is the witness a
-            // fold consumes. This is the fold's own obligation read back,
-            // not a search.
+            // Explicit folds retain the legacy held-child inference when a
+            // word supplies no origin. Return construction passes None and
+            // never searches a retained frame or constructed sibling here.
             .or_else(|| {
-                held_child_witness(definition, witness.name(), arguments, held, assumptions)
+                held.and_then(|held| {
+                    held_child_witness(definition, witness.name(), arguments, held, assumptions)
+                })
             });
         // A witness with no recorded origin is named by the content of the
         // instance that introduces it: the definition, the witness position,
@@ -13665,7 +13680,7 @@ pub(super) fn bind_composite_witnesses_with_held(
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             definition.name().hash(&mut hasher);
             index.hash(&mut hasher);
-            arguments.hash(&mut hasher);
+            argument_identity.hash(&mut hasher);
             // The canonical form names a load by its cell rather than by
             // the state it was read from, so the key is the same before
             // and after the body's cells are materialized.
@@ -13739,44 +13754,58 @@ fn held_child_witness(
     candidates.all(|other| other == first).then_some(first)
 }
 
-/// The word a `where` fact relates `witness` to: for `E == address(witness)`
-/// or `E == address(witness) + t` (either operand order, under `and`), the
-/// expression `E`.
-fn witness_origin_word<'a>(fact: &'a SpecProposition, witness: &str) -> Option<&'a SpecExpression> {
-    fn mentions_witness_address(expression: &SpecExpression, witness: &str) -> bool {
-        match expression {
-            SpecExpression::ProgramExpression(ProgramExpression::Cast {
-                expression,
-                target_type: ProgramType::UInt64 | ProgramType::Int64,
-                ..
-            }) => {
-                matches!(expression.as_ref(), ProgramExpression::Variable(name) if name.is_named(witness))
+/// Build the selected definition's witness-to-word table once, preserving the
+/// first declaration and right-before-left precedence of the origin relation.
+fn indexed_witness_origin_words(facts: &[SpecProposition]) -> BTreeMap<&str, &SpecExpression> {
+    fn addresses<'a>(
+        expression: &'a SpecExpression,
+        word: &'a SpecExpression,
+        words: &mut BTreeMap<&'a str, &'a SpecExpression>,
+    ) {
+        let mut pending = vec![expression];
+        while let Some(expression) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match expression {
+                SpecExpression::ProgramExpression(ProgramExpression::Cast {
+                    expression,
+                    target_type: ProgramType::UInt64 | ProgramType::Int64,
+                    ..
+                }) => {
+                    if let ProgramExpression::Variable(name) = expression.as_ref() {
+                        if let Some(name) = name.named() {
+                            words.entry(name).or_insert(word);
+                        }
+                    }
+                }
+                SpecExpression::Add(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                _ => {}
             }
-            SpecExpression::Add(left, right) => {
-                mentions_witness_address(left, witness) || mentions_witness_address(right, witness)
-            }
-            _ => false,
         }
     }
-    match fact {
-        SpecProposition::And(left, right) => {
-            witness_origin_word(left, witness).or_else(|| witness_origin_word(right, witness))
-        }
-        SpecProposition::Comparison {
-            left,
-            operator: ComparisonOperator::Equal,
-            right,
-        } => {
-            if mentions_witness_address(right, witness) {
-                Some(left)
-            } else if mentions_witness_address(left, witness) {
-                Some(right)
-            } else {
-                None
+    let mut words = BTreeMap::new();
+    let mut pending = facts.iter().rev().collect::<Vec<_>>();
+    while let Some(fact) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match fact {
+            SpecProposition::And(left, right) => {
+                pending.push(right);
+                pending.push(left);
             }
+            SpecProposition::Comparison {
+                left,
+                operator: ComparisonOperator::Equal,
+                right,
+            } => {
+                addresses(right, left, &mut words);
+                addresses(left, right, &mut words);
+            }
+            _ => {}
         }
-        _ => None,
     }
+    words
 }
 
 /// Why a fold or unfold was refused. Most refusals are one fixed sentence;
@@ -15679,7 +15708,11 @@ fn construct_composite_resource_body(
             parameter.program_type(),
         );
     }
-    let witnesses = bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    let witnesses = if selected.is_some() {
+        bind_composite_witness_values(definition, arguments, &mut state, None, assumptions)?
+    } else {
+        bind_composite_witnesses(definition, arguments, &mut state, assumptions)?
+    };
     let mut budget = ExecutionBudget::beside_live_state();
     // Opening a held composite assumes the body its fold established
     // (`assume_entry_clause_extents`).

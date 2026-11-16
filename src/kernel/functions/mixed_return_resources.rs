@@ -690,10 +690,11 @@ impl ConstructedReturnBodies {
     }
 
     // Classify definitions before producing any body. Existential migration
-    // is deliberately separate: one pointer witness with flat memory/token
-    // children. Its binder examines only this definition, never held children.
+    // retains pointer witness bindings and nested child occurrences. Its binder
+    // examines only this definition, never held children.
     // Guarded direct recursion emits a finite frontier and retains its child
-    // folded. Complex existential, authority and matched bodies stay legacy.
+    // folded. Non-pointer witnesses and named child schemas stay legacy;
+    // specialized authority/matched fragments have their own classifier.
     fn supports(
         name: &str,
         definitions: &[CompositeResourceDefinition],
@@ -713,19 +714,14 @@ impl ConstructedReturnBodies {
         if !active.insert(name.to_string()) {
             return false;
         }
-        let flat_existential = matches!(definition.witnesses.as_slice(), [witness]
-            if witness.program_type().is_pointer())
-            && definition.contains().iter().all(|child| {
-                crate::instrumentation::record_deterministic_work(1);
-                matches!(
-                    child.term(),
-                    ResourceTerm::Memory(_) | ResourceTerm::Token { .. }
-                )
-            });
+        let explicit_witnesses = definition.witnesses.iter().all(|witness| {
+            crate::instrumentation::record_deterministic_work(1);
+            witness.program_type().is_pointer()
+        });
         let valid = definition.instance_schema.is_none()
             && definition.matched.is_none()
             && (!definition.is_recursive() || definition.condition.is_some())
-            && (definition.witnesses.is_empty() || flat_existential)
+            && explicit_witnesses
             && definition.children.is_empty()
             && definition.contains().iter().all(|child| {
                 crate::instrumentation::record_deterministic_work(1);

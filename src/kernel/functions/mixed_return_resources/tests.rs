@@ -1402,7 +1402,7 @@ fn flat_body_admission_keeps_selected_alias_diagnostics_and_branch_isolation() {
 }
 
 #[test]
-fn flat_body_admission_does_not_certify_cold_or_general_geometry() {
+fn flat_body_admission_uses_cold_coordinates_but_refuses_general_geometry() {
     let facts = PureFactContext::new();
     let pointer = Pointer::symbolic(Variable(8_819_102));
     let (evaluated, bodies) = constructed_flat_return(&pointer, 1, &facts);
@@ -1410,9 +1410,9 @@ fn flat_body_admission_does_not_certify_cold_or_general_geometry() {
     let cold = ResourceContext::new().unchecked_with_fact(owner(pointer.clone(), 0, 1));
     assert!(matches!(
         cold.admit_returned_flat_body(body, &facts),
-        FlatBodyAdmission::Unsupported
+        FlatBodyAdmission::Conflict { .. }
     ));
-    // Unsupported dispatch still preserves the original overlap refusal.
+    // A cold lookup now reports the conflict without discovery.
     assert!(matches!(
         produced_composite_frontier_conflict(
             &cold,
