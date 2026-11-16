@@ -16327,7 +16327,7 @@ int read(int* p) {
 "#;
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
+#[ignore = "nightly: expansion and recheck took 1.09s in isolation"]
 fn match_arm_closer_anchors_the_case_fact_at_entry_and_reverifies() {
     // The arm's case fact is a statement about the scrutinee at unchanged
     // function entry, but its recorded spelling was the unanchored
@@ -16623,7 +16623,7 @@ int spin(int n) {
 "#;
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
+#[ignore = "nightly: expansion and recheck took 3.96s in isolation"]
 fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
     // Reduced from the insert fixup loop in `examples/rbtree/rbtree-model`. The
     // per-invariant entry planner was handed the whole phase script as every
@@ -16657,7 +16657,7 @@ fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
+#[ignore = "nightly: expansion and recheck took 3.55s in isolation"]
 fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
     // `preserve by solve();` is one smart tactic standing for the whole phase,
     // like `initialize by solve();`. Every driver step under it is generated, so
@@ -16682,7 +16682,7 @@ fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
+#[ignore = "nightly: expansion and recheck took 2.99s in isolation"]
 fn a_helper_have_in_a_loop_initialize_script_is_expanded_once() {
     // The entry planner nested every sibling step inside every invariant's
     // proof, so expanding the closing `solve()` printed the helper once per
@@ -21895,12 +21895,6 @@ test_batches! {
         specification_conditional_branch_is_an_expanded_proof_step,
         integer_quantifiers_substitute_checked_mixed_atoms_and_expand,
         smart_closer_after_a_return_inside_an_open_scope_expands_and_reverifies,
-    ],
-    expansion_batch_70: [
-        match_arm_closer_anchors_the_case_fact_at_entry_and_reverifies,
-        each_smart_have_in_a_loop_initialize_script_expands_on_its_own,
-        a_smart_loop_preserve_phase_tactic_expands_and_reverifies,
-        a_helper_have_in_a_loop_initialize_script_is_expanded_once,
     ],
     expansion_batch_71: [
         loop_initialization_duplicate_clauses_keep_distinct_bodies,
