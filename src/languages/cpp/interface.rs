@@ -349,8 +349,19 @@ fn prepare_functions(
                 .with_generic_instance(generic)
                 .with_trait_interface(interface)
                 .with_read_only_contract(observers.contains(&source.declaration_id))
-                .with_local_struct_values(locals)
-                .with_local_references(references.difference(&objects).cloned().collect()))
+                .with_local_struct_values(
+                    locals
+                        .into_iter()
+                        .map(|(name, ty)| (name.into(), ty))
+                        .collect(),
+                )
+                .with_local_references(
+                    references
+                        .difference(&objects)
+                        .cloned()
+                        .map(Into::into)
+                        .collect(),
+                ))
         })
         .collect::<Result<Vec<_>, String>>()
 }

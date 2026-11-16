@@ -3744,6 +3744,7 @@ pub(super) fn decode_crate(
         temporaries::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
+        temporaries::bind_range_payloads(&mut locals, &mut blocks, &temporaries);
         functions.push(out::Function {
             sites: source_statements
                 .iter()
@@ -4274,8 +4275,6 @@ mod tests {
     );
     const ARRAY_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/conversions-arrays/arrays.rs");
-    const ARRAY_CLAIM: &str =
-        include_str!("../../../design/charon-trial/conversions-arrays/arrays.click");
 
     #[test]
     fn charon_chunks_keep_state_and_owned_moves() {
@@ -5556,7 +5555,14 @@ mod tests {
     #[test]
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn charon_array_index_bounds_remain_checked_after_normalization() {
+        const CLAIM: &str =
+            "verifying \"arrays.rs\"; fn large_array() -> u8 { ensures result == 7; }";
         let mut export = decode(ARRAY_ARTIFACT, "arrays.rs", ARRAY_SOURCE).unwrap();
+        {
+            let prepared = super::super::import::prepared_for_test(export.clone()).unwrap();
+            ProgramVerificationSession::new_program_prepared(CLAIM, &prepared)
+                .expect("the original in-bounds array access should verify");
+        }
         let mir = export
             .functions
             .iter_mut()
@@ -5565,21 +5571,34 @@ mod tests {
             .mir
             .as_mut()
             .unwrap();
+        // Normalization substitutes the temporary into the array read.
+        // Mutate that index, rather than looking for its removed assignment.
         let index = mir
             .blocks
             .iter_mut()
             .flat_map(|b| &mut b.statements)
             .find_map(|s| match s {
                 S::Assign {
-                    value: E::UsizeInteger { value, .. },
+                    value: E::Index { index, .. },
                     ..
-                } if *value == 999_999 => Some(value),
+                } => match index.as_mut() {
+                    E::UsizeInteger { value } if *value == 999_999 => Some(value),
+                    _ => None,
+                },
                 _ => None,
             })
-            .unwrap();
+            .expect("the normalized read should retain the last in-bounds index");
         *index = 1_000_000;
         let prepared = super::super::import::prepared_for_test(export).unwrap();
-        assert!(ProgramVerificationSession::new_program_prepared(ARRAY_CLAIM, &prepared).is_err());
+        let error = ProgramVerificationSession::new_program_prepared(CLAIM, &prepared)
+            .err()
+            .expect("the out-of-bounds array access must fail");
+        assert_eq!(error.kind(), crate::surface::ClickErrorKind::Proof);
+        assert!(
+            error.message().contains("Rust array index panic check"),
+            "{}",
+            error.message()
+        );
     }
 
     #[test]
@@ -5624,7 +5643,10 @@ mod tests {
         }
         let mut guards = Vec::new();
         visit(function.body(), &mut guards);
-        assert_eq!(guards, ["LessThan(Variable(\"i\"), Variable(\"n\"))"]);
+        assert_eq!(
+            guards,
+            ["LessThan(Variable(Named(\"i\")), Variable(Named(\"n\")))"]
+        );
     }
 
     #[test]

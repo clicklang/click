@@ -27,5 +27,5 @@ int f() {
 
 ```expect
 fail: use of a pointer into a freed allocation: its value is indeterminate after the free
-  operation: `p as uint64`
+  operation: `"freed_cast.c"::f.local(0) as uint64`
 ```

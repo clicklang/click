@@ -202,7 +202,7 @@ mod tests {
                     format,
                     op,
                     left: Box::new(MachineTerm::MemoryLoad(
-                        memory.clone(),
+                        ProgramPoint::at(&memory),
                         Box::new(crate::kernel::Memory::global_pointer("overflow-read")),
                         if format == MachineIntegerType::Int32 {
                             LoadKind::Int32

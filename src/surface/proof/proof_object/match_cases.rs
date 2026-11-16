@@ -362,7 +362,8 @@ impl<'a> Proof<'a> {
         capture_fixed_state_algebraic_value(
             &expression,
             query.assumptions(),
-            ContractEnvironment::new(&values, &array_refs),
+            ContractEnvironment::new(&values, &array_refs)
+                .with_parameters(context.parameter_binding()),
             BTreeMap::new(),
             context.old_reference_state(&execution.core.frontier, state),
             state,
@@ -483,9 +484,9 @@ impl<'a> Proof<'a> {
         // its variant tests read.
         let local = match &expression {
             ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
-                if !values.contains_key(name) && !self.state.locals().values.contains_key(name) =>
-            {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) if !values.contains_key(name) && !self.state.locals().values.contains_key(name) => {
                 match execution.core.state.locals().get_native(name).as_deref() {
                     Some(ProgramValue::Parameter(term)) => Some((**term).clone()),
                     _ => None,
@@ -498,7 +499,8 @@ impl<'a> Proof<'a> {
             None => capture_fixed_state_algebraic_value(
                 &expression,
                 self.facts().assumptions(),
-                ContractEnvironment::new(&values, &array_refs),
+                ContractEnvironment::new(&values, &array_refs)
+                    .with_parameters(context.parameter_binding()),
                 BTreeMap::new(),
                 context.old_reference_state(&execution.core.frontier, &execution.core.state),
                 &execution.core.state,
@@ -670,7 +672,7 @@ impl<'a> Proof<'a> {
                         // id that no later lowering can resolve.
                         ContractExpression::ProgramExpression(ProgramExpression::Value(_)) => {
                             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                                name.clone(),
+                                (name.clone()).into(),
                             ))
                         }
                         expression => expression.clone(),

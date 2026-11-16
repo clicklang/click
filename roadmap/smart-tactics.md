@@ -144,6 +144,14 @@ probe/reinvoke adapter. Solving belongs to the driver there; any repeated-loweri
 cost needs its own fixed-input/ambient-growth measurement. This is not evidence
 that the removed step/fold retry survives.
 
+Have opening also retains two separate preparation candidates: the pointer-only
+`with_selected_load_equality_bridge` route can traverse equality chains and
+origin-unchanged edges, and copying `execution.core.effect_facts` visits the
+retained effect collection. Measure each with a fixed written goal and growing
+unrelated history; remove automatic discovery or repeated publication rather
+than moving it into another fast helper. These are not covered by the scalar
+historical-candidate removal regression.
+
 
 ## Operation map
 
@@ -187,10 +195,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 27 | 65 |
-| `examples/` | 27 | 347 |
+| `mdtests/` | 25 | 56 |
+| `examples/` | 26 | 321 |
 | `library/` | 0 | 0 |
-| Total | 54 | 412 |
+| Total | 51 | 377 |
 
 The 12 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Positive fixtures also supply exact input text
@@ -214,11 +222,6 @@ pattern is understood but the complete family has not yet been validated.
 
 | ID | Work | Confidence |
 | --- | --- | --- |
-| 6 | Arena: pre-loop viewability and initial reads | Uncertain: exact held-range spelling |
-| 7 | Arena allocation: search-loop preservation | Medium |
-| 8 | Arena allocation: marking-loop preservation | Medium |
-| 9 | Arena allocation: finishing stores, returns, pipeline | Medium |
-| 10 | Remaining array mdtests, including bubble-sort | Medium; check baselines |
 | 11 | Remaining loop-frame mdtests | Medium |
 | 12 | Remaining call and branching-graph mdtests | Medium |
 | 13 | Named-root aliased-pointer baseline diagnosis/repair | Uncertain |

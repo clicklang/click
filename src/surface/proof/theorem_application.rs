@@ -325,19 +325,21 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         }) && !mirrored_order_listed()
             && !matches!(normalize_proposition(&lowered), NormalizedProposition::True)
         {
-            return Err(theorem_application_error(
-                claim_label,
-                path_index,
-                tactic_index,
-                describe_unavailable_theorem_requirement(
-                    theorem.name(),
-                    requirement_index,
-                    requirement,
-                    theorem.parameters(),
-                    &requirement_source_bindings(&theorem, application),
-                    &lowered,
-                ),
-            ));
+            let (message, fact) = describe_unavailable_theorem_requirement(
+                theorem.name(),
+                requirement_index,
+                requirement,
+                theorem.parameters(),
+                &requirement_source_bindings(&theorem, application),
+                &lowered,
+            );
+            return Err(
+                theorem_application_error(claim_label, path_index, tactic_index, message)
+                    .with_missing_theorem_requirement(format!(
+                        "theorem `{}` needs listed prerequisite `{fact}`",
+                        theorem.name()
+                    )),
+            );
         }
         // A range premise states two things, and the theorem's own proof
         // assumed both: that `a..b` is a valid 32-bit byte extent, and that
@@ -451,7 +453,7 @@ pub(super) fn describe_unavailable_theorem_requirement(
     parameters: &[FunctionParameter],
     bindings: &[(String, ContractExpression)],
     lowered: &Proposition,
-) -> String {
+) -> (String, String) {
     // Substitute the actual written arguments rather than asking a kernel
     // load to recover the program point selector the author already supplied. A
     // native comparison keeps its observations, so the instantiation reads
@@ -471,13 +473,14 @@ pub(super) fn describe_unavailable_theorem_requirement(
             )
         })
         .collect::<Vec<_>>();
-    describe_unavailable_theorem_requirement_spelled(
+    let message = describe_unavailable_theorem_requirement_spelled(
         theorem_name,
         requirement_index,
         requirement,
         &names,
         &instantiation,
-    )
+    );
+    (message, instantiation)
 }
 
 /// [`describe_unavailable_theorem_requirement`] with the instantiation
@@ -960,7 +963,9 @@ fn theorem_application_argument_type(
             return Ok(Some(generics::click_type_from_program_value(value)));
         }
         ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => {
             if let Some(value) = context.values.get(name) {
                 return Ok(Some(generics::click_type_from_program_value(value)));
             }
@@ -1134,6 +1139,7 @@ pub(super) fn theorem_application_bindings(
                 actual: &crate::kernel::AlgebraicValueType,
             ) -> bool {
                 match (expected, actual) {
+                    (ClickType::Integer, crate::kernel::AlgebraicValueType::Integer) => true,
                     (
                         ClickType::Algebraic(expected),
                         crate::kernel::AlgebraicValueType::Parameter(name),
@@ -1459,7 +1465,7 @@ fn pointer_element_width_for_program_expression(
     known: &BTreeMap<String, u32>,
 ) -> Option<u32> {
     match expression {
-        ProgramExpression::Variable(name) => known.get(name).copied(),
+        ProgramExpression::Variable(name) => name.named_in(known).copied(),
         ProgramExpression::Add(left, right) => {
             pointer_element_width_for_program_expression(left, known)
                 .or_else(|| pointer_element_width_for_program_expression(right, known))
@@ -1790,7 +1796,9 @@ theorem nested_count(value: int32) {
                 7,
             ),
             (
-                ContractExpression::Binding(crate::kernel::C_CONTRACT_RESULT_NAME.into()),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    crate::kernel::CONTRACT_RESULT,
+                )),
                 11,
             ),
         ] {
@@ -1908,11 +1916,9 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     let parameter = |side: &ContractExpression| match side {
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
-            if machine.contains(name.as_str()) =>
-        {
-            Some(name.clone())
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) if machine.contains(name.as_str()) => Some(name.clone()),
         _ => None,
     };
     // A suffixed literal, such as `100u64`, is a machine constant: it reads

@@ -57,7 +57,7 @@ fn contract_expression_function_address(expression: &ContractExpression) -> Opti
         }
         ContractExpression::ProgramExpression(ProgramExpression::AddressOf(expression)) => {
             match expression.as_ref() {
-                ProgramExpression::Variable(name) => Some(name),
+                ProgramExpression::Variable(name) => name.named(),
                 _ => None,
             }
         }
@@ -235,7 +235,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "constructs",
     "consumes",
     "contains",
-    "changes_only",
     "contract",
     "contradiction",
     "conclusion",
@@ -388,7 +387,6 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "by",
     "c-fragment",
     "contains-proposition",
-    "changes-only",
     "contract",
     "decreases",
     "defined",
@@ -537,7 +535,7 @@ pub(crate) fn rust_iterator_method(
 ) -> Result<ContractExpression, String> {
     use crate::languages::interface::RustIteratorKind as K;
     let variable =
-        |suffix: &str| ProgramExpression::Variable(format!("{}_{suffix}", iterator.local));
+        |suffix: &str| ProgramExpression::Variable(format!("{}_{suffix}", iterator.local).into());
     let expression = match (iterator.kind, accessor) {
         (K::Slice | K::Enumerate, "len()") => variable("remaining"),
         // The remaining elements start `length - remaining` into the slice
@@ -609,7 +607,7 @@ pub(crate) fn rust_iterator_spelling(
             .find_map(|accessor| {
                 (rust_iterator_method(iterator, accessor).ok()?
                     == ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                        name.to_string(),
+                        (name.to_string()).into(),
                     )))
                 .then(|| {
                     if current == Some(index) {
@@ -640,7 +638,9 @@ pub(crate) fn loop_iterator_bindings(
     if let Some(local) = rust_library_iterator(&iterator) {
         return vec![(
             "iter".to_string(),
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(local.to_string())),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                (local.to_string()).into(),
+            )),
         )];
     }
     rust_iterator_accessors(iterator.kind)
@@ -657,7 +657,11 @@ pub(crate) fn loop_iterator_bindings(
 /// Whether a bare `name` is a Click value, `result` or a loop's
 /// `iterations`, so a program binding of that name is written `c(name)`, or
 /// `rust(name)` for a Rust source.
-pub(crate) fn is_click_value_name(name: &str) -> bool {
+pub(crate) fn is_click_value_name(name: impl Into<crate::kernel::BindingName>) -> bool {
+    let name = name.into();
+    let Some(name) = name.named() else {
+        return false;
+    };
     name == "result" || name == LOOP_ITERATIONS_NAME
 }
 
@@ -1761,7 +1765,7 @@ pub struct FunctionBlock {
     /// The scalar fields of each struct parameter's layout, and of each
     /// local struct pointer's, by name. Printing only: `click expand` writes a read at a field's
     /// offset as the field place.
-    parameter_field_places: BTreeMap<String, Vec<FieldPlace>>,
+    parameter_field_places: BTreeMap<crate::kernel::BindingName, Vec<FieldPlace>>,
     /// The scalar fields of each struct those places point to, by struct
     /// name, transitively. Printing only, as above.
     pointee_field_places: BTreeMap<String, Vec<FieldPlace>>,
@@ -2356,11 +2360,6 @@ pub enum ResourceKind {
 pub enum ClickProposition {
     /// Assert a proposition-valued expression, such as a lambda application.
     Value(ContractExpression),
-    ChangesOnly {
-        before: ProgramPointSelector,
-        after: ProgramPointSelector,
-        resources: Vec<ResourceSubject>,
-    },
     Comparison {
         left: ContractExpression,
         operator: ComparisonOperator,
@@ -2444,15 +2443,6 @@ impl Clone for ClickProposition {
 fn clone_click_proposition_atom(proposition: &ClickProposition) -> ClickProposition {
     match proposition {
         ClickProposition::Value(expression) => ClickProposition::Value(expression.clone()),
-        ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => ClickProposition::ChangesOnly {
-            before: before.clone(),
-            after: after.clone(),
-            resources: resources.clone(),
-        },
 
         ClickProposition::Comparison {
             left,
@@ -2902,7 +2892,9 @@ pub(crate) fn collect_program_expression_variables(
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Variable(name) => {
-            names.insert(name.clone());
+            if let Some(name) = name.named() {
+                names.insert(name.to_owned());
+            }
         }
         ProgramExpression::Cast { expression, .. } => {
             collect_program_expression_variables(expression, names);
@@ -3198,7 +3190,6 @@ fn collect_current_proposition_variables(
             ClickProposition::Value(expression) => {
                 collect_current_contract_expression_variables(expression, names)
             }
-            ClickProposition::ChangesOnly { .. } => {}
 
             ClickProposition::Comparison { left, right, .. } => {
                 collect_current_contract_expression_variables(left, names);
@@ -3478,11 +3469,37 @@ type ClickArrayRefs = BTreeMap<String, ClickArrayRef>;
 struct ContractEnvironment<'a> {
     values: &'a BTreeMap<String, ProgramValue>,
     array_refs: &'a ClickArrayRefs,
+    parameters: ParameterBinding<'a>,
 }
 
 impl<'a> ContractEnvironment<'a> {
     fn new(values: &'a BTreeMap<String, ProgramValue>, array_refs: &'a ClickArrayRefs) -> Self {
-        Self { values, array_refs }
+        Self {
+            values,
+            array_refs,
+            parameters: ParameterBinding::default(),
+        }
+    }
+    fn with_parameters(self, parameters: ParameterBinding<'a>) -> Self {
+        Self { parameters, ..self }
+    }
+    /// Ordinal lookup is checked against the exact prepared declaration: another
+    /// function's parameter with the same spelling never acquires this value.
+    fn parameter_value(self, binding: &crate::kernel::BindingName) -> Option<&'a ProgramValue> {
+        let id = binding.local_id()?;
+        if !id.is_parameter() {
+            return None;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        let position = id.ordinal() as usize;
+        let parameter = self.parameters.parameters.get(position)?;
+        if parameter.binding_name() != binding {
+            return None;
+        }
+        let ProgramExpression::Value(value) = self.parameters.arguments.get(position)? else {
+            return None;
+        };
+        Some(value)
     }
 }
 /// How many recorded memories on each side of a load's own the speller
@@ -3573,9 +3590,9 @@ struct RecordedStates {
     /// `region(N)` point it is recorded at.
     source_layout: Option<lowering::SourceExecutionLayout>,
     /// The name of each recorded point, by the identity of the point its
-    /// state's path reached there ([`crate::kernel::reached_point`]): a
+    /// state's path reached there ([`crate::kernel::ProgramPoint`]): a
     /// direct lookup, independent of what the memory there holds.
-    point_names: imbl::HashMap<crate::kernel::reached_point::ProgramPointId, ProgramPointSelector>,
+    point_names: imbl::HashMap<crate::kernel::program_point::ProgramPointId, ProgramPointSelector>,
     /// The newest recorded point whose memory reads each set of program
     /// bytes, keyed by the memory's read identity. A load registered in a
     /// memory other than the one being spelled is looked up here and
@@ -3590,13 +3607,14 @@ struct RecordedStates {
     /// spelled `at(point, local)` from here in one lookup. Entries are made
     /// from the locals each insert changed, and checked against the point's
     /// state when read.
-    value_points: crate::persistent::PersistentMap<(u64, String), ProgramPointSelector>,
+    value_points:
+        crate::persistent::PersistentMap<(u64, crate::kernel::BindingName), ProgramPointSelector>,
     /// The recorded point at which each local first held a pointer into
     /// each block, keyed by the block and the local's name: a pointer no
     /// nearer state names is spelled at such a point, from that local.
     /// Filled and checked as `value_points` is.
     pointer_points: crate::persistent::PersistentMap<
-        (crate::kernel::PointerBlock, String),
+        (crate::kernel::PointerBlock, crate::kernel::BindingName),
         ProgramPointSelector,
     >,
     /// Allocation results keep the region that introduced them, independently
@@ -4001,7 +4019,7 @@ impl RecordedStates {
     pub(crate) fn region_result(
         &self,
         region: &CodeRegionRef,
-    ) -> Result<(ProgramPointRef, String), String> {
+    ) -> Result<(ProgramPointRef, crate::kernel::BindingName), String> {
         let fallback;
         let layout = match &self.source_layout {
             Some(layout) => layout,
@@ -4029,7 +4047,7 @@ impl RecordedStates {
                 region: CodeRegionRef::Region(index),
                 kind: ProgramPointKind::Exit,
             },
-            local.to_string(),
+            local.clone(),
         ))
     }
 
@@ -4549,7 +4567,7 @@ impl RecordedStates {
     #[cfg_attr(not(test), allow(dead_code))]
     fn point_name(
         &self,
-        id: crate::kernel::reached_point::ProgramPointId,
+        id: crate::kernel::program_point::ProgramPointId,
     ) -> Option<&ProgramPointSelector> {
         self.point_names.get(&id)
     }
@@ -4582,9 +4600,13 @@ impl RecordedStates {
     fn point_naming_integer(
         &self,
         term: &crate::kernel::MachineTerm,
-    ) -> Option<(&ProgramPointSelector, &str, &ExecutionState)> {
+    ) -> Option<(
+        &ProgramPointSelector,
+        &crate::kernel::BindingName,
+        &ExecutionState,
+    )> {
         let fingerprint = crate::kernel::held_term_fingerprint(term);
-        let mut key = (fingerprint, String::new());
+        let mut key = (fingerprint, crate::kernel::BindingName::from(""));
         let mut found = self.value_points.get_key_value(&key);
         loop {
             let ((found_fingerprint, name), selector) =
@@ -4596,7 +4618,7 @@ impl RecordedStates {
             if let Some(state) = self.get_exact(selector)
                 && state.locals().holds_integer(name, term)
             {
-                return Some((selector, name.as_str(), state));
+                return Some((selector, name, state));
             }
             key = (fingerprint, name.clone());
             found = None;
@@ -4613,7 +4635,7 @@ impl RecordedStates {
             .changed_integer_holdings(self.last_locals.as_ref())
         {
             crate::instrumentation::record_deterministic_work(1);
-            let key = (crate::kernel::held_term_fingerprint(term), name.to_string());
+            let key = (crate::kernel::held_term_fingerprint(term), name.clone());
             let named = self.value_points.get(&key).is_some_and(|earlier| {
                 earlier != selector
                     && self
@@ -4629,7 +4651,7 @@ impl RecordedStates {
             .changed_pointer_blocks(self.last_locals.as_ref())
         {
             crate::instrumentation::record_deterministic_work(1);
-            let key = (block.clone(), name.to_string());
+            let key = (block.clone(), name.clone());
             let named = self.pointer_points.get(&key).is_some_and(|earlier| {
                 earlier != selector
                     && self
@@ -4765,7 +4787,7 @@ impl RecordedStates {
         &'a self,
         block: &'a crate::kernel::PointerBlock,
     ) -> impl Iterator<Item = (&'a ProgramPointSelector, &'a ExecutionState)> {
-        let mut key = (block.clone(), String::new());
+        let mut key = (block.clone(), crate::kernel::BindingName::from(""));
         let mut found = self.pointer_points.get_key_value(&key);
         std::iter::from_fn(move || {
             loop {
@@ -4846,7 +4868,7 @@ impl RecordedStates {
             .insert(selector.clone(), self.effect_log.len());
         let prior = self.get(&selector).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), Some(&state));
-        if let Some(id) = state.reached_point().id() {
+        if let Some(id) = state.program_point_id() {
             self.point_names.insert(id, selector.clone());
         }
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
@@ -4930,7 +4952,7 @@ impl RecordedStates {
             self.record_read_event_values(*index, std::iter::empty());
         }
 
-        if let Some(id) = prior.as_ref().and_then(|state| state.reached_point().id())
+        if let Some(id) = prior.as_ref().and_then(|state| state.program_point_id())
             && self.point_names.get(&id) == Some(&selector)
         {
             self.point_names.remove(&id);
@@ -5406,6 +5428,8 @@ struct SpecElaborationContext {
     /// Bare `result` names the internal contract-return binding here;
     /// explicit C bindings keep their source identifier and value.
     contract_result_in_scope: bool,
+    /// A fixed return value, separate from all lexical bindings.
+    contract_result: Option<std::sync::Arc<SpecExpression>>,
     /// Preserve native address checks inside an explicit `defined(...)`.
     checking_definedness: bool,
 }
@@ -5424,6 +5448,7 @@ impl Default for SpecElaborationContext {
             function_contract: false,
             reference_state: None,
             contract_result_in_scope: false,
+            contract_result: None,
             checking_definedness: false,
         }
     }
@@ -5478,6 +5503,7 @@ impl SpecElaborationContext {
                 at_function_entry: true,
                 reference_state: None,
                 contract_result_in_scope: false,
+                contract_result: None,
                 checking_definedness: self.checking_definedness,
             });
         }
@@ -5511,6 +5537,7 @@ impl SpecElaborationContext {
             // The return value is a logical proof binding, like `let`.
             // Historical C reads still use their own entry bindings.
             contract_result_in_scope: self.contract_result_in_scope,
+            contract_result: self.contract_result.clone(),
             checking_definedness: self.checking_definedness,
         })
     }
@@ -5557,7 +5584,7 @@ enum ContractSegmentSurface {
     },
     Object(String),
     ObjectPlace {
-        name: String,
+        name: crate::kernel::BindingName,
         layout: std::sync::Arc<StructRangeLayout>,
     },
 }
@@ -5827,6 +5854,11 @@ pub enum ProofTactic {
     CallOutcomes(ProofCallOutcomes),
     Loop(StructuralClause),
     ObserveResource(ResourceClause),
+    ObserveSavedMemory {
+        base: ContractExpression,
+        start: ContractExpression,
+        end: ContractExpression,
+    },
     /// `take`, `give`, `gather`, or `scatter` on iterated guarded ownership.
     Iterated(IteratedTactic),
     ConstructResource(ResourceClause),
@@ -6492,7 +6524,9 @@ impl ProofTactic {
             Self::UnfoldResource(_) | Self::UnfoldWitnesses { .. } => {
                 TacticClass::Simple(SimpleTactic::UnfoldResource)
             }
-            Self::ObserveResource(_) => TacticClass::Simple(SimpleTactic::ObserveResource),
+            Self::ObserveResource(_) | Self::ObserveSavedMemory { .. } => {
+                TacticClass::Simple(SimpleTactic::ObserveResource)
+            }
             Self::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
             Self::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
             Self::StructuralInduct { .. } => TacticClass::Control(ControlTactic::StructuralInduct),
@@ -6863,11 +6897,8 @@ impl ProofMatch {
     }
 
     /// The C local an execution-generated `match` splits on.
-    pub(in crate::surface) fn scrutinee_name(&self) -> &str {
-        match &self.scrutinee {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => name,
-            _ => "",
-        }
+    pub(in crate::surface) fn describe_scrutinee(&self) -> String {
+        crate::surface::diagnostics::describe_contract_expression(&self.scrutinee)
     }
 
     /// The written form with each arm's tactics elided:
@@ -6886,7 +6917,7 @@ impl ProofMatch {
             })
             .collect::<Vec<_>>()
             .join(", ");
-        format!("match {} {{ {arms} }}", self.scrutinee_name())
+        format!("match {} {{ {arms} }}", self.describe_scrutinee())
     }
 }
 
@@ -7904,9 +7935,9 @@ fn field_projection(definition: &ClickFunctionDefinition) -> Option<crate::kerne
     let names = |expression: &ContractExpression| match expression {
         ContractExpression::Binding(name)
         | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-            Some(name.clone())
-        }
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => Some(name.clone()),
         _ => None,
     };
     let ContractExpression::AlgebraicMatch { scrutinee, arms } = definition.body()? else {
@@ -8076,7 +8107,8 @@ fn contract_expression_reads_memory(
         | ContractExpression::Binding(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::ProgramExpression(
-            ProgramExpression::Variable(_) | ProgramExpression::Value(_),
+            ProgramExpression::Variable(crate::kernel::BindingName::Named(_))
+            | ProgramExpression::Value(_),
         ) => false,
         // `address(p)` of a name is that pointer value's integer
         // representation: it reads nothing its operand does not.
@@ -8090,7 +8122,8 @@ fn contract_expression_reads_memory(
                 },
         } if matches!(
             expression.as_ref(),
-            ProgramExpression::Variable(_) | ProgramExpression::Value(_)
+            ProgramExpression::Variable(crate::kernel::BindingName::Named(_))
+                | ProgramExpression::Value(_)
         ) =>
         {
             contract_expression_reads_memory(operand, callees)
@@ -8101,7 +8134,8 @@ fn contract_expression_reads_memory(
             ..
         }) if matches!(
             expression.as_ref(),
-            ProgramExpression::Variable(_) | ProgramExpression::Value(_)
+            ProgramExpression::Variable(crate::kernel::BindingName::Named(_))
+                | ProgramExpression::Value(_)
         ) =>
         {
             false
@@ -8217,8 +8251,7 @@ fn click_proposition_reads_memory(
         }
         // Resource separation, containment, loadability, states, and
         // predicates all observe the C state.
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
@@ -8315,6 +8348,9 @@ struct TheoremEnvironment {
     /// The name index of the library selection `standard_library` is a
     /// prefix of.
     standard_library_index: &'static BTreeMap<String, usize>,
+    standard_library_conclusions: &'static planning::theorems::TheoremConclusionIndex,
+    discovery_library_end: usize,
+    definition_conclusions: planning::theorems::TheoremConclusionIndex,
     /// Theorems declared after `standard_library`, by identity. The parser
     /// resolved every citation to one: a library theorem's is qualified, so
     /// no file theorem shares it, and a file refuses a duplicate theorem.
@@ -8324,7 +8360,9 @@ struct TheoremEnvironment {
 impl TheoremEnvironment {
     fn new<'a>(definitions: impl IntoIterator<Item = &'a TheoremDefinition>) -> Self {
         static NO_LIBRARY: BTreeMap<String, usize> = BTreeMap::new();
-        Self::with_library_prefix(&[], &NO_LIBRARY, definitions)
+        static NO_CONCLUSIONS: std::sync::LazyLock<planning::theorems::TheoremConclusionIndex> =
+            std::sync::LazyLock::new(Default::default);
+        Self::with_library_prefix(&[], &NO_LIBRARY, &NO_CONCLUSIONS, definitions)
     }
 
     /// The whole Click library followed by `definitions`. Built-in tactics
@@ -8336,8 +8374,22 @@ impl TheoremEnvironment {
         Ok(Self::with_library_prefix(
             library.theorem_definitions(),
             library.theorem_index(),
+            library.theorem_conclusions(),
             definitions,
         ))
+    }
+
+    /// Discovery selects laws visible in the source, so expansion can cite
+    /// them without adding library imports.
+    fn with_discovery_library(mut self, file: &ClickFile) -> Result<Self, ClickError> {
+        let library = validation::file_library(file)?;
+        self.standard_library_conclusions = library.theorem_conclusions();
+        self.discovery_library_end = library.theorem_definitions().partition_point(|theorem| {
+            self.standard_library_index
+                .get(theorem.name())
+                .is_some_and(|ordinal| *ordinal < self.standard_library.len())
+        });
+        Ok(self)
     }
 
     /// The theorems of the whole Click library before position `end`,
@@ -8350,6 +8402,7 @@ impl TheoremEnvironment {
         Ok(Self::with_library_prefix(
             &library.theorem_definitions()[..end],
             library.theorem_index(),
+            library.theorem_conclusions(),
             definitions,
         ))
     }
@@ -8359,21 +8412,21 @@ impl TheoremEnvironment {
     fn with_library_prefix<'a>(
         standard_library: &'static [TheoremDefinition],
         standard_library_index: &'static BTreeMap<String, usize>,
+        standard_library_conclusions: &'static planning::theorems::TheoremConclusionIndex,
         definitions: impl IntoIterator<Item = &'a TheoremDefinition>,
     ) -> Self {
-        Self {
+        let mut environment = Self {
             standard_library,
             standard_library_index,
-            definitions: definitions
-                .into_iter()
-                .map(|definition| {
-                    (
-                        definition.name().to_string(),
-                        clone_theorem_definition_iteratively(definition),
-                    )
-                })
-                .collect(),
+            standard_library_conclusions,
+            discovery_library_end: standard_library.len(),
+            definition_conclusions: Default::default(),
+            definitions: BTreeMap::new(),
+        };
+        for definition in definitions {
+            environment.insert(clone_theorem_definition_iteratively(definition));
         }
+        environment
     }
 
     fn get(&self, name: &str) -> Option<&TheoremDefinition> {
@@ -8384,7 +8437,21 @@ impl TheoremEnvironment {
         })
     }
 
+    fn conclusion_candidates<'a>(
+        &'a self,
+        goal: &ClickProposition,
+    ) -> impl Iterator<Item = &'a planning::theorems::TheoremCandidate> {
+        self.definition_conclusions
+            .candidates(goal, usize::MAX)
+            .chain(
+                self.standard_library_conclusions
+                    .candidates(goal, self.discovery_library_end),
+            )
+    }
+
     fn insert(&mut self, definition: TheoremDefinition) {
+        self.definition_conclusions
+            .insert(&definition, self.definitions.len());
         self.definitions
             .insert(definition.name().to_string(), definition);
     }
@@ -8544,6 +8611,8 @@ struct ReportDetail {
     /// The prepared program's accessor spellings, retained for lazy reports.
     model_accessors: Option<diagnostics::CapturedModelAccessors>,
     missing_tactic_requirement: Option<String>,
+    /// Instantiated declared theorem prerequisite, for discovery diagnostics only.
+    missing_theorem_requirement: Option<String>,
     /// The Click declaration (a function block, named contract or theorem)
     /// this failure is about, when no C statement has run and no tactic has
     /// been checked: a contract that could not be set up at entry, or an
@@ -9441,7 +9510,9 @@ impl FunctionBlock {
         &self.parameter_struct_casts
     }
 
-    pub(in crate::surface) fn parameter_field_places(&self) -> &BTreeMap<String, Vec<FieldPlace>> {
+    pub(in crate::surface) fn parameter_field_places(
+        &self,
+    ) -> &BTreeMap<crate::kernel::BindingName, Vec<FieldPlace>> {
         &self.parameter_field_places
     }
 
@@ -11207,6 +11278,20 @@ impl ClickError {
         std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).goal = Some(goal);
         self.rendered = std::sync::OnceLock::new();
         self
+    }
+
+    pub(in crate::surface) fn with_missing_theorem_requirement(mut self, fact: String) -> Self {
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default())
+            .missing_theorem_requirement = Some(fact);
+        self.rendered = std::sync::OnceLock::new();
+        self
+    }
+
+    pub(in crate::surface) fn missing_theorem_requirement(&self) -> Option<&str> {
+        self.report_detail
+            .as_ref()?
+            .missing_theorem_requirement
+            .as_deref()
     }
 
     pub(in crate::surface) fn unresolved_requirement(&self) -> Option<&UnresolvedRequirement> {

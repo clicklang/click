@@ -36,12 +36,6 @@ fn collect_spec_proposition_carriers(
         return;
     }
     match proposition {
-        SpecProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                collect_spec_resource_carriers(r, variables, integer_seen);
-            }
-        }
-
         SpecProposition::IntegerComparison { left, right, .. } => {
             collect_spec_integer_carriers(left, variables, integer_seen);
             if variables.exhausted() {
@@ -822,19 +816,6 @@ impl<'a> TermRewrite<'a> {
     ) -> Result<SpecProposition, SpecRewriteError> {
         self.spec_visit()?;
         let result = match proposition {
-            SpecProposition::ChangesOnly {
-                before,
-                after,
-                resources,
-            } => SpecProposition::ChangesOnly {
-                before: before.clone(),
-                after: after.clone(),
-                resources: resources
-                    .iter()
-                    .map(|r| self.rewrite_spec_resource(r))
-                    .collect::<Result<_, _>>()?,
-            },
-
             SpecProposition::IntegerComparison {
                 left,
                 operator,

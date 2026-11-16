@@ -230,8 +230,11 @@ fn coordinate_reconstruction_keeps_the_selected_read_state() {
     let mut results = vec![];
     for memory in [before, after] {
         let memory = crate::kernel::intern_memory(memory);
-        let read =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64);
+        let read = MachineTerm::MemoryLoad(
+            ProgramPoint::at(&memory),
+            Box::new(pointer.clone()),
+            LoadKind::Bits64,
+        );
         let offset = PointerOffsetTerm::Int64Scaled {
             value: retained(MachineIntegerType::Int64, &read),
             byte_width: 4,

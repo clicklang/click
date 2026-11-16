@@ -2,15 +2,14 @@
 //! resources are known to be the same at which program points**.
 //!
 //! A *resource* is a piece of mutable state: a memory cell, an observed
-//! memory block, or a model field. A surface *program point* is a code
-//! location or proof mark used by `at(point, expression)`. It selects a
-//! recorded symbolic execution state on the current proof path.
+//! memory block, or a model field. A *program point*, [`ProgramPoint`], is a
+//! node a proof path reached, named in Surface by `at(point, expression)`;
+//! for now the kernel identifies one by the interned memory state there.
 //!
-//! Memory reasoning uses a *version point*, [`VersionPoint`], identified by
-//! an interned memory state. The assumption-free naming walk selects the
-//! earliest version point it can prove unchanged for the chosen resource.
-//! Distinct program points may select the same version point for one cell.
-//! The tracker answers two questions about version points:
+//! A read's *version point* is the point it is lowered to. The
+//! assumption-free naming walk selects the earliest point it can prove
+//! unchanged for the chosen resource, so reads at several points may share
+//! one version point. The tracker answers two questions about points:
 //!
 //! * [`last_same`] — walking back from a point, where was this resource last
 //!   known to be the same, and what stopped the walk there;
@@ -66,48 +65,10 @@ pub(in crate::kernel) mod cell_source;
 pub(in crate::kernel) mod step_effect;
 
 use crate::kernel::memory_provenance::with_extended_dag_bridging;
+pub(crate) use crate::kernel::primitives::ProgramPoint;
 use crate::kernel::primitives::*;
 use crate::kernel::unary_term;
 use crate::kernel::{MachineCastSpelling, cast_term};
-
-/// A position in memory history, identified by an interned memory state.
-/// The naming walk selects a resource's version point from these positions.
-///
-/// This is not the surface program point passed to `at`: two distinct
-/// program points can select the same version point for a cell. Equality
-/// here compares interned memory states, not source locations or all values
-/// at a location.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct VersionPoint(SharedMemory);
-
-impl VersionPoint {
-    pub(crate) fn at(memory: &SharedMemory) -> Self {
-        Self(memory.clone())
-    }
-
-    /// The point a `Memory` value stands at, interning it first. Callers
-    /// that already hold an interned state use [`VersionPoint::at`].
-    pub(crate) fn of_memory(memory: &Memory) -> Self {
-        Self(crate::kernel::intern_memory(memory.clone()))
-    }
-
-    pub(crate) fn shared_memory(&self) -> &SharedMemory {
-        &self.0
-    }
-
-    pub(crate) fn memory(&self) -> &Memory {
-        self.0.memory()
-    }
-
-    /// True when this point is later in the recorded history than `other`.
-    /// Memory state ids strictly increase along derivation edges, so comparing
-    /// them orders two points of one arena without walking.
-    pub(crate) fn is_later_than(&self, other: &Self) -> bool {
-        let (arena, id) = self.0.arena_id();
-        let (other_arena, other_id) = other.0.arena_id();
-        arena == other_arena && id > other_id
-    }
-}
 
 /// A state point for a resource that does not live in memory: a borrowed
 /// handle to the whole execution state the kernel already holds there — the
@@ -119,7 +80,7 @@ impl VersionPoint {
 /// state: nothing compares two states' contents, because a resource context's
 /// `PartialEq` walks its facts and no tracker answer may cost that.
 ///
-/// Memory keeps [`VersionPoint`] instead, whose identity is one interned
+/// Memory keeps [`ProgramPoint`] instead, whose identity is one interned
 /// state id. That is what the naming path needs and what a load variable's
 /// name embeds; a whole state is neither interned nor ordered, so it could not
 /// serve there.
@@ -287,7 +248,7 @@ impl OwnedResource {
 /// point, and what stopped the walk there.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LastSame {
-    pub(crate) point: VersionPoint,
+    pub(crate) point: ProgramPoint,
     pub(crate) stopped_by: Stop,
 }
 
@@ -307,7 +268,7 @@ impl Stop {
     /// the walk itself asked, run with the same evidence the naming walk has —
     /// none — so a refusal explains the answer the term actually got rather
     /// than a second opinion about it.
-    fn at_point(point: &VersionPoint, resource: TrackedResource<'_>) -> Self {
+    fn at_point(point: &ProgramPoint, resource: TrackedResource<'_>) -> Self {
         let Some(derivation) = point.shared_memory().derivation() else {
             return Self {
                 change: Change::BeginningOfHistory,
@@ -507,20 +468,20 @@ pub(crate) enum Sameness {
     Same,
     /// A step between the two points wrote the resource.
     Changed {
-        at: Option<VersionPoint>,
+        at: Option<ProgramPoint>,
         by: Stop,
     },
     /// A step between the two points could not be shown to leave the
     /// resource alone. The resource may well be unchanged; nothing states it.
     Unknown {
-        at: Option<VersionPoint>,
+        at: Option<ProgramPoint>,
         why: Stop,
     },
 }
 
 impl Sameness {
     /// The step that broke the chain, for the two answers that have one.
-    pub(crate) fn blocking_step(&self) -> Option<(Option<&VersionPoint>, &Stop)> {
+    pub(crate) fn blocking_step(&self) -> Option<(Option<&ProgramPoint>, &Stop)> {
         match self {
             Self::Same => None,
             Self::Changed { at, by } => Some((at.as_ref(), by)),
@@ -541,9 +502,9 @@ pub(crate) struct Explanation {
     /// The point the question was asked at, for a resource that has one.
     /// Absent for the kinds whose points are saved states: a state is neither
     /// interned nor ordered, so it cannot be one of these.
-    pub(crate) here: Option<VersionPoint>,
+    pub(crate) here: Option<ProgramPoint>,
     /// The other point, when the question had one.
-    pub(crate) there: Option<VersionPoint>,
+    pub(crate) there: Option<ProgramPoint>,
     pub(crate) outcome: Sameness,
     /// Recorded steps between the blocking step and `here`, capped at
     /// [`MAX_REPORTED_STEPS`]. The tracker crossed all of them, so a
@@ -568,13 +529,14 @@ impl Explanation {
 /// tracker call on the hot path.
 pub(crate) fn last_same_version_point(
     resource: TrackedResource<'_>,
-    at: &VersionPoint,
-) -> Option<VersionPoint> {
+    at: &ProgramPoint,
+) -> Option<ProgramPoint> {
     match resource {
         TrackedResource::Cell { pointer, bytes } => {
-            cell_last_same_version_point(at.shared_memory(), pointer, bytes).map(VersionPoint)
+            cell_last_same_version_point(at.shared_memory(), pointer, bytes)
+                .map(|memory| ProgramPoint::at(&memory))
         }
-        TrackedResource::Block(block) => Some(VersionPoint(block_last_same_version_point(
+        TrackedResource::Block(block) => Some(ProgramPoint::at(&block_last_same_version_point(
             at.shared_memory(),
             block,
         ))),
@@ -596,11 +558,11 @@ pub(crate) fn last_same_version_point(
 /// [`last_same_version_point`] with the reason the resource walk stopped.
 /// Cell naming retains that decision alongside its endpoint; querying it
 /// must not re-run the effect check that produced it.
-pub(crate) fn last_same(resource: TrackedResource<'_>, at: &VersionPoint) -> Option<LastSame> {
+pub(crate) fn last_same(resource: TrackedResource<'_>, at: &ProgramPoint) -> Option<LastSame> {
     match resource {
         TrackedResource::Cell { pointer, bytes } => last_same_named_cell(pointer, bytes, at),
         TrackedResource::Block(block) => {
-            let point = VersionPoint(block_last_same_version_point(at.shared_memory(), block));
+            let point = ProgramPoint::at(&block_last_same_version_point(at.shared_memory(), block));
             let stopped_by = Stop::at_point(&point, resource);
             Some(LastSame { point, stopped_by })
         }
@@ -617,7 +579,7 @@ pub(crate) fn last_same(resource: TrackedResource<'_>, at: &VersionPoint) -> Opt
 pub(crate) fn last_same_named_cell(
     pointer: &Pointer,
     bytes: u32,
-    at: &VersionPoint,
+    at: &ProgramPoint,
 ) -> Option<LastSame> {
     let version = cell_last_same_version(at.shared_memory(), pointer, bytes)?;
     let change = version
@@ -627,7 +589,7 @@ pub(crate) fn last_same_named_cell(
             Change::of_derivation(&edge)
         });
     Some(LastSame {
-        point: VersionPoint(version.memory),
+        point: ProgramPoint::at(&version.memory),
         stopped_by: Stop {
             change,
             reason: version.reason,
@@ -643,8 +605,8 @@ pub(crate) fn last_same_named_cell(
 /// chain.
 pub(crate) fn same(
     resource: TrackedResource<'_>,
-    left: &VersionPoint,
-    right: &VersionPoint,
+    left: &ProgramPoint,
+    right: &ProgramPoint,
 ) -> Sameness {
     if left == right {
         return Sameness::Same;
@@ -828,8 +790,8 @@ fn version_at_state(resource: TrackedResource<'_>, point: StatePoint<'_>) -> Opt
 /// [`same`], with the bounded context a refusal prints.
 pub(crate) fn explain(
     resource: TrackedResource<'_>,
-    here: &VersionPoint,
-    there: &VersionPoint,
+    here: &ProgramPoint,
+    there: &ProgramPoint,
 ) -> Explanation {
     let outcome = same(resource, here, there);
     explanation_for(resource, here, Some(there.clone()), outcome)
@@ -839,7 +801,7 @@ pub(crate) fn explain(
 /// to compare against: the step that ended the last stretch of agreement.
 /// A resource nothing has touched since the beginning of the history
 /// answers [`Sameness::Same`].
-pub(crate) fn explain_last_same(resource: TrackedResource<'_>, here: &VersionPoint) -> Explanation {
+pub(crate) fn explain_last_same(resource: TrackedResource<'_>, here: &ProgramPoint) -> Explanation {
     let outcome = match last_same(resource, here) {
         Some(last) => match last.stopped_by.reason {
             StopReason::HistoryEnds => Sameness::Same,
@@ -861,8 +823,8 @@ pub(crate) fn explain_last_same(resource: TrackedResource<'_>, here: &VersionPoi
 
 fn explanation_for(
     resource: TrackedResource<'_>,
-    here: &VersionPoint,
-    there: Option<VersionPoint>,
+    here: &ProgramPoint,
+    there: Option<ProgramPoint>,
     outcome: Sameness,
 ) -> Explanation {
     let crossed_after = outcome
@@ -882,7 +844,7 @@ fn explanation_for(
 /// Recorded steps from `from` back to `to`, bounded. Zero when `to` is not
 /// an ancestor of `from`, which is what the two answers that report no step
 /// already say.
-fn recorded_steps_between(from: &VersionPoint, to: &VersionPoint) -> usize {
+fn recorded_steps_between(from: &ProgramPoint, to: &ProgramPoint) -> usize {
     let mut current = from.shared_memory().clone();
     for crossed in 0..MAX_REPORTED_STEPS {
         if &current == to.shared_memory() {
@@ -1282,7 +1244,7 @@ thread_local! {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ResourceRead {
     pub(crate) resource: OwnedResource,
-    pub(crate) point: VersionPoint,
+    pub(crate) point: ProgramPoint,
 }
 
 /// The resources a proposition reads, in traversal order.
@@ -1340,7 +1302,7 @@ fn collect_term_reads(term: &Term, reads: &mut Vec<ResourceRead>) {
 pub(crate) fn version_mismatch(
     left: &Proposition,
     right: &Proposition,
-) -> Option<(OwnedResource, VersionPoint, VersionPoint)> {
+) -> Option<(OwnedResource, ProgramPoint, ProgramPoint)> {
     let left_reads = reads_of_proposition(left);
     let right_reads = reads_of_proposition(right);
     if left_reads.is_empty() || left_reads.len() != right_reads.len() {
@@ -1371,7 +1333,7 @@ pub(crate) fn reads_any_resource(fact: &Proposition) -> bool {
 /// shape an equation between a term and its own earlier value takes.
 pub(crate) fn internal_version_mismatch(
     fact: &Proposition,
-) -> Option<(OwnedResource, VersionPoint, VersionPoint)> {
+) -> Option<(OwnedResource, ProgramPoint, ProgramPoint)> {
     let reads = reads_of_proposition(fact);
     reads.iter().enumerate().find_map(|(index, read)| {
         reads[index + 1..]
@@ -1387,7 +1349,7 @@ pub(crate) fn internal_version_mismatch(
     })
 }
 
-fn push_read(reads: &mut Vec<ResourceRead>, resource: OwnedResource, point: VersionPoint) {
+fn push_read(reads: &mut Vec<ResourceRead>, resource: OwnedResource, point: ProgramPoint) {
     let read = ResourceRead { resource, point };
     if !reads.contains(&read) {
         reads.push(read);
@@ -1500,7 +1462,7 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
                 pointer: pointer.as_ref().clone(),
                 bytes: 1,
             },
-            VersionPoint::at(memory),
+            ProgramPoint::at(memory),
         ),
     }
 }
@@ -1522,7 +1484,7 @@ fn collect_pointer_block_reads(block: &PointerBlock, reads: &mut Vec<ResourceRea
                 pointer: address,
                 bytes: crate::kernel::C_POINTER_BYTE_WIDTH,
             },
-            VersionPoint::at(&memory),
+            ProgramPoint::at(&memory),
         );
     }
 }
@@ -1666,7 +1628,7 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
                 push_read(
                     reads,
                     OwnedResource::Block(pointer.pointer().block.clone()),
-                    VersionPoint::of_memory(memory),
+                    ProgramPoint::of_memory(memory),
                 );
             }
         }
@@ -1693,7 +1655,7 @@ fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
                         pointer: read.pointer,
                         bytes: read.bytes,
                     },
-                    VersionPoint::at(&read.origin.unwrap_or(read.memory)),
+                    ProgramPoint::at(&read.origin.unwrap_or(read.memory)),
                 );
             }
         }

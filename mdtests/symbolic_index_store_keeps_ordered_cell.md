@@ -1,11 +1,7 @@
 # Symbolic-index store keeps a cell a recorded order separates
 
-A store through a symbolic index keeps every cell whose index a strict order
-in the proof context separates from the written one. The bare `step();`
-carries nothing; the kernel's store edge freezes the transition's context and
-a later load crosses it by that recorded order alone, so the fact about the
-untouched cell is still available afterwards without any `using` list or
-transport.
+The proof uses the strict index order to establish separation, then explicitly
+preserves the terminator across the selected store before refolding its owner.
 
 ```c filename=set_then_read_end.c
 int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
@@ -41,7 +37,20 @@ int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
     have index < cap;
     step();
     step();
-    have data[len] == 0 by { known(); }
+    have index != len by { solve() using { index < len; }; }
+    have separate(memory(data[index]), memory(data[len])) by {
+        apply(click::separation::separate_elements(data, index, len)) using { index != len; };
+    }
+    have separate(statement(1).footprint, memory(data[len])) by {
+        normalize() using { separate(memory(data[index]), memory(data[len])); };
+    }
+    have separate(statement(0).footprint, memory(data[len])) by { normalize() using {}; }
+    have at(statement(0).exit, data[len]) == at(statement(0).entry, data[len]) by {
+        preserve(memory(data[len]), statement(0));
+    }
+    have at(statement(1).exit, data[len]) == at(statement(1).entry, data[len]) by {
+        preserve(memory(data[len]), statement(1));
+    }
     have terminated_at(data, len) by {
         unfold(terminated_at(data, len));
         known();

@@ -1431,8 +1431,9 @@ one is `loop(i).iter` there. A range stored in a local first,
 `impl<I: Iterator> IntoIterator for I` and `impl<A: Step> Iterator for
 Range<A>`. `next` yields `Some(iter.start)` and advances `iter.start` while
 `iter.start < iter.end`, else `None`; the advance owes the addition's check,
-which the guard decides. The loop's `Option` is an ordinary `Option` value,
-so the body reads the yielded value as a `match` arm does.
+which the guard decides. The loop's variable is bound where `next` yields:
+`i = iter.start`, then the advance. The `Option` is never built, and no
+compiler temporary holds it.
 
 Invariants are written over the bounds: `decreases iter.end - iter.start`
 ranks the loop, and after it the exit guard gives `iter.start >= iter.end`.

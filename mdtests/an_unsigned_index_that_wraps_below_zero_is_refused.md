@@ -27,5 +27,5 @@ int32 read_previous(uint32 x) {
 ```
 
 ```expect
-fail: the read of `values[x - 1u32]` may read outside `values`
+fail: the read of `values["an_unsigned_index_that_wraps_below_zero_is_refused.c"::read_previous.parameter(0) - 1u32]` may read outside `values`
 ```

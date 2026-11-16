@@ -131,10 +131,14 @@ pub enum KernelTermNode {
     MachineIf {
         arguments: [KernelTerm; 3],
     },
-    /// Exact condition payload at the temporary migration boundary.
+    /// Explicit native Boolean observation identity; condition imports are structural.
     LegacyBool(KernelLegacyTerm),
     IntegerLiteral(BigInt),
     MachineLiteral(KernelMachineLiteral),
+    /// A program-carried abstract value, distinct from a logical algebraic argument.
+    ProgramParameter {
+        operand: KernelTerm,
+    },
     FloatConvert {
         source: ProgramType,
         destination: ProgramType,
@@ -239,8 +243,6 @@ pub struct KernelLegacyTerm {
 }
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum LegacyIdentity {
-    Integer(u64),
-    AlgebraicVariable(Variable),
     Machine(u64),
     MachineObservation(SharedMachineIntegerTerm),
     NativeObservation(Box<PureFunctionArgument>),
@@ -409,7 +411,12 @@ impl NodeKey {
                 .arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
-            KernelTermNode::MemoryLoad { .. }
+            KernelTermNode::PointerValue(_)
+            | KernelTermNode::PointerRead { .. }
+            | KernelTermNode::PointerArithmetic { .. }
+            | KernelTermNode::PointerCall { .. }
+            | KernelTermNode::ArrayReference { .. }
+            | KernelTermNode::MemoryLoad { .. }
             | KernelTermNode::PointerAddress { .. }
             | KernelTermNode::PointerOffsetEqual { .. }
             | KernelTermNode::PointerEqual { .. }
@@ -463,6 +470,7 @@ impl NodeKey {
                 .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::IntegerIf { .. } => false,
             KernelTermNode::BoolCast { operand, .. }
+            | KernelTermNode::ProgramParameter { operand }
             | KernelTermNode::FloatConvert { operand, .. }
             | KernelTermNode::FloatNegate { operand }
             | KernelTermNode::FloatClassify { operand, .. }
@@ -823,6 +831,7 @@ impl KernelTerm {
             | KernelTermNode::IntegerIf { arguments }
             | KernelTermNode::MachineIf { arguments } => arguments,
             KernelTermNode::BoolCast { operand, .. }
+            | KernelTermNode::ProgramParameter { operand }
             | KernelTermNode::FloatConvert { operand, .. }
             | KernelTermNode::FloatNegate { operand }
             | KernelTermNode::FloatClassify { operand, .. }
@@ -900,21 +909,10 @@ impl KernelTerm {
     fn legacy(argument: PureFunctionArgument) -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        let identity = match &argument {
-            PureFunctionArgument::Integer(value) => LegacyIdentity::Integer(value.id()),
-            PureFunctionArgument::Algebraic(AlgebraicTerm {
-                node: AlgebraicTermNode::Variable(variable),
-                ..
-            }) => {
-                // The enclosing node already keys the algebraic type. A
-                // variable has no additional producer-only pointer evidence.
-                LegacyIdentity::AlgebraicVariable(*variable)
-            }
-            _ => LegacyIdentity::Fresh(
-                NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-                    .expect("legacy term identity exhausted"),
-            ),
-        };
+        let identity = LegacyIdentity::Fresh(
+            NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+                .expect("legacy term identity exhausted"),
+        );
         Self::legacy_at(argument, identity)
     }
     /// Retain an already-native opaque machine operand at a shared parent.
@@ -1103,29 +1101,68 @@ pub(crate) struct KernelTermImport {
     pub(super) machine_input_requires_export: bool,
 }
 impl KernelTermImport {
-    pub(crate) fn argument(&mut self, value: &PureFunctionArgument) -> KernelTerm {
-        match value {
+    /// Every argument family is explicit here. Native fallbacks preserve C
+    /// carrier records and out-of-domain inputs; migrated expressions expose
+    /// their children through the common nodes.
+    pub(crate) fn argument(&mut self, argument: &PureFunctionArgument) -> KernelTerm {
+        match argument {
             PureFunctionArgument::Algebraic(value) => self.algebraic(value),
             PureFunctionArgument::Integer(value) => self.integer(value),
             PureFunctionArgument::SharedMachine(value) => value
                 .shared_operand()
                 .cloned()
                 .unwrap_or_else(|| self.machine(value.ty(), value.value())),
-            PureFunctionArgument::Value(value) if matches!(value, integer_c_value!(_)) => {
-                let format = MachineIntegerType::from_program_type(value.program_type()).unwrap();
-                let (integer_c_value!(bits)) = value else {
-                    unreachable!()
-                };
-                self.machine(format, bits)
-            }
-            PureFunctionArgument::Value(value) if FloatOperandView::from_value(value).is_some() => {
-                let view = FloatOperandView::from_value(value).expect("float argument");
-                self.float(
-                    view.format(),
-                    view.native_compat().expect("native float argument"),
-                )
-            }
-            _ => KernelTerm::legacy(value.clone()),
+            PureFunctionArgument::Value(value) => match value {
+                integer_c_value!(bits) => self.machine(
+                    MachineIntegerType::from_program_type(value.program_type()).unwrap(),
+                    bits,
+                ),
+                ProgramValue::Float32(bits) => self.float(KernelFloatType::Float32, bits),
+                ProgramValue::Float64(bits) => self.float(KernelFloatType::Float64, bits),
+                ProgramValue::Bool(word) => match word {
+                    MachineTerm::Constant {
+                        format: MachineIntegerType::UInt8,
+                        bits,
+                    } if *bits <= 1 => self.condition(&ConditionTerm::Constant(*bits != 0)),
+                    MachineTerm::Variable(variable) => {
+                        KernelTerm::variable(KernelType::Program(ProgramType::Bool), *variable)
+                    }
+                    MachineTerm::BoolCast {
+                        to: MachineIntegerType::UInt8,
+                        value,
+                    } if !matches!(value.as_ref(), ConditionTerm::Constant(_)) => {
+                        self.condition(value)
+                    }
+                    // Other C-word carriers retain their original width and
+                    // bits. Importing an argument must not normalize its truth.
+                    _ => KernelTerm::legacy(argument.clone()),
+                },
+                ProgramValue::Parameter(value) => {
+                    KernelTerm::program_parameter(self.algebraic(value))
+                }
+                ProgramValue::Pointer(value) => {
+                    KernelTerm::shared_pointer_value(SharedPointerValue::import(value))
+                }
+                // Void has no expression. A complete pointer/integer record is
+                // the package-7 value descriptor, not its numeric projection.
+                ProgramValue::Void | ProgramValue::PointerInteger(_) => {
+                    KernelTerm::legacy(argument.clone())
+                }
+            },
+            PureFunctionArgument::ArrayRef {
+                memory,
+                pointer,
+                element_type,
+            } => match pointer {
+                ProgramValue::Pointer(pointer) => KernelTerm::shared_array_reference(
+                    intern_memory(memory.clone()),
+                    KernelTerm::shared_pointer_value(SharedPointerValue::import(pointer)),
+                    *element_type,
+                ),
+                // Preserve the existing refusal boundary for a non-pointer
+                // descriptor rather than inventing an address for it.
+                _ => KernelTerm::legacy(argument.clone()),
+            },
         }
     }
     pub(crate) fn integer(&mut self, term: &SharedIntegerTerm) -> KernelTerm {
@@ -1175,14 +1212,15 @@ impl KernelTermImport {
                     .arguments()
                     .iter()
                     .enumerate()
-                    .map(|(index, arg)| match arg {
-                        PureFunctionArgument::Integer(value) => self.integer(value),
-                        PureFunctionArgument::Value(integer_c_value!(_))
-                        | PureFunctionArgument::SharedMachine(_) => self.argument(arg),
-                        _ => KernelTerm::legacy_at(
-                            arg.clone(),
-                            LegacyIdentity::ApplicationArgument(application.clone(), index),
-                        ),
+                    .map(|(index, arg)| {
+                        if let Some(root) = application.common_argument(index) {
+                            root
+                        } else {
+                            KernelTerm::legacy_at(
+                                arg.clone(),
+                                LegacyIdentity::ApplicationArgument(application.clone(), index),
+                            )
+                        }
                     })
                     .collect();
                 KernelTerm::checked_call(KernelType::Integer, application.name().into(), arguments)
@@ -1319,7 +1357,7 @@ mod tests {
             "opaque_argument".into(),
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(Memory::new()),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
                     Box::new(Pointer::symbolic(Variable(87654328))),
                     LoadKind::Int32,
                 ),
@@ -1633,6 +1671,9 @@ impl KernelTermExport {
             KernelTermNode::ArrayReference { .. } => {
                 term.pointer_argument_native().unwrap().clone()
             }
+            KernelTermNode::ProgramParameter { operand } => PureFunctionArgument::Value(
+                ProgramValue::Parameter(Box::new(self.algebraic(operand)?)),
+            ),
             KernelTermNode::Legacy(value) => value.value().clone(),
             KernelTermNode::IntegerLiteral(value) => {
                 PureFunctionArgument::Integer(IntegerTerm::Constant(value.clone()).into())
@@ -1714,3 +1755,6 @@ impl KernelTermExport {
         }
     }
 }
+
+#[cfg(test)]
+mod mixed_arguments;

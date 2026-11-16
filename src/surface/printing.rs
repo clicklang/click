@@ -367,18 +367,6 @@ pub(super) fn print_proposition(
             },
             describe_contract_expression(expression)
         ),
-        ClickProposition::ChangesOnly {
-            before,
-            after,
-            resources,
-        } => {
-            let mut args = vec![
-                describe_program_point_selector(before),
-                describe_program_point_selector(after),
-            ];
-            args.extend(resources.iter().map(describe_resource_subject));
-            format!("changes_only({})", args.join(", "))
-        }
         ClickProposition::Separate { left, right } => format!(
             "separate({}, {})",
             describe_resource_subject(left),
@@ -1102,6 +1090,16 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             }
             line(output, &prefix, "}");
         }
+        ProofTactic::ObserveSavedMemory { base, start, end } => line(
+            output,
+            &prefix,
+            &format!(
+                "observe({}[{}..{}]);",
+                describe_contract_expression(base),
+                describe_contract_expression(start),
+                describe_contract_expression(end)
+            ),
+        ),
         ProofTactic::ObserveResource(resource) => line(
             output,
             &prefix,
@@ -2819,11 +2817,11 @@ mod tests {
     fn marked_conjunction_uses_parseable_click_connectives() {
         let equality = |name: &str| ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                name.to_string(),
+                (name.to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                name.to_string(),
+                (name.to_string()).into(),
             )),
         };
         let proposition = ClickProposition::At {

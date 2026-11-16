@@ -13,11 +13,11 @@ fn nested_integer_conversions_keep_current_parameter_reads_visible() {
     };
     assert!(spec_reads_current_parameter(
         SpecNode::Expression(&conversion),
-        "parameter"
+        &("parameter").into()
     ));
     assert!(!spec_reads_current_parameter(
         SpecNode::Expression(&conversion),
-        "other"
+        &("other").into()
     ));
     let comparison = SpecProposition::IntegerComparison {
         left: SpecIntegerExpression::Term(IntegerTerm::constant_i64(0)),
@@ -26,10 +26,10 @@ fn nested_integer_conversions_keep_current_parameter_reads_visible() {
     };
     assert!(spec_reads_current_parameter(
         SpecNode::Proposition(&comparison),
-        "parameter"
+        &("parameter").into()
     ));
     assert!(!spec_reads_current_parameter(
         SpecNode::Proposition(&comparison),
-        "other"
+        &("other").into()
     ));
 }

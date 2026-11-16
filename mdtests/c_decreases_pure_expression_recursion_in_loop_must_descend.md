@@ -62,5 +62,5 @@ int32 walk(int32 n) {
 ```
 
 ```expect
-fail: unproved obligation: `level(n) < level(n)`
+fail: unproved obligation: `level("c_decreases_pure_expression_recursion_in_loop_must_descend.c"::walk.parameter(0)) < level("c_decreases_pure_expression_recursion_in_loop_must_descend.c"::walk.parameter(0))`
 ```

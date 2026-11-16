@@ -30,5 +30,5 @@ int32 one_past(int32 x) {
 ```
 
 ```expect
-fail: the read of `values[x]` may read outside `values`: could not show `0 <= x && x < 4`
+fail: the read of `values["a_symbolic_read_one_past_an_initialized_local_array_is_refused.c"::one_past.parameter(0)]` may read outside `values`: could not show `0 <= "a_symbolic_read_one_past_an_initialized_local_array_is_refused.c"::one_past.parameter(0) && "a_symbolic_read_one_past_an_initialized_local_array_is_refused.c"::one_past.parameter(0) < 4`
 ```

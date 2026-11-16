@@ -33,7 +33,10 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
     let mut measured_work = Vec::new();
     for count in [0, 16, 64, 256] {
         crate::kernel::set_never_address_taken_locals(
-            (0..count).map(|i| format!("hidden_{i}")).collect(),
+            (0..count)
+                .map(|i| format!("hidden_{i}"))
+                .map(Into::into)
+                .collect(),
         );
         let mut resources = base.clone();
         for i in 0..count {
@@ -343,14 +346,14 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
             Memory::new().store(cell(length), ProgramValue::Int32(MachineTerm::constant(42)));
         for index in (0..length).rev() {
             let next = MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(cell(index + 1)),
                 crate::kernel::LoadKind::Int32,
             );
             memory = Memory::new().store(cell(index), ProgramValue::Int32(next));
         }
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(cell(0)),
             crate::kernel::LoadKind::Int32,
         );

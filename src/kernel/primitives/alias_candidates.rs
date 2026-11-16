@@ -7,12 +7,13 @@
 //!
 //! ```text
 //! Concrete < StringLiteral < Function < FunctionSymbolic < ExternalArgument
-//!          < ExternalObject < Symbolic < Heap < Temporary
+//!          < ExternalObject < Symbolic < LoadedPointer < PureFunctionApplication
+//!          < Heap < Temporary < AutomaticLocal < StaticObject < ContractResult < AggregateReturn
 //! ```
 //!
 //! So the entries of one block are one contiguous key range, every
 //! `Symbolic` block sits in one contiguous range, and every `Heap` and
-//! `Temporary` block sits at the end.
+//! `Temporary` block precedes the typed `AutomaticLocal` interval.
 //!
 //! [`PointerBlock::proven_distinct`] is the kernel's only structural block
 //! separation rule, and it has a shape these ranges follow:
@@ -207,6 +208,16 @@ fn first_symbolic() -> PointerBlock {
     PointerBlock::Symbolic(Variable(0))
 }
 
+fn first_static() -> PointerBlock {
+    PointerBlock::StaticObject {
+        binding: crate::kernel::StaticBindingId::new(
+            crate::kernel::StaticBindingOwner::File(None),
+            0,
+            String::new(),
+        ),
+    }
+}
+
 fn first_heap() -> PointerBlock {
     PointerBlock::Heap(0)
 }
@@ -268,7 +279,9 @@ impl AliasCandidates {
             PointerBlock::Heap(_) | PointerBlock::Temporary(_) => vec![symbolic(), own()],
             // Distinct concrete names are distinct; a `local:` block is also
             // distinct from the external variants.
-            PointerBlock::Concrete(_) if block.is_local_block() => vec![
+            PointerBlock::ContractResult
+            | PointerBlock::AggregateReturn { .. }
+            | PointerBlock::AutomaticLocal { .. } => vec![
                 own(),
                 BlockInterval {
                     start: Some(first_function()),
@@ -276,7 +289,17 @@ impl AliasCandidates {
                 },
                 symbolic(),
             ],
-            PointerBlock::Concrete(_) => vec![
+            PointerBlock::Concrete(_) if block.is_local_block() => {
+                vec![
+                    own(),
+                    BlockInterval {
+                        start: Some(first_function()),
+                        end: Upper::Before(PointerBlock::ExternalArgument),
+                    },
+                    symbolic(),
+                ]
+            }
+            PointerBlock::StaticObject { .. } | PointerBlock::Concrete(_) => vec![
                 own(),
                 BlockInterval {
                     start: Some(first_function()),
@@ -288,13 +311,26 @@ impl AliasCandidates {
                 start: Some(first_string_literal()),
                 end: Upper::Before(first_heap()),
             }],
-            PointerBlock::Function(_)
-            | PointerBlock::FunctionSymbolic(_)
-            | PointerBlock::ExternalArgument
-            | PointerBlock::ExternalObject(_) => vec![BlockInterval {
-                start: None,
-                end: Upper::Before(first_heap()),
-            }],
+            PointerBlock::Function(_) | PointerBlock::FunctionSymbolic(_) => vec![
+                BlockInterval {
+                    start: None,
+                    end: Upper::Before(first_heap()),
+                },
+                BlockInterval {
+                    start: Some(PointerBlock::Temporary(u64::MAX)),
+                    end: Upper::Unbounded,
+                },
+            ],
+            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_) => vec![
+                BlockInterval {
+                    start: None,
+                    end: Upper::Before(first_heap()),
+                },
+                BlockInterval {
+                    start: Some(first_static()),
+                    end: Upper::Unbounded,
+                },
+            ],
         };
         Self { intervals }
     }
@@ -599,6 +635,41 @@ mod tests {
             PointerBlock::Heap(9),
             PointerBlock::Temporary(0),
             PointerBlock::Temporary(2),
+            PointerBlock::ContractResult,
+            PointerBlock::AggregateReturn { frame: 0 },
+            PointerBlock::AggregateReturn { frame: 1 },
+            PointerBlock::AutomaticLocal {
+                binding: crate::kernel::LocalBindingId::new(
+                    crate::kernel::LocalFunctionId::new(Some("a.c".into()), "f".into()),
+                    false,
+                    0,
+                    Some("local".into()),
+                ),
+                instance: crate::kernel::LocalStorageInstance::Implicit,
+            },
+            PointerBlock::StaticObject {
+                binding: crate::kernel::StaticBindingId::new(
+                    crate::kernel::StaticBindingOwner::File(Some("a.c".into())),
+                    0,
+                    "value".into(),
+                ),
+            },
+            PointerBlock::StaticObject {
+                binding: crate::kernel::StaticBindingId::new(
+                    crate::kernel::StaticBindingOwner::File(Some("b.c".into())),
+                    0,
+                    "value".into(),
+                ),
+            },
+            PointerBlock::StaticObject {
+                binding: crate::kernel::StaticBindingId::new(
+                    crate::kernel::StaticBindingOwner::Function(
+                        crate::kernel::LocalFunctionId::new(Some("a.c".into()), "f".into()),
+                    ),
+                    0,
+                    "value".into(),
+                ),
+            },
         ]
     }
 

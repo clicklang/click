@@ -51,5 +51,5 @@ int32 f(int32 c) {
 ```
 
 ```expect
-fail: left side evaluated to at(statement(5).exit, first), right side evaluated to 0
+fail: left side evaluated to at(statement(5).exit, "a_branch_that_writes_calloc_storage_forgets_its_zero_reading.c"::f.local(1)), right side evaluated to 0
 ```

@@ -67,7 +67,7 @@ pub(super) fn decorate(
                     expression,
                     source,
                     ..
-                } if name == &birth.child
+                } if name.is_named(&birth.child)
                     && source.as_ref().is_some_and(|source| {
                         source.import_identity == birth.key.import_identity
                             && source.function == birth.key.function

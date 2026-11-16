@@ -255,7 +255,12 @@ fn allocation_result_names_use_one_index_as_recorded_history_grows() {
                         kind: ProgramPointKind::Exit,
                     },
                     ExecutionState::new().with_local(
-                        "p",
+                        crate::kernel::BindingName::Local(crate::kernel::LocalBindingId::new(
+                            crate::kernel::LocalFunctionId::new(None, "f".into()),
+                            false,
+                            0,
+                            Some("p".into()),
+                        )),
                         ProgramValue::typed_pointer(last.clone(), ProgramType::Int32Pointer),
                     ),
                 )
@@ -727,4 +732,171 @@ fn array_argument_state_lookup_ignores_unrelated_recorded_history() {
         samples[3] < samples[0] * 4 + 128,
         "state lookup scanned history: {samples:?}"
     );
+}
+
+#[test]
+fn shared_constructor_spelling_visits_fields_without_exporting_the_tree() {
+    use crate::kernel::{
+        AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, KernelMatch, KernelTermExport,
+        KernelTermImport,
+    };
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut native =
+            KernelMatch::test_scrutinee(vec![
+                AlgebraicValueType::Program(ProgramType::Int32);
+                size
+            ]);
+        native.node = AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields: (0..size)
+                .map(|i| AlgebraicValue::Program(int32(i as u32)))
+                .collect(),
+        };
+        let root = KernelTermImport::default().algebraic(&native);
+        let exports = KernelTermExport::algebraic_export_count();
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            raise_kernel_term(
+                &root,
+                ParameterBinding::default(),
+                &ExecutionState::new(),
+                &BTreeMap::new(),
+            )
+        });
+        let Some(SurfaceTerm::AlgebraicConstructor { arguments, .. }) = surface else {
+            panic!("constructor spelling")
+        };
+        assert_eq!(arguments.len(), size);
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        assert!(work <= 32 * size + 32, "{size} fields: {work} work");
+    }
+}
+
+#[test]
+fn nested_shared_constructors_and_named_leaf_do_not_export() {
+    use crate::kernel::{
+        AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, KernelMatch, KernelTermExport,
+        KernelTermImport,
+    };
+    for size in [8, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut native = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Algebraic {
+            name: "MatchScope".into(),
+            arguments: vec![],
+        }]);
+        let AlgebraicTermNode::Variable(variable) = native.node else {
+            panic!("named leaf")
+        };
+        let names = BTreeMap::from([(variable, "payload".into())]);
+        for _ in 0..size {
+            native = crate::kernel::AlgebraicTerm {
+                algebraic_type: native.algebraic_type.clone(),
+                node: AlgebraicTermNode::Constructor {
+                    variant: "Arm".into(),
+                    fields: vec![AlgebraicValue::Algebraic(native)],
+                },
+            };
+        }
+        let root = KernelTermImport::default().algebraic(&native);
+        let exports = KernelTermExport::algebraic_export_count();
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            raise_kernel_term(
+                &root,
+                ParameterBinding::default(),
+                &ExecutionState::new(),
+                &names,
+            )
+        });
+        assert!(surface.is_some(), "{size} nested constructors");
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        assert!(work <= 64 * size + 64, "{size} constructors: {work} work");
+    }
+}
+
+#[test]
+fn shared_overflow_spelling_does_not_export_growing_operands() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, OverflowOperation};
+    for size in [8, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = Variable(999987);
+        let mut operand = MachineTerm::Variable(variable);
+        for _ in 0..size {
+            operand = MachineTerm::logical_machine_binary(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                operand,
+                MachineTerm::constant(1),
+            );
+        }
+        let root = KernelTermImport::default().condition(&ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: Box::new(operand),
+            right: Box::new(MachineTerm::Variable(variable)),
+        });
+        let names = BTreeMap::from([(variable, "x".into())]);
+        let exports = KernelTermExport::machine_export_count();
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            raise_kernel_term(
+                &root,
+                ParameterBinding::default(),
+                &ExecutionState::new(),
+                &names,
+            )
+        });
+        assert!(surface.is_some());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work <= size * 64 + 128, "{size} operations: {work} work");
+    }
+}
+
+#[test]
+fn pointer_comparison_spelling_does_not_export_extent_payloads() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, PointerValue, SubobjectExtent};
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(999990));
+        let mut width = MachineTerm::Variable(Variable(999991));
+        for _ in 0..size {
+            width = MachineTerm::logical_machine_binary(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                width,
+                MachineTerm::constant(1),
+            );
+        }
+        let value = PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_extent(
+            Some(SubobjectExtent {
+                start: pointer,
+                width,
+            }),
+        );
+        let parameters = [crate::languages::interface::ImportedParameter::new(
+            InterfaceType::Int32Pointer,
+            "p".into(),
+            None,
+        )];
+        let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
+            value.clone(),
+        ))];
+        let root = KernelTermImport::default().condition(&ConditionTerm::PointerValueEqual(
+            Box::new(value.clone()),
+            Box::new(value),
+        ));
+        let exports = KernelTermExport::machine_export_count();
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            raise_kernel_term(
+                &root,
+                ParameterBinding::new(&parameters, &arguments),
+                &ExecutionState::new(),
+                &BTreeMap::new(),
+            )
+        });
+        assert!(surface.is_some());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(
+            work <= 128,
+            "{size} unspelled extent operations: {work} work"
+        );
+    }
 }

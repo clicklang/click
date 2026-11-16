@@ -945,7 +945,6 @@ fn validate_contract_applications_in_proposition_one(
         }
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
-        | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
@@ -1627,7 +1626,9 @@ fn validate_resource_fact_memory_read_authority(
         .map(|(name, _, _)| {
             (
                 name.clone(),
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    (name.clone()).into(),
+                )),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -1765,8 +1766,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::ChangesOnly { .. }
-        | ClickProposition::Separate { .. }
+        ClickProposition::Separate { .. }
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. } => Ok(()),
         ClickProposition::And(left, right) => {
@@ -1862,20 +1862,6 @@ fn collect_resource_fact_reads_from_proposition(
                 reads,
                 resource_name,
             )
-        }
-        ClickProposition::ChangesOnly { resources, .. } => {
-            for r in resources {
-                collect_resource_fact_reads_from_resource_subject(
-                    r,
-                    predicate_definitions,
-                    click_function_definitions,
-                    visited_predicates,
-                    visited_functions,
-                    reads,
-                    resource_name,
-                )?;
-            }
-            Ok(())
         }
 
         ClickProposition::Comparison { left, right, .. } => {
@@ -2052,7 +2038,7 @@ fn collect_resource_fact_reads_from_proposition(
                 )?;
                 if let Some((start, end)) = quantified_index_interval(body, name, click_type) {
                     for read in &mut reads[first_consequent_read..] {
-                        if read.index == ProgramExpression::Variable(name.clone()) {
+                        if read.index == ProgramExpression::Variable((name.clone()).into()) {
                             read.enclosing_range = Some((start.clone(), end.clone()));
                         }
                     }
@@ -2116,7 +2102,7 @@ fn collect_resource_fact_reads_from_proposition(
                 ))
             })?;
             for read in &mut reads[first_body_read..] {
-                if read.index == ProgramExpression::Variable(item.clone()) {
+                if read.index == ProgramExpression::Variable((item.clone()).into()) {
                     read.enclosing_range = Some((start.clone(), end.clone()));
                 }
             }
@@ -2243,7 +2229,7 @@ fn quantified_index_interval(
                     _ => (left, right),
                 };
                 let variable = ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    name.to_string(),
+                    (name.to_string()).into(),
                 ));
                 match operator {
                     ComparisonOperator::LessEqual if right == &variable => {
@@ -3428,7 +3414,7 @@ mod read_authority_tests {
 
     #[test]
     fn current_view_covers_a_zero_valued_cell() {
-        let base = ProgramExpression::Variable("cell".to_string());
+        let base = ProgramExpression::Variable(("cell".to_string()).into());
         let clause = ResourceClause::ViewMemory(segment(
             ContractSegmentState::Current,
             base.clone(),
@@ -3449,9 +3435,9 @@ mod read_authority_tests {
 
     #[test]
     fn current_view_accepts_a_symbolic_in_bounds_read() {
-        let base = ProgramExpression::Variable("cell".to_string());
-        let index = ProgramExpression::Variable("index".to_string());
-        let bound = ProgramExpression::Variable("bound".to_string());
+        let base = ProgramExpression::Variable(("cell".to_string()).into());
+        let index = ProgramExpression::Variable(("index".to_string()).into());
+        let bound = ProgramExpression::Variable(("bound".to_string()).into());
         let clause = ResourceClause::ViewMemory(segment(
             ContractSegmentState::Current,
             base.clone(),
@@ -3492,7 +3478,7 @@ mod read_authority_tests {
 
     #[test]
     fn current_view_does_not_cover_its_neighbor() {
-        let base = ProgramExpression::Variable("cell".to_string());
+        let base = ProgramExpression::Variable(("cell".to_string()).into());
         let clause = ResourceClause::ViewMemory(segment(
             ContractSegmentState::Current,
             base.clone(),
@@ -3510,7 +3496,7 @@ mod read_authority_tests {
 
     #[test]
     fn old_view_does_not_cover_a_current_resource_fact() {
-        let base = ProgramExpression::Variable("cell".to_string());
+        let base = ProgramExpression::Variable(("cell".to_string()).into());
         let clause = ResourceClause::ViewMemory(segment(
             ContractSegmentState::Old,
             base.clone(),

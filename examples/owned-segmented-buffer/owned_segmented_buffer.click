@@ -318,10 +318,16 @@ int32 owned_segmented_buffer_pipeline(
     unfold(owned_segmented_buffer(owner));
     step();
     step();
-    have at(statement(4).entry, first_data[0]) == at(statement(4).entry, first_value) by {
-        rewrite(at(statement(4).entry, first_value), at(statement(4).entry, owner->first_data[0]));
-        rewrite(at(statement(4).entry, owner->first_data), at(statement(4).entry, first_data));
-        normalize();
+    have at(statement(3).call(0).exit, first_data[0]) == first_value by {
+        rewrite(first_data, at(statement(3).call(0).exit, owner->first_data));
+        known();
+    }
+    have separate(memory(ignored), memory(first_data[0])) by { known(); }
+    have separate(statement(3).assignment(ignored, 0).footprint, memory(first_data[0])) by {
+        normalize() using { separate(memory(ignored), memory(first_data[0])); };
+    }
+    have first_data[0] == at(statement(3).call(0).exit, first_data[0]) by {
+        preserve(separate(statement(3).assignment(ignored, 0).footprint, memory(first_data[0])));
     }
     have first_data[0] == first_value by { known(); }
     step();
@@ -330,6 +336,29 @@ int32 owned_segmented_buffer_pipeline(
     have owner->second_len == second_len by { known(); }
     have 0 < owner->first_len by { known(); }
     have 0 < owner->second_len by { known(); }
+    have separate(memory(second_data[0..1]), memory(first_data[0])) by { solve(); }
+    have contains(memory(second_data[0..1]), statement(4).call(0).footprint) by {
+        rewrite(second_data, at(statement(4).call(0).entry, owner->second_data));
+        known();
+    }
+    have contains(memory(first_data[0]), memory(first_data[0])) by { normalize(); }
+    have separate(statement(4).call(0).footprint, memory(first_data[0])) by {
+        apply(separation::separate_restrict(memory(second_data[0..1]), memory(first_data[0]), statement(4).call(0).footprint, memory(first_data[0]))) using {
+            separate(memory(second_data[0..1]), memory(first_data[0]));
+            contains(memory(second_data[0..1]), statement(4).call(0).footprint);
+            contains(memory(first_data[0]), memory(first_data[0]));
+        };
+    }
+    have at(statement(4).call(0).exit, first_data[0]) == at(statement(4).call(0).entry, first_data[0]) by {
+        preserve(separate(statement(4).call(0).footprint, memory(first_data[0])));
+    }
+    have separate(memory(ignored), memory(first_data[0])) by { known(); }
+    have separate(statement(4).assignment(ignored, 0).footprint, memory(first_data[0])) by {
+        normalize() using { separate(memory(ignored), memory(first_data[0])); };
+    }
+    have at(statement(4).assignment(ignored, 0).exit, first_data[0]) == at(statement(4).assignment(ignored, 0).entry, first_data[0]) by {
+        preserve(separate(statement(4).assignment(ignored, 0).footprint, memory(first_data[0])));
+    }
     have first_data[0] == first_value by { known(); }
     have owner->first_data == first_data by { known(); }
     have owner->second_data == second_data by { known(); }

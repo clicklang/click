@@ -652,7 +652,12 @@ impl ResourceContextIndex {
         if let Some(range) = fact.memory_range() {
             let block = range.base().block.clone();
             let mode = fact.is_own();
-            if !matches!(block, PointerBlock::Concrete(_)) {
+            if !matches!(
+                block,
+                PointerBlock::Concrete(_)
+                    | PointerBlock::StaticObject { .. }
+                    | PointerBlock::AutomaticLocal { .. }
+            ) {
                 result.nonconcrete_memory_count += 1;
             }
             result.memory_by_block =
@@ -952,7 +957,12 @@ impl ResourceContextIndex {
         if let Some(range) = fact.memory_range() {
             let block = range.base().block.clone();
             let mode = fact.is_own();
-            if !matches!(block, PointerBlock::Concrete(_)) {
+            if !matches!(
+                block,
+                PointerBlock::Concrete(_)
+                    | PointerBlock::StaticObject { .. }
+                    | PointerBlock::AutomaticLocal { .. }
+            ) {
                 result.nonconcrete_memory_count -= 1;
             }
             result.memory_by_block =
@@ -3432,6 +3442,48 @@ impl ResourceContext {
         }
         let fact = self.fact(*entries.iter().next()?);
         matches!(fact, ResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
+    }
+
+    /// Select one actual occurrence, retaining a projection's own identity.
+    /// Descent belongs to that witness, not to its equal resource term.
+    pub(crate) fn structural_witness_occurrence(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceOccurrenceId> {
+        crate::instrumentation::record_deterministic_work(1);
+        let owner = required
+            .is_view()
+            .then(|| ResourceFact::own(required.resource().clone()));
+        let exact = self.storage.index.exact.get(required).or_else(|| {
+            owner
+                .as_ref()
+                .and_then(|owned| self.storage.index.exact.get(owned))
+        });
+        let entry = if let Some(entries) = exact {
+            if entries.len() != 1 {
+                return None;
+            }
+            *entries.iter().next()?
+        } else {
+            let entries = self.class_shape_candidates(required, assumptions)?;
+            if entries.len() != 1 {
+                return None;
+            }
+            *entries.iter().next()?
+        };
+        resource_fact_entails(self.fact(entry), required, assumptions)
+            .then(|| self.occurrence(entry))
+    }
+
+    pub(crate) fn structural_fact_at_occurrence(
+        &self,
+        occurrence: ResourceOccurrenceId,
+    ) -> Option<&ResourceFact> {
+        self.storage
+            .entry_by_occurrence
+            .get(&occurrence)
+            .map(|entry| self.fact(*entry))
     }
 
     /// Select an exact owned occurrence for a fact-only API. Equal owned
@@ -7555,6 +7607,14 @@ impl ResourceContext {
             }
         }
         for entries in buckets {
+            // Proof-relevant witnesses, like loan-bound views, keep their
+            // native occurrences instead of being folded into equal facts.
+            if let Some(entry) = entries.iter().next()
+                && self.protects_structural_resource(self.fact(*entry).resource())
+            {
+                continue;
+            }
+
             let original = entries
                 .iter()
                 .map(|entry| self.fact(*entry).clone())
@@ -7904,9 +7964,13 @@ impl ResourceContext {
         // representation is the checked one; keep it. The map is empty under
         // legacy semantics, so this costs nothing and changes nothing there.
         let loan_bound = |occurrence: &Option<ResourceOccurrenceId>| {
-            !self.loan_dependencies.map.is_empty()
-                && occurrence
-                    .is_some_and(|occurrence| self.loan_dependencies.map.get(&occurrence).is_some())
+            occurrence.is_some_and(|occurrence| {
+                self.loan_dependencies.map.get(&occurrence).is_some()
+                    || self
+                        .structural_witnesses
+                        .as_ref()
+                        .is_some_and(|witnesses| witnesses.contains(occurrence))
+            })
         };
         let mut i = 0;
         while i < slots.len() {
@@ -12639,12 +12703,12 @@ mod support_removal_tests {
                 ProgramValue::Float64(MachineTerm::uint64_constant(0)),
             );
         let short_load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(short_pointer.clone()),
             crate::kernel::LoadKind::Int16,
         );
         let wide_load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(wide_pointer.clone()),
             crate::kernel::LoadKind::Float64,
         );
@@ -12682,12 +12746,12 @@ mod support_removal_tests {
             .store(pointer.clone(), int16(0));
         let second = first.clone().store(pointer.clone(), int16(1));
         let first_load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&first),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&first))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
         let second_load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&second),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&second))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );
@@ -12715,7 +12779,7 @@ mod support_removal_tests {
             .with_block("deep-load", 8)
             .store(pointer.clone(), int16(0));
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory_ref(&memory),
+            ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
         );

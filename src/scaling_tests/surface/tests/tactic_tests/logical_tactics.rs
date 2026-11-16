@@ -43,3 +43,61 @@ fn pure_witness_integer_aliases_keep_shared_term_scaling() {
         }
     }
 }
+
+#[test]
+#[ignore = "nightly: three cold call-history proofs"]
+fn extracting_two_call_equalities_ignores_earlier_call_history() {
+    let mut measured = Vec::new();
+    for preceding in [2usize, 4, 8] {
+        let c = format!(
+            "void keep(int *v, int n, int to) {{}}\nvoid caller(int *v, int n, int to) {{ {} }}",
+            "keep(v, n, to);".repeat(preceding + 2),
+        );
+        let source = format!(
+            r#"
+            verifying "extract.c";
+            void keep(int32* v, int32 n, int32 to) {{
+                requires 0 <= n;
+                owns v[0..n];
+                ensures 0 <= to and to < n implies v[to] == old(v[to]);
+            }}
+            void caller(int32* v, int32 n, int32 to) {{
+                requires 0 <= n;
+                owns v[0..n];
+            }} by {{
+                {}
+                mark start;
+                step();
+                mark middle;
+                step();
+                have 0 <= to and to < n implies v[to] == at(start, v[to]) by {{
+                    intro();
+                    extract(v[to] == at(middle, v[to]));
+                    extract(at(middle, v[to]) == at(start, v[to]));
+                    known();
+                }}
+                step();
+                known();
+            }}
+        "#,
+            "step();".repeat(preceding)
+        );
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c_sources(&source, &[("extract.c", c.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("{preceding}: {}", error.report()));
+        let work = samples
+            .iter()
+            .filter(|sample| {
+                sample.tactic.claim == "caller.contract" && sample.tactic.tactic_name == "have"
+            })
+            .map(|sample| sample.work)
+            .max()
+            .expect("selected two-call equality proof");
+        measured.push(work);
+    }
+    assert!(
+        measured.windows(2).all(|pair| pair[1] <= pair[0] + 128),
+        "fixed two-call proof must ignore earlier calls: {measured:?}"
+    );
+}

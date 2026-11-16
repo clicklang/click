@@ -34,7 +34,7 @@ fn retained_contract_result_storage_and_exit_memory_skip_expression_prefixes() {
             }
         });
         assert_eq!(
-            state.locals.get(C_CONTRACT_RESULT_NAME).unwrap().shared(),
+            state.locals.get(CONTRACT_RESULT).unwrap().shared(),
             Some(&root)
         );
         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -98,12 +98,12 @@ fn pointer_return_handoffs_retain_prepared_dags_without_export() {
                     assert_eq!(value.shared(), Some(&root));
                     set_function_result(&mut state, &function, value.clone());
                     assert_eq!(
-                        state.locals.get(C_CONTRACT_RESULT_NAME).unwrap().shared(),
+                        state.locals.get(CONTRACT_RESULT).unwrap().shared(),
                         Some(&root)
                     );
                     crate::kernel::loops::assign_call_result(
                         &mut state,
-                        "received",
+                        &("received").into(),
                         value,
                         &mut obligations,
                         &PureFactContext::new(),
@@ -122,4 +122,33 @@ fn pointer_return_handoffs_retain_prepared_dags_without_export() {
             "{samples:?}"
         );
     }
+}
+
+#[test]
+fn typed_contract_result_lookup_and_update_skip_unrelated_locals() {
+    let mut samples = Vec::new();
+    for count in [16, 128, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut locals = LocalEnvironment::new();
+        for index in 0..count {
+            locals.set(format!("unrelated_{index}"), int32(index));
+        }
+        locals.set("result", int32(7));
+        locals.set(CONTRACT_RESULT, int32(11));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..16 {
+                locals.set(CONTRACT_RESULT, int32(11));
+                assert_eq!(
+                    locals.get(CONTRACT_RESULT).unwrap().native().as_ref(),
+                    &int32(11)
+                );
+                assert_eq!(locals.get("result").unwrap().native().as_ref(), &int32(7));
+            }
+        });
+        samples.push(work);
+    }
+    assert_eq!(
+        samples, [samples[0]; 3],
+        "direct binding operations: {samples:?}"
+    );
 }

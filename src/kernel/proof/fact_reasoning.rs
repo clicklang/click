@@ -1,4 +1,5 @@
 mod computation;
+mod intervals;
 pub(crate) use computation::computes_leaf;
 
 use crate::kernel::CompareRelation;
@@ -58,6 +59,11 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
         && let Some(holds) = computation::integer_affine_comparison(condition)
     {
         return holds == *value;
+    }
+    if let Proposition::ConditionIs(condition, true) = goal
+        && computation::integer_distribution_step(condition)
+    {
+        return true;
     }
     if let Proposition::ConditionIs(condition, value) = goal
         && let Some(holds) = computation::integer_linear_comparison(condition)
@@ -213,6 +219,38 @@ pub(crate) fn normalize_using_conditions(
             .then_some(())
             .ok_or(ConditionalNormalizationError::DoesNotNormalize);
     }
+    // Validate every explicit citation before a local interval reduction.
+    // Successful endpoint checks need no general rewriting context or its
+    // mirrored condition forms over each increasingly large machine term.
+    for (index, premise) in premises.iter().enumerate() {
+        if !facts.available(premise)
+            && !crate::kernel::listed_premise_holds(premise, |fact| facts.available(fact))
+            && !order_claim_forms(premise)
+                .iter()
+                .any(|form| facts.available(form))
+        {
+            return Err(ConditionalNormalizationError::UnavailablePremise(index));
+        }
+    }
+    if intervals::reduces_one_operation(goal, premises) {
+        return Ok(());
+    }
+    // Ordinary cited rewrites and bounds take their established fast path.
+    // Specialized rules are a fallback, so a simple equality does not pay for
+    // conversion and matching against unrelated arithmetic rule shapes.
+    let ordinary = normalize_condition_selection(goal, premises, facts);
+    if ordinary.is_ok() || !super::arithmetic_special::normalizes_selected(goal, premises) {
+        ordinary
+    } else {
+        Ok(())
+    }
+}
+
+fn normalize_condition_selection(
+    goal: &Proposition,
+    premises: &[Proposition],
+    facts: &super::ProofFacts,
+) -> Result<(), ConditionalNormalizationError> {
     let mut conditions = std::collections::HashMap::new();
     // Keep graph admission in source order. Its bounded pointer fragment may
     // retain different coordinates after a block merge; hash iteration must
@@ -228,14 +266,6 @@ pub(crate) fn normalize_using_conditions(
         Vec<(super::fact_keys::IntegerEqualityAlphaKey, bool)>,
     > = std::collections::HashMap::new();
     for (index, premise) in premises.iter().enumerate() {
-        if !crate::kernel::proposition_holds_without_facts(premise)
-            && !facts.available(premise)
-            && !order_claim_forms(premise)
-                .iter()
-                .any(|form| facts.available(form))
-        {
-            return Err(ConditionalNormalizationError::UnavailablePremise(index));
-        }
         // A complete arithmetic domain supplies its two ordinary bounds.
         // Keep shared operands intact; no private overflow spelling is needed.
         let leaves =
@@ -924,7 +954,66 @@ pub(crate) fn condition_polarity_forms(proposition: &Proposition) -> Vec<Proposi
 /// other spelling) probe an exact index for these; the planners and
 /// availability paths keep [`condition_polarity_forms`].
 pub(crate) fn order_claim_forms(proposition: &Proposition) -> Vec<Proposition> {
-    polarity_forms_by(proposition, canonical_order_claim)
+    let mut forms = polarity_forms_by(proposition, canonical_order_claim);
+    if let Some((wide, operator, left, right, value)) = float_comparison_parts(proposition) {
+        crate::instrumentation::record_deterministic_work(1);
+        let comparison = FloatCondition::Comparison {
+            operator: mirrored_float_operator(operator),
+            left: Box::new(right.clone()),
+            right: Box::new(left.clone()),
+        };
+        let condition = if wide {
+            ConditionTerm::Float64(comparison)
+        } else {
+            ConditionTerm::Float32(comparison)
+        };
+        forms.push(Proposition::ConditionIs(condition.clone(), value));
+        forms.push(Proposition::Not(Box::new(Proposition::ConditionIs(
+            condition, !value,
+        ))));
+    }
+    forms
+}
+
+/// Float orders have mirrored spellings, but NaNs forbid complementing an
+/// order when its truth polarity changes. Keep width and polarity exact.
+fn float_comparison_parts(
+    mut proposition: &Proposition,
+) -> Option<(bool, ComparisonOperator, &MachineTerm, &MachineTerm, bool)> {
+    let mut negated = false;
+    while let Proposition::Not(body) = proposition {
+        proposition = body;
+        negated = !negated;
+    }
+    let Proposition::ConditionIs(condition, value) = proposition else {
+        return None;
+    };
+    let (wide, comparison) = match condition {
+        ConditionTerm::Float32(comparison) => (false, comparison),
+        ConditionTerm::Float64(comparison) => (true, comparison),
+        _ => return None,
+    };
+    let FloatCondition::Comparison {
+        operator,
+        left,
+        right,
+    } = comparison
+    else {
+        return None;
+    };
+    Some((wide, *operator, left, right, *value ^ negated))
+}
+
+fn mirrored_float_operator(operator: ComparisonOperator) -> ComparisonOperator {
+    use ComparisonOperator::*;
+    match operator {
+        Equal => Equal,
+        NotEqual => NotEqual,
+        LessThan => GreaterThan,
+        LessEqual => GreaterEqual,
+        GreaterThan => LessThan,
+        GreaterEqual => LessEqual,
+    }
 }
 
 fn polarity_forms_by(
@@ -1272,7 +1361,15 @@ pub(crate) fn condition_polarity_equivalent(left: &Proposition, right: &Proposit
 /// lowers to: 32-bit and 64-bit machine orders and the `Integer` order. Each
 /// side is normalized once and the results compared; nothing is searched.
 pub(crate) fn order_claim_equivalent(left: &Proposition, right: &Proposition) -> bool {
-    polarity_equivalent_by(left, right, canonical_order_claim)
+    if polarity_equivalent_by(left, right, canonical_order_claim) {
+        return true;
+    }
+    match (float_comparison_parts(left), float_comparison_parts(right)) {
+        (Some((lw, lo, ll, lr, lv)), Some((rw, ro, rl, rr, rv))) => {
+            lw == rw && lv == rv && mirrored_float_operator(lo) == ro && ll == rr && lr == rl
+        }
+        _ => false,
+    }
 }
 
 fn polarity_equivalent_by(
@@ -2141,7 +2238,7 @@ mod tests {
                 ))
             } else {
                 MachineTerm::MemoryLoad(
-                    memory,
+                    ProgramPoint::at(&memory),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )
@@ -2247,7 +2344,7 @@ mod tests {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: Box::new(MachineTerm::MemoryLoad(
-                        memory.clone().into(),
+                        crate::kernel::ProgramPoint::of_memory(&memory),
                         Box::new(pointer.clone()),
                         crate::kernel::LoadKind::Int32,
                     )),
@@ -2511,7 +2608,11 @@ mod tests {
                             node: AlgebraicTermNode::Variable(Variable(argument)),
                         })],
                     },
-                    MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32),
+                    MachineTerm::MemoryLoad(
+                        ProgramPoint::at(&memory),
+                        Box::new(pointer.clone()),
+                        LoadKind::Int32,
+                    ),
                 ),
                 true,
             )),
@@ -2540,7 +2641,7 @@ mod tests {
         let memory = intern_memory(Memory::new().with_block("p", 12));
         let cell = |index: Variable| {
             MachineTerm::MemoryLoad(
-                memory.clone(),
+                ProgramPoint::at(&memory),
                 Box::new(Pointer {
                     block: "p".into(),
                     offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(index), 4),
@@ -2650,7 +2751,7 @@ mod tests {
         let cell_field = owner_field(8);
         let load = |memory: &Memory, pointer: &Pointer| {
             MachineTerm::MemoryLoad(
-                intern_memory(memory.clone()),
+                ProgramPoint::at(&(intern_memory(memory.clone()))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -2738,6 +2839,7 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/fact_reasoning/tests.rs");
+        include!("../../scaling_tests/kernel/proof/fact_reasoning/float_comparison_spellings.rs");
     }
 }
 
@@ -2941,7 +3043,7 @@ impl<'a> OriginsUnchanged<'a> {
                 crate::kernel::MachineOperandView::Legacy(term),
             )?;
             Some(MachineTerm::MemoryLoad(
-                read.origin?,
+                ProgramPoint::at(&(read.origin?)),
                 Box::new(read.pointer),
                 read.kind,
             ))
@@ -3616,7 +3718,7 @@ mod integer_reflexivity_tests {
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
                     MachineTerm::MemoryLoad(
-                        memory.clone(),
+                        ProgramPoint::at(&memory),
                         Box::new(pointer.clone()),
                         crate::kernel::LoadKind::Int32,
                     ),
@@ -4095,7 +4197,11 @@ mod annotated_address_condition_tests {
             let pointer = Pointer {
                 block: "annotated-address-target".into(),
                 offset: PointerOffsetTerm::scale_int32(
-                    MachineTerm::MemoryLoad(memory, Box::new(cell.clone()), LoadKind::Int32),
+                    MachineTerm::MemoryLoad(
+                        ProgramPoint::at(&memory),
+                        Box::new(cell.clone()),
+                        LoadKind::Int32,
+                    ),
                     1,
                 ),
             };

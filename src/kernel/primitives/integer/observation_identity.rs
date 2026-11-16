@@ -113,6 +113,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 KernelTermNode::FloatCall(call) => call.arguments.clone(),
                 KernelTermNode::Call { arguments, .. } => arguments.clone(),
                 KernelTermNode::FloatClassify { operand, .. } | KernelTermNode::FloatConvert { operand, .. } | KernelTermNode::FloatNegate { operand } | KernelTermNode::BoolCast { operand, .. }
+                | KernelTermNode::ProgramParameter { operand }
                 | KernelTermNode::MachineObservation { operand, .. }
                 | KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand.clone()],
@@ -158,6 +159,17 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 KernelTermNode::Legacy(value) => {
                     KernelTerm::native_observation_leaf(value.value().clone())
                 }
+                KernelTermNode::PointerValue(_)
+                | KernelTermNode::PointerRead { .. }
+                | KernelTermNode::PointerArithmetic { .. }
+                | KernelTermNode::PointerCall { .. }
+                | KernelTermNode::ArrayReference { .. } => {
+                    // Observation equality keeps the established native pointer
+                    // metadata policy; exact producer roots remain untouched.
+                    KernelTerm::native_observation_leaf(
+                        KernelTermExport::default().argument(&term).expect("pointer argument observation"),
+                    )
+                }
                 KernelTermNode::AlgebraicIf { arguments } => {
                     let KernelType::Algebraic(ty) = term.ty() else { unreachable!() };
                     KernelTerm::algebraic_if_raw(ty.clone(), arguments.each_ref().map(|arg| get(arg)))
@@ -167,6 +179,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                     call.arguments = call.arguments.iter().map(|arg| get(arg)).collect();
                     call.into_term()
                 }
+                KernelTermNode::ProgramParameter { operand } => KernelTerm::program_parameter(get(operand)),
                 KernelTermNode::FloatCall(call) => {
                     let mut call = call.clone();
                     call.arguments = call.arguments.iter().map(|arg| get(arg)).collect();

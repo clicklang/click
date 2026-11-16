@@ -67,3 +67,51 @@ fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_r
         );
     }
 }
+
+#[test]
+fn declaration_reference_and_shadow_lookup_are_indexed() {
+    for size in [1u32, 16, 256] {
+        let owner = LocalFunctionId::new(None, "indexed".into());
+        let mut locals = LocalEnvironment::new();
+        let mut shadowed = Vec::new();
+        for ordinal in 0..size {
+            let noise = LocalBindingId::new(
+                owner.clone(),
+                false,
+                ordinal * 2,
+                Some(format!("noise_{ordinal}")),
+            );
+            locals.set(noise, int32(0));
+            let selected = LocalBindingId::new(
+                owner.clone(),
+                false,
+                ordinal * 2 + 1,
+                Some("selected".into()),
+            )
+            .with_scope_depth(ordinal);
+            locals.set(selected.clone(), int32(ordinal));
+            shadowed.push(selected);
+        }
+        let (_, work) = crate::persistent::measure_persistent_work(|| {
+            assert_eq!(
+                locals.get("selected").unwrap().native().as_ref(),
+                &int32(size - 1)
+            );
+            assert_eq!(
+                locals.get(shadowed[0].clone()).unwrap().native().as_ref(),
+                &int32(0)
+            );
+        });
+        assert!(
+            work <= 6 * (size.ilog2() as usize + 1) + 12,
+            "{size}: {work}"
+        );
+        if size > 1 {
+            locals.remove(shadowed.pop().unwrap());
+            assert_eq!(
+                locals.get("selected").unwrap().native().as_ref(),
+                &int32(size - 2)
+            );
+        }
+    }
+}

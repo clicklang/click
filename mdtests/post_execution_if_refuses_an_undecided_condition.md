@@ -33,5 +33,5 @@ int32 pick(int32 a, int32 b) {
 ```
 
 ```expect
-fail: `pick.contract` tactic 1: `step` could not prove that the next C `if` condition `(a > b)` is one exact truth value
+fail: `pick.contract` tactic 1: `step` could not prove that the next C `if` condition `("pick_undecided.c"::pick.parameter(0) > "pick_undecided.c"::pick.parameter(1))` is one exact truth value
 ```

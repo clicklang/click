@@ -273,7 +273,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         offset: PointerOffsetTerm::Constant(4),
     };
     let first_value = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(base_memory.clone()),
+        crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(base_memory.clone()))),
         Box::new(first.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -283,7 +283,9 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         .store(
             second.clone(),
             int32(MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(base_memory.clone()),
+                crate::kernel::ProgramPoint::at(
+                    &(crate::kernel::intern_memory(base_memory.clone())),
+                ),
                 Box::new(second.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -344,7 +346,9 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(post_state.memory().clone()),
+                crate::kernel::ProgramPoint::at(
+                    &(crate::kernel::intern_memory(post_state.memory().clone())),
+                ),
                 Box::new(first),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -403,8 +407,24 @@ fn failed_call_step_reports_its_unresolved_required_precondition() {
     assert_eq!(
         call_site.source_arguments.as_slice(),
         [
-            ProgramExpression::Variable("x".to_string()),
-            ProgramExpression::Variable("y".to_string())
+            ProgramExpression::Variable(
+                crate::kernel::LocalBindingId::new(
+                    crate::kernel::LocalFunctionId::new(Some("caller.c".into()), "caller".into()),
+                    true,
+                    0,
+                    Some("x".into())
+                )
+                .into()
+            ),
+            ProgramExpression::Variable(
+                crate::kernel::LocalBindingId::new(
+                    crate::kernel::LocalFunctionId::new(Some("caller.c".into()), "caller".into()),
+                    true,
+                    1,
+                    Some("y".into())
+                )
+                .into()
+            )
         ]
     );
 
@@ -1172,7 +1192,7 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
             }),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Variable(name)),
-        } if name == "data"
+        } if name == ("data").into()
     ));
 }
 
@@ -1280,8 +1300,8 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
             left: ContractExpression::ProgramExpression(ProgramExpression::Add(left, right)),
             operator: ComparisonOperator::Equal,
             ..
-        } if matches!(left.as_ref(), ProgramExpression::Variable(name) if name == "data")
-            && matches!(right.as_ref(), ProgramExpression::Variable(name) if name == "index")
+        } if matches!(left.as_ref(), ProgramExpression::Variable(name) if name.is_named("data"))
+            && matches!(right.as_ref(), ProgramExpression::Variable(name) if name.is_named("index"))
     ));
 }
 

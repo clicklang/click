@@ -105,7 +105,7 @@ pub(super) fn verify_execution_theorem(
     }
     let is_callback = |arguments: &[ContractExpression]| {
         matches!(arguments.first(), Some(ContractExpression::Binding(name)) if name == &execution.callback)
-            || matches!(arguments.first(), Some(ContractExpression::ProgramExpression(ProgramExpression::Variable(name))) if name == &execution.callback)
+            || matches!(arguments.first(), Some(ContractExpression::ProgramExpression(ProgramExpression::Variable(name))) if name.is_named(&execution.callback))
     };
     if concrete_callee.is_none() && !is_callback(arguments) {
         return Err(error("the conclusion must describe the executed callback"));
@@ -246,7 +246,7 @@ pub(super) fn verify_execution_theorem(
             (
                 declared.name().to_string(),
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    written.name().to_string(),
+                    (written.name().to_string()).into(),
                 )),
             )
         })
@@ -315,7 +315,7 @@ pub(super) fn verify_execution_theorem(
             .map(|(parameter, value)| {
                 Requirement::Proposition(ClickProposition::Comparison {
                     left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                        parameter.name().to_string(),
+                        (parameter.name().to_string()).into(),
                     )),
                     operator: ComparisonOperator::Equal,
                     right: ContractExpression::ProgramExpression(ProgramExpression::Value(
@@ -339,7 +339,7 @@ pub(super) fn verify_execution_theorem(
     let arguments = execution
         .parameters
         .iter()
-        .map(|p| syntax::CExpression::Variable(p.name().to_string()))
+        .map(|p| syntax::CExpression::Variable((p.name().to_string()).into()))
         .collect();
     let body = if block.signature().return_type() == InterfaceType::Void {
         syntax::CStatement::Call {

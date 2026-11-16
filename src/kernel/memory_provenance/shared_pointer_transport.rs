@@ -233,7 +233,7 @@ mod tests {
         let context = PureFactContext::new();
         for wide in [None, Some(false), Some(true)] {
             let load = MachineTerm::MemoryLoad(
-                before.clone(),
+                ProgramPoint::at(&before),
                 Box::new(field.clone()),
                 if wide.is_some() {
                     LoadKind::Bits64
@@ -330,7 +330,11 @@ mod tests {
         )
         .with_extent(Some(SubobjectExtent {
             start: field.clone(),
-            width: MachineTerm::MemoryLoad(before, Box::new(field), LoadKind::Int32),
+            width: MachineTerm::MemoryLoad(
+                ProgramPoint::at(&before),
+                Box::new(field),
+                LoadKind::Int32,
+            ),
         }));
         let shared = SharedPointerValue::import(&source);
         let output = transport_pointer(&shared, &after, None).unwrap();
@@ -354,7 +358,7 @@ mod tests {
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
         let loaded = Arc::new(Pointer::loaded_value(&before, &field));
         let base = Pointer::integer_address(MachineTerm::MemoryLoad(
-            before,
+            ProgramPoint::at(&before),
             Box::new(field),
             LoadKind::Bits64,
         ));
@@ -395,7 +399,7 @@ mod tests {
         let loaded = Arc::new(Pointer::loaded_value(&before, &field));
         let source = PointerValue::new(
             Pointer::integer_address(MachineTerm::MemoryLoad(
-                before,
+                ProgramPoint::at(&before),
                 Box::new(field.clone()),
                 LoadKind::Bits64,
             )),

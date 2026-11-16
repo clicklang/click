@@ -24,10 +24,10 @@ These names describe different things:
   handle. It records symbolic memory information, which may be incomplete,
   abstracted by a call or loop, or projected for one selected read. It is
   not a program point or a complete execution state.
-- A **version point** identifies the memory state selected by the
+- A **version point** is the point a read is lowered to, selected by the
   assumption-free version walk for a particular cell or observed block.
-  The kernel resource tracker represents it with `VersionPoint`. A read's
-  address, type, and version point determine its identity.
+  The kernel represents points with `ProgramPoint`. A read's address, type,
+  and version point determine its identity.
 
 Evaluating a read at a later program point can select an earlier version
 point when the intervening operations leave that cell unchanged. Two

@@ -207,7 +207,7 @@ impl Analysis<'_> {
         bindings: &BTreeMap<String, Origins>,
     ) -> Origins {
         match expression {
-            ProgramExpression::Variable(name) => bindings.get(name).cloned().flatten(),
+            ProgramExpression::Variable(name) => name.named_in(bindings).cloned().flatten(),
             ProgramExpression::Value(ProgramValue::Pointer(p)) if p.is_null() => {
                 Some(null_origins())
             }
@@ -658,8 +658,7 @@ impl Analysis<'_> {
             }
             // These query resources; their arguments cannot return a value
             // into the enclosing function's result or lexical bindings.
-            ClickProposition::ChangesOnly { .. }
-            | ClickProposition::Separate { .. }
+            ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => {}

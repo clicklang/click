@@ -15,10 +15,10 @@ pub(super) fn initialized_input_range_fact(
     let constructed = interface
         .construction_parameter()
         .and_then(|(index, _)| interface.parameters().get(index))
-        .map(ProgramParameter::name)
+        .map(ProgramParameter::binding_name)
         .or_else(|| {
             (interface.aggregate_return_mode() == AggregateReturnMode::Construction)
-                .then_some(crate::kernel::C_CONTRACT_RESULT_NAME)
+                .then_some(&crate::kernel::CONTRACT_RESULT)
         });
     if let Some(constructed) = constructed {
         let mut names = BTreeSet::new();

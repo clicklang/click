@@ -667,7 +667,7 @@ pub(crate) fn matching_recomputed_call_havoc_views(
         // a narrower or differently signed read changes the cell.
         load_pointer.as_ref() == pointer
             && kind.reads_value(value)
-            && intern_memory_ref(load_memory).arena_id() == base.arena_id()
+            && intern_memory_ref(load_memory.memory()).arena_id() == base.arena_id()
     }
     fn match_inner(
         left: &Memory,
@@ -1084,7 +1084,7 @@ fn materialized_load_is_unchanged(
         return false;
     }
     let right = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(symbolic_memory.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(symbolic_memory.clone()))),
         Box::new(pointer.clone()),
         kind,
     );
@@ -1586,7 +1586,7 @@ fn prepare_closing_path(
         );
     } else if function.return_type() != ProgramType::Void {
         post_state.locals.set_typed(
-            C_CONTRACT_RESULT_NAME.to_string(),
+            CONTRACT_RESULT,
             value.clone().into_native(),
             function.return_type(),
         );
@@ -2548,7 +2548,7 @@ impl<'a> FunctionEnsureGoalContext<'a> {
         post_state.population_effects = return_state.population_effects.clone();
         if function.return_type() != ProgramType::Void {
             post_state.locals.set_typed(
-                C_CONTRACT_RESULT_NAME.to_string(),
+                CONTRACT_RESULT,
                 value.clone().into_native(),
                 function.return_type(),
             );
@@ -4057,7 +4057,7 @@ mod materialized_function_load_tests {
 
     fn callback_load(memory: &Memory, address: &Pointer, kind: LoadKind) -> ProgramValue {
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(memory.clone()),
+            ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
             Box::new(address.clone()),
             kind,
         );

@@ -294,8 +294,7 @@ pub(super) fn spec_proposition_supports_stateful_memory_refinement(
 pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
     match node {
         SpecNode::Proposition(proposition) => match proposition {
-            SpecProposition::ChangesOnly { .. }
-            | SpecProposition::SequenceComparison { .. }
+            SpecProposition::SequenceComparison { .. }
             | SpecProposition::SequenceMembership { .. }
             | SpecProposition::Comparison { .. }
             | SpecProposition::AlgebraicComparison { .. }
@@ -616,7 +615,10 @@ pub(in crate::kernel) fn program_expression_is_state_independent(
 /// from the current callee state. Entry-state reads (`old(...)`) use
 /// `SpecMemory::FunctionEntry` and are intentionally ignored: they describe
 /// the caller's argument image, which is stable across the call.
-pub(super) fn spec_reads_current_parameter(node: SpecNode<'_>, parameter_name: &str) -> bool {
+pub(super) fn spec_reads_current_parameter(
+    node: SpecNode<'_>,
+    parameter_name: &BindingName,
+) -> bool {
     !spec_tree_all(node, |node| match node {
         SpecNode::Expression(SpecExpression::ProgramExpression(expression))
             if program_expression_mentions_variable(expression, parameter_name) =>
@@ -636,12 +638,18 @@ pub(super) fn spec_reads_current_parameter(node: SpecNode<'_>, parameter_name: &
     })
 }
 
+fn same_program_binding(variable: &BindingName, parameter: &BindingName) -> bool {
+    variable == parameter
+        || (parameter.local_id().is_some_and(|id| id.is_parameter())
+            && variable.is_named(parameter.source_name()))
+}
+
 pub(super) fn program_expression_mentions_variable(
     expression: &ProgramExpression,
-    name: &str,
+    name: &BindingName,
 ) -> bool {
     match expression {
-        ProgramExpression::Variable(variable) => variable == name,
+        ProgramExpression::Variable(variable) => same_program_binding(variable, name),
         ProgramExpression::StringLiteral(_)
         | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
@@ -696,7 +704,7 @@ pub(super) fn program_expression_mentions_variable(
 
 pub(super) fn program_expression_takes_address_of_variable(
     expression: &ProgramExpression,
-    name: &str,
+    name: &BindingName,
 ) -> bool {
     match expression {
         ProgramExpression::AddressOf(expression)
@@ -776,10 +784,12 @@ impl ParameterAccessRange {
 
 pub(super) fn program_expression_parameter_offset(
     expression: &ProgramExpression,
-    parameter_name: &str,
+    parameter_name: &BindingName,
 ) -> Option<u32> {
     match expression {
-        ProgramExpression::Variable(variable) if variable == parameter_name => Some(0),
+        ProgramExpression::Variable(variable) if same_program_binding(variable, parameter_name) => {
+            Some(0)
+        }
         ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
             program_expression_parameter_offset(pointer, parameter_name)?.checked_add(*bytes)
         }
@@ -820,7 +830,7 @@ pub(super) fn spec_expression_constant(expression: &SpecExpression) -> Option<u3
 
 pub(super) fn spec_expression_parameter_offset(
     expression: &SpecExpression,
-    parameter_name: &str,
+    parameter_name: &BindingName,
 ) -> Option<u32> {
     match expression {
         SpecExpression::ProgramExpression(expression) => {
@@ -847,10 +857,10 @@ pub(super) fn spec_expression_parameter_offset(
 /// address. The exit-state check still detects writes through local aliases.
 pub(super) fn program_expression_uses_object_address(
     expression: &ProgramExpression,
-    name: &str,
+    name: &BindingName,
 ) -> bool {
     match expression {
-        ProgramExpression::Variable(variable) => variable == name,
+        ProgramExpression::Variable(variable) => same_program_binding(variable, name),
         ProgramExpression::StringLiteral(_)
         | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
@@ -914,7 +924,7 @@ pub(super) fn program_expression_uses_object_address(
 
 pub(super) fn statement_writes_aggregate_parameter(
     statement: &ProgramStatement,
-    parameter_name: &str,
+    parameter_name: &BindingName,
     writes: &mut Vec<ParameterAccessRange>,
     unknown_write: &mut bool,
 ) {
@@ -1061,7 +1071,7 @@ pub(super) fn statement_writes_aggregate_parameter(
 /// constant offset from the parameter sets `unknown_read` instead.
 pub(super) fn spec_proposition_current_parameter_accesses(
     proposition: &SpecProposition,
-    parameter_name: &str,
+    parameter_name: &BindingName,
     reads: &mut Vec<ParameterAccessRange>,
     unknown_read: &mut bool,
 ) {
@@ -1122,7 +1132,7 @@ pub(crate) fn modified_by_value_aggregate_parameter_with_current_ensure_in_sourc
             let mut unknown_write = false;
             statement_writes_aggregate_parameter(
                 function.source_body(),
-                parameter.name(),
+                parameter.binding_name(),
                 &mut writes,
                 &mut unknown_write,
             );
@@ -1134,7 +1144,7 @@ pub(crate) fn modified_by_value_aggregate_parameter_with_current_ensure_in_sourc
             for ensure in function.contract_ensures() {
                 spec_proposition_current_parameter_accesses(
                     ensure,
-                    parameter.name(),
+                    parameter.binding_name(),
                     &mut reads,
                     &mut unknown_read,
                 );
@@ -1172,7 +1182,7 @@ pub(super) fn aggregate_parameter_copy_changed(
         return false;
     };
     let Some(LocalBinding::AggregateObject { slot, layout, .. }) =
-        entry_state.locals.binding(parameter.name())
+        entry_state.locals.binding(parameter.binding_name())
     else {
         return false;
     };
@@ -1207,7 +1217,10 @@ pub(super) fn modified_by_value_aggregate_parameter_with_current_ensure(
         .find(|parameter| {
             aggregate_parameter_copy_changed(entry_state, outcome, parameter)
                 && ensures.iter().any(|ensure| {
-                    spec_reads_current_parameter(SpecNode::Proposition(ensure), parameter.name())
+                    spec_reads_current_parameter(
+                        SpecNode::Proposition(ensure),
+                        parameter.binding_name(),
+                    )
                 })
         })
         .map(|parameter| parameter.name().to_string())

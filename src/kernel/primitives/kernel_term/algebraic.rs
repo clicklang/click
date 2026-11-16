@@ -512,3 +512,15 @@ mod tests {
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/primitives/kernel_term/algebraic.rs");
 }
+
+impl KernelTerm {
+    pub(crate) fn program_parameter(operand: Self) -> Self {
+        let KernelType::Algebraic(ty) = operand.ty() else {
+            panic!("program parameter requires an algebraic operand");
+        };
+        Self::intern(
+            KernelType::Program(ProgramType::Parameter(TypeParameterName::of(ty))),
+            KernelTermNode::ProgramParameter { operand },
+        )
+    }
+}

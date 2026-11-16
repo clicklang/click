@@ -26,7 +26,7 @@ pub(in crate::surface) fn construction_result_resource(
     }
     Ok(Some(ResourceSpec::owned_memory(
         MemorySegment::new(
-            crate::kernel::program_expression::variable(crate::kernel::C_CONTRACT_RESULT_NAME),
+            crate::kernel::program_expression::variable(crate::kernel::CONTRACT_RESULT),
             crate::kernel::program_expression::int32_literal(0),
             crate::kernel::program_expression::int32_literal(layout.size_bytes()),
         )
@@ -536,7 +536,7 @@ pub(in crate::surface) fn initial_call_state(
         // Resource preparation evaluates the implicit contract segment before
         // the checked function-entry binder installs its aggregate local.
         state = state.with_local(
-            crate::kernel::C_CONTRACT_RESULT_NAME,
+            crate::kernel::CONTRACT_RESULT,
             ProgramValue::typed_pointer(destination.clone(), function.return_type()),
         );
         let storage = ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -756,7 +756,7 @@ fn reject_aggregate_parameter_storage_resource(
 ) -> Result<(), ClickError> {
     fn root(expression: &ProgramExpression) -> Option<&str> {
         match expression {
-            ProgramExpression::Variable(name) => Some(name),
+            ProgramExpression::Variable(name) => name.named(),
             ProgramExpression::PointerOffsetBytes { pointer, .. }
             | ProgramExpression::Subobject { pointer, .. }
             | ProgramExpression::AddressOf(pointer)
@@ -1179,7 +1179,7 @@ fn check_segment_base_loadability(
         crate::surface::proof::evaluate_program_expression_through_kernel(
             pointer,
             assumptions,
-            ContractEnvironment::new(&values, &array_refs),
+            ContractEnvironment::new(&values, &array_refs).with_parameters(parameter_binding),
             state,
             None,
         )
@@ -1687,7 +1687,6 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
             | ClickProposition::Exists { .. }
             | ClickProposition::RangeAll { .. }
             | ClickProposition::RangeAny { .. }
-            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
@@ -2856,7 +2855,7 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
             ClickError::new("a loop's `iterations` is an Integer, not a C value"),
         ),
         ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
-            Ok(ProgramExpression::Variable(name.clone()))
+            Ok(ProgramExpression::Variable((name.clone()).into()))
         }
         ContractExpression::Add(left, right) => Ok(ProgramExpression::Add(
             Box::new(resource_argument_to_program_expression(left)?),
@@ -3114,7 +3113,8 @@ fn loadable_requirement_props(
                 ContractEnvironment::new(
                     &values,
                     &array_refs_for_parameters(parameter_binding.parameters, &values, memory),
-                ),
+                )
+                .with_parameters(parameter_binding),
                 &state,
                 None,
                 contract_segment_element_width(parameter_binding.parameters, segment),
@@ -3549,7 +3549,7 @@ pub(in crate::surface) fn object_segment_layout<'a>(
     if let ProgramExpression::Variable(name) = &segment.base
         && let Some(layout) = parameters
             .iter()
-            .find(|parameter| parameter.name() == name)
+            .find(|parameter| parameter.matches_binding(name))
             .and_then(crate::languages::interface::ImportedParameter::pointee_struct_layout)
     {
         return Some(layout);
@@ -3591,15 +3591,18 @@ pub(in crate::surface) fn contract_segment_element_width_for_result_type(
     segment: &ContractSegment,
     result_type: Option<ProgramType>,
 ) -> u32 {
-    if matches!(segment.surface, ContractSegmentSurface::ObjectPlace { .. }) {
+    if matches!(
+        segment.surface,
+        ContractSegmentSurface::Object(_) | ContractSegmentSurface::ObjectPlace { .. }
+    ) {
         return 4;
     }
     if let Some(element_width) = segment.field_element_width() {
         return element_width;
     }
     if matches!(&segment.base, ProgramExpression::Variable(name)
-        if name == crate::kernel::C_CONTRACT_RESULT_NAME
-            || (name == "result" && !matches!(&segment.surface,
+        if name == &crate::kernel::CONTRACT_RESULT
+            || (name.is_named("result") && !matches!(&segment.surface,
                 ContractSegmentSurface::Range { base: ContractExpression::CBinding(_), .. })))
         && let Some(element_width) = result_type
             .and_then(ProgramType::pointee_type)
@@ -3624,7 +3627,10 @@ pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
         types: &BTreeMap<String, ProgramType>,
     ) -> Option<ProgramType> {
         match expression {
-            ProgramExpression::Variable(name) => types.get(name).copied(),
+            ProgramExpression::Variable(name) => name
+                .program_type()
+                .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()))
+                .or_else(|| name.named_in(types).copied()),
             ProgramExpression::Add(left, right) => {
                 local_element(left, types).or_else(|| local_element(right, types))
             }
@@ -3637,8 +3643,8 @@ pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
     if segment.field_element_width().is_some()
         || contract_expression_element_width(parameters, &segment.base).is_some()
         || matches!(&segment.base, ProgramExpression::Variable(name)
-            if name == crate::kernel::C_CONTRACT_RESULT_NAME
-                || (name == "result" && !matches!(&segment.surface,
+            if name == &crate::kernel::CONTRACT_RESULT
+                || (name.is_named("result") && !matches!(&segment.surface,
                     ContractSegmentSurface::Range { base: ContractExpression::CBinding(_), .. })))
     {
         return contract_segment_element_width_for_result_type(parameters, segment, result_type);
@@ -3694,7 +3700,7 @@ fn contract_expression_is_struct_array(
     match expression {
         ProgramExpression::Variable(name) => parameters
             .iter()
-            .find(|parameter| parameter.name() == name)
+            .find(|parameter| parameter.matches_binding(name))
             .is_some_and(|parameter| parameter.array_element_width().is_some()),
         ProgramExpression::Add(left, right) => {
             contract_expression_is_struct_array(parameters, left)
@@ -3714,7 +3720,7 @@ fn contract_expression_struct_layout<'a>(
     match expression {
         ProgramExpression::Variable(name) => parameters
             .iter()
-            .find(|parameter| parameter.name() == name)
+            .find(|parameter| parameter.matches_binding(name))
             .and_then(|parameter| {
                 (parameter.array_element_width().is_some() || parameter.is_struct_value())
                     .then(|| parameter.struct_layout())
@@ -3758,7 +3764,7 @@ fn contract_expression_element_type(
         ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
         ProgramExpression::Variable(name) => parameters
             .iter()
-            .find(|parameter| parameter.name() == name)
+            .find(|parameter| parameter.matches_binding(name))
             .and_then(|parameter| parameter.interface_type().pointee_type())
             .map(InterfaceType::to_kernel_type),
         ProgramExpression::Add(left, right) => contract_expression_element_type(parameters, left)
@@ -3801,7 +3807,7 @@ pub(in crate::surface) fn contract_expression_element_width(
         }
         ProgramExpression::Variable(name) => parameters
             .iter()
-            .find(|parameter| parameter.name() == name)
+            .find(|parameter| parameter.matches_binding(name))
             .and_then(|parameter| {
                 if parameter.is_struct_value() {
                     Some(4)
@@ -3895,9 +3901,22 @@ fn requirement_lowering_state(
     state: &ExecutionState,
 ) -> Result<ExecutionState, ClickError> {
     let mut lowering_state = state.clone();
-    for (name, value) in parameter_values(parameter_binding)? {
-        if lowering_state.locals().get(&name).is_none() {
-            lowering_state = lowering_state.with_local(name, value);
+    for (parameter, argument) in parameter_binding
+        .parameters
+        .iter()
+        .zip(parameter_binding.arguments)
+    {
+        let ProgramExpression::Value(value) = argument else {
+            return Err(ClickError::new(format!(
+                "could not build contract environment for parameter `{}`",
+                parameter.name()
+            )));
+        };
+        if !lowering_state
+            .locals()
+            .contains_name(parameter.binding_name())
+        {
+            lowering_state = lowering_state.with_local(parameter.binding_name(), value.clone());
         }
     }
     Ok(lowering_state)

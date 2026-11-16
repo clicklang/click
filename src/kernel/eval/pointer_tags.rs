@@ -873,7 +873,7 @@ mod exact_word_address_tests {
         let memory = Memory::new();
         let read = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer.clone()),
                 LoadKind::Bits64,
             )
@@ -1611,7 +1611,7 @@ mod retained_tag_tests {
         let memory = Memory::new().with_block("tag-cell", 8);
         let read = |memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(cell.clone()),
                 LoadKind::Bits64,
             )

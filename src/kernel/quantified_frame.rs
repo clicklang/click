@@ -391,7 +391,7 @@ mod wide_condition_tests {
         );
         let load = |memory: &Memory, kind| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_memory_ref(memory),
+                ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(pointer.clone()),
                 kind,
             )

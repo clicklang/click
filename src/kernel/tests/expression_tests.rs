@@ -23,7 +23,7 @@ fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
     let _specification = crate::kernel::eval::SpecificationReadScope::enter();
     for expression in [
         ProgramExpression::Value(ProgramValue::Pointer(value.clone())),
-        ProgramExpression::Variable("p".to_owned()),
+        ProgramExpression::Variable(("p".to_owned()).into()),
     ] {
         for context in [&PureFactContext::new(), &facts] {
             let paths = evaluate_program_expression_paths(
@@ -2300,7 +2300,7 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
                 // The symbolic read is canonical at creation: its load
                 // variable, which names this load.
                 value: int32(crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(Memory::new()),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 )))
@@ -2378,7 +2378,7 @@ fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
                 value: int32(crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32
                 )))
@@ -3201,7 +3201,7 @@ fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
                 value: int32(crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
-                    crate::kernel::intern_memory(memory),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(derived),
                     crate::kernel::LoadKind::Int32,
                 )))
@@ -4014,7 +4014,7 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
     };
     let memory = Memory::new().with_block("bounded", 8);
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -4040,12 +4040,12 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
         ProgramValue::Int32(MachineTerm::constant(0)),
     );
     let changed_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(changed),
+        ProgramPoint::at(&(crate::kernel::intern_memory(changed))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let other_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(Pointer {
             block: pointer.block,
             offset: PointerOffsetTerm::Constant(4),
@@ -4115,7 +4115,7 @@ fn exact_signed_mirror_normalization_checks_state_address_and_selected_premise()
     };
     let memory = Memory::new().with_block("mirror", 8);
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_memory(memory.clone()),
+        ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -4151,7 +4151,7 @@ fn exact_signed_mirror_normalization_checks_state_address_and_selected_premise()
         ),
     ] {
         let unrelated = MachineTerm::MemoryLoad(
-            crate::kernel::intern_memory(retained_state),
+            ProgramPoint::at(&(crate::kernel::intern_memory(retained_state))),
             Box::new(address),
             crate::kernel::LoadKind::Int32,
         );

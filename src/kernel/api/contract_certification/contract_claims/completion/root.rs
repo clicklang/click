@@ -170,28 +170,33 @@ impl WholeContractRoot {
                 .executions
                 .iter()
                 .map(|execution| execution.checked_callees.as_ref()),
-        );
+        )
+        .unwrap_or_else(|| self.plan.declared_calls.clone());
         let mut applied_tactics = BTreeSet::new();
         for execution in state.executions.iter() {
             crate::instrumentation::record_deterministic_work(execution.applied_tactics.len() + 1);
             applied_tactics.extend(execution.applied_tactics.iter().cloned());
         }
+        let exits = state
+            .concrete_loop_exits
+            .clone()
+            .unwrap_or_else(|| self.plan.loop_exits.unknown());
+        let termination =
+            crate::kernel::termination::inputs::CompletedBodyTermination::from_completed_root(
+                exits.clone(),
+            );
         let rule = VerifiedFunctionRule {
             pointer_result,
             function: state.subject.clone(),
             descent_completion: self.plan.entry.function.contract_interface().has_call_ranked_recursion()
                 .then(crate::kernel::termination::descent_completion::DescentCompletion::from_completed_root),
-            concrete_loop_exits: Some(
-                state
-                    .concrete_loop_exits
-                    .clone()
-                    .unwrap_or_else(|| self.plan.loop_exits.unknown()),
-            ),
+            concrete_loop_exits: Some(exits),
             loop_semantics,
-            checked_callees,
+            checked_callees: Some(checked_callees),
             applied_tactics,
         };
         let completed = Arc::new(ContractBodyProof {
+            termination,
             rule,
             modular: self.plan.modular,
             loop_rules: state.loop_rules.iter().cloned().collect(),
@@ -380,9 +385,11 @@ mod tests {
         let rules = [rule];
         program
             .generate_termination(crate::kernel::ProgramTerminationInputs {
-                partial_rules: &rules,
+                independent: crate::kernel::IndependentTerminationInputs {
+                    rules: &rules,
+                    bodies: &[],
+                },
                 plans: &[],
-                inline_bodies: &[],
                 assumed_terminating: &BTreeSet::new(),
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,

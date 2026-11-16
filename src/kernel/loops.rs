@@ -17,7 +17,7 @@ mod head_invariant_refusal_tests;
 
 pub(super) fn assign_call_result(
     state: &mut ExecutionState,
-    target: &str,
+    target: &BindingName,
     value: impl Into<StoredExecutionValue>,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -117,7 +117,7 @@ pub(super) fn assign_call_result(
     }
     sync_retained_stack_local(state, target, &value);
     state.locals.set_retained_typed_with_all_qualifiers(
-        target.to_string(),
+        target.clone(),
         value,
         program_type,
         volatile,
@@ -161,7 +161,7 @@ fn authority_call_refusal_path() -> StatementExecutionPath {
 
 pub(super) fn execute_program_call_construct_paths(
     state: &ExecutionState,
-    target: &str,
+    target: &BindingName,
     function_name: &str,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
@@ -478,7 +478,7 @@ fn freshen_shared_mutex_payload(
 
 fn execute_modeled_pthread_mutex_paths(
     state: &ExecutionState,
-    target: Option<&str>,
+    target: Option<&BindingName>,
     function_name: &str,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
@@ -1195,7 +1195,7 @@ fn execute_modeled_pthread_create_paths(
 
 fn execute_modeled_pthread_join_paths(
     state: &ExecutionState,
-    target: Option<&str>,
+    target: Option<&BindingName>,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
@@ -3340,8 +3340,8 @@ fn resource_value_term(value: &AlgebraicValue) -> Term {
 /// What the join replaced in the successor, for the residual comparison to
 /// put back at each exit.
 struct LoopExitAbstraction<'a> {
-    locals: &'a [(String, ProgramType)],
-    uninitialized: &'a [String],
+    locals: &'a [(BindingName, ProgramType)],
+    uninitialized: &'a [BindingName],
     cells: &'a BTreeSet<Pointer>,
     bookkeeping: bool,
 }
@@ -3359,7 +3359,7 @@ struct LoopExitAbstraction<'a> {
 fn abstract_loop_exit_initialization(
     successor: &mut ExecutionState,
     exits: &[ExecutionState],
-) -> Vec<String> {
+) -> Vec<BindingName> {
     let names = successor
         .locals
         .bindings
@@ -3518,12 +3518,12 @@ fn abstract_loop_exit_locals(
     restatements: &mut [LoopExitRestatement],
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
-) -> Result<Vec<(String, ProgramType)>, String> {
+) -> Result<Vec<(BindingName, ProgramType)>, String> {
     let mut abstracted = Vec::new();
     let names = successor
         .locals()
         .object_values()
-        .map(|(name, _)| name.to_string())
+        .map(|(name, _)| name.clone())
         .collect::<Vec<_>>();
     for name in names {
         let mut held = Vec::with_capacity(exits.len());
@@ -4095,7 +4095,7 @@ fn loop_exit_state_difference(
         let shown = names
             .iter()
             .take(12)
-            .map(|name| name.as_str())
+            .map(|name| name.to_string())
             .collect::<Vec<_>>();
         let mut detail = if shown.is_empty() {
             "local storage slot bindings".to_string()
@@ -5989,6 +5989,11 @@ pub(super) fn prepare_loop_top_state(
             .as_ref()
             .map(|frame| CallKeptRanges::new(frame.clone(), Vec::new(), None)),
     )?;
+    if statement_may_write_memory(entry_state, body) {
+        let mut resources = top_state.resources().clone();
+        resources.havoc_owned_structural_witnesses();
+        top_state = top_state.with_resource_context(resources);
+    }
     let mut summaries =
         collect_whole_loop_effect_summaries(entry_state, &top_state, &effect_ranges);
 
@@ -8577,7 +8582,7 @@ pub(super) fn undecided_loop_guard_context(outcome: &StatementOutcome) -> String
 pub(super) fn havoc_loop_modified_locals(
     state: &ExecutionState,
     body: &ProgramStatement,
-    escaped: &BTreeSet<String>,
+    escaped: &BTreeSet<BindingName>,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
     mutable_ranges: Option<&[MemoryRange]>,
@@ -8631,7 +8636,7 @@ pub(super) fn havoc_loop_modified_locals(
             .locals
             .bindings
             .keys()
-            .filter(|name| state.locals.get(name).is_some())
+            .filter(|name| state.locals.get(*name).is_some())
             .filter_map(|name| state.locals.slot(name).map(|slot| slot.block.clone()))
             .collect();
         // Cells under an active stable-view loan are stable across the loop
@@ -8770,12 +8775,15 @@ mod v10_tests;
 
 pub(super) fn collect_loop_modified_locals(
     statement: &ProgramStatement,
-    names: &mut BTreeSet<String>,
+    names: &mut BTreeSet<BindingName>,
 ) {
     match statement {
-        ProgramStatement::ScalarReferenceScope(scope) => {
-            names.extend(scope.cleared_locals().iter().map(|(name, _)| name.clone()))
-        }
+        ProgramStatement::ScalarReferenceScope(scope) => names.extend(
+            scope
+                .cleared_locals()
+                .iter()
+                .map(|(name, _)| name.clone().into()),
+        ),
         ProgramStatement::EndAutomaticLifetimes { names: retired, .. } => {
             names.extend(retired.iter().cloned())
         }
@@ -8806,8 +8814,10 @@ pub(super) fn collect_loop_modified_locals(
             name,
             initializer: Some(_),
             ..
+        } => {
+            names.insert(name.binding().clone());
         }
-        | ProgramStatement::Assign { name, .. } => {
+        ProgramStatement::Assign { name, .. } => {
             names.insert(name.clone());
         }
         ProgramStatement::CallConstruct { target, .. } => {
@@ -8830,7 +8840,7 @@ pub(super) fn collect_loop_modified_locals(
             ..
         } => {
             collect_loop_modified_locals(try_body, names);
-            names.insert(binding.clone());
+            names.insert(binding.clone().into());
             collect_loop_modified_locals(handler, names);
         }
         ProgramStatement::If {
@@ -8920,15 +8930,15 @@ fn run_slots_clear_of_loop_summaries(
 pub(super) fn address_escaped_scalar_locals(
     state: &ExecutionState,
     body: &ProgramStatement,
-) -> BTreeSet<String> {
+) -> BTreeSet<BindingName> {
     let mut escaped = BTreeSet::new();
     collect_address_taken_locals(body, &mut escaped);
 
-    let record_pointer = |value: &ProgramValue, escaped: &mut BTreeSet<String>| {
+    let record_pointer = |value: &ProgramValue, escaped: &mut BTreeSet<BindingName>| {
         if let ProgramValue::Pointer(pointer) = value
             && let Some(name) = state.locals.name_for_slot(pointer)
         {
-            escaped.insert(name.to_string());
+            escaped.insert(name.clone());
         }
     };
     for name in state.locals.bindings.keys() {
@@ -8936,7 +8946,7 @@ pub(super) fn address_escaped_scalar_locals(
             if let Some(pointer) = value.pointer()
                 && let Some(name) = state.locals.name_for_slot(pointer.pointer())
             {
-                escaped.insert(name.to_string());
+                escaped.insert(name.clone());
             }
         }
     }
@@ -8967,7 +8977,7 @@ pub(super) fn address_escaped_scalar_locals(
 fn loop_written_automatic_objects(
     state: &ExecutionState,
     body: &ProgramStatement,
-    escaped: &BTreeSet<String>,
+    escaped: &BTreeSet<BindingName>,
 ) -> Vec<MemoryRange> {
     let mut names = escaped.clone();
     for_each_statement_expression(body, &mut |expression| {
@@ -9105,7 +9115,7 @@ fn for_each_statement_expression<'a>(
 
 pub(crate) fn collect_address_taken_locals(
     statement: &ProgramStatement,
-    names: &mut BTreeSet<String>,
+    names: &mut BTreeSet<BindingName>,
 ) {
     match statement {
         ProgramStatement::EndAutomaticLifetimes { .. } => {}
@@ -9209,7 +9219,7 @@ pub(crate) fn collect_address_taken_locals(
 
 pub(super) fn collect_address_taken_in_expression(
     expression: &ProgramExpression,
-    names: &mut BTreeSet<String>,
+    names: &mut BTreeSet<BindingName>,
 ) {
     match expression {
         // `&target`: any local reachable in the target may have its address
@@ -9268,7 +9278,10 @@ pub(super) fn collect_address_taken_in_expression(
     }
 }
 
-pub(super) fn collect_variable_names(expression: &ProgramExpression, names: &mut BTreeSet<String>) {
+pub(super) fn collect_variable_names(
+    expression: &ProgramExpression,
+    names: &mut BTreeSet<BindingName>,
+) {
     match expression {
         ProgramExpression::Variable(name) => {
             names.insert(name.clone());

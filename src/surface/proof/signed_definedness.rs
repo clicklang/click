@@ -1,19 +1,9 @@
-//! Smart closure of an `int32` or `int64` definedness goal from the
-//! operands' bounds.
-//!
-//! `defined(a + b)` and `defined(a - b)` over `int32` or `int64` lower to the
-//! conjunction of ordinary exact-result range bounds. The checked
-//! `int32_defined` / `int64_defined` rule of the `rules` arithmetic
-//! certificate family establishes it from each operand's width range and
-//! cited constant bounds. This closer only selects those bounds: the constant
-//! order and equality facts of the goal's width indexed under each operand
-//! term, or, for `solve() using`, the listed premises that bound an operand.
-//! It spells each cited fact through the goal's own operand spelling, so the
-//! certificate re-lowers to exactly the facts it names. Selection is a keyed
-//! lookup per operand and never scans the context; the kernel checker, not
-//! this selector, decides whether the ranges exclude overflow. Both widths
-//! share every line of this selection; the width only chooses which index
-//! and comparison family the lookups read.
+//! Smart closure of signed addition/subtraction definedness from selected
+//! operand bounds. Both widths materialize intrinsic operand ranges, prove
+//! the two ordinary bounds on the exact result with Integer composition,
+//! and close the stated domain. Expansion retains those ordinary proofs.
+//! Ambient selection uses the operand's constant-bound index; an explicit
+//! using list supplies only its own bounds. No certificate rule participates.
 
 use super::surface_synthesis::synthesize_surface_machine_expression;
 use super::*;
@@ -101,7 +91,14 @@ fn spell_signed_bound(
                 }
                 SignedDefinedWidth::Int64 => side.int64_constant(),
             };
-            number.map(signed_literal)
+            number.map(|value| match width {
+                SignedDefinedWidth::Int32 => signed_literal(value),
+                SignedDefinedWidth::Int64 => {
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        ProgramValue::Int64(MachineTerm::int64_constant(value)),
+                    ))
+                }
+            })
         }
     };
     let [left, right] = view

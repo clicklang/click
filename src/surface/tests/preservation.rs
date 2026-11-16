@@ -1765,6 +1765,10 @@ fn resource_scope_preservation_migrations_expand_and_replay() {
             "mdtests/graph_view_survives_marked_summary_call.md",
             "caller.contract",
         ),
+        (
+            "mdtests/store_geometry_uses_explicit_order_and_transport.md",
+            "keep_first.contract",
+        ),
     ] {
         let (source, sources) = mdtest_sources(fixture);
         let sources = sources
@@ -1778,4 +1782,20 @@ fn resource_scope_preservation_migrations_expand_and_replay() {
         })
         .unwrap();
     }
+}
+
+#[test]
+#[ignore = "nightly: saved-range observation expansion and cold replay"]
+fn saved_memory_observation_expands_and_replays() {
+    let (mut source, sources) = mdtest_sources("mdtests/observe_saved_pointer_memory_range.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    for claim in ["update.contract", "update_byte.contract"] {
+        source = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    }
+    assert!(source.contains("observe(at("), "{source}");
+    assert!(!source.contains("transport("), "{source}");
+    without_implicit_solve(|| verify_c_sources(&source, &sources)).unwrap();
 }

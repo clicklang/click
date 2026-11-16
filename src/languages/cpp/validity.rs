@@ -322,6 +322,12 @@ impl Metadata<'_> {
                     arguments,
                     value_type,
                     span,
+                }
+                | CppCallArgument::Construct {
+                    callee,
+                    arguments,
+                    value_type,
+                    span,
                 } => {
                     self.callee(callee)?;
                     self.value_type(value_type)?;

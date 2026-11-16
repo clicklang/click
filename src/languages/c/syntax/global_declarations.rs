@@ -91,7 +91,7 @@ impl Parser {
             let kernel_name = if is_file_static {
                 self.file_static_kernel_name(&name)
             } else {
-                name.clone()
+                name.clone().into()
             };
             if let Some((struct_name, layout)) = &aggregate_struct {
                 if self.peek() == Some(&Token::LBracket) {
@@ -206,21 +206,26 @@ impl Parser {
                         let bytes = length
                             .checked_mul(layout.size_bytes())
                             .expect("validated aggregate global array size");
-                        self.variable_types
-                            .insert(kernel_name.clone(), InterfaceType::UInt8Array(bytes));
+                        self.variable_types.insert(
+                            (kernel_name.clone()).into(),
+                            InterfaceType::UInt8Array(bytes),
+                        );
                         self.variable_array_shapes
-                            .insert(kernel_name.clone(), vec![length]);
-                        self.incomplete_array_names.remove(&kernel_name);
+                            .insert((kernel_name.clone()).into(), vec![length]);
+                        self.incomplete_array_names
+                            .remove(&kernel_name.clone().into());
                     } else {
                         self.variable_types
-                            .insert(kernel_name.clone(), InterfaceType::UInt8Pointer);
-                        self.variable_array_shapes.remove(&kernel_name);
-                        self.incomplete_array_names.insert(kernel_name.clone());
+                            .insert((kernel_name.clone()).into(), InterfaceType::UInt8Pointer);
+                        self.variable_array_shapes
+                            .remove(&kernel_name.clone().into());
+                        self.incomplete_array_names
+                            .insert((kernel_name.clone()).into());
                     }
                     self.variable_structs
-                        .insert(kernel_name.clone(), struct_name.clone());
+                        .insert((kernel_name.clone()).into(), struct_name.clone());
                     if parsed_type.is_constant {
-                        self.variable_constants.insert(kernel_name.clone());
+                        self.variable_constants.insert((kernel_name.clone()).into());
                     }
                     if self.peek() == Some(&Token::Comma) {
                         self.position += 1;
@@ -265,19 +270,19 @@ impl Parser {
                 let declaration = declaration.with_tentative(tentative);
                 self.register_global_aggregate_declaration(name.clone(), declaration)?;
                 self.variable_struct_values
-                    .insert(kernel_name.clone(), struct_name.clone());
+                    .insert((kernel_name.clone()).into(), struct_name.clone());
                 self.variable_types
-                    .insert(name.clone(), record_value_type(layout));
+                    .insert((name.clone()).into(), record_value_type(layout));
                 self.variable_structs
-                    .insert(name.clone(), struct_name.clone());
+                    .insert((name.clone()).into(), struct_name.clone());
                 if parsed_type.is_constant {
-                    self.variable_constants.insert(name.clone());
+                    self.variable_constants.insert((name.clone()).into());
                 }
-                if kernel_name != name {
+                if kernel_name.named() != Some(name.as_str()) {
                     self.variable_types
-                        .insert(kernel_name.clone(), record_value_type(layout));
+                        .insert((kernel_name.clone()).into(), record_value_type(layout));
                     self.variable_structs
-                        .insert(kernel_name, struct_name.clone());
+                        .insert((kernel_name).into(), struct_name.clone());
                 }
                 if self.peek() == Some(&Token::Comma) {
                     self.position += 1;
@@ -342,7 +347,7 @@ impl Parser {
             if let Some(array_length) = array_length {
                 if let Some(struct_name) = &struct_pointer_name {
                     self.variable_structs
-                        .insert(kernel_name.clone(), struct_name.clone());
+                        .insert((kernel_name.clone()).into(), struct_name.clone());
                 }
                 match array_length {
                     GlobalArrayLength::Complete(shape) => {
@@ -415,13 +420,14 @@ impl Parser {
                                 }),
                         )?;
                         self.variable_types.insert(
-                            kernel_name.clone(),
+                            (kernel_name.clone()).into(),
                             array_type_for_element(parsed_type.interface_type, length)
                                 .expect("validated global array element type"),
                         );
                         self.variable_array_shapes
-                            .insert(kernel_name.clone(), shape);
-                        self.incomplete_array_names.remove(&kernel_name);
+                            .insert((kernel_name.clone()).into(), shape);
+                        self.incomplete_array_names
+                            .remove(&kernel_name.clone().into());
                     }
                     GlobalArrayLength::Incomplete(incomplete_shape) => {
                         if self.peek() == Some(&Token::Equal) {
@@ -451,22 +457,25 @@ impl Parser {
                             let length = array_shape_element_count(&shape)
                                 .expect("validated global array shape");
                             self.variable_types.insert(
-                                kernel_name.clone(),
+                                (kernel_name.clone()).into(),
                                 array_type_for_element(parsed_type.interface_type, length)
                                     .expect("validated global array element type"),
                             );
                             self.variable_array_shapes
-                                .insert(kernel_name.clone(), shape);
-                            self.incomplete_array_names.remove(&kernel_name);
+                                .insert((kernel_name.clone()).into(), shape);
+                            self.incomplete_array_names
+                                .remove(&kernel_name.clone().into());
                         } else {
                             let element_pointer = parsed_type
                                 .interface_type
                                 .pointer_type()
                                 .expect("validated incomplete external array element type");
                             self.variable_types
-                                .insert(kernel_name.clone(), element_pointer);
-                            self.variable_array_shapes.remove(&kernel_name);
-                            self.incomplete_array_names.insert(kernel_name.clone());
+                                .insert((kernel_name.clone()).into(), element_pointer);
+                            self.variable_array_shapes
+                                .remove(&kernel_name.clone().into());
+                            self.incomplete_array_names
+                                .insert((kernel_name.clone()).into());
                         }
                     }
                 }
@@ -540,10 +549,10 @@ impl Parser {
                         }),
                 )?;
                 self.variable_types
-                    .insert(kernel_name.clone(), parsed_type.interface_type);
+                    .insert((kernel_name.clone()).into(), parsed_type.interface_type);
                 if let Some(struct_name) = &struct_pointer_name {
                     self.variable_structs
-                        .insert(kernel_name, struct_name.clone());
+                        .insert((kernel_name).into(), struct_name.clone());
                 }
             }
             if self.peek() != Some(&Token::Comma) {

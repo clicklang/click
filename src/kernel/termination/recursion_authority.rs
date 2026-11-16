@@ -11,7 +11,7 @@ fn declaration_error(function: &str, message: impl Into<String>) -> TerminationE
 enum DeclaredMeasure {
     Numeric {
         index: usize,
-        parameter: String,
+        parameter: BindingName,
     },
     Structural(usize),
     Expression {
@@ -37,13 +37,35 @@ pub(super) struct ExpressionRecursionAuthority {
 pub(super) struct RecursionAuthority {
     pub refusal: Option<TerminationRefusal>,
     pub parameter_indices: BTreeMap<String, usize>,
-    pub parameter: Option<String>,
+    pub parameter: Option<BindingName>,
     pub structural_requirement: Option<usize>,
     pub structural_callees: BTreeMap<String, usize>,
     pub expression: Option<ExpressionRecursionAuthority>,
 }
 
 impl RecursionDeclarations {
+    pub fn open_ordinary(
+        functions: &[&ProgramFunction],
+        plans: &[FunctionTerminationPlan],
+    ) -> Result<Arc<Self>, TerminationError> {
+        for plan in plans {
+            charge_termination_work(1);
+            if matches!(
+                plan.recursive_measure,
+                Some(
+                    FunctionTerminationMeasure::NumericParameter(_)
+                        | FunctionTerminationMeasure::ResourceRequirement(_)
+                )
+            ) {
+                return Err(declaration_error(
+                    &plan.function_name,
+                    "legacy termination measures require independent termination inputs; ordinary contracts declare call-ranked recursion",
+                ));
+            }
+        }
+        Self::open(functions, plans)
+    }
+
     pub fn open(
         functions: &[&ProgramFunction],
         plans: &[FunctionTerminationPlan],
@@ -87,7 +109,7 @@ impl RecursionDeclarations {
                     }
                     DeclaredMeasure::Numeric {
                         index: *index,
-                        parameter: parameter.name.clone(),
+                        parameter: parameter.binding_name().clone(),
                     }
                 }
                 FunctionTerminationMeasure::ResourceRequirement(index) => {
@@ -261,7 +283,7 @@ mod tests {
     #[test]
     fn declaration_opening_refuses_an_expression_plan_without_a_declared_measure() {
         let function = expression("f", &[]).with_recursion_measure(vec![]);
-        let result = ProgramContractProof::open_with_recursion_declarations(
+        let result = ProgramContractProof::open_ordinary(
             BTreeSet::from(["f".into()]),
             BTreeSet::new(),
             &BTreeSet::new(),
@@ -272,6 +294,25 @@ mod tests {
             matches!(result, Err(error) if error.message.contains("carries no declared measure"))
         );
     }
+    #[test]
+    fn ordinary_opening_refuses_legacy_measures_before_body_execution() {
+        let function = ProgramFunction::new(
+            ProgramType::Void,
+            "f",
+            vec![ProgramParameter::new("n", ProgramType::Int32)],
+            ProgramStatement::Skip,
+        );
+        for measure in [
+            FunctionTerminationMeasure::NumericParameter(0),
+            FunctionTerminationMeasure::ResourceRequirement(0),
+        ] {
+            let plans = [plan("f", measure)];
+            assert!(RecursionDeclarations::open(&[&function], &plans).is_ok());
+            let error = RecursionDeclarations::open_ordinary(&[&function], &plans).unwrap_err();
+            assert!(error.message.contains("independent termination inputs"));
+        }
+    }
+
     #[test]
     fn declaration_opening_resolves_numeric_parameters_before_any_descent_proof() {
         let function = ProgramFunction::new(

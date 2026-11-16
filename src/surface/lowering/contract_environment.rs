@@ -33,12 +33,12 @@ pub(in crate::surface) fn contract_environment_at_state(
     state: &ExecutionState,
 ) -> (BTreeMap<String, ProgramValue>, ClickArrayRefs) {
     let mut values = parameter_values.clone();
-    values.extend(
-        state
-            .locals()
-            .object_values()
-            .map(|(name, value)| (name.to_string(), value.clone().into_native())),
-    );
+    values.extend(state.locals().object_values().filter_map(|(name, value)| {
+        Some((
+            state.locals().active_source_name(name)?.to_owned(),
+            value.clone().into_native(),
+        ))
+    }));
 
     let mut state_array_refs = array_refs_with_memory(array_refs, state.memory());
     // A parameter's array reference is read through the variable, exactly as
@@ -48,24 +48,30 @@ pub(in crate::surface) fn contract_environment_at_state(
     // argument naming that parameter then read two different pointers under
     // one name.
     for (name, value) in state.locals().object_values() {
+        let Some(source_name) = state.locals().active_source_name(name) else {
+            continue;
+        };
         if let Some(pointer) = value.pointer()
-            && let Some(array_ref) = state_array_refs.get_mut(name)
+            && let Some(array_ref) = state_array_refs.get_mut(source_name)
         {
             array_ref.pointer = pointer.pointer().clone();
         }
     }
     for (name, value, element_type) in state.locals().array_object_values() {
+        let Some(source_name) = state.locals().active_source_name(name) else {
+            continue;
+        };
         let ProgramValue::Pointer(pointer) = value.clone() else {
             unreachable!("local array values are pointers")
         };
         // File-scope arrays remain in the state even when a parameter hides
         // their name. They must not replace that parameter's current value.
-        if pointer.block.is_global_block() && parameter_values.contains_key(name) {
+        if pointer.block.is_global_block() && parameter_values.contains_key(source_name) {
             continue;
         }
-        values.insert(name.to_string(), value);
+        values.insert(source_name.to_owned(), value);
         state_array_refs.insert(
-            name.to_string(),
+            source_name.to_owned(),
             ClickArrayRef {
                 memory: state.memory().clone(),
                 pointer: pointer.pointer().clone(),
@@ -181,7 +187,9 @@ pub(in crate::surface) fn contract_array_ref_element_type(
 ) -> Option<ProgramType> {
     match expression {
         ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        ))
         | ContractExpression::CBinding(name) => {
             array_refs.get(name).map(|array_ref| array_ref.element_type)
         }
@@ -221,7 +229,9 @@ pub(in crate::surface) fn program_value_matches_click_type(
         | (ProgramValue::Int64(_), InterfaceType::Int64(_))
         | (ProgramValue::UInt64(_), InterfaceType::UInt64(_))
         | (ProgramValue::Int128(_), InterfaceType::Int128)
-        | (ProgramValue::UInt128(_), InterfaceType::UInt128) => true,
+        | (ProgramValue::UInt128(_), InterfaceType::UInt128)
+        | (ProgramValue::Float32(_), InterfaceType::Float32)
+        | (ProgramValue::Float64(_), InterfaceType::Float64) => true,
         (ProgramValue::Pointer(pointer), interface_type) if interface_type.is_pointer() => pointer
             .program_type()
             .pointer_types_compatible(interface_type.to_kernel_type()),
@@ -392,6 +402,36 @@ mod tests {
         let (values, arrays) =
             contract_environment_for_names(ParameterBinding::default(), &names, &state).unwrap();
         assert_bytes(&values, &arrays, &expected, ProgramType::UInt8);
+    }
+
+    #[test]
+    fn float_argument_types_preserve_their_width() {
+        let single = ProgramValue::Float32(MachineTerm::Variable(Variable(41501)));
+        let double = ProgramValue::Float64(MachineTerm::Variable(Variable(41502)));
+        assert!(program_value_matches_click_type(
+            &single,
+            InterfaceType::Float32
+        ));
+        assert!(program_value_matches_click_type(
+            &double,
+            InterfaceType::Float64
+        ));
+        assert!(!program_value_matches_click_type(
+            &single,
+            InterfaceType::Float64
+        ));
+        assert!(!program_value_matches_click_type(
+            &double,
+            InterfaceType::Float32
+        ));
+        assert!(!program_value_matches_click_type(
+            &single,
+            InterfaceType::Int32
+        ));
+        assert!(!program_value_matches_click_type(
+            &double,
+            InterfaceType::Int64(syntax::LongRank::Long)
+        ));
     }
 
     mod scaling_tests {

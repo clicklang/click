@@ -35,10 +35,10 @@ pub(super) fn uninitialized_call_input<'a>(
     let constructed = interface
         .construction_parameter()
         .and_then(|(index, _)| interface.parameters().get(index))
-        .map(ProgramParameter::name)
+        .map(ProgramParameter::binding_name)
         .or_else(|| {
             (interface.aggregate_return_mode() == AggregateReturnMode::Construction)
-                .then_some(crate::kernel::C_CONTRACT_RESULT_NAME)
+                .then_some(&crate::kernel::CONTRACT_RESULT)
         });
     for input in inputs {
         let Resource::Memory(range) = input.fact.resource() else {
@@ -78,7 +78,7 @@ pub(super) fn uninitialized_call_input<'a>(
 }
 
 /// The parameter a segment's address is computed from.
-fn root_parameter(expression: &ProgramExpression) -> Option<&str> {
+fn root_parameter(expression: &ProgramExpression) -> Option<&BindingName> {
     match expression {
         ProgramExpression::Variable(name) => Some(name),
         ProgramExpression::PointerOffsetBytes { pointer, .. }

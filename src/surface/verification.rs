@@ -679,7 +679,7 @@ fn verify_click_file_theorems_with_environment(
         &combined_external_function_blocks(file)?,
     )?);
     verify_theorem_definitions(
-        TheoremEnvironment::with_standard_library(&[])?,
+        TheoremEnvironment::with_standard_library(&[])?.with_discovery_library(file)?,
         file.theorem_definitions(),
         SpecDefinitions::new(&predicate_environment, &click_function_environment)
             .with_struct_sizes(&file.struct_sizes),
@@ -864,7 +864,8 @@ fn verify_click_file_theorem_context(
         }
     }
     let theorem_environment =
-        TheoremEnvironment::with_standard_library(file.theorem_definitions())?;
+        TheoremEnvironment::with_standard_library(file.theorem_definitions())?
+            .with_discovery_library(&file)?;
     if theorem.executes.is_some() {
         let registry = std::sync::Arc::new(FunctionSourceRegistry::from_function_blocks(
             &external_and_user_function_blocks,
@@ -873,7 +874,8 @@ fn verify_click_file_theorem_context(
             file.theorem_definitions()
                 .iter()
                 .take_while(|definition| definition.name() != theorem_name),
-        )?;
+        )?
+        .with_discovery_library(&file)?;
         return verify_theorem_definitions(
             dependencies,
             std::slice::from_ref(theorem),
@@ -2375,7 +2377,8 @@ fn verify_program_in_context(
             .map(clone_theorem_definition_iteratively)
             .collect::<Vec<_>>();
         let theorem_dependencies =
-            TheoremEnvironment::with_standard_library(&unselected_theorem_definitions)?;
+            TheoremEnvironment::with_standard_library(&unselected_theorem_definitions)?
+                .with_discovery_library(&file)?;
         let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
             .with_contracts(file.contract_definitions(), &file.program_function_names);
         let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
@@ -2473,17 +2476,16 @@ fn verify_program_in_context(
                 function_environment = function_environment.with_external_function_rule(assumption);
             }
         }
-        let program_contracts =
-            crate::kernel::ProgramContractProof::open_with_recursion_declarations(
-                requested_contracts,
-                declared_diverging.clone(),
-                &bodyless_declarations,
-                &function_environment.linked_functions(),
-                &termination_plans,
-            )
-            .map_err(|error| {
-                ClickError::new(format!("could not open C recursion declarations: {error}"))
-            })?;
+        let program_contracts = crate::kernel::ProgramContractProof::open_ordinary(
+            requested_contracts,
+            declared_diverging.clone(),
+            &bodyless_declarations,
+            &function_environment.linked_functions(),
+            &termination_plans,
+        )
+        .map_err(|error| {
+            ClickError::new(format!("could not open C recursion declarations: {error}"))
+        })?;
         drop(_timing);
         let verified_theorems = verify_theorem_definitions(
             theorem_dependencies,
@@ -2515,7 +2517,8 @@ fn verify_program_in_context(
             &mut theorem_certification_authorities,
         );
         let theorem_environment =
-            TheoremEnvironment::with_standard_library(file.theorem_definitions())?;
+            TheoremEnvironment::with_standard_library(file.theorem_definitions())?
+                .with_discovery_library(&file)?;
         check_verification_deadline()?;
         (
             predicate_environment,
@@ -3039,9 +3042,11 @@ fn verify_program_in_context(
     }
     let generated_program = program_contracts
         .generate_termination(crate::kernel::ProgramTerminationInputs {
-            partial_rules: &partial_rules,
+            independent: crate::kernel::IndependentTerminationInputs {
+                rules: &partial_rules,
+                bodies: &inline_bodies,
+            },
             plans: &termination_plans,
-            inline_bodies: &inline_bodies,
             assumed_terminating: &assumed_terminating,
             diverging_contracts: &diverging_contracts,
             has_unselected_functions: !unselected_executing_names.is_empty(),
@@ -3835,6 +3840,26 @@ pub(in crate::surface) fn c_statement_calls(
 
 /// [`c_statement_calls`], also recording in `allocator` each allocator
 /// function the body calls, which is not a call dependency.
+fn source_struct_names(
+    bindings: &BTreeMap<crate::kernel::BindingName, String>,
+) -> BTreeMap<String, String> {
+    let mut names: BTreeMap<String, Option<String>> = BTreeMap::new();
+    for (binding, ty) in bindings {
+        names
+            .entry(binding.source_name().to_owned())
+            .and_modify(|previous| {
+                if previous.as_ref() != Some(ty) {
+                    *previous = None;
+                }
+            })
+            .or_insert_with(|| Some(ty.clone()));
+    }
+    names
+        .into_iter()
+        .filter_map(|(name, ty)| Some((name, ty?)))
+        .collect()
+}
+
 fn c_statement_calls_recording(
     function: &crate::languages::interface::ImportedFunction,
     allocator: &mut BTreeSet<&'static str>,
@@ -3849,7 +3874,7 @@ fn c_statement_calls_recording(
                 name,
                 ..
             } => {
-                names.insert(name.clone());
+                names.insert(name.source_name().to_owned());
             }
             syntax::CStatement::Seq(first, second) => {
                 collect_function_pointer_names(first, names);
@@ -4405,7 +4430,9 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
     match component {
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Some(name),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) => Some(name),
         _ => None,
     }
 }
@@ -4485,6 +4512,53 @@ fn executing_function_name(names: &BTreeMap<String, String>, source_name: &str) 
         .unwrap_or_else(|| source_name.to_string())
 }
 
+pub(in crate::surface) fn function_recursion_resource_requirement(
+    function: &FunctionBlock,
+) -> Result<Option<usize>, ClickError> {
+    let Some(FunctionDecrease::Resource(measure)) = function.decreases() else {
+        return Ok(None);
+    };
+    let ResourceClause::Declared {
+        kind: ResourceKind::Composite,
+        name: measure_name,
+        arguments: measure_arguments,
+        ..
+    } = measure
+    else {
+        return Err(ClickError::new(format!(
+            "function-level `decreases` in `{}` must name one composite resource",
+            function.signature().name()
+        )));
+    };
+    let mut resource_index = 0;
+    let mut matched = None;
+    for requirement in function.requires() {
+        let Requirement::Resource(required) = requirement else {
+            continue;
+        };
+        if matches!(
+            required,
+            ResourceClause::Declared {
+                kind: ResourceKind::Composite,
+                name,
+                arguments,
+                ..
+            } if name == measure_name && arguments == measure_arguments
+        ) {
+            matched = Some(resource_index);
+            break;
+        }
+        resource_index += 1;
+    }
+    let index = matched.ok_or_else(|| {
+        ClickError::new(format!(
+            "function-level `decreases {measure_name}(...)` in `{}` must exactly match an owned or viewed entry resource",
+            function.signature().name()
+        ))
+    })?;
+    Ok(Some(index))
+}
+
 pub(in crate::surface) fn program_function_termination_plans(
     file: &ClickFile,
     selected_functions: Option<&BTreeSet<String>>,
@@ -4535,45 +4609,10 @@ pub(in crate::surface) fn program_function_termination_plans(
                     )))
                 }
                 FunctionDecrease::Resource(measure) => {
-                    let ResourceClause::Declared {
-                        kind: ResourceKind::Composite,
-                        name: measure_name,
-                        arguments: measure_arguments,
-                        ..
-                    } = measure
-                    else {
-                        return Err(ClickError::new(format!(
-                            "function-level `decreases` in `{}` must name one composite resource",
-                            function.signature().name()
-                        )));
-                    };
-                    let mut resource_index = 0;
-                    let mut matched = None;
-                    for requirement in function.requires() {
-                        let Requirement::Resource(required) = requirement else {
-                            continue;
-                        };
-                        if matches!(
-                            required,
-                            ResourceClause::Declared {
-                                kind: ResourceKind::Composite,
-                                name,
-                                arguments,
-                                ..
-                            } if name == measure_name && arguments == measure_arguments
-                        ) {
-                            matched = Some(resource_index);
-                            break;
-                        }
-                        resource_index += 1;
-                    }
-                    let index = matched.ok_or_else(|| {
-                        ClickError::new(format!(
-                            "function-level `decreases {measure_name}(...)` in `{}` must exactly match an owned or viewed entry resource",
-                            function.signature().name()
-                        ))
-                    })?;
-                    Ok(crate::kernel::FunctionTerminationMeasure::ResourceRequirement(index))
+                    function_recursion_resource_requirement(function)?;
+                    Ok(crate::kernel::FunctionTerminationMeasure::Expression(
+                        describe_resource_clause(measure),
+                    ))
                 }
             })
             .transpose()?;
@@ -4782,6 +4821,7 @@ impl parser::ProgramLayouts {
             .map(|function| (function.name(), function.source_name()))
             .collect::<BTreeMap<_, _>>();
         for function in &execution.functions {
+            tables.register_local_bindings(function);
             tables.register_string_literals(function);
             let captures = function.closure_captures();
             if !captures.is_empty() {
@@ -4803,7 +4843,7 @@ impl parser::ProgramLayouts {
             }
             tables.aggregate_objects.insert(
                 function.source_name().to_string(),
-                function.local_struct_values().clone(),
+                source_struct_names(function.local_struct_values()),
             );
             if let Some(interface) = function.trait_interface()
                 && let Some(interface) = source_names.get(interface)
@@ -4907,9 +4947,17 @@ impl parser::ProgramLayouts {
                 function.source_name().to_string(),
                 parser::FunctionLocals {
                     execution_name: Some(function.name().to_string()),
-                    struct_pointers: function.local_struct_pointers().clone(),
-                    references: function.local_references().clone(),
-                    pointers: function.local_pointers().clone(),
+                    struct_pointers: source_struct_names(function.local_struct_pointers()),
+                    references: function
+                        .local_references()
+                        .iter()
+                        .map(|name| name.source_name().to_owned())
+                        .collect(),
+                    pointers: function
+                        .local_pointers()
+                        .iter()
+                        .map(|name| name.source_name().to_owned())
+                        .collect(),
                     loop_iterators: function.loop_iterators().to_vec(),
                 },
             );
@@ -5481,11 +5529,17 @@ pub(in crate::surface) fn build_function_environment(
                     Some(FunctionDecrease::Binder(binder)) => Some(binder.clone()),
                     _ => None,
                 };
-                if !recursion_measure.is_empty() || recursion_binder.is_some() {
+                let recursion_resource = function_recursion_resource_requirement(function_block)?;
+                if !recursion_measure.is_empty()
+                    || recursion_binder.is_some()
+                    || recursion_resource.is_some()
+                {
                     function =
                         function.with_recursion_peers(function_block.recursion_peers().to_vec());
                 }
-                function = function.with_recursion_binder(recursion_binder);
+                function = function
+                    .with_recursion_binder(recursion_binder)
+                    .with_recursion_resource(recursion_resource);
                 function = function.with_recursion_measure(recursion_measure);
                 function = function
                     .with_trailing_value_parameters(function_block.witness_count())
@@ -5809,7 +5863,7 @@ fn with_closure_instance(
     let parameters = contract.interface().value_parameters().to_vec();
     let mut arguments = vec![SpecPredicateArgument::Value(
         SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            crate::kernel::C_CONTRACT_RESULT_NAME,
+            crate::kernel::CONTRACT_RESULT,
         )),
     )];
     arguments.extend(parameters.iter().map(|parameter| {
@@ -5958,7 +6012,7 @@ pub(in crate::surface) fn function_resource_summary(
         let result_binding = BTreeMap::from([(
             "result".to_string(),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                crate::kernel::CONTRACT_RESULT,
             )),
         )]);
         let result_substitutions = ContractSubstitutions::for_contract_result(&result_binding);
@@ -6055,7 +6109,7 @@ pub(in crate::surface) fn function_resource_constructors(
             let result_binding = BTreeMap::from([(
                 "result".to_string(),
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                    crate::kernel::CONTRACT_RESULT,
                 )),
             )]);
             let resource = substitute_resource_clause_for_summary_in(
@@ -7756,7 +7810,7 @@ int32 answer() {
             parsed.values().map(|(_, function)| function),
         );
         assert!(
-            !summary.never_taken().contains("x"),
+            !summary.never_taken().contains(&("x").into()),
             "`&x` is written in v4, so `x` must not be reported: {:?}",
             summary.never_taken()
         );

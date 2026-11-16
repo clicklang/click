@@ -107,8 +107,9 @@ fn authority_test_protected(argument: ContractExpression) -> ResourceClause {
 
 #[test]
 fn authority_type_argument_requires_exact_unary_pointer_family() {
-    let pointer =
-        ContractExpression::ProgramExpression(ProgramExpression::Variable("p".to_string()));
+    let pointer = ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        ("p".to_string()).into(),
+    ));
     let accepted = expand_resource_type_arguments(
         "authority",
         vec![authority_test_protected(pointer.clone())],

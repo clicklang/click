@@ -220,7 +220,7 @@ fn retained_return_and_caller_receipt_do_not_export_growing_prefixes() {
                 .unwrap();
                 crate::kernel::loops::assign_call_result(
                     &mut state,
-                    "received",
+                    &("received").into(),
                     value,
                     &mut obligations,
                     &PureFactContext::new(),
@@ -313,6 +313,7 @@ fn retained_pointer_step_receipts_do_not_walk_dags_or_sibling_results() {
             let expression = ProgramExpression::StepResult {
                 step: 11,
                 origin: crate::kernel::StepOrigin::Call("step".into()),
+                ends: true,
             };
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -415,6 +416,7 @@ fn float_steps_and_returns_keep_shared_roots_without_exporting_prefixes() {
                     origin: crate::kernel::StepOrigin::Operator(
                         crate::kernel::OperatorKind::Ternary,
                     ),
+                    ends: true,
                 };
                 let paths = evaluate_expression_value_paths(
                     &after,

@@ -3,16 +3,14 @@
 //! One conservative syntactic pass over every parsed function body, run before
 //! any verification query, so that the kernel can decide that a pointer value
 //! it cannot resolve does not designate a local the program never addresses.
-//! The answer is a set of *names* and is deliberately program-wide;
-//! [`crate::kernel::block_is_never_address_taken_local`] says why,
-//! and carries the soundness argument for spending it.
+//! The answer is a set of declaration references, shared across a verification
+//! session. C declarations in different functions or scopes have distinct IDs;
+//! the legacy Named alternative remains conservative for other frontends.
 //!
-//! The pass is default-deny in both directions. A name is reported only if
-//! every declaration of it, in every function, is scalar or pointer typed, and
-//! it never occurs anywhere under an address-forming node. Anything the walk
-//! cannot account for — a name it never saw declared, or an opaque runtime
-//! pointer literal in an imported body — is simply absent from
-//! the result, which is the same as being addressable.
+//! The pass is default-deny. A declaration is reported only for scalar or
+//! pointer objects whose address never occurs under an address-forming node.
+//! An undeclared reference or opaque runtime pointer literal contributes no
+//! inaccessible-local claim.
 //!
 //! The two structural walks below (`child_expressions`, `child_statements`)
 //! are the only exhaustive matches: a syntax form added later must be added to
@@ -29,16 +27,16 @@ mod lowered;
 pub struct AddressTakenSummary {
     /// Every name declared as an automatic object with a scalar or pointer
     /// type, anywhere in the bundle.
-    scalar_declarations: BTreeSet<String>,
+    scalar_declarations: BTreeSet<crate::kernel::BindingName>,
     /// Every name the bundle can form an address of: declared with an
     /// aggregate type somewhere, so that its name converts to a pointer on
     /// use, or occurring anywhere under an address-forming node.
-    taken: BTreeSet<String>,
+    taken: BTreeSet<crate::kernel::BindingName>,
 }
 
 impl AddressTakenSummary {
     /// The names no function in this bundle can form the address of.
-    pub fn never_taken(&self) -> BTreeSet<String> {
+    pub fn never_taken(&self) -> BTreeSet<crate::kernel::BindingName> {
         self.scalar_declarations
             .difference(&self.taken)
             .cloned()
@@ -47,7 +45,7 @@ impl AddressTakenSummary {
 
     /// The names this bundle shows to be addressable. A name absent from both
     /// sets was never declared here and is addressable by default.
-    pub fn taken(&self) -> &BTreeSet<String> {
+    pub fn taken(&self) -> &BTreeSet<crate::kernel::BindingName> {
         &self.taken
     }
 }
@@ -75,7 +73,11 @@ pub fn summarize_address_taken<'a>(
             continue;
         }
         for parameter in function.parameters() {
-            declare(&mut summary, parameter.name(), parameter.interface_type());
+            declare(
+                &mut summary,
+                parameter.binding_name(),
+                parameter.interface_type(),
+            );
         }
         walk_statement(function.body(), &mut summary);
     }
@@ -89,11 +91,15 @@ pub fn summarize_address_taken<'a>(
 /// converts to its address wherever it is used, so declaring one is itself a
 /// way for the program to hold that address; such a name is refused rather
 /// than tracked.
-fn declare(summary: &mut AddressTakenSummary, name: &str, interface_type: InterfaceType) {
+fn declare(
+    summary: &mut AddressTakenSummary,
+    name: &crate::kernel::BindingName,
+    interface_type: InterfaceType,
+) {
     if scalar_or_pointer(interface_type) {
-        summary.scalar_declarations.insert(name.to_string());
+        summary.scalar_declarations.insert(name.clone());
     } else {
-        summary.taken.insert(name.to_string());
+        summary.taken.insert(name.clone().into());
     }
 }
 
@@ -175,7 +181,7 @@ fn walk_statement(statement: &CStatement, summary: &mut AddressTakenSummary) {
     }
     // A struct value's name is its address wherever it is used.
     if let CStatement::DeclareStructValue { name, .. } = statement {
-        summary.taken.insert(name.clone());
+        summary.taken.insert(name.clone().into());
     }
     let mut expressions = Vec::new();
     let mut statements = Vec::new();
@@ -217,7 +223,10 @@ fn walk_expression(expression: &CExpression, summary: &mut AddressTakenSummary) 
 
 /// Every name an expression mentions, at any depth and through any form,
 /// including the names its embedded statements declare and read.
-pub(super) fn mentioned_names(expression: &CExpression, names: &mut BTreeSet<String>) {
+pub(super) fn mentioned_names(
+    expression: &CExpression,
+    names: &mut BTreeSet<crate::kernel::BindingName>,
+) {
     match expression {
         CExpression::Variable(name)
         | CExpression::Assignment { name, .. }
@@ -238,12 +247,15 @@ pub(super) fn mentioned_names(expression: &CExpression, names: &mut BTreeSet<Str
 }
 
 /// The same for a statement, used for a statement expression under an `&`.
-fn statement_mentioned_names(statement: &CStatement, names: &mut BTreeSet<String>) {
+fn statement_mentioned_names(
+    statement: &CStatement,
+    names: &mut BTreeSet<crate::kernel::BindingName>,
+) {
     match statement {
-        CStatement::Declare { name, .. }
-        | CStatement::DeclareStructValue { name, .. }
-        | CStatement::Assign { name, .. }
-        | CStatement::HeapAllocate { target: name, .. } => {
+        CStatement::Declare { name, .. } | CStatement::DeclareStructValue { name, .. } => {
+            names.insert(name.binding().clone());
+        }
+        CStatement::Assign { name, .. } | CStatement::HeapAllocate { target: name, .. } => {
             names.insert(name.clone());
         }
         _ => {}
@@ -260,7 +272,7 @@ fn statement_mentioned_names(statement: &CStatement, names: &mut BTreeSet<String
 }
 
 /// The immediate subexpressions and substatements of one expression.
-fn child_expressions<'a>(
+pub(crate) fn child_expressions<'a>(
     expression: &'a CExpression,
     expressions: &mut Vec<&'a CExpression>,
     statements: &mut Vec<&'a CStatement>,
@@ -472,8 +484,14 @@ mod tests {
     fn a_scalar_local_whose_address_is_never_taken_is_reported() {
         let summary = summary("int32 f(void) { int32 x; int32* q; x = 5; return x; }\n");
         let never = summary.never_taken();
-        assert!(never.contains("x"), "{never:?}");
-        assert!(never.contains("q"), "{never:?}");
+        assert!(
+            never.iter().any(|binding| binding.source_name() == "x"),
+            "{never:?}"
+        );
+        assert!(
+            never.iter().any(|binding| binding.source_name() == "q"),
+            "{never:?}"
+        );
     }
 
     #[test]
@@ -481,15 +499,37 @@ mod tests {
         let call = summary(
             "int32* echo(int32* p) { return p; }\nvoid f(void) { int32 x; int32* q; x = 5; q = echo(&x); x = 1; }\n",
         );
-        assert!(!call.never_taken().contains("x"), "{:?}", call.taken());
+        assert!(
+            !call
+                .never_taken()
+                .iter()
+                .any(|binding| binding.source_name() == "x"),
+            "{:?}",
+            call.taken()
+        );
         let indexed =
             summary("void f(void) { int32 a[4]; int32 i; int32* p; i = 0; p = &a[i]; }\n");
-        assert!(!indexed.never_taken().contains("a"));
-        assert!(!indexed.never_taken().contains("i"));
+        assert!(
+            !indexed
+                .never_taken()
+                .iter()
+                .any(|binding| binding.source_name() == "a")
+        );
+        assert!(
+            !indexed
+                .never_taken()
+                .iter()
+                .any(|binding| binding.source_name() == "i")
+        );
         let field = summary(
             "struct pair { int32 first; };\nvoid f(void) { struct pair s; int32* p; s.first = 1; p = &s.first; }\n",
         );
-        assert!(!field.never_taken().contains("s"));
+        assert!(
+            !field
+                .never_taken()
+                .iter()
+                .any(|binding| binding.source_name() == "s")
+        );
     }
 
     /// An address does not have to come back from the call it was handed to.
@@ -503,21 +543,30 @@ mod tests {
             "void stash(int32** slot, int32* p) { *slot = p; }\nint32* fetch(int32** slot) { return *slot; }\nvoid v(int32** slot) { int32 x; int32* q; x = 5; stash(slot, &x); q = fetch(slot); x = 1; }\n",
         );
         assert!(
-            !summary.never_taken().contains("x"),
+            !summary
+                .never_taken()
+                .iter()
+                .any(|binding| binding.source_name() == "x"),
             "the address escaped into `*slot`: {:?}",
             summary.never_taken()
         );
     }
 
     #[test]
-    fn a_name_taken_in_another_function_is_refused_everywhere() {
+    fn addressability_is_specific_to_a_declaration_in_its_function() {
         let summary = summary(
             "int32* echo(int32* p) { return p; }\nvoid taker(void) { int32 x; int32* q; q = echo(&x); }\nint32 innocent(void) { int32 x; x = 5; return x; }\n",
         );
-        assert!(
-            !summary.never_taken().contains("x"),
-            "one name, one answer for the whole session: {:?}",
-            summary.never_taken()
-        );
+        let never = summary.never_taken();
+        assert!(never.iter().any(|binding| {
+            binding
+                .local_id()
+                .is_some_and(|id| id.function() == "innocent" && id.spelling() == Some("x"))
+        }));
+        assert!(!never.iter().any(|binding| {
+            binding
+                .local_id()
+                .is_some_and(|id| id.function() == "taker" && id.spelling() == Some("x"))
+        }));
     }
 }

@@ -36,7 +36,7 @@ fn checked_index_substitution_reprojects_the_selected_scalar_read() {
         let pointer = address(index);
         crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 4);
         crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-            memory.clone(),
+            ProgramPoint::at(&memory),
             Box::new(pointer),
             LoadKind::Int32,
         ))
@@ -45,9 +45,12 @@ fn checked_index_substitution_reprojects_the_selected_scalar_read() {
     let MachineTerm::MemoryLoad(projected, pointer, _) = &original else {
         panic!("structural read");
     };
-    assert_ne!(*projected, memory);
+    assert_ne!(*projected.shared_memory(), memory);
     assert_eq!(
-        crate::kernel::prelude::canonical_load_projection_source(projected, pointer),
+        crate::kernel::prelude::canonical_load_projection_source(
+            projected.shared_memory(),
+            pointer
+        ),
         Some(memory.clone())
     );
     let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
@@ -375,7 +378,11 @@ fn structural_read_replacement_matches_retained_name_at_native_value_boundary() 
     let address = Pointer::symbolic(Variable(3_219_001));
     let name = exact_load(&memory, &address);
     let named = MachineTerm::Variable(name);
-    let read = MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
+    let read = MachineTerm::MemoryLoad(
+        ProgramPoint::at(&memory),
+        Box::new(address.clone()),
+        LoadKind::Int32,
+    );
     let observed = machine_variable(name);
     let replacement = MachineTerm::IntegerToMachine {
         value: SharedIntegerTerm::from(IntegerTerm::Add(
@@ -397,7 +404,7 @@ fn structural_read_replacement_matches_retained_name_at_native_value_boundary() 
     assert_eq!(rewrite.refusal(), None);
     assert_eq!(result, expected);
     let other = MachineTerm::MemoryLoad(
-        memory,
+        ProgramPoint::at(&memory),
         Box::new(address.offset_by_bytes(8)),
         LoadKind::Int32,
     );
@@ -431,14 +438,14 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
     };
     let read =
         |memory, pointer| MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Int32);
-    let goal = relation(read(memory.clone(), address.clone()));
+    let goal = relation(read(ProgramPoint::at(&memory), address.clone()));
     let expected = relation(MachineTerm::constant(37));
     assert_eq!(
         crate::kernel::eval::comparison_form(&goal),
         Some(expected.clone())
     );
     assert!(crate::kernel::eval::proposition_mentions_scalar_read(&goal));
-    let other_address = relation(read(memory, address.offset_by_bytes(4)));
+    let other_address = relation(read(ProgramPoint::at(&memory), address.offset_by_bytes(4)));
     assert_ne!(
         crate::kernel::eval::comparison_form(&other_address),
         Some(expected.clone())
@@ -447,7 +454,10 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
         Memory::new().store(address.clone(), ProgramValue::Int32(38u32.into())),
     );
     assert_ne!(
-        crate::kernel::eval::comparison_form(&relation(read(other_memory, address))),
+        crate::kernel::eval::comparison_form(&relation(read(
+            ProgramPoint::at(&other_memory),
+            address
+        ))),
         Some(expected)
     );
 }

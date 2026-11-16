@@ -643,8 +643,11 @@ fn arithmetic_read_atoms_keep_state_identity_without_scanning_storage() {
             );
         }
         let memory = intern_memory(memory);
-        let read =
-            MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Bits64);
+        let read = MachineTerm::MemoryLoad(
+            crate::kernel::ProgramPoint::at(&memory),
+            Box::new(address.clone()),
+            LoadKind::Bits64,
+        );
         let duplicate = read.clone();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(charge_bitvector(&read));
@@ -656,12 +659,19 @@ fn arithmetic_read_atoms_keep_state_identity_without_scanning_storage() {
             address.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
         ));
-        let different =
-            MachineTerm::MemoryLoad(changed, Box::new(address.clone()), LoadKind::Bits64);
+        let different = MachineTerm::MemoryLoad(
+            crate::kernel::ProgramPoint::at(&changed),
+            Box::new(address.clone()),
+            LoadKind::Bits64,
+        );
         assert!(!bitvector_equal(&read, &different));
         assert!(!bitvector_equal(
             &read,
-            &MachineTerm::MemoryLoad(memory, Box::new(address), LoadKind::Int32)
+            &MachineTerm::MemoryLoad(
+                crate::kernel::ProgramPoint::at(&memory),
+                Box::new(address),
+                LoadKind::Int32
+            )
         ));
         samples.push(work);
     }

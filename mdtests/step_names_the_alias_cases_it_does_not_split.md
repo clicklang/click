@@ -42,5 +42,5 @@ int32 stepped(int32 u) {
 
 ```expect
 fail: a simple step never splits the proof. Split the proof on the case condition first, then step each case:
-  if 0 == u {
+  if 0 == "step_names_the_alias_cases_it_does_not_split.c"::stepped.parameter(0) {
 ```

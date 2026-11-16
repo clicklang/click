@@ -1351,8 +1351,17 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
     let first = base.clone();
     let second = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(1));
     let third = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(2));
+    let local_i_block = crate::kernel::PointerBlock::AutomaticLocal {
+        binding: crate::kernel::LocalBindingId::new(
+            crate::kernel::LocalFunctionId::new(Some("fill3.c".into()), "fill3".into()),
+            false,
+            0,
+            Some("i".into()),
+        ),
+        instance: crate::kernel::LocalStorageInstance::Implicit,
+    };
     let local_i = Pointer {
-        block: "local:i".into(),
+        block: local_i_block.clone(),
         offset: PointerOffsetTerm::Constant(0),
     };
     let initial_memory = memory_with_symbolic_loadable_cells(
@@ -1376,12 +1385,12 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
         )));
     let final_memory = initial_memory
         .clone()
-        .with_block("local:i", 4)
+        .with_block(local_i_block.clone(), 4)
         .store(first, int32(0))
         .store(second, int32(1))
         .store(third, int32(2))
         .store(local_i, int32(3))
-        .without_local_block(&"local:i".into());
+        .without_local_block(&local_i_block);
 
     // The entry has a creation ledger with a fresh
     // identity; it records nothing here.
@@ -1416,14 +1425,16 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                 ),
             })
     );
+    let parsed_source = syntax::parse_functions_for_source(FILL3_C, "fill3.c")
+        .unwrap()
+        .remove(0);
+    let parameter_binding = parsed_source.parameters()[0].binding_name().clone();
     assert_eq!(
         implication_body(verified.theorem.proposition()),
         &Proposition::ProgramFunctionPartiallySatisfiesSpecification {
             function: Box::new(
                 {
-                    let parsed = syntax::parse_function(FILL3_C)
-                        .expect("fill3 should parse")
-                        .to_kernel_function();
+                    let parsed = parsed_source.to_kernel_function();
                     let ProgramStatement::Seq(statements) = parsed.body().clone() else {
                         panic!("fill3 body should have a prefix and suffix");
                     };
@@ -1446,12 +1457,15 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                         ProgramType::Int32,
                         "fill3",
                         vec![
-                            crate::kernel::program_parameter("p", ProgramType::Int32Pointer)
-                                .with_pointee_class(Some(
-                                    crate::kernel::effective_type::CAccessClass::Scalar(
-                                        crate::kernel::effective_type::CScalarClass::Int,
-                                    ),
-                                )),
+                            crate::kernel::program_parameter(
+                                parameter_binding.clone(),
+                                ProgramType::Int32Pointer,
+                            )
+                            .with_pointee_class(Some(
+                                crate::kernel::effective_type::CAccessClass::Scalar(
+                                    crate::kernel::effective_type::CScalarClass::Int,
+                                ),
+                            )),
                         ],
                         program_seq(
                             prefix.as_ref().clone(),
@@ -1489,7 +1503,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                 .with_resource_summary(
                     vec![ResourceSpec::memory(
                         MemorySegment::new(
-                            ProgramExpression::Variable("p".to_string()),
+                            ProgramExpression::Variable(("p".to_string()).into()),
                             ProgramExpression::Value(int32(0)),
                             ProgramExpression::Value(int32(3)),
                         ),
@@ -1503,7 +1517,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                     vec![SpecProposition::MemoryLoadable {
                         memory: SpecMemory::Current,
                         base: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                            "p".to_string(),
+                            parameter_binding.clone(),
                         )),
                         start: SpecExpression::Value(int32(0)),
                         end: SpecExpression::Value(int32(3)),
@@ -1511,7 +1525,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                     }],
                     vec![SpecProposition::Comparison {
                         left: SpecExpression::ProgramExpression(ProgramExpression::Variable(
-                            crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                            crate::kernel::CONTRACT_RESULT,
                         )),
                         operator: KernelComparisonOperator::Equal,
                         right: SpecExpression::Value(int32(2)),
@@ -2434,16 +2448,6 @@ fn a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name() {
 #[test]
 #[ignore = "nightly: verifies every C mdtest again under the read-name audit"]
 fn every_mdtest_names_each_read_once() {
-    // The naming walk never crosses a loop havoc (`step_effect::Evidence`):
-    // a loop's checked footprint comes from the proof's own annotation, so a
-    // read on either side keeps its own name and the footprint relates them.
-    // The load equality may cross that footprint, so these reads are
-    // reported though their two names are by design.
-    const LOOP_HAVOC_NAMES: &[&str] = &[
-        "a_callee_reads_inside_a_chunk_a_loop_holds",
-        "entry_alignment_premise_expands",
-        "shifted_loop_effect_preserves_prefix",
-    ];
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
     let mut paths = std::fs::read_dir(&directory)
         .unwrap()
@@ -2452,7 +2456,6 @@ fn every_mdtest_names_each_read_once() {
         .collect::<Vec<_>>();
     paths.sort();
     let mut duplicates = Vec::new();
-    let mut allowed_seen = Vec::new();
     for path in paths {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         let Ok(mdtest) = crate::cli::read_mdtest(&path) else {
@@ -2483,20 +2486,9 @@ fn every_mdtest_names_each_read_once() {
         if reports.is_empty() {
             continue;
         }
-        if LOOP_HAVOC_NAMES.contains(&name.as_str()) {
-            allowed_seen.push(name);
-        } else {
-            duplicates.push(format!("{name}: {reports:?}"));
-        }
+        duplicates.push(format!("{name}: {reports:?}"));
     }
     assert!(duplicates.is_empty(), "{duplicates:#?}");
-    // An entry that no longer reports is stale: remove it.
-    for name in LOOP_HAVOC_NAMES {
-        assert!(
-            allowed_seen.iter().any(|seen| seen == name),
-            "`{name}` no longer names a read twice; remove it from the list"
-        );
-    }
 }
 
 #[cfg(feature = "fast-gate")]
@@ -2604,7 +2596,7 @@ fn recorded_points_are_named_by_the_point_each_path_reached() {
     let mut states = RecordedStates::default();
     states.insert(ProgramPointSelector::Mark("left".into()), left.clone());
     states.insert(ProgramPointSelector::Mark("right".into()), right.clone());
-    let name = |state: &ExecutionState| states.point_name(state.reached_point().id().unwrap());
+    let name = |state: &ExecutionState| states.point_name(state.program_point_id().unwrap());
     assert_eq!(
         name(&left),
         Some(&ProgramPointSelector::Mark("left".into()))

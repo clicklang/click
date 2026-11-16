@@ -185,11 +185,41 @@ pub(in crate::surface) struct FunctionLocals {
         Vec<Option<crate::languages::interface::RustLoopIterator>>,
 }
 
+/// C declarations indexed from the selected source, independent of facts or execution.
+#[derive(Clone, Default)]
+pub(in crate::surface) struct SourceBindingIndex {
+    declarations: BTreeMap<crate::kernel::LocalBindingId, SourceBindingInfo>,
+    statics: BTreeMap<crate::kernel::StaticBindingId, SourceBindingInfo>,
+    static_files: BTreeSet<Option<String>>,
+    owners: BTreeMap<String, BTreeSet<Option<String>>>,
+    sites: BTreeMap<(Option<String>, String, Vec<u32>, String), crate::kernel::LocalBindingId>,
+    field_places: BTreeMap<String, BTreeMap<crate::kernel::BindingName, Vec<super::FieldPlace>>>,
+}
+impl SourceBindingIndex {
+    fn info(&self, binding: &crate::kernel::BindingName) -> Option<&SourceBindingInfo> {
+        match binding {
+            crate::kernel::BindingName::Local(id) => self.declarations.get(id),
+            crate::kernel::BindingName::Static(id) => self.statics.get(id),
+            crate::kernel::BindingName::Named(_) | crate::kernel::BindingName::ContractResult => {
+                None
+            }
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+struct SourceBindingInfo {
+    struct_name: Option<String>,
+    aggregate: bool,
+    array_shape: Option<Vec<u32>>,
+}
+
 /// The program facts a sidecar is parsed against: its struct and union
 /// layouts, and by function, the objects a contract may name and the locals
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    pub(in crate::surface) local_bindings: std::sync::Arc<SourceBindingIndex>,
     pub(in crate::surface) string_literal_values:
         std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
     pub(in crate::surface) string_literal_owners:
@@ -847,6 +877,7 @@ fn reduce_contract_binary_expression(
 }
 
 struct Parser {
+    local_bindings: std::sync::Arc<SourceBindingIndex>,
     string_literal_values: std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
     string_literal_owners: std::sync::Arc<BTreeMap<String, BTreeSet<Option<String>>>>,
     /// The loop clause currently being read, including its phase proofs.
@@ -1274,6 +1305,108 @@ struct ParsedFunctionSignature {
 }
 
 impl ProgramLayouts {
+    pub(in crate::surface) fn register_local_bindings(
+        &mut self,
+        function: &crate::languages::interface::ImportedFunction,
+    ) {
+        self.register_function_static_bindings(function);
+        let index = std::sync::Arc::make_mut(&mut self.local_bindings);
+        let mut record = |binding: &crate::kernel::BindingName, site: Option<&syntax::CSite>| {
+            let Some(id) = binding.local_id() else {
+                return;
+            };
+            index
+                .owners
+                .entry(id.function().to_owned())
+                .or_default()
+                .insert(id.source().map(str::to_owned));
+            let parameter = id
+                .is_parameter()
+                .then(|| function.parameters().get(id.ordinal() as usize))
+                .flatten();
+            let struct_name = id.struct_name().map(str::to_owned).or_else(|| {
+                function
+                    .local_struct_pointers()
+                    .get(binding)
+                    .or_else(|| function.local_struct_values().get(binding))
+                    .cloned()
+                    .or_else(|| parameter.and_then(|p| p.struct_name().map(str::to_owned)))
+            });
+            let aggregate = id
+                .program_type()
+                .is_some_and(|ty| ty.array_element_type().is_some())
+                || function.local_struct_values().contains_key(binding)
+                || parameter.is_some_and(|p| p.is_struct_value());
+            let array_shape = id.array_shape().map(<[u32]>::to_vec);
+            if !aggregate
+                && id.program_type().is_some_and(ProgramType::is_pointer)
+                && let Some(layout) = struct_name
+                    .as_ref()
+                    .and_then(|name| function.structs().get(name))
+            {
+                index
+                    .field_places
+                    .entry(function.name().to_owned())
+                    .or_default()
+                    .insert(
+                        binding.clone(),
+                        super::scalar_field_places(layout, function.structs()),
+                    );
+            }
+            index.declarations.insert(
+                id.clone(),
+                SourceBindingInfo {
+                    struct_name,
+                    aggregate,
+                    array_shape,
+                },
+            );
+            if let Some(path) = site
+                .and_then(syntax::CSite::get)
+                .and_then(|site| site.source_path())
+                && let Some(name) = id.spelling()
+            {
+                index.sites.insert(
+                    (
+                        id.source().map(str::to_owned),
+                        id.function().to_owned(),
+                        path.to_vec(),
+                        name.to_owned(),
+                    ),
+                    id.clone(),
+                );
+            }
+        };
+        for parameter in function.parameters() {
+            record(parameter.binding_name(), None);
+        }
+        let mut statements = vec![function.body()];
+        let mut expressions = Vec::new();
+        while !statements.is_empty() || !expressions.is_empty() {
+            while let Some(statement) = statements.pop() {
+                match statement {
+                    syntax::CStatement::Declare { name, .. }
+                    | syntax::CStatement::DeclareStructValue { name, .. } => {
+                        record(name.binding(), statement.site())
+                    }
+                    _ => {}
+                }
+                crate::languages::c::address_taken::child_statements(
+                    statement,
+                    &mut expressions,
+                    &mut statements,
+                );
+            }
+            while let Some(expression) = expressions.pop() {
+                crate::languages::c::address_taken::child_expressions(
+                    expression,
+                    &mut expressions,
+                    &mut statements,
+                );
+            }
+        }
+    }
+
     pub(in crate::surface) fn register_string_literals(
         &mut self,
         function: &crate::languages::interface::ImportedFunction,
@@ -1429,6 +1562,7 @@ impl Parser {
             &layouts.record_spellings,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
+        parser.local_bindings = layouts.local_bindings;
         parser.string_literal_values = layouts.string_literal_values;
         parser.string_literal_owners = layouts.string_literal_owners;
         parser.program_object_names_by_function = layouts.program_object_names;
@@ -1675,6 +1809,7 @@ impl Parser {
         };
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
+            local_bindings: Default::default(),
             string_literal_values: Default::default(),
             string_literal_owners: Default::default(),
             rust_object_traits,
@@ -1951,11 +2086,9 @@ impl Parser {
             return None;
         };
         match inner.as_ref() {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(slice))
-                if self.rust_slice_params.contains(slice) =>
-            {
-                Some(slice)
-            }
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(slice),
+            )) if self.rust_slice_params.contains(slice) => Some(slice),
             _ => None,
         }
     }
@@ -2012,21 +2145,23 @@ impl Parser {
                         .to_string();
                     spread.push(argument);
                     spread.push(ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable(format!("{slice}_len")),
+                        ProgramExpression::Variable(format!("{slice}_len").into()),
                     ));
                 }
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(slice))
-                    if self.rust_slice_params.contains(&slice) =>
-                {
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    crate::kernel::BindingName::Named(slice),
+                )) if self.rust_slice_params.contains(&slice) => {
                     let length = ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable(format!("{slice}_len")),
+                        ProgramExpression::Variable(format!("{slice}_len").into()),
                     );
                     spread.push(ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable(slice),
+                        ProgramExpression::Variable(slice.into()),
                     ));
                     spread.push(length);
                 }
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(slice)) => {
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    crate::kernel::BindingName::Named(slice),
+                )) => {
                     return Err(self.error(format!(
                         "argument {} of `{name}` is a slice, but `{slice}` is not a slice parameter; pass one, or `slice::from_raw_parts(p, n)` for a pointer and a length",
                         index + 1
@@ -3006,7 +3141,7 @@ impl Parser {
             .get(&alias)
             .ok_or_else(|| self.error(format!("unknown C source alias `{alias}`")))?;
         let expression = match &self.qualified_objects {
-            None => ProgramExpression::Variable(qualified.clone()),
+            None => ProgramExpression::Variable((qualified.clone()).into()),
             Some(objects) => objects
                 .get(source)
                 .and_then(|objects| objects.get(&name))
@@ -3037,10 +3172,15 @@ impl Parser {
     fn parse_segment_primary(
         &mut self,
     ) -> Result<(ContractExpression, ProgramExpression), ClickError> {
+        if let Some(expression) = self.take_local_binding_reference()? {
+            let lowered = contract_expression_as_program_expression(&expression)
+                .ok_or_else(|| self.error("a C declaration reference must denote a C place"))?;
+            return Ok((expression, lowered));
+        }
         if self.peek_next() == Some(&Token::ColonColon) {
             let (name, expression) = self.parse_qualified_program_name()?;
             return Ok((
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(name)),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable((name).into())),
                 expression,
             ));
         }
@@ -3059,7 +3199,8 @@ impl Parser {
     /// A parameter shadowing the global is not in the per-function shape map,
     /// so it keeps the parameter's own type.
     fn retype_global_array_pointer(&self, expression: &ProgramExpression) -> ProgramExpression {
-        let ProgramExpression::Variable(name) = expression else {
+        let ProgramExpression::Variable(crate::kernel::BindingName::Named(name)) = expression
+        else {
             return expression.clone();
         };
         match self
@@ -5384,7 +5525,7 @@ impl Parser {
             .filter_map(|parameter| {
                 let layout = self.struct_layouts.get(parameter.struct_name()?)?;
                 Some((
-                    parameter.name().to_string(),
+                    crate::kernel::BindingName::from(parameter.name()),
                     super::scalar_field_places(layout, &self.struct_layouts),
                 ))
             })
@@ -5404,10 +5545,17 @@ impl Parser {
                 && let Some(layout) = self.struct_layouts.get(struct_name)
             {
                 parameter_field_places.insert(
-                    name.clone(),
+                    crate::kernel::BindingName::from(name),
                     super::scalar_field_places(layout, &self.struct_layouts),
                 );
             }
+        }
+        if let Some(places) = self.local_bindings.field_places.get(&table_name) {
+            parameter_field_places.extend(
+                places
+                    .iter()
+                    .map(|(binding, fields)| (binding.clone(), fields.clone())),
+            );
         }
         let pointee_field_places =
             super::pointee_field_places(parameter_field_places.values(), &self.struct_layouts);
@@ -5880,7 +6028,7 @@ impl Parser {
         }
         let name = self.take_rust_slice_len(&name).unwrap_or(name);
         Ok(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable(name),
+            ProgramExpression::Variable((name).into()),
         ))
     }
 
@@ -7762,7 +7910,7 @@ impl Parser {
                         kind: ResourceKind::Token,
                         name: family.to_string(),
                         arguments: vec![ContractExpression::ProgramExpression(
-                            ProgramExpression::Variable("mutex".to_string()),
+                            ProgramExpression::Variable(("mutex".to_string()).into()),
                         )],
                         parameter_types: vec![InterfaceType::VoidPointer],
                     }),
@@ -8471,24 +8619,6 @@ impl Parser {
             return Ok(proposition);
         }
 
-        if self.peek_ident() == Some("changes_only") && self.peek_next() == Some(&Token::LParen) {
-            self.position += 2;
-            let before = self.parse_program_point_selector()?;
-            self.expect(Token::Comma)?;
-            let after = self.parse_program_point_selector()?;
-            let mut resources = Vec::new();
-            while self.peek() == Some(&Token::Comma) {
-                self.position += 1;
-                resources.push(self.parse_resource_subject()?);
-            }
-            self.expect(Token::RParen)?;
-            return Ok(ClickProposition::ChangesOnly {
-                before,
-                after,
-                resources,
-            });
-        }
-
         if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
             let start = self.position;
             self.position += 2;
@@ -9095,7 +9225,9 @@ impl Parser {
             let proposition_binding = match &left {
                 ContractExpression::Binding(name)
                 | ContractExpression::CBinding(name)
-                | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    crate::kernel::BindingName::Named(name),
+                )) => {
                     self.specification_binding_kind(name)
                         == Some(spec_arithmetic::SpecificationBinding::Proposition)
                 }
@@ -9266,11 +9398,9 @@ impl Parser {
     /// point, `old(bytes)` or `at(point, bytes)`.
     fn rust_slice_parameter_read<'a>(&self, expression: &'a ContractExpression) -> Option<&'a str> {
         match expression {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(slice))
-                if self.rust_slice_params.contains(slice) =>
-            {
-                Some(slice)
-            }
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(slice),
+            )) if self.rust_slice_params.contains(slice) => Some(slice),
             _ => self.read_slice_parameter(expression),
         }
     }
@@ -9290,9 +9420,9 @@ impl Parser {
             variant: "Slice".to_string(),
             arguments: vec![
                 expression.clone(),
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(format!(
-                    "{parameter}_len"
-                ))),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    format!("{parameter}_len").into(),
+                )),
             ],
         })
     }
@@ -11028,22 +11158,35 @@ impl Parser {
             }
             "observe" => {
                 self.expect(Token::LParen)?;
-                let start = self.position;
-                let resource = if let Ok(quantity) = self.parse_contract_expression()
-                    && self.peek_ident() == Some("of")
+                if matches!(self.peek_ident(), Some("at" | "old"))
+                    && self.peek_next() == Some(&Token::LParen)
                 {
-                    self.position += 1;
-                    let resource = self.parse_resource_target(ResourceAccessMode::Own)?;
-                    ResourceClause::Quantified {
-                        quantity,
-                        resource: Box::new(resource),
-                    }
+                    let base = self.parse_contract_primary()?;
+                    self.expect(Token::LBracket)?;
+                    let start = self.parse_contract_expression()?;
+                    self.expect(Token::DotDot)?;
+                    let end = self.parse_contract_expression()?;
+                    self.expect(Token::RBracket)?;
+                    self.expect(Token::RParen)?;
+                    ProofTactic::ObserveSavedMemory { base, start, end }
                 } else {
-                    self.position = start;
-                    self.parse_resource_target(ResourceAccessMode::View)?
-                };
-                self.expect(Token::RParen)?;
-                ProofTactic::ObserveResource(resource)
+                    let start = self.position;
+                    let resource = if let Ok(quantity) = self.parse_contract_expression()
+                        && self.peek_ident() == Some("of")
+                    {
+                        self.position += 1;
+                        let resource = self.parse_resource_target(ResourceAccessMode::Own)?;
+                        ResourceClause::Quantified {
+                            quantity,
+                            resource: Box::new(resource),
+                        }
+                    } else {
+                        self.position = start;
+                        self.parse_resource_target(ResourceAccessMode::View)?
+                    };
+                    self.expect(Token::RParen)?;
+                    ProofTactic::ObserveResource(resource)
+                }
             }
             "witness" => {
                 // `witness { k: value, ... }`: a value for each named binder
@@ -11712,7 +11855,7 @@ impl Parser {
         self.expect(Token::RParen)?;
         let mut resource_arguments = Vec::new();
         let first_reference = arguments.iter().position(|argument| {
-            matches!(argument, ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) | ContractExpression::Binding(name)
+            matches!(argument, ContractExpression::ProgramExpression(ProgramExpression::Variable(crate::kernel::BindingName::Named(name))) | ContractExpression::Binding(name)
                 if self.names.resource_bindings.contains_key(name))
                 || matches!(argument, ContractExpression::Resource(subject)
                     if matches!(subject.as_ref(), ResourceSubject::Instance { .. }))
@@ -11720,8 +11863,12 @@ impl Parser {
         if let Some(first) = first_reference {
             for argument in arguments.drain(first..) {
                 let reference = match argument {
-                    ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
-                    | ContractExpression::Binding(name) => name,
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                        name.named()
+                            .ok_or_else(|| self.error("resource arguments must name instances"))?
+                            .to_owned()
+                    }
+                    ContractExpression::Binding(name) => name,
                     ContractExpression::Resource(subject) => match *subject {
                         ResourceSubject::Instance { name, .. } => name,
                         _ => return Err(self.error("resource arguments must name instances")),
@@ -13074,8 +13221,14 @@ impl Parser {
             self.parse_segment_primary()?
         };
         let mut struct_name = match &surface_base {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binding @ (crate::kernel::BindingName::Local(_)
+                | crate::kernel::BindingName::Static(_)),
+            )) => self.binding_struct_name(binding).cloned(),
             ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => self
                 .names
                 .struct_params
                 .get(name)
@@ -13096,8 +13249,9 @@ impl Parser {
             _ => None,
         };
         if let ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) =
-            &surface_base
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) = &surface_base
             && self
                 .names
                 .struct_params
@@ -13106,8 +13260,14 @@ impl Parser {
             struct_name = None;
         }
         let names_aggregate_object = match &surface_base {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binding @ (crate::kernel::BindingName::Local(_)
+                | crate::kernel::BindingName::Static(_)),
+            )) => self.binding_is_aggregate(binding),
             ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => {
                 self.names.aggregate_objects.contains_key(name)
                     || self.names.global_array_shapes.contains_key(name)
                     || self.qualified_object(name).is_some()
@@ -13117,16 +13277,26 @@ impl Parser {
         let mut dereferences_pointer = !names_aggregate_object;
         let mut union_name: Option<String> = None;
         let mut struct_array_element_width = match &surface_base {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binding @ (crate::kernel::BindingName::Local(_)
+                | crate::kernel::BindingName::Static(_)),
+            )) => self
+                .local_bindings
+                .info(binding)
+                .filter(|info| info.array_shape.is_some())
+                .and_then(|info| info.struct_name.as_ref())
+                .and_then(|name| self.struct_layouts.get(name))
+                .map(|layout| layout.size_bytes()),
             ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
-                if self.names.contains(NameKind::StructArrayParameter, name) =>
-            {
-                struct_name
-                    .as_ref()
-                    .and_then(|name| self.struct_layouts.get(name))
-                    .map(|layout| layout.size_bytes())
-            }
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) if self.names.contains(NameKind::StructArrayParameter, name) => struct_name
+                .as_ref()
+                .and_then(|name| self.struct_layouts.get(name))
+                .map(|layout| layout.size_bytes()),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => self
                 .qualified_object(name)
                 .filter(|object| object.struct_name.is_some() && object.array_shape.is_some())
                 .and_then(|object| object.struct_name.as_ref())
@@ -13135,15 +13305,35 @@ impl Parser {
             _ => None,
         };
         let mut struct_array_shape = match &surface_base {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binding @ (crate::kernel::BindingName::Local(_)
+                | crate::kernel::BindingName::Static(_)),
+            )) => self
+                .local_bindings
+                .info(binding)
+                .filter(|info| info.struct_name.is_some())
+                .and_then(|info| info.array_shape.clone()),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => self
                 .qualified_object(name)
                 .filter(|object| object.struct_name.is_some())
                 .and_then(|object| object.array_shape.clone()),
             _ => None,
         };
         let mut scalar_array_shape = match &surface_base {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binding @ (crate::kernel::BindingName::Local(_)
+                | crate::kernel::BindingName::Static(_)),
+            )) => self
+                .local_bindings
+                .info(binding)
+                .filter(|info| info.struct_name.is_none())
+                .and_then(|info| info.array_shape.clone()),
             ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => self
                 .names
                 .global_array_shapes
                 .get(name)
@@ -13566,15 +13756,15 @@ impl Parser {
         };
         let names_reference = match &surface_base {
             ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-                carries_reference(name)
-            }
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => carries_reference(name),
             _ => false,
         };
         let names_scalar_referent = matches!(
             &surface_base,
             ContractExpression::ProgramExpression(ProgramExpression::Index(carrier, _))
-                if matches!(carrier.as_ref(), ProgramExpression::Variable(name) if carries_reference(name))
+                if matches!(carrier.as_ref(), ProgramExpression::Variable(crate::kernel::BindingName::Named(name)) if carries_reference(name))
         );
         if dereference && (names_reference || names_scalar_referent) {
             return Err(self.error(
@@ -13620,11 +13810,11 @@ impl Parser {
             }
             // `*bytes` on a slice parameter is the whole slice, as `*value`
             // is the one object a reference refers to.
-            if let ProgramExpression::Variable(name) = &base
+            if let ProgramExpression::Variable(crate::kernel::BindingName::Named(name)) = &base
                 && self.rust_slice_params.contains(name)
             {
                 let length = ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    format!("{name}_len"),
+                    format!("{name}_len").into(),
                 ));
                 let end_expression = length;
                 let end = contract_expression_as_program_expression(&end_expression)
@@ -13671,20 +13861,30 @@ impl Parser {
             && let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) =
                 &surface_base
         {
-            let object = if !self.names.program_parameter_types.contains_key(name)
-                && !self.names.contains(NameKind::StructArrayParameter, name)
-                && let Some(struct_name) = self.names.aggregate_objects.get(name)
-            {
-                Some((
-                    struct_name,
-                    ProgramExpression::AddressOf(Box::new(base.clone())),
-                ))
+            let object = if name.named().is_none() {
+                self.local_bindings
+                    .info(name)
+                    .filter(|info| info.aggregate)
+                    .and_then(|info| info.struct_name.as_ref())
+                    .map(|name| (name, ProgramExpression::AddressOf(Box::new(base.clone()))))
+            } else if let Some(name) = name.named() {
+                if !self.names.program_parameter_types.contains_key(name)
+                    && !self.names.contains(NameKind::StructArrayParameter, name)
+                    && let Some(struct_name) = self.names.aggregate_objects.get(name)
+                {
+                    Some((
+                        struct_name,
+                        ProgramExpression::AddressOf(Box::new(base.clone())),
+                    ))
+                } else {
+                    self.qualified_object(name)
+                        .filter(|object| object.address.is_none() && object.array_shape.is_none())
+                        .and_then(|object| {
+                            Some((object.struct_name.as_ref()?, object.expression.clone()))
+                        })
+                }
             } else {
-                self.qualified_object(name)
-                    .filter(|object| object.address.is_none() && object.array_shape.is_none())
-                    .and_then(|object| {
-                        Some((object.struct_name.as_ref()?, object.expression.clone()))
-                    })
+                None
             };
             if let Some((struct_name, address)) = object {
                 let mut segment = self.object_segment(address, struct_name.clone())?;
@@ -13701,7 +13901,7 @@ impl Parser {
         // A place written alone is its own storage: one element at its
         // address.
         if self.peek() != Some(&Token::LBracket) {
-            if let ProgramExpression::Variable(name) = &base
+            if let ProgramExpression::Variable(crate::kernel::BindingName::Named(name)) = &base
                 && self.names.struct_params.contains_key(name)
                 && !names_aggregate_object
             {
@@ -13717,7 +13917,8 @@ impl Parser {
                     else {
                         return Err(self.error("this C expression has no storage to own"));
                     };
-                    self.qualified_object(name)
+                    name.named()
+                        .and_then(|name| self.qualified_object(name))
                         .and_then(|object| object.address.clone())
                         .ok_or_else(|| self.error("this C expression has no storage to own"))?
                 }
@@ -14118,7 +14319,9 @@ impl Parser {
         base: ProgramExpression,
         field_name: &str,
     ) -> Result<ProgramExpression, ClickError> {
-        self.refuse_trait_receiver_field(named_place_base(&base).map(String::as_str))?;
+        self.refuse_trait_receiver_field(
+            named_place_base(&base).and_then(crate::kernel::BindingName::named),
+        )?;
         let Some(field) = self.resolve_field_metadata(&base, field_name)? else {
             return Ok(ProgramExpression::Load(Box::new(base)));
         };
@@ -14149,14 +14352,10 @@ impl Parser {
         field_name: &str,
     ) -> Result<Option<CExpression>, ClickError> {
         if let CExpression::Variable(name) = &base {
-            self.refuse_trait_receiver_field(Some(name))?;
+            self.refuse_trait_receiver_field(name.named())?;
         }
         let struct_name = match &base {
-            CExpression::Variable(base_name) => self
-                .names
-                .struct_params
-                .get(base_name)
-                .or_else(|| self.names.aggregate_objects.get(base_name)),
+            CExpression::Variable(base_name) => self.binding_struct_name(base_name),
             CExpression::Field {
                 field_struct_name, ..
             } => field_struct_name.as_ref(),
@@ -14224,13 +14423,10 @@ impl Parser {
         let Some(base_name) = named_place_base(base) else {
             return Ok(None);
         };
-        let Some(struct_name) = self
-            .names
-            .struct_params
-            .get(base_name)
-            .or_else(|| self.names.aggregate_objects.get(base_name))
-        else {
-            self.reject_non_struct_arm_base(base_name, field_name)?;
+        let Some(struct_name) = self.binding_struct_name(base_name) else {
+            if let Some(name) = base_name.named() {
+                self.reject_non_struct_arm_base(name, field_name)?;
+            }
             return Ok(None);
         };
         if !self.struct_layouts.contains_key(struct_name) {
@@ -14244,8 +14440,60 @@ impl Parser {
     /// the layout through an entry-state or recorded-state wrapper. The
     /// pointer value may come from another state while a later field load
     /// still reads the surrounding state.
+    fn binding_struct_name(&self, binding: &crate::kernel::BindingName) -> Option<&String> {
+        match binding {
+            crate::kernel::BindingName::ContractResult => self
+                .names
+                .struct_params
+                .get("result")
+                .or_else(|| self.names.aggregate_objects.get("result")),
+            crate::kernel::BindingName::Static(id) => {
+                self.local_bindings.statics.get(id)?.struct_name.as_ref()
+            }
+            crate::kernel::BindingName::Local(id) => self
+                .local_bindings
+                .declarations
+                .get(id)?
+                .struct_name
+                .as_ref(),
+            crate::kernel::BindingName::Named(name) => self
+                .names
+                .struct_params
+                .get(name)
+                .or_else(|| self.names.aggregate_objects.get(name))
+                .or_else(|| {
+                    self.qualified_object(name)
+                        .and_then(|object| object.struct_name.as_ref())
+                }),
+        }
+    }
+    fn binding_is_aggregate(&self, binding: &crate::kernel::BindingName) -> bool {
+        match binding {
+            crate::kernel::BindingName::ContractResult => {
+                self.names.aggregate_objects.contains_key("result")
+            }
+            crate::kernel::BindingName::Static(id) => self
+                .local_bindings
+                .statics
+                .get(id)
+                .is_some_and(|info| info.aggregate),
+            crate::kernel::BindingName::Local(id) => self
+                .local_bindings
+                .declarations
+                .get(id)
+                .is_some_and(|info| info.aggregate),
+            crate::kernel::BindingName::Named(name) => {
+                self.names.aggregate_objects.contains_key(name)
+            }
+        }
+    }
+
     fn contract_expression_struct_name(&self, expression: &ContractExpression) -> Option<String> {
         match expression {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binding @ (crate::kernel::BindingName::Local(_)
+                | crate::kernel::BindingName::Static(_)),
+            )) => self.binding_struct_name(binding).cloned(),
             ContractExpression::CUnary {
                 lowered: ProgramExpression::Cast { pointee_struct, .. },
                 ..
@@ -14258,7 +14506,9 @@ impl Parser {
                 .qualified_object(name)
                 .and_then(|object| object.struct_name.clone()),
             ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => self
                 .names
                 .struct_params
                 .get(name)
@@ -14570,8 +14820,12 @@ impl Parser {
         ) {
             return Ok(());
         }
+        if matches!(operand, ProgramExpression::Variable(name) if name.named().is_none() && name.program_type() == Some(ProgramType::VoidPointer))
+        {
+            return Ok(());
+        }
         let name = match operand {
-            ProgramExpression::Variable(name) => Some(name.as_str()),
+            ProgramExpression::Variable(name) => name.named(),
             _ => None,
         };
         let Some(name) =
@@ -14917,7 +15171,7 @@ impl Parser {
         let carrier = self.reference_binding_carrier(name);
         self.position += 2;
         Ok(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable(carrier),
+            ProgramExpression::Variable((carrier).into()),
         ))
     }
 
@@ -14932,7 +15186,9 @@ impl Parser {
         mut expression: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
         if let ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) = &expression
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) = &expression
             && self.is_reference_binding(name)
         {
             let name = name.clone();
@@ -14943,8 +15199,9 @@ impl Parser {
                     "`{name}` is a struct reference; name a field as `{name}.field`, or its address as `&{name}`"
                 )));
             }
-            expression =
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(carrier));
+            expression = ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                (carrier).into(),
+            ));
             if !is_struct {
                 if self.peek() == Some(&Token::LBracket) {
                     return Err(self.error(format!(
@@ -14986,6 +15243,10 @@ impl Parser {
         }
         expression = self.resolve_reference_parameter(expression)?;
         let mut struct_name = match &expression {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binding @ (crate::kernel::BindingName::Local(_)
+                | crate::kernel::BindingName::Static(_)),
+            )) => self.binding_struct_name(binding).cloned(),
             ContractExpression::CUnary {
                 lowered: ProgramExpression::Cast { pointee_struct, .. },
                 ..
@@ -14998,7 +15259,9 @@ impl Parser {
                 .qualified_object(name)
                 .and_then(|object| object.struct_name.clone()),
             ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => self
                 .names
                 .struct_params
                 .get(name)
@@ -15012,7 +15275,9 @@ impl Parser {
         };
         // A struct double pointer indexes pointer slots, not struct objects.
         if let ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) = &expression
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        )) = &expression
             && self
                 .names
                 .struct_params
@@ -15022,8 +15287,20 @@ impl Parser {
         }
         let mut union_name: Option<String> = None;
         let mut struct_array_element_width = match &expression {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binding @ (crate::kernel::BindingName::Local(_)
+                | crate::kernel::BindingName::Static(_)),
+            )) => self
+                .local_bindings
+                .info(binding)
+                .filter(|info| info.array_shape.is_some())
+                .and_then(|info| info.struct_name.as_ref())
+                .and_then(|name| self.struct_layouts.get(name))
+                .map(|layout| layout.size_bytes()),
             ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => self
                 .names
                 .contains(NameKind::StructArrayParameter, name)
                 .then(|| {
@@ -15042,6 +15319,14 @@ impl Parser {
             _ => None,
         };
         let mut struct_array_shape = match &expression {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binding @ (crate::kernel::BindingName::Local(_)
+                | crate::kernel::BindingName::Static(_)),
+            )) => self
+                .local_bindings
+                .info(binding)
+                .filter(|info| info.struct_name.is_some())
+                .and_then(|info| info.array_shape.clone()),
             ContractExpression::QualifiedC { name, .. } => self
                 .qualified_object(name)
                 .filter(|object| object.struct_name.is_some())
@@ -15049,11 +15334,21 @@ impl Parser {
             _ => None,
         };
         let mut scalar_array_shape = match &expression {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                binding @ (crate::kernel::BindingName::Local(_)
+                | crate::kernel::BindingName::Static(_)),
+            )) => self
+                .local_bindings
+                .info(binding)
+                .filter(|info| info.struct_name.is_none())
+                .and_then(|info| info.array_shape.clone()),
             ContractExpression::QualifiedC { name, .. } => self
                 .qualified_object(name)
                 .and_then(|object| object.array_shape.clone()),
             ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => self
                 .names
                 .global_array_shapes
                 .get(name)
@@ -15349,16 +15644,18 @@ impl Parser {
                         access.click_type = None;
                         continue;
                     }
-                    if let ContractExpression::ProgramExpression(ProgramExpression::Variable(owner)) =
-                        &expression
+                    if let ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        crate::kernel::BindingName::Named(owner),
+                    )) = &expression
                         && self.peek() == Some(&Token::Dot)
                         && self.names.ended_instance_names.contains(owner)
                         && !self.names.is_bound(owner)
                     {
                         return Err(self.unknown_instance(owner, "resource instance"));
                     }
-                    if let ContractExpression::ProgramExpression(ProgramExpression::Variable(owner)) =
-                        &expression
+                    if let ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        crate::kernel::BindingName::Named(owner),
+                    )) = &expression
                         && let Some((identity, resource_name)) =
                             self.names.resource_bindings.get(owner).cloned()
                     {
@@ -15485,10 +15782,13 @@ impl Parser {
         mut expression: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
         let unresolved = |expression: &ContractExpression| {
-            ProgramExpression::Variable(format!(
-                "<{} read at its call>",
-                crate::surface::diagnostics::describe_contract_expression(expression)
-            ))
+            ProgramExpression::Variable(
+                format!(
+                    "<{} read at its call>",
+                    crate::surface::diagnostics::describe_contract_expression(expression)
+                )
+                .into(),
+            )
         };
         loop {
             match self.peek() {
@@ -15705,7 +16005,268 @@ impl Parser {
         )))
     }
 
+    fn finish_static_reference(
+        &mut self,
+        query: crate::kernel::StaticBindingId,
+    ) -> Result<ContractExpression, ClickError> {
+        crate::instrumentation::record_deterministic_work(1);
+        let id = self
+            .local_bindings
+            .statics
+            .get_key_value(&query)
+            .map(|(id, _)| id.clone())
+            .ok_or_else(|| self.error(format!("unknown C static declaration `{query}`")))?;
+        if self.peek() == Some(&Token::Dot)
+            && self.peek_next() == Some(&Token::Ident("storage".into()))
+            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+        {
+            self.position += 2;
+            self.expect(Token::LParen)?;
+            self.expect(Token::RParen)?;
+            return Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(ProgramValue::typed_pointer(
+                    crate::kernel::Pointer {
+                        block: crate::kernel::PointerBlock::StaticObject { binding: id },
+                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                    },
+                    ProgramType::UInt8Pointer,
+                )),
+            ));
+        }
+        Ok(ContractExpression::ProgramExpression(
+            ProgramExpression::Variable(id.into()),
+        ))
+    }
+
+    fn take_local_binding_reference(&mut self) -> Result<Option<ContractExpression>, ClickError> {
+        let start = self.position;
+        let first = match self.peek() {
+            Some(Token::Ident(name)) => (false, name.clone()),
+            Some(Token::String(name)) => (true, name.clone()),
+            _ => return Ok(None),
+        };
+        self.position += 1;
+        let (source, function) = if self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+            let Some(Token::Ident(function)) = self.peek() else {
+                self.position = start;
+                return Ok(None);
+            };
+            let function = function.clone();
+            self.position += 1;
+            let source = if first.0 {
+                first.1.clone()
+            } else {
+                // An explicit source alias uses the same qualification as C objects.
+                match self.source_aliases.get(&first.1) {
+                    Some(source) => source.clone(),
+                    None => {
+                        self.position = start;
+                        return Ok(None);
+                    }
+                }
+            };
+            (Some(source), function)
+        } else {
+            if first.0 {
+                self.position = start;
+                return Ok(None);
+            }
+            if let Some((alias, name)) = first.1.split_once("::") {
+                let Some(source) = self.source_aliases.get(alias).cloned() else {
+                    self.position = start;
+                    return Ok(None);
+                };
+                (Some(source), name.to_string())
+            } else {
+                (None, first.1.clone())
+            }
+        };
+        // A file owns its static declarations directly; a function's statics
+        // use the same tree selector as its parameters and automatic locals.
+        if function == "static" && self.peek() == Some(&Token::LParen) {
+            self.position += 1;
+            let source = if source.is_some() {
+                source
+            } else {
+                if self.local_bindings.static_files.len() != 1 {
+                    return Err(self.error("file-static owner is ambiguous; qualify its C source"));
+                }
+                self.local_bindings
+                    .static_files
+                    .first()
+                    .expect("one file-static owner")
+                    .clone()
+            };
+            let ordinal = u32::try_from(self.expect_index("static declaration ordinal")?)
+                .map_err(|_| self.error("static declaration ordinal exceeds u32"))?;
+            self.expect(Token::RParen)?;
+            let query = crate::kernel::StaticBindingId::new(
+                crate::kernel::StaticBindingOwner::File(source),
+                ordinal,
+                String::new(),
+            );
+            return self.finish_static_reference(query).map(Some);
+        }
+        if self.peek() == Some(&Token::Dot)
+            && self.peek_next() == Some(&Token::Ident("static".into()))
+        {
+            self.position += 2;
+            self.expect(Token::LParen)?;
+            let source = if source.is_some() {
+                source
+            } else {
+                let owners = self.local_bindings.owners.get(&function).ok_or_else(|| {
+                    self.error(format!("unknown C declaration owner `{function}`"))
+                })?;
+                if owners.len() != 1 {
+                    return Err(self.error(format!(
+                        "declaration owner `{function}` is ambiguous; qualify its C source"
+                    )));
+                }
+                owners.first().expect("one declaration owner").clone()
+            };
+            let ordinal = u32::try_from(self.expect_index("static declaration ordinal")?)
+                .map_err(|_| self.error("static declaration ordinal exceeds u32"))?;
+            self.expect(Token::RParen)?;
+            let query = crate::kernel::StaticBindingId::new(
+                crate::kernel::StaticBindingOwner::Function(crate::kernel::LocalFunctionId::new(
+                    source, function,
+                )),
+                ordinal,
+                String::new(),
+            );
+            return self.finish_static_reference(query).map(Some);
+        }
+        let mut path = Vec::new();
+        while self.peek() == Some(&Token::Dot)
+            && self.peek_next() == Some(&Token::Ident("statement".into()))
+            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+        {
+            self.position += 2;
+            self.expect(Token::LParen)?;
+            path.push(
+                u32::try_from(self.expect_index("statement ordinal")?)
+                    .map_err(|_| self.error("statement ordinal exceeds u32"))?,
+            );
+            self.expect(Token::RParen)?;
+        }
+        if self.tokens.get(self.position + 2) != Some(&Token::LParen) {
+            self.position = start;
+            return Ok(None);
+        }
+        let parameter = match (self.peek(), self.peek_next()) {
+            (Some(Token::Dot), Some(Token::Ident(selector))) if selector == "local" => false,
+            (Some(Token::Dot), Some(Token::Ident(selector)))
+                if selector == "parameter" && path.is_empty() =>
+            {
+                true
+            }
+            _ => {
+                self.position = start;
+                return Ok(None);
+            }
+        };
+        // A code region's existing `.parameter(name)` names a by-value
+        // call copy. Numeric declaration selectors use a separate grammar.
+        if parameter && !matches!(self.tokens.get(self.position + 3), Some(Token::Number(_))) {
+            self.position = start;
+            return Ok(None);
+        }
+        self.position += 2;
+        self.expect(Token::LParen)?;
+        let source = if source.is_some() {
+            source
+        } else {
+            let owners =
+                self.local_bindings.owners.get(&function).ok_or_else(|| {
+                    self.error(format!("unknown C declaration owner `{function}`"))
+                })?;
+            if owners.len() != 1 {
+                return Err(self.error(format!(
+                    "declaration owner `{function}` is ambiguous; qualify its C source"
+                )));
+            }
+            owners
+                .first()
+                .expect("registered declaration owner")
+                .clone()
+        };
+        let id = if path.is_empty() {
+            let ordinal = u32::try_from(self.expect_index("declaration ordinal")?)
+                .map_err(|_| self.error("declaration ordinal exceeds u32"))?;
+            let query = crate::kernel::LocalBindingId::new(
+                crate::kernel::LocalFunctionId::new(source, function),
+                parameter,
+                ordinal,
+                None,
+            );
+            self.local_bindings
+                .declarations
+                .get_key_value(&query)
+                .map(|(id, _)| id.clone())
+                .ok_or_else(|| self.error(format!("unknown C declaration `{query}`")))?
+        } else {
+            let name = self.expect_ident("local declaration name")?;
+            self.local_bindings
+                .sites
+                .get(&(source, function.clone(), path, name.clone()))
+                .cloned()
+                .ok_or_else(|| {
+                    self.error(format!(
+                        "statement of `{function}` does not declare local `{name}`"
+                    ))
+                })?
+        };
+        self.expect(Token::RParen)?;
+        if self.peek() == Some(&Token::Dot)
+            && self.peek_next() == Some(&Token::Ident("storage".into()))
+            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+        {
+            self.position += 2;
+            self.expect(Token::LParen)?;
+            let kind = self.expect_ident("storage instance kind")?;
+            let instance = match kind.as_str() {
+                "implicit" => crate::kernel::LocalStorageInstance::Implicit,
+                "parameter" => crate::kernel::LocalStorageInstance::ValueParameter,
+                "lifetime" | "frame" => {
+                    self.expect(Token::Comma)?;
+                    let number = self.expect_index("storage instance number")? as u64;
+                    if kind == "lifetime" {
+                        crate::kernel::LocalStorageInstance::Lifetime(number)
+                    } else {
+                        crate::kernel::LocalStorageInstance::Frame(number)
+                    }
+                }
+                _ => {
+                    return Err(self.error(
+                        "storage kind must be `implicit`, `parameter`, `lifetime` or `frame`",
+                    ));
+                }
+            };
+            self.expect(Token::RParen)?;
+            return Ok(Some(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(ProgramValue::typed_pointer(
+                    crate::kernel::Pointer {
+                        block: crate::kernel::PointerBlock::AutomaticLocal {
+                            binding: id,
+                            instance,
+                        },
+                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                    },
+                    ProgramType::UInt8Pointer,
+                )),
+            )));
+        }
+        Ok(Some(ContractExpression::ProgramExpression(
+            ProgramExpression::Variable(id.into()),
+        )))
+    }
+
     fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        if let Some(binding) = self.take_local_binding_reference()? {
+            return Ok(binding);
+        }
         if let Some(literal) = self.take_string_literal_reference()? {
             return Ok(literal);
         }
@@ -15761,7 +16322,9 @@ impl Parser {
             if let Some(name) = self.peek_ident().map(str::to_string) {
                 self.position += 1;
                 return Ok(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable(format!("{}{}", "outer.".repeat(depth), name)),
+                    ProgramExpression::Variable(
+                        format!("{}{}", "outer.".repeat(depth), name).into(),
+                    ),
                 ));
             }
             self.position = start;
@@ -15819,6 +16382,36 @@ impl Parser {
 
     #[inline(never)]
     fn parse_contract_non_match_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        // Exact result storage identities. Naming one grants no access rights.
+        if self.peek_ident() == Some("result")
+            && self.tokens.get(self.position + 1) == Some(&Token::Dot)
+            && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(name)) if name == "storage")
+            && self.tokens.get(self.position + 3) == Some(&Token::LParen)
+        {
+            self.position += 4;
+            let block = if self.peek() == Some(&Token::RParen) {
+                crate::kernel::PointerBlock::ContractResult
+            } else {
+                let kind = self.expect_ident("return storage kind `frame`")?;
+                if kind != "frame" {
+                    return Err(self.error("return storage kind must be `frame`"));
+                }
+                self.expect(Token::Comma)?;
+                let frame = self.expect_u64("return storage frame")?;
+                crate::kernel::PointerBlock::AggregateReturn { frame }
+            };
+            self.expect(Token::RParen)?;
+            return Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(ProgramValue::typed_pointer(
+                    crate::kernel::Pointer {
+                        block,
+                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                    },
+                    ProgramType::UInt8Pointer,
+                )),
+            ));
+        }
+
         if self.peek_next() == Some(&Token::LParen) {
             match self.peek_ident() {
                 Some("float32_from_bits") => return self.parse_float_bits(32),
@@ -16953,7 +17546,7 @@ impl Parser {
             };
             let carrier = self.reference_binding_carrier(name);
             self.position += 2;
-            return Ok(CExpression::Variable(carrier));
+            return Ok(CExpression::Variable((carrier).into()));
         }
         if self.peek() == Some(&Token::Amp) {
             self.check_unary_nesting_limit(depth)?;
@@ -17006,7 +17599,7 @@ impl Parser {
             Some(Token::Ident(name)) if self.is_reference_binding(&name) => {
                 let carrier = self.reference_binding_carrier(&name);
                 let is_struct = self.names.struct_params.contains_key(&carrier);
-                let carrier = CExpression::Variable(carrier);
+                let carrier = CExpression::Variable((carrier).into());
                 Ok(if is_struct {
                     carrier
                 } else {
@@ -17020,7 +17613,7 @@ impl Parser {
             Some(Token::Ident(name)) => {
                 self.refuse_unknown_loop_value(&name)?;
                 let name = self.take_rust_slice_len(&name).unwrap_or(name);
-                Ok(CExpression::Variable(name))
+                Ok(CExpression::Variable((name).into()))
             }
             Some(Token::RustInteger(literal)) => literal.program_expression(false).map_err(|message| self.error(message)),
             Some(Token::Number(value)) => Ok(CExpression::Int32Literal(value)),
@@ -17229,6 +17822,29 @@ impl Parser {
             self.expect(Token::RParen)?;
         }
         Ok(value)
+    }
+
+    fn expect_u64(&mut self, expected: &str) -> Result<u64, ClickError> {
+        let at = self.error_context();
+        match self.next() {
+            Some(Token::Number(value)) => Ok(u64::from(value)),
+            Some(Token::UnsuffixedUInt64(value) | Token::UInt64Number(value)) => Ok(value),
+            Some(Token::UnsuffixedInt64(value) | Token::Int64Number(value)) => u64::try_from(value)
+                .map_err(|_| self.error_at(at, format!("expected nonnegative {expected}"))),
+            Some(Token::RustInteger(literal)) => {
+                literal
+                    .program_expression(false)
+                    .map_err(|message| self.error_at(at.clone(), message))?;
+                literal
+                    .digits
+                    .parse::<u64>()
+                    .map_err(|_| self.error_at(at, format!("expected {expected} to fit in uint64")))
+            }
+            Some(token) => {
+                Err(self.error_at(at, format!("expected {expected}, got {}", token.describe())))
+            }
+            None => Err(self.error_at(at, format!("expected {expected}, got end of input"))),
+        }
     }
 
     fn expect_index(&mut self, expected: &str) -> Result<usize, ClickError> {
@@ -17609,7 +18225,7 @@ fn negatable_int32_magnitude(token: &Token) -> Option<u32> {
     }
 }
 
-fn named_place_base(expression: &ProgramExpression) -> Option<&String> {
+fn named_place_base(expression: &ProgramExpression) -> Option<&crate::kernel::BindingName> {
     match expression {
         ProgramExpression::Variable(name) => Some(name),
         ProgramExpression::AddressOf(inner) => match inner.as_ref() {
@@ -17680,8 +18296,10 @@ fn contract_member_lvalue(load: &ProgramExpression) -> ProgramExpression {
     {
         let width = value_type.byte_width();
         if width != 0 {
-            let member =
-                std::mem::replace(pointer.as_mut(), ProgramExpression::Variable(String::new()));
+            let member = std::mem::replace(
+                pointer.as_mut(),
+                ProgramExpression::Variable((String::new()).into()),
+            );
             **pointer = ProgramExpression::Subobject {
                 pointer: Box::new(member),
                 width,
@@ -18196,7 +18814,7 @@ mod integer_quantifier_parser_tests {
         };
         assert!(matches!(
             left,
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) if name == "saved"
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named("saved")
         ));
     }
 
@@ -18836,6 +19454,73 @@ mod lambda_certificate_parser_tests {
             assert_eq!(parser.expect_signed_i64("lower").unwrap(), -2147483648);
             assert_eq!(parser.expect_signed_i64("upper").unwrap(), 2147483646);
             assert!(parser.peek().is_none());
+        }
+    }
+}
+
+#[cfg(test)]
+mod local_binding_tests;
+
+impl ProgramLayouts {
+    fn register_static_binding(&mut self, binding: &crate::kernel::BindingName) {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(id) = binding.static_id() else {
+            return;
+        };
+        let Some(metadata) = id.metadata() else {
+            return;
+        };
+        let index = std::sync::Arc::make_mut(&mut self.local_bindings);
+        if let Some(function) = id.function() {
+            index
+                .owners
+                .entry(function.to_owned())
+                .or_default()
+                .insert(id.source().map(str::to_owned));
+        } else {
+            index.static_files.insert(id.source().map(str::to_owned));
+        }
+        index.statics.insert(
+            id.clone(),
+            SourceBindingInfo {
+                struct_name: id.struct_name().map(str::to_owned),
+                aggregate: metadata.aggregate || metadata.array_shape.is_some(),
+                array_shape: id.array_shape().map(<[u32]>::to_vec),
+            },
+        );
+    }
+    fn register_function_static_bindings(
+        &mut self,
+        function: &crate::languages::interface::ImportedFunction,
+    ) {
+        for object in function.static_locals().values() {
+            self.register_static_binding(object.kernel_name());
+        }
+        for object in function.static_arrays().values() {
+            self.register_static_binding(object.kernel_name());
+        }
+        for object in function.static_aggregates().values() {
+            self.register_static_binding(object.kernel_name());
+        }
+        for object in function.static_aggregate_arrays().values() {
+            self.register_static_binding(object.kernel_name());
+        }
+    }
+    pub(in crate::surface) fn register_file_static_bindings(
+        &mut self,
+        unit: &syntax::CTranslationUnit,
+    ) {
+        for object in unit.globals.values() {
+            self.register_static_binding(object.kernel_name());
+        }
+        for object in unit.global_arrays.values() {
+            self.register_static_binding(object.kernel_name());
+        }
+        for object in unit.global_aggregates.values() {
+            self.register_static_binding(object.kernel_name());
+        }
+        for object in unit.global_aggregate_arrays.values() {
+            self.register_static_binding(object.kernel_name());
         }
     }
 }
