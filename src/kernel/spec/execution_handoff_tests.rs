@@ -588,3 +588,107 @@ fn explicit_pointer_cast_lowering_keeps_native_extent_rules() {
         assert_eq!(actual.value.into_native(), ProgramValue::Pointer(expected));
     }
 }
+
+#[test]
+fn float_lowering_conversions_preserve_bits_roots_and_path_context() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let evaluate = |expression: &SpecExpression, disabled| {
+        let mut budget = ExecutionBudget::new();
+        let mut evaluation = SpecEvaluation::logical(&mut budget);
+        evaluation.machine_result_production_disabled = disabled;
+        evaluate_spec_expression_paths_with_bindings_in(
+            &ExecutionState::new(),
+            expression,
+            &PureFactContext::new(),
+            &BTreeMap::new(),
+            &mut evaluation,
+        )
+        .unwrap()
+        .pop()
+        .unwrap()
+    };
+    for (format, target, literals) in [
+        (
+            KernelFloatType::Float32,
+            ProgramType::Float64,
+            vec![0, 0x8000_0000, 0x7fc0_1234, 0x7f80_0000, 1, 0x3f80_0000],
+        ),
+        (
+            KernelFloatType::Float64,
+            ProgramType::Float32,
+            vec![
+                0,
+                0x8000_0000_0000_0000,
+                0x7ff8_0000_0000_1234,
+                0x7ff0_0000_0000_0000,
+                1,
+                0x3ff0_0000_0000_0000,
+            ],
+        ),
+    ] {
+        let literal = |bits| match format {
+            KernelFloatType::Float32 => MachineTerm::constant(bits as u32),
+            KernelFloatType::Float64 => MachineTerm::uint64_constant(bits),
+        };
+        let mut values = literals.into_iter().map(literal).collect::<Vec<_>>();
+        values.push(MachineTerm::Variable(Variable(999970)));
+        values.push(match format {
+            KernelFloatType::Float32 => MachineTerm::Float32Negate(Box::new(literal(0))),
+            KernelFloatType::Float64 => MachineTerm::Float64Negate(Box::new(literal(0))),
+        });
+        values.push(match format {
+            KernelFloatType::Float32 => MachineTerm::Float32Binary {
+                operator: FloatBinaryOperator::Add,
+                left: Box::new(literal(0x3f80_0000)),
+                right: Box::new(literal(0x3f80_0000)),
+            },
+            KernelFloatType::Float64 => MachineTerm::Float64Binary {
+                operator: FloatBinaryOperator::Add,
+                left: Box::new(literal(0x3ff0_0000_0000_0000)),
+                right: Box::new(literal(0x3ff0_0000_0000_0000)),
+            },
+        });
+        for value in values {
+            let operand = SpecExpression::Value(format.value(value));
+            let source = evaluate(&operand, false);
+            let expression = SpecExpression::Cast(Box::new(operand), target);
+            let exports = KernelTermExport::float_export_count();
+            let actual = evaluate(&expression, false);
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+            if let KernelTermNode::FloatConvert { operand, .. } =
+                actual.value.shared().unwrap().node()
+            {
+                assert_eq!(Some(operand), source.value.shared());
+            }
+            let old = evaluate(&expression, true);
+            assert_eq!(actual.facts, old.facts);
+            assert_eq!(actual.obligations, old.obligations);
+            assert_eq!(actual.value.into_native(), old.value.into_native());
+        }
+    }
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        for target in [ProgramType::Float32, ProgramType::Float64] {
+            let operand = sum(format);
+            let source = evaluate(&operand, false);
+            let expression = SpecExpression::Cast(Box::new(operand), target);
+            let exports = KernelTermExport::machine_export_count();
+            let actual = evaluate(&expression, false);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            let KernelTermNode::FloatConvert { operand, .. } =
+                actual.value.shared().unwrap().node()
+            else {
+                panic!("retained numeric conversion")
+            };
+            assert_eq!(Some(operand), source.value.shared());
+            let old = evaluate(&expression, true);
+            assert_eq!(actual.facts, old.facts);
+            assert_eq!(actual.obligations, old.obligations);
+            assert_eq!(actual.value.into_native(), old.value.into_native());
+        }
+    }
+}

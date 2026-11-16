@@ -350,6 +350,21 @@ parity. Quality checks and all 575 regular pointer fixtures passed; the audit re
 stability differences. A broad fixture selector also selected 23 nightly cases;
 the ten failures were identical before 9o and were left outside this task.
 
+### 9p Float-producing conversions
+
+Supported symbolic machine-to-float and float-width conversions retain their
+shared operands. Float constant arithmetic is read through the existing views
+and numeric bit helpers, preserving the prior normalization of signed zeros,
+NaN payloads, infinities and subnormals. Integer literal rounding and
+float-to-integer finite/range obligations remain at their existing native
+producer boundaries; no conversion admission or rounding rules changed.
+
+Validation: exact native result, root and scoped-context parity passed across
+both float widths and four machine formats. Growing operands remain shared with
+linear work and zero float exports. All 2,019 API, specification, execution-value
+and scaling tests and quality checks passed. Regular float fixtures passed with
+zero fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
