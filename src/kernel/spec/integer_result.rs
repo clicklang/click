@@ -227,10 +227,9 @@ mod conditional_contract_tests {
     #[test]
     fn integer_common_conditionals_keep_native_equal_arm_and_payload_rules() {
         let _session = VerificationSession::enter();
-        let ProgramValue::Pointer(pointer) = crate::kernel::symbolic_call_result(
-            ProgramType::Int32Pointer,
-            Variable(1009890),
-        ) else {
+        let ProgramValue::Pointer(pointer) =
+            crate::kernel::symbolic_call_result(ProgramType::Int32Pointer, Variable(1009890))
+        else {
             unreachable!("typed symbolic pointer")
         };
         let call = |constant| {
