@@ -45,16 +45,16 @@ int32 cycle(int32* (*acquire)(int32*), void (*release)(int32*, int32*), int32* p
 } by {
     step();
     step(Acquire); step();
-    if c(cell) != 0 {
-        unfold(Acquisition(pool, c(cell)));
-        unfold(Unavailable(pool, c(cell)));
+    if program::cell != 0 {
+        unfold(Acquisition(pool, program::cell));
+        unfold(Unavailable(pool, program::cell));
         step();
         step();
         step(Release);
         step_until(function.exit); solve();
     } else {
-        unfold(Acquisition(pool, c(cell)));
-        unfold(Unavailable(pool, c(cell)));
+        unfold(Acquisition(pool, program::cell));
+        unfold(Unavailable(pool, program::cell));
         step_until(function.exit); solve();
     }
 }

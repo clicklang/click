@@ -24,7 +24,7 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
     };
     let mut costs = Vec::new();
     for size in [16u32, 64, 256] {
-        let mut before = Memory::new()
+        let mut before = SymbolicMemory::new()
             .with_block("conjunct-frame", 16)
             .with_block("conjunct-frame-unrelated", size);
         for index in 0..size {
@@ -42,7 +42,7 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
                 true,
             ))
         });
-        let defined = |memory: &Memory| Proposition::MemoryReadDefined {
+        let defined = |memory: &SymbolicMemory| Proposition::MemoryReadDefined {
             at: None,
             memory: memory.clone(),
             pointer: base.clone(),
@@ -112,7 +112,7 @@ fn load_equality_work(earlier: u32, between: u32, written: bool) -> usize {
         base: "load-frame-other".into(),
         offset: AddressOffset::Constant(0),
     };
-    let mut before = Memory::new()
+    let mut before = SymbolicMemory::new()
         .with_block("load-frame", between + 8)
         .with_block("load-frame-other", earlier);
     if written {

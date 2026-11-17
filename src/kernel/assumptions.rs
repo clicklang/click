@@ -881,7 +881,7 @@ pub(super) fn resources_equal_ignoring_memories(left: &Resource, right: &Resourc
 /// registered load variable.
 pub(in crate::kernel) fn load_state_and_pointer(
     term: &MachineTerm,
-) -> Option<(Memory, Address, LoadKind)> {
+) -> Option<(SymbolicMemory, Address, LoadKind)> {
     let read = crate::kernel::eval::scalar_read_observation(
         crate::kernel::MachineOperandView::Legacy(term),
     )?;
@@ -1810,7 +1810,7 @@ mod exact_materialization_tests {
             offset: AddressOffset::Constant(0),
         };
         (0..length).fold(MachineTerm::constant(tail), |value, _| {
-            let memory = Memory::new().store(pointer.clone(), ProgramValue::Int32(value));
+            let memory = SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(value));
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(intern_memory(memory))),
                 Box::new(pointer.clone()),
@@ -1854,7 +1854,8 @@ mod exact_materialization_tests {
         let unsigned = MachineTerm::MemoryLoad(
             ProgramPoint::at(
                 &(intern_memory(
-                    Memory::new().store(pointer.clone(), ProgramValue::UInt32(17u32.into())),
+                    SymbolicMemory::new()
+                        .store(pointer.clone(), ProgramValue::UInt32(17u32.into())),
                 )),
             ),
             Box::new(pointer),
@@ -1899,7 +1900,7 @@ mod exact_materialization_tests {
             base: pointer.base.clone(),
             offset: AddressOffset::Constant(32),
         };
-        let before = Memory::new().with_block("retained-retained_state", 64);
+        let before = SymbolicMemory::new().with_block("retained-retained_state", 64);
         let load = |memory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(intern_memory(memory))),
@@ -2550,7 +2551,7 @@ fn collect_bitvector_memory_load_keys(term: &MachineTerm, keys: &mut BTreeSet<(A
 /// an error rather than an invitation to silently forget a memory dependency.
 pub(crate) fn current_memory_loads_in_term(
     term: &Term,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
 ) -> Result<Vec<(Address, u32)>, String> {
     let mut loads = Vec::new();
     collect_term_memory_loads(term, current_memory, &mut loads, &mut BTreeSet::new())?;
@@ -2561,7 +2562,7 @@ pub(crate) fn current_memory_loads_in_term(
 
 fn collect_term_memory_loads(
     term: &Term,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -2593,7 +2594,7 @@ fn collect_term_memory_loads(
 
 fn collect_condition_memory_loads(
     condition: &ConditionTerm,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -2702,7 +2703,7 @@ fn collect_condition_memory_loads(
 
 fn collect_pointer_offset_memory_loads(
     offset: &AddressOffset,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -2731,7 +2732,7 @@ fn collect_pointer_offset_memory_loads(
 
 fn collect_bitvector_memory_loads(
     term: &MachineTerm,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
@@ -2741,7 +2742,7 @@ fn collect_bitvector_memory_loads(
 
 fn collect_memory_read_descriptor(
     operand: MachineOperandView<'_>,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
@@ -2767,7 +2768,7 @@ fn collect_memory_read_descriptor(
 
 fn collect_bitvector_memory_loads_with_width(
     term: &MachineTerm,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
@@ -2963,7 +2964,7 @@ fn collect_bitvector_memory_loads_with_width(
 
 fn collect_cvalue_memory_loads(
     value: &ProgramValue,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -3037,7 +3038,7 @@ fn collect_cvalue_memory_loads(
 
 fn collect_sequence_memory_loads(
     sequence: &SequenceTerm,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -3057,7 +3058,7 @@ fn collect_sequence_memory_loads(
 
 fn collect_algebraic_value_memory_loads(
     value: &AlgebraicValue,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -3076,7 +3077,7 @@ fn collect_algebraic_value_memory_loads(
 
 fn collect_algebraic_memory_loads(
     term: &AlgebraicTerm,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -3130,7 +3131,7 @@ fn collect_algebraic_memory_loads(
 
 fn collect_integer_memory_loads(
     term: &IntegerTerm,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -3139,7 +3140,7 @@ fn collect_integer_memory_loads(
 
 fn collect_integer_memory_loads_with_width(
     term: &SharedIntegerTerm,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
@@ -3181,7 +3182,7 @@ fn collect_integer_memory_loads_with_width(
 /// payload against this query's state; never cache memory-dependent results.
 fn collect_shared_machine_memory_loads(
     value: &SharedMachineIntegerTerm,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
@@ -3257,7 +3258,7 @@ fn collect_shared_machine_memory_loads(
 
 fn collect_shared_read_memory_loads(
     root: &KernelTerm,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
@@ -3280,7 +3281,7 @@ fn collect_shared_read_memory_loads(
 
 fn collect_integer_node_memory_loads(
     term: &IntegerTerm,
-    current_memory: &Memory,
+    current_memory: &SymbolicMemory,
     loads: &mut Vec<(Address, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
@@ -6231,7 +6232,7 @@ impl PureFactContext {
         )
     }
 
-    /// Memory separations selected by the caller's containment blocks.
+    /// SymbolicMemory separations selected by the caller's containment blocks.
     /// Callers additionally name pointers whose related roots and affine
     /// block classes a wide side may cover. A translated window may have no
     /// exact alias at its shifted address, but retains its base's block class.
@@ -6327,7 +6328,7 @@ impl PureFactContext {
     /// The memory effect facts with `memory` as their `before` or `after`.
     pub(in crate::kernel) fn memory_effect_facts_naming(
         &self,
-        memory: &Memory,
+        memory: &SymbolicMemory,
     ) -> impl Iterator<Item = &Proposition> {
         self.memory_effect_facts
             .get(memory)
@@ -8112,7 +8113,7 @@ impl PureFactContext {
             covered_variables = covered.len();
             keys.retain(|key| match key {
                 AtomicConnectionKey::Variable(variable) => !covered.contains(variable),
-                // Memory state equations can define a load named by its address,
+                // SymbolicMemory state equations can define a load named by its address,
                 // so retain their reverse address-block adjacency as well.
                 // Scalar facts reuse their existing value-variable index.
                 AtomicConnectionKey::Block(_) => !has_variables || covered.is_empty(),
@@ -10581,8 +10582,8 @@ impl ExecutionPureFact {
     }
 
     pub(super) fn certified_store(
-        before: Memory,
-        after: Memory,
+        before: SymbolicMemory,
+        after: SymbolicMemory,
         pointer: Address,
         value: ProgramValue,
         authorized_range: Option<MemoryRange>,
@@ -11032,7 +11033,7 @@ mod dynamic_current_load_tests {
     #[test]
     fn records_unmaterialized_loads_and_integer_machine_carriers() {
         let pointer = pointer();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let retained_state = crate::kernel::intern_memory_ref(&memory);
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&retained_state),
@@ -11072,7 +11073,7 @@ mod dynamic_current_load_tests {
         Term::Integer(IntegerTerm::Machine(value))
     }
 
-    fn load_payload(memory: &Memory, format: MachineIntegerType) -> SharedIntegerTerm {
+    fn load_payload(memory: &SymbolicMemory, format: MachineIntegerType) -> SharedIntegerTerm {
         let load = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             format,
             MachineTerm::MemoryLoad(
@@ -11104,7 +11105,7 @@ mod dynamic_current_load_tests {
             MachineIntegerType::Int128,
         ] {
             let _session = VerificationSession::enter();
-            let memory = Memory::new();
+            let memory = SymbolicMemory::new();
             let other = memory
                 .clone()
                 .store(pointer(), ProgramValue::Int32(1u32.into()));
@@ -11149,7 +11150,7 @@ mod dynamic_current_load_tests {
         );
         let exports = KernelTermExport::machine_export_count();
         assert_eq!(
-            current_memory_loads_in_term(&term, &Memory::new()).unwrap_err(),
+            current_memory_loads_in_term(&term, &SymbolicMemory::new()).unwrap_err(),
             "opaque integer function may hide a current memory load"
         );
         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -11159,7 +11160,7 @@ mod dynamic_current_load_tests {
     fn shared_fold_endpoints_keep_memory_dependencies() {
         use crate::kernel::{KernelTermExport, VerificationSession};
         let _session = VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let root = conversion_root(
             load_payload(&memory, MachineIntegerType::UInt64),
             MachineIntegerType::UInt64,
@@ -11193,7 +11194,7 @@ mod dynamic_current_load_tests {
 
     #[test]
     fn opaque_click_function_carrier_is_rejected() {
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let term = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
             name: "opaque".into(),
             arguments: Vec::new(),
@@ -12608,7 +12609,7 @@ mod execution_variable_ceiling_tests {
     /// A fact naming a state whose stored value holds `variable`, though
     /// the fact's own syntax names no variable.
     fn fact_over_state_holding(variable: Variable) -> ConditionTerm {
-        let memory = Memory::new().with_block("a", 8).store(
+        let memory = SymbolicMemory::new().with_block("a", 8).store(
             word(0),
             ProgramValue::Int32(MachineTerm::Variable(variable)),
         );
@@ -12645,10 +12646,11 @@ mod execution_variable_ceiling_tests {
     #[test]
     fn shared_ceiling_keeps_live_load_dependencies_and_execution_id_limits() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_memory_ref(&Memory::new().with_block("a", 8).store(
-            word(0),
-            ProgramValue::Int32(MachineTerm::Variable(execution_variable(71))),
-        ));
+        let memory =
+            crate::kernel::intern_memory_ref(&SymbolicMemory::new().with_block("a", 8).store(
+                word(0),
+                ProgramValue::Int32(MachineTerm::Variable(execution_variable(71))),
+            ));
         let load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &word(4),
@@ -13232,7 +13234,7 @@ mod shared_load_atom_comparison_tests {
             _ => unreachable!(),
         };
         let load = |block: &str| {
-            let memory = crate::kernel::intern_memory(Memory::new().with_block(block, 16));
+            let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(block, 16));
             let pointer = Address {
                 base: block.into(),
                 offset: AddressOffset::Constant(0),
@@ -13437,7 +13439,7 @@ mod shared_load_atom_comparison_tests {
     fn shared_state_premise_requires_the_selected_frame() {
         use crate::kernel::proof::PureFactStore;
         let _session = crate::kernel::VerificationSession::enter();
-        let before = Memory::new()
+        let before = SymbolicMemory::new()
             .with_block("shared-frame", 8)
             .with_block("call-havoc:0", 0);
         let after = before.clone().with_block("call-havoc:1", 0);
@@ -13463,7 +13465,7 @@ mod shared_load_atom_comparison_tests {
             &PureFactContext::new(),
         )
         .expect("disjoint selected footprint");
-        let condition = |memory: &Memory| {
+        let condition = |memory: &SymbolicMemory| {
             let memory = crate::kernel::intern_memory(memory.clone());
             let variable = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
@@ -13710,7 +13712,7 @@ mod shared_read_memory_collection_tests {
     #[test]
     fn shared_read_collection_preserves_width_and_state_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = Memory::new().with_block("read-width", 8);
+        let memory = SymbolicMemory::new().with_block("read-width", 8);
         let pointer = Address {
             base: AddressBase::Concrete("read-width".into()),
             offset: AddressOffset::Constant(0),
@@ -13824,7 +13826,7 @@ mod pointer_index_walk_tests {
             MachineIntegerType::UInt64,
         ] {
             let _session = VerificationSession::enter();
-            let memory = Memory::new().with_block("r7-read", 8);
+            let memory = SymbolicMemory::new().with_block("r7-read", 8);
             let address = Address {
                 base: AddressBase::Concrete("r7-read".into()),
                 offset: AddressOffset::Constant(0),

@@ -483,7 +483,7 @@ id = "language.word.import"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.rust"
+id = "language.word.program"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -548,10 +548,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.byte_offset"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.c"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1183,7 +1179,7 @@ path = "reference/language/index.md#old"
 
 [[item]]
 id = "language.c-fragment"
-path = "reference/language/index.md#c"
+path = "reference/language/index.md#program-and-qualified-names"
 
 [[item]]
 id = "language.at-expression"

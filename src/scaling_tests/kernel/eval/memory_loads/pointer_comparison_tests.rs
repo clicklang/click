@@ -10,7 +10,7 @@ fn stored_address_base_queries_scale_with_new_read_definitions() {
         };
         let other = AddressBase::Heap(989_011);
         let slot = Address::symbolic(Variable(989_012));
-        let mut memory = Memory::new()
+        let mut memory = SymbolicMemory::new()
             .with_block(target.base.clone(), 8)
             .with_block(other.clone(), 8);
         for index in 0..unrelated {
@@ -56,7 +56,7 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
             base: AddressBase::Heap(index),
             offset: AddressOffset::Constant(0),
         };
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..selected + unrelated {
             memory = memory.store(address(index), ProgramValue::Int32(37u32.into()));
         }
@@ -117,7 +117,7 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
             algebraic_type: algebraic_type.clone(),
             node: AlgebraicTermNode::Variable(Variable(991_000 + index)),
         };
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..selected + unrelated {
             memory = memory.store(
                 address(index),

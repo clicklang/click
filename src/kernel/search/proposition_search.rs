@@ -1897,7 +1897,7 @@ mod condition_premise_tests {
             base: "cell".into(),
             offset: AddressOffset::scaled_int32_node(term(40), 4),
         };
-        let memory = Memory::new().with_block("cell", 64).store(
+        let memory = SymbolicMemory::new().with_block("cell", 64).store(
             Address {
                 base: "cell".into(),
                 offset: AddressOffset::Constant(0),

@@ -60,15 +60,15 @@ int32* read_acquired(int32* (*acquire)(), int32* value) {
     apply(lift(acquire));
     step();
     step(Boxed); step();
-    if c(cell) != 0 {
-        unfold(MaybeCell(c(cell)));
-        unfold(Cell(c(cell)));
+    if program::cell != 0 {
+        unfold(MaybeCell(program::cell));
+        unfold(Cell(program::cell));
         step_until(function.exit);
         fold(Cell(result));
         fold(MaybeCell(result));
         solve();
     } else {
-        unfold(MaybeCell(c(cell)));
+        unfold(MaybeCell(program::cell));
         step_until(function.exit);
         fold(MaybeCell(result));
         solve();

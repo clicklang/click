@@ -3197,7 +3197,7 @@ fn contract_expression_reads_binding(expression: &ContractExpression, binding: &
 fn fold_end_parameter_name(end: &ContractExpression) -> Option<&String> {
     match end {
         ContractExpression::Binding(binding)
-        | ContractExpression::CBinding(binding)
+        | ContractExpression::ProgramBinding(binding)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(binding),
         )) => Some(binding),

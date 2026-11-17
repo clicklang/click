@@ -1,7 +1,8 @@
-# A C local named iterations is written c(iterations)
+# A language-named program binding is refused
 
-In a loop's clauses and phases, bare `iterations` is the pass count; a C
-local of that name is `c(iterations)`, and both can be stated together.
+A program binding a Click name shadows is written `program::name` in every
+source language. The earlier forms `c(name)` and `rust(name)` are refused,
+and the refusal names the replacement.
 
 ```c filename=named.c
 int32 count(int32 n) {
@@ -24,8 +25,8 @@ int32 count(int32 n) {
     step();
     step();
     loop {
-        decreases n - c(iterations);
-        invariant 0 <= c(iterations) and c(iterations) <= n;
+        decreases n - program::iterations;
+        invariant 0 <= program::iterations and program::iterations <= n;
         invariant c(iterations) == iterations;
     }
     have loop(0).iterations == n by { solve(); }
@@ -33,5 +34,5 @@ int32 count(int32 n) {
 ```
 
 ```expect
-pass
+fail: `c(iterations)` is no longer Click syntax: a program binding is `program::iterations`
 ```

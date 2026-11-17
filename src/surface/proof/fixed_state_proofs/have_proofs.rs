@@ -966,7 +966,7 @@ pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
     result: Option<&ProgramValue>,
 ) -> Result<ProgramValue, String> {
     // Most resource fragments already carry their resolved C spelling.
-    // Retain the source expression only where its `c(result)` distinction
+    // Retain the source expression only where its `program::result` distinction
     // matters, and keep the typed null supplied by parameter lowering.
     let original = if result.is_none()
         || !crate::surface::lowering::contract_expression_referenced_names(original)
@@ -1085,7 +1085,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     | ContractExpression::ProgramExpression(ProgramExpression::Variable(
         crate::kernel::BindingName::Named(name),
     ))
-    | ContractExpression::CBinding(name) = expression
+    | ContractExpression::ProgramBinding(name) = expression
         && let Some(array_ref) = contract_environment.array_refs.get(name)
         && let Some(ProgramValue::Pointer(value)) = contract_environment.values.get(name)
     {
@@ -1787,7 +1787,7 @@ fn fixed_array_argument_retains_the_selected_point_with_equal_memory() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = crate::kernel::Address::symbolic(crate::kernel::Variable(995_001));
     let entry = ExecutionState::new()
-        .with_memory(crate::kernel::Memory::new())
+        .with_memory(crate::kernel::SymbolicMemory::new())
         .with_local(
             "a",
             ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),

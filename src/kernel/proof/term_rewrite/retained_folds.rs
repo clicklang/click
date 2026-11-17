@@ -138,7 +138,7 @@ mod tests {
     #[test]
     fn common_fold_pointer_transport_preserves_state_and_condition_scope() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let source = Variable(55);
         let replacement = Address::symbolic(Variable(56));
         let read = MachineTerm::MemoryLoad(

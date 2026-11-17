@@ -27,10 +27,12 @@ fn reads() -> [MachineTerm; 3] {
         base: "retained-retained_state".into(),
         offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block(pointer.base.clone(), 64).store(
-        pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant(2)),
-    );
+    let memory = SymbolicMemory::new()
+        .with_block(pointer.base.clone(), 64)
+        .store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(2)),
+        );
     let other = Address {
         base: pointer.base.clone(),
         offset: AddressOffset::Constant(32),
@@ -177,7 +179,8 @@ fn state_source_index_matches_retained_signed_and_unsigned_ring_terms() {
 #[test]
 fn cached_state_syntax_never_caches_context_authority() {
     let _session = VerificationSession::enter();
-    let memory = crate::kernel::intern_memory(Memory::new().with_block("retained_state-alias", 16));
+    let memory =
+        crate::kernel::intern_memory(SymbolicMemory::new().with_block("retained_state-alias", 16));
     let pointers = [994110, 994111].map(|id| Address {
         base: "retained_state-alias".into(),
         offset: AddressOffset::Variable(Variable(id)),

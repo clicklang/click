@@ -261,7 +261,7 @@ fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixte
         base: "wide-pointee-external".into(),
         offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block(slot.base.clone(), 8)
         .with_block(pointee.base.clone(), 16)
         .store(
@@ -325,7 +325,7 @@ fn wide_address_symbolic_pointer_slot_reads_keep_eight_byte_access_identity() {
         };
         for bytes in [7, 8] {
             let state = ExecutionState::new()
-                .with_memory(Memory::new().with_block(slot.base.clone(), 8))
+                .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 8))
                 .with_resource_context(ResourceContext::new().unchecked_with_facts([
                     ResourceFact::view_memory(MemoryRange::new_with_element_width(
                         slot.clone(),
@@ -389,8 +389,9 @@ fn wide_address_static_array_startup_and_entry_keep_initializer_authority_separa
             3,
             ArrayContents::new(3, zero.clone(), [(2, endpoint.clone())]),
         )]);
-        let at =
-            |index: u32| Memory::static_pointer("wide_static", "items").offset_by_bytes(index * 16);
+        let at = |index: u32| {
+            SymbolicMemory::static_pointer("wide_static", "items").offset_by_bytes(index * 16)
+        };
         let startup =
             crate::kernel::initialize_program_program_storage([function.clone()]).unwrap();
         assert_eq!(startup.memory.known_value(&at(0)), Some(zero));
@@ -424,7 +425,7 @@ fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
         base: "local:wide-prefix".into(),
         offset: AddressOffset::Constant(offset),
     };
-    let mut memory = Memory::new()
+    let mut memory = SymbolicMemory::new()
         .with_block("local:wide-prefix", 16)
         .with_block("local:wide-target", 8)
         .with_initialized_object(&at(0), 16)
@@ -552,7 +553,7 @@ fn checked_object_address_rejects_storage_after_its_local_lifetime_ends() {
 
 #[test]
 fn wide_pointer_subtraction_preserves_unsigned_magnitude_and_bounds() {
-    let state = ExecutionState::new().with_memory(Memory::new().with_block("offsets", 16));
+    let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block("offsets", 16));
     let at = |offset| Address {
         base: "offsets".into(),
         offset: AddressOffset::Constant(offset),

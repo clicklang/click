@@ -9,7 +9,7 @@ fn store_equation_work(unrelated: usize, stores: usize) -> usize {
         base: "array".into(),
         offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(index)), 4),
     };
-    let mut memory = Memory::new().with_block("array", 1 << 20);
+    let mut memory = SymbolicMemory::new().with_block("array", 1 << 20);
     for index in 0..unrelated as u64 {
         memory = memory.store(
             cell(989_900_000 + index),
@@ -25,7 +25,7 @@ fn store_equation_work(unrelated: usize, stores: usize) -> usize {
         operands.push((before, memory.clone(), pointer, value));
     }
     // Include equation construction at store admission, not just extraction
-    // of retained equations. Memory-state fixture setup stays outside it.
+    // of retained equations. SymbolicMemory-state fixture setup stays outside it.
     let (equations, work) = crate::instrumentation::measure_deterministic_work(|| {
         let facts: ExecutionFacts = operands
             .into_iter()

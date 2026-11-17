@@ -1076,7 +1076,7 @@ impl<'a> Proof<'a> {
             )));
         }
         let replacement = match (c_typed, name.written()) {
-            (true, Some(name)) => ContractExpression::CBinding(name.into()),
+            (true, Some(name)) => ContractExpression::ProgramBinding(name.into()),
             _ => name.reference(),
         };
         let renaming = BTreeMap::from([(binder.clone(), replacement)]);

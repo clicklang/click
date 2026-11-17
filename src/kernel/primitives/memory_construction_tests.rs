@@ -1,6 +1,6 @@
 use super::*;
 
-fn assert_explained(memory: &Memory) {
+fn assert_explained(memory: &SymbolicMemory) {
     let mut pending = vec![memory.clone()];
     let mut seen = std::collections::HashSet::new();
     while let Some(memory) = pending.pop() {
@@ -31,7 +31,7 @@ fn memory_constructions_cover_non_transition_producers() {
         base: "local:construction".into(),
         offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block("local:construction", 16)
         .store(pointer.clone(), ProgramValue::Int32(7.into()));
     let projected = crate::kernel::memory_history::canonical_program_memory_for_pointer_load(
@@ -80,11 +80,15 @@ fn memory_constructions_cover_non_transition_producers() {
 #[test]
 fn construction_metadata_does_not_change_memory_identity_or_proof_edges() {
     let _session = crate::kernel::VerificationSession::enter();
-    let original = Memory::new().with_block("local:identity", 4);
+    let original = SymbolicMemory::new().with_block("local:identity", 4);
     let interned = intern_memory_ref(&original);
     let mut described = original.clone();
     // A distinct diagnostic path describes exactly the same semantic state.
-    described.record_diagnostic_transform("diagnostic test", vec![Memory::new()], Vec::new());
+    described.record_diagnostic_transform(
+        "diagnostic test",
+        vec![SymbolicMemory::new()],
+        Vec::new(),
+    );
     assert_eq!(original, described);
     assert_eq!(
         memory_content_hash(&original),
@@ -100,7 +104,7 @@ fn construction_metadata_does_not_change_memory_identity_or_proof_edges() {
 
 #[test]
 fn unrecorded_mutation_cannot_inherit_an_incorrect_origin() {
-    let original = Memory::new().with_block("local:changed", 4);
+    let original = SymbolicMemory::new().with_block("local:changed", 4);
     let mut changed = original.clone();
     Arc::make_mut(&mut changed.blocks).insert("local:extra".into(), MemoryBlock::new(4));
     assert!(changed.diagnostic_construction().is_none());
@@ -113,7 +117,7 @@ fn construction_pins_detect_mutation_of_an_uninterned_state() {
         base: "local:unpinned".into(),
         offset: AddressOffset::Constant(0),
     };
-    let mut memory = Memory::new().with_uninitialized_object(pointer.clone(), 4);
+    let mut memory = SymbolicMemory::new().with_uninitialized_object(pointer.clone(), 4);
     assert!(memory.diagnostic_construction().is_some());
     Arc::make_mut(&mut memory.heap)
         .uninitialized_objects

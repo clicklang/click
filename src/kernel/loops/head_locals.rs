@@ -78,13 +78,13 @@ mod tests {
     #[test]
     fn head_locals_keep_entry_and_construct_matching_stack_cells() {
         let _session = crate::kernel::VerificationSession::enter();
-        let slot = Memory::local_pointer("changed");
+        let slot = SymbolicMemory::local_pointer("changed");
         let entry = ExecutionState::new()
             .with_local("changed", int32(3))
             .with_local("retained", int32(7))
             .with_local("logical", int32(9))
             .with_memory(
-                Memory::new()
+                SymbolicMemory::new()
                     .with_block(slot.base.clone(), 4)
                     .store(slot.clone(), int32(3)),
             );
@@ -109,7 +109,7 @@ mod tests {
         assert!(
             !head
                 .memory
-                .has_block(&Memory::local_pointer("logical").base)
+                .has_block(&SymbolicMemory::local_pointer("logical").base)
         );
         assert!(head.locals.get("absent").is_none());
     }

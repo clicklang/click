@@ -14,9 +14,9 @@ use crate::kernel::population_authority::storage_creation::{
 use crate::kernel::{
     Address, CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
     ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MachineTerm,
-    Memory, MemoryRange, ProgramExpression, ProgramFunction, ProgramStatement, ProgramValue,
-    Proposition, PureFactContext, Resource, ResourceContext, ResourceFact, ResourceSpec,
-    RuntimeError, SpecProposition, StatementOutcome, Theorem, Variable, VerifiedLoopRule,
+    MemoryRange, ProgramExpression, ProgramFunction, ProgramStatement, ProgramValue, Proposition,
+    PureFactContext, Resource, ResourceContext, ResourceFact, ResourceSpec, RuntimeError,
+    SpecProposition, StatementOutcome, SymbolicMemory, Theorem, Variable, VerifiedLoopRule,
 };
 use crate::kernel::{BindingName, CompareRelation, MachineIntegerType};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
@@ -1237,8 +1237,8 @@ impl CheckedPopulationMemberRewrite {
 /// naming the offending cell, so the caller can report which cell or field a
 /// rejected rewrite changed.
 fn memory_only_adds_named_cells(
-    before: &crate::kernel::Memory,
-    after: &crate::kernel::Memory,
+    before: &crate::kernel::SymbolicMemory,
+    after: &crate::kernel::SymbolicMemory,
 ) -> Result<(), String> {
     let mut rebased = after.clone();
     rebased.cells = before.cells.clone();
@@ -1441,7 +1441,7 @@ impl From<&str> for ResourceRewriteCheckError {
 /// and admits no different address, bounds, or wide/narrow representation.
 fn cached_body_loadability(
     fact: &Proposition,
-    body_memory: &Memory,
+    body_memory: &SymbolicMemory,
     allowed: &std::collections::BTreeSet<Proposition>,
     comparisons: &mut HashMap<((u32, u32), (u32, u32)), bool>,
 ) -> bool {
@@ -5005,8 +5005,8 @@ fn arm_effect_deltas_are_exact(
 }
 
 fn memory_diff_is_covered_by_writes(
-    before: &Memory,
-    after: &Memory,
+    before: &SymbolicMemory,
+    after: &SymbolicMemory,
     changed: &[(Address, u32)],
     assumptions: &PureFactContext,
     fact: &ExecutionPureFact,
@@ -5047,8 +5047,8 @@ fn memory_diff_is_covered_by_writes(
 }
 
 fn memory_diff_is_covered_by_ranges(
-    before: &Memory,
-    after: &Memory,
+    before: &SymbolicMemory,
+    after: &SymbolicMemory,
     mutable_ranges: &[MemoryRange],
     assumptions: &PureFactContext,
 ) -> bool {
@@ -5090,17 +5090,17 @@ fn memory_diff_is_covered_by_ranges(
 /// and leaves no effect, so the recorded memory may hold tombstones the
 /// effects do not produce. Those objects are ended here the same way before
 /// the comparison. The join carries every arm's tombstones on its own
-/// ([`Memory::with_interface_memory_havoc_preserving_loans`]), so this
+/// ([`SymbolicMemory::with_interface_memory_havoc_preserving_loans`]), so this
 /// admits no write the effects do not cover.
 fn interface_chain_memory_matches(
-    produced: &Memory,
-    recorded: &Memory,
+    produced: &SymbolicMemory,
+    recorded: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     use crate::kernel::api::contract_certification::memories_definitionally_equal;
     // End the lifetimes first: with them the memories are usually the same
     // state, which the comparison answers without looking at a cell.
-    let mut ended: Option<Memory> = None;
+    let mut ended: Option<SymbolicMemory> = None;
     for block in recorded.ended_local_blocks() {
         if !produced.is_ended_local_block(block) {
             ended = Some(
@@ -5710,7 +5710,7 @@ impl CheckedInterfaceLowering {
 #[derive(Default)]
 struct InterfaceReadPremises {
     by_base: std::collections::BTreeMap<
-        (crate::kernel::Memory, crate::kernel::Address),
+        (crate::kernel::SymbolicMemory, crate::kernel::Address),
         (u32, Proposition),
     >,
 }
@@ -6577,8 +6577,8 @@ fn statement_call_havoc_views(theorem: &Theorem) -> Vec<crate::kernel::SharedMem
 
 fn register_recomputed_call_views(
     events: &CheckedCallEvents,
-    running: &Memory,
-    recomputed: &Memory,
+    running: &SymbolicMemory,
+    recomputed: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) {
     let Some(pairs) =
@@ -7052,8 +7052,8 @@ struct CheckedEvidenceProgress {
 /// pointer can reach, and it leaves no effect fact.
 #[derive(Clone)]
 struct CheckedMemoryStep {
-    before: Memory,
-    after: Memory,
+    before: SymbolicMemory,
+    after: SymbolicMemory,
     may_write: bool,
     /// For a statement, how many memory effects its recorder appended.
     statement_effects: Option<usize>,
@@ -7426,7 +7426,7 @@ fn retain_return_context(
                     crate::kernel::functions::evaluate_composite_resource_fact_propositions(
                         &authority,
                         definition,
-                        &crate::kernel::ProgramPoint::of_memory(&Memory::new()),
+                        &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
                         &ResourceContext::new(),
                         &PureFactContext::new().require_owned_expression_loads(),
                     )

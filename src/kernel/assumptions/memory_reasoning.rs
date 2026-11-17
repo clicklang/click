@@ -223,7 +223,7 @@ impl PureFactContext {
     /// preserving memory edge. Value equalities alone are never authority.
     pub(crate) fn has_memory_read_defined_evidence(
         &self,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         pointer: &Address,
         value_type: ProgramType,
     ) -> bool {
@@ -341,7 +341,7 @@ impl PureFactContext {
     /// Specification evaluation and value equalities alone cannot initialize bytes.
     pub(crate) fn proves_memory_read_defined(
         &self,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         pointer: &Address,
         value_type: ProgramType,
     ) -> bool {
@@ -452,7 +452,7 @@ impl PureFactContext {
 
     pub(crate) fn proves_memory_access(
         &self,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         pointer: &Address,
         byte_width: u32,
     ) -> bool {
@@ -465,7 +465,7 @@ impl PureFactContext {
     /// the evidence's address, just as for ordinary read ranges.
     pub(crate) fn proves_native_memory_loadable(
         &self,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         base: &Address,
         bytes: &MachineTerm,
     ) -> bool {
@@ -585,7 +585,7 @@ impl PureFactContext {
     fn native_loadable_subrange_from(
         &self,
         fact: &Proposition,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         base: &Address,
         bytes: &MachineTerm,
     ) -> bool {
@@ -669,7 +669,7 @@ impl PureFactContext {
 
     pub(crate) fn proves_memory_loadable(
         &self,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         base: &Address,
         bytes: &MachineTerm,
     ) -> bool {
@@ -697,7 +697,7 @@ impl PureFactContext {
 
     fn proves_memory_loadable_inner(
         &self,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         base: &Address,
         bytes: &MachineTerm,
     ) -> bool {
@@ -848,11 +848,11 @@ impl PureFactContext {
     /// store initializes the next cell of an already-initialized prefix.
     pub(crate) fn adjacent_loadable_region_facts(
         &self,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         base: &Address,
         bytes: &MachineTerm,
     ) -> Option<Vec<Proposition>> {
-        let compatible = |fact_memory: &Memory, fact_base: &Address| {
+        let compatible = |fact_memory: &SymbolicMemory, fact_base: &Address| {
             fact_memory == memory
                 // Stores change cell contents, not whether the surrounding
                 // stack blocks or heap allocations are live. Pointer terms
@@ -1043,7 +1043,7 @@ impl PureFactContext {
 
     pub(crate) fn proves_memory_loadable_for_memory_resolution(
         &self,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         base: &Address,
         bytes: &MachineTerm,
     ) -> bool {
@@ -1665,7 +1665,7 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn proves_access_from_memory_block(
         &self,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         pointer: &Address,
         byte_width: u32,
     ) -> bool {
@@ -3301,7 +3301,7 @@ impl PureFactContext {
         if left == right {
             return true;
         }
-        // Memory is addressed: two pointers with equal addresses name the
+        // SymbolicMemory is addressed: two pointers with equal addresses name the
         // same bytes, whatever objects they designate. A C pointer comparison
         // states exactly that (`program_pointer_comparison_condition`). Such a
         // fact files its address endpoints by object, so a context with none
@@ -5878,7 +5878,7 @@ mod seeded_interval_adjacency_tests {
             base: "wide-run-adjacency".into(),
             offset: AddressOffset::Constant(0),
         };
-        let source = crate::kernel::intern_memory(Memory::new());
+        let source = crate::kernel::intern_memory(SymbolicMemory::new());
         let run = CellRun::new(
             base.clone(),
             1,
@@ -5887,7 +5887,7 @@ mod seeded_interval_adjacency_tests {
             source,
             IndexIntervals::default(),
         );
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         std::sync::Arc::make_mut(&mut memory.cells).add_run(run);
         let wrong = Address {
             base: base.base.clone(),

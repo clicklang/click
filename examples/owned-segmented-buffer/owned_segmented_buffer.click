@@ -372,8 +372,8 @@ int32 owned_segmented_buffer_pipeline(
     step();
     step();
     have first_data[0] == first_value by { known(); }
-    apply(int32_equality_transitive(c(result), first_data[0], first_value)) using {
-        c(result) == first_data[0];
+    apply(int32_equality_transitive(program::result, first_data[0], first_value)) using {
+        program::result == first_data[0];
         *first_data == first_value;
     };
     step();

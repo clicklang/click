@@ -348,7 +348,7 @@ impl Printer<'_> {
     /// Spells a place read in `memory`, then qualifies it with that memory.
     fn place_read_in(
         &mut self,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         place: impl FnOnce(&mut Self) -> Option<Spelled>,
     ) -> Option<Spelled> {
         let outer = self.before_return;
@@ -744,7 +744,7 @@ impl Printer<'_> {
 
     /// A state's role in a sentence: `function entry`, `here`, a recorded
     /// point, or a report-local `<state A>`.
-    fn state_phrase(&mut self, memory: &Memory) -> String {
+    fn state_phrase(&mut self, memory: &SymbolicMemory) -> String {
         let point = self
             .labels
             .source_memory_context(memory)
@@ -1766,7 +1766,7 @@ impl Printer<'_> {
 
     fn load(
         &mut self,
-        memory: &Memory,
+        memory: &SymbolicMemory,
         pointer: &Address,
         kind: crate::kernel::LoadKind,
         depth: usize,
@@ -1881,7 +1881,7 @@ impl Printer<'_> {
     /// report has a current state and `memory` is another recorded point,
     /// `at(point, fact)`; otherwise bare. Unlike a read, a fact at entry is
     /// `at(function.entry, fact)`: `old` takes a value.
-    fn qualify_fact(&mut self, memory: &Memory, fact: Spelled) -> Option<Spelled> {
+    fn qualify_fact(&mut self, memory: &SymbolicMemory, fact: Spelled) -> Option<Spelled> {
         let has_current = self
             .labels
             .source_memories
@@ -1899,7 +1899,7 @@ impl Printer<'_> {
         })
     }
 
-    fn qualify(&mut self, memory: &Memory, place: Spelled) -> Option<Spelled> {
+    fn qualify(&mut self, memory: &SymbolicMemory, place: Spelled) -> Option<Spelled> {
         let point = self
             .labels
             .source_memory_context(memory)
@@ -2031,7 +2031,12 @@ impl Printer<'_> {
 
     /// The pointer stored at `address` in `memory`, as the place it is read
     /// from.
-    fn pointer_cell(&mut self, memory: &Memory, address: &Address, depth: usize) -> Spelled {
+    fn pointer_cell(
+        &mut self,
+        memory: &SymbolicMemory,
+        address: &Address,
+        depth: usize,
+    ) -> Spelled {
         let tables = self.labels.naming.clone();
         let cell = tables.as_deref().and_then(|(parameters, arguments)| {
             let binding = ParameterBinding::new(parameters, arguments);
@@ -3276,7 +3281,7 @@ mod tests {
         ));
         let before = ExecutionState::new()
             .with_local("before_ptr", pointer_value.clone())
-            .with_memory(Memory::new());
+            .with_memory(SymbolicMemory::new());
         let current = ExecutionState::new()
             .with_local("current_ptr", pointer_value)
             .with_memory(before.memory().clone());
@@ -3320,17 +3325,17 @@ mod tests {
         ));
         let before = ExecutionState::new()
             .with_local("cells", pointer.clone())
-            .with_memory(Memory::new().with_block("global:cells", 4));
+            .with_memory(SymbolicMemory::new().with_block("global:cells", 4));
         let copied = before
             .clone()
-            .with_memory(Memory::new().with_block("global:cells", 8));
+            .with_memory(SymbolicMemory::new().with_block("global:cells", 8));
         let current = before
             .clone()
-            .with_memory(Memory::new().with_block("global:cells", 16));
+            .with_memory(SymbolicMemory::new().with_block("global:cells", 16));
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &current);
         labels.source_state(&before, ENTRY_POINT.into());
         labels.source_state(&copied, "copied".into());
-        let predicate = |memories: [&Memory; 3]| Proposition::Predicate {
+        let predicate = |memories: [&SymbolicMemory; 3]| Proposition::Predicate {
             name: "same".into(),
             arguments: std::iter::once(Term::ExecutionState(Box::new(before.clone())))
                 .chain(memories.into_iter().flat_map(|memory| {
@@ -3367,7 +3372,7 @@ mod tests {
         let state = ExecutionState::new()
             .with_local("m", cell("m"))
             .with_local("p", cell("p"))
-            .with_memory(Memory::new().with_block("global:m", 4));
+            .with_memory(SymbolicMemory::new().with_block("global:m", 4));
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &state);
         let fact = |name: String, arguments: Vec<Term>| Proposition::Predicate { name, arguments };
         let same = fact(
@@ -3427,13 +3432,13 @@ mod tests {
         ));
         let before = ExecutionState::new()
             .with_local("cells", base.clone())
-            .with_memory(Memory::new().with_block("global:cells", 4));
+            .with_memory(SymbolicMemory::new().with_block("global:cells", 4));
         let after = before
             .clone()
-            .with_memory(Memory::new().with_block("global:cells", 8));
+            .with_memory(SymbolicMemory::new().with_block("global:cells", 8));
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &after);
         labels.source_state(&before, "pre".into());
-        let load = |memory: &Memory, kind| {
+        let load = |memory: &SymbolicMemory, kind| {
             equality(MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                 Box::new(pointer.clone()),
@@ -3452,7 +3457,7 @@ mod tests {
             render(&load(before.memory(), LoadKind::UInt8), &mut labels),
             None
         );
-        let unknown = Memory::new().with_block("global:cells", 16);
+        let unknown = SymbolicMemory::new().with_block("global:cells", 16);
         assert_eq!(render(&load(&unknown, LoadKind::Int32), &mut labels), None);
         // The source policy names the unknown memory instead of refusing, so
         // the two reads of `cells[0]` stay distinct.
@@ -3474,8 +3479,10 @@ mod tests {
             base: AddressBase::Heap(1),
             offset: AddressOffset::Constant(0),
         };
-        let before = ExecutionState::new().with_memory(Memory::new().with_block("global:a", 4));
-        let after = ExecutionState::new().with_memory(Memory::new().with_block("global:a", 8));
+        let before =
+            ExecutionState::new().with_memory(SymbolicMemory::new().with_block("global:a", 4));
+        let after =
+            ExecutionState::new().with_memory(SymbolicMemory::new().with_block("global:a", 8));
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &after);
         labels.source_state(&before, "pre".into());
         labels.source_result(&ProgramValue::Int32(MachineTerm::Variable(index)));
@@ -3484,7 +3491,7 @@ mod tests {
             heap.clone(),
             ProgramType::Int32Pointer,
         )));
-        let load = |memory: &Memory| {
+        let load = |memory: &SymbolicMemory| {
             equality(MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                 Box::new(heap.clone()),
@@ -3547,11 +3554,11 @@ mod resource_tests {
                     ProgramType::Int32Pointer,
                 )),
             )
-            .with_memory(Memory::new().with_block("global:cells", 4));
+            .with_memory(SymbolicMemory::new().with_block("global:cells", 4));
         let after = before
             .clone()
-            .with_memory(Memory::new().with_block("global:cells", 8));
-        let resource = |memory: &Memory| {
+            .with_memory(SymbolicMemory::new().with_block("global:cells", 8));
+        let resource = |memory: &SymbolicMemory| {
             ResourceFact::view_composite(
                 "sampled".into(),
                 vec![ProgramValue::Int32(MachineTerm::MemoryLoad(

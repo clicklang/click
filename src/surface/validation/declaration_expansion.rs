@@ -90,7 +90,7 @@ impl DeclaredResourceScope {
                         crate::kernel::BindingName::Named(name),
                     ))
                     | ContractExpression::Binding(name)
-                    | ContractExpression::CBinding(name) => Some(name.as_str()),
+                    | ContractExpression::ProgramBinding(name) => Some(name.as_str()),
                     _ => None,
                 };
                 match (named, parameter_types.get(index)) {
@@ -1743,7 +1743,7 @@ fn theorem_argument_is_value(argument: &ContractExpression) -> bool {
     match argument {
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::Binding(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::ProgramExpression(
             ProgramExpression::Value(_) | ProgramExpression::Variable(_),
@@ -2174,7 +2174,7 @@ fn classify_function_decrease(
             )?))
         }
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) if declared_binders.contains(name) => Ok(FunctionDecrease::Binder(name.clone())),

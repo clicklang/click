@@ -597,7 +597,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
 pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
     let ranges = evaluate_composite_resource_memory_ranges(
@@ -699,6 +699,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
     // Evaluating the body binds definition parameters at an existing point.
     // Installing its memory as a transition would mint an unrelated point
     // every time the same facts were instantiated.
+    let memory = at.memory();
     let point_state = ExecutionState::at_point(at);
     let mut state = match population_state {
         Some(state) => state.clone().with_memory_of(&point_state),

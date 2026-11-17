@@ -49,7 +49,7 @@ pub(super) fn negate_condition(condition: E) -> E {
 
 /// Interpret the header in assignment order. Admit only total scalar copies,
 /// comparisons, negation, and shared slice pointer/length metadata copies.
-/// Memory reads, arithmetic, ordinary calls, and ownership events stay excluded.
+/// SymbolicMemory reads, arithmetic, ordinary calls, and ownership events stay excluded.
 /// Bound substitution growth rather than expanding a shared expression DAG
 /// exponentially. The fixed bound makes work linear in header size.
 pub(super) fn header_condition(

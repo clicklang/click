@@ -152,7 +152,7 @@ fn preserve_definedness(
     if bytes != value_type.byte_width() {
         return None;
     }
-    let defined = |point: &ProgramPoint, memory: &Memory| Proposition::MemoryReadDefined {
+    let defined = |point: &ProgramPoint, memory: &SymbolicMemory| Proposition::MemoryReadDefined {
         at: point.id(),
         memory: memory.clone(),
         pointer: pointer.clone(),
@@ -255,8 +255,8 @@ fn observation_type(comparison: ReadType, bytes: u32) -> Option<ReadType> {
 }
 
 fn observation_equality(
-    before: &Memory,
-    after: &Memory,
+    before: &SymbolicMemory,
+    after: &SymbolicMemory,
     address: Address,
     kind: ReadType,
     comparison: ReadType,
@@ -357,7 +357,7 @@ mod tests {
             super::apply(&self.separation, self.field, &self.result, available)?;
             Ok(self.result.clone())
         }
-        pub fn memories(&self) -> (&Memory, &Memory) {
+        pub fn memories(&self) -> (&SymbolicMemory, &SymbolicMemory) {
             let Proposition::ResourceSeparate { left, .. } = &self.separation else {
                 unreachable!()
             };
@@ -373,7 +373,7 @@ mod tests {
         ty: ProgramType,
     ) -> (Preservation, Proposition, Proposition, Proposition) {
         let pointer = Address::symbolic(Variable(8_410_000));
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for i in 0..history {
             // Grow both related history and unrelated memory.
             memory = memory.store(
@@ -485,7 +485,7 @@ mod tests {
                     unreachable!()
                 };
                 match corruption {
-                    0 => *memory = Memory::new(),
+                    0 => *memory = SymbolicMemory::new(),
                     1 => *pointer = Address::symbolic(Variable(8_499_000)),
                     2 => {
                         *at = ExecutionState::new()
@@ -700,7 +700,11 @@ mod tests {
         );
     }
 
-    pub(super) fn observe(memory: &Memory, address: &Address, ty: ProgramType) -> ProgramValue {
+    pub(super) fn observe(
+        memory: &SymbolicMemory,
+        address: &Address,
+        ty: ProgramType,
+    ) -> ProgramValue {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
             memory,
             address.clone(),
@@ -721,7 +725,7 @@ mod tests {
     pub(super) fn fixture(history: u64, cached: bool) -> (Preservation, Proposition) {
         let address = Address::symbolic(Variable(8_310_000));
         let changed = Address::symbolic(Variable(8_310_001));
-        let mut before = Memory::new();
+        let mut before = SymbolicMemory::new();
         for i in 0..history {
             before = before.store(
                 Address::symbolic(Variable(8_320_000 + i)),
@@ -872,7 +876,7 @@ mod tests {
     #[test]
     fn typed_read_observations_are_scoped_and_keep_the_selected_width() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let address = Address::symbolic(Variable(8_399_010));
         let kind = ReadType::Integer(MachineIntegerType::Int64);
         observe(&memory, &address, ProgramType::UInt64);
@@ -956,9 +960,9 @@ mod tests {
                     let mut before = fp.before.clone();
                     let mut after = fp.after.clone();
                     if corruption == 1 {
-                        before = Memory::new();
+                        before = SymbolicMemory::new();
                     } else {
-                        after = Memory::new();
+                        after = SymbolicMemory::new();
                     }
                     let entry = ExecutionState::new().with_memory(before);
                     let exit = entry.clone().with_memory(after);

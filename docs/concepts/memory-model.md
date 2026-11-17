@@ -20,7 +20,7 @@ These names describe different things:
   resources, and execution bookkeeping. `RecordedStates` associates point
   selectors with these states. It is not a table of all concrete values at
   a source location, and different paths need not supply one common state.
-- A **memory state** is a `Memory` value, or its interned `SharedMemory`
+- A **memory state** is a `SymbolicMemory` value, or its interned `SharedMemory`
   handle. It records symbolic memory information, which may be incomplete,
   abstracted by a call or loop, or projected for one selected read. It is
   not a program point or a complete execution state.
@@ -593,7 +593,7 @@ predicate same_first(a: int32[], b: int32[]) {
 
 receives pure array refs for `a` and `b`. Each ref carries:
 
-- a `Memory` value, the memory its reads are taken in
+- a `SymbolicMemory` value, the memory its reads are taken in
 - a C pointer
 - an element type, currently `int32` or `uint8`
 

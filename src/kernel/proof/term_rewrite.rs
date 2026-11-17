@@ -1,5 +1,5 @@
 //! Sort-preserving congruence and explicitly directed conditional reduction.
-//! Memory states are opaque: this walks the selected logical expression,
+//! SymbolicMemory states are opaque: this walks the selected logical expression,
 //! never a heap or an ambient proof state.
 use crate::kernel::CompareRelation;
 #[cfg(test)]
@@ -1071,7 +1071,7 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
                 }
             }
         }
-        // Memory states are opaque proof-state values.  Only the selected
+        // SymbolicMemory states are opaque proof-state values.  Only the selected
         // pointer expression participates in freshness collection.
         MachineTerm::MemoryLoad(memory, pointer, kind) => {
             if let Some(terms) = &mut variables.read_terms {
@@ -1188,8 +1188,8 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
 ///
 /// *Union overlays.* A typed union overlay outranks the raw cell for an exact
 /// typed load, so a raw cell read while an overlay is present would be the
-/// wrong value rather than a missing one. `Memory::store_with_context` drops
-/// every overlay at the pointer it writes and `Memory::store_union` drops the
+/// wrong value rather than a missing one. `SymbolicMemory::store_with_context` drops
+/// every overlay at the pointer it writes and `SymbolicMemory::store_union` drops the
 /// raw cell at the pointer it overlays, so the two never coexist at one
 /// pointer — an invariant this helper depends on and does not enforce
 /// elsewhere. It is asserted in debug builds and refused in release ones, and
@@ -1361,7 +1361,7 @@ impl IntegerSubstitutionVariableCollector {
     }
 }
 
-/// Collect only pointer expressions reachable from this explicit goal. Memory
+/// Collect only pointer expressions reachable from this explicit goal. SymbolicMemory
 /// states remain opaque, just as in capture-avoiding term rewriting.
 pub(crate) fn proposition_pointer_terms(proposition: &Proposition) -> Vec<Address> {
     let mut carriers = CarrierVariables::for_rewrite(false);
@@ -2022,7 +2022,7 @@ impl<'a> TermRewrite<'a> {
     }
 
     /// A retained read is an atom under a binder only when its explicit
-    /// address does not mention that binder. Memory states remain immutable.
+    /// address does not mention that binder. SymbolicMemory states remain immutable.
     pub(crate) fn read_address_independent_of(
         term: &MachineTerm,
         bound: &BTreeSet<Variable>,
@@ -7229,13 +7229,13 @@ mod tests {
             offset: AddressOffset::Constant(1),
         };
         let memory_with_unrelated_blocks = |count: u64| {
-            let mut memory = Memory::new().with_block("array", 8);
+            let mut memory = SymbolicMemory::new().with_block("array", 8);
             for index in 0..count {
                 memory = memory.with_block(AddressBase::Heap(index + 1), 8);
             }
             memory
         };
-        let observed_array = |memory: Memory, pointer: Address| {
+        let observed_array = |memory: SymbolicMemory, pointer: Address| {
             Term::Integer(IntegerTerm::PureFunctionApplication(
                 SharedPureApplication::intern(
                     "observe_array".into(),
@@ -7263,7 +7263,7 @@ mod tests {
         let (large, large_work) =
             crate::instrumentation::measure_deterministic_work(|| rewrite(&large_input));
 
-        let assert_rewrite = |output: &Term, original_memory: &Memory| {
+        let assert_rewrite = |output: &Term, original_memory: &SymbolicMemory| {
             let Term::Integer(IntegerTerm::PureFunctionApplication(application)) = output else {
                 unreachable!()
             };
@@ -7342,7 +7342,7 @@ mod tests {
             base: AddressBase::Symbolic(source),
             offset: AddressOffset::Constant(0),
         };
-        let condition_for = |memory: Memory, depth: usize, fanout: usize| {
+        let condition_for = |memory: SymbolicMemory, depth: usize, fanout: usize| {
             let mut right = MachineTerm::Variable(source);
             for index in 0..depth as u64 {
                 let mut arguments = Vec::with_capacity(fanout + 1);
@@ -7377,7 +7377,7 @@ mod tests {
             }
         };
         let memory_with_unrelated_blocks = |count: u64| {
-            let mut memory = Memory::new().with_block("array", 8);
+            let mut memory = SymbolicMemory::new().with_block("array", 8);
             for index in 0..count {
                 memory = memory.with_block(AddressBase::Heap(index + 1), 8);
             }
@@ -7663,7 +7663,7 @@ mod tests {
     fn a_loaded_pointer_carries_its_defining_address_variables() {
         let _session = crate::kernel::VerificationSession::enter();
         let index = Variable(9_904);
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let address = Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::scale_int32(MachineTerm::Variable(index), 8),
@@ -8760,7 +8760,7 @@ mod tests {
     fn checked_substitution_collector_rejects_work_exhaustion() {
         let source = Variable(3_104_100);
         let atom = Proposition::MemoryLoadable {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             base: Address {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(source), 4),
@@ -8811,7 +8811,7 @@ mod pointer_integer_rewrite_tests {
             algebraic_type: parameter.algebraic_type(),
             node: AlgebraicTermNode::Variable(Variable(996_022)),
         }));
-        let memory = crate::kernel::intern_memory(Memory::new().store(
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new().store(
             Address {
                 base: AddressBase::Heap(996_023),
                 offset: AddressOffset::Constant(0),
@@ -8849,7 +8849,7 @@ mod pointer_integer_rewrite_tests {
             ProgramType::Int32PointerPointer,
         );
         let stored = ProgramValue::pointer(Address::symbolic(Variable(996_012)));
-        let memory = Memory::new().store(to.pointer().clone(), stored.clone());
+        let memory = SymbolicMemory::new().store(to.pointer().clone(), stored.clone());
         let read = memory.symbolic_pointer_version_load(from.pointer(), ProgramType::Int32Pointer);
         let expected =
             memory.symbolic_pointer_version_load(to.pointer(), ProgramType::Int32Pointer);
@@ -8881,7 +8881,7 @@ mod pointer_integer_rewrite_tests {
         };
         let destination = address(to.clone());
         let stored = ProgramValue::pointer(Address::symbolic(Variable(996_022)));
-        let memory = Memory::new().store(destination.clone(), stored.clone());
+        let memory = SymbolicMemory::new().store(destination.clone(), stored.clone());
         let shared = crate::kernel::intern_memory(memory.clone());
         let mut input = address(from.clone());
         let mut expected = destination.clone();
@@ -8962,7 +8962,7 @@ mod comparison_read_batch_tests {
     #[test]
     fn batch_read_comparison_retains_literal_machine_truth_and_falsehood() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         for (format, kind) in [
             (MachineIntegerType::Int32, LoadKind::Int32),
             (MachineIntegerType::UInt32, LoadKind::UInt32),
@@ -9018,7 +9018,7 @@ mod comparison_read_batch_tests {
     #[test]
     fn batch_read_comparison_is_simultaneous_and_capture_avoiding() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let read = |index| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
@@ -9171,7 +9171,7 @@ mod comparison_read_batch_tests {
         let binder = Variable(403_001);
         let accumulator = Variable(403_002);
         let pointer = Address::symbolic(binder);
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let raw = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
@@ -9263,7 +9263,7 @@ mod comparison_read_batch_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Variable(402_001);
         let pointer = Address::symbolic(Variable(402_002));
-        let memory = crate::kernel::intern_memory(Memory::new().store(
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::Variable(source)),
         ));

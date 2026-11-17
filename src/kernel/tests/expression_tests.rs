@@ -1667,7 +1667,7 @@ fn finite_float_context_proves_reflexive_comparisons() {
 #[test]
 fn finite_structural_float_read_proves_reflexive_comparison() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let pointer = Address::symbolic(Variable(22_103));
     let value = crate::kernel::eval::scalar_read_for_exact_cell(
         &memory,
@@ -2018,7 +2018,7 @@ fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
         base: "bytes".into(),
         offset: AddressOffset::Constant(0),
     };
-    let state = ExecutionState::new().with_memory(Memory::new().with_block("bytes", 8));
+    let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block("bytes", 8));
     let value = || {
         crate::kernel::program_expression::typed_pointer_value(
             pointer.clone(),
@@ -2252,7 +2252,7 @@ fn store_then_load_threads_native_memory() {
         )),
     );
     let final_state = ExecutionState::new()
-        .with_memory(Memory::new().store(pointer.clone(), int32(9)))
+        .with_memory(SymbolicMemory::new().store(pointer.clone(), int32(9)))
         .with_resource_context(resources);
     let theorem =
         prove_symbolic_program_execution(state.clone(), statement.clone(), PureFactContext::new())
@@ -2300,7 +2300,7 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
                 // The symbolic read is canonical at creation: its load
                 // variable, which names this load.
                 value: int32(crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
+                    ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 )))
@@ -2317,7 +2317,7 @@ fn block_backed_store_then_load_needs_no_memory_obligation() {
         base: "block".into(),
         offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("block", 16);
+    let memory = SymbolicMemory::new().with_block("block", 16);
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = ExecutionState::new()
         .with_memory(memory.clone())
@@ -2359,7 +2359,7 @@ fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
         base: "block".into(),
         offset: AddressOffset::Constant(4),
     };
-    let memory = Memory::new().with_block("block", 16);
+    let memory = SymbolicMemory::new().with_block("block", 16);
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_memory(memory.clone())
@@ -2399,7 +2399,7 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
         base: "block".into(),
         offset: AddressOffset::Constant(4),
     };
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block("block", 16)
         .store(second.clone(), int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
@@ -2434,7 +2434,7 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
                             }),
                         )
                         .with_memory(
-                            Memory::new()
+                            SymbolicMemory::new()
                                 .with_block("block", 16)
                                 .store(second, int32(23),),
                         )
@@ -2453,7 +2453,7 @@ fn pointer_addition_rejects_an_int32_index_beyond_the_object() {
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base))
-        .with_memory(Memory::new().with_block("array", 8));
+        .with_memory(SymbolicMemory::new().with_block("array", 8));
     let expression = crate::kernel::program_expression::add(
         crate::kernel::program_expression::variable("p"),
         crate::kernel::program_expression::int32_literal(3),
@@ -2485,7 +2485,7 @@ fn uint64_pointer_index_bounds_use_the_full_value() {
     let mut state = ExecutionState::new()
         .with_local("array", ProgramValue::pointer(base.clone()))
         .with_local("index", ProgramValue::UInt64(index.clone()))
-        .with_memory(Memory::new().with_block("bytes", 8));
+        .with_memory(SymbolicMemory::new().with_block("bytes", 8));
     state.locals.set_typed(
         "array",
         ProgramValue::pointer(base),
@@ -2586,7 +2586,7 @@ fn pointer_addition_allows_the_one_past_int32_element() {
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
-        .with_memory(Memory::new().with_block("array", 8));
+        .with_memory(SymbolicMemory::new().with_block("array", 8));
     let expression = crate::kernel::program_expression::add(
         crate::kernel::program_expression::variable("p"),
         crate::kernel::program_expression::int32_literal(2),
@@ -2617,7 +2617,7 @@ fn pointer_addition_rejects_a_uint8_index_beyond_the_object() {
     };
     let mut state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
-        .with_memory(Memory::new().with_block("bytes", 4));
+        .with_memory(SymbolicMemory::new().with_block("bytes", 4));
     state
         .locals
         .set_typed("p", ProgramValue::pointer(base), ProgramType::UInt8Pointer);
@@ -2647,7 +2647,7 @@ fn byte_offset_rejects_a_pointer_beyond_the_object() {
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base))
-        .with_memory(Memory::new().with_block("object", 4));
+        .with_memory(SymbolicMemory::new().with_block("object", 4));
     let expression = crate::kernel::program_expression::pointer_offset_bytes(
         crate::kernel::program_expression::variable("p"),
         5,
@@ -2802,7 +2802,7 @@ fn pointer_subtraction_by_one_steps_back_one_element() {
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer))
-        .with_memory(Memory::new().with_block("array", 12));
+        .with_memory(SymbolicMemory::new().with_block("array", 12));
     let expression = crate::kernel::program_expression::subtract(
         crate::kernel::program_expression::variable("p"),
         crate::kernel::program_expression::int32_literal(1),
@@ -3175,7 +3175,7 @@ fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
         base: "block".into(),
         offset: AddressOffset::Constant(4),
     };
-    let memory = Memory::new().with_block("block", 4);
+    let memory = SymbolicMemory::new().with_block("block", 4);
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
         .with_memory(memory.clone())
@@ -3218,7 +3218,7 @@ fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
         base: "block".into(),
         offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("block", 12);
+    let memory = SymbolicMemory::new().with_block("block", 12);
     let resources = own_memory_context(base.clone(), 0, 3);
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(base.clone()))
@@ -3315,7 +3315,7 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
     let n = Variable(68);
     let i_bits = MachineTerm::Variable(i);
     let n_bits = MachineTerm::Variable(n);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let base = Address {
         base: "array".into(),
         offset: AddressOffset::Constant(0),
@@ -4012,7 +4012,7 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
         base: "bounded".into(),
         offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("bounded", 8);
+    let memory = SymbolicMemory::new().with_block("bounded", 8);
     let load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
         Box::new(pointer.clone()),
@@ -4113,7 +4113,7 @@ fn exact_signed_mirror_normalization_checks_state_address_and_selected_premise()
         base: "mirror".into(),
         offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("mirror", 8);
+    let memory = SymbolicMemory::new().with_block("mirror", 8);
     let load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
         Box::new(pointer.clone()),
@@ -4658,11 +4658,11 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     let a = Address::symbolic(Variable(22_111));
     let b = Address::symbolic(Variable(22_112));
     let stored = subobject_pointer(0, 0, 4);
-    let before_b = Memory::new().store(a.clone(), ProgramValue::Pointer(stored.clone()));
+    let before_b = SymbolicMemory::new().store(a.clone(), ProgramValue::Pointer(stored.clone()));
     let memory = before_b
         .clone()
         .store(b.clone(), ProgramValue::Pointer(stored.clone()));
-    let read = |memory: &Memory, address: &Address| {
+    let read = |memory: &SymbolicMemory, address: &Address| {
         PointerValue::from_read(
             stored.pointer().clone(),
             ProgramType::Int32Pointer,
@@ -4708,7 +4708,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         &stored,
     ));
     let c = Address::symbolic(Variable(22_113));
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let original = read(&before, &c);
     let changed = before.clone().store(b.clone(), int32(1));
     let later = read(&changed, &c);
@@ -4743,7 +4743,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     assert!(!context.pointer_provenance_match(&first, &stored.clone().with_root_bounds()));
     let partial = memory.store(a.clone().offset_by_bytes(4), int32(0));
     assert!(!context.pointer_provenance_match(&read(&partial, &a), &stored));
-    let numeric = Memory::new().store(
+    let numeric = SymbolicMemory::new().store(
         a.clone(),
         ProgramValue::UInt64(MachineTerm::pointer_address(stored.pointer().clone())),
     );
@@ -4931,7 +4931,7 @@ fn specification_volatile_reads_do_not_create_execution_events() {
     let initial = ExecutionState::new()
         .with_resource_context(own_memory_context(pointer.clone(), 0, 1))
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("cell", 4)
                 .store(pointer.clone(), int32(7)),
         );

@@ -192,7 +192,7 @@ pub(in crate::surface) fn contract_array_ref_element_type(
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | ContractExpression::CBinding(name) => {
+        | ContractExpression::ProgramBinding(name) => {
             array_refs.get(name).map(|array_ref| array_ref.element_type)
         }
         ContractExpression::Old(expression) => {
@@ -393,8 +393,10 @@ mod tests {
             assert_bytes(&named_values, &named_arrays, &expected, ProgramType::Int32);
         }
         // Without a shadowing parameter, the same name still denotes the global.
-        let expected =
-            ProgramValue::typed_pointer(Memory::global_pointer("bytes"), ProgramType::UInt8Pointer);
+        let expected = ProgramValue::typed_pointer(
+            SymbolicMemory::global_pointer("bytes"),
+            ProgramType::UInt8Pointer,
+        );
         let (values, arrays) =
             contract_environment_at_state(&BTreeMap::new(), &BTreeMap::new(), &state);
         assert_bytes(&values, &arrays, &expected, ProgramType::UInt8);

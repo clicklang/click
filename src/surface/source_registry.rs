@@ -639,7 +639,7 @@ mod tests {
     }
 
     fn retained_state() -> crate::kernel::MemoryStateIdentity {
-        crate::kernel::MemoryStateIdentity::of(&crate::kernel::Memory::new())
+        crate::kernel::MemoryStateIdentity::of(&crate::kernel::SymbolicMemory::new())
     }
 
     fn direct_predicate(name: &str, parameter: &str) -> Requirement {
@@ -1082,7 +1082,7 @@ mod tests {
                     0,
                     &source_arguments,
                     crate::kernel::MemoryStateIdentity::of(
-                        &crate::kernel::Memory::new().with_block("stale", 1),
+                        &crate::kernel::SymbolicMemory::new().with_block("stale", 1),
                     ),
                 )
                 .is_none()

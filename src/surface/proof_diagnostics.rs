@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     fn rejected_read_prerequisite_uses_the_shared_state_legend() {
-        use crate::kernel::{Address, Memory, ProgramType, Variable};
+        use crate::kernel::{Address, ProgramType, SymbolicMemory, Variable};
         struct Rejected(Proposition);
         impl ProofDiagnosticState for Rejected {
             fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
@@ -760,7 +760,7 @@ mod tests {
         }
         let state = Rejected(Proposition::MemoryReadDefined {
             at: None,
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             pointer: Address::symbolic(Variable(987_001)),
             value_type: ProgramType::Int32,
         });
@@ -782,7 +782,7 @@ mod tests {
     #[test]
     fn rejected_resource_fact_uses_one_printer_and_state_legend() {
         let _typed = render::TypedNotationScope::enter();
-        use crate::kernel::{Address, Memory, ProgramType, Variable};
+        use crate::kernel::{Address, ProgramType, SymbolicMemory, Variable};
         struct Rejected(crate::kernel::proof::RejectedResourceRewriteFact);
         impl ProofDiagnosticState for Rejected {
             fn rejected_resource_fact(
@@ -806,8 +806,8 @@ mod tests {
             pointer: Address::symbolic(Variable(987_002)),
             value_type: ProgramType::Int32,
         };
-        let rejected = read(Memory::new());
-        let allowed = read(Memory::new().with_block("changed", 4));
+        let rejected = read(SymbolicMemory::new());
+        let allowed = read(SymbolicMemory::new().with_block("changed", 4));
         let state = Rejected(crate::kernel::proof::RejectedResourceRewriteFact {
             rejected: rejected.clone(),
             allowed: vec![allowed.clone(); 13].into(),
@@ -953,7 +953,7 @@ mod tests {
 
     #[test]
     fn reported_trace_uses_the_goals_state_labels() {
-        use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, Memory};
+        use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, SymbolicMemory};
 
         struct TracedState(Proposition);
         impl ProofDiagnosticState for TracedState {
@@ -1004,7 +1004,7 @@ mod tests {
             wide: false,
         };
         crate::surface::with_proof_trace("f", || {
-            let memory = Memory::new().with_block("shared", 1);
+            let memory = SymbolicMemory::new().with_block("shared", 1);
             crate::surface::proof_trace::record(
                 1,
                 crate::surface::proof_trace::TraceStep {

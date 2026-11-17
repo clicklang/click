@@ -12,8 +12,8 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 pub struct RegionFootprint {
     id: u64,
     pub(crate) source: String,
-    pub(crate) before: Memory,
-    pub(crate) after: Memory,
+    pub(crate) before: SymbolicMemory,
+    pub(crate) after: SymbolicMemory,
     pub(crate) before_point: ProgramPoint,
     pub(crate) after_point: ProgramPoint,
     pub(crate) before_resources: ResourceContext,

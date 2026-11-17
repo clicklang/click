@@ -1,7 +1,7 @@
 //! The entries of a pointer-keyed state collection that an access into
 //! one block can alias.
 //!
-//! Every memory map and heap collection in a `Memory` is keyed by a
+//! Every memory map and heap collection in a `SymbolicMemory` is keyed by a
 //! `Address` (or by a key whose ordering starts with one), and `Address`
 //! orders by `block` first. `AddressBase` in turn orders by variant:
 //!
