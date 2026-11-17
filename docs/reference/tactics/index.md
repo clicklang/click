@@ -2264,6 +2264,12 @@ search emits separate distribution and rewrite steps. All library proofs use
 ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
 states the named laws' exact guards.
 
+Bounded cast identities expand by proving the exact destination range from
+the selected bounds and then closing the observation equality with
+`known()`. Native and Integer spellings of the source bounds can be cited.
+For example, a signed value bounded from 1 through 100 keeps its Integer
+value when cast to `uint32`.
+
 Scalar-pointer offset translation expands through the named
 `integer::<pointee>_pointer_translate_int32` /
 `<pointee>_pointer_translate_uint64` laws, explicit

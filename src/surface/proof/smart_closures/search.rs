@@ -45,6 +45,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return search_input.driver().apply_step(ProofStep::Known);
         }
+        if let Some(premises) = &premises
+            && let Some(closed) = attempt::candidate_outcome(
+                Self::try_bounded_cast_identity_using(search_input, premises),
+            )?
+            .flatten()
+        {
+            return Ok(closed);
+        }
         if let Some(closed) =
             Self::try_pointer_translation_using(search_input, premises.as_deref().unwrap_or(&[]))?
         {
@@ -2647,6 +2655,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // decomposing the goal or searching for another derivation.
         if let Some(proof) =
             attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Known))?
+        {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
+        if let Some(proof) =
+            attempt::candidate_outcome(Self::try_bounded_cast_identity_closure(search_input))?
+                .flatten()
         {
             scope.succeed();
             return Ok(Some(proof));

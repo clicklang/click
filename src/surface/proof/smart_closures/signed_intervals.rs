@@ -111,6 +111,25 @@ pub(super) fn has_retained_read_source(proposition: &ClickProposition) -> bool {
     found
 }
 
+/// The cast's destination and which written operand holds the original value.
+fn bounded_cast_shape(goal: &Proposition) -> Option<(crate::kernel::MachineIntegerFormat, bool)> {
+    use crate::kernel::machine_integer::conversion;
+    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = goal else {
+        return None;
+    };
+    for (cast, original, original_on_left) in [(a, b, false), (b, a, true)] {
+        let format = conversion::cast(cast, original).or_else(|| {
+            conversion::integer_conversion(cast)
+                .filter(|(operand, _)| operand == original)
+                .map(|(_, ty)| ty.format())
+        });
+        if let Some(format) = format {
+            return Some((format, original_on_left));
+        }
+    }
+    None
+}
+
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Retain a native read's available domain or its recorded initialization.
     /// Observation identities themselves need only their outer range guards.
@@ -129,6 +148,77 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(closed.join()?));
         }
         Ok(None)
+    }
+
+    /// Discover connected bounds within the solve budget and replay the same
+    /// proof as the selected form. The fast cast rule never searches facts.
+    pub(in crate::surface::proof) fn try_bounded_cast_identity_closure(
+        input: &Proof<'a>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_bounded_cast_identity_closure");
+        let (Some(goal), Some(surface)) = (input.goal(), input.surface_goal()) else {
+            return Ok(None);
+        };
+        if bounded_cast_shape(goal).is_none() || has_retained_read_source(surface) {
+            return Ok(None);
+        }
+        let Some(candidates) =
+            crate::kernel::search::proposition_search::arithmetic_connected_premises(
+                input.facts().assumptions(),
+                goal,
+            )
+        else {
+            return Ok(None);
+        };
+        if candidates.len() > 64 {
+            return Ok(None);
+        }
+        let Some(pairs) = Self::resolve_solve_premises(input, &candidates, &[]) else {
+            return Ok(None);
+        };
+        let premises = pairs
+            .into_iter()
+            .map(|(_, source)| source)
+            .collect::<Vec<_>>();
+        Self::try_bounded_cast_identity_using(input, &premises)
+    }
+
+    /// Weaken the selected bounds to the exact destination range, then
+    /// use the same local observation rule as a written known().
+    pub(in crate::surface::proof) fn try_bounded_cast_identity_using(
+        input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_bounded_cast_identity_using");
+        let (Some(goal), Some(ClickProposition::Comparison { left, right, .. })) =
+            (input.goal(), input.surface_goal())
+        else {
+            return Ok(None);
+        };
+        let Some((format, original_on_left)) = bounded_cast_shape(goal) else {
+            return Ok(None);
+        };
+        let source = if original_on_left { left } else { right };
+        let (minimum, maximum) = format.bounds();
+        let integer_literal = |value: &BigInt| {
+            super::super::surface_synthesis::integer_typed_expression(
+                surface_signed_integer_literal(value),
+            )
+        };
+        let mut proof = input.clone();
+        for bound in [
+            le(integer_literal(&minimum), source.clone()),
+            le(source.clone(), integer_literal(&maximum)),
+        ] {
+            let scope = proof.driver().open_have(bound)?;
+            let Some(closed) = scope.driver().try_integer_composition_using(premises)? else {
+                return Ok(None);
+            };
+            proof = closed.join()?;
+        }
+        proof.driver().apply_step(ProofStep::Known).map(Some)
     }
 
     /// Close one selected interval obligation through ordinary emitters only.
@@ -157,37 +247,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return input.driver().apply_step(ProofStep::Known).map(Some);
         }
-        // Narrow casts need the destination's exact range pair. Stronger
-        // selected endpoints are converted by Integer proofs, never searched
-        // for or weakened implicitly by the known leaf.
-        if let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = goal
-            && let Some(ClickProposition::Comparison { left, right, .. }) = input.surface_goal()
-        {
-            for (cast, original, source) in [(a, b, right), (b, a, left)] {
-                let Some(format) = crate::kernel::machine_integer::conversion::cast(cast, original)
-                else {
-                    continue;
-                };
-                let (minimum, maximum) = format.bounds();
-                let integer_literal = |value: &BigInt| {
-                    super::super::surface_synthesis::integer_typed_expression(
-                        surface_signed_integer_literal(value),
-                    )
-                };
-                let mut proof = input.clone();
-                for bound in [
-                    le(integer_literal(&minimum), source.clone()),
-                    le(source.clone(), integer_literal(&maximum)),
-                ] {
-                    let scope = proof.driver().open_have(bound)?;
-                    let Some(closed) = scope.driver().try_integer_composition_using(premises)?
-                    else {
-                        return Ok(None);
-                    };
-                    proof = closed.join()?;
-                }
-                return proof.driver().apply_step(ProofStep::Known).map(Some);
-            }
+        if let Some(closed) = Self::try_bounded_cast_identity_using(input, premises)? {
+            return Ok(Some(closed));
         }
         // Native unsigned comparisons use their own observation, rather than
         // relabelling their bits int32. Transport a written cast explicitly.
@@ -1175,5 +1236,68 @@ by {step(); have defined(pool->capacity - 1) by solve();}
         assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[("bump.c", c)]))
             .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    }
+}
+
+#[cfg(test)]
+mod bounded_cast_tests {
+    use crate::surface::{
+        expand_c_claim_source_by_label, verify_c_sources, without_implicit_solve,
+    };
+
+    #[test]
+    #[ignore = "nightly: bounded cast expansion and strict replay matrix"]
+    fn bounded_cast_identities_expand_as_explicit_range_proofs() {
+        for (ty, lower, upper, identity) in [
+            (
+                "int32",
+                "1 <= to_integer(x)",
+                "to_integer(x) <= 100",
+                "to_integer(x as uint32) == to_integer(x)",
+            ),
+            (
+                "uint64",
+                "1u64 <= x",
+                "x <= 100u64",
+                "to_integer(x) == to_integer(x as uint32)",
+            ),
+            (
+                "int64",
+                "-100 <= to_integer(x)",
+                "to_integer(x) <= 100",
+                "to_integer(x as int8) == to_integer(x)",
+            ),
+            (
+                "uint32",
+                "0 <= to_integer(x)",
+                "to_integer(x) <= 4294967295",
+                "to_integer(x as uint64) == to_integer(x)",
+            ),
+        ] {
+            for tactic in [
+                format!("solve() using {{ {lower}; {upper}; }};"),
+                "solve();".into(),
+            ] {
+                let source = format!(
+                    "theorem cast_identity(x: {ty}) {{ requires {lower}; requires {upper}; ensures {identity} by {{ {tactic} }} }}"
+                );
+                let expanded =
+                    expand_c_claim_source_by_label(&source, &[], "cast_identity.ensures_0")
+                        .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+                assert!(expanded.contains("known()"), "{expanded}");
+                assert!(!expanded.contains("normalize("), "{expanded}");
+                assert!(!expanded.contains("solve("), "{expanded}");
+                without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+                    .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+            }
+        }
+
+        for source in [
+            "theorem omitted(x: int64) { requires 1 <= to_integer(x); requires to_integer(x) <= 100; ensures to_integer(x as uint32) == to_integer(x) by { solve() using { to_integer(x) <= 100; }; } }",
+            "theorem wraps(x: uint64) { requires 0u64 <= x; requires x <= 4294967296u64; ensures to_integer(x as uint32) == to_integer(x) by { solve() using { 0u64 <= x; x <= 4294967296u64; }; } }",
+        ] {
+            crate::surface::parse(source).expect("bounded cast refusal should parse");
+            assert!(verify_c_sources(source, &[]).is_err(), "{source}");
+        }
     }
 }

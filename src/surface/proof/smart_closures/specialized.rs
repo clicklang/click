@@ -136,6 +136,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if matches!(node, UnsignedSumBound { .. }) {
             return Self::try_widened_unsigned_sum_using(proof, &premises);
         }
+        if matches!(node, IntegerCastIdentity { .. }) {
+            if proof
+                .goal()
+                .is_some_and(crate::surface::planning::solve::computes_with_known)
+                || Self::known_bridge_using(proof, &premises)?
+            {
+                return proof.driver().apply_step(ProofStep::Known).map(Some);
+            }
+            if let Some(closed) =
+                attempt::candidate_outcome(Self::try_bounded_cast_identity_using(proof, &premises))?
+                    .flatten()
+            {
+                return Ok(Some(closed));
+            }
+            // Read-over-write cast identities still use the read adapter.
+            if !super::signed_intervals::has_retained_read_source(result)
+                && !premises
+                    .iter()
+                    .any(super::signed_intervals::has_retained_read_source)
+            {
+                return Ok(None);
+            }
+        }
         let scope = proof.driver().open_have(result.clone())?;
         if matches!(node, FloatReflexive { .. }) {
             if !Self::known_bridge_using(scope.body(), &premises)? {
