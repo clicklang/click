@@ -1,7 +1,7 @@
-# A C sidecar names a program binding c(name), not rust(name)
+# A C local named iterations is written program::iterations
 
-`rust(name)` is the Rust spelling of a program binding; a C source's is
-`c(name)`.
+In a loop's clauses and phases, bare `iterations` is the pass count; a C
+local of that name is `program::iterations`, and both can be stated together.
 
 ```c filename=named.c
 int32 count(int32 n) {
@@ -24,14 +24,14 @@ int32 count(int32 n) {
     step();
     step();
     loop {
-        decreases n - rust(iterations);
-        invariant 0 <= rust(iterations) and c(iterations) <= n;
-        invariant rust(iterations) == iterations;
+        decreases n - program::iterations;
+        invariant 0 <= program::iterations and program::iterations <= n;
+        invariant program::iterations == iterations;
     }
     have loop(0).iterations == n by { solve(); }
 }
 ```
 
 ```expect
-fail: `rust(iterations)` names a Rust binding; a C or C++ source's is `c(iterations)`
+pass
 ```

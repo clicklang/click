@@ -498,7 +498,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         step();
         let ready = fold(allocated_vector(owner), { cap: owner->cap });
         let { after: after } = step(vector_grow, { before: ready });
-        if c(grown) == 0 {
+        if program::grown == 0 {
             step();
             step();
             have not old(owner->len) < old(owner->cap) by {
@@ -584,12 +584,12 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             step();
             step();
             unfold(after);
-            have c(grown) == 1 by {
+            have program::grown == 1 by {
                 cases {
-                    c(grown) == 0 => {
-                        contradiction(c(grown) == 0);
+                    program::grown == 0 => {
+                        contradiction(program::grown == 0);
                     }
-                    c(grown) == 1 => {
+                    program::grown == 1 => {
                         known();
                     }
                 }

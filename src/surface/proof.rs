@@ -274,7 +274,7 @@ mod certificate_tests {
     #[test]
     fn state_annotation_rejects_deep_logic_without_using_the_native_stack() {
         let mut surface = ClickProposition::Comparison {
-            left: ContractExpression::CBinding("value".to_string()),
+            left: ContractExpression::ProgramBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::Int32(MachineTerm::constant(0)),
@@ -405,7 +405,7 @@ mod certificate_tests {
     #[test]
     fn state_variant_search_reaches_a_candidate_after_eight() {
         let base = ClickProposition::Comparison {
-            left: ContractExpression::CBinding("value".to_string()),
+            left: ContractExpression::ProgramBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::Int32(MachineTerm::constant(0)),
@@ -1915,7 +1915,7 @@ pub(super) fn initial_claim_context(
 /// `bool` parameter's range entry fact (rule C1).
 fn bool_range_surface(name: &str) -> ClickProposition {
     let cast = ContractExpression::CUnary {
-        operand: Box::new(ContractExpression::CBinding(name.to_string())),
+        operand: Box::new(ContractExpression::ProgramBinding(name.to_string())),
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Variable(name.into())),
             target_type: crate::kernel::ProgramType::Int32,

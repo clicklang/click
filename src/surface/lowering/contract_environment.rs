@@ -190,7 +190,7 @@ pub(in crate::surface) fn contract_array_ref_element_type(
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | ContractExpression::CBinding(name) => {
+        | ContractExpression::ProgramBinding(name) => {
             array_refs.get(name).map(|array_ref| array_ref.element_type)
         }
         ContractExpression::Old(expression) => {

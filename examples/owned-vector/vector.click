@@ -609,12 +609,12 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         have owner->data == at(after_grow, owner->data) by {
             preserve(memory(owner->data), statement(2).statement(0).assignment(grown, 0));
         }
-        have c(grown) == 0 implies owner->data == at(before_grow, owner->data) by {
+        have program::grown == 0 implies owner->data == at(before_grow, owner->data) by {
             intro();
             have at(after_grow, owner->data) == at(before_grow, owner->data);
             known();
         }
-        if c(grown) == 0 {
+        if program::grown == 0 {
             step();
             step();
             have not old(owner->len) < old(owner->cap) by {
@@ -680,12 +680,12 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             step();
             step();
             unfold(allocated_vector(owner));
-            have c(grown) == 1 by {
+            have program::grown == 1 by {
                 cases {
-                    c(grown) == 0 => {
-                        contradiction(c(grown) == 0);
+                    program::grown == 0 => {
+                        contradiction(program::grown == 0);
                     }
-                    c(grown) == 1 => {
+                    program::grown == 1 => {
                         known();
                     }
                 }

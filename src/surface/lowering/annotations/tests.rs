@@ -39,7 +39,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_program_names
             "result",
         ),
         (
-            ContractExpression::CBinding("result".into()),
+            ContractExpression::ProgramBinding("result".into()),
             crate::kernel::BindingName::from("result"),
             true,
             "result",
@@ -286,7 +286,7 @@ fn nested_state_propositions_lower_with_small_frames_and_linear_visits() {
 /// `at(...)` state, including a loop's own entry, are refused.
 #[test]
 fn a_fixed_state_anywhere_in_a_measure_is_found() {
-    let current = ContractExpression::CBinding("n".to_string());
+    let current = ContractExpression::ProgramBinding("n".to_string());
     assert!(fixed_measure_state(&current).is_none());
 
     let old = ContractExpression::Subtract(
@@ -508,7 +508,7 @@ fn fixed_contract_result_is_separate_from_lexical_result_in_old_states() {
         assert_eq!(
             lowerer
                 .lower_contract_expression_to_spec(
-                    &ContractExpression::CBinding("result".into()),
+                    &ContractExpression::ProgramBinding("result".into()),
                     context
                 )
                 .unwrap(),

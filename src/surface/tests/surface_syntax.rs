@@ -1871,7 +1871,10 @@ fn surface_synthesis_qualifies_a_c_local_named_result() {
     let ClickProposition::Comparison { left, .. } = surface else {
         panic!("expected a comparison form");
     };
-    assert_eq!(left, ContractExpression::CBinding("result".to_string()));
+    assert_eq!(
+        left,
+        ContractExpression::ProgramBinding("result".to_string())
+    );
 }
 
 #[test]
@@ -2465,7 +2468,7 @@ fn surface_lowering_map_forks_and_local_updates_scale_logarithmically() {
     fn indexed_pair(index: u32) -> (ClickProposition, Proposition) {
         (
             ClickProposition::Comparison {
-                left: ContractExpression::CBinding(format!("x{index}")),
+                left: ContractExpression::ProgramBinding(format!("x{index}")),
                 operator: ComparisonOperator::Equal,
                 right: current_int(index),
             },

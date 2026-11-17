@@ -5839,7 +5839,7 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             && !matches!(
                 operand.as_ref(),
                 ContractExpression::Binding(_)
-                    | ContractExpression::CBinding(_)
+                    | ContractExpression::ProgramBinding(_)
                     | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                         crate::kernel::BindingName::Named(_)
                     ))
@@ -7404,8 +7404,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 field,
             ),
         },
-        ContractExpression::CBinding(name) if rust_spelling() => format!("rust({name})"),
-        ContractExpression::CBinding(name) => format!("c({name})"),
+        ContractExpression::ProgramBinding(name) => format!("program::{name}"),
         ContractExpression::ResourceWildcard => "_".to_string(),
         ContractExpression::ResourceCount(resource) => {
             // Population patterns name the resource, not the permission of

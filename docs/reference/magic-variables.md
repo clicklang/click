@@ -19,7 +19,7 @@ names are fixed, so a reader learns them once; this page lists them all.
 clause and, in a proof, once the frontier is at function exit, where
 `at(function.exit, ...)` reads the returned state. Inside `old(...)` it is
 refused, because the entry state has no return value. See
-[explicit C binding references](language/index.md#explicit-c-binding-references).
+[program binding references](language/index.md#program-binding-references).
 
 A Rust or C++ function that runs cleanup between computing its return value
 and returning, such as a Rust drop or a C++ destructor, holds that value in a
@@ -58,10 +58,9 @@ In nested loops, bare `iter` is the innermost loop's iterator. See
 ## A source variable with the same name
 
 A magic variable takes precedence over a program variable of the same name in
-the places it is valid. The program variable is then written with its
-language's binding form: `c(name)` in a C sidecar and `rust(name)` in a Rust
-sidecar. For example, a Rust local named `iterations` is `rust(iterations)`
+the places it is valid. The program variable is then written
+`program::name`, in every source language. For example, a Rust local named `iterations` is `program::iterations`
 inside a loop's clauses, where bare `iterations` is the pass count, and a C
-local named `result` is `c(result)` in a postcondition
-([`a_c_local_named_iterations_is_written_c_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_c_iterations.md),
+local named `result` is `program::result` in a postcondition
+([`a_c_local_named_iterations_is_written_program_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_program_iterations.md),
 [`design/charon-trial/program-bindings`](https://github.com/clicklang/click/blob/master/design/charon-trial/program-bindings/bindings.click)).

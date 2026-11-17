@@ -237,7 +237,7 @@ fn collect_signed_surface_terms<'a>(
             | ContractExpression::AlgebraicVariable { .. }
             | ContractExpression::Binding(_)
             | ContractExpression::ProgramExpression(_)
-            | ContractExpression::CBinding(_)
+            | ContractExpression::ProgramBinding(_)
             | ContractExpression::RegionResult(_)
             | ContractExpression::RegionAllocation(_)
             | ContractExpression::RegionParameter { .. }

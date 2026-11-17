@@ -775,7 +775,7 @@ fn synthesize_state_local(term: &MachineTerm) -> Option<ContractExpression> {
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(if crate::surface::is_click_value_name(name) {
-                ContractExpression::CBinding(name.to_string())
+                ContractExpression::ProgramBinding(name.to_string())
             } else {
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     surface_local_name(name),
@@ -795,7 +795,7 @@ fn synthesize_recorded_local(term: &MachineTerm) -> Option<ContractExpression> {
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(if crate::surface::is_click_value_name(name) {
-                ContractExpression::CBinding(name.to_string())
+                ContractExpression::ProgramBinding(name.to_string())
             } else {
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     surface_local_name(name),
@@ -2345,7 +2345,7 @@ fn names_bool_local(expression: &ContractExpression, state: &ExecutionState) -> 
             .locals()
             .get(name)
             .is_some_and(|value| value.program_type() == ProgramType::Bool),
-        ContractExpression::CBinding(name) => state
+        ContractExpression::ProgramBinding(name) => state
             .locals()
             .get(name)
             .is_some_and(|value| value.program_type() == ProgramType::Bool),
@@ -4808,7 +4808,7 @@ fn synthesize_named_integer_local<'a>(
 ) -> Option<SurfaceTerm> {
     if let Some(name) = holders.next() {
         return Some(if crate::surface::is_click_value_name(name) {
-            ContractExpression::CBinding(name.to_string())
+            ContractExpression::ProgramBinding(name.to_string())
         } else {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(surface_local_name(
                 name,
@@ -4926,7 +4926,7 @@ fn synthesize_surface_bitvector(
                     kind: ProgramPointKind::Entry,
                 }),
                 expression: Box::new(if crate::surface::is_click_value_name(&name) {
-                    ContractExpression::CBinding(name)
+                    ContractExpression::ProgramBinding(name)
                 } else {
                     ContractExpression::ProgramExpression(ProgramExpression::Variable(
                         (name).into(),
@@ -4934,7 +4934,7 @@ fn synthesize_surface_bitvector(
                 }),
             }
         } else if crate::surface::is_click_value_name(&name) {
-            ContractExpression::CBinding(name)
+            ContractExpression::ProgramBinding(name)
         } else {
             ContractExpression::ProgramExpression(ProgramExpression::Variable((name).into()))
         });

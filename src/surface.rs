@@ -225,7 +225,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "outcomes",
     "by",
     "byte_offset",
-    "c",
     "call",
     "cases",
     "close_invariants",
@@ -263,7 +262,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "if",
     "import",
     "implies",
-    "rust",
+    "program",
     "in",
     "induct",
     "initialize",
@@ -615,8 +614,7 @@ pub(crate) fn loop_iterator_bindings(
 }
 
 /// Whether a bare `name` is a Click value, `result` or a loop's
-/// `iterations`, so a program binding of that name is written `c(name)`, or
-/// `rust(name)` for a Rust source.
+/// `iterations`, so a program binding of that name is written `program::name`.
 pub(crate) fn is_click_value_name(name: impl Into<crate::kernel::BindingName>) -> bool {
     let name = name.into();
     let Some(name) = name.named() else {
@@ -3068,9 +3066,14 @@ pub(crate) fn collect_current_contract_expression_variables(
         | ContractExpression::ProgramExpression(expression) => {
             collect_program_expression_variables(expression, names);
         }
+        // A `program::name` base is skipped like a bare `program::name`: its
+        // lowered C form names the same binding, not a Click value such as
+        // the contract `result`.
         ContractExpression::Field { base, lowered, .. } => {
             collect_current_contract_expression_variables(base, names);
-            collect_program_expression_variables(lowered, names);
+            if !matches!(base.as_ref(), ContractExpression::ProgramBinding(_)) {
+                collect_program_expression_variables(lowered, names);
+            }
         }
         ContractExpression::ArrayIndex {
             base,
@@ -3082,12 +3085,14 @@ pub(crate) fn collect_current_contract_expression_variables(
             for index in indexes {
                 collect_current_contract_expression_variables(index, names);
             }
-            collect_program_expression_variables(lowered, names);
+            if !matches!(base.as_ref(), ContractExpression::ProgramBinding(_)) {
+                collect_program_expression_variables(lowered, names);
+            }
         }
         ContractExpression::Binding(name) => {
             names.insert(name.clone());
         }
-        ContractExpression::CBinding(_) | ContractExpression::ResourceWildcard => {}
+        ContractExpression::ProgramBinding(_) | ContractExpression::ResourceWildcard => {}
         ContractExpression::ResourceCount(resource) => {
             collect_current_resource_clause_variables(resource, names);
         }
@@ -3267,7 +3272,7 @@ pub enum SurfaceTerm {
         binder_index: usize,
     },
     /// A bare source-level name whose Click type is resolved from its lexical
-    /// environment. Unlike `CBinding`, this can denote either a C value or a
+    /// environment. Unlike `ProgramBinding`, this can denote either a C value or a
     /// specification-only value such as an algebraic datatype.
     Binding(String),
     /// Exhaustive elimination of an algebraic value. Its arms may produce a
@@ -3309,11 +3314,12 @@ pub enum SurfaceTerm {
         /// `base` is evaluated in a different state from the field value.
         offset_bytes: u32,
     },
-    /// A binding from the verified C function's lexical environment.
+    /// `program::name`: a binding from the verified program function's
+    /// lexical environment, in any source language.
     ///
     /// This is distinct from contract built-ins such as bare `result`, even
-    /// when the C binding has the same source name.
-    CBinding(String),
+    /// when the program binding has the same source name.
+    ProgramBinding(String),
     /// The authoritative population count of one instantiated counted
     /// resource family. This expression is only meaningful while the
     /// family's population body is in scope.
@@ -5498,7 +5504,7 @@ impl SpecElaborationContext {
 
     /// A loop clause's context. `iterations` is the loop's pass count, which
     /// each loop phase binds where it lowers the invariant; a program binding
-    /// of that name is `c(iterations)`.
+    /// of that name is `program::iterations`.
     fn for_loop_invariant(loop_index: usize) -> Self {
         Self {
             current_loop_entry: Some(loop_index),
@@ -7939,7 +7945,7 @@ fn contract_expression_reads_memory(
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::ProgramExpression(
             ProgramExpression::Variable(crate::kernel::BindingName::Named(_))
             | ProgramExpression::Value(_),

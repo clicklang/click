@@ -2549,7 +2549,7 @@ fn collect_resource_fact_reads_from_contract_expression(
             collect_resource_fact_reads_from_program_expression(expression, reads);
             Ok(())
         }
-        ContractExpression::CBinding(_) => Ok(()),
+        ContractExpression::ProgramBinding(_) => Ok(()),
         ContractExpression::ResourceWildcard => Err(ClickError::new(format!(
             "`_` is only valid inside a `count(...)` resource pattern in resource `{resource_name}`"
         ))),

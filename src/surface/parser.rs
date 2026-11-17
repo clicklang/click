@@ -3087,6 +3087,11 @@ impl Parser {
             self.position += 1;
             let alias = self.expect_ident("C source alias")?;
             self.refuse_cast_type_binder(&alias)?;
+            if alias == "program" {
+                return Err(self.error(
+                    "`program` names the verified program's bindings (`program::name`) and cannot be a source alias",
+                ));
+            }
             if self
                 .source_aliases
                 .insert(alias.clone(), source_path.clone())
@@ -8839,6 +8844,9 @@ impl Parser {
         if matches!(self.peek(), Some(Token::Ident(_)))
             && self.peek_ident() != Some("old")
             && self.peek_ident() != Some("at")
+            && !(self.peek_ident() == Some("program")
+                && self.peek_next() == Some(&Token::ColonColon))
+            // The earlier `c(name)` / `rust(name)` forms reach their refusal.
             && self.peek_ident() != Some("c")
             && self.peek_ident() != Some("rust")
             && !(self.peek_ident() == Some("count")
@@ -9344,7 +9352,7 @@ impl Parser {
                         == Some(spec_arithmetic::SpecificationBinding::Proposition)
                 }
                 ContractExpression::Binding(name)
-                | ContractExpression::CBinding(name)
+                | ContractExpression::ProgramBinding(name)
                 | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Named(name),
                 )) => {
@@ -10832,7 +10840,7 @@ impl Parser {
             // The loop's pass count, an Integer, is in scope in its clauses
             // and proofs, so a comparison with it reads its other side as an
             // Integer, as one with a population count does.
-            // A program binding of that name is `c(iterations)`.
+            // A program binding of that name is `program::iterations`.
             let iterations_was_bound = self.names.contains(
                 NameKind::IntegerParameter,
                 crate::surface::LOOP_ITERATIONS_NAME,
@@ -15806,34 +15814,39 @@ impl Parser {
             });
         }
 
-        // `c(name)` names a C binding, and `rust(name)` a Rust one, where a
-        // Click name has the same spelling; any other argument is an ordinary
-        // call, so a declaration that takes the name is refused by name
-        // rather than failing to parse at its first use.
+        // `program::name` names the verified program's binding `name`, as the
+        // program itself resolves it at this point, where a Click name has the
+        // same spelling (`result`, `iterations`). The form is the same in every
+        // source language.
+        if self.peek_ident() == Some("program")
+            && self.peek_next() == Some(&Token::ColonColon)
+            && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_)))
+        {
+            self.position += 2;
+            let name = self.expect_ident("program binding name")?;
+            self.refuse_unknown_loop_value(&name)?;
+            return Ok(ContractExpression::ProgramBinding(name));
+        }
+        // The earlier language-named forms are refused with their replacement.
         if matches!(self.peek_ident(), Some("c" | "rust"))
             && self.peek_next() == Some(&Token::LParen)
             && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_)))
             && self.tokens.get(self.position + 3) == Some(&Token::RParen)
+            && !matches!(
+                self.peek_ident()
+                    .and_then(|name| self.specification_binding_kind(name)),
+                Some(spec_arithmetic::SpecificationBinding::Function { .. })
+            )
         {
-            let written = self.peek_ident() == Some("rust");
-            if written != self.verifies_rust() {
-                let name = match self.tokens.get(self.position + 2) {
-                    Some(Token::Ident(name)) => name.clone(),
-                    _ => unreachable!("checked above"),
-                };
-                return Err(self.error(if written {
-                    format!(
-                        "`rust({name})` names a Rust binding; a C or C++ source's is `c({name})`"
-                    )
-                } else {
-                    format!("`c({name})` names a C binding; a Rust source's is `rust({name})`")
-                }));
-            }
-            self.position += 2;
-            let name = self.expect_ident("C binding name")?;
-            self.refuse_unknown_loop_value(&name)?;
-            self.expect(Token::RParen)?;
-            return Ok(ContractExpression::CBinding(name));
+            let (Some(Token::Ident(form)), Some(Token::Ident(name))) = (
+                self.tokens.get(self.position),
+                self.tokens.get(self.position + 2),
+            ) else {
+                unreachable!("checked above");
+            };
+            return Err(self.error(format!(
+                "`{form}({name})` is no longer Click syntax: a program binding is `program::{name}`"
+            )));
         }
 
         if self.peek_ident() == Some("address") && self.peek_next() == Some(&Token::LParen) {
@@ -15861,7 +15874,7 @@ impl Parser {
             if matches!(
                 &source_pointer,
                 ContractExpression::Binding(_)
-                    | ContractExpression::CBinding(_)
+                    | ContractExpression::ProgramBinding(_)
                     | ContractExpression::ProgramExpression(_)
                     | ContractExpression::QualifiedC { .. }
             ) {
@@ -16028,7 +16041,7 @@ impl Parser {
                 }
                 // Inside a loop, `iter` is the loop's iterator, read through
                 // its accessors, even where the function has a local of
-                // that name, which is `rust(iter)`.
+                // that name, which is `program::iter`.
                 if name == "iter"
                     && let Some(expression) = self.take_rust_iterator_method(&name, None)?
                 {
@@ -16362,6 +16375,10 @@ impl Parser {
     /// Whether an identifier starts `Name::Variant` or `Name<arguments>::Variant`.
     fn looks_like_algebraic_constructor(&self) -> bool {
         if !matches!(self.peek(), Some(Token::Ident(_))) {
+            return false;
+        }
+        // `program::name` is a program binding, never a datatype's variant.
+        if self.peek_ident() == Some("program") {
             return false;
         }
         if self.peek_next() == Some(&Token::ColonColon) {
@@ -18370,7 +18387,7 @@ mod loop_name_tests {
         for (body, clause) in [
             ("invariant bogus <= n;", "invariant"),
             ("invariant bogus == bogus;", "invariant"),
-            ("invariant c(bogus) == n;", "invariant"),
+            ("invariant program::bogus == n;", "invariant"),
             (
                 "invariant (0..n).all(|bogus| { bogus == bogus }); invariant bogus == 0;",
                 "invariant",

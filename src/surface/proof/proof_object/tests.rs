@@ -10114,9 +10114,9 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
     let state =
         empty_state.with_resource_context(ResourceContext::new().unchecked_with_fact(lowered));
     let reflexive = ClickProposition::Comparison {
-        left: ContractExpression::CBinding("x".to_string()),
+        left: ContractExpression::ProgramBinding("x".to_string()),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CBinding("x".to_string()),
+        right: ContractExpression::ProgramBinding("x".to_string()),
     };
     let _exposed_reflexive = ClickProposition::Comparison {
         left: ContractExpression::ProgramExpression(ProgramExpression::Variable(

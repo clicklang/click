@@ -1747,7 +1747,7 @@ raises to `exception.storage()` and grants no storage or ownership. Neither `exc
 name `__click_exception` is decoded into a kernel identity, so a source
 variable of either name cannot replace the payload or alias its slot.
 
-Bare `result` lowers to that typed binding, while `c(result)` resolves the
+Bare `result` lowers to that typed binding, while `program::result` resolves the
 source C binding, including inside casts, field projections, and array indices.
 Kernel post-state reconstruction and fixed-state proof lowering preserve a
 same-named parameter's value.
