@@ -582,18 +582,23 @@ pub(in crate::surface::proof) struct CertifiedConditionTransition {
 pub(in crate::surface::proof) fn surface_program_condition(
     condition: &ProgramExpression,
     state: &ExecutionState,
+    points: Option<&RecordedStates>,
 ) -> Result<ClickProposition, ClickError> {
-    Ok(surface_program_condition_unresolved(condition, state))
+    Ok(surface_program_condition_unresolved(
+        condition, state, points,
+    ))
 }
 
 fn surface_program_condition_unresolved(
     condition: &ProgramExpression,
     state: &ExecutionState,
+    points: Option<&RecordedStates>,
 ) -> ClickProposition {
     let no_values = BTreeMap::new();
     let source_names = crate::surface::lowering::ContractSubstitutions::with_source_names(
         &no_values,
         state.locals(),
+        points,
     );
     // A local is written by its name where the condition's state resolves
     // that name to it, as a proof that writes the condition reads it.
@@ -638,7 +643,7 @@ fn surface_program_condition_unresolved(
             expression,
             target_type: ProgramType::Bool,
             ..
-        } => surface_program_condition_unresolved(expression, state),
+        } => surface_program_condition_unresolved(expression, state, points),
         ProgramExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
         ProgramExpression::NotEqual(left, right) => {
             comparison(left, ComparisonOperator::NotEqual, right)
@@ -655,16 +660,16 @@ fn surface_program_condition_unresolved(
         ProgramExpression::GreaterEqual(left, right) => {
             comparison(left, ComparisonOperator::GreaterEqual, right)
         }
-        ProgramExpression::Not(body) => {
-            ClickProposition::Not(Box::new(surface_program_condition_unresolved(body, state)))
-        }
+        ProgramExpression::Not(body) => ClickProposition::Not(Box::new(
+            surface_program_condition_unresolved(body, state, points),
+        )),
         ProgramExpression::And(left, right) => ClickProposition::And(
-            Box::new(surface_program_condition_unresolved(left, state)),
-            Box::new(surface_program_condition_unresolved(right, state)),
+            Box::new(surface_program_condition_unresolved(left, state, points)),
+            Box::new(surface_program_condition_unresolved(right, state, points)),
         ),
         ProgramExpression::Or(left, right) => ClickProposition::Or(
-            Box::new(surface_program_condition_unresolved(left, state)),
-            Box::new(surface_program_condition_unresolved(right, state)),
+            Box::new(surface_program_condition_unresolved(left, state, points)),
+            Box::new(surface_program_condition_unresolved(right, state, points)),
         ),
         // A `bool` value is the claim on itself (Stage 5): `Bool` has no
         // integer value to compare with zero.
@@ -1617,13 +1622,13 @@ mod boolean_guard_tests {
             let converted =
                 crate::kernel::program_expression::cast(condition.clone(), ProgramType::Bool);
             assert_eq!(
-                surface_program_condition(&converted, &ExecutionState::new()).unwrap(),
-                surface_program_condition(&condition, &ExecutionState::new()).unwrap()
+                surface_program_condition(&converted, &ExecutionState::new(), None).unwrap(),
+                surface_program_condition(&condition, &ExecutionState::new(), None).unwrap()
             );
             let nested = crate::kernel::program_expression::cast(converted, ProgramType::Bool);
             assert_eq!(
-                surface_program_condition(&nested, &ExecutionState::new()).unwrap(),
-                surface_program_condition(&condition, &ExecutionState::new()).unwrap()
+                surface_program_condition(&nested, &ExecutionState::new(), None).unwrap(),
+                surface_program_condition(&condition, &ExecutionState::new(), None).unwrap()
             );
         }
     }

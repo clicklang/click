@@ -109,7 +109,11 @@ impl<'a> Proof<'a> {
             region: CodeRegionRef::Region(statement_index),
             kind: ProgramPointKind::Entry,
         };
-        let source_condition = surface_program_condition(&condition, &current_state)?;
+        let source_condition = surface_program_condition(
+            &condition,
+            &current_state,
+            Some(&execution.presentation.recorded_states),
+        )?;
         let checked = surface_at_program_point(&source_condition, &entry_point)?;
         if super::same_branch_condition(&checked, surface_condition) {
             return Ok(true);
@@ -120,13 +124,27 @@ impl<'a> Proof<'a> {
         if super::same_branch_condition(&source_condition, surface_condition) {
             return Ok(false);
         }
-        if proposition_contains_at_expression(surface_condition)
-            && surface_at_program_point(surface_condition, &entry_point)
-                .is_ok_and(|reanchored| super::same_branch_condition(&reanchored, &checked))
-        {
-            return Err(self.step_error(
-                "expanded execution branch condition does not match the checked C branch",
-            ));
+        if proposition_contains_at_expression(surface_condition) {
+            let legacy = if context.constants.source_layout.has_call_captures() {
+                let legacy = surface_program_condition(&condition, &current_state, None)?;
+                let legacy = surface_at_program_point(&legacy, &entry_point)?;
+                if super::same_branch_condition(&legacy, surface_condition) {
+                    return Ok(true);
+                }
+                Some(legacy)
+            } else {
+                None
+            };
+            if surface_at_program_point(surface_condition, &entry_point).is_ok_and(|reanchored| {
+                super::same_branch_condition(&reanchored, &checked)
+                    || legacy
+                        .as_ref()
+                        .is_some_and(|legacy| super::same_branch_condition(&reanchored, legacy))
+            }) {
+                return Err(self.step_error(
+                    "expanded execution branch condition does not match the checked C branch",
+                ));
+            }
         }
         Ok(false)
     }
@@ -191,7 +209,11 @@ impl<'a> Proof<'a> {
             else_branch: else_branch.clone(),
         };
         let surface_condition = surface_at_program_point(
-            &surface_program_condition(&condition, &current_state)?,
+            &surface_program_condition(
+                &condition,
+                &current_state,
+                Some(&execution.presentation.recorded_states),
+            )?,
             &ProgramPointRef {
                 region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Entry,
@@ -224,7 +246,11 @@ impl<'a> Proof<'a> {
                 .count()
                 > 1
         });
-        let source_condition = surface_program_condition(&condition, &current_state)?;
+        let source_condition = surface_program_condition(
+            &condition,
+            &current_state,
+            Some(&execution.presentation.recorded_states),
+        )?;
         let mut operand_condition = &source_condition;
         while let ClickProposition::Not(inner) = operand_condition {
             operand_condition = inner;
@@ -666,7 +692,11 @@ impl<'a> Proof<'a> {
             );
         };
         let surface_condition = surface_at_program_point(
-            &surface_program_condition(&condition, &current_state)?,
+            &surface_program_condition(
+                &condition,
+                &current_state,
+                Some(&parent_execution.presentation.recorded_states),
+            )?,
             &ProgramPointRef {
                 region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Entry,
@@ -1509,7 +1539,11 @@ impl<'a> Proof<'a> {
             };
             (
                 surface_at_program_point(
-                    &surface_program_condition(&condition, &current_state)?,
+                    &surface_program_condition(
+                        &condition,
+                        &current_state,
+                        Some(&parent_execution.presentation.recorded_states),
+                    )?,
                     &ProgramPointRef {
                         region: CodeRegionRef::Region(statement_index),
                         kind: ProgramPointKind::Entry,
@@ -3231,19 +3265,32 @@ impl<'a> Proof<'a> {
         else {
             return Err(self.step_error("expanded execution branch root is not a C `if`"));
         };
-        let checked_condition = surface_at_program_point(
-            &surface_program_condition(&condition, &current_state)?,
-            &ProgramPointRef {
+        if let Some(surface_condition) = surface_condition {
+            let entry = ProgramPointRef {
                 region: CodeRegionRef::Region(record.statement_index),
                 kind: ProgramPointKind::Entry,
-            },
-        )?;
-        if surface_condition.is_some_and(|surface_condition| {
-            !super::same_branch_condition(surface_condition, &checked_condition)
-        }) {
-            return Err(self.step_error(
-                "expanded execution branch condition does not match the checked C branch",
-            ));
+            };
+            let checked = surface_program_condition(
+                &condition,
+                &current_state,
+                Some(&record.parent_execution.presentation.recorded_states),
+            )?;
+            if !super::same_branch_condition(
+                surface_condition,
+                &surface_at_program_point(&checked, &entry)?,
+            ) && !(context.constants.source_layout.has_call_captures()
+                && super::same_branch_condition(
+                    surface_condition,
+                    &surface_at_program_point(
+                        &surface_program_condition(&condition, &current_state, None)?,
+                        &entry,
+                    )?,
+                ))
+            {
+                return Err(self.step_error(
+                    "expanded execution branch condition does not match the checked C branch",
+                ));
+            }
         }
         let source_arm = if take_then {
             then_branch.as_ref()

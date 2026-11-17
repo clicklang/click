@@ -3091,6 +3091,7 @@ pub(in crate::surface) struct ContractSubstitutions<'a> {
     body_field_values: Option<&'a BTreeMap<String, ContractExpression>>,
     contract_result_only: bool,
     current_program_values: bool,
+    call_captures: Option<&'a crate::surface::RecordedStates>,
     /// When set, a C declaration is written by its source name wherever that
     /// name resolves to it in these locals and no binder here shadows it, as
     /// the parser reads a proof that writes the name.
@@ -3154,6 +3155,7 @@ impl<'a> ContractSubstitutions<'a> {
             contract_result_only: false,
             current_program_values: false,
             source_names: None,
+            call_captures: None,
         };
         for (name, value) in values {
             result.insert_value(name, value);
@@ -3225,16 +3227,30 @@ impl<'a> ContractSubstitutions<'a> {
         self.values.insert(name, value);
     }
 
-    /// No value substitutions; each C declaration is written by its source
-    /// name where that name resolves to it in `locals`.
+    /// Write each C declaration by its source name where it resolves in
+    /// `locals`, and exact call captures by their recorded call result.
     pub(in crate::surface) fn with_source_names(
         values: &'a BTreeMap<String, ContractExpression>,
         locals: &'a crate::kernel::LocalEnvironment,
+        call_captures: Option<&'a crate::surface::RecordedStates>,
     ) -> Self {
         Self {
+            call_captures,
             source_names: Some((locals, Cow::Owned(BTreeSet::new()))),
             ..Self::new(values)
         }
+    }
+
+    fn call_capture(&self, name: &crate::kernel::BindingName) -> Option<ContractExpression> {
+        let points = self.call_captures?;
+        let (locals, _) = self.source_names.as_ref()?;
+        if !name
+            .local_id()
+            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+        {
+            return None;
+        }
+        points.call_capture_expression(name, locals.get(name)?)
     }
 
     /// The source name `name` is written as here, if any.
@@ -4341,6 +4357,7 @@ fn substitute_program_expression_as_contract_with_numerals_in(
         ProgramExpression::Variable(name) => Ok(substitutions
             .program_value(name)
             .cloned()
+            .or_else(|| substitutions.call_capture(name))
             .or_else(|| {
                 substitutions.source_name(name).map(|source| {
                     ContractExpression::ProgramExpression(ProgramExpression::Variable(

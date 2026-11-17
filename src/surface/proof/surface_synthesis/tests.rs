@@ -7639,3 +7639,44 @@ fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
         "address(node) == address(node)"
     );
 }
+
+#[test]
+fn call_capture_names_the_selected_result_at_its_declared_type() {
+    use crate::kernel::{LocalBindingId, LocalFunctionId};
+    use crate::languages::interface::ImportedFunction;
+
+    let capture = LocalBindingId::temporary(LocalFunctionId::new(None, "f".into()), 0);
+    capture.initialize_program_type(ProgramType::Int32);
+    let capture = crate::kernel::BindingName::from(capture);
+    let (call, result) = crate::kernel::program_call_value(0, "get", Vec::new());
+    let function = ImportedFunction::external(InterfaceType::Int32, "f".into(), Vec::new())
+        .with_prelowered_kernel_function(crate::kernel::program_function(
+            ProgramType::Int32,
+            "f",
+            Vec::new(),
+            crate::kernel::program_seq(call, crate::kernel::program_assign(&capture, result)),
+        ));
+    let layout = crate::surface::lowering::SourceExecutionLayout::for_function(&function).unwrap();
+    let term = MachineTerm::Variable(Variable(977_921));
+    let value = ProgramValue::Int32(term.clone());
+    let state = ExecutionState::new().with_local(&capture, value.clone());
+    let mut points = RecordedStates::new().with_source_layout(layout);
+    let expected =
+        ContractExpression::RegionResult(CodeRegionRef::Path(vec![SourcePathStep::Call(
+            "get".into(),
+            0,
+        )]));
+
+    let raise = |points: &RecordedStates| {
+        let _scope = SynthesisRecordedPointsScope::enter(points);
+        synthesize_surface_bitvector(&term, ParameterBinding::default(), &state, &BTreeMap::new())
+    };
+    points.record_call_result(0, Some(value));
+    assert_eq!(raise(&points), Some(expected.clone()));
+
+    // The call has run again, but this snapshot still holds its earlier value.
+    points.record_call_result(0, Some(int32(7)));
+    assert_ne!(raise(&points), Some(expected.clone()));
+    points.record_call_result(0, Some(ProgramValue::UInt32(term.clone())));
+    assert_ne!(raise(&points), Some(expected));
+}

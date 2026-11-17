@@ -4348,6 +4348,28 @@ impl RecordedStates {
             .map(|(index, term)| (loop_iterations_spelling(*index), term))
     }
 
+    /// The source call spells a capture only while the selected execution
+    /// of that call still names the exact captured value and its type.
+    fn call_capture_expression(
+        &self,
+        binding: &crate::kernel::BindingName,
+        value: &crate::kernel::StoredExecutionValue,
+    ) -> Option<ContractExpression> {
+        if !binding
+            .local_id()
+            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+        {
+            return None;
+        }
+        let layout = self.source_layout.as_ref()?;
+        let (index, source) = layout.call_capture_source(binding)?;
+        let recorded = self.call_results.get(&index)?;
+        if recorded.program_type() != value.program_type() || recorded != value.native().as_ref() {
+            return None;
+        }
+        Some(ContractExpression::RegionResult(source))
+    }
+
     /// Each recorded call's result with the source spelling that names it,
     /// `<call>.result`. Diagnostics only.
     pub(in crate::surface) fn call_result_bindings(&self) -> Vec<(String, &ProgramValue)> {
