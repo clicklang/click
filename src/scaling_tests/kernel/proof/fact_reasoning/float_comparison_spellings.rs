@@ -53,7 +53,7 @@ fn mirrored_float_spellings_use_exact_indexes_and_preserve_nan_polarity() {
                         })
                         .collect::<Vec<_>>();
                     input.push(held.clone());
-                    let facts = ProofFacts::from_ordered(&input);
+                    let facts = PureFactStore::from_ordered(&input);
                     let (available, work) =
                         crate::instrumentation::measure_deterministic_work(|| {
                             order_claim_forms(&goal)

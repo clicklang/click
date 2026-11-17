@@ -22,9 +22,9 @@ fn local_observation_rules_ignore_unrelated_facts_and_related_bound_buckets() {
                     )
                 });
             }
-            let missing = ProofFacts::from_ordered(&premises);
+            let missing = PureFactStore::from_ordered(&premises);
             premises.extend(bounds(&exact, MachineIntegerType::Int64));
-            let facts = ProofFacts::from_ordered(&premises);
+            let facts = PureFactStore::from_ordered(&premises);
             let (accepted, work) = crate::instrumentation::measure_deterministic_work(|| {
                 known_bridge_leaf(&goal, &|p| facts.pure_known_available(p))
             });
@@ -77,8 +77,8 @@ fn observation_leaves_keep_growing_arithmetic_and_comparison_dags_shared() {
             IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, conditional).unwrap());
         let mut premises = bounds(&exact, ty).to_vec();
         premises.push(Proposition::ConditionIs(condition, true));
-        let facts = ProofFacts::from_ordered(&premises);
-        let missing = ProofFacts::from_ordered(&[]);
+        let facts = PureFactStore::from_ordered(&premises);
+        let missing = PureFactStore::from_ordered(&[]);
         let operation_goal = equality(observed, exact);
         let conditional_goal = equality(conditional, operand);
         let exports = KernelTermExport::machine_export_count();

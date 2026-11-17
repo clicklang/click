@@ -6241,6 +6241,21 @@ pub(super) fn store_value_equation(
     pointer: &Pointer,
     value: &ProgramValue,
 ) -> Option<Proposition> {
+    if let ProgramValue::Pointer(value) = value
+        && matches!(value.program_type(), ProgramType::FunctionPointer(_))
+    {
+        // The producer knows this exact store's value. Retain its read equation;
+        // registration relates aliases by congruence, without looking in cells.
+        let memory = crate::kernel::intern_memory(after.clone());
+        let read = PointerValue::new(
+            Pointer::loaded_value(&memory, pointer),
+            value.program_type(),
+        );
+        return Some(Proposition::ConditionIs(
+            ConditionTerm::pointer_value_equal(read, value.clone()),
+            true,
+        ));
+    }
     let stored_bits = match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
         ProgramValue::Int8(term) => term.clone(),

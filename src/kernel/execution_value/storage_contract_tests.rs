@@ -373,3 +373,118 @@ fn deep_algebraic_storage_keys_use_a_small_stack() {
         .join()
         .unwrap();
 }
+
+#[test]
+fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
+    let _session = VerificationSession::enter();
+    let pointer = PointerValue::new(
+        Pointer::symbolic(Variable(998750)),
+        ProgramType::Int32Pointer,
+    );
+    let other = Pointer::symbolic(Variable(998751));
+    let mut values = vec![
+        pointer.clone(),
+        pointer.clone().with_pointee_constant(true),
+        pointer.clone().with_pointee_volatile(true),
+        pointer.clone().with_type(ProgramType::VoidPointer),
+        pointer
+            .clone()
+            .with_designation(std::sync::Arc::new(other.clone())),
+        pointer
+            .clone()
+            .with_opaque_extent(Some(std::sync::Arc::new(other.clone()))),
+        pointer.clone().with_root_extent(),
+        pointer
+            .clone()
+            .with_root_extent()
+            .with_opaque_extent(Some(std::sync::Arc::new(other.clone()))),
+    ];
+    for width in [0, 1, 8] {
+        values.push(pointer.clone().with_extent(Some(SubobjectExtent {
+            start: other.clone(),
+            width: MachineTerm::constant(width),
+        })));
+    }
+    for offset in [
+        PointerOffsetTerm::Constant(-1),
+        PointerOffsetTerm::Constant(0),
+        PointerOffsetTerm::Variable(Variable(998752)),
+        PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::Variable(Variable(998752))),
+            Box::new(PointerOffsetTerm::Constant(1)),
+        ),
+        PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(998753)), 4),
+        PointerOffsetTerm::scaled_int64_node(MachineTerm::Variable(Variable(998754)), 8, false),
+        PointerOffsetTerm::scaled_int64_node(MachineTerm::Variable(Variable(998754)), 8, true),
+    ] {
+        values.push(PointerValue::new(
+            Pointer {
+                block: other.block.clone(),
+                offset,
+            },
+            ProgramType::Int32Pointer,
+        ));
+    }
+    let natives: Vec<_> = values.iter().cloned().map(ProgramValue::Pointer).collect();
+    let shared: Vec<_> = natives
+        .iter()
+        .cloned()
+        .map(|value| StoredExecutionValue::from(ExecutionValue::retain_formed_pointer(value)))
+        .collect();
+    let stored: Vec<_> = natives
+        .iter()
+        .cloned()
+        .map(StoredExecutionValue::from)
+        .collect();
+    let exports = KernelTermExport::machine_export_count();
+    for i in 0..values.len() {
+        for j in 0..values.len() {
+            let expected = natives[i].cmp(&natives[j]);
+            assert_eq!(shared[i].cmp(&shared[j]), expected, "shared {i}/{j}");
+            assert_eq!(stored[i].cmp(&shared[j]), expected, "mixed {i}/{j}");
+            assert_eq!(stored[i] == shared[j], expected.is_eq());
+            if expected.is_eq() {
+                assert_eq!(hash(&stored[i]), hash(&shared[j]));
+            }
+        }
+        assert!(!shared[i].shared().unwrap().has_cached_native_argument());
+    }
+    // The selected scalar subobject widths use their explicit compatibility
+    // reader; no enclosing pointer descriptor is produced.
+    assert!(KernelTermExport::machine_export_count() - exports <= 3);
+}
+
+#[test]
+fn deep_pointer_storage_keys_use_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(|| {
+            use crate::kernel::{KernelPointerOffset, SharedPointerAddress};
+            let _session = VerificationSession::enter();
+            let value = SharedPointerValue::import_produced(&PointerValue::new(
+                Pointer::symbolic(Variable(998755)),
+                ProgramType::Int32Pointer,
+            ));
+            let mut payload = value.node().clone();
+            let atom = KernelPointerOffset::Variable(Variable(998756))
+                .into_shared()
+                .unwrap();
+            let mut offset = atom.clone();
+            for _ in 0..4096 {
+                offset = KernelPointerOffset::Add([offset, atom.clone()])
+                    .into_shared()
+                    .unwrap();
+            }
+            payload.address =
+                SharedPointerAddress::new(payload.address.node().block.clone(), offset);
+            payload.designation = payload.address.clone();
+            let stored = StoredExecutionValue::from(ExecutionValue::Shared(
+                KernelTerm::shared_pointer_value(SharedPointerValue::new(payload)),
+            ));
+            let _ = hash(&stored);
+            assert!(!stored.shared().unwrap().has_cached_native_argument());
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

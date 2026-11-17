@@ -1373,6 +1373,17 @@ impl Renderer<'_> {
         }
         self.depth += 1;
         match proposition {
+            Proposition::VolatileAccess(event) => {
+                let operation = match event.kind {
+                    crate::kernel::VolatileAccessKind::Read => "read",
+                    crate::kernel::VolatileAccessKind::Write => "write",
+                };
+                self.fmt(format_args!("volatile-{operation}-event#{}(", event.id.0));
+                self.pointer(&event.pointer);
+                self.push(", ");
+                self.cvalue(&event.value);
+                self.push(")");
+            }
             Proposition::Equal(left, right) => self.binary_term(left, " = ", right),
             Proposition::ConditionIs(condition, value) => {
                 self.condition(condition);
@@ -1401,13 +1412,8 @@ impl Renderer<'_> {
                     self.depth -= 1;
                     return;
                 }
-                if let Some(event) = name.strip_prefix("__click_volatile_write_") {
-                    self.push("volatile-write-event#");
-                    self.push(event);
-                } else {
-                    self.push("predicate ");
-                    self.push(name);
-                }
+                self.push("predicate ");
+                self.push(name);
                 self.push("(");
                 self.terms(arguments);
                 self.push(")");

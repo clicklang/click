@@ -6,7 +6,7 @@
 
 use super::{
     BranchId, CheckedProofCasePartition, FrontierObligation, OutcomeProofState, ProofBranch,
-    ProofBranchState, ProofBranches, ProofExecutionState, ProofFacts, ProofObligation,
+    ProofBranchState, ProofBranches, ProofExecutionState, ProofObligation, PureFactStore,
 };
 #[cfg(test)]
 use crate::kernel::CompareRelation;
@@ -66,7 +66,7 @@ pub(crate) struct ProofObject<L, O, E> {
 /// Borrowed authority that the focused goal is an execution frontier owning
 /// checked execution state. Only the kernel can construct this view.
 pub(crate) struct ProofExecutionView<'a, S> {
-    facts: &'a ProofFacts,
+    facts: &'a PureFactStore,
     execution: &'a ProofExecutionState<S>,
 }
 
@@ -191,7 +191,7 @@ pub(crate) enum PropositionIntroduction {
 }
 
 impl<'a, S> ProofExecutionView<'a, S> {
-    pub(crate) fn facts(&self) -> &'a ProofFacts {
+    pub(crate) fn facts(&self) -> &'a PureFactStore {
         self.facts
     }
 
@@ -439,7 +439,7 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
     pub(crate) fn replace_focused_obligation_and_facts(
         &self,
         obligation: O,
-        facts: ProofFacts,
+        facts: PureFactStore,
     ) -> Result<Self, ProofFocusError> {
         let branch = self
             .state
@@ -469,7 +469,7 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
     pub(crate) fn publish_checked_focused_transition(
         &self,
         obligation: O,
-        facts: ProofFacts,
+        facts: PureFactStore,
         execution: Option<Arc<E>>,
         added_facts: Vec<Proposition>,
         checked_facts: Vec<Proposition>,
@@ -965,7 +965,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         &self,
     ) -> Option<(
         &super::PropositionObligation<P, Arc<OutcomeProofState<S>>>,
-        &ProofFacts,
+        &PureFactStore,
     )> {
         let branch = self.state.open_branches.get(self.focused_branch)?;
         let ProofObligation::Proposition(goal) = &branch.obligation else {
@@ -2424,7 +2424,7 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
     /// typed kernel evidence would be a separate interface redesign.
     pub(crate) fn publish_checked_frontier_transition(
         &self,
-        facts: ProofFacts,
+        facts: PureFactStore,
         execution: ProofExecutionState<S>,
         added_facts: Vec<Proposition>,
         checked_facts: Vec<Proposition>,
@@ -2463,7 +2463,7 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
     /// branch identities and split topology.
     pub(crate) fn publish_checked_frontier_split(
         &self,
-        arms: [(ProofFacts, ProofExecutionState<S>); 2],
+        arms: [(PureFactStore, ProofExecutionState<S>); 2],
         introduced_facts: [Vec<Proposition>; 2],
         focused_checked_facts: Vec<Proposition>,
     ) -> Result<ProofSplit<L, ProofObligation<P, O>, ProofExecutionState<S>>, ExecutionUpdateError>
@@ -2513,7 +2513,7 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
 
     pub(crate) fn publish_checked_partial_frontier_split(
         &self,
-        arms: [Option<(ProofFacts, Arc<ProofExecutionState<S>>)>; 2],
+        arms: [Option<(PureFactStore, Arc<ProofExecutionState<S>>)>; 2],
         introduced_facts: [Option<Vec<Proposition>>; 2],
     ) -> Result<(Self, super::SplitId, [Option<BranchId>; 2]), ExecutionUpdateError> {
         let branch = self
@@ -2581,7 +2581,7 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         split: super::SplitId,
         children: [BranchId; 2],
         parent: BranchId,
-        facts: ProofFacts,
+        facts: PureFactStore,
         execution: ProofExecutionState<S>,
         added_facts: Vec<Proposition>,
         checked_facts: Vec<Proposition>,
@@ -2810,7 +2810,7 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
 
     /// Retains the addressed goal under updated facts, preserving any
     /// execution state it already borrowed.
-    pub(crate) fn with_facts_at(&self, at: BranchId, facts: ProofFacts) -> Self {
+    pub(crate) fn with_facts_at(&self, at: BranchId, facts: PureFactStore) -> Self {
         let Some(branch) = self.get(at) else {
             unreachable!("a fact successor requires the addressed open branch");
         };
@@ -2828,7 +2828,7 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
     pub(crate) fn replace_execution_at(
         &self,
         at: BranchId,
-        facts: ProofFacts,
+        facts: PureFactStore,
         execution: E,
     ) -> Self {
         let Some(_) = self.get(at) else {
@@ -2848,7 +2848,7 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
     pub(crate) fn replace_frontier_at(
         &self,
         at: BranchId,
-        facts: ProofFacts,
+        facts: PureFactStore,
         execution: E,
     ) -> Self {
         let Some(ProofBranch {
@@ -2861,7 +2861,12 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
         self.replace_execution_at(at, facts, execution)
     }
 
-    pub(crate) fn discharged_if_at(&self, at: BranchId, complete: bool, facts: ProofFacts) -> Self {
+    pub(crate) fn discharged_if_at(
+        &self,
+        at: BranchId,
+        complete: bool,
+        facts: PureFactStore,
+    ) -> Self {
         if complete {
             self.close_at(at)
         } else {
@@ -2901,7 +2906,7 @@ mod tests {
 
     fn known_computation_proof(
         goal: Proposition,
-        facts: ProofFacts,
+        facts: PureFactStore,
     ) -> ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> {
         ProofObject::root(
             (),
@@ -2937,7 +2942,7 @@ mod tests {
             falsehood,
         ] {
             assert!(
-                known_computation_proof(goal, ProofFacts::default())
+                known_computation_proof(goal, PureFactStore::default())
                     .apply_known(PropositionKnownContext::Exact)
                     .is_err()
             );
@@ -2954,7 +2959,7 @@ mod tests {
             ),
         ] {
             assert!(
-                known_computation_proof(goal, ProofFacts::default())
+                known_computation_proof(goal, PureFactStore::default())
                     .apply_known(PropositionKnownContext::Exact)
                     .is_ok()
             );
@@ -2963,7 +2968,7 @@ mod tests {
 
     fn integer_choice_proof(
         source: Proposition,
-        facts: ProofFacts,
+        facts: PureFactStore,
         goal: Proposition,
     ) -> ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> {
         assert!(facts.contains_top_level(&source));
@@ -2997,7 +3002,7 @@ mod tests {
         let goal = Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true);
         let proof = integer_choice_proof(
             source.clone(),
-            ProofFacts::from_ordered(std::slice::from_ref(&source)),
+            PureFactStore::from_ordered(std::slice::from_ref(&source)),
             goal,
         );
         for hint in [Variable(3_000_000), Variable((1 << 40) + 8)] {
@@ -3028,7 +3033,7 @@ mod tests {
         ));
         let exhausted = integer_choice_proof(
             source.clone(),
-            ProofFacts::from_ordered(std::slice::from_ref(&source))
+            PureFactStore::from_ordered(std::slice::from_ref(&source))
                 .with_reserved_variables([Variable(ceiling - 1)]),
             Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true),
         );
@@ -3042,7 +3047,7 @@ mod tests {
     fn unused_universal_witness_is_reserved_before_a_choice() {
         let binder = Variable(3_200_000);
         let source = unused_integer_existential();
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source))
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source))
             .with_reserved_variables([binder]);
         let proof = integer_choice_proof(
             source.clone(),
@@ -3086,7 +3091,7 @@ mod tests {
         };
         let proof = integer_choice_proof(
             source.clone(),
-            ProofFacts::from_ordered(std::slice::from_ref(&source)),
+            PureFactStore::from_ordered(std::slice::from_ref(&source)),
             Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true),
         );
         let opened = proof
@@ -3131,7 +3136,7 @@ mod tests {
             ProofBranch::new(
                 ProofObligation::Proposition(PropositionObligation::new(goal, ())),
                 ProofBranchState {
-                    facts: ProofFacts::from_ordered(std::slice::from_ref(&source)),
+                    facts: PureFactStore::from_ordered(std::slice::from_ref(&source)),
                     execution: None,
                 },
             ),
@@ -3158,7 +3163,7 @@ mod tests {
                 true,
             )),
         };
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source))
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&source))
             .with_reserved_variables([ambient]);
         let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
             ProofObject::root(
@@ -3212,7 +3217,7 @@ mod tests {
             sort: Sort::ProgramInt32,
             body: Box::new(body.clone()),
         };
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&reserving));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&reserving));
         let (witness, _) = facts
             .freshen_int32_forall_body(bound, &body)
             .expect("the witness range holds an identity for the first introduction");
@@ -3259,7 +3264,7 @@ mod tests {
             sort: Sort::ProgramPointer(crate::kernel::ProgramType::Int32),
             body: Box::new(body.clone()),
         };
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&reserving));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&reserving));
         let (witness, _) = facts
             .freshen_pointer_forall_body(bound, crate::kernel::ProgramType::Int32, &body)
             .expect("the witness range holds an identity");
@@ -3283,7 +3288,7 @@ mod tests {
             ProofObligation<(), Arc<OutcomeProofState<()>>>,
             ProofExecutionState<()>,
         >;
-        let root = |facts: ProofFacts, goal: Proposition| {
+        let root = |facts: PureFactStore, goal: Proposition| {
             TestProof::root(
                 (),
                 ProofBranch::new(
@@ -3346,14 +3351,14 @@ mod tests {
         let quantified_goal = loadable(before.clone(), Variable(42));
         assert!(
             root(
-                ProofFacts::from_ordered(std::slice::from_ref(&quantified_source)),
+                PureFactStore::from_ordered(std::slice::from_ref(&quantified_source)),
                 quantified_goal.clone(),
             )
             .apply_known(PropositionKnownContext::Materialized)
             .is_ok()
         );
         assert!(
-            root(ProofFacts::default(), quantified_goal)
+            root(PureFactStore::default(), quantified_goal)
                 .apply_known(PropositionKnownContext::Materialized)
                 .is_err()
         );
@@ -3393,14 +3398,14 @@ mod tests {
         );
         assert!(
             root(
-                ProofFacts::from_ordered(std::slice::from_ref(&fold_fact)),
+                PureFactStore::from_ordered(std::slice::from_ref(&fold_fact)),
                 fold_goal.clone(),
             )
             .apply_known(PropositionKnownContext::Materialized)
             .is_ok()
         );
         assert!(
-            root(ProofFacts::default(), fold_goal.clone())
+            root(PureFactStore::default(), fold_goal.clone())
                 .apply_known(PropositionKnownContext::Materialized)
                 .is_err()
         );
@@ -3414,7 +3419,7 @@ mod tests {
         );
         assert!(
             root(
-                ProofFacts::from_ordered(&[loadable(before, Variable(70))]),
+                PureFactStore::from_ordered(&[loadable(before, Variable(70))]),
                 loadable(changed, Variable(71)),
             )
             .apply_known(PropositionKnownContext::Materialized)
@@ -3461,7 +3466,7 @@ mod tests {
             ProofBranch::new(
                 ProofObligation::Frontier(FrontierObligation),
                 ProofBranchState {
-                    facts: ProofFacts::default(),
+                    facts: PureFactStore::default(),
                     execution: Some(Arc::new(ProofExecutionState::new(
                         ExecutionProofCore::at_entry(
                             ExecutionState::new(),
@@ -3515,7 +3520,7 @@ mod tests {
             let branch = ProofBranch::new(
                 ProofObligation::Proposition(PropositionObligation::new(truth.clone(), ())),
                 ProofBranchState {
-                    facts: ProofFacts::from_ordered(if assumed {
+                    facts: PureFactStore::from_ordered(if assumed {
                         std::slice::from_ref(&truth)
                     } else {
                         &[]
@@ -3574,7 +3579,7 @@ mod tests {
                 ProofBranch::new(
                     ProofObligation::Proposition(PropositionObligation::new(goal, ())),
                     ProofBranchState {
-                        facts: ProofFacts::from_ordered(&[]),
+                        facts: PureFactStore::from_ordered(&[]),
                         execution: None,
                     },
                 ),
@@ -3620,7 +3625,7 @@ mod tests {
         let branch = ProofBranch::new(
             ProofObligation::Proposition(PropositionObligation::new(goal, ())),
             ProofBranchState {
-                facts: ProofFacts::from_ordered(std::slice::from_ref(&body)),
+                facts: PureFactStore::from_ordered(std::slice::from_ref(&body)),
                 execution: None,
             },
         );

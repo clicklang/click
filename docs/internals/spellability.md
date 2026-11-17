@@ -574,7 +574,7 @@ Exact premise lists, signed arithmetic claims, and fold alpha keys use this
 same form; they do not add tactic-specific fact searches.
 
 - The fact stores file each fact under its comparison form too
-  (`ProofFacts::with_fact`, `PureFactContext::assume_condition_once`), and an
+  (`PureFactStore::with_fact`, `PureFactContext::assume_condition_once`), and an
   exact lookup also looks up the comparison form of what it looks up.
 - A kernel rule that compares a stated term with one it derives compares
   their comparison forms (identity, cast identity, affine conclusions).
@@ -614,8 +614,8 @@ placeholder, a skipped candidate, or a declining route to work around it.
 
 ## Measuring the gap
 
-`scripts/spellability-census.sh` runs the mdtest corpus with
-`CLICK_SPELLABILITY_CENSUS` set (`src/surface/proof/spellability_census.rs`).
+`scripts/raise-lower-census.sh` runs the mdtest corpus with
+`CLICK_RAISE_LOWER_CENSUS` set (`src/surface/proof/raise_lower_census.rs`).
 Each checked step records, for every fact it adds and for the goal it leaves
 focused, whether the premise speller finds a checked spelling. The script
 prints the misses grouped by kind. It separates steps a person wrote from
@@ -623,7 +623,7 @@ steps a smart tactic's search took: a search step needs a spelling only when
 its search succeeds and is expanded, but a written step's facts and goal may
 be cited by the next written step. The census only observes; it does not
 change any proof. A unit test can record the same lines in memory with
-`spellability_census::capture` and assert that a step's facts are spelled.
+`raise_lower_census::capture` and assert that a step's facts are spelled.
 
 Audit-budget limitation (2026-10-31): enabling both census and fact-stability
 instrumentation together pushes `solve_false_list_position_is_prompt` over

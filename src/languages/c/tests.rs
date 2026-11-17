@@ -636,18 +636,14 @@ int32 run(int32 value) {
         .facts()
         .iter()
         .filter_map(|fact| match fact.proposition() {
-            crate::kernel::Proposition::Predicate { name, .. }
-                if name.starts_with("__click_volatile_") =>
-            {
-                Some(name.as_str())
-            }
+            crate::kernel::Proposition::VolatileAccess(event) => Some(event.clone()),
             _ => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(accesses.len(), 3);
-    assert!(accesses[0].starts_with("__click_volatile_write_"));
-    assert!(accesses[1].starts_with("__click_volatile_write_"));
-    assert!(accesses[2].starts_with("__click_volatile_read_"));
+    assert_eq!(accesses[0].kind, crate::kernel::VolatileAccessKind::Write);
+    assert_eq!(accesses[1].kind, crate::kernel::VolatileAccessKind::Write);
+    assert_eq!(accesses[2].kind, crate::kernel::VolatileAccessKind::Read);
 }
 
 #[test]
@@ -1159,15 +1155,15 @@ fn c_small_volatile_model_preserves_metadata_and_access_facts() {
     assert!(read_twice.parameters()[0].is_volatile());
     let kernel = read_twice.to_kernel_function();
     assert!(kernel.parameters()[0].is_volatile());
-    let volatile_read_names = |execution: &crate::kernel::SymbolicExecution| {
+    let volatile_read_ids = |execution: &crate::kernel::SymbolicExecution| {
         execution.paths()[0]
             .facts()
             .iter()
             .filter_map(|fact| match fact.proposition() {
-                crate::kernel::Proposition::Predicate { name, .. }
-                    if name.starts_with("__click_volatile_read_") =>
+                crate::kernel::Proposition::VolatileAccess(event)
+                    if event.kind == crate::kernel::VolatileAccessKind::Read =>
                 {
-                    Some(name.clone())
+                    Some(event.id)
                 }
                 _ => None,
             })
@@ -1180,7 +1176,7 @@ fn c_small_volatile_model_preserves_metadata_and_access_facts() {
         crate::kernel::PureFactContext::new(),
     );
     assert_eq!(execution.paths().len(), 1);
-    let accesses = volatile_read_names(&execution);
+    let accesses = volatile_read_ids(&execution);
     assert_eq!(accesses.len(), 2);
     assert_ne!(accesses[0], accesses[1]);
 
@@ -1193,7 +1189,7 @@ fn c_small_volatile_model_preserves_metadata_and_access_facts() {
     // A mutable volatile global is current state at ordinary entry, so two
     // reads may observe distinct values and produce two symbolic paths.
     assert_eq!(global_execution.paths().len(), 2);
-    assert_eq!(volatile_read_names(&global_execution).len(), 2);
+    assert_eq!(volatile_read_ids(&global_execution).len(), 2);
 
     let static_function = &functions[2];
     assert!(
@@ -1212,7 +1208,7 @@ fn c_small_volatile_model_preserves_metadata_and_access_facts() {
         crate::kernel::PureFactContext::new(),
     );
     assert_eq!(static_execution.paths().len(), 1);
-    assert_eq!(volatile_read_names(&static_execution).len(), 1);
+    assert_eq!(volatile_read_ids(&static_execution).len(), 1);
 }
 
 #[test]
@@ -1302,19 +1298,15 @@ fn c_pointer_volatile_accesses_preserve_pointee_metadata_and_order() {
         .facts()
         .iter()
         .filter_map(|fact| match fact.proposition() {
-            crate::kernel::Proposition::Predicate { name, .. }
-                if name.starts_with("__click_volatile_") =>
-            {
-                Some(name.as_str())
-            }
+            crate::kernel::Proposition::VolatileAccess(event) => Some(event.clone()),
             _ => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(accesses.len(), 4);
-    assert!(accesses[0].starts_with("__click_volatile_write_"));
-    assert!(accesses[1].starts_with("__click_volatile_read_"));
-    assert!(accesses[2].starts_with("__click_volatile_write_"));
-    assert!(accesses[3].starts_with("__click_volatile_read_"));
+    assert_eq!(accesses[0].kind, crate::kernel::VolatileAccessKind::Write);
+    assert_eq!(accesses[1].kind, crate::kernel::VolatileAccessKind::Read);
+    assert_eq!(accesses[2].kind, crate::kernel::VolatileAccessKind::Write);
+    assert_eq!(accesses[3].kind, crate::kernel::VolatileAccessKind::Read);
 }
 
 #[test]
@@ -1370,8 +1362,7 @@ fn c_pointer_object_volatile_accesses_preserve_pointer_provenance() {
         .filter(|fact| {
             matches!(
                 fact.proposition(),
-                crate::kernel::Proposition::Predicate { name, .. }
-                    if name.starts_with("__click_volatile_")
+                crate::kernel::Proposition::VolatileAccess(_)
             )
         })
         .count();
@@ -1388,20 +1379,16 @@ fn c_pointer_object_volatile_accesses_preserve_pointer_provenance() {
         .facts()
         .iter()
         .filter_map(|fact| match fact.proposition() {
-            crate::kernel::Proposition::Predicate { name, .. }
-                if name.starts_with("__click_volatile_") =>
-            {
-                Some(name.as_str())
-            }
+            crate::kernel::Proposition::VolatileAccess(event) => Some(event.clone()),
             _ => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(accesses.len(), 5);
-    assert!(accesses[0].starts_with("__click_volatile_write_"));
-    assert!(accesses[1].starts_with("__click_volatile_write_"));
-    assert!(accesses[2].starts_with("__click_volatile_read_"));
-    assert!(accesses[3].starts_with("__click_volatile_write_"));
-    assert!(accesses[4].starts_with("__click_volatile_read_"));
+    assert_eq!(accesses[0].kind, crate::kernel::VolatileAccessKind::Write);
+    assert_eq!(accesses[1].kind, crate::kernel::VolatileAccessKind::Write);
+    assert_eq!(accesses[2].kind, crate::kernel::VolatileAccessKind::Read);
+    assert_eq!(accesses[3].kind, crate::kernel::VolatileAccessKind::Write);
+    assert_eq!(accesses[4].kind, crate::kernel::VolatileAccessKind::Read);
 
     let mut proposition = indirect_execution.paths()[0].theorem().proposition();
     while let crate::kernel::Proposition::Implies(_, body) = proposition {

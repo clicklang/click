@@ -6511,7 +6511,7 @@ fn shared_pointer_comparisons_preserve_native_spelling() {
 
 #[test]
 fn closed_machine_orders_round_trip_after_checked_rewrite() {
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     for (spelling, suffix, value) in [
         (
             "uint32",
@@ -6551,7 +6551,7 @@ fn closed_machine_orders_round_trip_after_checked_rewrite() {
                 panic!("ensure")
             };
             let equality = lower(equality);
-            let produced = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+            let produced = PureFactStore::from_ordered(std::slice::from_ref(&equality))
                 .check_equality_rewrite(&lower(goal), &equality)
                 .unwrap()
                 .proposition()
@@ -6656,7 +6656,7 @@ fn closed_machine_order_lowering_preserves_relations_and_truth_checking() {
             assert_eq!(PureFactContext::new().decide(condition), Some(truth));
             assert_eq!(
                 crate::kernel::proof::checked_branch_fact_is_available(
-                    &crate::kernel::proof::ProofFacts::from_ordered(&[]),
+                    &crate::kernel::proof::PureFactStore::from_ordered(&[]),
                     &lowered,
                 ),
                 truth,
@@ -6670,7 +6670,7 @@ fn closed_machine_order_lowering_preserves_relations_and_truth_checking() {
 #[test]
 fn machine_arithmetic_round_trips_after_checked_rewrite() {
     use crate::kernel::MachineIntegerType as T;
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     let mut failures = Vec::new();
     for (format, spelling, suffix) in [
         (T::Int32, "int32", ""),
@@ -6723,7 +6723,7 @@ fn machine_arithmetic_round_trips_after_checked_rewrite() {
                 };
                 let equality = lower(equality);
                 let original = lower(goal);
-                let facts = ProofFacts::from_ordered(std::slice::from_ref(&equality));
+                let facts = PureFactStore::from_ordered(std::slice::from_ref(&equality));
                 let produced = facts
                     .check_equality_rewrite(&original, &equality)
                     .unwrap()
@@ -6812,7 +6812,7 @@ fn assert_narrow_comparison_round_trip(
 #[test]
 fn narrow_comparisons_round_trip_after_checked_rewrite() {
     use crate::kernel::MachineIntegerType as T;
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     for (source, source_spelling) in [
         (T::Int32, "int32"),
         (T::UInt32, "uint32"),
@@ -6849,7 +6849,7 @@ fn narrow_comparisons_round_trip_after_checked_rewrite() {
                         panic!()
                     };
                     let equality = lower(equality);
-                    let produced = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+                    let produced = PureFactStore::from_ordered(std::slice::from_ref(&equality))
                         .check_equality_rewrite(&lower(goal), &equality)
                         .unwrap()
                         .proposition()
@@ -6986,7 +6986,7 @@ fn pthread_handle_words_use_c_names_and_retained_states() {
 }
 
 fn check_int64_literal_comparison_round_trips(values: &[i64]) {
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     for value in values {
         for operator in ["<", "<=", ">", ">="] {
             for reverse in [false, true] {
@@ -7017,7 +7017,7 @@ fn check_int64_literal_comparison_round_trips(values: &[i64]) {
                     format!("x {operator} 100i64")
                 };
                 let original = relower_written_proposition(&parse(&expression), &state).unwrap();
-                let rewritten = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+                let rewritten = PureFactStore::from_ordered(std::slice::from_ref(&equality))
                     .check_equality_rewrite(&original, &equality)
                     .unwrap()
                     .proposition()
@@ -7127,7 +7127,7 @@ fn check_conditional_round_trip(
     reverse: bool,
     replacement: u64,
 ) {
-    use crate::kernel::proof::ProofFacts;
+    use crate::kernel::proof::PureFactStore;
     let _session = crate::kernel::VerificationSession::enter();
     let state = ExecutionState::new()
         .with_local(
@@ -7141,6 +7141,10 @@ fn check_conditional_round_trip(
         .with_local(
             "z",
             format.value_from_term(MachineTerm::Variable(Variable(999710))),
+        )
+        .with_local(
+            "flag",
+            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999711))),
         );
     let parse = |text: &str| {
         let file = parser::parse(&format!(
@@ -7164,7 +7168,7 @@ fn check_conditional_round_trip(
         format!("{value} <= 100")
     };
     let original = relower_written_proposition(&parse(&goal), &state).unwrap();
-    let rewritten = ProofFacts::from_ordered(std::slice::from_ref(&equality))
+    let rewritten = PureFactStore::from_ordered(std::slice::from_ref(&equality))
         .check_equality_rewrite(&original, &equality)
         .unwrap()
         .proposition()
@@ -7176,6 +7180,11 @@ fn check_conditional_round_trip(
         let produced = Proposition::ConditionIs(condition.clone(), truth);
         let raised =
             synthesize_surface_proposition(&produced, ParameterBinding::default(), &state).unwrap();
+        assert_eq!(
+            relower_written_proposition(&raised, &state).unwrap(),
+            produced,
+            "Surface AST: {spelling}, guard={guard}, reverse={reverse}, truth={truth}"
+        );
         let text = crate::surface::printing::source_click_proposition(&raised);
         let restored = relower_written_proposition(&parse(&text), &state).unwrap();
         assert_eq!(
@@ -7298,6 +7307,23 @@ fn symbolic_unsigned_equality_guards_keep_high_bit_literals() {
                     reverse,
                     9,
                 );
+            }
+        }
+    }
+}
+
+#[test]
+fn boolean_variable_guard_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        for guard in ["flag", "not flag"] {
+            for reverse in [false, true] {
+                check_conditional_round_trip(format, spelling, guard, reverse, 9);
             }
         }
     }

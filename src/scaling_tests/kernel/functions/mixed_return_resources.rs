@@ -2360,3 +2360,147 @@ fn summary_transfer_construction_scales_with_clauses_not_retained_owners_or_alia
         }
     }
 }
+
+#[test]
+fn composite_parameter_footprints_scale_with_parts_not_the_frame_or_alias_classes() {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    for axis in ["frame", "aliases", "same-block aliases", "parts"] {
+        let mut samples = Vec::new();
+        for count in [4_u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (mut state, mut facts, first) = super::summary_transfer_tests::symbolic_state();
+            let template = super::composite_transfer_tests::contract();
+            let mut parameters = template.parameters().to_vec();
+            let mut inputs = template.resource_requires().to_vec();
+            let mut owners = vec![first.clone()];
+            let mut definition = super::composite_transfer_tests::definition();
+            let mut arguments = vec![variable("p"), variable("n")];
+            let mut types = vec![ProgramType::Int32Pointer, ProgramType::Int32];
+            for index in 0..count {
+                let pointer = if axis == "same-block aliases" {
+                    Pointer {
+                        block: first.memory_own_range().unwrap().base().block.clone(),
+                        offset: PointerOffsetTerm::Variable(Variable(9_960_000 + index)),
+                    }
+                } else {
+                    Pointer::symbolic(Variable(9_960_000 + index))
+                };
+                match axis {
+                    "aliases" | "same-block aliases" => {
+                        facts = facts.assume_condition(
+                            ConditionTerm::pointer_equal(
+                                first.memory_own_range().unwrap().base().clone(),
+                                pointer,
+                            ),
+                            true,
+                        )
+                    }
+                    "frame" => owners.push(ResourceFact::own_memory(MemoryRange::new(
+                        first.memory_own_range().unwrap().base().clone(),
+                        (32 + index as u32 * 2).into(),
+                        (33 + index as u32 * 2).into(),
+                    ))),
+                    _ => {
+                        let name = format!("part_{index}");
+                        parameters.push(program_parameter(name.clone(), ProgramType::Int32Pointer));
+                        definition
+                            .parameters
+                            .push(program_parameter(name.clone(), ProgramType::Int32Pointer));
+                        definition
+                            .contains
+                            .push(ResourceSpec::owned_memory(MemorySegment::new(
+                                variable(name.clone()),
+                                int32_literal(0),
+                                variable("length"),
+                            )));
+                        inputs.push(ResourceSpec::owned_memory(
+                            MemorySegment::new(
+                                variable(name.clone()),
+                                int32_literal(0),
+                                variable("n"),
+                            )
+                            .with_uninitialized(true),
+                        ));
+                        arguments.push(variable(name.clone()));
+                        types.push(ProgramType::Int32Pointer);
+                        let memory = state
+                            .memory()
+                            .clone()
+                            .with_block(pointer.block.clone(), 1024);
+                        state = state
+                            .with_memory(memory)
+                            .with_local(name, ProgramValue::pointer(pointer.clone()));
+                        owners.push(ResourceFact::own_memory(MemoryRange::new(
+                            pointer,
+                            0u32.into(),
+                            first.memory_own_range().unwrap().end().clone(),
+                        )));
+                    }
+                }
+            }
+            let output =
+                ResourceSpec::composite(ResourceAccessMode::Own, "packet".into(), arguments, types)
+                    .with_role(ResourceTransferRole::Produce)
+                    .with_state_source(ResourceStateSource::Post);
+            let function = program_function(
+                ProgramType::Void,
+                "composite_scaling",
+                parameters,
+                program_skip(),
+            )
+            .with_resource_summary(inputs, vec![output])
+            .with_composite_resource_definitions(vec![definition]);
+            let resources =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_facts(owners);
+            resources.synchronize_memory_equalities(&facts);
+            state = state.with_resource_context(resources);
+            let transfer = super::tests::prepare_mixed_scalar(&function, &state, &facts);
+            assert_eq!(
+                transfer.consumed_cell_returns.children.len(),
+                if axis == "parts" {
+                    count as usize + 1
+                } else {
+                    1
+                }
+            );
+            let (returned, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast =
+                    crate::kernel::search::FastOperationScope::enter("parameter composite return");
+                super::composite_transfer_tests::returned(
+                    &function,
+                    &state,
+                    &transfer,
+                    ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+                    &facts,
+                )
+                .unwrap()
+            });
+            assert_eq!(returned.output_resources.facts().len(), 1);
+            assert_eq!(
+                returned
+                    .return_resources
+                    .facts()
+                    .iter()
+                    .filter(|fact| fact.is_own())
+                    .count(),
+                transfer
+                    .caller_resources_after_requirements
+                    .facts()
+                    .iter()
+                    .filter(|fact| fact.is_own())
+                    .count()
+                    + 1
+            );
+            samples.push(work);
+        }
+        eprintln!("composite parameter return {axis}: {samples:?}");
+        if axis == "parts" {
+            assert!(samples[2] <= samples[0] * 18 + 256, "{axis}: {samples:?}");
+        } else {
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 64),
+                "{axis}: {samples:?}"
+            );
+        }
+    }
+}

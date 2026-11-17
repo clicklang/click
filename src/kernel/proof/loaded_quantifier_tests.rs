@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::proof::ProofFacts;
+use crate::kernel::proof::PureFactStore;
 use crate::kernel::{LoadKind, Memory, Pointer, PointerOffsetTerm, ProgramValue, intern_memory};
 
 fn loaded_fact(memory: &SharedMemory, binder: Variable, shared: bool) -> Proposition {
@@ -75,7 +75,7 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
     let native = loaded_fact(&memory, Variable(920_001), false);
     let shared = loaded_fact(&memory, Variable(920_002), true);
     for (source, requested) in [(&native, &shared), (&shared, &native)] {
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(source));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(source));
         assert_eq!(
             facts.matching_quantified_fact(requested),
             Some(source.clone())
@@ -136,7 +136,7 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
             !quantified_binder_equivalent(&native, &different),
             "change {change}"
         );
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(&native));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(&native));
         assert!(
             facts.matching_quantified_fact(&different).is_none(),
             "change {change}"
@@ -158,7 +158,7 @@ fn loaded_quantifier_shared_guard_does_not_rename_a_variable_inside_state() {
     let shared = loaded_fact(&memory, Variable(920_002), true);
     for (source, requested) in [(&native, &shared), (&shared, &native)] {
         assert!(!quantified_binder_equivalent(source, requested));
-        let facts = ProofFacts::from_ordered(std::slice::from_ref(source));
+        let facts = PureFactStore::from_ordered(std::slice::from_ref(source));
         assert!(facts.matching_quantified_fact(requested).is_none());
     }
 }
@@ -200,7 +200,7 @@ fn loaded_quantifier_native_guard_does_not_capture_a_variable_inside_state() {
             let second = quantify(b);
             for (source, requested) in [(&first, &second), (&second, &first)] {
                 assert!(!quantified_binder_equivalent(source, requested));
-                let facts = ProofFacts::from_ordered(std::slice::from_ref(source));
+                let facts = PureFactStore::from_ordered(std::slice::from_ref(source));
                 assert!(facts.matching_quantified_fact(requested).is_none());
             }
         }
@@ -246,7 +246,7 @@ fn loaded_quantifier_guard_matching_preserves_machine_binder_width() {
         let native = loaded_fact_of_format(&memory, Variable(940_001), false, format);
         let shared = loaded_fact_of_format(&memory, Variable(940_002), true, format);
         for (source, requested) in [(&native, &shared), (&shared, &native)] {
-            let facts = ProofFacts::from_ordered(std::slice::from_ref(source));
+            let facts = PureFactStore::from_ordered(std::slice::from_ref(source));
             assert_eq!(
                 facts.matching_quantified_fact(requested),
                 Some(source.clone()),

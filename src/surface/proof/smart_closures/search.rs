@@ -384,7 +384,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if crate::kernel::proof::fact_reasoning::normalize_using_conditions(
             goal,
             &kernels,
-            &crate::kernel::proof::ProofFacts::from_ordered(&kernels),
+            &crate::kernel::proof::PureFactStore::from_ordered(&kernels),
         )
         .is_ok()
         {
@@ -767,7 +767,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// implication to publish the whole consequent, spelled as the implication fact is written, and
     /// then the goal, now a proper conjunct of an available fact. The
     /// implication is selected by one probe of the conjunct index
-    /// (`ProofFacts::discharged_implication_containing`); both steps are
+    /// (`PureFactStore::discharged_implication_containing`); both steps are
     /// checked as written, and expansion prints them.
     pub(in crate::surface::proof) fn try_discharged_consequent_conjunct_closure(
         search_input: &Proof<'a>,
@@ -834,7 +834,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// the goal `forall k { G implies A }` follows from an available
     /// `forall k { G implies A and B }` with the same binder and guards.
     /// The source is selected by one probe of the indexed conjunct
-    /// projections (`ProofFacts::quantified_conjunct_projection_source`), so
+    /// projections (`PureFactStore::quantified_conjunct_projection_source`), so
     /// a universal goal no such fact concludes costs one lookup and no
     /// unrelated fact is visited. The proof is the explicit sequence
     /// `intro()` for the binder and each guard, `instantiate(F, k)` at the
@@ -5669,7 +5669,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// `forall k { k < n implies p[k] == v }` from a call's
     /// `forall k { k < n implies defined(p[k]) and p[k] == v }`. The larger
     /// fact is selected by one probe of the indexed conjunct projections
-    /// (`ProofFacts::quantified_conjunct_projection_source`) with the goal
+    /// (`PureFactStore::quantified_conjunct_projection_source`) with the goal
     /// lowered at that point, so a point holding no such fact costs one
     /// lowering and one lookup. The proof is one explicit transport from
     /// the larger fact to the goal, which the checked quantified frame
@@ -10511,7 +10511,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && crate::kernel::proof::fact_reasoning::normalize_using_conditions(
                     goal,
                     &condition_kernels,
-                    &crate::kernel::proof::ProofFacts::from_ordered(&restricted),
+                    &crate::kernel::proof::PureFactStore::from_ordered(&restricted),
                 )
                 .is_ok()
                 && let Ok(closed) = crate::kernel::search::ProofSearch::apply_normalization_closure(

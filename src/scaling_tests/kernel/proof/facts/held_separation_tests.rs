@@ -13,7 +13,7 @@ fn held_separation_uses_only_the_selected_members() {
         let resources = ResourceContext::new()
             .unchecked_with_facts((0..size).map(|index| ResourceFact::own(cell(index))));
         let state = ExecutionState::new().with_resource_context(resources);
-        let facts = ProofFacts::default();
+        let facts = PureFactStore::default();
         let goal = separation(cell(size - 2), cell(size - 1));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let observed = facts.with_selected_held_resource_separation(&goal, &state);
@@ -43,7 +43,7 @@ fn held_field_separation_does_not_visit_unrelated_owners() {
         let goal = separation(range(size - 2, 1, 2, 8), range(size - 1, 0, 1, 8));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(
-                ProofFacts::default()
+                PureFactStore::default()
                     .with_selected_held_resource_separation(&goal, &state)
                     .contains(&goal)
             );
@@ -73,7 +73,7 @@ fn held_separation_transitive_alias_uses_the_shared_resource_index() {
         let link = |a, b| {
             Proposition::ConditionIs(ConditionTerm::pointer_equal(pointer(a), pointer(b)), true)
         };
-        let mut facts = ProofFacts::from_ordered(&[link(0, size + 1), link(size + 1, size + 2)]);
+        let mut facts = PureFactStore::from_ordered(&[link(0, size + 1), link(size + 1, size + 2)]);
         for index in 0..size {
             facts = facts.with_fact(link(size + 10 + 2 * index, size + 11 + 2 * index));
         }
@@ -111,7 +111,7 @@ fn exact_partition_known_ignores_unselected_members_and_refuses_two_views() {
         let goal = separation(owned.clone(), viewed.clone());
         let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
             let _guard = crate::kernel::search::FastOperationScope::enter("exact partition known");
-            let facts = ProofFacts::default().with_exact_partition_separation(&goal, &resources);
+            let facts = PureFactStore::default().with_exact_partition_separation(&goal, &resources);
             assert!(facts.contains(&goal));
             assert!(resources.proves_exact_partition_separation(&viewed, &owned));
             assert!(!resources.proves_exact_partition_separation(&viewed, &cell(2)));
@@ -140,7 +140,7 @@ fn exact_partition_known_does_not_treat_supported_views_as_independent() {
 fn separation_carrier_key_ignores_unrelated_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64, 256] {
-        let mut facts = ProofFacts::default();
+        let mut facts = PureFactStore::default();
         for index in 0..size {
             facts = facts.with_fact(separation(cell(index + 10), cell(index + 1000)));
         }

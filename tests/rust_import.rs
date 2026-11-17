@@ -2969,6 +2969,24 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(BOX_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
+    // A box parameter's and a box result's type grant what these clauses
+    // state, so the contracts verify without them.
+    let derived = BOX_SIDECAR
+        .replacen(
+            "    consumes allocation(b, sizeof(boxed::Cell));\n    consumes *b;\n",
+            "",
+            1,
+        )
+        .replacen(
+            "    produces allocation(result, sizeof(boxed::Cell));\n    produces *result;\n",
+            "",
+            1,
+        );
+    assert_ne!(derived, BOX_SIDECAR);
+    for function in ["boxed::make", "boxed::read", "boxed::through"] {
+        verify_rust_function(&derived, &prepared, function)
+            .unwrap_or_else(|error| panic!("{function}: {error:?}"));
+    }
     for (function, before, after, expected) in [
         (
             "boxed::boxed",
@@ -3547,6 +3565,11 @@ fn charon_option_take_moves_out_and_leaves_none() {
     fs::write(p.root.join("borrow.click"), OPTION_TAKE_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(OPTION_TAKE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    // `o: &mut Option<u32>` owns `*o` with no clause written.
+    let derived = OPTION_TAKE_SIDECAR.replacen("    owns *o;\n", "", 1);
+    assert_ne!(derived, OPTION_TAKE_SIDECAR);
+    ProgramVerificationSession::new_program_prepared(&derived, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
         (

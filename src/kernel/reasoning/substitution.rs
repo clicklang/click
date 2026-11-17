@@ -450,9 +450,6 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
         .iter()
         .map(|resource| walk_resource_spec(resource, s))
         .collect();
-    interface.resource_transfer_rule = std::sync::Arc::new(
-        crate::kernel::functions::SummaryResourceTransferRule::compile(&interface),
-    );
     interface.resource_constructors = function
         .resource_constructors()
         .iter()
@@ -587,6 +584,9 @@ fn walk_program_function<S: VariableSubstitution + ?Sized>(
             body: s.spec_proposition(&unfolding.body),
         })
         .collect();
+    interface.resource_transfer_rule = std::sync::Arc::new(
+        crate::kernel::functions::SummaryResourceTransferRule::compile(&interface),
+    );
     ProgramFunction {
         program_entry: function.program_entry,
         name: function.name.clone(),
@@ -1293,6 +1293,15 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
 ) -> Proposition {
     let _scope = s.proposition_scope();
     match proposition {
+        Proposition::VolatileAccess(event) => {
+            Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
+                pointer: s.pointer(&event.pointer),
+                value: s.program_value(&event.value),
+                id: event.id,
+                kind: event.kind,
+                value_type: event.value_type,
+            }))
+        }
         Proposition::Equal(left, right) => Proposition::Equal(s.term(left), s.term(right)),
         Proposition::ConditionIs(condition, value) => {
             Proposition::ConditionIs(s.condition(condition), *value)
@@ -2163,6 +2172,14 @@ pub(crate) fn substitute_algebraic_variable_in_proposition(
     }
 
     match proposition {
+        Proposition::VolatileAccess(_) => {
+            let source = AlgebraicTerm {
+                algebraic_type: to.algebraic_type.clone(),
+                node: AlgebraicTermNode::Variable(from),
+            };
+            crate::kernel::proof::term_rewrite::TermRewrite::new(&source, to)
+                .proposition(proposition)
+        }
         Proposition::Equal(left, right) => Proposition::Equal(
             rewritten_term(left, from, to),
             rewritten_term(right, from, to),
@@ -2382,6 +2399,10 @@ fn collect_proposition_bound_variables_one(
     variables: &mut BTreeSet<Variable>,
 ) {
     match proposition {
+        Proposition::VolatileAccess(event) => {
+            collect_pointer_bound_variables(&event.pointer, variables);
+            collect_program_value_bound_variables(&event.value, variables);
+        }
         Proposition::Equal(left, right) => {
             collect_term_bound_variables(left, variables);
             collect_term_bound_variables(right, variables);

@@ -124,8 +124,8 @@ fn outcome_case_region_in_scope<'a>(
 /// arm's case and bindings.
 type OutcomeMatchPartition<'f> = dyn Fn(
         &ProofMatch,
-        &ProofFacts,
-        &ProofFacts,
+        &PureFactStore,
+        &PureFactStore,
         Option<&OutcomeBindings>,
     ) -> Result<super::match_cases::OutcomeMatchCases, ClickError>
     + 'f;
@@ -137,8 +137,8 @@ type OutcomeMatchPartition<'f> = dyn Fn(
 fn partition_outcome_match(
     nodes: &[OutcomeNode<'_>],
     node: &OutcomeMatch<'_>,
-    authority: &ProofFacts,
-    query: &ProofFacts,
+    authority: &PureFactStore,
+    query: &PureFactStore,
     facts: &mut Vec<Proposition>,
     provenance: OutcomeProvenance,
     lower: &impl Fn(
@@ -150,7 +150,7 @@ fn partition_outcome_match(
     prove: &impl Fn(
         &ClickProposition,
         Option<&DeferredPostExecutionTactic>,
-        &ProofFacts,
+        &PureFactStore,
         &OutcomeProvenance,
         Option<&OutcomeBindings>,
     ) -> Result<(Proposition, ProofCertificate), ClickError>,
@@ -233,8 +233,8 @@ fn descend_outcome_case(
     node: &OutcomeCase<'_>,
     arm_case: OutcomeArmCase<'_>,
     take_then: bool,
-    authority: &ProofFacts,
-    query: &ProofFacts,
+    authority: &PureFactStore,
+    query: &PureFactStore,
     facts: &mut Vec<Proposition>,
     provenance: OutcomeProvenance,
     fact: Option<Proposition>,
@@ -247,7 +247,7 @@ fn descend_outcome_case(
     prove: &impl Fn(
         &ClickProposition,
         Option<&DeferredPostExecutionTactic>,
-        &ProofFacts,
+        &PureFactStore,
         &OutcomeProvenance,
         Option<&OutcomeBindings>,
     ) -> Result<(Proposition, ProofCertificate), ClickError>,
@@ -286,8 +286,8 @@ fn descend_outcome_case(
 fn partition_outcome_cases(
     nodes: &[OutcomeNode<'_>],
     next: Option<usize>,
-    authority: &ProofFacts,
-    query: &ProofFacts,
+    authority: &PureFactStore,
+    query: &PureFactStore,
     facts: &mut Vec<Proposition>,
     provenance: OutcomeProvenance,
     lower: &impl Fn(
@@ -299,7 +299,7 @@ fn partition_outcome_cases(
     prove: &impl Fn(
         &ClickProposition,
         Option<&DeferredPostExecutionTactic>,
-        &ProofFacts,
+        &PureFactStore,
         &OutcomeProvenance,
         Option<&OutcomeBindings>,
     ) -> Result<(Proposition, ProofCertificate), ClickError>,
@@ -3770,7 +3770,7 @@ mod outcome_case_tests {
             let visits = std::cell::Cell::new(0);
             let mut leaves = 0;
             let mut facts = Vec::new();
-            let root = ProofFacts::default();
+            let root = PureFactStore::default();
             partition_outcome_cases(
                 &nodes,
                 Some(0),

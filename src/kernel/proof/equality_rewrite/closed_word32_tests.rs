@@ -35,7 +35,7 @@ fn rewrite_observation(
         ),
         true,
     );
-    ProofFacts::from_ordered(std::slice::from_ref(&equality))
+    PureFactStore::from_ordered(std::slice::from_ref(&equality))
         .check_equality_rewrite(&goal, &equality)
         .unwrap()
         .proposition()
