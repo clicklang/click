@@ -16756,14 +16756,14 @@ fn consume_returned_resource_unit(
     let result = (|| {
         let singleton =
             ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(required.clone());
-        let expanded = expand_composite_resource_fact(
+        let (_, _, written_children) = expand_composite_resource_fact_with_children(
             &singleton,
             required,
             interface.composite_resource_definitions(),
             &state.program_point(),
             assumptions,
         )?;
-        if !unit && expanded.facts().iter().any(ResourceFact::is_own) {
+        if !unit && written_children.iter().any(ResourceFact::is_own) {
             return None;
         }
         // An empty expansion cannot manufacture a missing unit. A
@@ -16771,11 +16771,14 @@ fn consume_returned_resource_unit(
         // and a declaration with no body at all is a token that only a
         // held copy supplies: two `Permit(x)` cannot come from one. A
         // conditional body whose guard is false is refused the same way.
-        if expanded.facts().is_empty() {
+        if written_children.is_empty() {
             return None;
         }
         let mut remaining = available.clone();
-        for child in expanded.facts() {
+        // The required head is a description, not a held owner. Spend each
+        // written body occurrence before normalization can coalesce equal
+        // memory clauses; their physical overlap does not make them duplicable.
+        for child in &written_children {
             remaining = consume_returned_resource_unit(
                 remaining,
                 child,

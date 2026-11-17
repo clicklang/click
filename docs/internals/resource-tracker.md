@@ -2017,7 +2017,7 @@ Ordinary returns, exceptional returns and void fallthrough do not call
 shared-root consistency check is constant work; selected output consumption,
 loan recovery and declared resource effects keep their own construction rules.
 
-Entry/exit certification, definition-fact checking and Surface observation use
+Entry/exit certification and definition-fact checking use
 `observable_facts_assuming_valid` on their producer-established partitions.
 They expose the compact observable composition without repeating ownership
 admission. The raw `observable_facts` API still validates an assembled description
@@ -2034,3 +2034,5 @@ raw-output admission and pending-return admission; the broader legacy routes
 remain source pinned. Existing migrated fragment tests provide their own no-discovery/scaling evidence. The guard
 observes registered discovery calls, not arbitrary loops: each future migration
 still needs an operation audit and deterministic scaling checks.
+
+Surface observation retains raw-context validation: entry declarations can still expose contradictory instance bodies. That remaining raw boundary is source-inventoried; only producer-established observations may bypass it. Returned composite requirements consume every written body occurrence, before normalization can collapse duplicate memory clauses.
