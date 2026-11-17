@@ -8971,6 +8971,14 @@ fn evaluate_spec_if_paths_in(
         // select an arm; logical lowering retains both guarded values.
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
+                Proposition::ConditionIs(condition, _)
+                    if crate::kernel::machine_integer::comparison::is_simple_bitwise_comparison(
+                        condition,
+                    ) =>
+                {
+                    true
+                }
+
                 Proposition::ConditionIs(
                     ConditionTerm::Compare {
                         format,

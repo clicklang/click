@@ -9,6 +9,10 @@ the field's folded value where the instance is unfolded,
 [`resource_unfold_binds_scalar_field.md`](resource_unfold_binds_scalar_field.md)
 does.
 
+The store suffix uses explicit cell separation and `preserve`. Its expansion
+regression repairs only the invalid invariant to use `p`, then verifies and
+cold-replays the complete proof while rejecting legacy transport output.
+
 ```c filename=resource_unfold_field_binding_rejects_consumed_read.c
 int32 claim(int32* data, int32* occupied, int32 capacity) {
     int32 i;
@@ -109,24 +113,25 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 instantiate(forall (k: int32) {
                     0 <= k and k < p implies occupied[k] == 1
                 }, i);
-                known();
+                contradiction(0 <= i and i < p);
             }
             contradiction(occupied[i] == 1);
         } else {
             have i == p;
+            known();
         }
     }
     mark before_store;
     step();
-    have p + 1 <= capacity;
-    have 0 <= p + 1;
+    have to_integer(p + 1) <= to_integer(capacity);
+    have 0 <= to_integer(p + 1);
     have forall (k: int32) {
-        0 <= k and k < p + 1 implies occupied[k] == 1
+        0 <= k and to_integer(k) < to_integer(p + 1) implies occupied[k] == 1
     } by {
         intro();
         intro();
         have 0 <= k;
-        have k < p + 1;
+        have to_integer(k) < to_integer(p + 1);
         if k < p {
             have at(before_store, occupied[k]) == 1 by {
                 have at(before_store, 0) <= at(before_store, k) and
@@ -143,10 +148,16 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 rewrite(i, p);
                 known();
             }
-            transport(at(before_store, occupied[k]) == 1, occupied[k] == 1) using {
-                at(before_store, occupied[k]) == 1;
-                k != i;
-            };
+            have separate(memory(occupied[i]), memory(occupied[k])) by {
+                apply(click::separation::separate_elements(occupied, i, k)) using { k != i; };
+            }
+            have separate(statement(3).footprint, memory(occupied[k])) by {
+                normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
+            }
+            have occupied[k] == at(before_store, occupied[k]) by {
+                preserve(memory(occupied[k]), statement(3));
+            }
+            known();
         } else {
             have k <= p;
             have k == p;
@@ -155,11 +166,11 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         }
     }
     have forall (k: int32) {
-        p + 1 <= k and k < capacity implies occupied[k] == 0
+        to_integer(p + 1) <= to_integer(k) and k < capacity implies occupied[k] == 0
     } by {
         intro();
         intro();
-        have p + 1 <= k;
+        have to_integer(p + 1) <= to_integer(k);
         have k < capacity;
         have p < p + 1;
         have p < k;
@@ -179,10 +190,16 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             known();
         }
         have i != k;
-        transport(at(before_store, occupied[k]) == 0, occupied[k] == 0) using {
-            at(before_store, occupied[k]) == 0;
-            i != k;
-        };
+        have separate(memory(occupied[i]), memory(occupied[k])) by {
+            apply(click::separation::separate_elements(occupied, i, k)) using { i != k; };
+        }
+        have separate(statement(3).footprint, memory(occupied[k])) by {
+            normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
+        }
+        have occupied[k] == at(before_store, occupied[k]) by {
+            preserve(memory(occupied[k]), statement(3));
+        }
+        known();
     }
     let after = fold(claimed_prefix(data, occupied, capacity), { prefix: p + 1 });
     step();

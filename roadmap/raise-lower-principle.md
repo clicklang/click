@@ -567,6 +567,56 @@ Authorized sequences: 10a–10e and 10f–10j, one PR per slice. Inventory basel
 this inventory assigns the storage behind those boundaries. Later slices are
 provisional until their consumers are inspected.
 
+### Active sequence and durable checkpoint
+
+Package 10 removes remaining native expression storage and obsolete compatibility
+caches after their consumers migrate to shared `KernelTerm` operands. Surface
+raising/lowering and its fact-stability contract must continue to hold. Legitimate
+memory, allocation, binder, function and type identities are not expression
+payloads to eliminate. Snapshot architecture is outside this package's current
+storage-cleanup slices.
+
+This section is the authoritative package-10 sequence. Preserve the chunk IDs
+across sessions; read it before selecting work, and update status, evidence,
+remaining consumers and PR links in the same PR as each completed slice. Record
+any scope split or changed dependency here before proceeding. Conversation
+history and temporary session notes are not the plan's durable record.
+
+Checkpoint: 10a–10g have landed; 10f is [PR #3075](https://github.com/clicklang/click/pull/3075)
+and 10g is [PR #3080](https://github.com/clicklang/click/pull/3080).
+10i landed in [PR #3117](https://github.com/clicklang/click/pull/3117); all four
+pushed commits were verified on upstream. Its approved hash-encoding change
+supersedes the historical native-hash-stream requirement below. The original
+10h scope/completion evidence has not been recovered; do not infer completion
+from the later 10i merge. The user restored the complete remaining 10j–10t
+sequence below. These rows record planned scope, not completed implementation.
+
+| Slice | Scope | Acceptance / dependency | Status |
+| --- | --- | --- | --- |
+| 10j | Remove redundant native payloads from stored execution and memory values. | Audit actual wrapper-owned and reachable duplicate payloads first; remove demonstrated redundancy while preserving producer, storage and exact-refresh contracts. Account for live compatibility readers. | Next; audit first. |
+| 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Planned. |
+| 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Planned. |
+| 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Planned. |
+| 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Planned. |
+| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Planned. |
+| 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Planned; family split may be needed. |
+| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
+| 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
+| 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
+| 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
+
+Keep one PR per coherent slice; subdivide when actual consumers warrant it.
+Do not invent implementation work to satisfy an old title. In particular,
+`ExecutionValue` already chooses native input or one shared root, and both
+stored wrappers currently hold one `ExecutionValue` plus a lazy structural key.
+Thus 10j is not permission to assume a second enclosing native field exists or
+to delete caches assigned to 10r–10s before their readers migrate. Any remaining
+native numeric memory-carrier policy requires an explicit consumer inventory;
+local machine observation equivalence must not replace memory structural
+identity. Stop and discuss changes to proof semantics, syntax or snapshot
+architecture; representation cleanup must not require proof rewrites, new
+search indexes or increased budgets.
+
 ### 10a Storage inventory and completion criteria
 
 | Storage / consumer | Current representation and dependency | Planned slice |
