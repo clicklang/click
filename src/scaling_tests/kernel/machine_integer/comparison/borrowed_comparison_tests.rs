@@ -266,27 +266,36 @@ fn bit_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                 complement(arithmetic.clone()),
                 complement(complement(variable.clone())),
             );
-            let shift = |left, count| {
-                KernelTerm::machine_binary_shared(format, O::ShiftRight, [left, count])
-            };
-            let shift_cases = [
-                (
-                    shift(variable.clone(), literal(1)),
-                    shift(arithmetic.clone(), literal(1)),
-                    shift(variable.clone(), other.clone()),
-                ),
-                (
-                    shift(
-                        variable.clone(),
-                        literal(u64::from(format.format().bits()) - 1),
-                    ),
-                    shift(variable.clone(), literal(u64::from(format.format().bits()))),
-                    shift(
-                        variable.clone(),
-                        literal(u64::from(format.format().bits()) + 1),
-                    ),
-                ),
-            ];
+            let shifts = [O::ShiftRight, O::ShiftLeft];
+            let shift_cases = shifts
+                .into_iter()
+                .filter(|op| *op == O::ShiftRight || !format.format().is_signed())
+                .flat_map(|op| {
+                    let shift =
+                        |left, count| KernelTerm::machine_binary_shared(format, op, [left, count]);
+                    let width = u64::from(format.format().bits());
+                    [
+                        (
+                            shift(variable.clone(), literal(1)),
+                            shift(arithmetic.clone(), literal(1)),
+                            shift(variable.clone(), other.clone()),
+                        ),
+                        (
+                            shift(variable.clone(), literal(width - 1)),
+                            shift(variable.clone(), literal(width)),
+                            shift(variable.clone(), literal(width + 1)),
+                        ),
+                    ]
+                })
+                .collect::<Vec<_>>();
+            if format.format().is_signed() {
+                let signed_left_shift = KernelTerm::machine_binary_shared(
+                    format,
+                    O::ShiftLeft,
+                    [variable.clone(), literal(1)],
+                );
+                assert!(bounded_bit_operand(V::Shared(&signed_left_shift)).is_none());
+            }
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for (hit, left_miss, right_miss) in binary_cases

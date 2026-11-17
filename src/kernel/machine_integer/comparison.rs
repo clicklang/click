@@ -304,7 +304,8 @@ fn comparison_leaf_operand(operand: crate::kernel::MachineOperandView<'_>) -> Op
         .or_else(|| operand.variable().copied().map(MachineTerm::Variable))
 }
 
-/// Read a single bitwise operation or an in-range fixed-count right shift.
+/// Read a single bitwise operation, a fixed right shift, or a fixed unsigned
+/// left shift. A shift count must be in range.
 /// Inspect only immediate leaves and preserve their original formats.
 fn bounded_bit_operand(operand: crate::kernel::MachineOperandView<'_>) -> Option<MachineTerm> {
     if let Some((format, op @ crate::kernel::MachineUnaryOp::BitwiseNot, child)) = operand.unary()
@@ -325,9 +326,13 @@ fn bounded_bit_operand(operand: crate::kernel::MachineOperandView<'_>) -> Option
     use crate::kernel::MachineBinaryOp as O;
     match operator {
         O::BitwiseAnd | O::BitwiseOr | O::BitwiseXor => {}
-        O::ShiftRight
-            if super::bounds::constant_shift_count(arguments[1])
-                .is_some_and(|count| count < width) => {}
+        O::ShiftRight | O::ShiftLeft
+            if operator == O::ShiftRight || !format.format().is_signed() =>
+        {
+            if super::bounds::constant_shift_count(arguments[1])? >= width {
+                return None;
+            }
+        }
         _ => return None,
     }
     crate::instrumentation::record_deterministic_work(1);
