@@ -28,10 +28,7 @@ use super::{
     VerifiedFunctionRule, VerifiedFunctionTerminationRule,
 };
 
-/// A kernel identity, not the integer representation of `pthread_t`. The C
-/// binding writes an opaque value carrying this identity to a checked slot.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub(super) struct ThreadHandle(u64);
+pub(super) use super::ThreadHandleId as ThreadHandle;
 
 /// An explicit runtime assumption, scoped by `join` to a live child of this
 /// parent with matching termination evidence. It grants no right by itself.
@@ -644,25 +641,22 @@ impl ThreadLedger {
 
 impl ThreadHandle {
     pub(super) fn program_value(self) -> ProgramValue {
-        ProgramValue::UInt64(super::MachineTerm::PureFunctionApplication {
-            // This name cannot be spelled by C or Click source. The term is
-            // copied as an opaque pthread_t value, never derived from its
-            // machine integer representation.
-            name: format!("\0click.pthread.handle:{}", self.0),
-            arguments: vec![],
+        ProgramValue::UInt64(MachineTerm::ThreadHandle(self))
+    }
+
+    pub(super) fn resolve_program_value(
+        value: &ProgramValue,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        Self::from_program_value(value).or_else(|| match value.numeric_value() {
+            ProgramValue::UInt64(term) => assumptions.equality_graph.thread_handle_for_word(term),
+            _ => None,
         })
     }
 
     pub(super) fn from_program_value(value: &ProgramValue) -> Option<Self> {
-        match value {
-            ProgramValue::UInt64(super::MachineTerm::PureFunctionApplication {
-                name,
-                arguments,
-            }) if arguments.is_empty() => name
-                .strip_prefix("\0click.pthread.handle:")?
-                .parse()
-                .ok()
-                .map(Self),
+        match value.numeric_value() {
+            ProgramValue::UInt64(MachineTerm::ThreadHandle(handle)) => Some(*handle),
             _ => None,
         }
     }
@@ -671,6 +665,88 @@ impl ThreadHandle {
 #[cfg(test)]
 mod handle_tests {
     use super::*;
+
+    #[test]
+    fn handle_is_a_shared_opaque_word_without_numeric_or_join_authority() {
+        use super::super::{
+            ConditionTerm, KernelTermExport, KernelTermImport, KernelTermNode, MachineIntegerType,
+        };
+        let _session = super::super::VerificationSession::enter();
+        let id = ThreadHandle(42);
+        let native = MachineTerm::ThreadHandle(id);
+        let shared = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
+        assert!(matches!(shared.node(), KernelTermNode::ThreadHandle(actual) if *actual == id));
+        assert!(shared.children().is_empty());
+        assert!(
+            super::super::shared_machine_syntax_variables(&shared, || true)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(shared.is_shared_machine_operand());
+        assert_eq!(KernelTermExport::machine(&shared).unwrap(), native);
+        assert_eq!(native.as_machine_constant(), None);
+        for number in [0, 42, 43] {
+            let equality =
+                ConditionTerm::uint64_equal(native.clone(), MachineTerm::uint64_constant(number));
+            assert_eq!(PureFactContext::new().decide(&equality), None);
+            let stated = PureFactContext::new()
+                .assume_proposition(Proposition::ConditionIs(equality.clone(), true));
+            assert_eq!(stated.decide(&equality), Some(true));
+            assert_eq!(
+                ThreadHandle::from_program_value(&ProgramValue::UInt64(
+                    MachineTerm::uint64_constant(number)
+                )),
+                None
+            );
+        }
+        let old_encoding = ProgramValue::UInt64(MachineTerm::PureFunctionApplication {
+            name: format!("\0click.pthread.handle:{}", id.0),
+            arguments: vec![],
+        });
+        assert_eq!(ThreadHandle::from_program_value(&old_encoding), None);
+    }
+
+    #[test]
+    fn forwarded_handle_resolution_uses_equality_and_preserves_forks() {
+        use super::super::{ConditionTerm, Variable};
+        let _session = super::super::VerificationSession::enter();
+        let alias = MachineTerm::Variable(Variable(1008891));
+        let value = ProgramValue::UInt64(alias.clone());
+        let equality = |handle| {
+            Proposition::ConditionIs(
+                ConditionTerm::uint64_equal(alias.clone(), MachineTerm::ThreadHandle(handle)),
+                true,
+            )
+        };
+        let empty = PureFactContext::new();
+        assert_eq!(ThreadHandle::resolve_program_value(&value, &empty), None);
+        let first = empty
+            .clone()
+            .assume_proposition(equality(ThreadHandle(1008892)));
+        assert_eq!(
+            ThreadHandle::resolve_program_value(&value, &first),
+            Some(ThreadHandle(1008892))
+        );
+        assert_eq!(ThreadHandle::resolve_program_value(&value, &empty), None);
+        let sibling = empty
+            .clone()
+            .assume_proposition(equality(ThreadHandle(1008893)));
+        assert_eq!(
+            ThreadHandle::resolve_program_value(&value, &sibling),
+            Some(ThreadHandle(1008893))
+        );
+        assert_eq!(
+            ThreadHandle::resolve_program_value(&value, &first),
+            Some(ThreadHandle(1008892))
+        );
+        let ambiguous = first
+            .clone()
+            .assume_proposition(equality(ThreadHandle(1008893)));
+        assert_eq!(
+            ThreadHandle::resolve_program_value(&value, &ambiguous),
+            None
+        );
+    }
 
     #[test]
     fn handle_identity_survives_symbolic_variable_substitution() {

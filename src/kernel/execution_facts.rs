@@ -104,8 +104,7 @@ struct FactIndexes {
 
 impl FactIndexes {
     fn insert(&mut self, fact: &Arc<ExecutionPureFact>) {
-        self.propositions
-            .insert(Arc::new(fact.proposition().clone()));
+        self.propositions.insert(fact.shared_proposition());
         self.exact.insert(fact.clone());
     }
 }

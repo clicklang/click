@@ -2329,7 +2329,6 @@ pub(super) fn execute_program_function_call_paths(
                     outcome,
                     facts,
                     obligations,
-
                     loan_evidence: body_path.loan_evidence,
                 });
             }
@@ -8289,6 +8288,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     ));
                 }
             }
+            Resource::ConditionalMutexGuard(_) => {}
             Resource::MutexGuard(identity) => {
                 if let Some(bytes) = self.mutex_storage_bytes {
                     self.ranges.push(MemoryRange::new_with_element_width(
@@ -8594,7 +8594,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             {
                 match (variable, value) {
                     (None, AlgebraicValue::Algebraic(value)) => {
-                        algebraic_bindings.insert(name.clone(), value.clone());
+                        algebraic_bindings.insert(name.clone().into(), value.clone());
                     }
                     (Some(variable), AlgebraicValue::Integer(value)) => {
                         integer_bindings.insert(*variable, value.clone());
@@ -8834,7 +8834,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
                 rewrite(else_branch, ranges);
             }
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
                 effect_checks,
                 body,
@@ -8846,9 +8846,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
                     }
                 }
                 rewrite(body, ranges);
-                if let Some(test) = test {
-                    rewrite(std::sync::Arc::make_mut(&mut test.statement), ranges);
-                }
+                rewrite(std::sync::Arc::make_mut(&mut loop_test.statement), ranges);
                 if let Some(update) = update {
                     rewrite(std::sync::Arc::make_mut(update), ranges);
                 }
@@ -8888,12 +8886,13 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 ..
             } => has_inherited_loop_frame(then_branch) || has_inherited_loop_frame(else_branch),
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
                 effect_checks,
                 body,
                 ..
             } => {
+                let (_, _, test) = loop_test.execution_parts();
                 effect_checks
                     .iter()
                     .any(|check| check.origin() == LoopEffectOrigin::InheritedResourceDerived)
@@ -8953,12 +8952,13 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 check_statement(else_branch)
             }
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
                 effect_checks,
                 body,
                 ..
             } => {
+                let (_, _, test) = loop_test.execution_parts();
                 if let Err(error) = check(effect_checks)? {
                     return Ok(Err(error));
                 }
@@ -10214,6 +10214,7 @@ fn evaluate_resource_population_body_resources(
             Resource::Memory(_)
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)
@@ -14224,7 +14225,7 @@ fn lower_selected_resource_body_clauses(
     source: &[SpecProposition],
     arm: Option<&str>,
     integer_bindings: &BTreeMap<Variable, IntegerTerm>,
-    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    algebraic_bindings: &BTreeMap<BindingName, AlgebraicTerm>,
     body_assumptions: &PureFactContext,
     established_assumptions: Option<&PureFactContext>,
     budget: &mut ExecutionBudget,
@@ -14881,7 +14882,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     }
                 }
                 (AlgebraicValueType::Algebraic { .. }, None, AlgebraicValue::Algebraic(value)) => {
-                    algebraic_bindings.insert(name.clone(), value.clone());
+                    algebraic_bindings.insert(name.clone().into(), value.clone());
                 }
                 _ => return Err("resource match constructor binding type mismatch".into()),
             }
@@ -18684,6 +18685,7 @@ fn resource_clause_supply_with_fact(
                 Resource::Token { .. }
                 | Resource::PopulationAuthority(_)
                 | Resource::Instance(_)
+                | Resource::ConditionalMutexGuard(_)
                 | Resource::MutexGuard(_)
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
@@ -20093,6 +20095,7 @@ fn resource_fact_transfer_priority(resource: &ResourceFact) -> u8 {
             | Resource::Token { .. }
             | Resource::PopulationAuthority(_)
             | Resource::Instance(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_)

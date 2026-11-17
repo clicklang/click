@@ -15,9 +15,14 @@ use std::sync::{Arc, OnceLock};
 
 mod bindings;
 pub use bindings::{
-    BindingDeclaration, BindingName, LocalBindingId, LocalFunctionId, LocalStorageInstance,
-    StaticBindingId, StaticBindingMetadata, StaticBindingOwner,
+    BindingDeclaration, BindingName, GeneratedBinderId, LocalBindingId, LocalFunctionId,
+    LocalStorageInstance, StaticBindingId, StaticBindingMetadata, StaticBindingOwner,
 };
+
+/// Opaque creation identity carried by a modeled `pthread_t` word. Its ID is
+/// not the numeric C representation and carries no completion authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ThreadHandleId(pub(crate) u64);
 
 pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
 
@@ -869,12 +874,14 @@ pub enum MachineTerm {
     /// travels in a `ProgramValue::Bool` as its cast to `uint8`, the byte a `bool`
     /// cell holds; its truth is `value`. Built by
     /// [`MachineTerm::bool_cast`], which folds a constant. It follows
-    /// every other variant, so the derived order of the terms before it is
+    /// the preexisting variants, so the derived order of the terms before it is
     /// unchanged.
     BoolCast {
         to: MachineIntegerType,
         value: Box<ConditionTerm>,
     },
+    /// An opaque pthread word; never a symbolic variable or numeric literal.
+    ThreadHandle(ThreadHandleId),
 }
 
 /// The derived `Debug` spelling of every variant, except that a constant
@@ -885,6 +892,7 @@ pub enum MachineTerm {
 impl std::fmt::Debug for MachineTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::ThreadHandle(id) => f.debug_tuple("ThreadHandle").field(id).finish(),
             int32_constant!(bits) => f
                 .debug_tuple("Constant")
                 .field(&constant_u32(*bits))
@@ -4167,12 +4175,12 @@ pub enum SpecExpression {
         start: Box<SpecExpression>,
         end: Box<SpecExpression>,
         initial: Box<SpecExpression>,
-        accumulator: String,
-        item: String,
+        accumulator: BindingName,
+        item: BindingName,
         body: Box<SpecExpression>,
     },
     Let {
-        name: String,
+        name: BindingName,
         value: Box<SpecExpression>,
         body: Box<SpecExpression>,
     },
@@ -4424,7 +4432,7 @@ pub enum SpecIntegerRangeFoldIndex {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecAlgebraicExpressionNode {
     Variable(Variable),
-    Binding(String),
+    Binding(BindingName),
     ResourceField(ResourceFieldProjection),
     Constructor {
         variant: String,
@@ -4486,7 +4494,7 @@ pub enum SpecAlgebraicValue {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SpecAlgebraicMatchArm {
     pub variant: String,
-    pub bindings: Vec<String>,
+    pub bindings: Vec<BindingName>,
     pub binding_types: Vec<AlgebraicValueType>,
     pub body: SpecExpression,
 }
@@ -4494,7 +4502,7 @@ pub struct SpecAlgebraicMatchArm {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SpecAlgebraicResultMatchArm {
     pub variant: String,
-    pub bindings: Vec<String>,
+    pub bindings: Vec<BindingName>,
     pub binding_types: Vec<AlgebraicValueType>,
     /// Kernel identities of Integer fields in the lowered arm body.
     /// Other carriers are bound through their typed environments.
@@ -4526,7 +4534,7 @@ impl SpecAlgebraicResultMatchArm {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SpecIntegerMatchArm {
     pub variant: String,
-    pub bindings: Vec<String>,
+    pub bindings: Vec<BindingName>,
     pub binding_types: Vec<AlgebraicValueType>,
     /// Kernel identities used by Integer binders in the lowered arm body.
     /// C and algebraic binders are represented by their typed environments.
@@ -5399,57 +5407,57 @@ pub enum SpecProposition {
     Not(Box<SpecProposition>),
     Implies(Box<SpecProposition>, Box<SpecProposition>),
     ForAllInt32 {
-        name: String,
+        name: BindingName,
         variable: Variable,
         body: Box<SpecProposition>,
     },
     ForAllMachineInteger {
-        name: String,
+        name: BindingName,
         variable: Variable,
         integer_type: MachineIntegerType,
         body: Box<SpecProposition>,
     },
     ForAllInteger {
-        name: String,
+        name: BindingName,
         variable: Variable,
         body: Box<SpecProposition>,
     },
     ForAllAlgebraic {
-        name: String,
+        name: BindingName,
         variable: Variable,
         algebraic_type: AlgebraicType,
         body: Box<SpecProposition>,
     },
     ForAllPointer {
-        name: String,
+        name: BindingName,
         variable: Variable,
         program_type: ProgramType,
         body: Box<SpecProposition>,
     },
     ExistsInt32 {
-        name: String,
+        name: BindingName,
         variable: Variable,
         body: Box<SpecProposition>,
     },
     ExistsMachineInteger {
-        name: String,
+        name: BindingName,
         variable: Variable,
         integer_type: MachineIntegerType,
         body: Box<SpecProposition>,
     },
     ExistsInteger {
-        name: String,
+        name: BindingName,
         variable: Variable,
         body: Box<SpecProposition>,
     },
     ExistsAlgebraic {
-        name: String,
+        name: BindingName,
         variable: Variable,
         algebraic_type: AlgebraicType,
         body: Box<SpecProposition>,
     },
     ExistsPointer {
-        name: String,
+        name: BindingName,
         variable: Variable,
         program_type: ProgramType,
         body: Box<SpecProposition>,
@@ -5710,7 +5718,7 @@ pub enum ProgramStatement {
     /// for the handler. Other outcomes retain their original path and state.
     TryCatchInt32 {
         try_body: Box<ProgramStatement>,
-        binding: String,
+        binding: BindingName,
         handler: Box<ProgramStatement>,
         /// This is an implementation cleanup edge inserted by a frontend,
         /// rather than a source-level handler. Its handler runs cleanup and
@@ -5760,11 +5768,10 @@ pub enum ProgramStatement {
     },
     /// Shared loop form for structured loops and checked natural cycles.
     Loop {
-        /// The loop's shared effectful test, outside the body scope.
-        test: Option<LoopTestRegion>,
+        /// The loop's one test region, outside the body scope.
+        test: LoopTestRegion,
         /// Shared update region, entered after leaving the body scope.
         update: Option<std::sync::Arc<ProgramStatement>>,
-        condition: ProgramExpression,
         invariant: Vec<Proposition>,
         invariant_checks: Vec<LoopInvariantCheck>,
         effect_checks: Vec<LoopEffectCheck>,
@@ -5786,9 +5793,6 @@ pub enum ProgramStatement {
         /// a direct contained child, in the exact resource definition, of the
         /// instance it held at the loop head.
         structural_measure: Option<String>,
-        /// Whether the body runs before the first condition check, as in C's
-        /// `do ... while` statement.
-        do_while: bool,
         /// When present, this is a proof-only natural cycle whose source body
         /// retains a checked `goto` to the target. The matching jump is the
         /// back edge; ordinary completion of the body is the cycle exit.
@@ -5818,7 +5822,7 @@ pub enum LoopTestPosition {
     AfterBody,
 }
 
-/// The one shared source region that prepares and decides an effectful test.
+/// Every loop has one test region: optional preparation, a decision and cleanup.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct LoopTestRegion {
     pub statement: std::sync::Arc<ProgramStatement>,
@@ -11055,6 +11059,8 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_memory_range_counts: PersistentMap<MemoryRange, usize>,
     owned_count: usize,
     owned_composite_count: usize,
+    /// Exclusive occurrence identities: named instances and conditional loop
+    /// guard custody. Shape/pointer indexes below contain only named instances.
     pub(super) instances: PersistentMap<Variable, ResourceEntryIds>,
     /// Only duplicated or malformed mutex authority atoms need a validity check.
     pub(super) suspect_mutex_authorities: PersistentMap<Resource, ()>,
@@ -11514,6 +11520,8 @@ pub enum Resource {
     Instance(ResourceInstance),
     /// Opaque exclusive authority for one acquisition of a modeled mutex.
     MutexGuard(MutexIdentity),
+    /// Exclusive custody of a loop guard, conditional on its frozen head condition.
+    ConditionalMutexGuard(Arc<ConditionalMutexGuard>),
     /// Exclusive lifecycle authority for one initialized mutex.
     MutexLive(MutexIdentity),
     /// Owned permission to use one checked loan share of an initialized mutex.
@@ -11604,6 +11612,25 @@ pub struct MutexIdentity {
     pub(in crate::kernel) mutex: Pointer,
 }
 
+/// A loop-owned occurrence. Protocol metadata and the condition never create
+/// this resource: only checked entry/backedge ownership exchanges do.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ConditionalMutexGuard {
+    pub(in crate::kernel) identity: Variable,
+    pub(in crate::kernel) guard: MutexIdentity,
+    pub(in crate::kernel) initialization: MutexIdentity,
+    pub(in crate::kernel) held: ConditionTerm,
+}
+
+impl ConditionalMutexGuard {
+    pub(crate) fn mutex(&self) -> &Pointer {
+        self.guard.mutex()
+    }
+    pub(crate) fn condition(&self) -> &ConditionTerm {
+        &self.held
+    }
+}
+
 /// Opaque identity of one use-share resource occurrence. The pointer is
 /// diagnostic provenance, not a constructor for loan authority. Substitution
 /// must preserve this identity just as it preserves a concrete acquisition.
@@ -11646,6 +11673,7 @@ impl Resource {
             Resource::Memory(_) => "memory",
             Resource::PopulationAuthority(_) => "population authority",
             Resource::MutexGuard(_) => "mutex guard",
+            Resource::ConditionalMutexGuard(_) => "conditional mutex guard",
             Resource::MutexLive(_) => "mutex lifetime",
             Resource::MutexUse(_) => "mutex use",
             Resource::Publication(_) => "publication right",
@@ -13104,6 +13132,9 @@ pub enum Term {
 pub struct BinderName(Option<std::sync::Arc<str>>);
 
 impl BinderName {
+    pub fn binding(name: &BindingName) -> Self {
+        name.named().map(Self::written).unwrap_or_default()
+    }
     pub fn written(name: &str) -> Self {
         Self((!name.is_empty()).then(|| name.into()))
     }
@@ -13119,6 +13150,9 @@ impl BinderName {
 pub struct BindingNames(Option<std::sync::Arc<[BinderName]>>);
 
 impl BindingNames {
+    pub fn bindings(names: &[BindingName]) -> Self {
+        Self((!names.is_empty()).then(|| names.iter().map(BinderName::binding).collect()))
+    }
     pub fn written(names: &[String]) -> Self {
         Self(
             (!names.is_empty())
@@ -14918,7 +14952,7 @@ impl PartialOrd for ProofObligation {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ExecutionPureFact {
-    pub(super) proposition: Proposition,
+    pub(super) proposition: Arc<Proposition>,
     pub(super) public: bool,
     pub(super) certified: bool,
     /// A value equation derived by a logical read, not a condition selecting
@@ -16017,3 +16051,5 @@ impl TypeParameterName {
 mod scaling_tests {
     include!("../scaling_tests/kernel/primitives.rs");
 }
+
+pub(crate) use bindings::NamedBindingMap;

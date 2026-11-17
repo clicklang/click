@@ -1102,7 +1102,7 @@ fn thread_guarantees_are_withheld_until_join() {
         .unwrap()
         .unwrap();
     assert!(matches!(
-        effect.proposition,
+        effect.proposition(),
         Proposition::MemoryEffectSummary { .. }
     ));
     assert!(!spawned.parent().resources().satisfies_fact(
@@ -1132,7 +1132,7 @@ fn thread_guarantees_are_withheld_until_join() {
             &(facts
                 .iter()
                 .fold(PureFactContext::new(), |assumptions, fact| {
-                    assumptions.assume_proposition(fact.proposition.clone())
+                    assumptions.assume_shared_proposition(fact.shared_proposition())
                 })),
             &postcondition
         ),

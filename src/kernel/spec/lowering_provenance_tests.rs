@@ -17,7 +17,7 @@ fn positive(expression: SpecExpression) -> SpecProposition {
 
 fn universal(body: SpecProposition) -> SpecProposition {
     SpecProposition::ForAllInt32 {
-        name: "k".to_string(),
+        name: "k".to_string().into(),
         variable: Variable(41),
         body: Box::new(body),
     }
@@ -89,7 +89,7 @@ fn a_written_universal_over_a_written_implication_records_both() {
         recorded,
         vec![
             LoweringIntroduction::WrittenUniversal {
-                name: "k".to_string(),
+                name: "k".to_string().into(),
                 variable: Variable(41),
                 pointer: false,
                 integer: false,
@@ -117,7 +117,7 @@ fn arithmetic_debts_do_not_insert_an_introduction_before_the_written_implication
         recorded,
         vec![
             LoweringIntroduction::WrittenUniversal {
-                name: "k".to_string(),
+                name: "k".to_string().into(),
                 variable: Variable(41),
                 pointer: false,
                 integer: false,
@@ -129,7 +129,7 @@ fn arithmetic_debts_do_not_insert_an_introduction_before_the_written_implication
 
 fn existential(body: SpecProposition) -> SpecProposition {
     SpecProposition::ExistsInt32 {
-        name: "len".to_string(),
+        name: "len".to_string().into(),
         variable: Variable(41),
         body: Box::new(body),
     }
@@ -193,12 +193,12 @@ fn a_definedness_guard_under_an_existential_stays_under_its_binder() {
 #[test]
 fn an_integer_existential_does_not_expose_nested_introductions_at_its_head() {
     let body = SpecProposition::ForAllInt32 {
-        name: "k".to_string(),
+        name: "k".to_string().into(),
         variable: Variable(42),
         body: Box::new(positive(bound(Variable(42)))),
     };
     let proposition = SpecProposition::ExistsInteger {
-        name: "z".to_string(),
+        name: "z".to_string().into(),
         variable: Variable(43),
         body: Box::new(body),
     };

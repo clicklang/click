@@ -4109,7 +4109,6 @@ impl CStatement {
         match self {
             Self::StepValue {
                 aggregate_layout,
-
                 steps,
                 expression,
                 interface_type,
@@ -4205,7 +4204,6 @@ impl CStatement {
             },
             Self::CallResult {
                 aggregate_layout,
-
                 call,
                 function_name,
                 arguments,
@@ -11077,9 +11075,6 @@ impl Parser {
         if self.peek() != Some(&Token::LBracket) {
             return Ok((parsed_type.interface_type, None));
         }
-        if parsed_type.enum_name.is_some() {
-            return Err(self.error_here("local arrays of enum type are not supported"));
-        }
         let (element_width, element_name, struct_array) = if is_plain_struct_type(parsed_type) {
             let struct_name = parsed_type
                 .struct_name
@@ -14932,7 +14927,6 @@ impl Parser {
             }
             CStatement::StepValue {
                 aggregate_layout,
-
                 steps,
                 expression,
                 interface_type,
@@ -14945,7 +14939,6 @@ impl Parser {
                     prefix,
                     CStatement::StepValue {
                         aggregate_layout,
-
                         steps,
                         expression,
                         interface_type,

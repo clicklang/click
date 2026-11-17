@@ -168,6 +168,7 @@ impl ResourceContext {
         let entries = match piece.resource() {
             Resource::Instance(instance) => self.storage.index.instances.get(&instance.identity),
             Resource::PopulationAuthority(_)
+            | Resource::ConditionalMutexGuard(_)
             | Resource::MutexGuard(_)
             | Resource::MutexLive(_)
             | Resource::MutexUse(_) => self.storage.index.by_resource.get(piece.resource()),

@@ -1845,7 +1845,7 @@ fn function_array_synthesis_requires_the_exact_named_state() {
         pointer,
         element_type: ProgramType::Int32,
     }];
-    let bindings = BTreeMap::new();
+    let bindings = BTreeMap::<Variable, SurfaceBinder>::new();
     // An unnamed historical memory cannot be silently printed as current.
     assert!(
         synthesize_surface_call(
@@ -2841,7 +2841,10 @@ fn a_local_indexes_only_addresses_formed_from_it() {
         Box::new(scaled(arena)),
         Box::new(scaled(index)),
     ));
-    let bound = BTreeMap::from([(Variable(index), "k".to_string())]);
+    let bound = (BTreeMap::<_, String>::from([(Variable(index), "k".to_string())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     let Some(ContractExpression::Index(base, _)) = synthesize_local_indexed_load(
         &own_cell,
         crate::kernel::LoadKind::Int32,
@@ -4129,9 +4132,12 @@ fn unified_certificate_terms_raise_and_lower_by_identity() {
     use crate::surface::lowering::lower_surface_integer_term;
     let variable = Variable(99003);
     let a = KernelTerm::variable(KernelType::Integer, variable);
-    let names = BTreeMap::from([(variable, "a".into())]);
-    let bindings = crate::persistent::PersistentMap::default().with_inserted(
-        "a".into(),
+    let names = (BTreeMap::<_, String>::from([(variable, "a".into())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
+    let bindings = PersistentBinderMap::default().with_inserted(
+        "a",
         crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::Variable(variable)),
     );
     let one = KernelTerm::integer_literal(1.into());
@@ -4585,7 +4591,8 @@ fn range_fold_surface_preserves_scope_and_alpha_identity() {
                 ParameterBinding::default(),
                 &state
             ),
-            "{expression}: {spelled:?}"
+            "{expression}: {spelled:?}; restored: {:?}; original: {lowered:?}",
+            relower_written_proposition(spelled, &state)
         );
     }
 }
@@ -4633,7 +4640,7 @@ fn range_fold_surface_separates_integer_and_machine_binder_ids() {
 }
 
 #[test]
-fn common_match_surface_preserves_written_binders_and_relowers_nested_results() {
+fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
     use crate::kernel::{AlgebraicValueType, KernelMatch};
     let _session = crate::kernel::VerificationSession::enter();
     let scrutinee =
@@ -4686,7 +4693,7 @@ fn common_match_surface_preserves_written_binders_and_relowers_nested_results() 
             FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
             SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::with_algebraic_types(file.click_function_definitions(), file.algebraic_type_definitions())),
             FixedStateLoweringOptions { algebraic_values: Some(&algebraic_values), ..Default::default() },
-        ).unwrap().0
+        ).unwrap_or_else(|error| panic!("{requirement}: {proposition:?}: {error}")).0
         };
         let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
             panic!()
@@ -4697,7 +4704,7 @@ fn common_match_surface_preserves_written_binders_and_relowers_nested_results() 
                 .unwrap_or_else(|| panic!("match spelling: {original:?}"));
         let text = crate::surface::printing::source_click_proposition(&spelled);
         if text.contains("match ") {
-            assert!(text.contains("Arm(item)"), "{requirement}: {text}");
+            assert!(text.contains("Arm(binder("), "{requirement}: {text}");
         }
         assert!(!text.contains('\0'));
         let parsed = parser::parse(&format!(
@@ -4803,7 +4810,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
         let root = common(pointer);
         let names = values
             .iter()
-            .map(|(name, value)| (value.clone(), name.clone()))
+            .map(|(name, value)| (value.clone(), SurfaceBinder::from(name)))
             .collect();
         let raised = with_proof_local_value_names(names, || {
             raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
@@ -5006,13 +5013,16 @@ fn common_float_atoms_round_trip_printed_surface_bits() {
         let state = ExecutionState::new();
         // Scoped float binders already have their source names. Execution-local
         // name/storage handoffs are the later 8aa boundary.
-        let bindings = match &value {
+        let bindings = (match &value {
             ProgramValue::Float32(MachineTerm::Variable(variable))
             | ProgramValue::Float64(MachineTerm::Variable(variable)) => {
                 BTreeMap::from([(*variable, "value".to_string())])
             }
             _ => BTreeMap::new(),
-        };
+        })
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
         let root = crate::kernel::KernelTermImport::default()
             .argument(&crate::kernel::PureFunctionArgument::Value(value.clone()));
         let surface =
@@ -5498,7 +5508,10 @@ fn common_float_arithmetic_round_trips_existing_operators() {
     ] {
         let variable = MachineTerm::Variable(Variable(999936));
         let state = ExecutionState::new().with_local("x", format.value(variable.clone()));
-        let names = BTreeMap::from([(Variable(999936), "x".to_string())]);
+        let names = (BTreeMap::<_, String>::from([(Variable(999936), "x".to_string())]))
+            .into_iter()
+            .map(|(var, name)| (var, SurfaceBinder::from(name)))
+            .collect::<BTreeMap<_, _>>();
         let literal = match format {
             KernelFloatType::Float32 => MachineTerm::constant(0x80000000),
             KernelFloatType::Float64 => MachineTerm::uint64_constant(0x8000000000000000),
@@ -5750,7 +5763,10 @@ fn common_float_conversions_round_trip_existing_casts() {
     use crate::kernel::KernelFloatType;
     let _session = crate::kernel::VerificationSession::enter();
     let variable = MachineTerm::Variable(Variable(999963));
-    let names = BTreeMap::from([(Variable(999963), "x".to_string())]);
+    let names = (BTreeMap::<_, String>::from([(Variable(999963), "x".to_string())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     for (source_spelling, source_type) in [
         ("int8", ProgramType::Int8),
         ("uint8", ProgramType::UInt8),
@@ -5839,7 +5855,10 @@ fn common_float_conversions_round_trip_existing_casts() {
 fn common_float_to_integer_conversions_round_trip_with_definedness() {
     let _session = crate::kernel::VerificationSession::enter();
     let variable = MachineTerm::Variable(Variable(999963));
-    let names = BTreeMap::from([(Variable(999963), "x".to_string())]);
+    let names = (BTreeMap::<_, String>::from([(Variable(999963), "x".to_string())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     for (source_spelling, source_type) in [
         ("float", ProgramType::Float32),
         ("double", ProgramType::Float64),
@@ -5921,7 +5940,10 @@ fn common_float_to_integer_conversions_round_trip_with_definedness() {
 fn common_float_predicates_round_trip_existing_spelling() {
     let _session = crate::kernel::VerificationSession::enter();
     let variable = MachineTerm::Variable(Variable(999977));
-    let names = BTreeMap::from([(Variable(999977), "x".to_string())]);
+    let names = (BTreeMap::<_, String>::from([(Variable(999977), "x".to_string())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     for (spelling, value) in [
         ("float", ProgramValue::Float32(variable.clone())),
         ("double", ProgramValue::Float64(variable.clone())),
@@ -6006,7 +6028,10 @@ fn common_float_calls_round_trip_existing_function_syntax() {
         (crate::kernel::KernelFloatType::Float64, "double"),
     ] {
         let variable = MachineTerm::Variable(Variable(1008204));
-        let names = BTreeMap::from([(Variable(1008204), "x".to_string())]);
+        let names = (BTreeMap::<_, String>::from([(Variable(1008204), "x".to_string())]))
+            .into_iter()
+            .map(|(var, name)| (var, SurfaceBinder::from(name)))
+            .collect::<BTreeMap<_, _>>();
         let state = ExecutionState::new().with_local("x", format.value(variable.clone()));
         let source = MachineTerm::ClickFunctionApplication {
             name: "step".into(),
@@ -6062,7 +6087,10 @@ fn common_float_calls_round_trip_existing_function_syntax() {
 fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
     let _session = crate::kernel::VerificationSession::enter();
     let variable = MachineTerm::Variable(Variable(1008516));
-    let names = BTreeMap::from([(Variable(1008516), "x".to_string())]);
+    let names = (BTreeMap::<_, String>::from([(Variable(1008516), "x".to_string())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     let state = ExecutionState::new().with_local("x", ProgramValue::Float32(variable.clone()));
     let condition =
         crate::kernel::ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
@@ -6141,7 +6169,7 @@ fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
     let argument = crate::kernel::PureFunctionArgument::Value(value.clone());
     let root = crate::kernel::KernelTermImport::default().argument(&argument);
     let state = ExecutionState::new().with_local("p", value.clone());
-    let bound = BTreeMap::new();
+    let bound = BTreeMap::<Variable, SurfaceBinder>::new();
     for names in [vec![], vec![(value.clone(), "exact_p".into())]] {
         with_proof_local_value_names(names, || {
             let native = synthesize_legacy_call_argument(
@@ -6177,7 +6205,10 @@ fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
     };
     let _session = crate::kernel::VerificationSession::enter();
     let variable = Variable(999981);
-    let names = BTreeMap::from([(variable, "item".into())]);
+    let names = (BTreeMap::<_, String>::from([(variable, "item".into())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     let state = ExecutionState::new();
     let word = MachineTerm::Variable(variable);
     for value in [
@@ -6233,7 +6264,10 @@ fn shared_algebraic_reads_and_variables_raise_without_tree_exports() {
     ))];
     let binding = ParameterBinding::new(&parameters, &arguments);
     let variable = Variable(999984);
-    let names = BTreeMap::from([(variable, "value".into())]);
+    let names = (BTreeMap::<_, String>::from([(variable, "value".into())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     for node in [
         AlgebraicTermNode::Variable(variable),
         AlgebraicTermNode::MemoryLoad {
@@ -6264,7 +6298,10 @@ fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
     };
     let _session = crate::kernel::VerificationSession::enter();
     let variable = Variable(999986);
-    let names = BTreeMap::from([(variable, "x".into())]);
+    let names = (BTreeMap::<_, String>::from([(variable, "x".into())]))
+        .into_iter()
+        .map(|(var, name)| (var, SurfaceBinder::from(name)))
+        .collect::<BTreeMap<_, _>>();
     let mut conditions = vec![];
     for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
         for op in [
@@ -6336,7 +6373,7 @@ fn shared_pointer_comparisons_preserve_native_spelling() {
         .map(|value| ProgramExpression::Value(ProgramValue::Pointer(value)));
     let binding = ParameterBinding::new(&parameters, &arguments);
     let state = ExecutionState::new();
-    let names = BTreeMap::new();
+    let names = BTreeMap::<Variable, SurfaceBinder>::new();
     for native in [
         ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())),
         ConditionTerm::PointerEqual(
@@ -6784,6 +6821,52 @@ fn narrow_symbolic_comparisons_keep_their_existing_normal_forms() {
     }
 }
 
+#[test]
+#[ignore = "nightly: retained pthread value parse/lower round trip"]
+fn pthread_handle_words_use_c_names_and_retained_states() {
+    use crate::kernel::{KernelTermImport, ThreadHandleId};
+    let _session = crate::kernel::VerificationSession::enter();
+    let native = MachineTerm::ThreadHandle(ThreadHandleId(1008820));
+    let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
+    let saved = ExecutionState::new().with_local("h", ProgramValue::UInt64(native));
+    let now = saved
+        .clone()
+        .with_local("h", ProgramValue::UInt64(MachineTerm::uint64_constant(0)));
+    let current =
+        raise_kernel_term(&root, ParameterBinding::default(), &saved, &BTreeMap::new()).unwrap();
+    assert_eq!(diagnostics::describe_contract_expression(&current), "h");
+    let selector = ProgramPointSelector::Mark("created".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), saved);
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let retained =
+        raise_kernel_term(&root, ParameterBinding::default(), &now, &BTreeMap::new()).unwrap();
+    assert!(matches!(&retained, SurfaceTerm::At { selector: actual, .. } if *actual == selector));
+    let text = diagnostics::describe_contract_expression(&retained);
+    assert_eq!(text, "at(created, h)");
+    let parsed = parser::parse(&format!(
+        "theorem probe() {{ requires {text} == 0; ensures true; }}"
+    ))
+    .unwrap();
+    let Requirement::Proposition(claim) = &parsed.theorem_definitions()[0].requires()[0] else {
+        panic!("comparison")
+    };
+    let lowered = relower_written_proposition_with_states(claim, &now, &now, &points).unwrap();
+    let Proposition::ConditionIs(condition, true) = lowered else {
+        panic!("comparison")
+    };
+    let view =
+        crate::kernel::machine_integer::comparison::structural_comparison_view(&condition).unwrap();
+    assert_eq!(view.format, MachineIntegerType::Int64);
+    assert_eq!(
+        crate::kernel::KernelTerm::retained_machine_operand(
+            view.format,
+            view.operands[0].operand_view()
+        ),
+        root.with_machine_observation_type(view.format)
+    );
+}
+
 fn check_int64_literal_comparison_round_trips(values: &[i64]) {
     use crate::kernel::proof::ProofFacts;
     for value in values {
@@ -6902,13 +6985,15 @@ fn negative_int64_comparisons_round_trip_under_point_selectors() {
     }
 }
 
-fn check_order_guard_conditional_round_trips(
+fn check_comparison_guard_conditional_round_trips(
     format: crate::kernel::MachineIntegerType,
     spelling: &str,
-    guards: &[(&str, i32)],
+    guards: &[(&str, u64)],
+    operators: &[&str],
+    replacement: u64,
 ) {
     use crate::kernel::proof::ProofFacts;
-    for operator in ["<", "<=", ">", ">="] {
+    for operator in operators {
         for &(guard, bound) in guards {
             for reverse in [false, true] {
                 let _session = crate::kernel::VerificationSession::enter();
@@ -6932,9 +7017,11 @@ fn check_order_guard_conditional_round_trips(
                     };
                     p.clone()
                 };
-                let equality =
-                    relower_written_proposition(&parse(&format!("x == (9 as {spelling})")), &state)
-                        .unwrap();
+                let equality = relower_written_proposition(
+                    &parse(&format!("x == ({replacement} as {spelling})")),
+                    &state,
+                )
+                .unwrap();
                 let value = format!(
                     "to_integer(if {guard} {operator} ({bound} as {spelling}) {{ x }} else {{ 3 as {spelling} }})"
                 );
@@ -6974,26 +7061,32 @@ fn check_order_guard_conditional_round_trips(
 
 #[test]
 fn closed_uint32_order_guard_conditionals_round_trip_after_rewrite() {
-    check_order_guard_conditional_round_trips(
+    check_comparison_guard_conditional_round_trips(
         crate::kernel::MachineIntegerType::UInt32,
         "uint32",
         &[("x", 8), ("x", 10)],
+        &["<", "<=", ">", ">="],
+        9,
     );
 }
 #[test]
 fn closed_int64_order_guard_conditionals_round_trip_after_rewrite() {
-    check_order_guard_conditional_round_trips(
+    check_comparison_guard_conditional_round_trips(
         crate::kernel::MachineIntegerType::Int64,
         "int64",
         &[("x", 8), ("x", 10)],
+        &["<", "<=", ">", ">="],
+        9,
     );
 }
 #[test]
 fn closed_uint64_order_guard_conditionals_round_trip_after_rewrite() {
-    check_order_guard_conditional_round_trips(
+    check_comparison_guard_conditional_round_trips(
         crate::kernel::MachineIntegerType::UInt64,
         "uint64",
         &[("x", 8), ("x", 10)],
+        &["<", "<=", ">", ">="],
+        9,
     );
 }
 
@@ -7006,6 +7099,37 @@ fn symbolic_order_guard_conditionals_round_trip_after_rewrite() {
         (T::Int64, "int64"),
         (T::UInt64, "uint64"),
     ] {
-        check_order_guard_conditional_round_trips(format, spelling, &[("y", 8)]);
+        check_comparison_guard_conditional_round_trips(
+            format,
+            spelling,
+            &[("y", 8)],
+            &["<", "<=", ">", ">="],
+            9,
+        );
     }
+}
+
+#[test]
+fn closed_wide_equality_guard_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [(T::Int64, "int64"), (T::UInt64, "uint64")] {
+        check_comparison_guard_conditional_round_trips(
+            format,
+            spelling,
+            &[("x", 8), ("x", 9)],
+            &["==", "!="],
+            9,
+        );
+    }
+}
+
+#[test]
+fn closed_unsigned_equality_guards_keep_high_bit_literals() {
+    check_comparison_guard_conditional_round_trips(
+        crate::kernel::MachineIntegerType::UInt64,
+        "uint64",
+        &[("x", u64::MAX)],
+        &["==", "!="],
+        u64::MAX,
+    );
 }

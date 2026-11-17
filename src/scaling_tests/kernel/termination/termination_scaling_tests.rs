@@ -180,12 +180,14 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
     let ranked_loop = || {
         let i = ProgramExpression::Variable(("i".to_string()).into());
         ProgramStatement::Loop {
-            test: None,
-            update: None,
-            condition: ProgramExpression::LessThan(
-                Box::new(i.clone()),
-                Box::new(crate::kernel::program_expression::int32_literal(4)),
+            test: crate::kernel::LoopTestRegion::expression(
+                ProgramExpression::LessThan(
+                    Box::new(i.clone()),
+                    Box::new(crate::kernel::program_expression::int32_literal(4)),
+                ),
+                crate::kernel::LoopTestPosition::BeforeBody,
             ),
+            update: None,
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: Vec::new(),
@@ -197,7 +199,6 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
                 ),
             )],
             structural_measure: None,
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
             body: Box::new(ProgramStatement::Skip),

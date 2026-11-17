@@ -18,7 +18,7 @@
 
 use super::*;
 use crate::surface::generics::{TypeSubstitution, unify_click_type};
-use crate::surface::scoped_names::{Scope, ScopedNames};
+use crate::surface::scoped_names::Scope;
 
 /// The signature of a pure function, predicate or theorem, as inference
 /// reads it.
@@ -61,7 +61,7 @@ pub(super) struct ConstructorTypes {
     /// by the type's name, the method's name and its argument count. A name
     /// two library functions share is ambiguous and maps to `None`.
     methods: BTreeMap<(String, String, usize), Option<String>>,
-    variables: std::cell::RefCell<ScopedNames<Option<ClickType>>>,
+    variables: std::cell::RefCell<ScopedBinders<Option<ClickType>>>,
     /// Whether any datatype takes type arguments; without one there is
     /// nothing to infer and every hook returns at once.
     active: bool,
@@ -165,7 +165,11 @@ impl ConstructorTypes {
 
     /// Bind `name` to `click_type` for a nested scope, `None` when its type
     /// is not known, returning the scope it ends with [`Self::restore`].
-    pub(super) fn bind(&self, name: &str, click_type: Option<ClickType>) -> Scope {
+    pub(super) fn bind(
+        &self,
+        name: impl Into<SurfaceBinder>,
+        click_type: Option<ClickType>,
+    ) -> Scope {
         let mut variables = self.variables.borrow_mut();
         let scope = variables.scope();
         if self.active {
@@ -217,7 +221,11 @@ impl ConstructorTypes {
     /// The type `expression` has without looking at its surroundings, when
     /// inference can read it off directly.
     fn known_type(&self, expression: &ContractExpression) -> Option<ClickType> {
+        if let Some(id) = expression.generated_binder() {
+            return self.variables.borrow().get(&id).cloned().flatten();
+        }
         match expression {
+            ContractExpression::IntegerContext(_) => Some(ClickType::Integer),
             ContractExpression::AlgebraicConstructor { algebraic_type, .. }
             | ContractExpression::AlgebraicVariable { algebraic_type, .. } => (!self
                 .unapplied(algebraic_type))
@@ -626,15 +634,15 @@ impl ConstructorTypes {
 
     /// Bind each of `names` to its type for the scope `body` expands,
     /// then restore what the names meant outside.
-    pub(super) fn with_bindings<T>(
+    pub(super) fn with_bindings<T, N: Clone + Into<SurfaceBinder>>(
         &self,
-        names: &[String],
+        names: &[N],
         types: Vec<Option<ClickType>>,
         body: impl FnOnce() -> T,
     ) -> T {
         let scope = self.variables.borrow().scope();
         for (name, click_type) in names.iter().zip(types) {
-            let _ = self.bind(name, click_type);
+            let _ = self.bind(name.clone(), click_type);
         }
         let result = body();
         self.restore(scope);

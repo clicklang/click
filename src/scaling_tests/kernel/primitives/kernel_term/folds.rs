@@ -88,8 +88,8 @@ fn nested_machine_fold_producers_retain_children_without_native_exports() {
                     zero.clone(),
                     end.clone(),
                     zero.clone(),
-                    "acc",
-                    "item",
+                    &"acc".into(),
+                    &"item".into(),
                     value,
                 )
                 .unwrap();

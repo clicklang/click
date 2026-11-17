@@ -96,3 +96,87 @@ mod scaling_tests {
     use super::*;
     include!("../../scaling_tests/kernel/loops/shared_update.rs");
 }
+
+#[test]
+fn direct_and_prepared_tests_keep_placement_and_continue_semantics() {
+    for position in [LoopTestPosition::BeforeBody, LoopTestPosition::AfterBody] {
+        for prepared in [false, true] {
+            for initial in [0, 3] {
+                let state = ExecutionState::new()
+                    .with_local("i", int32(initial))
+                    .with_local("visits", int32(0))
+                    .with_local("tests", int32(0));
+                let condition = less_than(variable("i"), int32_literal(3));
+                let body = program_switch(
+                    int32_literal(0),
+                    vec![SwitchCase {
+                        value: Some(0),
+                        body: Box::new(ProgramStatement::Continue),
+                    }],
+                );
+                let statement = match position {
+                    LoopTestPosition::BeforeBody => {
+                        program_while(condition.clone(), Vec::new(), body)
+                    }
+                    LoopTestPosition::AfterBody => program_do_while(condition.clone(), body),
+                }
+                .with_loop_update(program_seq(
+                    program_assign("i", add(variable("i"), int32_literal(1))),
+                    program_assign("visits", add(variable("visits"), int32_literal(1))),
+                ));
+                let statement = if prepared {
+                    statement.with_loop_test(
+                        program_seq(
+                            program_assign("tests", add(variable("tests"), int32_literal(1))),
+                            ProgramStatement::LoopTest {
+                                condition,
+                                aggregate_steps: Vec::new(),
+                            },
+                        ),
+                        position,
+                    )
+                } else {
+                    statement
+                };
+                let ProgramStatement::Loop { test, .. } = &statement else {
+                    unreachable!()
+                };
+                assert_eq!(test.position, position);
+                let outcome = crate::kernel::eval::execute_execution_statement(
+                    &state,
+                    &statement,
+                    &PureFactContext::new(),
+                )
+                .expect("both test forms execute the same bounded loop");
+                let StatementOutcome::Normal(state) = outcome else {
+                    panic!("{outcome:?}")
+                };
+                let visits = if initial == 0 {
+                    3
+                } else if position == LoopTestPosition::AfterBody {
+                    1
+                } else {
+                    0
+                };
+                let tests = if !prepared {
+                    0
+                } else if position == LoopTestPosition::BeforeBody {
+                    visits + 1
+                } else {
+                    visits
+                };
+                for (name, expected) in [
+                    ("i", initial + visits),
+                    ("visits", visits),
+                    ("tests", tests),
+                ] {
+                    assert_eq!(
+                        state.locals.get_native(name).as_deref(),
+                        Some(&int32(expected)),
+                        "{position:?}, prepared={prepared}, initial={initial}, {name}"
+                    );
+                }
+            }
+        }
+    }
+}

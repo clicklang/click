@@ -525,7 +525,7 @@ pub(super) fn diagnostic_item_limit() -> usize {
 }
 
 fn describe_context_pure_and_execution_facts(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
@@ -533,7 +533,7 @@ fn describe_context_pure_and_execution_facts(
 }
 
 fn describe_context_facts_with_result(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
     result: Option<&ProgramValue>,
@@ -548,14 +548,14 @@ fn describe_context_facts_with_result(
 }
 
 fn describe_context_facts_labeled(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
 ) -> String {
     let item_limit = diagnostic_item_limit();
     let mut total = 0;
     let mut entries = Vec::new();
-    for fact in pure_facts.iter().chain(
+    for fact in pure_facts.propositions().chain(
         execution_pure_facts
             .fact_iter()
             .map(ExecutionPureFact::proposition),
@@ -962,7 +962,7 @@ pub(super) fn describe_execution_pure_facts(facts: &(impl ExecutionFactSource + 
 }
 
 pub(super) fn describe_available_facts(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -995,7 +995,7 @@ pub(super) fn describe_required_pure_fact(
 
 pub(super) fn describe_missing_pure_fact(
     required: &Proposition,
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -1018,7 +1018,7 @@ pub(super) fn describe_missing_pure_fact(
 
 fn describe_missing_fact_context(
     requirement: &str,
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
@@ -1036,7 +1036,7 @@ fn describe_missing_fact_context(
 
 pub(super) fn describe_missing_resource_fact(
     required: &ResourceFact,
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -1276,7 +1276,7 @@ pub(super) fn describe_goal_proof_context(
 }
 
 pub(super) fn describe_proof_context(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -1585,12 +1585,12 @@ pub(super) fn describe_missing_proof_obligations(
 /// [x == 300]".
 pub(super) fn describe_refuted_condition(
     required: &Proposition,
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let variables = crate::kernel::proposition_variables(required);
     let about = pure_facts
-        .iter()
+        .propositions()
         .filter(|fact| {
             matches!(fact, Proposition::ConditionIs(_, _))
                 && (variables.is_empty()
@@ -6958,11 +6958,10 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
             format!("the loop's test ({})", describe_c_guard(condition))
         }
         ProgramStatement::Loop {
-            condition,
-            do_while,
-            ..
+            test: loop_test, ..
         } => {
-            if *do_while {
+            let (condition, direct_post_test, _) = loop_test.execution_parts();
+            if direct_post_test {
                 format!("do ... while ({})", describe_c_guard(condition))
             } else {
                 format!("while ({})", describe_c_guard(condition))
@@ -7119,6 +7118,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         return describe_add_contract_expression(expression);
     }
     match expression {
+        ContractExpression::IntegerContext(value) => {
+            format!("({} : Integer)", describe_contract_expression(value))
+        }
         ContractExpression::Proposition(proposition) => {
             format!(
                 "prop {{ {} }}",
@@ -7227,9 +7229,8 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 arguments.join(", ")
             )
         }
-        ContractExpression::AlgebraicVariable { name, .. } | ContractExpression::Binding(name) => {
-            name.clone()
-        }
+        ContractExpression::AlgebraicVariable { name, .. } => name.to_string(),
+        ContractExpression::Binding(name) => name.clone(),
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
             let scrutinee = describe_contract_expression(scrutinee);
             let arms = arms
@@ -7239,7 +7240,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                         "{}::{}({}) => {}",
                         arm.type_name,
                         arm.variant,
-                        arm.bindings.join(", "),
+                        arm.bindings
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", "),
                         describe_contract_expression(&arm.body)
                     )
                 })
@@ -7903,6 +7908,7 @@ pub(super) fn describe_bitvector_with_context(
         return name;
     }
     match term {
+        MachineTerm::ThreadHandle(_) => format!("{term:?}"),
         MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,

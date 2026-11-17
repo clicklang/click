@@ -728,6 +728,11 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                 identity.mutex.clone()
             },
         }),
+        Resource::ConditionalMutexGuard(carrier) => {
+            let mut mapped = (**carrier).clone();
+            mapped.held = s.condition(&carrier.held);
+            Resource::ConditionalMutexGuard(std::sync::Arc::new(mapped))
+        }
         Resource::MutexGuard(identity) => Resource::MutexGuard(MutexIdentity {
             epoch: identity.epoch,
             mutex: if identity.epoch.is_none() {
@@ -1153,7 +1158,6 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
         ProgramStatement::Loop {
             test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
@@ -1161,19 +1165,17 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             ranking_measures,
             structural_measure,
             body,
-            do_while,
             backedge_target,
             natural_exit_target,
         } => ProgramStatement::Loop {
-            test: test.as_ref().map(|test| LoopTestRegion {
+            test: LoopTestRegion {
                 statement: std::sync::Arc::new(walk_execution_statement(&test.statement, s)),
                 position: test.position,
-            }),
+            },
             update: update
                 .as_ref()
                 .map(|step| std::sync::Arc::new(walk_execution_statement(step, s))),
             structural_measure: structural_measure.clone(),
-            condition: s.program_expression(condition),
             ranking_measures: ranking_measures
                 .iter()
                 .map(|measure| walk_ranking_component(measure, s))
@@ -1209,7 +1211,6 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
                     }),
                 })
                 .collect(),
-            do_while: *do_while,
             backedge_target: *backedge_target,
             natural_exit_target: *natural_exit_target,
             body: Box::new(walk_execution_statement(body, s)),
@@ -1972,9 +1973,11 @@ mod resource_frame_substitution_tests {
             ),
         );
         let statement = ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: vec![inherited_check(range)],
@@ -1982,7 +1985,6 @@ mod resource_frame_substitution_tests {
             ranking_measures: Vec::new(),
             structural_measure: None,
             body: Box::new(ProgramStatement::Skip),
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
         };
@@ -2018,9 +2020,11 @@ mod resource_frame_substitution_tests {
             MachineTerm::constant(1),
         );
         let statement = ProgramStatement::Loop {
-            test: None,
+            test: crate::kernel::LoopTestRegion::expression(
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::LoopTestPosition::BeforeBody,
+            ),
             update: None,
-            condition: crate::kernel::program_expression::int32_literal(0),
             invariant: Vec::new(),
             invariant_checks: Vec::new(),
             effect_checks: vec![inherited_check(range)],
@@ -2028,7 +2032,6 @@ mod resource_frame_substitution_tests {
             ranking_measures: Vec::new(),
             structural_measure: None,
             body: Box::new(ProgramStatement::Skip),
-            do_while: false,
             backedge_target: None,
             natural_exit_target: None,
         };
@@ -2172,7 +2175,7 @@ pub fn resolve_minted_load_variables(
                 right,
             },
             true,
-        ) = &fact.proposition
+        ) = fact.proposition()
         else {
             continue;
         };
@@ -2827,15 +2830,15 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
             collect_execution_statement_bound_variables(else_branch, variables);
         }
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks,
             effect_checks,
             body,
             ..
         } => {
+            let (condition, _, test) = loop_test.execution_parts();
             collect_program_expression_bound_variables(condition, variables);
             for proposition in invariant {
                 collect_proposition_bound_variables(proposition, variables);
@@ -3290,6 +3293,9 @@ fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSe
                 collect_pointer_bound_variables(&identity.mutex, variables);
             }
         }
+        Resource::ConditionalMutexGuard(carrier) => {
+            collect_condition_bound_variables(&carrier.held, variables)
+        }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
                 let pointer = &identity.mutex;
@@ -3401,6 +3407,7 @@ fn collect_scoped_leaf_bound_variables(
 
 fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
     match term {
+        MachineTerm::ThreadHandle(_) => {}
         bits32_constant!(_) | MachineTerm::Variable(_) => {}
         crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
@@ -5901,6 +5908,7 @@ pub(crate) fn substitute_bitvector_variable(
     to: &MachineTerm,
 ) -> MachineTerm {
     match term {
+        MachineTerm::ThreadHandle(_) => term.clone(),
         MachineTerm::Constant { .. } => term.clone(),
         MachineTerm::Variable(variable) if *variable == from => to.clone(),
         MachineTerm::Variable(variable) => {

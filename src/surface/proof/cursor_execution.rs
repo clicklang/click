@@ -65,7 +65,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                         describe_click_proposition(written_fact),
                         describe_missing_pure_fact(
                             &fact,
-                            &concrete_facts.to_vec(),
+                            &concrete_facts,
                             state.resources().facts(),
                             parameter_binding,
                             &[]
@@ -103,7 +103,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                         "`{claim_label}` tactic {tactic_index}: `branch ensuring` did not establish resource fact: {}",
                         describe_missing_resource_fact(
                             &expected,
-                            &concrete_facts.to_vec(),
+                            &concrete_facts,
                             state.resources().facts(),
                             parameter_binding,
                             &[]
@@ -480,11 +480,15 @@ fn resource_is_direct_observed_core(
 /// so listing the slice alone shows `pure facts: []` beside a `requires` the
 /// step did see. List the context the kernel checked against.
 fn listed_context_pure_facts(
-    delta: &[Proposition],
+    delta: &(impl PropositionSource + ?Sized),
     context: Option<&PureFactContext>,
 ) -> Vec<Proposition> {
     const LIMIT: usize = 32;
-    let mut facts = delta.iter().take(LIMIT).cloned().collect::<Vec<_>>();
+    let mut facts = delta
+        .propositions()
+        .take(LIMIT)
+        .cloned()
+        .collect::<Vec<_>>();
     if let Some(context) = context {
         facts.extend(context.diagnostic_fact_sample(LIMIT - facts.len(), 0).0);
     }
@@ -494,7 +498,7 @@ fn listed_context_pure_facts(
 }
 
 fn describe_step_proof_context(
-    delta: &[Proposition],
+    delta: &(impl PropositionSource + ?Sized),
     context: Option<&PureFactContext>,
     resources: &[ResourceFact],
     binding: ParameterBinding<'_>,
@@ -510,7 +514,7 @@ fn describe_step_proof_context(
         let (conditions, propositions) = context.fact_counts();
         conditions + propositions
     });
-    if total.saturating_add(delta.len()) > 32 {
+    if total.saturating_add(delta.propositions().take(33).count()) > 32 {
         description.push_str(
             "\n  pure facts shown are a bounded sample of the context and statement facts",
         );
@@ -826,22 +830,21 @@ fn execute_concrete_loop_head_step(
 
     execution.core.concrete_loop_execution = true;
     let ProgramStatement::Loop {
-        test,
+        test: loop_test,
         update,
-        condition,
         invariant,
         invariant_checks,
         effect_checks,
         resource_specs,
         ranking_measures,
         structural_measure,
-        do_while,
         body,
         ..
     } = loop_statement.clone()
     else {
         unreachable!("concrete loop stepping requires a loop statement");
     };
+    let (condition, direct_post_test, test) = loop_test.execution_parts();
 
     record_statement_program_state(
         &mut execution.presentation.recorded_states,
@@ -859,16 +862,14 @@ fn execute_concrete_loop_head_step(
     );
 
     let loop_head = ProgramStatement::Loop {
-        test: test.clone(),
+        test: loop_test.for_repeated_iteration(),
         update: update.clone(),
-        condition: condition.clone(),
         invariant: invariant.clone(),
         invariant_checks: invariant_checks.clone(),
         effect_checks: effect_checks.clone(),
         resource_specs: resource_specs.clone(),
         ranking_measures: ranking_measures.clone(),
         structural_measure: structural_measure.clone(),
-        do_while: false,
         backedge_target: None,
         natural_exit_target: None,
         body: body.clone(),
@@ -877,9 +878,9 @@ fn execute_concrete_loop_head_step(
     let body = Box::new(crate::kernel::program_loop_pass(
         &body,
         update.as_deref(),
-        test.as_ref(),
+        test,
     ));
-    let update = crate::kernel::program_loop_continuation(update.as_deref(), test.as_ref());
+    let update = crate::kernel::program_loop_continuation(update.as_deref(), test);
     let update_index = proof_context
         .constants
         .source_layout
@@ -891,7 +892,7 @@ fn execute_concrete_loop_head_step(
     // C's `do ... while` enters its body before evaluating the condition. The
     // continuation is an ordinary while head: after the first body, every
     // iteration checks the condition before re-entering the body.
-    if do_while {
+    if direct_post_test {
         // Entering the body records no evidence of its own. When the loop is
         // the first thing this trace executes, the proof object would start
         // matching evidence from the frontier position set below, which
@@ -1567,7 +1568,7 @@ pub(super) fn route_throw_to_handler(
     context: Option<&PureFactContext>,
     throw_value: &ProgramValue,
     thrown_state: &ExecutionState,
-    throw_facts: &[Proposition],
+    throw_facts: &PureFactList,
 ) -> Result<bool, ClickError> {
     let handler = loop {
         match execution.core.frontier.continuations.pop() {
@@ -1593,7 +1594,7 @@ pub(super) fn route_throw_to_handler(
     // declare the handler binding, then assign the thrown value. The
     // handler binding is always `int32` by `TryCatchInt32` semantics.
     let mut state = thrown_state.clone();
-    let mut facts = PureFactList::from(throw_facts.to_vec());
+    let mut facts = throw_facts.clone();
     for statement in [
         program_declare(handler.binding.clone(), crate::kernel::ProgramType::Int32),
         program_assign(
@@ -3245,7 +3246,7 @@ fn execute_step_from_frontier_position_selecting_path(
             let mut returned_facts = loop_index
                 .and_then(|index| execution.presentation.loop_return_proofs.get(&index))
                 .map(|planned| planned.entry_facts.clone())
-                .unwrap_or_else(|| ProofFacts::from_source(&*available_pure_facts));
+                .unwrap_or_else(|| available_pure_facts.proof_facts());
             for fact in returned.pure_facts.iter() {
                 if !returned_facts.contains(fact) {
                     returned_facts = returned_facts.with_kernel_checked_fact(fact.clone());
@@ -4478,7 +4479,10 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
                 describe_program_expression(condition)
             )
         }
-        ProgramStatement::Loop { condition, .. } => {
+        ProgramStatement::Loop {
+            test: loop_test, ..
+        } => {
+            let (condition, _, _) = loop_test.execution_parts();
             format!("while ({})", describe_program_expression(condition))
         }
         ProgramStatement::Switch { expression, .. } => {

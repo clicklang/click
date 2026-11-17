@@ -5,10 +5,13 @@ use super::*;
 
 pub(super) fn promote_integer_expression(
     expression: &ContractExpression,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    surface_bindings: &crate::persistent::PersistentMap<String, ContractExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+    surface_bindings: &PersistentBinderMap<ContractExpression>,
 ) -> ContractExpression {
     match expression {
+        ContractExpression::IntegerContext(value) => ContractExpression::IntegerContext(Box::new(
+            promote_integer_expression(value, integer_values, surface_bindings),
+        )),
         ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) if integer_values.get(name).is_some() && surface_bindings.get(name).is_none() => {
@@ -100,8 +103,8 @@ pub(in crate::surface::proof) fn unassigned_local_read_by(
 
 pub(super) fn promote_integer_comparison(
     surface: &ClickProposition,
-    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    surface_bindings: &crate::persistent::PersistentMap<String, ContractExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+    surface_bindings: &PersistentBinderMap<ContractExpression>,
 ) -> ClickProposition {
     match surface {
         ClickProposition::Comparison {
@@ -171,12 +174,12 @@ pub(super) fn promote_integer_comparison(
 
 fn integer_values_for_surface_proposition(
     proposition: &ClickProposition,
-    theorem_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    local_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-) -> crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression> {
-    let mut referenced = BTreeSet::new();
-    collect_click_proposition_referenced_names(proposition, &mut referenced);
-    let mut values = crate::persistent::PersistentMap::default();
+    theorem_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+    local_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+) -> PersistentBinderMap<crate::kernel::SpecIntegerExpression> {
+    let mut referenced = BinderSet::new();
+    collect_click_proposition_referenced_binders(proposition, &mut referenced);
+    let mut values = PersistentBinderMap::default();
     for name in referenced {
         if let Some(value) = local_values
             .get(&name)
@@ -191,7 +194,7 @@ fn integer_values_for_surface_proposition(
 fn algebraic_values_for_surface_proposition(
     proposition: &ClickProposition,
     theorem_values: &BTreeMap<String, crate::kernel::SpecAlgebraicExpression>,
-    local_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecAlgebraicExpression>,
+    local_values: &PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
 ) -> BTreeMap<String, crate::kernel::SpecAlgebraicExpression> {
     let mut referenced = BTreeSet::new();
     collect_click_proposition_referenced_names(proposition, &mut referenced);
@@ -713,16 +716,16 @@ impl<'a> Proof<'a> {
         // names and ambiguous mappings still take the fresh-lowering path.
         // This is citation lookup, not fact-dependent term construction.
         if matches!(self.context.as_ref(), ProofContext::Pure(_)) {
-            let mut names = BTreeSet::new();
-            collect_click_proposition_referenced_names(surface, &mut names);
+            let mut names = BinderSet::new();
+            collect_click_proposition_referenced_binders(surface, &mut names);
             let goal_bindings = self
                 .proposition_obligation()
                 .map(|goal| &goal.surface_bindings);
-            let rebound = names.iter().any(|name| {
-                goal_bindings.is_some_and(|bindings| bindings.get(name).is_some())
-                    || self.local_binding(name).is_some()
-                    || self.local_integer_values().get(name).is_some()
-                    || self.local_algebraic_values().get(name).is_some()
+            let rebound = names.into_iter().any(|name| {
+                goal_bindings.is_some_and(|bindings| bindings.get(&name).is_some())
+                    || self.local_binding(&name).is_some()
+                    || self.local_integer_values().get(&name).is_some()
+                    || self.local_algebraic_values().get(&name).is_some()
             });
             crate::instrumentation::record_deterministic_work(1);
             if !rebound
@@ -748,8 +751,8 @@ impl<'a> Proof<'a> {
     /// are neither scanned nor cloned.
     pub(super) fn fixed_state_local_substitutions(
         &self,
-        names: impl IntoIterator<Item = String>,
-    ) -> BTreeMap<String, ContractExpression> {
+        names: impl IntoIterator<Item = SurfaceBinder>,
+    ) -> BTreeMap<SurfaceBinder, ContractExpression> {
         let surface_bindings = self
             .proposition_obligation()
             .map(|goal| &goal.surface_bindings);
@@ -770,7 +773,7 @@ impl<'a> Proof<'a> {
                 // `intro`'s generic surface cursor can also name the variable
                 // as a C fragment; that spelling must not override this binding.
                 if self.local_integer_values().get(&name).is_some() {
-                    return Some((name.clone(), ContractExpression::Binding(name)));
+                    return Some((name.clone(), name.reference()));
                 }
                 surface_bindings
                     .and_then(|bindings| bindings.get(&name))
@@ -784,7 +787,7 @@ impl<'a> Proof<'a> {
                             context
                                 .theorem_context
                                 .declaration_bindings
-                                .get(&name)
+                                .get(name.written()?)
                                 .cloned()
                         }
                         _ => None,
@@ -799,8 +802,8 @@ impl<'a> Proof<'a> {
         &self,
         proposition: &ClickProposition,
     ) -> Result<ClickProposition, ClickError> {
-        let mut names = BTreeSet::new();
-        collect_click_proposition_referenced_names(proposition, &mut names);
+        let mut names = BinderSet::new();
+        collect_click_proposition_referenced_binders(proposition, &mut names);
         let substitutions = self.fixed_state_local_substitutions(names);
         if substitutions.is_empty() {
             return Ok(proposition.clone());
@@ -819,14 +822,14 @@ impl<'a> Proof<'a> {
     /// binders or the scoped proof's locals, and so means something other
     /// than what the theorem's own requirements wrote.
     fn rebinds_a_referenced_name(&self, proposition: &ClickProposition) -> bool {
-        let mut names = BTreeSet::new();
-        collect_click_proposition_referenced_names(proposition, &mut names);
+        let mut names = BinderSet::new();
+        collect_click_proposition_referenced_binders(proposition, &mut names);
         let surface_bindings = self
             .proposition_obligation()
             .map(|goal| &goal.surface_bindings);
-        names.iter().any(|name| {
-            surface_bindings.is_some_and(|bindings| bindings.get(name).is_some())
-                || self.local_binding(name).is_some()
+        names.into_iter().any(|name| {
+            surface_bindings.is_some_and(|bindings| bindings.get(&name).is_some())
+                || self.local_binding(&name).is_some()
         })
     }
 
@@ -837,8 +840,8 @@ impl<'a> Proof<'a> {
         let Some(goal) = self.proposition_obligation() else {
             return Ok(proposition.clone());
         };
-        let mut names = BTreeSet::new();
-        collect_click_proposition_referenced_names(proposition, &mut names);
+        let mut names = BinderSet::new();
+        collect_click_proposition_referenced_binders(proposition, &mut names);
         let substitutions = names
             .into_iter()
             .filter_map(|name| {
@@ -875,8 +878,8 @@ impl<'a> Proof<'a> {
         let surface_bindings = self
             .proposition_obligation()
             .map(|goal| &goal.surface_bindings);
-        let mut names = BTreeSet::new();
-        collect_click_proposition_referenced_names(proposition, &mut names);
+        let mut names = BinderSet::new();
+        collect_click_proposition_referenced_binders(proposition, &mut names);
         let substitutions = names
             .into_iter()
             .filter_map(|name| {
@@ -887,7 +890,7 @@ impl<'a> Proof<'a> {
                         ProofContext::Pure(context)
                             if self.local_integer_values().get(&name).is_none()
                                 && self.local_algebraic_values().get(&name).is_none() =>
-                            context.theorem_context.declaration_bindings.get(&name),
+                            name.written().and_then(|name| context.theorem_context.declaration_bindings.get(name)),
                         _ => None,
                     })
                     .filter(|value| {
@@ -928,7 +931,8 @@ impl<'a> Proof<'a> {
         &self,
         expression: &ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
-        let names = contract_expression_referenced_names(expression);
+        let mut names = BinderSet::new();
+        collect_contract_expression_referenced_binders(expression, &mut names);
         let substitutions = self.fixed_state_local_substitutions(names);
         if substitutions.is_empty() {
             return Ok(expression.clone());

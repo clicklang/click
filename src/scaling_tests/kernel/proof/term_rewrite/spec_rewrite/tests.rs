@@ -10,7 +10,7 @@ fn checked_spec_rewrite_match_bindings_scale_with_arity() {
     for arity in [4usize, 8, 16, 32] {
         let arm = SpecIntegerMatchArm {
             variant: "Node".into(),
-            bindings: (0..arity).map(|index| format!("v{index}")).collect(),
+            bindings: (0..arity).map(|index| format!("v{index}").into()).collect(),
             binding_types: vec![AlgebraicValueType::Integer; arity],
             binding_variables: (0..arity)
                 .map(|index| Some(Variable(100 + index as u64)))

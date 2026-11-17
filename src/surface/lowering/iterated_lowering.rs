@@ -56,7 +56,7 @@ fn program_expression_constant(expression: &ProgramExpression) -> Option<i64> {
 
 /// Reads `expression` as an affine function of `index` with constant
 /// coefficients, or `None` when it is not one.
-fn affine_in(expression: &ProgramExpression, index: &str) -> Option<Affine> {
+fn affine_in(expression: &ProgramExpression, index: &SurfaceBinder) -> Option<Affine> {
     if let Some(constant) = program_expression_constant(expression) {
         return Some(Affine {
             coefficient: 0,
@@ -64,7 +64,7 @@ fn affine_in(expression: &ProgramExpression, index: &str) -> Option<Affine> {
         });
     }
     match expression {
-        ProgramExpression::Variable(name) if name.is_named(index) => Some(Affine {
+        ProgramExpression::Variable(name) if name == &index.kernel_name() => Some(Affine {
             coefficient: 1,
             constant: 0,
         }),
@@ -105,16 +105,16 @@ fn affine_in(expression: &ProgramExpression, index: &str) -> Option<Affine> {
 /// pointer expression, when the load's address is exactly `base + index`.
 fn indexed_load_base<'a>(
     expression: &'a ProgramExpression,
-    index: &str,
+    index: &SurfaceBinder,
 ) -> Option<&'a ProgramExpression> {
     match expression {
         ProgramExpression::Index(base, offset) => {
-            matches!(offset.as_ref(), ProgramExpression::Variable(name) if name.is_named(index))
+            matches!(offset.as_ref(), ProgramExpression::Variable(name) if name == &index.kernel_name())
                 .then_some(base)
         }
         ProgramExpression::TypedLoad { pointer, .. } | ProgramExpression::Load(pointer) => {
             match pointer.as_ref() {
-                ProgramExpression::Add(base, offset) if matches!(offset.as_ref(), ProgramExpression::Variable(name) if name.is_named(index)) => {
+                ProgramExpression::Add(base, offset) if matches!(offset.as_ref(), ProgramExpression::Variable(name) if name == &index.kernel_name()) => {
                     Some(base)
                 }
                 ProgramExpression::Index(..) => indexed_load_base(pointer, index),
@@ -135,15 +135,15 @@ fn side_as_c(expression: &ContractExpression) -> Result<ProgramExpression, Strin
     })
 }
 
-fn is_index(expression: &ProgramExpression, index: &str) -> bool {
-    matches!(expression, ProgramExpression::Variable(name) if name.is_named(index))
+fn is_index(expression: &ProgramExpression, index: &SurfaceBinder) -> bool {
+    matches!(expression, ProgramExpression::Variable(name) if name == &index.kernel_name())
 }
 
 /// One bound of the `where` proposition: `Ok(Some((true, lo)))` for a lower
 /// bound `lo <= k`, `Ok(Some((false, hi)))` for an upper bound `k < hi`.
 fn range_bound(
     proposition: &ClickProposition,
-    index: &str,
+    index: &SurfaceBinder,
 ) -> Result<Option<(bool, ProgramExpression)>, String> {
     let ClickProposition::Comparison {
         left,
@@ -168,7 +168,7 @@ fn range_bound(
 fn written_range_bounds(
     clause: &IteratedResourceClause,
 ) -> Option<(ContractExpression, ContractExpression)> {
-    let index = clause.binder.as_str();
+    let index = &clause.binder;
     let ClickProposition::And(first, second) = &clause.range else {
         return None;
     };
@@ -239,7 +239,7 @@ pub(in crate::surface) fn unguarded_iterated_clause_as_range(
 pub(in crate::surface) fn iterated_clause_shape(
     clause: &IteratedResourceClause,
 ) -> Result<IteratedClauseShape, String> {
-    let index = clause.binder.as_str();
+    let index = &clause.binder;
     let bounded = || {
         format!(
             "the index range must be written `lo <= {index} and {index} < hi` with bounds that do not mention `{index}`"
@@ -375,7 +375,7 @@ fn iterated_clause_as_proposition(clause: &IteratedResourceClause) -> ClickPropo
     };
     ClickProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
-        name: clause.binder.clone(),
+        name: clause.binder.clone().into(),
         written_name: None,
         body: Box::new(body),
     }

@@ -1667,8 +1667,9 @@ retirement. This includes a `for` initializer's scope. The saved loop-exit
 state still names its final index for proof provenance; the subsequent
 execution state has retired its storage.
 
-A loop owns one shared update and, for an effectful condition, one shared test
-region. Body locals end before fallthrough or `continue` reaches the update or
+A loop owns one test region and an optional shared update. A plain test region
+contains only its decision; calls and other preparation precede that same
+decision. Body locals end before fallthrough or `continue` reaches the update or
 post-test. A continuing update resumes the loop head; a false post-test exits
 without a back edge. Nested loops keep their own control edges. A non-inline
 function also retires its body locals before postconditions
@@ -1694,6 +1695,19 @@ member designation, extent, qualifiers, and checked-address obligations.
 Evaluation introduces no execution local or lexical binder. The Surface form
 remains the original address expression, including `old(...)`/`at(...)` state
 selectors; no generated operand name or replacement syntax is required.
+
+C++ evaluation and cleanup temporaries use a separate `LocalBindingId`
+namespace, owned by the source unit and function with a deterministic temporary
+ordinal. They have type/layout metadata and no lexical C spelling. Surface
+references use `f.temporary(N)` (source-qualified when necessary), independently
+of `f.local(N)` and `f.parameter(N)`. Exact storage uses the existing
+`.storage(implicit)`, `.storage(lifetime, N)`, or `.storage(frame, N)` selectors;
+aggregate temporaries materialize distinct objects with ordinary automatic
+lifetimes. The parser indexes their declarations in the prelowered body once.
+Return capture, intermediate call values, and cleanup exception payloads all
+use these identities, and `TryCatchInt32` carries a `BindingName` through
+execution and evidence checking. No generated variable spelling or collision
+probe participates in identity or lookup.
 
 A contract's return value is `BindingName::ContractResult`, with Surface spelling
 `result`. It is distinct from all `Named`, automatic, and static bindings,
@@ -2038,3 +2052,24 @@ facts its root branch assumed are exactly the declared requirements, and that
 the declared binders are exactly the free variables. The rewrite variant
 additionally cites each equality it applied, which must be exactly available
 among the requirements and must rewrite the goal in the listed order.
+
+## Value storage identity contracts
+
+`ExecutionValue` compares exact producers; native and shared carriers are distinct.
+`StoredExecutionValue` compares machine values by their format-tagged shared
+observation. Other families keep native value equality and ordering, including
+raw Boolean words, float bits, and native call-argument carrier distinctions.
+Its hash need only agree across equal stored keys; it is not a serialized ID.
+
+`StoredMemoryValue` preserves native `ProgramValue` structural equality, order,
+and hash stream. Replacing it with a local observation key would change the
+contract. Exact outcome refresh uses `same_native_value`, separately from local
+storage equality. Certification syntax and fact observations have their own
+admission rules; neither inherits a storage key's equivalences.
+
+Regression evidence: `execution_value::storage_contract_tests` checks pairwise
+mixed-carrier order/hash classes and float call-argument distinctions. Existing
+`local_storage_identity_matches_native_without_changing_producer_equality` and
+`exact_native_value_comparison_does_not_use_machine_storage_equivalence` cover the intentional
+machine producer/storage/refresh differences. Representation changes must keep
+these contracts and test growing shared operands without native materialization.
