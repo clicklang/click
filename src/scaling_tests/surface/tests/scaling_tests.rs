@@ -6181,6 +6181,7 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
 /// The closers `solve() using` tries before arithmetic cost an unsigned chain
 /// more than a signed one, so the two chains' peaks are not compared.
 #[test]
+#[ignore = "nightly: signed and unsigned order-chain scaling across eight complete proofs"]
 fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
     for (value_type, bound) in [("int32", "4"), ("uint32", "4u32")] {
         let samples = [8usize, 16, 24, 32].map(|edges| {
@@ -9227,10 +9228,21 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
 /// adds
 /// (`context_rebuild_entries` with the split minus without it).
 #[test]
+#[ignore = "nightly: proof-if context scaling compares eight complete loop proofs"]
 fn proof_if_split_ignores_earlier_unrelated_facts() {
     fn rebuild_entries(size: usize, split: bool) -> usize {
+        // Establish the shared lower bound once; each distinct earlier fact
+        // then needs one explicit transitivity application instead of a new
+        // arithmetic search. Keep i symbolic so these remain distinct facts.
         let haves = (1..=size)
-            .map(|k| format!("            have i >= 0 - {k} by solve();\n"))
+            .map(|k| {
+                format!(
+                    "            have i >= 0 - {k} by {{\n\
+                     \x20               apply(click::integer::le_transitive(0 - {k}, 0, to_integer(i))) using {{\n\
+                     \x20                   0 - {k} <= 0; 0 <= to_integer(i);\n\
+                     \x20               }};\n            }}\n"
+                )
+            })
             .collect::<String>();
         // Arms that each close the iteration have no continuation to rejoin,
         // so the split is taken rather than tried as a straight-line join.
@@ -9242,11 +9254,32 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
             ""
         };
         let click_source = format!(
-            "verifying \"split.c\";\n\n\
-             int32 count_once(int32 flag) {{\n    ensures result == 1;\n}} by {{\n    \
-             step();\n    step();\n    loop {{\n        decreases 1 - i;\n        invariant i >= 0;\n        \
-             invariant i <= 1;\n        initialize by solve();\n        preserve by {{\n            \
-             step();\n{haves}{close}        }}\n    }}\n    step();\n    solve();\n}}\n"
+            r#"verifying "split.c";
+int32 count_once(int32 flag) {{
+    ensures result == 1;
+}} by {{
+    step();
+    step();
+    loop {{
+        decreases 1 - i;
+        invariant i >= 0;
+        invariant i <= 1;
+        initialize by {{ normalize(); }}
+        preserve by {{
+            mark before_increment;
+            step();
+            have 0 <= to_integer(i) by {{
+                solve() using {{
+                    at(before_increment, i) >= 0;
+                    at(before_increment, i) <= 1;
+                }};
+            }}
+{haves}{close}        }}
+    }}
+    step();
+    solve();
+}}
+"#
         );
         let c_source = "int32 count_once(int32 flag) {\n    int32 i;\n    i = 0;\n    \
                         while (i < 1) { i = i + 1; }\n    return i;\n}\n";
