@@ -110,7 +110,7 @@ fn reverse_three(xs: &mut [i64]) {
     ensures xs[2] == old(xs[0]);
 } by {
     step_until(function.exit);
-    have 1u64 < xs.len() by { solve(); }
+    have 1u64 < xs.len() and 1u64 != 0u64 and 1u64 != 2u64 by { solve(); }
     have xs[1] == old(xs[1]) by {
         instantiate(forall (k: usize) { k < xs.len() and k != 0u64 and k != 2u64 implies xs[k] == old(xs[k]) }, 1u64);
         known();

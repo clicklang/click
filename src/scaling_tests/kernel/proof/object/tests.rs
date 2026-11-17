@@ -817,8 +817,13 @@ fn apply_fact_quantified_sources_use_selected_alpha_keys() {
                 let successor = if successor.is_complete() {
                     successor
                 } else {
-                    successor.apply_known(PropositionKnownContext::Pure)
-                        .unwrap_or_else(|_| panic!("the applied existential must be available up to binder renaming"))
+                    successor
+                        .apply_known(PropositionKnownContext::Pure)
+                        .unwrap_or_else(|_| {
+                            panic!(
+                                "the applied existential must be available up to binder renaming"
+                            )
+                        })
                 };
                 assert!(successor.is_complete());
                 assert!(
