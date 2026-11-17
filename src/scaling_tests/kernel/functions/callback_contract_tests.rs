@@ -12,7 +12,7 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(Memory::new().with_block(pointer.base.clone(), 512));
+        .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 512));
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {
         let mut memory = state.memory.clone();
@@ -136,7 +136,7 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
                 .collect::<Vec<_>>();
             let state = ExecutionState::new()
                 .with_local("p", ProgramValue::pointer(pointer.clone()))
-                .with_memory(Memory::new().with_block(pointer.base.clone(), 512))
+                .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 512))
                 .with_resource_context(ResourceContext::new().unchecked_with_facts(owned));
             let function = program_function(
                 ProgramType::Void,
@@ -229,7 +229,7 @@ fn checked_wrapper_projection_scales_with_used_members() {
         );
         let state = ExecutionState::new()
             .with_local("p", ProgramValue::pointer(pointer.clone()))
-            .with_memory(Memory::new().with_block(pointer.base.clone(), 512))
+            .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 512))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_composite(
                     "TransitionWrapper".into(),

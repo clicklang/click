@@ -26,7 +26,7 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
     let mut samples = Vec::new();
     for size in [8, 32, 128] {
         let mut entry = ExecutionState::new().with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block(slot.base.clone(), 4)
                 .store(slot.clone(), int32(7)),
         );

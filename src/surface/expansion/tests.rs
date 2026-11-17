@@ -10,6 +10,115 @@ fn mdtest_markdown(name: &str) -> String {
         .unwrap_or_else(|error| panic!("failed to read `{}`: {error}", path.display()))
 }
 
+#[cfg(feature = "fast-gate")]
+crate::surface::tests::test_batches! {
+    file: "tests.rs",
+    marker: "expansion_api_batch_",
+    expansion_api_batch_00: [
+        nested_match_retains_nominal_list_result,
+        generic_list_induction_retains_nominal_pointer_fields,
+        retained_caller_expansion_preserves_declared_object_return_evidence,
+        grouped_expansion_keeps_postexecution_closers_in_source_order,
+    ],
+    expansion_api_batch_01: [
+        retained_function_expansion_formats_without_reverification_and_rechecks,
+        execute_until_in_proof_if_arms_expands_and_rechecks,
+        tactic_expansion_can_name_an_outer_c_parameter_after_intro,
+        tactic_expansion_can_name_two_levels_of_shadowed_binders,
+    ],
+    expansion_api_batch_02: [
+        integer_function_unfold_expands_and_reverifies,
+        nat_integer_laws_expand_and_reject_wrong_successor,
+        builtin_nat_integer_dispatch_and_checked_to_nat,
+        generic_smart_proofs_expand_without_concrete_clients,
+    ],
+    expansion_api_batch_03: [
+        conditional_normalization_roundtrips_and_rejects_tampering,
+        generic_template_expansion_checks_arbitrary_types,
+        smart_conditional_normalization_emits_checked_evidence,
+        nested_list_membership_expands_and_rechecks,
+    ],
+    expansion_api_batch_04: [
+        scalar_call_congruence_expands_and_rejects_tampering,
+        library_list_theorem_application_expands_and_rechecks,
+        inventories_and_expands_smart_tactics_inside_structural_induction,
+        expands_one_grouped_tactic_without_running_the_suffix,
+    ],
+    expansion_api_batch_05: [
+        expands_grouped_immutable_read_with_multiple_claim_successors,
+        expands_nested_branch_tactic_by_source_location,
+        source_positions_include_tactics_nested_in_open_blocks,
+        expands_common_step_after_frontier_branch,
+    ],
+    expansion_api_batch_06: [
+        expands_deferred_solve_after_frontier_branch,
+        shares_equal_deferred_expansions_after_frontier_branch,
+        expands_common_deferred_tactic_with_a_returning_branch_arm,
+        expands_deferred_solve_after_nested_frontier_branches,
+    ],
+    expansion_api_batch_07: [
+        hides_statement_local_opaque_call_facts_from_surface_premises,
+        opaque_call_expansion_keeps_only_consumed_ambient_conditions,
+        opaque_call_expansion_keeps_memory_condition_safety,
+        expands_public_opaque_call_results_through_later_call_arguments,
+    ],
+    expansion_api_batch_08: [
+        grouped_solve_distinguishes_program_local_result_from_contract_result,
+        grouped_solve_expansion_closes_only_the_first_open_claim,
+        return_fold_retains_post_return_proof_through_expansion,
+        grouped_solve_expansion_preserves_resource_scalar_and_quantified_transitions,
+    ],
+    expansion_api_batch_09: [
+        grouped_solve_expansion_uses_explicit_frame_consequences,
+        source_position_maps_implicit_default_proofs,
+        expanded_uint8_facts_print_as_parseable_typed_literals,
+        expanded_bitvector_facts_print_parseable_negative_literals,
+    ],
+    expansion_api_batch_10: [
+        expanded_branch_condition_names_a_struct_pointer_field,
+        expanded_branch_condition_names_a_local_struct_pointer_field,
+        expanded_branch_condition_names_a_field_through_a_loaded_pointer,
+        expanded_contract_let_facts_remain_source_indexable,
+    ],
+    expansion_api_batch_11: [
+        expanded_post_execution_apply_retains_its_facts_for_the_closer,
+        expanded_symbolic_range_propositions_use_parser_syntax,
+        expands_single_smart_and_default_function_proofs_by_source_location,
+        whole_function_proof_expansion_skips_unrelated_broken_proofs,
+    ],
+    expansion_api_batch_12: [
+        partial_tactic_expansion_skips_unrelated_broken_proofs,
+        pure_theorem_expansion_is_certificate_backed_and_idempotent,
+        pure_mixed_linear_smart_script_expands_the_retained_proof_object_path,
+        pure_branch_local_apply_expands_the_retained_proof_object_paths,
+    ],
+    expansion_api_batch_13: [
+        pure_nested_have_branch_apply_expands_the_retained_proof_object_scope,
+        smart_inventory_skips_assumed_extern_contracts,
+        smart_inventory_does_not_invent_solve_sites_for_kernel_axiom_declarations,
+        smart_inventory_keeps_refinement_proofs_named_like_arithmetic_axioms,
+    ],
+    expansion_api_batch_14: [
+        builtin_nat_integer_laws_expand_and_reject_invalid_conversions,
+        nat_addition_agrees_with_integer_addition_and_rechecks_expansion,
+        signed_to_unsigned_interval_comparisons_expand_and_recheck_both_sides,
+        smart_sites_inside_and_after_cases_and_outcomes_resolve_to_their_source,
+    ],
+    expansion_api_batch_15: [
+        premise_free_applications_are_simple_but_required_premises_stay_smart,
+        commented_selective_and_qualified_names_expand_and_recheck,
+        solve_expands_disjunction_projection_to_cases_without_extract,
+        solve_expands_propagated_partial_implication_to_known,
+    ],
+    expansion_api_batch_16: [
+        solve_expands_excluded_middle_to_if_without_extract,
+        ordinary_fold_expansion_requires_the_empty_range_guard,
+        ordinary_fold_expansion_keeps_array_reads_at_the_execution_frontier,
+        ordinary_fold_expansion_in_both_replays_without_implicit_solving,
+        exact_proposition_propagation_replays_without_search,
+    ],
+}
+
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_api_batch_00")]
 fn nested_match_retains_nominal_list_result() {
@@ -4359,111 +4468,65 @@ fn exact_proposition_propagation_replays_without_search() {
     }
 }
 
-#[cfg(feature = "fast-gate")]
-crate::surface::tests::test_batches! {
-    file: "tests.rs",
-    marker: "expansion_api_batch_",
-    expansion_api_batch_00: [
-        nested_match_retains_nominal_list_result,
-        generic_list_induction_retains_nominal_pointer_fields,
-        retained_caller_expansion_preserves_declared_object_return_evidence,
-        grouped_expansion_keeps_postexecution_closers_in_source_order,
-    ],
-    expansion_api_batch_01: [
-        retained_function_expansion_formats_without_reverification_and_rechecks,
-        execute_until_in_proof_if_arms_expands_and_rechecks,
-        tactic_expansion_can_name_an_outer_c_parameter_after_intro,
-        tactic_expansion_can_name_two_levels_of_shadowed_binders,
-    ],
-    expansion_api_batch_02: [
-        integer_function_unfold_expands_and_reverifies,
-        nat_integer_laws_expand_and_reject_wrong_successor,
-        builtin_nat_integer_dispatch_and_checked_to_nat,
-        generic_smart_proofs_expand_without_concrete_clients,
-    ],
-    expansion_api_batch_03: [
-        conditional_normalization_roundtrips_and_rejects_tampering,
-        generic_template_expansion_checks_arbitrary_types,
-        smart_conditional_normalization_emits_checked_evidence,
-        nested_list_membership_expands_and_rechecks,
-    ],
-    expansion_api_batch_04: [
-        scalar_call_congruence_expands_and_rejects_tampering,
-        library_list_theorem_application_expands_and_rechecks,
-        inventories_and_expands_smart_tactics_inside_structural_induction,
-        expands_one_grouped_tactic_without_running_the_suffix,
-    ],
-    expansion_api_batch_05: [
-        expands_grouped_immutable_read_with_multiple_claim_successors,
-        expands_nested_branch_tactic_by_source_location,
-        source_positions_include_tactics_nested_in_open_blocks,
-        expands_common_step_after_frontier_branch,
-    ],
-    expansion_api_batch_06: [
-        expands_deferred_solve_after_frontier_branch,
-        shares_equal_deferred_expansions_after_frontier_branch,
-        expands_common_deferred_tactic_with_a_returning_branch_arm,
-        expands_deferred_solve_after_nested_frontier_branches,
-    ],
-    expansion_api_batch_07: [
-        hides_statement_local_opaque_call_facts_from_surface_premises,
-        opaque_call_expansion_keeps_only_consumed_ambient_conditions,
-        opaque_call_expansion_keeps_memory_condition_safety,
-        expands_public_opaque_call_results_through_later_call_arguments,
-    ],
-    expansion_api_batch_08: [
-        grouped_solve_distinguishes_program_local_result_from_contract_result,
-        grouped_solve_expansion_closes_only_the_first_open_claim,
-        return_fold_retains_post_return_proof_through_expansion,
-        grouped_solve_expansion_preserves_resource_scalar_and_quantified_transitions,
-    ],
-    expansion_api_batch_09: [
-        grouped_solve_expansion_uses_explicit_frame_consequences,
-        source_position_maps_implicit_default_proofs,
-        expanded_uint8_facts_print_as_parseable_typed_literals,
-        expanded_bitvector_facts_print_parseable_negative_literals,
-    ],
-    expansion_api_batch_10: [
-        expanded_branch_condition_names_a_struct_pointer_field,
-        expanded_branch_condition_names_a_local_struct_pointer_field,
-        expanded_branch_condition_names_a_field_through_a_loaded_pointer,
-        expanded_contract_let_facts_remain_source_indexable,
-    ],
-    expansion_api_batch_11: [
-        expanded_post_execution_apply_retains_its_facts_for_the_closer,
-        expanded_symbolic_range_propositions_use_parser_syntax,
-        expands_single_smart_and_default_function_proofs_by_source_location,
-        whole_function_proof_expansion_skips_unrelated_broken_proofs,
-    ],
-    expansion_api_batch_12: [
-        partial_tactic_expansion_skips_unrelated_broken_proofs,
-        pure_theorem_expansion_is_certificate_backed_and_idempotent,
-        pure_mixed_linear_smart_script_expands_the_retained_proof_object_path,
-        pure_branch_local_apply_expands_the_retained_proof_object_paths,
-    ],
-    expansion_api_batch_13: [
-        pure_nested_have_branch_apply_expands_the_retained_proof_object_scope,
-        smart_inventory_skips_assumed_extern_contracts,
-        smart_inventory_does_not_invent_solve_sites_for_kernel_axiom_declarations,
-        smart_inventory_keeps_refinement_proofs_named_like_arithmetic_axioms,
-    ],
-    expansion_api_batch_14: [
-        builtin_nat_integer_laws_expand_and_reject_invalid_conversions,
-        nat_addition_agrees_with_integer_addition_and_rechecks_expansion,
-        signed_to_unsigned_interval_comparisons_expand_and_recheck_both_sides,
-        smart_sites_inside_and_after_cases_and_outcomes_resolve_to_their_source,
-    ],
-    expansion_api_batch_15: [
-        premise_free_applications_are_simple_but_required_premises_stay_smart,
-        commented_selective_and_qualified_names_expand_and_recheck,
-        solve_expands_disjunction_projection_to_cases_without_extract,
-        solve_expands_propagated_partial_implication_to_known,
-    ],
-    expansion_api_batch_16: [
-        solve_expands_excluded_middle_to_if_without_extract,
-        ordinary_fold_expansion_requires_the_empty_range_guard,
-        ordinary_fold_expansion_keeps_array_reads_at_the_execution_frontier,
-        ordinary_fold_expansion_in_both_replays_without_implicit_solving,
-        exact_proposition_propagation_replays_without_search,
-    ],
+#[test]
+fn heap_free_loan_separation_expands_and_rechecks() {
+    let c = r#"
+void release(unsigned char *p, unsigned long n, int32 *q) {
+    free(p);
+}
+"#;
+    let proof = r#"
+verifying "free_loan.c";
+
+void release(uint8* p, uint64 n, int32* q) {
+    requires p != 0;
+    requires 1u64 <= n and n <= 1000u64;
+    consumes allocation(p, n);
+    consumes p[0..n];
+    views *q;
+} by { step() by { known(); } }
+"#;
+    let sources = [("free_loan.c", c)];
+    verify_c_sources(proof, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(proof, &sources, "release.contract").unwrap();
+    without_implicit_solve_for_claim("release.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn aggregate_copy_loan_separation_expands_and_rechecks() {
+    let c = r#"
+union Payload { int32 value; };
+struct Packet { int32 tag; union Payload payload; };
+void copy(struct Packet *dst, struct Packet *src, int32 *q) {
+    *dst = *src;
+}
+"#;
+    let proof = r#"
+verifying "copy_loan.c";
+void copy(struct Packet* dst, struct Packet* src, int32* q) {
+    owns dst->tag;
+    owns dst->payload.value;
+    owns src->tag;
+    owns src->payload.value;
+    views *q;
+    requires separate(memory((dst as (uint8*))[0..8]), memory(*q));
+} by { step() by { known(); } }
+"#;
+    let sources = [("copy_loan.c", c)];
+    verify_c_sources(proof, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(proof, &sources, "copy.contract").unwrap();
+    without_implicit_solve_for_claim("copy.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+
+    // The loan can alias the second member when the separation is absent.
+    let missing = proof.replace(
+        "requires separate(memory((dst as (uint8*))[0..8]), memory(*q));",
+        "",
+    );
+    assert!(verify_c_sources(&missing, &sources).is_err());
 }

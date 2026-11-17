@@ -47,7 +47,9 @@ fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
     };
     let mut samples = Vec::new();
     for count in [4usize, 64, 1024] {
-        let mut memory = Memory::new().with_block("shared", 4).with_block("other", 4);
+        let mut memory = SymbolicMemory::new()
+            .with_block("shared", 4)
+            .with_block("other", 4);
         for index in 0..count {
             memory = memory.store(other.clone(), int32(index as u32));
         }
@@ -87,7 +89,7 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
         base: AddressBase::Concrete("shared".into()),
         offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("shared", 4);
+    let memory = SymbolicMemory::new().with_block("shared", 4);
     // Name the cell's load, as the exit's own read did.
     let load = symbolic_storage_cell_value(&memory, &pointer, ProgramType::Int32, true).unwrap();
     let zero = int32(0);

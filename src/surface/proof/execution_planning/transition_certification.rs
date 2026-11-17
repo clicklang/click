@@ -1134,7 +1134,7 @@ mod condition_transition_tests {
 
     #[test]
     fn generated_load_binding_collection_tombstones_conflicting_keys() {
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let pointer = Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(0),

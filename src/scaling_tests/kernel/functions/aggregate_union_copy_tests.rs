@@ -26,7 +26,7 @@ fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
                 .with_aggregate_layout(layout)];
         let values = [ProgramValue::pointer(source.clone())];
         let assumptions = PureFactContext::new();
-        let empty = Memory::new().with_uninitialized_block(source.base.clone(), count * 4);
+        let empty = SymbolicMemory::new().with_uninitialized_block(source.base.clone(), count * 4);
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new_with_element_width(source.clone(), 0.into(), (count * 4).into(), 1),
         ));
@@ -90,7 +90,7 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
                 ProgramType::UInt32Array(count),
             )],
         );
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block(source.base.clone(), count * 4)
             .with_block(destination.base.clone(), count * 4)
             .write_scalar_array_region(
@@ -144,7 +144,7 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
         assert!(unknown.known_value(&last).is_some());
         assert!(unknown.has_initialized_bytes_at(&destination, count * 4));
         samples.push(work);
-        let uninitialized = Memory::new()
+        let uninitialized = SymbolicMemory::new()
             .with_block(source.base.clone(), count * 4)
             .with_block(destination.base.clone(), count * 4);
         assert_eq!(

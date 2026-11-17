@@ -238,7 +238,7 @@ pub(super) struct PureTheoremContext {
     /// Immutable specification parameter names, retained for diagnostics.
     pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
-    pub(super) memory: Memory,
+    pub(super) memory: SymbolicMemory,
     pub(super) values: BTreeMap<String, ProgramValue>,
     pub(super) integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     pub(super) array_refs: ClickArrayRefs,
@@ -1388,7 +1388,7 @@ pub(super) fn pure_theorem_context(
     theorem: &TheoremDefinition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<PureTheoremContext, ClickError> {
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let values = pure_theorem_parameter_values_with_generic_pointers(
         theorem.parameters(),
         &theorem.generic_pointer_parameters,
@@ -1927,7 +1927,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
 pub(in crate::surface) fn pure_theorem_array_refs(
     parameters: &[FunctionParameter],
     values: &BTreeMap<String, ProgramValue>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
 ) -> ClickArrayRefs {
     parameters
         .iter()
@@ -3518,7 +3518,7 @@ pub(super) fn lower_pure_theorem_proposition(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_opaque_calls(
@@ -3536,7 +3536,7 @@ pub(super) fn lower_pure_theorem_proposition_with_integer_values(
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_algebraic_and_integer_values(
@@ -3557,7 +3557,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_recording_introductions(
@@ -3584,7 +3584,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
     let state = ExecutionState::new().with_memory(memory.clone());
@@ -3609,7 +3609,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_values(
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_algebraic_and_integer_values(
@@ -3630,7 +3630,7 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &BTreeSet<String>,
 ) -> Result<Proposition, String> {

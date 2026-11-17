@@ -19,8 +19,8 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(0),
         };
-        let before = Memory::new();
-        let read = |context: &PureFactContext, memory: &Memory, address: &Address| {
+        let before = SymbolicMemory::new();
+        let read = |context: &PureFactContext, memory: &SymbolicMemory, address: &Address| {
             let retained_state = crate::kernel::intern_memory_ref(memory);
             let variable = crate::kernel::load_variable_for_cell_with_origin(
                 &retained_state,
@@ -914,7 +914,7 @@ fn cold_singleton_return_checks_do_not_enumerate_loaded_pointer_alias_stars() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Address::symbolic(Variable(9_980_000));
         let memory = crate::kernel::intern_memory_ref(
-            &Memory::new().with_block(field.base.clone(), C_POINTER_BYTE_WIDTH),
+            &SymbolicMemory::new().with_block(field.base.clone(), C_POINTER_BYTE_WIDTH),
         );
         let query = Address::loaded_value(&memory, &field);
         let held = Address {

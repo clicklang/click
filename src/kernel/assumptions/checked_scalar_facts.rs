@@ -192,7 +192,7 @@ impl CheckedScalarFacts {
                     self.literals.with_inserted(key.clone(), sources)
                 };
             }
-            // Memory matching still consumes native written conditions. Keep
+            // SymbolicMemory matching still consumes native written conditions. Keep
             // its unique-source policy separate from semantic scalar queries.
             if let MachineOperandView::Legacy(endpoint) = endpoint
                 && matches!(

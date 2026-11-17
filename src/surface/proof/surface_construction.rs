@@ -187,7 +187,7 @@ fn checked_surface_fact_in_state_with_assumptions(
     }
 }
 
-fn proposition_state_memories(proposition: &Proposition) -> Vec<Memory> {
+fn proposition_state_memories(proposition: &Proposition) -> Vec<SymbolicMemory> {
     if !matches!(
         proposition,
         Proposition::And(_, _)

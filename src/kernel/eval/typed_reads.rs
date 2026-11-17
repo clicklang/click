@@ -48,7 +48,7 @@ impl Drop for ReadScope {
     }
 }
 
-pub(super) fn record(memory: &Memory, address: &Address, value: &ProgramValue) {
+pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &ProgramValue) {
     if !READS.with(|reads| reads.borrow().is_some()) {
         return;
     }
@@ -83,7 +83,7 @@ pub(super) fn record(memory: &Memory, address: &Address, value: &ProgramValue) {
 /// to evaluate a read here. The preservation goal names its reads by lowering
 /// them before applying the primitive.
 pub(in crate::kernel) fn get(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     address: &Address,
     kind: ReadType,
 ) -> Option<ProgramValue> {

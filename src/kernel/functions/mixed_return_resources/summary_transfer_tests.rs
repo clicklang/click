@@ -38,7 +38,7 @@ pub(super) fn symbolic_state() -> (ExecutionState, PureFactContext, ResourceFact
         ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), end.clone()));
     let state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_memory(Memory::new().with_block(pointer.base.clone(), 1024))
+        .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 1024))
         .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_local("q", ProgramValue::pointer(pointer))
         .with_local("n", ProgramValue::Int32(end))

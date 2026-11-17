@@ -621,10 +621,12 @@ fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() 
         base: "wide-cast-source".into(),
         offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("wide-cast-source", 4).store(
-        pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant((-1i32) as u32)),
-    );
+    let memory = SymbolicMemory::new()
+        .with_block("wide-cast-source", 4)
+        .store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant((-1i32) as u32)),
+        );
     let load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(intern_memory(memory))),
         Box::new(pointer),
@@ -774,7 +776,7 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
             ProgramValue::UInt64(bits.clone())
         };
         let memory = intern_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("wide-cached-read", 8)
                 .store(pointer.clone(), value),
         );

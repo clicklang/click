@@ -80,15 +80,15 @@ mod tests {
     #[test]
     fn selected_address_base_preserves_c_provenance_qualifiers_and_debts() {
         let _session = VerificationSession::enter();
-        let first = Memory::global_pointer("first");
-        let second = Memory::global_pointer("second");
+        let first = SymbolicMemory::global_pointer("first");
+        let second = SymbolicMemory::global_pointer("second");
         let first_value = ProgramValue::Pointer(
             PointerValue::new(first.clone(), ProgramType::UInt8Pointer)
                 .with_pointee_constant(true)
                 .with_pointee_volatile(true),
         );
         let second_value = ProgramValue::typed_pointer(second.clone(), ProgramType::UInt8Pointer);
-        let memory = Memory::new()
+        let memory = SymbolicMemory::new()
             .with_block(first.base.clone(), 24)
             .with_block(second.base.clone(), 24);
         let mut old = ExecutionState::new().with_memory(memory.clone());

@@ -378,13 +378,21 @@ fn memory_write_obligation_outcome(
     {
         return Some(StatementOutcome::RuntimeError(error));
     }
+    require_write_loan_separation(state, &range, obligations);
+    memory_write_ownership_outcome(state, storage_range, assumptions)
+}
+
+fn require_write_loan_separation(
+    state: &ExecutionState,
+    range: &MemoryRange,
+    obligations: &mut Vec<ProofObligation>,
+) {
     if let Some(requirement) = state
         .loan_ledger()
-        .and_then(|ledger| ledger.memory_access_requirement(&range))
+        .and_then(|ledger| ledger.memory_access_requirement(range))
     {
         obligations.push(ProofObligation::verification_condition(requirement));
     }
-    memory_write_ownership_outcome(state, storage_range, assumptions)
 }
 
 fn memory_write_ownership_outcome(
@@ -1141,6 +1149,7 @@ fn execute_program_aggregate_step_paths(
         &ProgramExpression::Value(result.clone()),
         expression,
         layout,
+        AggregateCopyDestination::ResultTemporary,
         assumptions,
         budget,
     )?;
@@ -1163,11 +1172,46 @@ fn execute_program_aggregate_step_paths(
     Ok(paths)
 }
 
+#[derive(Clone, Copy)]
+enum AggregateCopyDestination {
+    Assignment,
+    ResultTemporary,
+}
+
+fn aggregate_assignment_write_outcome(
+    state: &ExecutionState,
+    target: &PointerValue,
+    bytes: u32,
+    assumptions: &PureFactContext,
+    obligations: &mut Vec<ProofObligation>,
+) -> Option<StatementOutcome> {
+    #[cfg(test)]
+    let _fast = crate::kernel::search::FastOperationScope::enter("aggregate copy loan check");
+    let pointer = target.pointer();
+    let storage =
+        MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes);
+    if let Some(error) = super::super::mutexes::storage_write_refusal(state, &storage, assumptions)
+    {
+        return Some(StatementOutcome::RuntimeError(error));
+    }
+    if let Some(outcome) = memory_write_ownership_outcome(state, storage, assumptions) {
+        return Some(outcome);
+    }
+    // Express the full destination, including padding, as a byte slice that
+    // the proof can name at the assignment's entry point.
+    let byte_pointer =
+        super::expression::cast_pointer_value(target.clone(), ProgramType::UInt8Pointer);
+    let destination = MemoryRange::from_pointer_value(&byte_pointer, 0u32.into(), bytes.into(), 1);
+    require_write_loan_separation(state, &destination, obligations);
+    None
+}
+
 fn execute_program_aggregate_copy_paths(
     state: &ExecutionState,
     target: &ProgramExpression,
     source: &ProgramExpression,
     layout: &AggregateLayout,
+    destination: AggregateCopyDestination,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
@@ -1194,7 +1238,7 @@ fn execute_program_aggregate_copy_paths(
                 facts: source_facts,
                 obligations: source_obligations,
             } = source_path;
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, mut obligations)) = merge_execution_pure_facts_and_obligations(
                 &target_facts,
                 &target_obligations,
                 &source_facts,
@@ -1250,12 +1294,24 @@ fn execute_program_aggregate_copy_paths(
                 ));
                 continue;
             }
-            if let Some(outcome) = memory_write_permission_outcome(
-                state,
-                target_pointer.pointer(),
-                layout.size_bytes(),
-                &assumptions_with_path_context(assumptions, &facts, &obligations),
-            ) {
+            let write_assumptions =
+                assumptions_with_path_context(assumptions, &facts, &obligations);
+            let write_refusal = match destination {
+                AggregateCopyDestination::Assignment => aggregate_assignment_write_outcome(
+                    state,
+                    &target_pointer,
+                    layout.size_bytes(),
+                    &write_assumptions,
+                    &mut obligations,
+                ),
+                AggregateCopyDestination::ResultTemporary => memory_write_permission_outcome(
+                    state,
+                    target_pointer.pointer(),
+                    layout.size_bytes(),
+                    &write_assumptions,
+                ),
+            };
+            if let Some(outcome) = write_refusal {
                 paths.push(StatementExecutionPath::new(outcome, facts, obligations));
                 continue;
             }
@@ -1263,7 +1319,7 @@ fn execute_program_aggregate_copy_paths(
                 state,
                 &target_pointer,
                 layout,
-                &assumptions_with_path_context(assumptions, &facts, &obligations),
+                &write_assumptions,
             ) {
                 paths.push(StatementExecutionPath::new(
                     StatementOutcome::RuntimeError(RuntimeError::MissingResource {
@@ -2721,7 +2777,7 @@ fn execute_program_heap_free_paths(
         let ExpressionPath {
             outcome,
             mut facts,
-            obligations,
+            mut obligations,
         } = path;
         let outcome = match outcome {
             ExpressionOutcome::Value(ProgramValue::Int32(bits)) if bits.as_const() == Some(0) => {
@@ -2759,6 +2815,9 @@ fn execute_program_heap_free_paths(
             ));
             continue;
         }
+
+        // Retain the argument's spelling for the proof at this program point.
+        let argument = pointer.clone();
 
         // Resolve the allocation's owned base through the same argument
         // equality used to consume its token. A proven alias names that
@@ -2920,13 +2979,30 @@ fn execute_program_heap_free_paths(
             ));
             continue;
         };
-        // The free is authorized by the allocation and its complete access, so
-        // a refusal here is about a live loan of these bytes, not ownership.
-        if let Some(outcome) =
-            allocation_retirement_outcome(state, &full_allocation_range, &effective_assumptions)
-        {
-            paths.push(StatementExecutionPath::new(outcome, facts, obligations));
+        if let Some(error) = super::super::mutexes::storage_retirement_refusal(
+            state,
+            &full_allocation_range,
+            &effective_assumptions,
+        ) {
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(error),
+                facts,
+                obligations,
+            ));
             continue;
+        }
+        if let Some(ledger) = state.loan_ledger() {
+            // Check the full allocation at the argument's address, which was
+            // resolved to its live base above. Keep the Surface byte carrier
+            // so the separation can be stated at the free's entry.
+            let byte_pointer =
+                super::expression::cast_pointer_value(argument, ProgramType::UInt8Pointer);
+            let range = bytes
+                .byte_range(byte_pointer.pointer().clone())
+                .with_pointer_carrier(&byte_pointer);
+            if let Some(requirement) = ledger.memory_access_requirement(&range) {
+                obligations.push(ProofObligation::verification_condition(requirement));
+            }
         }
         // A free can invalidate only resources that refer to this block.
         // Most frees leave no such facts after consuming the allocation and
@@ -4190,6 +4266,7 @@ fn execute_execution_statement_leaf_paths(
             target,
             source,
             layout,
+            AggregateCopyDestination::Assignment,
             assumptions,
             budget,
         )?,
@@ -5558,7 +5635,7 @@ fn local_declaration_pointer(
         state.set_memory(state.memory.without_local_block(&previous.base));
         return Ok(fresh_local_object_identity(state, name));
     }
-    let unnumbered = Memory::local_pointer(name);
+    let unnumbered = SymbolicMemory::local_pointer(name);
     if state.enclosing_frame_holds_locals()
         || state.memory.local_block_is_occupied(&unnumbered.base)
     {
@@ -5609,7 +5686,7 @@ fn fresh_local_object_identity(state: &mut ExecutionState, name: &BindingName) -
         *state = state
             .clone()
             .with_next_local_lifetime(lifetime.saturating_add(1));
-        let pointer = Memory::local_lifetime_pointer(lifetime, name);
+        let pointer = SymbolicMemory::local_lifetime_pointer(lifetime, name);
         if !state.memory.local_block_is_occupied(&pointer.base) {
             return pointer;
         }
@@ -6179,7 +6256,7 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
     refresh_scalar_local_binding(state, name, slot, program_type, assumptions);
 }
 
-/// Reconcile one address-backed scalar after a checked call effect. Memory
+/// Reconcile one address-backed scalar after a checked call effect. SymbolicMemory
 /// decides its current value and initialization; a postcondition is not a store.
 pub(in crate::kernel) fn refresh_scalar_local_from_memory(
     state: &mut ExecutionState,

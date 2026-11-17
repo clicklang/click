@@ -464,9 +464,6 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
             }
             ProofTactic::Open(proof_open) => {
                 collect_applied_theorems(&proof_open.tactics, names);
-                if let Some(close_proof) = &proof_open.close_proof {
-                    collect_applied_theorems(close_proof, names);
-                }
             }
             ProofTactic::If(proof_if) => {
                 collect_applied_theorems(&proof_if.then_tactics, names);
@@ -8171,7 +8168,7 @@ int32 reader(int32 p[]) {
     /// write-authority check that precedes the ledger names the missing
     /// owner exactly. The ledger-level aggregate witness, an owner-authorized
     /// copy over a lent field, is
-    /// `owner_authorized_aggregate_copy_into_a_lent_range_is_refused`.
+    /// `owner_authorized_aggregate_copy_into_a_lent_range_requires_separation`.
     #[test]
     fn root_view_refuses_an_aggregate_copy_into_it() {
         let click = r#"

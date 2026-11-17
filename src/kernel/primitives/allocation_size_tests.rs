@@ -7,7 +7,7 @@ fn hash_of(value: &impl std::hash::Hash) -> u64 {
     hasher.finish()
 }
 
-/// Memory state hashes name symbolic loads, so tagging every existing (32-bit)
+/// SymbolicMemory state hashes name symbolic loads, so tagging every existing (32-bit)
 /// size must not change them: an `Int32` size hashes and prints as its
 /// byte term. The kind still separates the two sizes of one term.
 #[test]

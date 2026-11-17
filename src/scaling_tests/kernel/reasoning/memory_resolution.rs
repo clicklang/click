@@ -51,7 +51,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
     );
     let mut samples = Vec::new();
     for count in [8, 32, 128, 512] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.store(
                 Address {
@@ -61,7 +61,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
                 ProgramValue::Int32(MachineTerm::constant(0)),
             );
         }
-        // Memory state construction/interning belongs to the producer. Measure
+        // SymbolicMemory state construction/interning belongs to the producer. Measure
         // only a lookup in the already established state.
         crate::kernel::intern_memory_ref(&memory);
         let (absent, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -225,7 +225,7 @@ fn unresolved_load_projection_ignores_earlier_objects_and_hidden_slots() {
         };
         let object = |index: usize| Address::symbolic(Variable(98_700 + index as u64));
         let value = |index: usize| ProgramValue::Int32((index as u32).into());
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         let mut last = 0;
         for index in 0..=size {
             memory = memory
@@ -326,7 +326,7 @@ fn run_access_retains_cold_shared_index_dags() {
                 4,
                 ProgramType::Int32,
                 16,
-                crate::kernel::intern_memory(Memory::new()),
+                crate::kernel::intern_memory(SymbolicMemory::new()),
                 Default::default(),
             );
             let offset = if ty == MachineIntegerType::Int32 {

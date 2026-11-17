@@ -452,9 +452,18 @@ fn mdtests() {
         })
         .collect::<Vec<_>>();
     let filtered = if let Ok(filter) = std::env::var("MDTEST_FILTER") {
+        // A whole file name selects just that file; anything else selects
+        // every file whose name contains it.
+        let exact = filter.ends_with(".md");
         paths.retain(|path| {
-            path.file_name()
-                .is_some_and(|name| name.to_string_lossy().contains(&filter))
+            path.file_name().is_some_and(|name| {
+                let name = name.to_string_lossy();
+                if exact {
+                    name == filter
+                } else {
+                    name.contains(&filter)
+                }
+            })
         });
         true
     } else {
@@ -543,7 +552,7 @@ fn mdtests() {
     // Which producers still end a step on a state older than itself, so
     // that the step is recorded on no history. A knowledge-losing forget
     // cannot: its mark makes the result a node no earlier state can be
-    // (`Memory::mark_forgotten_from`). Anything else here is a producer
+    // (`SymbolicMemory::mark_forgotten_from`). Anything else here is a producer
     // whose steps are invisible to every history-based rule, and this line
     // is how a corpus run names it.
     eprintln!(
@@ -587,12 +596,27 @@ fn run_mdtest_in_thread(path: &Path) -> Result<(), String> {
     let result = limits::spawn("mdtest verifier", thread_name, move || {
         run_mdtest_attempt(&path)
     })?;
+    let seconds = started.elapsed().as_secs_f64();
     eprintln!(
-        "mdtest `{name}` {} in {:.2}s",
+        "mdtest `{name}` {} in {seconds:.2}s",
         if result.is_ok() { "passed" } else { "failed" },
-        started.elapsed().as_secs_f64()
+    );
+    click::nightly_report::record(
+        "mdtests",
+        &click::nightly_report::NightlyResult {
+            kind: "mdtest",
+            name: path_file_name(&name),
+            passed: result.is_ok(),
+            seconds,
+            message: result.as_ref().err().map(String::as_str),
+        },
     );
     result
+}
+
+/// The file name the report's `MDTEST_FILTER=<name>` selects.
+fn path_file_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
 }
 
 fn run_mdtest_attempt(path: &Path) -> Result<(), String> {
@@ -768,7 +792,7 @@ fn check_expectation(
             path.display()
         )),
         (MdTestExpectation::FailContains(expected), Err((message, report))) => {
-            if let Some(internal) = ["Memory {", "HeapMemory {", "pointer(pointer "]
+            if let Some(internal) = ["SymbolicMemory {", "HeapMemory {", "pointer(pointer "]
                 .into_iter()
                 .find(|internal| report.contains(internal))
             {

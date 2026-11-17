@@ -7,13 +7,13 @@ use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{
     Address, AddressBase, AddressOffset, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
-    Memory, SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedMachineIntegerTerm, SharedMemory,
-    Term, Variable,
+    SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedMachineIntegerTerm, SharedMemory,
+    SymbolicMemory, Term, Variable,
 };
 use std::collections::BTreeMap;
 
 fn memory() -> SharedMemory {
-    crate::kernel::intern_memory(Memory::new().with_block("registered-load-capture", 64))
+    crate::kernel::intern_memory(SymbolicMemory::new().with_block("registered-load-capture", 64))
 }
 
 #[test]
@@ -417,7 +417,7 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Address::symbolic(Variable(3_219_020));
     let memory = crate::kernel::intern_memory(
-        Memory::new().store(address.clone(), ProgramValue::Int32(37u32.into())),
+        SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(37u32.into())),
     );
     let relation = |term: MachineTerm| {
         let parent = Resource::Composite {
@@ -451,7 +451,7 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
         Some(expected.clone())
     );
     let other_memory = crate::kernel::intern_memory(
-        Memory::new().store(address.clone(), ProgramValue::Int32(38u32.into())),
+        SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(38u32.into())),
     );
     assert_ne!(
         crate::kernel::eval::comparison_form(&relation(read(
@@ -469,7 +469,8 @@ fn fold_index_substitution_keeps_call_havoc_source() {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::Constant(0),
     };
-    let before = Memory::new().store(base.clone(), ProgramValue::Int32(MachineTerm::constant(5)));
+    let before =
+        SymbolicMemory::new().store(base.clone(), ProgramValue::Int32(MachineTerm::constant(5)));
     let count = MachineTerm::Variable(Variable(3_229_001));
     let facts = crate::kernel::PureFactContext::new().assume_condition(
         ConditionTerm::signed_less_equal(MachineTerm::constant(1), count.clone()),

@@ -7,9 +7,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use click::cli::{VerificationInput, parse_mdtest, read_click_project, read_verification_inputs};
 use click::kernel::{
-    Address, AddressOffset, ExecutionState, FunctionOutcome, MachineTerm, Memory, MemoryRange,
+    Address, AddressOffset, ExecutionState, FunctionOutcome, MachineTerm, MemoryRange,
     ProgramExpression, ProgramStatement, ProgramType, Proposition, PureFactContext,
-    ResourceContext, ResourceFact, UndefinedBehavior, int32,
+    ResourceContext, ResourceFact, SymbolicMemory, UndefinedBehavior, int32,
     prove_symbolic_program_function_execution,
 };
 use click::languages::cpp::{
@@ -569,10 +569,14 @@ int32 probe(struct View& target, const struct View& source) {
  owns target.data;
  owns target.extent.size;
  views source.extent.size;
+ requires separate(memory((&target as (uint8*))[0..16]), memory(source.extent.size));
  ensures target.data == old(target.data);
  ensures target.extent.size == source.extent.size;
  ensures source.extent.size == old(source.extent.size);
  ensures result == 0;
+} by {
+ step() by { solve(); }
+ step() by { known(); }
 }
 "#;
     let path = project.directory.join("copy.click");
@@ -6245,10 +6249,10 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
         ProgramType::Int32Pointer,
     )];
     let state = ExecutionState::new()
-        .with_memory(Memory::new().store(pointer.clone(), int32(41)))
+        .with_memory(SymbolicMemory::new().store(pointer.clone(), int32(41)))
         .with_resource_context(resources.clone());
     let expected_state = ExecutionState::new()
-        .with_memory(Memory::new().store(pointer.clone(), int32(42)))
+        .with_memory(SymbolicMemory::new().store(pointer.clone(), int32(42)))
         .with_resource_context(resources.clone());
     let theorem = prove_symbolic_program_function_execution(
         state.clone(),
@@ -6271,7 +6275,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     );
 
     let max_state = ExecutionState::new()
-        .with_memory(Memory::new().store(pointer, int32(i32::MAX as u32)))
+        .with_memory(SymbolicMemory::new().store(pointer, int32(i32::MAX as u32)))
         .with_resource_context(resources);
     let overflow = prove_symbolic_program_function_execution(
         max_state.clone(),

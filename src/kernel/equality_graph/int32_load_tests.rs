@@ -19,7 +19,7 @@ fn load(memory: &SharedMemory, pointer: &Address, bytes: u32) -> MachineTerm {
     ))
 }
 fn memory() -> SharedMemory {
-    intern_memory(Memory::new().with_block("array", 4096))
+    intern_memory(SymbolicMemory::new().with_block("array", 4096))
 }
 
 #[test]
@@ -235,7 +235,11 @@ fn explicit_cross_state_load_equality_composes_without_merging_states() {
 #[test]
 fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = intern_memory(Memory::new().with_block("left", 64).with_block("right", 64));
+    let memory = intern_memory(
+        SymbolicMemory::new()
+            .with_block("left", 64)
+            .with_block("right", 64),
+    );
     let at = |block: &str, bytes: i64| Address {
         base: block.into(),
         offset: AddressOffset::Constant(bytes),
