@@ -49,7 +49,7 @@ impl Clone for Index {
 
 /// A watched identity retains the source literal beside its root-based key.
 /// Only keys normalize exact native observations; emitted consequences keep
-/// their original spelling and provenance.
+/// their original spelling and derivation.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum LiteralKey {
     Comparison(super::observation_comparisons::Key, bool),
@@ -337,7 +337,7 @@ impl PureFactContext {
 
     /// Construct consequences from the newly admitted fact and previously
     /// admitted clauses. Re-entering normal admission maintains all existing
-    /// fact/equality/provenance projections, without rechecking the inference.
+    /// fact/equality/consulted-premise projections, without rechecking the inference.
     pub(super) fn admit_exact_propagation(&mut self, proposition: Proposition) {
         self.admit_shared_exact_propagation(Arc::new(proposition));
     }

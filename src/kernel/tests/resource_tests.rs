@@ -2462,7 +2462,7 @@ fn resource_equality_and_exchange_preserve_support_occurrence_identity() {
         );
     assert_eq!(
         left, independently_allocated_same_topology,
-        "context equality compares support topology, while provenance checks use opaque occurrences"
+        "context equality compares support topology, while support checks use opaque occurrences"
     );
 
     assert_ne!(
@@ -3019,7 +3019,7 @@ fn installing_a_certified_resource_group_still_checks_the_existing_frame() {
 /// ensured views against caller ownership before composing them. The filter
 /// asked `satisfies_fact`, which an owner answers, so an owner discharged a
 /// returned view for free; composition plus this merge reaches the same
-/// context without consulting ownership, and the provenance routes decide
+/// context without consulting ownership, and the recovery routes decide
 /// whether the view was ever legitimate.
 #[test]
 fn an_unbound_view_beside_its_owner_normalizes_into_the_owner() {

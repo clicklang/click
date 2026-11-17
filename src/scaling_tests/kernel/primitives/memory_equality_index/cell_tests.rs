@@ -1535,7 +1535,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
         );
         let current = read(&context, &after);
         assert_eq!(
-            crate::kernel::memory_provenance::checked_pointer_read_endpoint(
+            crate::kernel::memory_history::checked_pointer_read_endpoint(
                 current.pointer(),
                 &context
             ),
@@ -1659,7 +1659,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
         );
         let current = read(&context, &after);
         assert_eq!(
-            crate::kernel::memory_provenance::checked_pointer_read_endpoint(&current, &context),
+            crate::kernel::memory_history::checked_pointer_read_endpoint(&current, &context),
             Some(source.clone())
         );
         let owner = ResourceFact::own_memory(range(source.clone(), 0, 8));
@@ -1874,7 +1874,7 @@ fn query_read_definition_merges_scale_with_changed_suppliers() {
     fn work(count: u32, unrelated_count: u32, register_query: bool) -> usize {
         let _session = crate::kernel::VerificationSession::enter();
         let name = |memory: &SharedMemory, address: &Pointer| {
-            crate::kernel::memory_provenance::canonical_value_load_memory(memory, address, 8);
+            crate::kernel::memory_history::canonical_value_load_memory(memory, address, 8);
             Pointer::canonical_loaded_value(memory, address)
         };
         let unrelated = Pointer {

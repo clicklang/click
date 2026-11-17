@@ -118,7 +118,7 @@ inventory, and re-runs semantic export and proof verification with Clang
 [`feerate-command.json.in`](feerate-command.json.in) is the selected command
 from the real Bitcoin CMake-generated compilation database, with only the
 checkout/build/sysroot paths and pinned Clang executable/resource paths
-relocated for the test machine. [`fixture-provenance.json`](fixture-provenance.json)
+relocated for the test machine. [`fixture-manifest.json`](fixture-manifest.json)
 records the release commit, original database and import-lock identities,
 archive digest, and source, package, and originating Clang executable hashes.
 The gate does not rerun Bitcoin's whole CMake configuration; that remains the
@@ -264,7 +264,7 @@ imports and lowers the complete unchanged `FeeFrac::Div`. Its separate
 `sysroot/usr/include/c++/12/string_view` to SHA-256
 `9b1a575ffad1e8575cd6fc1c9a24b0cdde3793275be431726cc9c1b178a8733c`.
 The artifact retains `"d > 0"`, the resolved `std::basic_string_view<char>` type,
-by-value binding, and constructor provenance. The source, archive, 320-file
+by-value binding, and constructor origin. The source, archive, 320-file
 closure, and real compiler command remain unchanged.
 
 Bitcoin's `Assume` expands to `inline_assertion_check<false>` in `util/check.h`,
@@ -783,7 +783,7 @@ validation rejects forged edges, layouts and cycles. Inherited source reads/writ
 implicit method/reference receivers now use
 ordered nominal base projections, including mixed field/base paths. Root
 constness and sibling authority are retained. Direct Boolean condition calls now normalize once before branching;
-locked-header ordinary executable calls now retain per-function source provenance.
+locked-header ordinary executable calls now retain per-function source origin.
 Scalar-call result conversions preserve the callee type before the wrapper's
 `CAmount` alias conversion. The composition proof above uses these features.
 
@@ -798,7 +798,7 @@ descriptor unchanged. The caller receives its borrowed memory on either exit.
 
 `streams-input-supplement.tar.gz` adds only the missing original Bitcoin,
 libstdc++ and Clang resource headers. It leaves `input-closure.tar.gz`
-unchanged. `streams-input-provenance.json` pins each supplemental file and
+unchanged. `streams-input-manifest.json` pins each supplemental file and
 both archives. The extra libstdc++ header comes from the same SHA-256-pinned
 Debian package as the original fixture. Clang's resource headers are relocated
 inside the dependency root so `size_t` retains its actual declaration identity

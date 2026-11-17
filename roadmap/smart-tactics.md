@@ -424,7 +424,7 @@ or consumption route.
 
 The retained summary rule now also binds literal/parameter footprints of
 one-level composite children to consumed input clauses. Unguarded parameter-only borrowed
-children keep entry provenance; conversions, loads, and unmatched footprints
+children keep entry origin; conversions, loads, and unmatched footprints
 retain their boundary checks. Composite scaling grows selected body parts as
 well as retained same-block owners and both alias shapes at 4/16/64.
 Iterated `take`/`scatter` now construct their exposed ownership from the checked

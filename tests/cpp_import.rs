@@ -12718,7 +12718,7 @@ template<bool Debug, class T> constexpr T&& check(T&& condition, const Location&
 "#;
 
 #[test]
-fn consteval_library_metadata_keeps_proof_obligations_and_compiler_provenance() {
+fn consteval_library_metadata_keeps_proof_obligations_and_compiler_origin() {
     let cpp = "#include \"gate.h\"\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
     let project = consteval_library_fixture(CONSTEVAL_LIBRARY_HEADER, cpp);
     refresh_import(&project.config()).unwrap();
@@ -12844,7 +12844,7 @@ int32 guarded(int32& memory, int32 n) { owns memory; requires memory == 7; requi
 
 #[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
-fn consteval_library_metadata_offline_checker_rejects_forged_provenance_and_kind() {
+fn consteval_library_metadata_offline_checker_rejects_forged_origin_and_kind() {
     use sha2::{Digest, Sha256};
     let cpp = "#include \"gate.h\"\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
     for change in ["file", "function", "specialization", "too_many", "kind"] {

@@ -265,7 +265,7 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
     assert!(context.opaque_pointer_covers(&p, &position(start + 2), 0));
     assert!(!context.opaque_pointer_covers(&p, &position(start + 2), 4));
     assert!(!context.opaque_pointer_covers(&p, &position(1), 0));
-    let (allowed, used) = crate::kernel::assumptions::collect_reasoning_provenance(|| {
+    let (allowed, used) = crate::kernel::assumptions::collect_consulted_premises(|| {
         context.opaque_pointer_covers(&p, &position(start + 1), 0)
     });
     assert!(allowed && used.contains(&coverage));

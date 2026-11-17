@@ -78,8 +78,8 @@ fn address_separation_preserves_scope_alias_and_exact_sources() {
             .restricted_to_facts(&[], &[])
             .contains_known(&different(&a, &c))
     );
-    let (_, premises) = crate::kernel::assumptions::collect_reasoning_provenance(|| {
-        crate::kernel::assumptions::capture_implicit_reasoning_provenance(|| {
+    let (_, premises) = crate::kernel::assumptions::collect_consulted_premises(|| {
+        crate::kernel::assumptions::capture_implicit_consulted_premises(|| {
             child.contains_known(&different(&a, &c))
         })
     });

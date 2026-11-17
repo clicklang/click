@@ -2,7 +2,7 @@
 
 Click's kernel `ProofObject` is the persistent semantic representation of an
 evolving proof. The language-layer `Proof` wrapper pairs that opaque handle
-with source context and proof provenance. Together they let explicit tactics
+with source context and proof lineage. Together they let explicit tactics
 and smart search share one checked-transition boundary while keeping semantic
 authority separate from the record used to explain or expand the result.
 
@@ -15,7 +15,7 @@ remaining operation-to-search calls; this is not yet a complete efficiency bound
 
 The kernel `ProofObject` owns an immutable `ProofState` and the focused branch
 cursor into that state. The language-layer `Proof` wrapper pairs that opaque
-handle with a shared checking context and Surface provenance `ProofNode`.
+handle with a shared checking context and Surface lineage `ProofNode`.
 Applying a checked operation returns a successor that shares unchanged
 structure with its ancestor. A smart tactic can therefore branch, inspect
 alternatives, and abandon candidates without cloning the complete logical or
@@ -62,7 +62,7 @@ derive or bless propositions themselves, so keeping raw callers inside the
 kernel is an explicit trusted boundary guarded by a source-scope regression.
 For proposition `if` and `cases`, the kernel allocates the audited split and
 sibling identities, checks complementary or available case facts, and owns the
-closed-arm join. Surface provenance independently proves that serialized arm
+closed-arm join. Surface lineage independently proves that serialized arm
 steps descend through the exact split marker; it never manufactures branch
 state. A source `cases` may establish its disjunction through an ordinary
 nested `have` before the split. The driver uses the ordinary implicit closer,
@@ -142,7 +142,7 @@ or grants authority to the written form. Shadowed names, ambiguous mappings, and
 missing facts take the ordinary citation-lowering path. New goals and term
 construction keep their existing lowering rules.
 Structural loop-effect scopes may restore an already allocated retired cursor
-for provenance, but cannot invent a branch identity; the kernel also refuses
+for lineage, but cannot invent a branch identity; the kernel also refuses
 to retire their frontier until its loop-effect goal is checked closed.
 Resource scope close publishes its checked state and fact delta on the
 owning frontier or outcome. Outcome closure projects only the restored
@@ -157,19 +157,19 @@ assemble or install a whole semantic state.
 Result-aware outcome state uses the same split as execution state: the kernel
 owns its result, C state, facts, and crossed effects. Source requirement identity
 comes from the immutable entry-origin index, independently of subsequently
-introduced facts. Surface proposition records and diagnostic provenance remain
+introduced facts. Surface proposition records and diagnostic metadata remain
 an opaque language presentation.
 Untrusted smart selection
 lives outside `proof_object/` and may inspect its read-only planning interface
 or publish descendants created by checked proof operations.
 Contextual Surface Click lowering likewise lives beside the language-layer
 proof drivers; the checked core retains only the derivation lineage from which
-surface certificate provenance is extracted.
+the surface certificate is extracted.
 
 The borrowed parser, project-environment, lowering, and diagnostic inputs are
 grouped in `src/surface/proof/language_context.rs`. They are language
 context, not persistent proof state. Surface `ProofStep` lineage and checkpoint
-extraction are isolated in `proof_object/provenance.rs`; that lineage records
+extraction are isolated in `proof_object/lineage.rs`; that lineage records
 checked successors but does not own semantic state or successor authority.
 
 Goals carry the facts, resources, and symbolic execution state relevant to one
@@ -184,7 +184,7 @@ explicit tactic block. Parsed tactic statements become `ProofTactic` values.
 Each tactic has a `TacticClass` used by checking, instrumentation, profiling,
 and expansion.
 
-`Proof` provenance retains the surface-expressible operation that produced each
+`Proof` lineage retains the surface-expressible operation that produced each
 checked successor. `ProofCertificate` is the current structured serialization
 of those operations as `ProofStep` values, including nested scopes and
 branches. It can be rendered back to surface tactics for expansion. The
@@ -202,7 +202,7 @@ its written tail is walked, so these completed splits do not accumulate depth.
 
 No `ProofStep` is smart or internal-only, and both certificate constructors
 apply one admission rule: `from_proof_tactics` classifies source tactics and
-`from_steps` classifies serialized provenance, so a leaf that no explicit
+`from_steps` classifies serialized lineage, so a leaf that no explicit
 proof could write is rejected from either direction. A smart tactic therefore
 has no step of its own. The implicit back-edge closure of a loop's
 `preserve` script, for example, plans the bundle body, and the step retained
@@ -225,7 +225,7 @@ Kernel `ProofExecutionState` pairs that core with an opaque language
 `ExecutionProofPresentation` containing only Surface Click construction data:
 recorded states and their selectors, source text,
 case assumptions, frontier loop clauses, planned statement transitions,
-branch and outcome provenance, deferred post-execution tactics, and the
+branch and outcome evidence, deferred post-execution tactics, and the
 `SurfaceRecord` used for certificate extraction. Its `ExpansionCursor` records
 where a source tactic's expansion is being captured and holds no semantic
 state. Core access is explicit as `execution.core`; the presentation does not
@@ -349,7 +349,7 @@ interface includes an owned, arm-sensitive resource that represents the
 lifetime. The kernel's interface abstraction retains the union of potential
 live allocations, keeps a tombstone only when every arm agrees that the
 allocation is retired, and forgets branch-local cell values behind a memory
-provenance barrier. It then checks that the exported resource expands to the
+history barrier. It then checks that the exported resource expands to the
 allocation on the retaining arm and not on the freeing arm. A conditional
 `HeapAllocationFreed` fact is therefore validated inside the branch evidence
 but is not published as an unconditional free effect for the joined state.
@@ -870,10 +870,10 @@ time and a certificate can encode. That the search-based `solve` decision
 procedure could decide a goal is not a criterion; it is a diagnostic, not
 an authority.
 
-For expansion, the completed proof's provenance is filtered to the selected
+For expansion, the completed proof's lineage is filtered to the selected
 source site and rendered as an explicit Surface Click proof. The complete
 rewritten source is then parsed and verified through the ordinary entry point.
-That check validates provenance extraction, surface synthesis, rendering,
+That check validates lineage extraction, surface synthesis, rendering,
 parsing, lowering, and source interpretation without preserving a second
 semantic proof engine.
 
@@ -962,7 +962,7 @@ The target invariants are:
 - smart success is a completed checked descendant, not an unchecked plan;
 - selectors resolve against the focused state where their operation applies;
 - proof checking doesn't depend on failed-search history;
-- expansion extracts exact attributed provenance and emits verifiable Surface
+- expansion extracts exact attributed lineage and emits verifiable Surface
   Click;
 - persistent proof-state sharing must not permit mutation of an earlier state;
 - instrumentation can observe work but cannot change the validity decision.

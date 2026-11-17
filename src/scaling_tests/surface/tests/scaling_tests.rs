@@ -3471,7 +3471,7 @@ fn an_array_fact_carried_across_local_stores_scales_linearly() {
 /// members.
 ///
 /// This is the shape that pays for
-/// `memory_provenance::owned_composition_store_separated_evidence`: it runs
+/// `memory_history::owned_composition_store_separated_evidence`: it runs
 /// per surviving cell per store, and looks each side up in the composition's
 /// own block bucket, so a context holding many owned ranges is exactly where
 /// a per-member scan would show.

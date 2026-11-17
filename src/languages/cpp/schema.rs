@@ -229,7 +229,7 @@ impl CppLibraryMetadata {
                     || !metadata.literal.is_ascii()
                     || metadata.literal.as_bytes().contains(&0)
                 {
-                    return Err("invalid C++ literal metadata contract or provenance".into());
+                    return Err("invalid C++ literal metadata contract or origin".into());
                 }
                 Ok(())
             }
@@ -255,7 +255,7 @@ impl CppConstevalMetadata {
             || self.function.len() > 256
             || !valid_metadata_file(&self.declaration_file)
         {
-            return Err("invalid C++ consteval metadata provenance".into());
+            return Err("invalid C++ consteval metadata origin".into());
         }
         Ok(())
     }

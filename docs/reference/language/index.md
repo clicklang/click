@@ -4412,7 +4412,7 @@ with `|`, such as `(((word & 7) | address(p)) & 3) == (word & 3)`.
 
 The low-level reads and `byte_offset` are Surface Click escape hatches, not
 Kernel Click syntax. The canonical
-renderer prefers `owner->field` whenever imported layout provenance identifies
+renderer prefers `owner->field` whenever imported layout origin identifies
 the address. Expansion may emit a low-level read only when no source field
 place is available.
 

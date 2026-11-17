@@ -81,7 +81,7 @@ mod tests {
             ));
             assert!(BooleanOperandView::Shared(root).is_bool_value_form());
             assert!(
-                crate::kernel::memory_provenance::transport_framed_common_condition(
+                crate::kernel::memory_history::transport_framed_common_condition(
                     root,
                     &Memory::new(),
                     None

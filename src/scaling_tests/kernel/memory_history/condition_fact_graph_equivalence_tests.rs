@@ -1,4 +1,4 @@
-// Scaling tests of `src/kernel/memory_provenance.rs` (module `condition_fact_graph_equivalence_tests`): deterministic work measured at several
+// Scaling tests of `src/kernel/memory_history.rs` (module `condition_fact_graph_equivalence_tests`): deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 

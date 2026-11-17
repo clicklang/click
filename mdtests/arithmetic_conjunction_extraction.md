@@ -4,7 +4,7 @@ The loop invariant is deliberately nested as `A and (B and C)`.  The
 preservation proof first extracts the needed member, then uses it as the exact
 premise of the arithmetic step.
 
-```c filename=arithmetic_conjunction_provenance.c
+```c filename=arithmetic_conjunction_extraction.c
 int32 drain(int32 n) {
     while (n > 0) {
         n = n - 1;
@@ -14,7 +14,7 @@ int32 drain(int32 n) {
 ```
 
 ```click
-verifying "arithmetic_conjunction_provenance.c";
+verifying "arithmetic_conjunction_extraction.c";
 
 int32 drain(int32 n) {
     requires n >= 0 and (n <= 2147483647 and n == n);

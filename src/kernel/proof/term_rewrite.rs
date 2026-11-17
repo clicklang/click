@@ -3752,9 +3752,12 @@ impl<'a> TermRewrite<'a> {
                                 )
                                 .unwrap_or_else(|| memory.clone());
                                 AlgebraicTermNode::MemoryLoad {
-                                    memory: crate::kernel::memory_provenance::canonical_value_load_memory(
-                                        &origin, &moved_pointer, crate::kernel::ABSTRACT_VALUE_WIDTH,
-                                    ),
+                                    memory:
+                                        crate::kernel::memory_history::canonical_value_load_memory(
+                                            &origin,
+                                            &moved_pointer,
+                                            crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                        ),
                                     pointer: moved_pointer,
                                 }
                             }
@@ -6612,7 +6615,7 @@ impl<'a> TermRewrite<'a> {
                     && self.pointer_exact.is_none()
                     && self.pointer_offset_exact.is_none()
                 {
-                    crate::kernel::memory_provenance::canonical_projected_load_memory(
+                    crate::kernel::memory_history::canonical_projected_load_memory(
                         &memory, &rewritten,
                     )
                 } else {
@@ -8837,11 +8840,8 @@ mod pointer_integer_rewrite_tests {
             },
             ProgramValue::UInt32(7u32.into()),
         ));
-        let _ = crate::kernel::memory_provenance::canonical_value_load_memory(
-            &partial,
-            from.pointer(),
-            4,
-        );
+        let _ =
+            crate::kernel::memory_history::canonical_value_load_memory(&partial, from.pointer(), 4);
         let expected = AlgebraicTermNode::parameter_load(memory, to.pointer().clone(), parameter);
         assert_ne!(expected, stored, "a rewritten logical read stays a read");
         let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);

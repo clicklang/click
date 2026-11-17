@@ -5031,7 +5031,7 @@ impl Pointer {
         address: &Pointer,
     ) -> Result<PointerValue, Self> {
         let source = memory.unchanged_bytes_source();
-        let canonical = crate::kernel::memory_provenance::canonical_value_load_memory(
+        let canonical = crate::kernel::memory_history::canonical_value_load_memory(
             &source,
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,

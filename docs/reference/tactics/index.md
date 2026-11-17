@@ -180,7 +180,7 @@ whatever remains and closes every open goal
 each arm of a proof `if` that ends a proof, the arm's own closer closes that
 arm's goals
 (`mdtests/solve_closes_each_arm_of_a_split_that_ends_a_proof.md`). Successful smart tactics and the implicit closer retain the checked
-surface provenance that `click expand` can render as an explicit proof.
+surface evidence that `click expand` can render as an explicit proof.
 Source-premise selection skips synthesized candidates whose rendered
 propositions do not tokenize as Click, rather than counting a route through an
 unnamed kernel value as a successful expandable proof.

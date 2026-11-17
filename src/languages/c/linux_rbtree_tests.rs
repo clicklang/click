@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use sha2::{Digest, Sha256};
 
 use super::compiler_import::PreparedCImport;
-use super::{provenance::CSourceMap, syntax};
+use super::{source_map::CSourceMap, syntax};
 use crate::project::{self, Project};
 use crate::source::SourcePosition;
 
@@ -105,15 +105,15 @@ fn sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
-fn provenance() -> serde_json::Value {
-    serde_json::from_slice(&fs::read(fixture().join("provenance.json")).unwrap()).unwrap()
+fn manifest() -> serde_json::Value {
+    serde_json::from_slice(&fs::read(fixture().join("manifest.json")).unwrap()).unwrap()
 }
 
 fn text<'a>(value: &'a serde_json::Value, path: &[&str]) -> &'a str {
     path.iter()
         .fold(value, |value, key| &value[*key])
         .as_str()
-        .unwrap_or_else(|| panic!("provenance has no string at {path:?}"))
+        .unwrap_or_else(|| panic!("manifest has no string at {path:?}"))
 }
 
 /// The closure extracted into a fresh directory, removed on drop.
@@ -126,27 +126,27 @@ impl Drop for Closure {
 }
 
 /// Extracts the checked-in archive after checking it, member by member,
-/// against the provenance record.
-fn extract_closure(provenance: &serde_json::Value) -> Closure {
+/// against the manifest.
+fn extract_closure(manifest: &serde_json::Value) -> Closure {
     let archive = fs::read(fixture().join("input-closure.tar.gz")).unwrap();
-    extract_archive(provenance, &archive, true)
+    extract_archive(manifest, &archive, true)
 }
 
 /// `check_archive_hash` is false only for the tamper regressions, which
 /// reach the per-member checks behind the whole-archive hash.
 fn extract_archive(
-    provenance: &serde_json::Value,
+    manifest: &serde_json::Value,
     archive: &[u8],
     check_archive_hash: bool,
 ) -> Closure {
     if check_archive_hash {
         assert_eq!(
             sha256(archive),
-            text(provenance, &["closure", "archive_sha256"]),
-            "input-closure.tar.gz differs from provenance.json"
+            text(manifest, &["closure", "archive_sha256"]),
+            "input-closure.tar.gz differs from manifest.json"
         );
     }
-    let mut expected = provenance["closure"]["files"]
+    let mut expected = manifest["closure"]["files"]
         .as_array()
         .unwrap()
         .iter()
@@ -160,7 +160,7 @@ fn extract_archive(
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let notices = provenance["closure"]["notices"]
+    let notices = manifest["closure"]["notices"]
         .as_array()
         .unwrap()
         .iter()
@@ -215,8 +215,8 @@ fn extract_archive(
 
 /// A project laid out as the committed import expects: the checked closure
 /// extracted into `inputs/`, beside the named fixture files.
-fn import_layout(provenance: &serde_json::Value, files: &[&str]) -> Closure {
-    let extracted = extract_closure(provenance);
+fn import_layout(manifest: &serde_json::Value, files: &[&str]) -> Closure {
+    let extracted = extract_closure(manifest);
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let root = fs::canonicalize(std::env::temp_dir())
         .unwrap()
@@ -241,11 +241,11 @@ fn read_lock(path: &Path) -> serde_json::Value {
 }
 
 /// Whether the host compiler driver and `cc1` are the recorded binaries.
-fn recorded_toolchain(provenance: &serde_json::Value) -> Result<(), String> {
+fn recorded_toolchain(manifest: &serde_json::Value) -> Result<(), String> {
     for tool in ["gcc", "cc1"] {
-        let path = text(provenance, &["toolchain", tool, "path"]);
+        let path = text(manifest, &["toolchain", tool, "path"]);
         let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
-        if sha256(&bytes) != text(provenance, &["toolchain", tool, "sha256"]) {
+        if sha256(&bytes) != text(manifest, &["toolchain", tool, "sha256"]) {
             return Err(format!("{path} is not the recorded binary"));
         }
     }
@@ -255,11 +255,8 @@ fn recorded_toolchain(provenance: &serde_json::Value) -> Result<(), String> {
 /// `Ok(None)` when the host has the recorded compiler. Otherwise the
 /// frontier checks cannot run: that is a notice to print, or an error when
 /// the recorded compiler is required.
-fn toolchain_gate(
-    provenance: &serde_json::Value,
-    required: bool,
-) -> Result<Option<String>, String> {
-    match recorded_toolchain(provenance) {
+fn toolchain_gate(manifest: &serde_json::Value, required: bool) -> Result<Option<String>, String> {
+    match recorded_toolchain(manifest) {
         Ok(()) => Ok(None),
         Err(reason) if required => Err(format!("{REQUIRE_TOOLCHAIN} is set, but {reason}")),
         Err(reason) => Ok(Some(format!(
@@ -272,29 +269,29 @@ fn toolchain_gate(
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn linux_rbtree_gate_reports_or_refuses_another_compiler() {
     // Another compiler is simulated by recording a different identity.
-    let mut other_binary = provenance();
+    let mut other_binary = manifest();
     other_binary["toolchain"]["cc1"]["sha256"] = "0".repeat(64).into();
-    let mut missing = provenance();
+    let mut missing = manifest();
     missing["toolchain"]["gcc"]["path"] = "/nonexistent/click-linux-rbtree-gcc".into();
-    for (provenance, reason) in [
+    for (manifest, reason) in [
         (other_binary, "is not the recorded binary"),
         (missing, "/nonexistent/click-linux-rbtree-gcc"),
     ] {
         // The reason does not depend on whether this host has the recorded
         // compiler: an unreadable recorded `gcc` path is also "another compiler".
-        let Err(actual) = recorded_toolchain(&provenance) else {
+        let Err(actual) = recorded_toolchain(&manifest) else {
             panic!("a changed identity must not match the host compiler");
         };
-        if fs::metadata(text(&provenance, &["toolchain", "gcc", "path"])).is_ok()
-            && fs::metadata(text(&provenance, &["toolchain", "cc1", "path"])).is_ok()
+        if fs::metadata(text(&manifest, &["toolchain", "gcc", "path"])).is_ok()
+            && fs::metadata(text(&manifest, &["toolchain", "cc1", "path"])).is_ok()
         {
             assert!(actual.contains(reason), "{actual}");
         }
-        let notice = toolchain_gate(&provenance, false)
+        let notice = toolchain_gate(&manifest, false)
             .expect("another compiler is not a failure by default")
             .expect("another compiler must be reported, not silently accepted");
         assert!(notice.contains("NOT CHECKED"), "{notice}");
-        let refusal = toolchain_gate(&provenance, true)
+        let refusal = toolchain_gate(&manifest, true)
             .expect_err("a required recorded compiler must fail the gate");
         assert!(refusal.contains(REQUIRE_TOOLCHAIN), "{refusal}");
     }
@@ -312,7 +309,7 @@ fn panic_message(result: std::thread::Result<Closure>) -> String {
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn linux_rbtree_gate_refuses_a_tampered_closure() {
-    let provenance = provenance();
+    let manifest = manifest();
     let archive = fs::read(fixture().join("input-closure.tar.gz")).unwrap();
 
     // One flipped byte anywhere changes the archive hash.
@@ -320,12 +317,9 @@ fn linux_rbtree_gate_refuses_a_tampered_closure() {
     let middle = flipped.len() / 2;
     flipped[middle] ^= 1;
     let message = panic_message(std::panic::catch_unwind(|| {
-        extract_archive(&provenance, &flipped, true)
+        extract_archive(&manifest, &flipped, true)
     }));
-    assert!(
-        message.contains("differs from provenance.json"),
-        "{message}"
-    );
+    assert!(message.contains("differs from manifest.json"), "{message}");
 
     // Behind the archive hash, each member is checked on its own: a changed
     // file, a missing file, and an unrecorded file are each refused.
@@ -383,20 +377,20 @@ fn linux_rbtree_gate_refuses_a_tampered_closure() {
     ];
     for (tampered, expected) in cases {
         let message = panic_message(std::panic::catch_unwind(|| {
-            extract_archive(&provenance, &tampered, false)
+            extract_archive(&manifest, &tampered, false)
         }));
         assert!(message.contains(expected), "{expected}: {message}");
     }
 }
 
 #[test]
-fn linux_rbtree_closure_matches_its_provenance() {
-    let provenance = provenance();
-    let closure = extract_closure(&provenance);
-    let files = provenance["closure"]["files"].as_array().unwrap();
+fn linux_rbtree_closure_matches_its_manifest() {
+    let manifest = manifest();
+    let closure = extract_closure(&manifest);
+    let files = manifest["closure"]["files"].as_array().unwrap();
     assert_eq!(
         files.len() as u64,
-        provenance["closure"]["file_count"].as_u64().unwrap()
+        manifest["closure"]["file_count"].as_u64().unwrap()
     );
     assert!(closure.0.join("lib/rbtree.c").is_file());
 
@@ -409,7 +403,7 @@ fn linux_rbtree_closure_matches_its_provenance() {
         config["sources"]["lib/rbtree.c"],
         serde_json::json!({"projection": "dependency-closure"})
     );
-    let mut recorded = provenance["preprocess"]["argv"]
+    let mut recorded = manifest["preprocess"]["argv"]
         .as_array()
         .unwrap()
         .iter()
@@ -426,18 +420,18 @@ fn linux_rbtree_closure_matches_its_provenance() {
     assert_eq!(configured, recorded);
     assert_eq!(
         config["compiler"].as_str().unwrap(),
-        text(&provenance, &["preprocess", "program"])
+        text(&manifest, &["preprocess", "program"])
     );
 }
 
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
-    let provenance = provenance();
-    let closure = import_layout(&provenance, &[SIDECAR, project::FILE_NAME]);
+    let manifest = manifest();
+    let closure = import_layout(&manifest, &[SIDECAR, project::FILE_NAME]);
     let required = std::env::var_os(REQUIRE_TOOLCHAIN).is_some_and(|value| !value.is_empty());
     if let Some(notice) =
-        toolchain_gate(&provenance, required).unwrap_or_else(|error| panic!("{error}"))
+        toolchain_gate(&manifest, required).unwrap_or_else(|error| panic!("{error}"))
     {
         eprintln!("{notice}");
         return;
@@ -451,7 +445,7 @@ fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
     let artifact = fs::read(closure.0.join(ARTIFACT)).unwrap();
     assert_eq!(
         sha256(&artifact),
-        text(&provenance, &["preprocess", "output", "sha256"]),
+        text(&manifest, &["preprocess", "output", "sha256"]),
         "the importer's artifact differs from the recorded preprocessed output"
     );
     let produced = unit_lock(&closure.0);
@@ -503,12 +497,12 @@ fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
 
     // The recorded preprocessing, run directly, reproduces the recorded
     // artifact from the closure alone.
-    let mut command = Command::new(text(&provenance, &["preprocess", "program"]));
+    let mut command = Command::new(text(&manifest, &["preprocess", "program"]));
     command.current_dir(&inputs).env_clear();
-    for argument in provenance["preprocess"]["argv"].as_array().unwrap() {
+    for argument in manifest["preprocess"]["argv"].as_array().unwrap() {
         command.arg(argument.as_str().unwrap());
     }
-    for (name, value) in provenance["preprocess"]["environment"].as_object().unwrap() {
+    for (name, value) in manifest["preprocess"]["environment"].as_object().unwrap() {
         command.env(name, value.as_str().unwrap());
     }
     let output = command.output().expect("run the recorded compiler");
@@ -519,13 +513,11 @@ fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
     );
     assert_eq!(
         output.stdout.len() as u64,
-        provenance["preprocess"]["output"]["bytes"]
-            .as_u64()
-            .unwrap()
+        manifest["preprocess"]["output"]["bytes"].as_u64().unwrap()
     );
     assert_eq!(
         sha256(&output.stdout),
-        text(&provenance, &["preprocess", "output", "sha256"]),
+        text(&manifest, &["preprocess", "output", "sha256"]),
         "the preprocessed translation unit differs from the recorded artifact"
     );
 }
@@ -537,9 +529,9 @@ fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn linux_rbtree_locked_import_loads_offline() {
-    let provenance = provenance();
+    let manifest = manifest();
     let layout = import_layout(
-        &provenance,
+        &manifest,
         &[SIDECAR, project::FILE_NAME, project::LOCK_NAME, ARTIFACT],
     );
     let imports = load(&layout.0).expect("load the committed lock offline");
@@ -600,7 +592,7 @@ fn linux_rbtree_locked_import_loads_offline() {
 fn linux_rbtree_locked_artifact_frontier() {
     assert_eq!(
         sha256(&fs::read(fixture().join(ARTIFACT)).unwrap()),
-        text(&provenance(), &["preprocess", "output", "sha256"]),
+        text(&manifest(), &["preprocess", "output", "sha256"]),
         "the committed artifact is the recorded preprocessed output"
     );
     let artifact = fs::read_to_string(fixture().join(ARTIFACT)).expect("the locked artifact");

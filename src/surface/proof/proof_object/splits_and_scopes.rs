@@ -554,7 +554,7 @@ impl<'a> Proof<'a> {
             site: self.site.clone(),
             context: self.context.clone(),
             state,
-            // The marker records the split instance in provenance; its
+            // The marker records the split instance in the lineage; its
             // identity is what the join verifies (identity rule 3).
             node: ProofNode::marker(&self.node, self.focused_branch_id(), ids.to_vec()),
         };
@@ -1224,7 +1224,7 @@ impl<'a> Proof<'a> {
 
     /// Opens one composite resource body as an execution scope. Entry is an
     /// audited representation transition, not a separately serialized
-    /// `unfold`; the child Proof starts fresh provenance and the eventual join
+    /// `unfold`; the child Proof starts a fresh lineage and the eventual join
     /// records the child certificate inside one `Open` step.
     ///
     /// `written_close_proof` is the proof `open(r) { ... } by { ... }` writes

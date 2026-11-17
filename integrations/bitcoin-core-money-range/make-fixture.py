@@ -202,7 +202,7 @@ def main():
         "input_file_count": len(files),
         "input_closure_sha256": digest(archive_bytes),
     }
-    (here / "fixture-provenance.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (here / "fixture-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
 
 if __name__ == "__main__":

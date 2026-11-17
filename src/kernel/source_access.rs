@@ -137,7 +137,7 @@ impl PartialOrd for StatementStoreSource {
 }
 
 /// Constructed only from a kernel producer's completed read or checked store.
-/// Matching source provenance alone never constructs this observation.
+/// Matching source origin alone never constructs this observation.
 #[derive(Debug)]
 pub(crate) struct ExecutedReferenceAccess<'a> {
     source: &'a ReferenceAccessSourceId,
@@ -153,7 +153,7 @@ pub(crate) enum ExecutedReferenceBoundary<'a> {
     Store(ExecutedReferenceAccess<'a>),
 }
 
-/// One optional provenance slot for completed reads and reference births.
+/// One optional source-origin slot for completed reads and reference births.
 /// Payloads are shared and allocated only for observed producers; comparison
 /// ignores metadata. Pure facts do not pay for an extra slot for each kind.
 #[derive(Clone, Debug, Default)]

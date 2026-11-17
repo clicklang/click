@@ -89,7 +89,7 @@ never whichever available fact happens to raise to that same text.
 The kernel's persistent `ProofObject` owns typed obligations, facts, symbolic
 program execution, resources, focus, and checked successor authority. A
 Surface-layer `Proof` pairs that opaque handle with checking context and
-Surface provenance. Explicit tactics request named simple or structural
+Surface lineage. Explicit tactics request named simple or structural
 operations. Smart planners try the same operations transactionally on
 persistent `Proof` descendants; they can't construct semantic successors
 directly. Kernel APIs expose the primitive logical, execution, memory, and
@@ -121,7 +121,7 @@ captured.
 
 `ProofCertificate` is the current structured form for a surface-expressible
 explicit proof. In the intended architecture it is serialization: expansion
-extracts attributed operations from checked `Proof` provenance only when proof
+extracts attributed operations from checked `Proof` lineage only when proof
 text or an inspection result is requested. Scalar return expressions can
 produce distinct outcomes without a written C branch; certificate synthesis
 separates their different endings with a guard each outcome decides. Guards

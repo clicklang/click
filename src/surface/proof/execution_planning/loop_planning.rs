@@ -288,7 +288,7 @@ fn initialize_script_layout<'a>(
 }
 
 /// Source positions derived once with the verification layout. Expansion
-/// consumes retained provenance without interpreting the source layout again.
+/// consumes retained evidence without interpreting the source layout again.
 struct InitializePhaseExpansion {
     helpers: usize,
     individual_bodies: bool,

@@ -1609,7 +1609,7 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
     }
     // A structured proof produced one check context per logical case, and
     // each context's claim-level surface record covers only the execution
-    // paths its case owns. Expansion synthesizes their provenance at the
+    // paths its case owns. Expansion synthesizes their evidence at the
     // recorded branch choices; a per-context record must not survive as the
     // claim's expansion.
     if context_count > 1 {

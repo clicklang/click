@@ -511,7 +511,7 @@ pub fn program_function_outcomes_program_state_definitionally_equal(
 /// Compares the observable program state of two return paths by matching their
 /// certified execution histories. Resource representation remains the
 /// responsibility of the separate resource certificate.
-pub fn program_function_outcomes_program_state_equal_by_execution_provenance(
+pub fn program_function_outcomes_program_state_equal_by_derivation(
     left: &FunctionOutcome,
     left_facts: &(impl ExecutionFactSource + ?Sized),
     right: &FunctionOutcome,
@@ -531,7 +531,7 @@ pub fn program_function_outcomes_program_state_equal_by_execution_provenance(
     else {
         return false;
     };
-    memories_equal_by_execution_provenance(
+    memories_equal_by_derivation(
         left_state.memory(),
         left_facts,
         right_state.memory(),
@@ -544,7 +544,7 @@ pub fn program_function_outcomes_program_state_equal_by_execution_provenance(
     )
 }
 
-fn memories_equal_by_execution_provenance(
+fn memories_equal_by_derivation(
     left_final: &Memory,
     left_facts: &(impl ExecutionFactSource + ?Sized),
     right_final: &Memory,

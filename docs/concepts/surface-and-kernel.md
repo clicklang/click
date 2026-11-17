@@ -21,7 +21,7 @@ Click owns their meaning and elaborates everything into Kernel Click over
 explicit memory states.
 
 Expansion travels in the other direction only through retained surface
-provenance and a canonical Surface Click renderer. It must never pretty-print
+lineage and a canonical Surface Click renderer. It must never pretty-print
 the kernel data model directly. Consequently, output from expansion and
 diagnostics is part of the public Surface Click language and must parse again
 with the ordinary parser.

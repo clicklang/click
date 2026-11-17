@@ -17,8 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::source::{SourcePosition, SourcePositionCursor};
 
-use super::provenance::CSourceMap;
 use super::source::ExpandedLineMap;
+use super::source_map::CSourceMap;
 pub use super::target::{LongRank, PlainChar};
 
 /// Stable documentation IDs for the accepted C surface. This registry
@@ -3017,7 +3017,7 @@ pub enum CExpression {
         field_struct_name: Option<String>,
         function_pointer_signature: Option<CallbackInterface>,
         array_shape: Option<Vec<u32>>,
-        /// Source provenance minted by the C parser.  This is absent on
+        /// Source origin minted by the C parser.  This is absent on
         /// parser-synthesized field loads used by aggregate copies.
         source: Option<CFieldSource>,
         /// The member access through the containing struct, for the
@@ -3746,7 +3746,7 @@ fn collect_natural_cycle_goto_targets<'a>(statement: &'a CStatement, targets: &m
 }
 
 impl CExpression {
-    /// Returns parser-minted provenance for a source-level scalar field load.
+    /// Returns parser-minted source origin for a source-level scalar field load.
     /// Synthesized aggregate-copy loads and all non-field expressions return
     /// `None`.
     pub fn field_source(&self) -> Option<&CFieldSource> {
@@ -10680,7 +10680,7 @@ impl Parser {
     }
 
     fn typeof_has_exact_struct_identity(&self, expression: &CExpression) -> bool {
-        // Layout provenance can survive a pointer cast, but GNU type
+        // Layout origin can survive a pointer cast, but GNU type
         // compatibility asks for the C type of the expression itself.
         match expression {
             CExpression::Variable(name) => self.variable_struct_values.contains_key(name),

@@ -140,7 +140,7 @@ fn partition_outcome_match(
     authority: &PureFactStore,
     query: &PureFactStore,
     facts: &mut Vec<Proposition>,
-    provenance: OutcomeProvenance,
+    outcome_evidence: OutcomeEvidence,
     lower: &impl Fn(
         &ClickProposition,
         &[Proposition],
@@ -151,14 +151,14 @@ fn partition_outcome_match(
         &ClickProposition,
         Option<&DeferredPostExecutionTactic>,
         &PureFactStore,
-        &OutcomeProvenance,
+        &OutcomeEvidence,
         Option<&OutcomeBindings>,
     ) -> Result<(Proposition, ProofCertificate), ClickError>,
-    emit: &mut impl FnMut(&[Proposition], OutcomeProvenance),
+    emit: &mut impl FnMut(&[Proposition], OutcomeEvidence),
 ) -> Result<OutcomeEvidenceFork, ClickError> {
     let bindings = node.lexical_bindings.or_else(|| {
         node.scope.and_then(|scope| {
-            provenance
+            outcome_evidence
                 .match_arms
                 .get(&scope)
                 .map(|(_, bindings)| bindings)
@@ -184,7 +184,7 @@ fn partition_outcome_match(
             .chain(cases.partition.additions_for_case(case))
             .cloned()
             .collect::<Vec<_>>();
-        let mut child = provenance.clone();
+        let mut child = outcome_evidence.clone();
         child.match_arms = child
             .match_arms
             .with_inserted(node.occurrence, (written, bindings.clone()));
@@ -236,7 +236,7 @@ fn descend_outcome_case(
     authority: &PureFactStore,
     query: &PureFactStore,
     facts: &mut Vec<Proposition>,
-    provenance: OutcomeProvenance,
+    outcome_evidence: OutcomeEvidence,
     fact: Option<Proposition>,
     lower: &impl Fn(
         &ClickProposition,
@@ -248,12 +248,12 @@ fn descend_outcome_case(
         &ClickProposition,
         Option<&DeferredPostExecutionTactic>,
         &PureFactStore,
-        &OutcomeProvenance,
+        &OutcomeEvidence,
         Option<&OutcomeBindings>,
     ) -> Result<(Proposition, ProofCertificate), ClickError>,
-    emit: &mut impl FnMut(&[Proposition], OutcomeProvenance),
+    emit: &mut impl FnMut(&[Proposition], OutcomeEvidence),
 ) -> Result<OutcomeEvidenceFork, ClickError> {
-    let mut child = provenance;
+    let mut child = outcome_evidence;
     child.branch_decisions.push(ExecutionBranchDecision {
         fingerprint: std::sync::OnceLock::from(ExecutionBranchDecisions::key(arm_case.surface)),
         condition: arm_case.surface.clone(),
@@ -289,7 +289,7 @@ fn partition_outcome_cases(
     authority: &PureFactStore,
     query: &PureFactStore,
     facts: &mut Vec<Proposition>,
-    provenance: OutcomeProvenance,
+    outcome_evidence: OutcomeEvidence,
     lower: &impl Fn(
         &ClickProposition,
         &[Proposition],
@@ -300,22 +300,22 @@ fn partition_outcome_cases(
         &ClickProposition,
         Option<&DeferredPostExecutionTactic>,
         &PureFactStore,
-        &OutcomeProvenance,
+        &OutcomeEvidence,
         Option<&OutcomeBindings>,
     ) -> Result<(Proposition, ProofCertificate), ClickError>,
-    emit: &mut impl FnMut(&[Proposition], OutcomeProvenance),
+    emit: &mut impl FnMut(&[Proposition], OutcomeEvidence),
 ) -> Result<OutcomeEvidenceFork, ClickError> {
     // Flat source haves are a sequence, not nested proof branches. Consume
     // them iteratively so a long explicit certificate does not grow the stack.
     // The enclosing arm owns the facts buffer's push/pop boundary.
     let mut next = next;
-    let mut provenance = provenance;
+    let mut outcome_evidence = outcome_evidence;
     let mut authority = authority.clone();
     let mut query = query.clone();
     let index = loop {
         check_verification_deadline()?;
         let Some(index) = next else {
-            emit(facts, provenance);
+            emit(facts, outcome_evidence);
             return Ok(OutcomeEvidenceFork::Keep);
         };
         let OutcomeNode::Have {
@@ -328,14 +328,14 @@ fn partition_outcome_cases(
             break index;
         };
         next = *continuation;
-        if provenance.checked_haves.get(occurrence).is_some() {
+        if outcome_evidence.checked_haves.get(occurrence).is_some() {
             continue;
         }
         let PostExecutionTactic::Have(have) = &source.tactic else {
             unreachable!("a have node retains its source have")
         };
         let bindings = scope.and_then(|scope| {
-            provenance
+            outcome_evidence
                 .match_arms
                 .get(&scope)
                 .map(|(_, bindings)| bindings)
@@ -344,13 +344,13 @@ fn partition_outcome_cases(
             &have.proposition,
             Some(source),
             &query,
-            &provenance,
+            &outcome_evidence,
             bindings,
         )?;
-        provenance
+        outcome_evidence
             .surface_propositions
             .record_lowering(&have.proposition, &kernel)?;
-        provenance.checked_haves = provenance
+        outcome_evidence.checked_haves = outcome_evidence
             .checked_haves
             .with_inserted(*occurrence, Arc::new(checked));
         facts.push(kernel.clone());
@@ -369,7 +369,7 @@ fn partition_outcome_cases(
                 authority,
                 query,
                 facts,
-                provenance,
+                outcome_evidence,
                 lower,
                 match_cases,
                 prove,
@@ -394,16 +394,16 @@ fn partition_outcome_cases(
     };
     let recorded = match (node.execution_route, &arm_surfaces) {
         (Some(position), _) => Some(
-            provenance
+            outcome_evidence
                 .branch_decisions
                 .value_for_route(position, node.condition)?,
         ),
-        (None, None) => provenance
+        (None, None) => outcome_evidence
             .branch_decisions
             .value_for_key(node.condition, node.fingerprint)?,
         (None, Some([left, right])) => {
             let holds = |surface: &ClickProposition| {
-                provenance
+                outcome_evidence
                     .branch_decisions
                     .value_for_key(surface, ExecutionBranchDecisions::key(surface))
                     .map(|value| value == Some(true))
@@ -424,7 +424,7 @@ fn partition_outcome_cases(
             authority,
             query,
             facts,
-            provenance,
+            outcome_evidence,
             lower,
             match_cases,
             prove,
@@ -433,7 +433,7 @@ fn partition_outcome_cases(
     }
     let bindings = node.lexical_bindings.or_else(|| {
         node.scope.and_then(|scope| {
-            provenance
+            outcome_evidence
                 .match_arms
                 .get(&scope)
                 .map(|(_, bindings)| bindings)
@@ -502,7 +502,7 @@ fn partition_outcome_cases(
             authority,
             query,
             facts,
-            provenance,
+            outcome_evidence,
             None,
             lower,
             match_cases,
@@ -514,23 +514,23 @@ fn partition_outcome_cases(
     // The driver retains the ordinary nested proof for source expansion.
     let existing_partition =
         CheckedProofCasePartition::check(authority, cases[0].clone(), cases[1].clone());
-    let mut provenance = provenance;
+    let mut outcome_evidence = outcome_evidence;
     let proved_authority;
     let proved_query;
     let (authority, query) = if node.disjunction && existing_partition.is_none() {
         let bindings = node.lexical_bindings.or_else(|| {
             node.scope.and_then(|scope| {
-                provenance
+                outcome_evidence
                     .match_arms
                     .get(&scope)
                     .map(|(_, bindings)| bindings)
             })
         });
-        let (kernel, have) = prove(node.condition, None, query, &provenance, bindings)?;
-        provenance
+        let (kernel, have) = prove(node.condition, None, query, &outcome_evidence, bindings)?;
+        outcome_evidence
             .surface_propositions
             .record_lowering(node.condition, &kernel)?;
-        provenance.case_obligations = provenance
+        outcome_evidence.case_obligations = outcome_evidence
             .case_obligations
             .with_inserted(node.occurrence, Arc::new(have));
         facts.push(kernel.clone());
@@ -566,7 +566,7 @@ fn partition_outcome_cases(
         &arm_facts[0],
         &query.with_kernel_checked_fact(positive.clone()),
         facts,
-        provenance.clone(),
+        outcome_evidence.clone(),
         Some(positive),
         lower,
         match_cases,
@@ -581,7 +581,7 @@ fn partition_outcome_cases(
         &arm_facts[1],
         &query.with_kernel_checked_fact(negative.clone()),
         facts,
-        provenance,
+        outcome_evidence,
         Some(negative),
         lower,
         match_cases,
@@ -3137,11 +3137,11 @@ impl<'a> Proof<'a> {
         };
         for path_index in 0..checked.paths().len() {
             check_verification_deadline()?;
-            let provenance = execution.provenance_for_outcome(path_index);
+            let outcome_evidence = execution.evidence_for_outcome(path_index);
             // A `cases` arm records that its own disjunct holds.
             if let Some((left, right)) = &sides {
                 let holds = |surface: &ClickProposition| {
-                    provenance
+                    outcome_evidence
                         .branch_decisions
                         .value_for_key(surface, ExecutionBranchDecisions::key(surface))
                         .map(|value| value == Some(true))
@@ -3152,7 +3152,7 @@ impl<'a> Proof<'a> {
                 continue;
             }
             let mut recorded = None;
-            for decision in provenance.branch_decisions.iter() {
+            for decision in outcome_evidence.branch_decisions.iter() {
                 if &decision.condition != condition {
                     continue;
                 }
@@ -3723,7 +3723,7 @@ mod outcome_case_tests {
                 &root,
                 &root,
                 &mut facts,
-                OutcomeProvenance {
+                OutcomeEvidence {
                     terminal_statement_case: None,
                     checked_leaf_facts: None,
                     loop_return: None,

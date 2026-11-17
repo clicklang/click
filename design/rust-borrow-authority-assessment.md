@@ -139,11 +139,11 @@ with completed kernel producer observations from the selected execution. It
 checks import identity, function, point, node, reference local and access kind,
 then retains the actual pointer and execution alongside the original borrow.
 
-Stores retain source provenance in their existing checked store certificate,
+Stores retain source origins in their existing checked store certificate,
 after memory checks succeed. Completed reads retain a private receipt even when
 a cached scalar returns without minting a new load variable. Read receipts match
 their exact memory state, pointer and type; rewritten facts discard that
-provenance. These private consequences are not path selectors. Source-bearing
+origin. These private consequences are not path selectors. Source-bearing
 producer records survive composition as a selected delta, without deduplicating
 two operations that happen to have the same semantic memory proposition.
 Source metadata remains outside statement/fact comparison and grants no resource
@@ -192,12 +192,12 @@ lookups; production transitions do not walk the ledger or resource context.
 
 ## Executed scalar-reference boundaries
 
-Rust lowering now attaches private source provenance to the assignment for a
+Rust lowering now attaches private source origin to the assignment for a
 direct mutable scalar reborrow. The ordinary assignment producer emits a
 private receipt only after successful assignment, checking the actual parent's
 pointer before the assignment against the child's pointer and pointer type
 afterward. Failed assignments and ordinary untagged pointer copies emit no
-borrow receipt. Source provenance stays outside statement/fact comparison;
+borrow receipt. Source origin stays outside statement/fact comparison;
 rewritten facts discard the receipt.
 
 `CheckedScalarReferenceEnd::bind_executed_endings` joins a completed borrow
@@ -213,7 +213,7 @@ without the selected borrow receipt suffice.
 These receipts are execution evidence, not recovery rights. They do not yet
 carry a local-reference lease or establish a dynamic invocation identity, and
 these receipts cannot activate the private scalar-memory lease adapter below.
-Private provenance tags remain comparison-neutral; recovery must additionally establish
+Private source-origin tags remain comparison-neutral; recovery must additionally establish
 the selected operation's membership in the locked source plan. Private
 receipt deltas retain each producer occurrence without scanning ambient facts;
 the existing 16/64/256/1024 regression now also checks borrow receipts.

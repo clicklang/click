@@ -11,7 +11,7 @@ lower(raise(x)) = x
 ```
 
 Raising preserves types, bindings, value identity, and snapshot identity. It
-uses names and provenance retained where values are introduced; it does not
+uses names and origins retained where values are introduced; it does not
 try historical states until a candidate happens to lower correctly. Printing
 then converts that Surface AST to source text. Printing chooses syntax and
 layout; it does not discover names or reconstruct missing semantic information.
@@ -51,7 +51,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   `None`, or to dropping the fact.
 - **Name a value where it is introduced.** A step that introduces a fresh
   value or memory state (a call result, a havoc, an allocation, a state
-  between recorded points) gives it a name from its provenance at that
+  between recorded points) gives it a name from its origin at that
   point. Do not recover a name later from whatever locals happen to hold the
   value. A non-void call's result is `<region>.result`, including calls whose
   source discards the return value. The checked call transition retains the
@@ -371,7 +371,7 @@ Baseline (2026-11-16, ordinary mdtest corpus, both runs passing):
   Integer and other comparisons round-trip about 77% of the time, pointer
   comparisons about 31%: pointer reads named by the memory they were read in
   rather than their version point, and pointer values with no recorded
-  provenance, account for most of the rest. Before the audit used recorded
+  origin, account for most of the rest. Before the audit used recorded
   points (2026-11-16) it reported 9,343 `same` of 54,642 records, because no
   `at(point, ..)` or `old(..)` spelling was available to it. Recurring
   `differs` shapes: an entry read raised through a current name (`old(*result) ==
@@ -405,7 +405,7 @@ the one the text names.
   value. The version walk below is that case.
 - Not allowed: substituting a known-equal term, constant-folding a
   comparison the facts decide, dropping a decided guard or disjunct, or
-  choosing a term by known provenance. Equalities stay in the equality graph
+  choosing a term by known origin. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
 Closed native order comparisons at 8, 16, 32, and 64 bits retain their comparison
@@ -543,7 +543,7 @@ term ([the raise-lower principle](#the-raise-lower-principle)).
 kind, and groups the differences by where the two terms first diverge. It
 does not observe C execution, which may depend on facts.
 Historical defects included comparisons folded using facts, pointer and aliased
-reads resolved through known values, comparison kinds chosen by provenance,
+reads resolved through known values, comparison kinds chosen by origin,
 and decided guards dropped. Such equalities belong in checking, not in the
 term lowering produces.
 
@@ -671,7 +671,7 @@ The census sorts a miss into one of three gaps, each with its own fix:
   have names, but the legacy raising search misses it: reflexive pointer
   equalities such as `p == p`, `viewable(p[0..1])` after an `unfold`, an
   applied theorem's conclusion such as `cd(n - 1) == 0`, and goals with no
-  recorded presentation. The fix is total raising from retained provenance.
+  recorded presentation. The fix is total raising from retained origins.
 - **A value with no name.** The fact mentions a value or address nothing
   names, printed `<unnamed A>` or `<pointer A>`: a callee's result, a havoc,
   an allocation. The fix is naming at introduction.

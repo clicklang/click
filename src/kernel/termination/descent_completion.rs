@@ -1,7 +1,7 @@
 //! Descent context follows native transitions into ordinary outcome completion.
 use super::*;
 
-/// Native transition provenance. This does not discharge its ordinary premises;
+/// Native transition record. This does not discharge its ordinary premises;
 /// the outcome proof must still complete before the root retires descent.
 #[derive(Clone, Debug)]
 pub(crate) struct DescentStep {
