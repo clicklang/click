@@ -675,7 +675,9 @@ pub(super) struct TermClasses {
     extent_values: PersistentMap<u64, crate::kernel::PointerValue>,
     read_domains: crate::kernel::pointer_provenance::ValueClasses<Pointer>,
     read_provenance_nodes: PersistentMap<Pointer, u64>,
-    read_extent_nodes: PersistentMap<Pointer, u64>,
+    // Every registered opaque origin, including symbols and complete reads.
+    // A domain query reads this index without registering terms or reads.
+    extent_origin_nodes: PersistentMap<Pointer, u64>,
     pointer_value_merges: imbl::Vector<(PointerBlock, PointerBlock)>,
     nodes: PersistentMap<Node, u64>,
     load_blocks: PersistentMap<PointerBlock, u64>,

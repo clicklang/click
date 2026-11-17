@@ -75,6 +75,30 @@ source order while retaining an indexed map for condition lookup. Bounded
 pointer closure can retain different coordinates after a block merge; a hash
 table's iteration order must not choose whether an emitted certificate checks.
 
+## Read-only pointer domains
+
+`PureFactContext::pointer_domain` returns `Unknown`, `Root`, or a selected
+subobject extent without changing the pointer value. Intrinsic bounds are
+read directly. An opaque domain uses its retained origin to find an already
+registered extent node and the cached witness of its equality class. The query
+registers no terms or reads, runs no closure, and recovers no memory history.
+Complete-pointer equality supplies domain knowledge; numeric address equality
+and equality of widened byte views do not supply the original domain.
+
+Access matching uses a cached selected domain when the offered
+range retains known bounds, has the same object identity, and lies entirely
+inside that selected domain. Both endpoints are checked in their original
+32-bit or native-width coordinates. A wider enclosing range cannot stand for
+the selected domain. This supplies domain compatibility, not ownership,
+initialization, liveness or permission to dereference a one-past pointer.
+Pointer arithmetic and other extent consumers still retain their existing
+checks and value-adoption path pending their separate migration.
+
+The domain unit tests and deterministic scaling tests in
+`assumptions/pointer_domains.rs` cover cold queries after late equality
+admission, growing related aliases and unrelated facts, branch isolation,
+full-width bounds, and an unregistered read with growing memory history.
+
 ## Checked object-type evidence
 
 Admitted equations, predicates, and true model-equality conditions retain the

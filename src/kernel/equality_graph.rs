@@ -805,6 +805,19 @@ impl EqualityGraph {
         state.close(Vec::new());
     }
 
+    /// Cached domain knowledge only: no congruence closure, registration or
+    /// memory-read recovery is performed on the query path.
+    pub(in crate::kernel) fn opaque_pointer_domain(
+        &self,
+        origin: &Pointer,
+    ) -> crate::kernel::assumptions::PointerDomain {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .opaque_pointer_domain(origin)
+    }
+
     pub(in crate::kernel) fn opaque_extent_is_root(&self, origin: &Pointer) -> bool {
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, [origin]);
