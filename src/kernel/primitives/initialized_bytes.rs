@@ -110,6 +110,47 @@ impl InitializedBytes {
         runs
     }
 
+    /// Recorded initialization within a concrete byte span, clipped at both
+    /// endpoints. A predecessor locates any run straddling the start.
+    pub(crate) fn constant_runs_in_range(
+        &self,
+        block: &AddressBase,
+        start: i64,
+        end: i64,
+    ) -> impl Iterator<Item = (i64, u32)> + '_ {
+        let first = self
+            .run_at_or_before(block, start)
+            .filter(|(_, run_end)| *run_end > start)
+            .map_or(start, |(run_start, _)| run_start);
+        crate::instrumentation::record_deterministic_work(1);
+        self.entries
+            .range(constant_start(block, first)..constant_start(block, end))
+            .map(move |(address, length)| {
+                crate::instrumentation::record_deterministic_work(1);
+                let offset = address.offset.as_const().expect("constant offset range");
+                let lo = offset.max(start);
+                let hi = (offset + i64::from(*length)).min(end);
+                (lo, u32::try_from(hi - lo).expect("clipped run"))
+            })
+    }
+
+    /// Symbolic spellings in a block may designate the destination of a
+    /// concrete write. Drop those spellings when replacing initialization;
+    /// exact byte runs outside the written span still hold.
+    pub(crate) fn forget_symbolic_offsets(&mut self, block: &AddressBase) {
+        use std::ops::Bound::{Excluded, Unbounded};
+        let addresses = self
+            .entries
+            .range((Excluded(constant_start(block, i64::MAX)), Unbounded))
+            .take_while(|(address, _)| &address.base == block)
+            .map(|(address, _)| address.clone())
+            .collect::<Vec<_>>();
+        crate::instrumentation::record_deterministic_work(addresses.len() + 1);
+        for address in addresses {
+            self.entries.remove(&address);
+        }
+    }
+
     /// Records that the `byte_width` bytes at `pointer` are initialized.
     /// Returns whether the record changed: recording bytes it already covers
     /// leaves it (and so the state's content) exactly as it was.
