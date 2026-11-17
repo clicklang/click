@@ -21250,6 +21250,7 @@ fn compact_store_proof_repairs_expand_and_replay() {
             "release_run",
         ),
         ("modeled_pthread_local_job_external_output", "worker"),
+        ("return_fold_retains_transported_facts", "arena_write"),
     ] {
         if std::env::var("CLICK_COMPACT_REPAIR").is_ok_and(|selected| selected != function) {
             continue;
