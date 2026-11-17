@@ -1,7 +1,4 @@
-# A `by` after an `open` whose close leaves nothing open is refused
-
-The body fact holds exactly after the store, so the closing fold leaves no
-body fact open and the `by` proves nothing.
+# Open uses in-block proofs for restoration
 
 ```c filename=open_by_superfluous.c
 void set(int32* p, int32 x) { p[0] = x; }
@@ -20,5 +17,5 @@ void set(int32* p, int32 x) {
 ```
 
 ```expect
-fail: the `by` after `open` is superfluous
+fail: `open` takes no trailing `by`
 ```

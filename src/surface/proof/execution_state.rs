@@ -574,16 +574,13 @@ fn ends_in_terminal_match(mut steps: &[ProofStep]) -> bool {
     }
 }
 
-/// A deferred `open` close that proved a body fact its closing fold left
-/// open is recorded as an `open` with no body and that proof (see
-/// `PostExecutionTactic::CloseOpen`). It is the `by` of the scope it closes,
-/// which is `steps`' last step. Return whether the close was attached; the
-/// caller retains an ordinary step when no matching scope was found.
-fn attach_deferred_close_proof(steps: &mut [ProofStep], step: &ProofStep) -> bool {
+/// Append the deferred restoration facts to their open scope rather than
+/// leaving them in the function's post-execution suffix.
+fn attach_deferred_open_tail(steps: &mut [ProofStep], step: &ProofStep) -> bool {
     let ProofStep::Open {
         resource,
         proof,
-        close_proof: Some(close_proof),
+        deferred_tail: true,
     } = step
     else {
         return false;
@@ -591,7 +588,7 @@ fn attach_deferred_close_proof(steps: &mut [ProofStep], step: &ProofStep) -> boo
     let Some(ProofStep::Open {
         resource: scope,
         proof: scope_body,
-        close_proof: slot @ None,
+        deferred_tail: false,
     }) = steps.last_mut()
     else {
         return false;
@@ -599,22 +596,13 @@ fn attach_deferred_close_proof(steps: &mut [ProofStep], step: &ProofStep) -> boo
     if scope != resource {
         return false;
     }
-    if proof.steps().is_empty() {
-        *slot = Some(close_proof.clone());
-        return true;
-    }
-    // A deferred block tail (`ProofOpen::deferred_block_tail`): its `have`s
-    // end the scope's block, which keeps no `by`.
-    if close_proof.steps().is_empty() {
-        let mut body = scope_body.steps().to_vec();
-        body.extend(proof.steps().iter().cloned());
-        let Ok(body) = ProofCertificate::from_steps(body) else {
-            return false;
-        };
-        **scope_body = body;
-        return true;
-    }
-    false
+    let mut body = scope_body.steps().to_vec();
+    body.extend(proof.steps().iter().cloned());
+    let Ok(body) = ProofCertificate::from_steps(body) else {
+        return false;
+    };
+    **scope_body = body;
+    true
 }
 
 pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: ProofStep) {
@@ -635,7 +623,7 @@ fn append_surface_step_to_leaves_ref(steps: &mut Vec<ProofStep>, step: &ProofSte
     if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
         return;
     }
-    if attach_deferred_close_proof(steps, step) {
+    if attach_deferred_open_tail(steps, step) {
         return;
     }
     if let Some(ProofStep::Open { proof, .. }) = steps.last_mut()
@@ -876,9 +864,10 @@ pub(super) fn append_surface_tactics_by_leaf(
         proof: &mut ProofCertificate,
         path_steps: &[Vec<ProofStep>],
         next_path: &mut usize,
+        open_scope: Option<&ResourceClause>,
     ) {
         if !proof.is_pruned_execution_arm() {
-            append(proof.steps_mut(), path_steps, next_path);
+            append(proof.steps_mut(), path_steps, next_path, open_scope);
         }
     }
 
@@ -886,21 +875,46 @@ pub(super) fn append_surface_tactics_by_leaf(
         steps: &mut Vec<ProofStep>,
         path_steps: &[Vec<ProofStep>],
         next_path: &mut usize,
+        open_scope: Option<&ResourceClause>,
     ) {
         #[cfg(test)]
         SURFACE_LEAF_VISITS.with(|visits| visits.set(visits.get() + 1));
         if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
             return;
         }
-        if let Some(ProofStep::Open { proof, .. }) = steps.last_mut()
+        if let Some(ProofStep::Open {
+            resource,
+            proof,
+            deferred_tail: false,
+        }) = steps.last_mut()
+            && matches!(
+                proof.steps().last(),
+                Some(ProofStep::If { .. } | ProofStep::CallOutcomes { .. })
+            )
+            && path_steps.get(*next_path).is_some_and(|suffix| {
+                suffix.iter().any(|step| {
+                    matches!(step, ProofStep::Open {
+                    resource: closing, deferred_tail: true, ..
+                } if closing == resource)
+                })
+            })
+        {
+            // A scope shared by several return paths needs each path's
+            // restoration proof in its own arm, before its closing fold.
+            append_certificate(proof, path_steps, next_path, Some(resource));
+            return;
+        }
+        if let Some(ProofStep::Open {
+            resource, proof, ..
+        }) = steps.last_mut()
             && ends_in_terminal_match(proof.steps())
         {
-            append_certificate(proof, path_steps, next_path);
+            append_certificate(proof, path_steps, next_path, Some(resource));
             return;
         }
         if let Some(ProofStep::Match { arms, .. }) = steps.last_mut() {
             for arm in arms {
-                append_certificate(&mut arm.proof, path_steps, next_path);
+                append_certificate(&mut arm.proof, path_steps, next_path, open_scope);
             }
             return;
         }
@@ -910,8 +924,8 @@ pub(super) fn append_surface_tactics_by_leaf(
             ..
         }) = steps.last_mut()
         {
-            append_certificate(then_proof, path_steps, next_path);
-            append_certificate(else_proof, path_steps, next_path);
+            append_certificate(then_proof, path_steps, next_path, open_scope);
+            append_certificate(else_proof, path_steps, next_path, open_scope);
         } else if let Some(ProofStep::CallOutcomes {
             returned_proof,
             threw_proof,
@@ -919,11 +933,22 @@ pub(super) fn append_surface_tactics_by_leaf(
         {
             // A call fork joins its returned arm's paths before its threw
             // arm's, as a C `if` joins then before else.
-            append_certificate(returned_proof, path_steps, next_path);
-            append_certificate(threw_proof, path_steps, next_path);
+            append_certificate(returned_proof, path_steps, next_path, open_scope);
+            append_certificate(threw_proof, path_steps, next_path, open_scope);
         } else if let Some(suffix) = path_steps.get(*next_path) {
             for step in suffix {
-                if !attach_deferred_close_proof(steps, step) {
+                if attach_deferred_open_tail(steps, step) {
+                    continue;
+                }
+                if let ProofStep::Open {
+                    resource,
+                    proof,
+                    deferred_tail: true,
+                } = step
+                    && open_scope == Some(resource)
+                {
+                    steps.extend(proof.steps().iter().cloned());
+                } else {
                     push_surface_step(steps, step);
                 }
             }
@@ -932,7 +957,7 @@ pub(super) fn append_surface_tactics_by_leaf(
     }
 
     let mut next_path = 0;
-    append(steps, &path_steps, &mut next_path);
+    append(steps, &path_steps, &mut next_path, None);
     if next_path == path_steps.len() {
         Ok(())
     } else {
@@ -1412,8 +1437,6 @@ pub(super) enum PostExecutionTactic {
     CloseOpen {
         resource: ResourceClause,
         preserve_exposed_body: bool,
-        /// The source's `open(r) { ... } by { ... }` proof.
-        written_close_proof: Option<Vec<ProofTactic>>,
     },
     Apply(TheoremApplication),
     Have(ProofHave),
