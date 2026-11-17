@@ -23017,3 +23017,42 @@ fn refuted_match_arm_retains_its_bridge_proof_from_propagated_false() {
     let reachable = expanded.replace("requires r.model != Tag::A;", "");
     assert!(without_implicit_solve(|| verify_c_sources(&reachable, &sources)).is_err());
 }
+
+#[test]
+#[ignore = "nightly: member-domain resource fold, expansion and strict cold/retained replay"]
+fn returned_member_domain_access_expands_and_replays() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_returned_member_domain_supports_a_logical_read.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let child_expanded = expand_c_claim_source_by_label(&source, &sources, "child.ensures_0")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&child_expanded, &sources, "probe.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    let position = expansion::position_at_offset(
+        &expanded,
+        expanded.find("ensures result == p->child.value").unwrap(),
+    );
+    let (session, _) = ProgramVerificationSession::new(&child_expanded, &sources).unwrap();
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    drop(session);
+    for bad in [
+        source.replace("owns p->child.value;", "views p->child.value;"),
+        source.replace(
+            "ensures result == p->child.value;",
+            "ensures result != p->child.value;",
+        ),
+        source.replace(
+            "ensures result == &p->child.value;",
+            "ensures (result as uint64) == (&p->child.value as uint64);",
+        ),
+    ] {
+        assert!(verify_c_sources(&bad, &sources).is_err());
+    }
+}
