@@ -824,6 +824,13 @@ assertion, and the nested-loop expansion-idempotence check. This avoids another
 search for an input proof that the same test just checked. Three are gate cases;
 the duplicate-invariant audit was already nightly and stays there.
 
+Each of the four symbolic-upper-bound expansion variants contains one theorem
+and one ensure. Selected-claim expansion verifies that input, so those cases
+omit a preceding duplicate verification. Every generated proof still rechecks
+with zero planning, and each forged tighter bound must fail.
+Two interleaved serial runs using retained before/after binaries took
+6.790/6.788s before and 5.931/5.472s after removing that duplicate pass.
+
 On the same four-CPU host and cached unoptimized fast-gate binary setup,
 the cast and selected-guard selection at `cff495519` took 5.787s wall and
 18.666 summed test-seconds before this gate/nightly split; afterward, the two
@@ -834,7 +841,8 @@ the four cases took 16.968s/14.096s, including the nightly duplicate-invariant
 audit. Retain the explicit proof checks rather than treating those variable
 wall times as a scaling assertion.
 
-With the cast/fold/loop changes above on upstream `a1b9ea190`, a cached
+With the cast/fold/loop changes above on upstream `a1b9ea190`, before the
+symbolic-upper-bound cleanup, a cached
 four-worker unit/API run passed 8,116 tests in 444.876s (1,773.878 summed
 test-seconds). It excludes compilation and every `gate_tests::` integration
 or corpus harness. This is a current snapshot with a different test inventory

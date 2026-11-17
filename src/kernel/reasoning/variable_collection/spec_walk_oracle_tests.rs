@@ -106,7 +106,9 @@ fn old_collect_spec_expression_bitvector_variables(
             old_collect_spec_expression_bitvector_variables(pointer, variables);
         }
         SpecExpression::MemoryLoad {
-            memory, pointer, ..
+            point: memory,
+            pointer,
+            ..
         } => {
             old_collect_spec_memory_bitvector_variables(memory, variables);
             old_collect_spec_expression_bitvector_variables(pointer, variables);
@@ -180,7 +182,10 @@ fn old_collect_spec_proposition_bitvector_variables(
                 }
             }
         }
-        SpecProposition::ResourceViewable { memory, resource } => {
+        SpecProposition::ResourceViewable {
+            point: memory,
+            resource,
+        } => {
             old_collect_spec_memory_bitvector_variables(memory, variables);
             old_collect_spec_resource_bitvector_variables(resource, variables)
         }
@@ -193,7 +198,7 @@ fn old_collect_spec_proposition_bitvector_variables(
             old_collect_spec_resource_bitvector_variables(right, variables);
         }
         SpecProposition::MemoryLoadable {
-            memory,
+            point: memory,
             base,
             start,
             end,
@@ -390,7 +395,9 @@ fn old_collect_spec_integer_bound_argument(
             old_collect_spec_algebraic_bound_identities(value, variables, integer_seen);
         }
         SpecPureFunctionArgument::ArrayRef {
-            memory, pointer, ..
+            point: memory,
+            pointer,
+            ..
         } => {
             old_collect_spec_memory_bound_identities(memory, variables, integer_seen);
             old_collect_spec_integer_bound_expression(pointer, variables, integer_seen);
@@ -487,7 +494,9 @@ fn old_collect_spec_integer_bound_expression(
             old_collect_spec_integer_bound_expression(pointer, variables, integer_seen);
         }
         SpecExpression::MemoryLoad {
-            memory, pointer, ..
+            point: memory,
+            pointer,
+            ..
         } => {
             old_collect_spec_memory_bound_identities(memory, variables, integer_seen);
             old_collect_spec_integer_bound_expression(pointer, variables, integer_seen);
@@ -669,14 +678,20 @@ fn old_collect_spec_proposition_bound_identities(
                     SpecPredicateArgument::Value(value) => {
                         old_collect_spec_integer_bound_expression(value, variables, integer_seen);
                     }
-                    SpecPredicateArgument::ArrayRef { memory, pointer } => {
+                    SpecPredicateArgument::ArrayRef {
+                        point: memory,
+                        pointer,
+                    } => {
                         old_collect_spec_memory_bound_identities(memory, variables, integer_seen);
                         old_collect_spec_integer_bound_expression(pointer, variables, integer_seen);
                     }
                 }
             }
         }
-        SpecProposition::ResourceViewable { memory, resource } => {
+        SpecProposition::ResourceViewable {
+            point: memory,
+            resource,
+        } => {
             old_collect_spec_memory_bound_identities(memory, variables, integer_seen);
             old_collect_spec_resource_bound_identities(resource, variables, integer_seen)
         }
@@ -689,7 +704,7 @@ fn old_collect_spec_proposition_bound_identities(
             old_collect_spec_resource_bound_identities(right, variables, integer_seen);
         }
         SpecProposition::MemoryLoadable {
-            memory,
+            point: memory,
             base,
             start,
             end,
@@ -771,7 +786,9 @@ fn old_collect_spec_function_argument_bitvector_variables(
             old_collect_spec_algebraic_expression_bitvector_variables(expression, variables)
         }
         SpecPureFunctionArgument::ArrayRef {
-            memory, pointer, ..
+            point: memory,
+            pointer,
+            ..
         } => {
             old_collect_spec_memory_bitvector_variables(memory, variables);
             old_collect_spec_expression_bitvector_variables(pointer, variables);

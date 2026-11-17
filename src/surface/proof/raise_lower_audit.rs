@@ -273,6 +273,22 @@ mod tests {
         );
     }
 
+    /// A parameter named `result` raises as `program::result`, so a read
+    /// through it lowers back to that parameter, not to the returned
+    /// pointer that bare `result` names after the return.
+    #[test]
+    fn a_parameter_named_result_round_trips_as_program_result() {
+        let lines = round_trips(
+            "result_parameter_false_field_postcondition.md",
+            include_str!("../../../mdtests/result_parameter_false_field_postcondition.md"),
+        );
+        assert!(!lines.is_empty());
+        assert!(
+            lines.iter().all(|(outcome, _)| outcome == "same"),
+            "{lines:#?}"
+        );
+    }
+
     #[test]
     fn a_checked_step_records_how_each_added_fact_round_trips() {
         let fixture = crate::cli::parse_mdtest(
