@@ -5209,7 +5209,7 @@ fn v11_unbound_owner_observation_composite_still_expands() {
 }
 
 #[test]
-fn v11_composite_expansion_refuses_equal_ambient_child_without_destination() {
+fn v11_composite_expansion_emits_a_destination_beside_an_equal_ambient_child() {
     let definition = CompositeResourceDefinition::new(
         "v11_box",
         Vec::new(),
@@ -5232,8 +5232,11 @@ fn v11_composite_expansion_refuses_equal_ambient_child_without_destination() {
     let support = ResourceFact::own_token("v11_expansion_support".into(), Vec::new());
     let parent = ResourceFact::view_composite("v11_box".into(), Vec::new());
     let child = ResourceFact::view_token("v11_child".into(), Vec::new());
-    let resources =
-        ResourceContext::new().unchecked_with_facts([support.clone(), parent.clone(), child]);
+    let resources = ResourceContext::new().unchecked_with_facts([
+        support.clone(),
+        parent.clone(),
+        child.clone(),
+    ]);
     let support_occurrence = resources.owned_occurrences_for_fact(&support)[0];
     let parent_occurrence = resources.occurrences_for_fact(&parent)[0];
     let ledger = LoanLedger::new();
@@ -5250,16 +5253,36 @@ fn v11_composite_expansion_refuses_equal_ambient_child_without_destination() {
         viewed: parent,
         hold: None,
     };
-    let resources = resources.with_loan_dependency(parent_occurrence, binding);
+    let ambient = resources.occurrences_for_fact(&child)[0];
+    let resources = resources.with_loan_dependency(parent_occurrence, binding.clone());
+    let expanded = crate::kernel::functions::expand_composite_resource_fact_with_children(
+        &resources,
+        &ResourceFact::view_composite("v11_box".into(), Vec::new()),
+        &[definition],
+        &crate::kernel::ProgramPoint::of_memory(&Memory::new()),
+        &PureFactContext::new(),
+    )
+    .expect("a fresh emitted child retains the exact parent binding")
+    .0;
+    assert_eq!(expanded.view_fact_for_occurrence(ambient), Some(&child));
+    assert!(expanded.loan_dependency(ambient).is_none());
+    let children = expanded.occurrences_for_fact(&child);
+    assert_eq!(children.len(), 2);
+    let emitted = *children
+        .iter()
+        .find(|occurrence| **occurrence != ambient)
+        .unwrap();
+    assert_eq!(
+        expanded.loan_dependency(emitted),
+        Some(&LoanViewBinding {
+            viewed: child,
+            ..binding
+        })
+    );
     assert!(
-        crate::kernel::functions::expand_composite_resource_fact_with_children(
-            &resources,
-            &ResourceFact::view_composite("v11_box".into(), Vec::new()),
-            &[definition],
-            &crate::kernel::ProgramPoint::of_memory(&Memory::new()),
-            &PureFactContext::new(),
-        )
-        .is_none()
+        expanded
+            .view_fact_for_occurrence(parent_occurrence)
+            .is_none()
     );
 }
 

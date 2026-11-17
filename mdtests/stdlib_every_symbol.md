@@ -1014,6 +1014,10 @@ theorem use_format_signed_digit() {
 theorem use_format_signed_length(v: int32) {
     requires 0 <= v;
     ensures format::signed_length(v) == format::decimal_length(format::magnitude(v)) by {
+        have not (v < 0) by { known(); }
+        have (if v < 0 { 1u64 + format::decimal_length(format::magnitude(v)) } else { format::decimal_length(format::magnitude(v)) }) == format::decimal_length(format::magnitude(v)) by {
+            normalize() using { not (v < 0); };
+        }
         unfold(format::signed_length(v));
         solve();
     }
@@ -2239,6 +2243,29 @@ theorem check_remainder_negate_divisor(n: Integer, d: Integer) {
         ensures truncating_remainder(n, d) == truncating_remainder(n, -d) by {
         apply(integer::remainder_negate_divisor(n, d)) using { d != 0; -d != 0; };
     }
+}
+
+
+theorem use_bytes_comparison_negative(left: uint8[], right: uint8[], length: uint64, first: uint64, cmp: int32) {
+    requires bytes::comparison(left, right, length, cmp);
+    requires first < length;
+    requires bytes::equal_range(left, right, 0u64, first);
+    requires left[first] < right[first];
+    ensures cmp < 0 by apply(bytes::comparison_negative_after_prefix(left, right, length, first, cmp));
+}
+
+theorem use_bytes_comparison_positive(left: uint8[], right: uint8[], length: uint64, first: uint64, cmp: int32) {
+    requires bytes::comparison(left, right, length, cmp);
+    requires first < length;
+    requires bytes::equal_range(left, right, 0u64, first);
+    requires right[first] < left[first];
+    ensures cmp > 0 by apply(bytes::comparison_positive_after_prefix(left, right, length, first, cmp));
+}
+
+theorem use_bytes_comparison_equal(left: uint8[], right: uint8[], length: uint64, cmp: int32) {
+    requires bytes::comparison(left, right, length, cmp);
+    requires bytes::equal(left, 0u64, right, 0u64, length);
+    ensures cmp == 0 by apply(bytes::comparison_zero_when_equal(left, right, length, cmp));
 }
 
 ```

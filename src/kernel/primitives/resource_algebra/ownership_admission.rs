@@ -24,6 +24,7 @@ pub(crate) enum FlatBodyAdmission {
         held: Box<ResourceFact>,
     },
     Unestablished(Box<Proposition>),
+    Unsupported,
 }
 
 impl ResourceContext {
@@ -214,4 +215,141 @@ mod tests;
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/primitives/resource_algebra/ownership_admission.rs");
+}
+
+impl ResourceContext {
+    /// Apply a checked loan's restoration recipe. Old separation comes from
+    /// the entry partition and the ledger; return-delta checks happen once at
+    /// the recovery boundary, never by re-admitting this old footprint.
+    pub(in crate::kernel) fn restore_checked_escrow(
+        mut self,
+        member: &crate::kernel::loans::RecoveredEscrow,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, ResourceContextValidityError> {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("restore checked escrow");
+        if self
+            .storage
+            .entry_by_occurrence
+            .contains_key(&member.occurrence())
+        {
+            return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                member.fact().clone(),
+            ));
+        }
+        if self.storage.facts.is_empty() {
+            self.synchronize_memory_equalities(assumptions);
+        }
+        self.insert_fact_with_support_occurrence_and_metadata_at(
+            member.fact().clone(),
+            None,
+            None,
+            None,
+            Some(member.occurrence()),
+        );
+        if let Some(binding) = member.binding() {
+            self = self.with_loan_dependency(member.occurrence(), binding.clone());
+        }
+        self.advance_prepared_memory_equalities(assumptions);
+        Ok(self)
+    }
+}
+
+impl ResourceContext {
+    /// Select only newly changed owned occurrences from the retained parent
+    /// lineage. Persistent differences skip shared frame/history nodes.
+    pub(in crate::kernel) fn new_owned_occurrences_from(
+        &self,
+        before: &Self,
+    ) -> Option<Vec<(ResourceFact, ResourceOccurrenceId)>> {
+        if !std::sync::Arc::ptr_eq(&self.storage.origin, &before.storage.origin) {
+            return None;
+        }
+        Some(
+            before
+                .storage
+                .facts
+                .diff(&self.storage.facts)
+                .filter_map(|(entry, _, new)| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let fact = new?;
+                    let occurrence = self.occurrence(*entry);
+                    if before.owned_fact_for_occurrence(occurrence) == Some(fact) {
+                        return None;
+                    }
+                    fact.is_own().then(|| (fact.clone(), occurrence))
+                })
+                .collect(),
+        )
+    }
+}
+
+impl ResourceContext {
+    pub(in crate::kernel) fn admit_returned_frontier(
+        &self,
+        frontier: &[ResourceFact],
+        assumptions: &PureFactContext,
+    ) -> FlatBodyAdmission {
+        match self.returned_boundary_conflict(frontier, assumptions) {
+            Ok(None) => FlatBodyAdmission::Admitted,
+            Ok(Some((piece, held))) => FlatBodyAdmission::Conflict {
+                piece: Box::new(piece),
+                held: Box::new(held),
+            },
+            Err(ResourceContextValidityError::UnestablishedOwnedBoundary(required)) => {
+                FlatBodyAdmission::Unestablished(required)
+            }
+            Err(_) => FlatBodyAdmission::Unsupported,
+        }
+    }
+    /// Consume the producer's partition. Only relationships with the original
+    /// frame are new; checking against progressively inserted outputs would
+    /// unnecessarily replay their internal separation obligations.
+    pub(in crate::kernel) fn admit_returned_partition(
+        transfer: crate::kernel::functions::ReturnedOwnershipPartition,
+        assumptions: &PureFactContext,
+    ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
+    {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("returned output partition");
+        let (retained, mut frame, outputs) = transfer.into_parts();
+        if frame.storage.facts.is_empty() {
+            frame.synchronize_memory_equalities(assumptions);
+        }
+        for piece in outputs.facts() {
+            let _checking =
+                crate::instrumentation::CheckingWorkScope::new("returned output boundary", 1);
+            crate::instrumentation::record_deterministic_work(1);
+            match retained.admit_returned_frontier(std::slice::from_ref(piece), assumptions) {
+                FlatBodyAdmission::Admitted => {}
+                FlatBodyAdmission::Unestablished(required) => {
+                    return Err(ResourceContextValidityError::UnestablishedOwnedBoundary(
+                        required,
+                    ));
+                }
+                FlatBodyAdmission::Unsupported => {
+                    return Err(ResourceContextValidityError::UnsupportedOwnershipBoundary);
+                }
+                FlatBodyAdmission::Conflict { piece, held } => {
+                    return Err(match (held.memory_own_range(), piece.memory_own_range()) {
+                        (Some(left), Some(right)) => {
+                            ResourceContextValidityError::OverlappingOwnedMemoryResources {
+                                left: left.clone(),
+                                right: right.clone(),
+                            }
+                        }
+                        _ => ResourceContextValidityError::DuplicateOwnedResourceFact(*piece),
+                    });
+                }
+            }
+        }
+        let mut inserted = Vec::with_capacity(outputs.facts().len());
+        for fact in outputs.facts() {
+            let entry = frame.storage.next_entry_id;
+            frame.insert_fact(fact.clone());
+            inserted.push((fact.clone(), frame.occurrence(entry)));
+        }
+        frame.advance_prepared_memory_equalities(assumptions);
+        Ok((frame, inserted))
+    }
 }

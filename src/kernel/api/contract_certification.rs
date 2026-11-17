@@ -2200,6 +2200,9 @@ fn program_function_contract_entry_facts(
         .observable_facts(&assumptions)
         .map_err(|error| {
             let detail = match error {
+                ResourceContextValidityError::UnsupportedOwnershipBoundary => {
+                    "ownership separation lacks an indexed finite frontier"
+                }
                 ResourceContextValidityError::UnestablishedOwnedBoundary(_) => {
                     "a symbolic boundary requires explicit separation"
                 }

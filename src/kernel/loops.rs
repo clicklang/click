@@ -6747,10 +6747,8 @@ fn with_loop_frame_resources(
         };
         match body_resources
             .clone()
-            .try_compose_with_facts_delaying_normalization_with_occurrences(
-                std::iter::once(supplied),
-                assumptions,
-            ) {
+            .install_established_partition(std::iter::once(supplied), assumptions)
+        {
             Ok((composed, inserted)) => {
                 body_resources = binding_source
                     .loan_view_bindings()
@@ -6764,7 +6762,7 @@ fn with_loop_frame_resources(
             Err(_) => continue,
         }
     }
-    body_resources.normalized(assumptions)
+    body_resources.normalized_without_discovery(assumptions)
 }
 
 fn loop_body_resource_context(

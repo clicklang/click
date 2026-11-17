@@ -486,3 +486,158 @@ fn selected_unfold_frame_restoration_does_not_visit_unrelated_owners() {
         "selected unfold frame: {samples:?}"
     );
 }
+
+#[test]
+fn symbolic_endpoint_refusal_does_not_follow_a_growing_order_chain() {
+    let mut samples = Vec::new();
+    for count in [4u64, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = |index| MachineTerm::Variable(Variable(8_919_000 + index));
+        let mut facts = PureFactContext::new();
+        for index in 0..count {
+            facts = facts.assume_condition(
+                ConditionTerm::signed_less_equal(variable(index), variable(index + 1)),
+                true,
+            );
+        }
+        let held = ResourceFact::own_memory(MemoryRange::new_with_element_width(
+            Pointer::symbolic(Variable(8_919_100)),
+            0u32.into(),
+            variable(0),
+            1,
+        ));
+        let query = ResourceFact::own_memory(MemoryRange::new_with_element_width(
+            Pointer::symbolic(Variable(8_919_100)),
+            variable(count),
+            100u32.into(),
+            1,
+        ));
+        let context = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(held);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let _fast =
+                crate::kernel::search::FastOperationScope::enter("bounded endpoint chain refusal");
+            assert!(matches!(
+                context.clone().admit_without_discovery([query], &facts),
+                OwnershipAdmission::Unsupported(_)
+            ));
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn cold_automatic_return_boundaries_do_not_visit_other_allocations() {
+    for overlap in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let local = |index| Pointer {
+                block: PointerBlock::Concrete(format!("local:bounded_return_{index}")),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let owner = |base, start: u32, end: u32| {
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                    base,
+                    start.into(),
+                    end.into(),
+                    1,
+                ))
+            };
+            let mut facts = PureFactContext::new();
+            for index in 0..count {
+                facts = facts.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        local(0),
+                        Pointer::symbolic(Variable(8_920_000 + u64::from(index))),
+                    ),
+                    true,
+                );
+            }
+            let mut frame = ResourceContext::new();
+            for index in 0..count {
+                frame = frame.unchecked_with_fact(owner(local(index), 0, 4));
+            }
+            let output = owner(local(if overlap { 0 } else { count }), 0, 4);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast =
+                    crate::kernel::search::FastOperationScope::enter("cold automatic return delta");
+                let result = frame.admit_returned_frontier(&[output], &facts);
+                assert_eq!(
+                    matches!(result, FlatBodyAdmission::Conflict { .. }),
+                    overlap
+                );
+                if !overlap {
+                    assert!(matches!(result, FlatBodyAdmission::Admitted));
+                }
+            });
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "overlap={overlap}: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn legacy_composition_cost_tracks_the_delta_and_written_neighbors() {
+    for axis in ["owners", "related", "aliases", "same token"] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let pointer = Pointer::symbolic(Variable(8_798_100));
+            let range = |base, start: u32| {
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                    base,
+                    start.into(),
+                    (start + 4).into(),
+                    1,
+                ))
+            };
+            let token = ResourceFact::own(Resource::Token {
+                name: "credit".into(),
+                arguments: vec![].into(),
+            });
+            let mut facts = PureFactContext::new();
+            let mut frame = ResourceContext::new_with_equalities(&facts)
+                .unchecked_with_fact(range(pointer.clone(), 0));
+            for index in 1..=count {
+                let other = Pointer::symbolic(Variable(8_798_200 + u64::from(index)));
+                match axis {
+                    "aliases" => {
+                        facts = facts.assume_condition(
+                            ConditionTerm::pointer_equal(pointer.clone(), other),
+                            true,
+                        )
+                    }
+                    "related" => {
+                        frame = frame.unchecked_with_fact(range(pointer.clone(), index * 16))
+                    }
+                    "same token" => {
+                        frame =
+                            frame.unchecked_with_fact(ResourceFact::View(token.resource().clone()))
+                    }
+                    _ => frame = frame.unchecked_with_fact(range(other, 0)),
+                }
+            }
+            frame.synchronize_memory_equalities(&facts);
+            let addition = if axis == "owners" || axis == "same token" {
+                token
+            } else {
+                range(pointer.clone(), 4)
+            };
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast =
+                    crate::kernel::search::FastOperationScope::enter("legacy checked delta");
+                frame.clone().try_compose_with_fact(addition, &facts)
+            });
+            result.unwrap();
+            samples.push(work);
+        }
+        assert!(samples[2] <= samples[0] * 3 + 96, "{axis}: {samples:?}");
+    }
+}

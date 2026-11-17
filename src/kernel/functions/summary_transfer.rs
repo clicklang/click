@@ -651,3 +651,47 @@ pub(super) fn invariant_condition(
     }
     true
 }
+
+// Retained arguments and fixed subobject addresses do not read post memory.
+// Loads and local-address expressions deliberately stay opaque.
+pub(super) fn invariant_parameter_expression(
+    expression: &ProgramExpression,
+    parameters: &BTreeSet<&BindingName>,
+) -> bool {
+    crate::instrumentation::record_deterministic_work(1);
+    match expression {
+        ProgramExpression::Variable(name) => parameters.contains(name),
+        ProgramExpression::Value(_) => true,
+        ProgramExpression::Cast { expression, .. } => {
+            invariant_parameter_expression(expression, parameters)
+        }
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. } => {
+            invariant_parameter_expression(pointer, parameters)
+        }
+        ProgramExpression::Add(left, right)
+        | ProgramExpression::Subtract(left, right)
+        | ProgramExpression::Multiply(left, right) => {
+            invariant_parameter_expression(left, parameters)
+                && invariant_parameter_expression(right, parameters)
+        }
+        _ => false,
+    }
+}
+
+pub(super) fn invariant_body_condition(
+    definition: &CompositeResourceDefinition,
+    parameters: &BTreeSet<&BindingName>,
+) -> bool {
+    let Some(condition) = definition.condition.as_ref() else {
+        return true;
+    };
+    let stable = |expression: &SpecExpression| match expression {
+        SpecExpression::Value(_) => true,
+        SpecExpression::ProgramExpression(expression) => {
+            invariant_parameter_expression(expression, parameters)
+        }
+        _ => false,
+    };
+    matches!(condition, SpecProposition::Comparison { left, right, .. } if stable(left) && stable(right))
+}

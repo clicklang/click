@@ -1627,7 +1627,9 @@ permitted stores or a transition that drops the fact:
   registration when all its owned memory shares the queried block and exact
   symbolic origin. The interval tree retains containing ranges even beside
   nested old intervals. Other blocks and origins remain unsupported on this
-  structural route; loaded-pointer aliases still require the paired namespace.
+  structural route except physical automatic-storage partitions: the maintained
+  automatic-owner index selects one storage block without visiting other locals.
+  Loaded-pointer aliases still require the paired namespace.
   Symbolic narrow query endpoints may use directly indexed constant extrema
   to form a conservative enclosing interval against the supported constant
   owners. A disjoint envelope proves separation; an intersecting envelope is
@@ -1709,8 +1711,8 @@ permitted stores or a transition that drops the fact:
   nested/recursive matched arms retain
   explicitly classified legacy routes. Specialized producers also return an
   explicit unsupported result for geometry outside the maintained ownership
-  index; that result dispatches to compatibility without invoking discovery
-  inside construction. A conflicting or invalid migrated body refuses the
+  index; family dispatch remains separately classified. Ordinary constructed
+  child partitions refuse unsupported geometry without retrying ownership discovery. A conflicting or invalid migrated body refuses the
   return rather than retrying legacy reconstruction.
   Monotone memory-evidence admission walks a smaller incoming contract or a
   shared persistent delta, without enumerating absent caller facts. Scalar
@@ -1825,16 +1827,14 @@ the final answer there is open.
 
 ## Remaining ownership compatibility inventory
 
-The ownership-return migration is incomplete. The source inventory in
-`build_support/ownership_fallback_edges.tsv` freezes references to the APIs in
-`ownership_fallback_targets.txt`, using the existing proof-search AST walker.
-Both kernel and Surface production modules are checked on every Cargo build;
-test-only modules are excluded. Calls, method references, imports and macro
-identifiers are counted by file, owning type and function. New references,
-changed counts and stale records fail the build. The inventory includes older
-full-composition APIs and generic expansion so indirect routes remain visible.
-It is a dependency inventory, not a list of bugs or a complexity proof. An
-invocation of a compatibility wrapper can complete entirely in its fast path.
+The source inventory in `build_support/ownership_fallback_edges.tsv` freezes
+references to the APIs in `ownership_fallback_targets.txt`, using the existing
+proof-search AST walker. Kernel and Surface production modules are checked on
+every Cargo build; test-only modules are excluded. Calls, method references,
+imports and macro identifiers are counted by file, owning type and function.
+New references, changed counts and stale records fail the build. This is a
+source dependency inventory, not a list of bugs or a complexity proof. A
+compatibility wrapper can complete entirely in its fast path.
 
 The incremental ownership-admission routes now use
 `try_compose_checked_ownership_and_occurrences` and `returned_boundary_conflict`.
@@ -1927,13 +1927,52 @@ the checked incremental API. That API also serves exchange
 restoration, certified groups, stable-view recovery, function resource
 context evaluation, instance rewriting, contract refinement, iterated steps,
 loop guards, proof-interface joins and thread joins. The manifest names every
-caller and reference count. Older `try_compose_with_fact(s)` and delaying
-normalization variants still reach `validity_error` over the combined context;
-some also call full normalization. Their presence must not be reported as
-incremental admission merely because an outer operation carries identities.
+caller and reference count. `try_compose_with_fact(s)` and delaying
+normalization variants now use the same bounded incremental admission. The
+retained context is a producer-established partition; explicit `validity_error`
+remains available for validating raw assembled input. Composition does not
+revalidate it. Normalized composition coalesces only changed occurrences and
+bounded nominees from existing exact-resource/shape and constant-neighbor
+indexes, plus a persistent index for symbolic written endpoints. Each
+successful merge consumes a changed occurrence; a missed or loan-bound nominee
+keeps the split representation. It never walks aliases, related resource buckets,
+projection caches or the unchanged frame to find another merge. Untouched
+occurrences, supported projections and loan dependencies keep their identities.
+
+Generic held-composite expansion removes one actual parent occurrence and
+constructs `HeldCompositeBody`, carrying that source, its residual frame and
+its explicit body. Installation uses the held definition's separating-body
+rule. It does not recheck body geometry or search the frame for equal children.
+Viewed children receive only that parent's exact binding on their fresh emitted
+occurrences. Selected return construction preserves raw clause order and
+multiplicity. Optional normalization visits only the explicit body. Arbitrary
+return descriptions still establish their cross-head and caller boundaries;
+they do not acquire the held parent's frame rule merely from a role marker.
 Generic expansion also serves contract entry/certification, folding and
-observations. Removing those general APIs requires auditing these users;
-finishing automatic call returns alone does not justify deleting them.
+observations, whose remaining caller-specific work stays source pinned. Footprint projection
+coalesces the explicit ranges derived from its selected head without admitting
+them again as new ownership; conservative overlapping arm unions remain unions.
+Store framing similarly retains the selected held instance bodies' partition.
+Returned-call recovery collects checked escrow receipts without rebuilding the
+captured entry successor, checks the required output/escrow boundary, then
+installs each receipt directly into the actual return context once.
+
+Surface `unfold` constructs its body delta once before publishing definition
+facts. It retains that successor and its emitted child IDs through publication;
+it neither validates the whole projected context nor normalizes ambient buckets.
+Known directly indexed collisions still refuse before a body fact can conceal
+them. Fresh viewed children receive only the selected parent's binding; equal
+ambient children keep theirs. A body already exposed by the same loan retains
+its existing child occurrences instead of emitting duplicate views. This reuse
+uses bounded exact-child nominees and checks their retained loan authority.
+Population/control projection, selected callee
+ownership reservations, loop declarations and loop-frame restoration use their
+held or declared partition rather than raw caller-boundary admission. Their
+actual reservation/consumption checks remain responsible for custody. Pointer
+comparison builds its separation witness from the two distinct held flat
+members selected from one resource context. Partial returns spend the input
+frontier's actual fragments: distinct slices may share an original owner ID,
+but the same bytes cannot supply two outputs.
 
 The source tests in `tests/search_boundary.rs` pin the perimeter, including
 new/hidden references and duplicate caller edges. Runtime probes exercise

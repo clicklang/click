@@ -1098,6 +1098,7 @@ pub(crate) fn listed_comparison_fact_is_available(
     required: &Proposition,
     available: &[Proposition],
 ) -> bool {
+    let required_alpha = std::cell::OnceCell::new();
     let mut pending = available.iter().collect::<Vec<_>>();
     while let Some(fact) = pending.pop() {
         if fact == required {
@@ -1108,6 +1109,19 @@ pub(crate) fn listed_comparison_fact_is_available(
             continue;
         }
         if exact_fact_contains_conjunct(fact, required) {
+            return true;
+        }
+        // Fold binders are freshly allocated by each lowering. Compare only
+        // the selected root-fold atoms, using the existing state-aware key;
+        // opaque memories stay identities rather than structural cache keys.
+        if let Some((required_key, fingerprint)) = required_alpha.get_or_init(|| {
+            let key = super::fact_keys::integer_condition_alpha_key(required)?;
+            let fingerprint = key.checked_fingerprint()?;
+            Some((key, fingerprint))
+        }) && let Some(key) = super::fact_keys::integer_condition_alpha_key(fact)
+            && key.checked_fingerprint() == Some(*fingerprint)
+            && key.checked_eq(required_key) == Some(true)
+        {
             return true;
         }
         let flatten = crate::kernel::spec::proposition_as_single_condition;
@@ -3595,6 +3609,85 @@ mod integer_reflexivity_tests {
             Some(true)
         );
         assert!(normalizes_context_free(&equality));
+    }
+
+    fn listed_loaded_fold(memory: &SharedMemory, seed: u64, free: u64) -> Proposition {
+        let fold = |seed| {
+            let accumulator = Variable(seed);
+            let item = Variable(seed + 1);
+            let pointer = Pointer {
+                block: "listed-fold".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            }
+            .offset_by_typed_elements(MachineTerm::Variable(item), 4, false, false);
+            integer_fold(
+                int32_index(),
+                accumulator,
+                item,
+                IntegerTerm::add(
+                    IntegerTerm::var(accumulator),
+                    IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                        MachineIntegerType::Int32,
+                        MachineTerm::MemoryLoad(
+                            ProgramPoint::at(memory),
+                            Box::new(pointer),
+                            LoadKind::Int32,
+                        ),
+                    )),
+                ),
+            )
+        };
+        Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(
+                fold(seed).into(),
+                IntegerTerm::add(fold(seed + 2), IntegerTerm::var(Variable(free))).into(),
+            ),
+            true,
+        )
+    }
+
+    #[test]
+    fn listed_loaded_fold_premises_allow_only_bound_renaming() {
+        let _session = VerificationSession::enter();
+        let before = intern_memory(Memory::new().with_block("listed-fold", 16));
+        let after = intern_memory(before.as_ref().clone().store(
+            Pointer {
+                block: "listed-fold".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        ));
+        let source = listed_loaded_fold(&before, 970_000, 979_000);
+        let renamed = listed_loaded_fold(&before, 971_000, 979_000);
+        assert!(
+            super::super::fact_keys::integer_condition_alpha_key(&source)
+                .unwrap()
+                .checked_eq(
+                    &super::super::fact_keys::integer_condition_alpha_key(&renamed).unwrap()
+                )
+                == Some(true)
+        );
+        assert!(listed_comparison_fact_is_available(
+            &renamed,
+            std::slice::from_ref(&source)
+        ));
+        assert!(!listed_comparison_fact_is_available(&renamed, &[]));
+        for changed in [
+            listed_loaded_fold(&after, 971_000, 979_000),
+            listed_loaded_fold(&before, 971_000, 979_001),
+        ] {
+            assert!(!listed_comparison_fact_is_available(
+                &changed,
+                std::slice::from_ref(&source)
+            ));
+        }
+        let Proposition::ConditionIs(condition, _) = renamed else {
+            unreachable!()
+        };
+        assert!(!listed_comparison_fact_is_available(
+            &Proposition::ConditionIs(condition, false),
+            &[source]
+        ));
     }
 
     fn normalization_pointer_equality(left: &Pointer, right: &Pointer) -> Proposition {

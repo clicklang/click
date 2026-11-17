@@ -144,6 +144,7 @@ pub(super) fn construct(
     composition: ReturnResourceComposition,
     borrowed: bool,
     assumptions: &PureFactContext,
+    mut admission: Option<&mut ReturnFrontierAdmission>,
 ) -> Option<Construction> {
     let name = match support.resource() {
         Resource::Instance(instance) => instance.name(),
@@ -285,8 +286,27 @@ pub(super) fn construct(
                 .ok()?
                 .ok()?
         };
+        let transferred = if let Some(admission) = admission.as_deref_mut() {
+            admission.admit(&fact, assumptions)?
+        } else {
+            None
+        };
         let origin = if fact.is_view() {
             ReturnOwnershipOrigin::Description
+        } else if let Some(input) = transferred {
+            ReturnOwnershipOrigin::ConsumedCell(input)
+        } else if admission
+            .as_ref()
+            .is_some_and(|admission| !admission.constructed_partition)
+            && fact.memory_own_range().is_some()
+        {
+            ReturnOwnershipOrigin::Description
+        } else if borrowed
+            && (fixed_memory_shape(spec, &parameters).is_some()
+                || definition.condition.is_none()
+                    && summary_transfer::invariant_memory_shape(spec, &parameters))
+        {
+            ReturnOwnershipOrigin::EntryBorrow
         } else if definition.matched.is_none()
             && fact.memory_own_range().is_some()
             && let Some(clause) = clause

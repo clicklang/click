@@ -2,6 +2,8 @@
 mod float_conversions;
 #[allow(dead_code)]
 mod pointer_checks;
+mod pointer_domains;
+pub(in crate::kernel) use pointer_domains::PointerDomain;
 #[allow(dead_code)]
 mod retained_folds;
 #[allow(dead_code)]
@@ -3948,7 +3950,7 @@ impl PureFactContext {
         required: (&Pointer, Option<&Pointer>),
         available: &MemoryRange,
     ) -> bool {
-        pointer_checks::access_match(
+        if pointer_checks::access_match(
             required,
             (
                 &available.provenance,
@@ -3956,7 +3958,10 @@ impl PureFactContext {
                 available.carrier_extent_known,
             ),
             self,
-        )
+        ) {
+            return true;
+        }
+        self.selected_domain_access_matches(required, available)
     }
 
     pub(in crate::kernel) fn pointer_provenance_match(

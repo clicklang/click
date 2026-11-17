@@ -508,6 +508,7 @@ impl ResourceContextIndex {
 
     fn with_inserted(&self, entry: ResourceEntryId, fact: &ResourceFact) -> Self {
         let mut result = self.clone();
+        result.written_normalization.insert(entry, fact);
         if fact.is_own()
             && !fact
                 .memory_own_range()
@@ -774,11 +775,40 @@ impl ResourceContextIndex {
                     result.owned_memory_by_anchor =
                         insert_resource_index_entry(&result.owned_memory_by_anchor, anchor, entry);
                 }
+                if result.owned_memory_by_block.is_empty() {
+                    result.owned_hidden_memory_by_block = Default::default();
+                    result.owned_hidden_memory_generation =
+                        Some(super::memory_state::never_address_taken_generation());
+                }
+                if matches!(
+                    block,
+                    PointerBlock::Concrete(_)
+                        | PointerBlock::AutomaticLocal { .. }
+                        | PointerBlock::StaticObject { .. }
+                        | PointerBlock::AggregateReturn { .. }
+                        | PointerBlock::ContractResult
+                        | PointerBlock::ContractException
+                        | PointerBlock::Heap(_)
+                        | PointerBlock::Temporary(_)
+                ) {
+                    result.owned_physical_memory_by_block = insert_resource_index_entry(
+                        &result.owned_physical_memory_by_block,
+                        block.clone(),
+                        entry,
+                    );
+                }
                 result.owned_memory_by_block = insert_resource_index_entry(
                     &result.owned_memory_by_block,
                     block.clone(),
                     entry,
                 );
+                if block_is_never_address_taken_local(&block) {
+                    result.owned_hidden_memory_by_block = insert_resource_index_entry(
+                        &result.owned_hidden_memory_by_block,
+                        block.clone(),
+                        entry,
+                    );
+                }
                 if block.is_local_block() {
                     result.owned_automatic_memory_by_block = insert_resource_index_entry(
                         &result.owned_automatic_memory_by_block,
@@ -840,6 +870,7 @@ impl ResourceContextIndex {
 
     fn without_entry(&self, entry: ResourceEntryId, fact: &ResourceFact) -> Self {
         let mut result = self.clone();
+        result.written_normalization.remove(entry, fact);
         if fact.is_own()
             && !fact
                 .memory_own_range()
@@ -1149,6 +1180,16 @@ impl ResourceContextIndex {
                 }
                 result.owned_memory_by_block =
                     remove_resource_index_entry(&result.owned_memory_by_block, &block, entry);
+                result.owned_hidden_memory_by_block = remove_resource_index_entry(
+                    &result.owned_hidden_memory_by_block,
+                    &block,
+                    entry,
+                );
+                result.owned_physical_memory_by_block = remove_resource_index_entry(
+                    &result.owned_physical_memory_by_block,
+                    &block,
+                    entry,
+                );
                 if block.is_local_block() {
                     result.owned_automatic_memory_by_block = remove_resource_index_entry(
                         &result.owned_automatic_memory_by_block,
@@ -3759,6 +3800,15 @@ impl ResourceContext {
             .collect()
     }
 
+    /// Select one actual written occurrence without enumerating equal heads.
+    pub(crate) fn first_exact_occurrence(
+        &self,
+        fact: &ResourceFact,
+    ) -> Option<ResourceOccurrenceId> {
+        let entry = self.storage.index.exact.get(fact)?.iter().next()?;
+        Some(self.occurrence(*entry))
+    }
+
     /// Return every exact occurrence for a representation, including viewed
     /// entries.  TrackedResource rewrites use this only after inserting the exact
     /// child representation, so the caller can attach a dependency to the
@@ -6095,8 +6145,8 @@ impl ResourceContext {
         facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
-        self.try_compose_with_facts_delaying_normalization(facts, assumptions)
-            .map(|context| context.normalized(assumptions))
+        self.try_compose_with_facts_delaying_normalization_with_occurrences(facts, assumptions)
+            .map(|(context, inserted)| context.normalized_delta(inserted, assumptions))
     }
 
     pub(crate) fn try_compose_with_facts_delaying_normalization(
@@ -6113,29 +6163,15 @@ impl ResourceContext {
     /// instead of rediscovering a support by its fact value: an equal caller
     /// authority may already be live in the destination context.
     pub(crate) fn try_compose_with_facts_delaying_normalization_with_occurrences(
-        mut self,
+        self,
         facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
     {
-        // Construction owns initial attachment. In particular, prepare an
-        // empty input before insertion so it shares the already closed graph;
-        // a later read must not register or scan the resource input.
-        if self.storage.facts.is_empty() {
-            self.synchronize_memory_equalities(assumptions);
-        }
-        let mut inserted = Vec::new();
-        for fact in facts {
-            let entry = self.storage.next_entry_id;
-            self.insert_fact(fact.clone());
-            inserted.push((fact, self.occurrence(entry)));
-        }
-        let context = self;
-        if let Some(error) = context.validity_error(assumptions) {
-            return Err(error);
-        }
-        context.advance_prepared_memory_equalities(assumptions);
-        Ok((context, inserted))
+        // `self` is the retained resource partition. Establish only the new
+        // facts' relationship with it; its producer already established the
+        // old partition. Raw input validation remains an explicit operation.
+        self.try_compose_checked_ownership_and_occurrences(facts, assumptions)
     }
 
     pub(crate) fn try_compose_with_fact_with_occurrence(
@@ -6148,8 +6184,8 @@ impl ResourceContext {
                 std::iter::once(fact.clone()),
                 assumptions,
             )?;
-        let occurrence = inserted.pop().map(|(_, occurrence)| occurrence);
-        let context = context.normalized(assumptions);
+        let occurrence = inserted.last().map(|(_, occurrence)| *occurrence);
+        let context = context.normalized_delta(std::mem::take(&mut inserted), assumptions);
         let occurrence = occurrence.filter(|occurrence| {
             context
                 .storage
@@ -6273,9 +6309,19 @@ impl ResourceContext {
         (frame, transfer)
     }
 
+    pub(in crate::kernel) fn install_held_composite_body(
+        construction: crate::kernel::functions::HeldCompositeBody,
+        assumptions: &PureFactContext,
+    ) -> (Self, Vec<(ResourceFact, ResourceOccurrenceId)>) {
+        let (_source, frame, children) = construction.into_parts();
+        let (context, inserted) = frame.unchecked_with_facts_and_occurrences(children);
+        context.advance_prepared_memory_equalities(assumptions);
+        (context, inserted)
+    }
+
     /// Install the body exposed by removal of one selected held composite.
     /// Its definition supplies the relationship with the retained frame.
-    pub(in crate::kernel) fn install_established_partition(
+    pub(crate) fn install_established_partition(
         self,
         body: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
@@ -6301,7 +6347,7 @@ impl ResourceContext {
             if fact.has_proven_positive_quantity(assumptions)
                 && let crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap::Overlap(
                 entry,
-            ) = self.structural_owned_overlap(&fact, assumptions)
+            ) = self.constant_owned_overlap(&fact, assumptions)
             {
                 return Err(
                     ResourceContextValidityError::OverlappingOwnedMemoryResources {
@@ -6497,6 +6543,7 @@ impl ResourceContext {
     /// installed can recursively rediscover state and range separation
     /// through an unrelated call history. Only a conflict with the existing
     /// caller frame is new information at installation time.
+    #[cfg(test)]
     pub(crate) fn try_compose_certified_group_into_valid_context_delaying_normalization(
         self,
         facts: impl IntoIterator<Item = ResourceFact>,
@@ -6509,6 +6556,7 @@ impl ResourceContext {
         .map(|(context, _)| context)
     }
 
+    #[cfg(test)]
     pub(crate) fn try_compose_certified_group_into_valid_context_delaying_normalization_with_occurrences(
         self,
         facts: impl IntoIterator<Item = ResourceFact>,
@@ -6731,13 +6779,6 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
         self.validity_error_with_separation(assumptions, true)
-    }
-
-    pub(crate) fn validity_error_ignoring_separation(
-        &self,
-        assumptions: &PureFactContext,
-    ) -> Option<ResourceContextValidityError> {
-        self.validity_error_with_separation(assumptions, false)
     }
 
     fn validity_error_with_separation(
@@ -8305,6 +8346,125 @@ impl ResourceContext {
         self
     }
 
+    /// Coalesce only the written neighbors reached by this insertion. Every
+    /// successful iteration consumes one changed occurrence; unrelated facts,
+    /// aliases, projections, and loan dependencies retain their identities.
+    fn normalized_delta(
+        mut self,
+        inserted: Vec<(ResourceFact, ResourceOccurrenceId)>,
+        assumptions: &PureFactContext,
+    ) -> Self {
+        for (_, occurrence) in inserted {
+            let Some(mut entry) = self.storage.entry_by_occurrence.get(&occurrence).copied() else {
+                continue;
+            };
+            loop {
+                let fact = self.fact(entry).clone();
+                if !self.delta_normalization_eligible(entry) {
+                    break;
+                }
+                if fact.has_valid_exclusive_access()
+                    && fact.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0)
+                {
+                    self.remove_entry(entry);
+                    break;
+                }
+                let mut merge = None;
+                for candidate in self.written_normalization_candidates(entry, &fact) {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if !self.delta_normalization_eligible(candidate)
+                        || fact.is_own() && !self.fact(candidate).is_own()
+                    {
+                        continue;
+                    }
+                    if let Some(merged) =
+                        normalize_resource_fact_pair(self.fact(candidate), &fact, assumptions)
+                    {
+                        merge = Some((candidate, merged));
+                        break;
+                    }
+                }
+                let Some((candidate, merged)) = merge else {
+                    break;
+                };
+                // An absorbed view must not replace its unchanged owner.
+                if &merged == self.fact(candidate) {
+                    self.remove_entry(entry);
+                    break;
+                }
+                if merged == fact {
+                    self.remove_entry(candidate);
+                    continue;
+                }
+                self.remove_entry(entry);
+                self.remove_entry(candidate);
+                entry = self.storage.next_entry_id;
+                self.insert_fact(merged);
+            }
+        }
+        self.advance_prepared_memory_equalities(assumptions);
+        self
+    }
+
+    fn written_normalization_candidates(
+        &self,
+        entry: ResourceEntryId,
+        fact: &ResourceFact,
+    ) -> BTreeSet<ResourceEntryId> {
+        let mut candidates: BTreeSet<_> = self
+            .storage
+            .index
+            .written_normalization
+            .candidates(entry, fact)
+            .into_iter()
+            .collect();
+        if let Some(entries) = self.storage.index.by_resource.get(fact.resource()) {
+            candidates.extend(entries.iter().take(2).copied());
+        }
+        if let Resource::Composite { name, arguments } | Resource::Token { name, arguments } =
+            fact.resource()
+            && let Some(entries) =
+                self.storage
+                    .index
+                    .exact_shapes
+                    .get(&(fact.family(), name.clone(), arguments.len()))
+        {
+            candidates.extend(entries.iter().take(2).copied());
+        }
+        if fact.is_own()
+            && let Some(range) = fact.memory_own_range()
+            && let Some((origin, start, end)) = constant_memory_coordinates(range)
+            && let Some(count) = self
+                .storage
+                .index
+                .concrete_memory_by_base
+                .get(&(origin.clone(), true))
+            && let Some(neighbors) = self.constant_owned_neighbors(&origin, start, end, *count)
+        {
+            candidates.extend(neighbors);
+        }
+        candidates.remove(&entry);
+        candidates
+    }
+
+    fn delta_normalization_eligible(&self, entry: ResourceEntryId) -> bool {
+        let occurrence = self.occurrence(entry);
+        !self.storage.supported_by.contains_key(&entry)
+            && !self
+                .storage
+                .projections_by_support_occurrence
+                .contains_key(&occurrence)
+            && !self
+                .storage
+                .expansions_by_support_occurrence
+                .contains_key(&occurrence)
+            && self.loan_dependency(occurrence).is_none()
+            && !self
+                .structural_witnesses
+                .as_ref()
+                .is_some_and(|witnesses| witnesses.contains(occurrence))
+    }
+
     pub(in crate::kernel) fn normalized(self, assumptions: &PureFactContext) -> Self {
         self.normalized_with_byte_endpoints(assumptions, false, false)
     }
@@ -8639,6 +8799,93 @@ enum ResourceNormalizationKey {
     MemoryNativeEnd(Pointer, u32, bool, WideNormalizationEndpointKey),
     MemoryByteStart(MemoryBaseRoot, bool, i64),
     MemoryByteEnd(MemoryBaseRoot, bool, i64),
+}
+
+/// Written normalization candidates are maintained with each resource delta.
+/// Querying a key nominates at most two entries (one may be the query itself).
+/// A missed or loan-bound nominee leaves the split representation intact.
+#[derive(Clone, Debug, Default)]
+pub(super) struct WrittenNormalizationIndex {
+    entries: PersistentMap<(ResourceNormalizationKey, bool), ResourceEntryIds>,
+}
+
+impl WrittenNormalizationIndex {
+    fn keys(fact: &ResourceFact) -> Vec<ResourceNormalizationKey> {
+        let Some(range) = fact.memory_range() else {
+            return Vec::new();
+        };
+        if constant_memory_coordinates(range).is_some() {
+            return Vec::new();
+        }
+        ResourceNormalizationIndex {
+            byte_endpoints: true,
+            written_only: true,
+            ..Default::default()
+        }
+        .keys(fact)
+        .into_iter()
+        .filter(|key| {
+            matches!(
+                key,
+                ResourceNormalizationKey::MemoryStart(..)
+                    | ResourceNormalizationKey::MemoryEnd(..)
+                    | ResourceNormalizationKey::MemoryNativeStart(..)
+                    | ResourceNormalizationKey::MemoryNativeEnd(..)
+                    | ResourceNormalizationKey::MemoryByteStart(..)
+                    | ResourceNormalizationKey::MemoryByteEnd(..)
+            )
+        })
+        .collect()
+    }
+
+    fn insert(&mut self, entry: ResourceEntryId, fact: &ResourceFact) {
+        for key in Self::keys(fact) {
+            self.entries = insert_resource_index_entry(&self.entries, (key, fact.is_own()), entry);
+        }
+    }
+
+    fn remove(&mut self, entry: ResourceEntryId, fact: &ResourceFact) {
+        for key in Self::keys(fact) {
+            self.entries = remove_resource_index_entry(&self.entries, &(key, fact.is_own()), entry);
+        }
+    }
+
+    fn candidates(&self, entry: ResourceEntryId, fact: &ResourceFact) -> Vec<ResourceEntryId> {
+        let mut candidates = BTreeSet::new();
+        for key in Self::keys(fact) {
+            use ResourceNormalizationKey::*;
+            let complementary = match key {
+                MemoryStart(base, own, position) => MemoryEnd(base, own, position),
+                MemoryEnd(base, own, position) => MemoryStart(base, own, position),
+                MemoryNativeStart(base, width, own, position) => {
+                    MemoryNativeEnd(base, width, own, position)
+                }
+                MemoryNativeEnd(base, width, own, position) => {
+                    MemoryNativeStart(base, width, own, position)
+                }
+                MemoryByteStart(base, own, position) => MemoryByteEnd(base, own, position),
+                MemoryByteEnd(base, own, position) => MemoryByteStart(base, own, position),
+                key => key,
+            };
+            for own in [fact.is_own(), !fact.is_own()] {
+                // An inserted owner does not consume ambient observations.
+                // Inserting a view may still be absorbed by an existing owner.
+                if fact.is_own() && !own {
+                    continue;
+                }
+                if let Some(entries) = self.entries.get(&(complementary.clone(), own)) {
+                    candidates.extend(
+                        entries
+                            .iter()
+                            .take(2)
+                            .copied()
+                            .filter(|candidate| *candidate != entry),
+                    );
+                }
+            }
+        }
+        candidates.into_iter().collect()
+    }
 }
 
 /// The adjacency coordinate one memory bound contributes to the
@@ -9109,6 +9356,69 @@ fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<It
         AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => Some(pointer.pointer()),
         _ => None,
     })
+}
+
+/// Coalesce an explicit description list without constructing ownership or
+/// resource indexes. This is representation only: callers retain the source
+/// partition/occurrence evidence, and no ambient context is inspected.
+pub(crate) fn coalesce_written_resource_descriptions(
+    facts: Vec<ResourceFact>,
+    assumptions: &PureFactContext,
+) -> Vec<ResourceFact> {
+    #[cfg(test)]
+    let _fast = crate::kernel::search::FastOperationScope::enter(
+        "bounded constructed description normalization",
+    );
+    let mut index = ResourceNormalizationIndex {
+        byte_endpoints: false,
+        written_only: true,
+        ..Default::default()
+    };
+    let mut slots = facts
+        .into_iter()
+        .map(|fact| {
+            crate::instrumentation::record_deterministic_work(1);
+            if fact.has_valid_exclusive_access()
+                && fact.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0)
+            {
+                None
+            } else {
+                Some(fact)
+            }
+        })
+        .collect::<Vec<_>>();
+    for (position, fact) in slots.iter().enumerate() {
+        if let Some(fact) = fact {
+            index.insert(position, fact);
+        }
+    }
+    let mut position = 0;
+    while position < slots.len() {
+        let Some(left) = slots[position].clone() else {
+            position += 1;
+            continue;
+        };
+        let mut changed = false;
+        for candidate in index.candidates_after(position, &left, assumptions) {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(right) = slots[candidate].as_ref() else {
+                continue;
+            };
+            if let Some(merged) = normalize_resource_fact_pair(&left, right, assumptions) {
+                index.remove(position, &left);
+                index.remove(candidate, right);
+                slots[candidate] = None;
+                index.insert(position, &merged);
+                slots[position] = Some(merged);
+                changed = true;
+                break;
+            }
+        }
+        if !changed {
+            position += 1;
+        }
+    }
+    slots.into_iter().flatten().collect()
 }
 
 /// The block of a token or composite's first argument when that argument is

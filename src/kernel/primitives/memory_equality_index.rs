@@ -1574,6 +1574,35 @@ impl ResourceContext {
         let Some(range) = fact.memory_own_range() else {
             return Unsupported;
         };
+        if self.storage.index.boundary_private_entries.len()
+            == self.storage.index.boundary_memory_count
+            && self
+                .storage
+                .index
+                .boundary_private_registry
+                .as_ref()
+                .is_some_and(|registry| {
+                    std::sync::Arc::ptr_eq(
+                        registry,
+                        &super::super::never_address_taken_locals_key(),
+                    )
+                })
+            && assumptions
+                .equality_graph
+                .admitted
+                .local_pointer_aliases
+                .is_empty()
+            && matches!(
+                range.base().block,
+                PointerBlock::Symbolic(_)
+                    | PointerBlock::LoadedPointer(_)
+                    | PointerBlock::FunctionSymbolic(_)
+                    | PointerBlock::ExternalArgument
+                    | PointerBlock::ExternalObject(_)
+            )
+        {
+            return Clear;
+        }
         let aliases = assumptions.has_pointer_block_aliases();
         if matches!(range.base().block, PointerBlock::StringLiteral { .. }) {
             return Unsupported;
@@ -1600,13 +1629,9 @@ impl ResourceContext {
             .get(&super::resource_algebra::memory_base_root(range.base()))
             .map_or(0, ResourceEntryIds::len);
         let covered =
-            !aliases && (blocks.len() == 1 || nominal_frame) && root_members == block_members;
+            (nominal_frame || !aliases && blocks.len() == 1) && root_members == block_members;
         if block_members == 0 {
-            return if nominal_frame && !aliases {
-                Clear
-            } else {
-                Unsupported
-            };
+            return if nominal_frame { Clear } else { Unsupported };
         }
         if let Some(entry) = self
             .storage
@@ -1716,8 +1741,162 @@ impl ResourceContext {
         {
             return Clear;
         }
+        if matches!(range.base().block, PointerBlock::StringLiteral { .. }) {
+            return Unsupported;
+        }
         if let decided @ (Clear | Overlap(_)) = self.structural_owned_overlap(fact, assumptions) {
             return decided;
+        }
+        // A singleton is a bounded source, even when its endpoints are symbolic.
+        // Exact bases and widths put both intervals in the same coordinates;
+        // only written endpoint equality or direct indexed order is needed.
+        // Do not iterate a larger base bucket looking for this special case.
+        if self.flat_owned_memory_ranges().len() == 1 {
+            let (held, ()) = self
+                .flat_owned_memory_ranges()
+                .iter()
+                .next()
+                .expect("singleton owner");
+            if assumptions.contains_known(&Proposition::ResourceSeparate {
+                left: Box::new(Resource::Memory(held.clone())),
+                right: Box::new(Resource::Memory(range.clone())),
+            }) {
+                return Clear;
+            }
+            // A singleton supplies both explicit operands. Register their
+            // checked read definitions and footprint endpoints locally, never
+            // prepare or enumerate an ambient resource input. A complete
+            // class miss is the same negative check a published index makes.
+            if matches!(range.base().block, PointerBlock::LoadedPointer(_)) {
+                let mut selected = assumptions.clone();
+                selected.equality_graph = graph_for_memory_query(assumptions, held.base());
+                selected.equality_graph = graph_for_memory_query(&selected, range.base());
+                let graph = &selected.equality_graph;
+                MemoryQuery::Footprint(held).register(graph);
+                MemoryQuery::Footprint(range).register(graph);
+                if let (Some(left_start), Some(left_end), Some(right_start), Some(right_end)) = (
+                    graph.canonical_pointer(&held.start_pointer()),
+                    graph.canonical_pointer(&held.end_pointer()),
+                    graph.canonical_pointer(&range.start_pointer()),
+                    graph.canonical_pointer(&range.end_pointer()),
+                ) && left_start.representative == left_end.representative
+                    && right_start.representative == right_end.representative
+                    && left_start.representative != right_start.representative
+                    && graph.affine_addresses_complete(&left_start.representative)
+                    && graph.affine_addresses_complete(&right_start.representative)
+                {
+                    return Clear;
+                }
+            }
+            // Existing structural storage separation needs no alias walk or
+            // prepared graph, and is independent of interval endpoints.
+            if held.base().blocks_proven_distinct(range.base()) {
+                return Clear;
+            }
+            let selected_entry = || {
+                self.storage
+                    .index
+                    .owned_memory_by_block
+                    .get(&held.base().block)
+                    .and_then(|entries| entries.iter().next())
+                    .copied()
+            };
+            if let (
+                Some((left_origin, left_start, left_end)),
+                Some((right_origin, right_start, right_end)),
+            ) = (
+                super::resource_algebra::constant_memory_coordinates(held),
+                super::resource_algebra::constant_memory_coordinates(range),
+            ) && left_origin == right_origin
+            {
+                if left_start >= left_end
+                    || right_start >= right_end
+                    || left_end <= right_start
+                    || right_end <= left_start
+                {
+                    return Clear;
+                }
+                if let Some(entry) = selected_entry() {
+                    return Overlap(entry);
+                }
+            }
+            // Register only the two explicit ranges, never the ambient frame.
+            let graph = &assumptions.equality_graph;
+            let held_class = graph.footprint_class(held);
+            let query_class = graph.footprint_class(range);
+            let nonempty = |range: &MemoryRange| {
+                if read_extent(&ResourceFact::own_memory(range.clone()))
+                    .is_some_and(|bytes| bytes > 0)
+                {
+                    return true;
+                }
+                let Some((start, end)) = range.int32_bounds() else {
+                    return false;
+                };
+                if assumptions.exact_condition_value(&ConditionTerm::signed_less_than(
+                    start.clone(),
+                    end.clone(),
+                )) == Some(true)
+                {
+                    return true;
+                }
+                let interval = |term: &MachineTerm| {
+                    term.as_const()
+                        .map(|value| {
+                            let value = i64::from(value as i32);
+                            (value, value)
+                        })
+                        .or_else(|| assumptions.indexed_constant_interval(term))
+                };
+                matches!((interval(start), interval(end)), (Some((_, upper)), Some((lower, _))) if upper < lower)
+            };
+            if held_class.is_some()
+                && held_class == query_class
+                && nonempty(held)
+                && nonempty(range)
+                && let Some(entry) = selected_entry()
+            {
+                return Overlap(entry);
+            }
+            if let (Some(ls), Some(le), Some(rs), Some(re)) = (
+                graph.canonical_pointer(&held.start_pointer()),
+                graph.canonical_pointer(&held.end_pointer()),
+                graph.canonical_pointer(&range.start_pointer()),
+                graph.canonical_pointer(&range.end_pointer()),
+            ) && ls.representative == le.representative
+                && ls.representative == rs.representative
+                && ls.representative == re.representative
+            {
+                let left_end = le.offset.constant_difference(&rs.offset);
+                let right_end = re.offset.constant_difference(&ls.offset);
+                let left_length = le.offset.constant_difference(&ls.offset);
+                let right_length = re.offset.constant_difference(&rs.offset);
+                if left_length.is_some_and(|length| length <= 0)
+                    || right_length.is_some_and(|length| length <= 0)
+                {
+                    return Clear;
+                }
+                if left_end.is_some_and(|end| end <= 0) || right_end.is_some_and(|end| end <= 0) {
+                    return Clear;
+                }
+                if left_length.is_some_and(|length| length > 0)
+                    && right_length.is_some_and(|length| length > 0)
+                    && left_end.is_some_and(|end| end > 0)
+                    && right_end.is_some_and(|end| end > 0)
+                    && let Some(entry) = selected_entry()
+                {
+                    return Overlap(entry);
+                }
+            }
+            if held.base() == range.base()
+                && held.element_width() == range.element_width()
+                && let (Some((left_start, left_end)), Some((right_start, right_end))) =
+                    (held.int32_bounds(), range.int32_bounds())
+                && (direct_endpoint_separation(left_end, right_start, assumptions)
+                    || direct_endpoint_separation(right_end, left_start, assumptions))
+            {
+                return Clear;
+            }
         }
         let Some(extent) = read_extent(fact) else {
             // This recursive query has constant endpoints and cannot repeat
@@ -1793,11 +1972,7 @@ impl ResourceContext {
             return Unsupported;
         }
         let Some(bucket) = index.addresses.classes.get(&start.representative) else {
-            return if start.offset.is_constant() && end.offset.is_constant() {
-                Clear
-            } else {
-                Unsupported
-            };
+            return Clear;
         };
         if bucket.general_coordinates != 0 || bucket.write_intervals.len() != bucket.owners.len() {
             return Unsupported;
@@ -3343,5 +3518,32 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/primitives/memory_equality_index/tests.rs");
+    }
+}
+
+fn direct_endpoint_separation(
+    end: &MachineTerm,
+    start: &MachineTerm,
+    assumptions: &PureFactContext,
+) -> bool {
+    if end == start
+        || assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
+            end.clone(),
+            start.clone(),
+        )) == Some(true)
+    {
+        return true;
+    }
+    let interval = |term: &MachineTerm| {
+        term.as_const()
+            .map(|value| {
+                let value = i64::from(value as i32);
+                (value, value)
+            })
+            .or_else(|| assumptions.indexed_constant_interval(term))
+    };
+    match (interval(end), interval(start)) {
+        (Some((_, upper)), Some((lower, _))) => upper <= lower,
+        _ => false,
     }
 }

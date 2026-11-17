@@ -386,9 +386,7 @@ fn checked_pair(
         }
     }
     let ((as_, ae), (bs, be)) = (a.int32_bounds()?, b.int32_bounds()?);
-    let le = |a: &MachineTerm, b: &MachineTerm| {
-        facts.decide(&ConditionTerm::signed_less_equal(a.clone(), b.clone())) == Some(true)
-    };
+    let le = |a: &MachineTerm, b: &MachineTerm| direct_endpoint_separation(a, b, facts);
     if le(ae, as_) || le(be, bs) || le(ae, bs) || le(be, as_) {
         return Some(true);
     }
@@ -400,7 +398,17 @@ fn checked_pair(
         return None;
     }
     let lt = |a: &MachineTerm, b: &MachineTerm| {
-        facts.decide(&ConditionTerm::signed_less_than(a.clone(), b.clone())) == Some(true)
+        if facts.exact_condition_value(&ConditionTerm::signed_less_than(a.clone(), b.clone()))
+            == Some(true)
+        {
+            return true;
+        }
+        let bound = |term: &MachineTerm| {
+            term.as_const()
+                .map(|value| (i64::from(value as i32), i64::from(value as i32)))
+                .or_else(|| facts.indexed_constant_interval(term))
+        };
+        matches!((bound(a), bound(b)), (Some((_, upper)), Some((lower, _))) if upper < lower)
     };
     (lt(as_, ae) && lt(bs, be) && lt(as_, be) && lt(bs, ae)).then_some(false)
 }

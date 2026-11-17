@@ -100,3 +100,210 @@ fn fallback_inventory_constant_return_partition_is_already_search_free() {
     }
     assert_eq!(outputs.occurrences.len(), 2);
 }
+
+#[test]
+fn body_returns_use_actual_joint_custody_for_their_output_partition() {
+    use crate::kernel::program_expression::{int32_literal, variable};
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let p = Pointer::symbolic(Variable(8_915_601));
+    let q = Pointer::symbolic(Variable(8_915_602));
+    let actual = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(p.clone()))
+        .with_local("q", ProgramValue::pointer(q.clone()))
+        .with_memory(
+            Memory::new()
+                .with_block(p.block.clone(), 4)
+                .with_block(q.block.clone(), 4),
+        )
+        .with_resource_context(
+            ResourceContext::new_with_equalities(&facts).unchecked_with_facts([
+                ResourceFact::own_memory(MemoryRange::new(p.clone(), 0u32.into(), 1u32.into())),
+                ResourceFact::own_memory(MemoryRange::new(q.clone(), 0u32.into(), 1u32.into())),
+            ]),
+        );
+    for (names, succeeds) in [(vec!["p", "q"], true), (vec!["p", "p"], false)] {
+        let outputs = names
+            .into_iter()
+            .map(|name| {
+                ResourceSpec::owned_memory(MemorySegment::new(
+                    variable(name),
+                    int32_literal(0),
+                    int32_literal(1),
+                ))
+                .with_role(ResourceTransferRole::Produce)
+                .with_state_source(ResourceStateSource::Post)
+            })
+            .collect();
+        let function =
+            program_function(ProgramType::Void, "body_partition", vec![], program_skip())
+                .with_resource_summary(vec![], outputs);
+        let result = evaluate_function_return_resources(
+            &ResourceContext::new_with_equalities(&facts),
+            &[],
+            &[],
+            &[],
+            &[],
+            &actual,
+            &actual,
+            &actual,
+            &function,
+            None,
+            &ConsumedCellReturns::default(),
+            &facts,
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .unwrap();
+        assert_eq!(result.is_ok(), succeeds);
+        if let Ok(returned) = result {
+            assert_eq!(returned.output_resources.facts().len(), 2);
+        }
+    }
+}
+
+#[test]
+fn selected_frontier_returns_keep_output_carriers_and_refuse_reuse() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Pointer::symbolic(Variable(8_915_100));
+    let q = Pointer::symbolic(Variable(8_915_101));
+    let alias = Pointer::symbolic(Variable(8_915_102));
+    let facts = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(p.clone(), alias.clone()), true);
+    let range = |base| MemoryRange::new(base, 0u32.into(), 2u32.into());
+    let mut plan = ConsumedCellReturns::default();
+    plan.retain_frontier([range(p.clone()), range(q.clone())], &facts);
+    let output = ResourceFact::own_memory(
+        range(alias)
+            .with_provenance(Arc::new(Pointer::symbolic(Variable(8_915_103))))
+            .with_typed_carrier(),
+    );
+    let composition = ReturnResourceComposition::ApplyTransfers(&plan);
+    for _ in 0..2 {
+        let _fast = crate::kernel::search::FastOperationScope::enter("selected input footprint");
+        let first = EvaluatedReturnResources::for_composition(composition, &facts)
+            .admit_clause(
+                output.clone(),
+                ReturnOwnershipOrigin::Description,
+                Some(0),
+                Some(&plan),
+                &facts,
+            )
+            .unwrap();
+        assert!(matches!(
+            first.occurrences[0].origin,
+            ReturnOwnershipOrigin::ConsumedCell(_)
+        ));
+        let complete = first
+            .admit_clause(
+                ResourceFact::own_memory(range(q.clone())),
+                ReturnOwnershipOrigin::Description,
+                Some(1),
+                Some(&plan),
+                &facts,
+            )
+            .unwrap();
+        // The inputs' partition, rather than spelling-based geometry, supplies
+        // separation between these two symbolic output bases.
+        let (returned, transfers) = complete
+            .restore_entry_borrows(
+                ResourceContext::new_with_equalities(&facts),
+                composition,
+                &facts,
+            )
+            .unwrap()
+            .finish(&facts)
+            .unwrap();
+        assert_eq!(
+            returned.owned_fact_for_occurrence(transfers[0].destination),
+            Some(&output)
+        );
+        assert!(
+            complete
+                .admit_clause(
+                    ResourceFact::own_memory(range(p.clone())),
+                    ReturnOwnershipOrigin::Description,
+                    Some(2),
+                    Some(&plan),
+                    &facts
+                )
+                .is_err()
+        );
+    }
+    assert_eq!(plan.frontier.as_ref().unwrap().facts().len(), 2);
+}
+
+#[test]
+fn static_and_dynamic_flat_selections_share_one_input_supply() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let p = Pointer::symbolic(Variable(8_915_200));
+    let owner = ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 2u32.into()));
+    let (_, original) = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts_and_occurrences([owner.clone()]);
+    let selected = ConsumedCellReturn {
+        input: original[0].1,
+    };
+    for dynamic_first in [false, true] {
+        let mut plan = ConsumedCellReturns::default();
+        plan.retain_frontier([owner.memory_own_range().unwrap().clone()], &facts);
+        plan.direct.insert(1, selected);
+        let composition = ReturnResourceComposition::ApplyTransfers(&plan);
+        let roles = if dynamic_first {
+            [
+                (0, ReturnOwnershipOrigin::Description),
+                (1, ReturnOwnershipOrigin::ConsumedCell(selected)),
+            ]
+        } else {
+            [
+                (1, ReturnOwnershipOrigin::ConsumedCell(selected)),
+                (0, ReturnOwnershipOrigin::Description),
+            ]
+        };
+        let first = EvaluatedReturnResources::for_composition(composition, &facts)
+            .admit_clause(
+                owner.clone(),
+                roles[0].1,
+                Some(roles[0].0),
+                Some(&plan),
+                &facts,
+            )
+            .unwrap();
+        assert!(
+            first
+                .admit_clause(
+                    owner.clone(),
+                    roles[1].1,
+                    Some(roles[1].0),
+                    Some(&plan),
+                    &facts
+                )
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn return_coordinates_include_emitted_fields_but_defer_live_counts() {
+    let comparison = |left| SpecProposition::Comparison {
+        left,
+        operator: ComparisonOperator::Equal,
+        right: SpecExpression::Value(ProgramValue::Int32(0u32.into())),
+    };
+    assert!(return_coordinate_ensure(&comparison(
+        SpecExpression::ResourceField {
+            projection: ResourceFieldProjection {
+                identity: Variable(8_915_300),
+                children: Vec::new(),
+                field_index: 0,
+                at_entry: false,
+            },
+            program_type: ProgramType::Int32,
+        }
+    )));
+    assert!(!return_coordinate_ensure(&comparison(
+        SpecExpression::CountedResourceCount {
+            name: "member".into(),
+            arguments: Vec::new(),
+        }
+    )));
+}

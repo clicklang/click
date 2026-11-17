@@ -890,8 +890,10 @@ fn a_borrowed_composites_post_footprint_cannot_overlap_a_transferred_cell() {
         .with_memory(memory.store(field, ProgramValue::pointer(cell)))
         .with_resource_context(ResourceContext::new_with_equalities(&facts));
     let transfers = ConsumedCellReturns {
+        frontier: None,
         direct: BTreeMap::from([(1, selected)]),
         children: BTreeMap::new(),
+        borrowed: BTreeMap::new(),
         constructed: BTreeMap::new(),
     };
     let result = evaluate_contract_return_resources(
@@ -2005,6 +2007,7 @@ fn viewed_expansion_transports_only_the_selected_occurrence_dependency() {
             &crate::kernel::ProgramPoint::of_memory(&memory),
             &facts,
             Some(selected),
+            None,
         )
         .unwrap();
         let (piece, occurrence) = &body.occurrences[0];
@@ -2085,6 +2088,7 @@ fn selected_view_expansion_keeps_raw_child_bindings_through_adjacent_normalizati
         &crate::kernel::ProgramPoint::of_memory(&memory),
         &facts,
         Some(selected),
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -2174,4 +2178,202 @@ fn packaged_views_keep_normalized_descriptions_and_the_raw_source_group() {
             .collect::<Vec<_>>()
     );
     assert_eq!(pieces[0].support.occurrence, transfers[0].destination);
+}
+
+#[test]
+fn escrow_boundary_checks_live_new_outputs_but_not_removed_occurrences() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let pointer = Pointer {
+        block: "escrow-boundary".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let escrow = owner(pointer.clone(), 0, 8);
+    let protected = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(escrow);
+    let overlap = owner(pointer.clone(), 4, 12);
+    let separate = owner(pointer, 8, 12);
+    for (output, succeeds) in [(overlap, false), (separate, true)] {
+        let (live, emitted) = ResourceContext::new_with_equalities(&facts)
+            .unchecked_with_facts_and_occurrences([output.clone()]);
+        let mut boundary = EscrowRecoveryBoundary::default();
+        boundary.record(emitted[0].1, vec![output], vec![]);
+        let empty = ResourceContext::new_with_equalities(&facts);
+        let _fast = crate::kernel::search::FastOperationScope::enter("escrow boundary test");
+        assert_eq!(
+            boundary.admit(&protected, false, &live, &facts).is_ok(),
+            succeeds
+        );
+        assert!(boundary.admit(&protected, false, &empty, &facts).is_ok());
+    }
+}
+
+#[test]
+fn escrow_boundary_checks_body_frontiers_against_released_inherited_holds() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let pointer = Pointer {
+        block: "inherited-escrow-boundary".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let inherited = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(
+        pointer.clone(),
+        0,
+        8,
+    ));
+    let head = ResourceFact::own_token("emitted-body".into(), vec![]);
+    let (live, emitted) =
+        ResourceContext::new_with_equalities(&facts).unchecked_with_facts_and_occurrences([head]);
+    let mut boundary = EscrowRecoveryBoundary::default();
+    boundary.record(emitted[0].1, vec![], vec![owner(pointer, 4, 12)]);
+    let empty = ResourceContext::new_with_equalities(&facts);
+    assert!(boundary.admit(&empty, false, &live, &facts).is_ok());
+    assert!(boundary.admit(&inherited, false, &live, &facts).is_err());
+}
+
+#[test]
+fn escrow_recovery_uses_the_lend_time_frontier_of_a_folded_owner() {
+    use crate::kernel::loans::{
+        CompositeLoanBacking, LoanLedger, LoanViewBindings,
+        plan_stable_view_transfer_with_bindings_and_composites,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let pointer = Pointer {
+        block: "folded-escrow".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let piece = owner(pointer.clone(), 0, 8);
+    let head = ResourceFact::own_composite("protected".into(), vec![]);
+    let caller = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(head.clone());
+    let source = caller.unique_owned_occurrence_for_fact(&head).unwrap().0;
+    let ledger = LoanLedger::new();
+    let lender = ledger.fresh_participant().unwrap();
+    let borrower = ledger.fresh_participant().unwrap();
+    let request = CheckedResourceFact {
+        fact: ResourceFact::view_composite("protected".into(), vec![]),
+        role: ResourceTransferRole::Borrow,
+        state_source: ResourceStateSource::Entry,
+        clause_position: None,
+        section_index: None,
+        selected_mutex_source: None,
+    };
+    for (frontier, opaque) in [
+        (vec![piece.clone()], false),
+        (
+            vec![ResourceFact::own_composite("opaque-child".into(), vec![])],
+            true,
+        ),
+    ] {
+        let backings = BTreeMap::from([(
+            source,
+            CompositeLoanBacking::from_checked_expansion(source, head.clone(), frontier).unwrap(),
+        )]);
+        let plan = plan_stable_view_transfer_with_bindings_and_composites(
+            &caller,
+            std::slice::from_ref(&request),
+            &facts,
+            &ledger,
+            lender,
+            borrower,
+            &LoanViewBindings::default(),
+            &backings,
+        )
+        .unwrap();
+        let recovery = plan
+            .recover_stable_views(&facts, &BTreeMap::new(), &[])
+            .unwrap();
+        for (output, expected) in [
+            (owner(pointer.clone(), 4, 12), false),
+            (owner(pointer.clone(), 8, 12), !opaque),
+        ] {
+            let (live, emitted) = ResourceContext::new_with_equalities(&facts)
+                .unchecked_with_facts_and_occurrences([output.clone()]);
+            let mut boundary = EscrowRecoveryBoundary::default();
+            boundary.record(emitted[0].1, vec![output], vec![]);
+            let restored = recovery.restore_returned_escrows(live, &boundary, &facts);
+            assert_eq!(restored.is_ok(), expected);
+            if let Ok((restored, _)) = restored {
+                assert_eq!(restored.owned_fact_for_occurrence(source), Some(&head));
+            }
+        }
+    }
+}
+
+#[test]
+fn an_opaque_return_frontier_cannot_hide_new_ownership_from_escrow() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let protected = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(
+        Pointer::symbolic(Variable(8_919_999)),
+        0,
+        1,
+    ));
+    let head = ResourceFact::own_composite("opaque-return".into(), vec![]);
+    let (live, emitted) = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts_and_occurrences([head.clone()]);
+    let mut boundary = EscrowRecoveryBoundary::default();
+    boundary.record(emitted[0].1, vec![], vec![head]);
+    assert!(boundary.admit(&protected, false, &live, &facts).is_err());
+    assert!(
+        boundary
+            .admit(
+                &ResourceContext::new_with_equalities(&facts),
+                false,
+                &live,
+                &facts
+            )
+            .is_ok()
+    );
+}
+
+#[test]
+fn fact_only_view_expansion_keeps_ambient_child_identity_and_binding() {
+    let facts = PureFactContext::new();
+    let (parent, head, source, binding, definitions, memory) = selected_view_expansion_fixture();
+    let at = crate::kernel::ProgramPoint::of_memory(&memory);
+    let first = construct_composite_resource_body(
+        &parent,
+        &head,
+        &definitions,
+        &at,
+        &facts,
+        Some(source),
+        None,
+    )
+    .unwrap();
+    let child = first.raw_children[0].clone();
+    let (parent, ambient) =
+        parent.unchecked_with_facts_and_occurrences([child.clone(), head.clone()]);
+    for choice in [None, Some(source)] {
+        let body = construct_composite_resource_body(
+            &parent,
+            &head,
+            &definitions,
+            &at,
+            &facts,
+            choice,
+            None,
+        )
+        .unwrap();
+        let emitted = body.occurrences[0].1;
+        assert_ne!(emitted, ambient[0].1);
+        assert_eq!(
+            body.expanded.view_fact_for_occurrence(ambient[0].1),
+            Some(&child)
+        );
+        assert!(body.expanded.loan_dependency(ambient[0].1).is_none());
+        assert_eq!(
+            body.expanded.loan_dependency(emitted),
+            Some(&LoanViewBinding {
+                viewed: child.clone(),
+                ..binding.clone()
+            })
+        );
+        assert!(
+            body.expanded
+                .view_fact_for_occurrence(ambient[1].1)
+                .is_some()
+        );
+        assert!(body.expanded.view_fact_for_occurrence(source).is_none());
+    }
 }

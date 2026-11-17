@@ -697,6 +697,9 @@ fn selected_scalar_transfers_scale_with_the_return_delta() {
             .unchecked_with_facts_and_occurrences(pieces);
         let mut evaluated = EvaluatedReturnResources {
             body: None,
+            unclassified: ResourceContext::new_with_equalities(&facts),
+            selected_inputs: BTreeSet::new(),
+            checked_frontier: None,
             resources,
             occurrences: emitted
                 .into_iter()
@@ -846,6 +849,9 @@ fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
                 .unchecked_with_facts_and_occurrences([output.clone()]);
             let mut evaluated = EvaluatedReturnResources {
                 body: None,
+                unclassified: ResourceContext::new_with_equalities(&facts),
+                selected_inputs: BTreeSet::new(),
+                checked_frontier: None,
                 resources,
                 occurrences: vec![EvaluatedReturnOccurrence {
                     clause: None,
@@ -1014,6 +1020,9 @@ fn fresh_allocation_return_work_scales_with_selected_return_pieces() {
             .unchecked_with_facts_and_occurrences(pieces);
         let mut evaluated = EvaluatedReturnResources {
             body: None,
+            unclassified: ResourceContext::new_with_equalities(&facts),
+            selected_inputs: BTreeSet::new(),
+            checked_frontier: None,
             resources,
             occurrences: inserted
                 .iter()
@@ -1406,15 +1415,26 @@ fn selected_view_child_expansion_ignores_equal_head_occurrences_and_bindings() {
                 let _fast = crate::kernel::search::FastOperationScope::enter(
                     "selected viewed child expansion",
                 );
-                construct_composite_resource_body(
-                    &context,
-                    &head,
-                    &definitions,
-                    &crate::kernel::ProgramPoint::of_memory(&memory),
-                    &facts,
-                    Some(selected),
-                )
-                .unwrap()
+                let mut result = None;
+                for choice in [Some(selected), None] {
+                    let body = construct_composite_resource_body(
+                        &context,
+                        &head,
+                        &definitions,
+                        &crate::kernel::ProgramPoint::of_memory(&memory),
+                        &facts,
+                        choice,
+                        None,
+                    )
+                    .unwrap();
+                    let child = body.occurrences[0].1;
+                    assert_eq!(
+                        body.expanded.loan_dependency(child).unwrap().loan,
+                        binding.loan
+                    );
+                    result = Some(body);
+                }
+                result.unwrap()
             });
             let (piece, source) = &body.occurrences[0];
             assert!(piece.is_view());
@@ -2024,7 +2044,9 @@ fn specialized_return_producers_ignore_retained_state_and_scale_with_their_bodie
                         // geometry miss. This producer test must not invoke their
                         // legacy discovery or call a miss established separation.
                         match frame.admit_returned_flat_body(body, &facts) {
-                            FlatBodyAdmission::Admitted | FlatBodyAdmission::Unestablished(_) => {}
+                            FlatBodyAdmission::Admitted
+                            | FlatBodyAdmission::Unestablished(_)
+                            | FlatBodyAdmission::Unsupported => {}
                             FlatBodyAdmission::Conflict { .. } => {
                                 panic!("fixture has no stated overlap")
                             }
@@ -2608,4 +2630,66 @@ fn fixed_input_partition_recipe_scales_with_its_declared_fields() {
         samples[2] <= 6 * samples[1] + 32,
         "partition recipes: {samples:?}"
     );
+}
+
+#[test]
+fn selected_input_frontier_queries_do_not_scan_related_or_unrelated_pieces() {
+    for related in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = PureFactContext::new();
+            let pointer = Pointer::symbolic(Variable(9_970_000));
+            let ranges = (0..count)
+                .map(|index| {
+                    let base = if related {
+                        pointer.clone()
+                    } else {
+                        Pointer::symbolic(Variable(9_970_000 + index))
+                    };
+                    let start = if related { index as u32 * 4 } else { 0 };
+                    MemoryRange::new(base, start.into(), (start + 1).into())
+                })
+                .collect::<Vec<_>>();
+            let mut plan = ConsumedCellReturns::default();
+            plan.retain_frontier(ranges.clone(), &facts);
+            let composition = ReturnResourceComposition::ApplyTransfers(&plan);
+            let query = ResourceFact::own_memory(ranges[0].clone());
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "finite input frontier selection",
+                );
+                let first = EvaluatedReturnResources::for_composition(composition, &facts)
+                    .admit_clause(
+                        query.clone(),
+                        ReturnOwnershipOrigin::Description,
+                        Some(0),
+                        Some(&plan),
+                        &facts,
+                    )?;
+                assert!(matches!(
+                    first.occurrences[0].origin,
+                    ReturnOwnershipOrigin::ConsumedCell(_)
+                ));
+                assert!(
+                    first
+                        .admit_clause(
+                            query.clone(),
+                            ReturnOwnershipOrigin::Description,
+                            Some(1),
+                            Some(&plan),
+                            &facts
+                        )
+                        .is_err()
+                );
+                Ok::<_, ResourceContextValidityError>(())
+            });
+            result.unwrap();
+            samples.push(work);
+        }
+        assert!(
+            samples[2] <= samples[0] * 3 + 100,
+            "related={related}: {samples:?}"
+        );
+    }
 }

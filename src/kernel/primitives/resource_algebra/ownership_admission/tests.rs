@@ -140,7 +140,7 @@ fn cold_return_boundary_keeps_the_aliased_held_fact_and_parent_partition() {
     let parent = ResourceContext::new().unchecked_with_fact(owner(at(1), 4, 8));
     assert!(matches!(
         parent.returned_boundary_conflict(std::slice::from_ref(&piece), &facts),
-        Err(ResourceContextValidityError::UnestablishedOwnedBoundary(_))
+        Ok(None)
     ));
     parent.synchronize_memory_equalities(&facts);
     assert!(
@@ -363,5 +363,118 @@ fn automatic_storage_and_entry_arguments_keep_their_structural_partition() {
             .unchecked_with_fact(global)
             .admit_without_discovery([argument], &facts),
         OwnershipAdmission::Unsupported(_)
+    ));
+}
+
+#[test]
+fn cold_singleton_and_prepared_aliases_keep_the_selected_held_fact() {
+    let facts =
+        PureFactContext::new().assume_condition(ConditionTerm::pointer_equal(at(0), at(1)), true);
+    let piece = owner(at(0), 0, 4);
+    let parent = ResourceContext::new().unchecked_with_fact(owner(at(1), 4, 8));
+    let _fast = crate::kernel::search::FastOperationScope::enter("bounded aliased return boundary");
+    assert!(matches!(
+        parent.admit_returned_frontier(std::slice::from_ref(&piece), &facts),
+        FlatBodyAdmission::Admitted
+    ));
+    parent.synchronize_memory_equalities(&facts);
+    assert!(matches!(
+        parent.admit_returned_frontier(std::slice::from_ref(&piece), &facts),
+        FlatBodyAdmission::Admitted
+    ));
+    let held = owner(at(1), 0, 4);
+    let branch = parent.clone().unchecked_with_fact(held.clone());
+    let FlatBodyAdmission::Conflict {
+        piece: selected_piece,
+        held: selected_held,
+    } = branch.admit_returned_frontier(std::slice::from_ref(&piece), &facts)
+    else {
+        panic!("prepared alias conflict");
+    };
+    assert_eq!(*selected_piece, piece);
+    assert_eq!(*selected_held, held);
+    assert!(matches!(
+        parent.admit_returned_frontier(&[piece], &facts),
+        FlatBodyAdmission::Admitted
+    ));
+    assert_eq!(parent.facts().len(), 1);
+    assert_eq!(branch.facts().len(), 2);
+}
+
+#[test]
+fn legacy_composition_checks_only_new_ownership_and_keeps_untouched_occurrences() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let unrelated = owner(at(1), 0, 4);
+    let (frame, originals) = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts_and_occurrences([unrelated.clone(), owner(at(0), 0, 4)]);
+    let _fast = crate::kernel::search::FastOperationScope::enter("legacy composition delta");
+    // Adding a token does not re-prove the frame's unknown pointer geometry.
+    let token = ResourceFact::own(Resource::Token {
+        name: "credit".into(),
+        arguments: vec![].into(),
+    });
+    let result = frame
+        .clone()
+        .try_compose_with_facts([token.clone(), token.clone()], &facts)
+        .unwrap();
+    assert_eq!(
+        result.owned_fact_for_occurrence(originals[0].1),
+        Some(&unrelated)
+    );
+    assert_eq!(result.facts().len(), 3);
+    assert!(result.satisfies_fact(
+        &ResourceFact::Own(token.resource().clone(), Box::new(2u32.into())),
+        &facts
+    ));
+    // Raw descriptions still need the relationship to this exact frame.
+    assert!(matches!(
+        frame.clone().try_compose_with_fact(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                at(0),
+                1u32.into(),
+                MachineTerm::Variable(Variable(8_770_999)),
+                1,
+            )),
+            &facts
+        ),
+        Err(ResourceContextValidityError::UnestablishedOwnedBoundary(_))
+    ));
+    assert!(matches!(
+        frame
+            .clone()
+            .try_compose_with_facts([owner(at(0), 4, 8), owner(at(0), 6, 10)], &facts),
+        Err(ResourceContextValidityError::OverlappingOwnedMemoryResources { .. })
+            | Err(ResourceContextValidityError::UnestablishedOwnedBoundary(_))
+    ));
+    assert_eq!(
+        frame.owned_fact_for_occurrence(originals[0].1),
+        Some(&unrelated)
+    );
+}
+
+#[test]
+fn legacy_composition_coalesces_written_neighbors_without_whole_normalization() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let frame = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts([owner(at(0), 0, 4), owner(at(0), 12, 16)]);
+    let untouched = frame.first_exact_occurrence(&owner(at(0), 12, 16)).unwrap();
+    let _ = take_whole_normalization_facts();
+    let _fast = crate::kernel::search::FastOperationScope::enter("written composition neighbors");
+    let result = frame
+        .clone()
+        .try_compose_with_fact(owner(at(0), 4, 8), &facts)
+        .unwrap();
+    assert!(result.contains_exact_representation(&owner(at(0), 0, 8)));
+    assert_eq!(
+        result.owned_fact_for_occurrence(untouched),
+        Some(&owner(at(0), 12, 16))
+    );
+    assert_eq!(take_whole_normalization_facts(), 0);
+    assert!(matches!(
+        ResourceContext::new_with_equalities(&facts)
+            .try_compose_with_facts([owner(at(0), 0, 4), owner(at(0), 0, 4)], &facts),
+        Err(ResourceContextValidityError::OverlappingOwnedMemoryResources { .. })
     ));
 }

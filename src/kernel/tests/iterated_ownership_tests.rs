@@ -366,10 +366,22 @@ fn iterated_element_selection_checks_pointer_reads_across_states() {
         1u32.into(),
         2u32.into(),
     ));
+    let frame = taken
+        .resources()
+        .facts()
+        .iter()
+        .filter(|fact| fact.memory_own_range().is_some())
+        .map(|fact| fact.resource().clone())
+        .reduce(Resource::star)
+        .unwrap();
+    let addition_facts = PureFactContext::new().assume_proposition(Proposition::ResourceSeparate {
+        left: Box::new(extra.resource().clone()),
+        right: Box::new(frame),
+    });
     let taken_resources = taken
         .resources()
         .clone()
-        .try_compose_with_facts([extra], &PureFactContext::new())
+        .try_compose_with_facts([extra], &addition_facts)
         .unwrap();
     let taken = taken.with_resource_context(taken_resources);
     let give = crate::kernel::IteratedStep::Give {

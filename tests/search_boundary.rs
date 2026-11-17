@@ -1667,3 +1667,66 @@ fn ownership_boundaries_cannot_restore_discovery() {
         );
     }
 }
+
+#[test]
+fn migrated_return_partitions_and_boundaries_cannot_restore_legacy_search() {
+    for (path, function) in [
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "admit_clause",
+        ),
+        ("src/kernel/functions/mixed_return_resources.rs", "finish"),
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "take_returned_footprint",
+        ),
+        ("src/kernel/functions/mixed_return_resources.rs", "admit"),
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "finish_group",
+        ),
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "retain_frontier",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "construct_composite_resource_body",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "produced_composite_frontier_conflict",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "recover_candidate_stable_view_resources",
+        ),
+        ("src/kernel/loans.rs", "recover_stable_views_impl"),
+    ] {
+        for target in [
+            "try_compose_with_legacy_discovery_and_occurrences",
+            "returned_boundary_conflict_with_legacy_discovery",
+            "resume_legacy_discovery",
+            "legacy_memory_boundary_conflict",
+            "validity_error",
+        ] {
+            for source in [
+                format!("fn {function}(c:C) {{ c.{target}(); }}"),
+                format!("fn {function}(c:C) {{ hidden!(c.{target}()); }}"),
+            ] {
+                assert!(boundary::check_source(path, &source).is_err(), "{source}");
+            }
+        }
+    }
+}
+
+#[test]
+fn ownership_endpoint_checks_cannot_reconstruct_order_paths() {
+    assert!(
+        boundary::check_source(
+            "src/kernel/primitives/memory_equality_index.rs",
+            "fn constant_owned_overlap(c:C) { c.decide(condition); }"
+        )
+        .is_err()
+    );
+}

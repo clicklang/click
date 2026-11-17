@@ -2323,6 +2323,15 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
                     true,
                 )
         });
+        let frame = footprint[..3]
+            .iter()
+            .map(|fact| fact.resource().clone())
+            .reduce(Resource::star)
+            .unwrap();
+        let assumptions = assumptions.assume_proposition(Proposition::ResourceSeparate {
+            left: Box::new(footprint[3].resource().clone()),
+            right: Box::new(frame),
+        });
         let (composed, work) = crate::instrumentation::measure_deterministic_work(|| {
             ResourceContext::new().try_compose_with_facts(footprint.iter().cloned(), &assumptions)
         });

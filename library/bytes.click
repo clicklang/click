@@ -36,3 +36,55 @@ predicate all_not_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
         bytes[k] != value
     })
 }
+
+// The sign of a byte comparison follows its first differing unsigned byte.
+predicate comparison(left: uint8[], right: uint8[], length: uint64, cmp: int32) {
+    (cmp == 0 implies bytes::equal(left, 0u64, right, 0u64, length)) and
+    (cmp != 0 implies not bytes::equal(left, 0u64, right, 0u64, length)) and
+    forall (k: uint64) {
+        k < length and bytes::equal_range(left, right, 0u64, k) implies
+            (left[k] < right[k] implies cmp < 0) and
+            (right[k] < left[k] implies cmp > 0)
+    }
+}
+
+theorem comparison_negative_after_prefix(left: uint8[], right: uint8[], length: uint64, first: uint64, cmp: int32) {
+    requires bytes::comparison(left, right, length, cmp);
+    requires first < length;
+    requires bytes::equal_range(left, right, 0u64, first);
+    requires left[first] < right[first];
+    ensures cmp < 0 by {
+        unfold(bytes::comparison(left, right, length, cmp));
+        instantiate(forall (k: uint64) {
+            k < length and bytes::equal_range(left, right, 0u64, k) implies
+                (left[k] < right[k] implies cmp < 0) and
+                (right[k] < left[k] implies cmp > 0)
+        }, first);
+        solve();
+    }
+}
+
+theorem comparison_positive_after_prefix(left: uint8[], right: uint8[], length: uint64, first: uint64, cmp: int32) {
+    requires bytes::comparison(left, right, length, cmp);
+    requires first < length;
+    requires bytes::equal_range(left, right, 0u64, first);
+    requires right[first] < left[first];
+    ensures cmp > 0 by {
+        unfold(bytes::comparison(left, right, length, cmp));
+        instantiate(forall (k: uint64) {
+            k < length and bytes::equal_range(left, right, 0u64, k) implies
+                (left[k] < right[k] implies cmp < 0) and
+                (right[k] < left[k] implies cmp > 0)
+        }, first);
+        solve();
+    }
+}
+
+theorem comparison_zero_when_equal(left: uint8[], right: uint8[], length: uint64, cmp: int32) {
+    requires bytes::comparison(left, right, length, cmp);
+    requires bytes::equal(left, 0u64, right, 0u64, length);
+    ensures cmp == 0 by {
+        unfold(bytes::comparison(left, right, length, cmp));
+        solve();
+    }
+}

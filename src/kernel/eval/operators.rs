@@ -2167,14 +2167,11 @@ fn compared_pointer_holders_composition(
         left: Box::new(Resource::Memory(left_member.clone())),
         right: Box::new(Resource::Memory(right_member.clone())),
     };
-    let composition = ResourceContext::new()
-        .try_compose_with_facts_delaying_normalization(
-            [left_member, right_member]
-                .into_iter()
-                .map(ResourceFact::own_memory),
-            assumptions,
-        )
-        .ok()?;
+    let composition = ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
+        [left_member, right_member]
+            .into_iter()
+            .map(ResourceFact::own_memory),
+    );
     Some((composition, separation))
 }
 

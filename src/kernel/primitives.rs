@@ -158,6 +158,7 @@ pub(in crate::kernel) mod canonical_fact_set;
 mod composition_member_index;
 mod memory_equality_index;
 mod resource_algebra;
+pub(crate) use resource_algebra::coalesce_written_resource_descriptions;
 #[cfg(test)]
 pub(crate) use resource_algebra::take_whole_normalization_facts;
 mod arithmetic_domains;
@@ -11147,6 +11148,7 @@ pub(super) struct ResourceContextIndex {
     /// so a kept set's identity can name them in constant work.
     pub(super) owned_composite_facts: HashedOrdMap<ResourceFact, usize>,
     pub(super) exact: PersistentMap<ResourceFact, ResourceEntryIds>,
+    written_normalization: resource_algebra::WrittenNormalizationIndex,
     /// Exact physical ranges with their access modes, only for observing
     /// partition separation. Entries still carry their original authority.
     pub(super) spatial_memory: PersistentMap<ResourceFact, ResourceEntryIds>,
@@ -11192,6 +11194,9 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// Automatic memory owners, indexed independently of external and global
     /// holdings. Addressability is checked when projecting observable facts.
+    pub(super) owned_hidden_memory_generation: Option<u64>,
+    pub(super) owned_physical_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
+    pub(super) owned_hidden_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     pub(super) owned_automatic_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// The blocks holding two or more owned memory ranges. Only those can
     /// contribute same-block separation candidates, so projecting a
@@ -11838,6 +11843,8 @@ impl ResourceInstance {
 pub enum ResourceContextValidityError {
     /// A raw symbolic boundary needs this explicit separation premise.
     UnestablishedOwnedBoundary(Box<Proposition>),
+    /// Opaque ownership lacks a finite indexed frontier.
+    UnsupportedOwnershipBoundary,
     InvalidExclusiveAccess(ResourceFact),
     DuplicateOwnedResourceFact(ResourceFact),
     OverlappingOwnedMemoryResources {
@@ -11849,6 +11856,7 @@ pub enum ResourceContextValidityError {
 impl std::fmt::Display for ResourceContextValidityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Self::UnsupportedOwnershipBoundary => "ownership separation lacks an indexed finite frontier",
             Self::UnestablishedOwnedBoundary(_) => "symbolic ownership boundary requires an explicit separation proof",
             Self::InvalidExclusiveAccess(_) => {
                 "field-bearing resource instances and mutex guards require exclusive ownership with quantity one"
