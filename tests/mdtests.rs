@@ -43,6 +43,7 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    "a_summarized_pure_loop_does_not_record_its_test_state.md", // 0.84s focused; fast layout coverage checks the test selector
     "scalar_induction_after_helper_facts.md", // 0.78s in the parallel induction fixture selection
     "witness_mixed_type_values.md", // 1.36s focused: pointer, Integer, and machine binders
     "modeled_pthread_copied_handle.md", // 0.6s focused: forwarded handle and retained equality

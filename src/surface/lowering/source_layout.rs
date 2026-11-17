@@ -1763,12 +1763,7 @@ impl SourceExecutionLayout {
                         .iter()
                         .find(|region| data.loop_tests.contains(region))
                         .copied()
-                        .ok_or_else(|| {
-                            format!(
-                                "`{}` tests its condition at its head, before any region of its own, so it has no `test()`",
-                                describe(&path)
-                            )
-                        });
+                        .ok_or_else(|| format!("`{}` has no loop test region", describe(&path)));
                 }
                 SourcePathStep::Assignment(local, index) if last => {
                     let assigns = |region: &usize| {
@@ -2991,6 +2986,20 @@ mod loop_phase_source_tests {
                 "the test must not overwrite source statements or their end boundary"
             );
             assert!(layout.is_hidden_loop_test(test));
+            if function.prelowered_kernel_function().is_none() {
+                use crate::surface::{ProgramPointKind, SourcePathStep};
+                assert_eq!(
+                    layout.source_path_region(&[SourcePathStep::Loop(0)], ProgramPointKind::Exit),
+                    Ok(0),
+                );
+                assert_eq!(
+                    layout.source_path_region(
+                        &[SourcePathStep::Loop(0), SourcePathStep::Test],
+                        ProgramPointKind::Exit,
+                    ),
+                    Ok(test),
+                );
+            }
             assert_eq!(layout.statement(test).unwrap().continuation_node, 1);
             assert_ne!(
                 test, 0,

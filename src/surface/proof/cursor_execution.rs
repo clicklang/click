@@ -848,13 +848,13 @@ fn execute_concrete_loop_head_step(
         current_state.clone(),
     );
     execution.core.frontier.execution_start_state = Some(execution_start_state);
-    execution.core.state = current_state.clone().into();
     let sources = execution
         .core
         .enter_loop_phases(function, arguments)
         .map_err(|refusal| {
             ClickError::new(describe_evidence_refusal(&refusal, parameter_binding))
         })?;
+    execution.core.state = current_state.clone().into();
     let pass = crate::kernel::program_loop_pass(body, update.as_deref(), Some(test));
     let after_loop = remaining.map(Arc::new);
     let repeat = match &after_loop {

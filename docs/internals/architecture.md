@@ -42,7 +42,8 @@ on either decision before its outcome is published.
 
 Checked concrete loop entry records a structural `LoopEntry` event and explicit
 `continue` and `break` destinations. The event retains the entered source pass;
-it needs neither a `Skip` theorem nor a rewritten post-test loop. Each keeps the driver's local source position separately from
+it needs neither a `Skip` theorem nor a rewritten post-test loop. Each keeps
+the driver's local source position separately from
 the kernel's full evidence cursor, which includes enclosing loop and function
 tails. The continuation code comes from that checked source construction.
 Transfers discard only the inner lexical continuations they leave, restore the

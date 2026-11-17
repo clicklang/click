@@ -3951,7 +3951,7 @@ before it and counted from zero there:
 | `S.call(j)` | `S`'s `j`th call of any callee, a call through a function pointer included, in the order the calls run |
 | `call(f, j)` | the function's `j`th call of `f`, counting all its calls of `f` in the order they run |
 | `call(j)` | the function's `j`th call of any callee, in the order the calls run |
-| `loop(i).test()` | the test of loop `i` whose condition calls a function, after those calls; refused for a pure condition, which is tested at the head |
+| `loop(i).test()` | the decision of loop `i`, after any condition preparation; pure conditions have the same test region |
 | `S.assignment(x, j)` | `S`'s `j`th atomic region of its own that assigns local `x` |
 | `S.read(j)` | `S`'s `j`th atomic region of its own with an explicit scalar memory load |
 | `S.and(j)`, `S.or(j)`, `S.ternary(j)` | `S`'s `j`th `&&`, `\|\|` or ternary operator whose operands make steps, where it decides which run; `.result` is its value on the path |

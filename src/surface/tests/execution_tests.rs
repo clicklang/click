@@ -2609,6 +2609,7 @@ fn recorded_points_are_named_by_the_point_each_path_reached() {
 }
 
 #[test]
+#[ignore = "nightly: 0.58s in the parallel gate; source-point separation stays in the fast layout test"]
 fn a_loop_test_does_not_publish_the_whole_loops_exit_state() {
     let c_source = r#"
         int32 count_two() {
