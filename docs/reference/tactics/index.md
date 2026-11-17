@@ -3289,7 +3289,9 @@ an `ensuring` interface can rejoin before the block closes.
 
 Missing ownership, an undecided guard, or failure to restore the body fails. A
 body fact the closing fold leaves open is proved by the implicit closer, which
-expansion prints as `open(...) { ... } by { ... }`. Click checks the exact
+expansion prints as `open(...) { ... } by { ... }`. When it leaves several open,
+the implicit closer proves each, and expansion prints them as `have`s at the end
+of the block. Click checks the exact
 resource transition; expansion recurses, and profiling reports descendants.
 
 **Checked examples:** [`resource_population_open.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_population_open.md), [`open_scope_model_match_terminal.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_terminal.md), [`open_scope_model_match_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejoins.md), [`open_scope_model_match_rejects_bad_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejects_bad_arm.md)
@@ -3310,7 +3312,8 @@ this `by`. The body is one tactic call, such as `solve();`, or a block.
 **Failure, checking, and tools:**
 
 Refused when the close leaves no body fact open (superfluous) or more than one;
-prove the others with `have` in the block. Expansion keeps the `by` and
+prove the others with `have` in the block, the form expansion writes for a bare
+`open` whose close leaves several. Expansion keeps the `by` and
 prints the body's checked steps; a smart tactic written in the `by` expands with its claim
 (`click expand --claim`), not as a site of its own.
 

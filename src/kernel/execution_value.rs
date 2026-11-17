@@ -598,6 +598,9 @@ impl Ord for StoredExecutionValue {
 }
 
 #[cfg(test)]
+mod storage_contract_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

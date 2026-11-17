@@ -3244,6 +3244,29 @@ fn decided_by_kernel_condition_decision(
     }
 }
 
+thread_local! {
+    static UNFOLD_WITNESS_NAMES: std::cell::RefCell<Vec<(String, String)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Runs an unfold whose `let ... where` witnesses the proof names, as
+/// `(witness, proof name)` pairs, so its published body facts are spelled
+/// with those names.
+pub(super) fn with_unfold_witness_names<R>(
+    names: &[(String, String)],
+    operation: impl FnOnce() -> R,
+) -> R {
+    struct Restore(Vec<(String, String)>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = std::mem::take(&mut self.0);
+            UNFOLD_WITNESS_NAMES.with(|names| *names.borrow_mut() = previous);
+        }
+    }
+    let _restore = Restore(UNFOLD_WITNESS_NAMES.with(|current| current.replace(names.to_vec())));
+    operation()
+}
+
 fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
@@ -3289,6 +3312,20 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         claim_label,
         tactic_index,
     )?);
+    // A witness the proof names here, `let { w: name } = unfold(...)`, is
+    // written by that name in the body facts this unfold publishes.
+    UNFOLD_WITNESS_NAMES.with(|names| {
+        for (witness, name) in names.borrow().iter() {
+            if spelling_substitutions.contains_key(witness) {
+                spelling_substitutions.insert(
+                    witness.clone(),
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        name.as_str().into(),
+                    )),
+                );
+            }
+        }
+    });
     let body_active = composite_resource_body_is_active_with_assumptions(
         definition,
         &substitutions,
