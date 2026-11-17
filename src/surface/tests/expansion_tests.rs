@@ -2718,14 +2718,46 @@ fn integer_sum_range_fold_expands_and_reverifies() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let verified_for_expansion =
+    assert!(!click_source.contains("transport("), "{click_source}");
+    let verified_for_expansion = with_proof_trace("sum", || {
         verify_c_sources(click_source, &c_sources).unwrap_or_else(|error| {
-            panic!("summation ordinary verification failed: {}", error.report())
-        });
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        })
+    });
     let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "sum")
         .expect("the summation grouped proof should expand");
-    verify_c_sources(&expanded, &c_sources)
-        .expect("the expanded summation proof should reverify independently");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("sum.contract", || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // Omitting accumulation preserves the memory frame but falsifies the sum.
+    let wrong_sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| {
+            (
+                name.as_str(),
+                source.replace("total = total + a[i];", "total = total;"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_ne!(wrong_sources[0].1, c_sources[0].1);
+    let wrong_sources = wrong_sources
+        .iter()
+        .map(|(name, source)| (*name, source.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c_sources(click_source, &wrong_sources).unwrap_err();
+    assert!(
+        error.report().contains("error kind: proof error"),
+        "{}",
+        error.report()
+    );
 }
 
 #[test]
