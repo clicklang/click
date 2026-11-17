@@ -2776,7 +2776,7 @@ impl<'a> Proof<'a> {
     /// An `Integer` binder's argument, captured as a mathematical value in
     /// the current proof context: the theorem's and the proof's `Integer`
     /// bindings in a pure proof, the fixed-state environment otherwise.
-    fn capture_instantiate_integer_argument(
+    pub(in crate::surface::proof) fn capture_instantiate_integer_argument(
         &self,
         argument: &ContractExpression,
     ) -> Result<crate::kernel::IntegerTerm, ClickError> {

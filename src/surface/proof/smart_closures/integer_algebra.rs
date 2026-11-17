@@ -39,35 +39,81 @@ fn product(terms: &[Expr]) -> Expr {
 fn have(p: ClickProposition, body: Vec<ProofStep>) -> ProofStep {
     super::super::wide_arithmetic::have(p, body)
 }
-// Partial operations retain their written evaluation domains inside a fresh
-// binder as well as in explicit theorem applications.
-fn argument_domains(args: &[Expr]) -> Vec<ClickProposition> {
-    let mut premises = Vec::new();
-    for arg in args {
-        super::super::fixed_state_proofs::conversion_conditions::walk_written_expressions(
-            arg,
-            &mut |e| {
-                if let Expr::Call { name, arguments } = e
-                    && matches!(
-                        name.rsplit("::").next(),
-                        Some("truncating_quotient" | "truncating_remainder")
-                    )
-                    && let [_, d] = arguments.as_slice()
-                {
-                    let p = ClickProposition::Comparison {
-                        left: d.clone(),
-                        operator: ComparisonOperator::NotEqual,
-                        right: num(0),
-                    };
-                    if !premises.contains(&p) {
-                        premises.push(p);
+// Reject non-identities before evaluating Surface arguments or selecting laws.
+// In particular, native arithmetic stays an atom while its bridge is proved.
+fn symbolic_shape(
+    term: &SharedIntegerTerm,
+    depth: usize,
+    memo: &mut std::collections::HashMap<u64, Poly>,
+) -> Option<Poly> {
+    use crate::kernel::IntegerTerm;
+    if depth >= 256 || crate::instrumentation::deadline_exceeded_with_work(1) {
+        return None;
+    }
+    if let Some(shape) = memo.get(&term.id()) {
+        if crate::instrumentation::deadline_exceeded_with_work(shape.len()) {
+            return None;
+        }
+        return Some(shape.clone());
+    }
+    let mut shape = if let Some(value) = term.as_const() {
+        BTreeMap::from([(vec![], value.clone())])
+    } else {
+        match term.as_ref() {
+            IntegerTerm::Add(a, b) | IntegerTerm::Subtract(a, b) => {
+                let mut left = symbolic_shape(a, depth + 1, memo)?;
+                for (keys, value) in symbolic_shape(b, depth + 1, memo)? {
+                    if crate::instrumentation::deadline_exceeded_with_work(
+                        value.bits() as usize + 1,
+                    ) {
+                        return None;
+                    }
+                    *left.entry(keys).or_default() +=
+                        if matches!(term.as_ref(), IntegerTerm::Subtract(..)) {
+                            -value
+                        } else {
+                            value
+                        };
+                }
+                left
+            }
+            IntegerTerm::Negate(value) => symbolic_shape(value, depth + 1, memo)?
+                .into_iter()
+                .map(|(keys, value)| (keys, -value))
+                .collect(),
+            IntegerTerm::Multiply(a, b) => {
+                let left = symbolic_shape(a, depth + 1, memo)?;
+                let right = symbolic_shape(b, depth + 1, memo)?;
+                let mut result = Poly::new();
+                for (x, a) in left {
+                    for (y, b) in &right {
+                        if crate::instrumentation::deadline_exceeded_with_work(
+                            (a.bits() as usize + 1).saturating_mul(b.bits() as usize + 1),
+                        ) {
+                            return None;
+                        }
+                        let mut keys = x.clone();
+                        keys.extend(y);
+                        keys.sort_unstable();
+                        *result.entry(keys).or_default() += &a * b;
+                        if result.len() > 4096 {
+                            return None;
+                        }
                     }
                 }
-            },
-        );
+                result
+            }
+            _ => BTreeMap::from([(vec![term.id()], BigInt::one())]),
+        }
+    };
+    shape.retain(|_, value| !value.is_zero());
+    if shape.len() > 4096 {
+        return None;
     }
-    premises
+    memo.insert(term.id(), shape.clone());
+    Some(shape)
 }
+
 #[derive(Clone)]
 struct Term {
     keys: Vec<u64>,
@@ -131,17 +177,96 @@ impl<'p, 'a> Algebra<'p, 'a> {
         a: Expr,
         b: Expr,
     ) -> Result<ClickProposition, ClickError> {
-        let premises = argument_domains(&args);
+        let mut premises = Vec::new();
+        for arg in &args {
+            super::super::fixed_state_proofs::conversion_conditions::walk_written_expressions(
+                arg,
+                &mut |e| {
+                    // Pure applications form native arguments from their
+                    // explicit premises, including arithmetic nested in calls.
+                    if matches!(self.proof.context.as_ref(), ProofContext::Pure(_)) {
+                        let mut domains = Vec::new();
+                        if let Expr::Call { name, arguments } = e
+                            && name.rsplit("::").next() == Some("to_integer")
+                            && let [value] = arguments.as_slice()
+                        {
+                            domains.push(value);
+                        }
+                        if matches!(
+                            e,
+                            Expr::Add(..)
+                                | Expr::Subtract(..)
+                                | Expr::Multiply(..)
+                                | Expr::Divide(..)
+                                | Expr::Remainder(..)
+                                | Expr::CUnary { .. }
+                                | Expr::ShiftLeft(..)
+                                | Expr::ShiftRight(..)
+                                | Expr::BitwiseAnd(..)
+                                | Expr::ProgramExpression(
+                                    ProgramExpression::Add(..)
+                                        | ProgramExpression::Subtract(..)
+                                        | ProgramExpression::Multiply(..)
+                                        | ProgramExpression::Divide(..)
+                                        | ProgramExpression::Remainder(..)
+                                        | ProgramExpression::ShiftLeft(..)
+                                        | ProgramExpression::ShiftRight(..)
+                                        | ProgramExpression::BitwiseAnd(..)
+                                        | ProgramExpression::Cast { .. }
+                                )
+                        ) {
+                            domains.push(e);
+                        }
+                        for value in domains {
+                            let domain = ClickProposition::Defined {
+                                expression: value.clone(),
+                            };
+                            if let Ok(kernel) = self.proof.lower_cited_surface_proposition(
+                                &domain,
+                                "Integer algebra argument domain",
+                            ) && self
+                                .proof
+                                .facts()
+                                .listed_premise_available(&kernel, &[], false)
+                                && !premises.contains(&domain)
+                            {
+                                premises.push(domain);
+                            }
+                        }
+                    }
+
+                    if let Expr::Call { name, arguments } = e
+                        && matches!(
+                            name.rsplit("::").next(),
+                            Some("truncating_quotient" | "truncating_remainder")
+                        )
+                        && let [_, divisor] = arguments.as_slice()
+                    {
+                        let domain = ClickProposition::Comparison {
+                            left: divisor.clone(),
+                            operator: ComparisonOperator::NotEqual,
+                            right: num(0),
+                        };
+                        if !premises.contains(&domain) {
+                            premises.push(domain);
+                        }
+                    }
+                },
+            );
+        }
         self.record(
             a,
             b,
-            vec![ProofStep::ApplyTheoremUsing {
-                application: TheoremApplication {
-                    name: format!("click::integer::{name}"),
-                    arguments: args,
+            vec![
+                ProofStep::ApplyTheoremUsing {
+                    application: TheoremApplication {
+                        name: format!("click::integer::{name}"),
+                        arguments: args,
+                    },
+                    premises,
                 },
-                premises,
-            }],
+                ProofStep::Known,
+            ],
         )
     }
     fn term(&self, t: &Term) -> Expr {
@@ -173,9 +298,19 @@ impl<'p, 'a> Algebra<'p, 'a> {
     fn expression(&self, p: &Poly) -> Expr {
         sum(Self::terms(p).iter().map(|t| self.term(t)))
     }
+    fn factor_items(&self, t: &Term) -> Vec<(Option<u64>, Expr)> {
+        // Keep actual coefficients, never introduce synthetic unit factors.
+        let coefficient = (!t.coefficient.is_one() || t.keys.is_empty())
+            .then(|| (None, num(t.coefficient.clone())));
+        coefficient
+            .into_iter()
+            .chain(t.keys.iter().map(|k| (Some(*k), self.atoms[k].1.clone())))
+            .collect()
+    }
     fn factors(&self, t: &Term) -> Vec<Expr> {
-        std::iter::once(num(t.coefficient.clone()))
-            .chain(t.keys.iter().map(|k| self.atoms[k].1.clone()))
+        self.factor_items(t)
+            .into_iter()
+            .map(|(_, expression)| expression)
             .collect()
     }
     // Flatten a product of two right-associated chains using one named law per link.
@@ -203,7 +338,7 @@ impl<'p, 'a> Algebra<'p, 'a> {
             (a.coefficient.bits() as usize + 1).saturating_mul(b.coefficient.bits() as usize + 1),
         )?;
         let raw = mul(self.term(a), self.term(b));
-        // Keep synthetic unit factors inside an equality, never rewrite an atom into 1*atom.
+        // Expose signed coefficients without introducing unit factors.
         for t in [a, b] {
             if t.coefficient == BigInt::from(-1) && !t.keys.is_empty() {
                 let m = product(
@@ -226,11 +361,8 @@ impl<'p, 'a> Algebra<'p, 'a> {
         let explicit = mul(product(&fa), product(&fb));
         self.known(raw.clone(), explicit.clone())?;
         let flattened = self.concatenate(&fa, &fb)?;
-        let mut fs: Vec<(Option<u64>, Expr)> = std::iter::once((None, num(a.coefficient.clone())))
-            .chain(a.keys.iter().map(|k| (Some(*k), self.atoms[k].1.clone())))
-            .chain(std::iter::once((None, num(b.coefficient.clone()))))
-            .chain(b.keys.iter().map(|k| (Some(*k), self.atoms[k].1.clone())))
-            .collect();
+        let mut fs = self.factor_items(a);
+        fs.extend(self.factor_items(b));
         let mut rewrites = Vec::new();
         for end in (1..fs.len()).rev() {
             for i in 0..end {
@@ -272,35 +404,34 @@ impl<'p, 'a> Algebra<'p, 'a> {
         keys.extend(&b.keys);
         keys.sort_unstable();
         let t = Term { keys, coefficient };
-        let numeric = self.known(
-            mul(num(a.coefficient.clone()), num(b.coefficient.clone())),
-            num(t.coefficient.clone()),
-        )?;
         let mut finish = Vec::new();
-        if fs.len() > 2 {
-            let tail = product(&fs[2..].iter().map(|(_, e)| e.clone()).collect::<Vec<_>>());
-            self.law(
-                "multiply_associative",
-                vec![
-                    num(a.coefficient.clone()),
-                    num(b.coefficient.clone()),
-                    tail.clone(),
-                ],
-                mul(
-                    mul(num(a.coefficient.clone()), num(b.coefficient.clone())),
-                    tail.clone(),
-                ),
-                sorted.clone(),
+        if fs.iter().take_while(|(key, _)| key.is_none()).count() == 2 {
+            let numeric = self.known(
+                mul(num(a.coefficient.clone()), num(b.coefficient.clone())),
+                num(t.coefficient.clone()),
             )?;
-            finish.push(ProofStep::Rewrite(eq(
-                sorted.clone(),
-                mul(
-                    mul(num(a.coefficient.clone()), num(b.coefficient.clone())),
-                    tail,
-                ),
-            )));
+            if fs.len() > 2 {
+                let tail = product(&fs[2..].iter().map(|(_, e)| e.clone()).collect::<Vec<_>>());
+                let association = self.law(
+                    "multiply_associative",
+                    vec![
+                        num(a.coefficient.clone()),
+                        num(b.coefficient.clone()),
+                        tail.clone(),
+                    ],
+                    mul(
+                        mul(num(a.coefficient.clone()), num(b.coefficient.clone())),
+                        tail.clone(),
+                    ),
+                    sorted.clone(),
+                )?;
+                finish.push(ProofStep::Rewrite(
+                    super::super::fixed_state_proofs::reverse_surface_equality(&association)
+                        .expect("an algebra law is an equality"),
+                ));
+            }
+            finish.push(ProofStep::Rewrite(numeric));
         }
-        finish.push(ProofStep::Rewrite(numeric));
         if t.coefficient == BigInt::from(-1) && !t.keys.is_empty() {
             let m = product(
                 &t.keys
@@ -437,9 +568,47 @@ impl<'p, 'a> Algebra<'p, 'a> {
         self.known(raw, expanded.clone())?;
         Ok(expanded)
     }
+    fn multiply_by_minus_one(&mut self, n: Normal, on_left: bool) -> Result<Normal, ClickError> {
+        let value = n.expression.clone();
+        let right = mul(value.clone(), num(-1));
+        let raw = if on_left {
+            mul(num(-1), value.clone())
+        } else {
+            right.clone()
+        };
+        if on_left {
+            self.law(
+                "multiply_commutative",
+                vec![num(-1), value.clone()],
+                raw.clone(),
+                right.clone(),
+            )?;
+        }
+        let unit = mul(value.clone(), num(1));
+        self.law(
+            "multiply_negate",
+            vec![value.clone(), num(1)],
+            right,
+            neg(unit.clone()),
+        )?;
+        self.known(unit, value)?;
+        let result = self.negative(n)?;
+        self.known(raw, result.expression.clone())?;
+        Ok(result)
+    }
     fn negative(&mut self, n: Normal) -> Result<Normal, ClickError> {
         let input = neg(n.expression.clone());
         let ts = Self::terms(&n.poly);
+        // Sums of signed opaque atoms already belong to the additive checker.
+        if ts
+            .iter()
+            .all(|term| term.keys.is_empty() || term.coefficient.abs().is_one())
+        {
+            let poly = n.poly.into_iter().map(|(keys, c)| (keys, -c)).collect();
+            let expression = self.expression(&poly);
+            self.known(input, expression.clone())?;
+            return Ok(Normal { poly, expression });
+        }
         let raw = sum(ts.iter().map(|t| neg(self.term(t))));
         self.known(input.clone(), raw.clone())?;
         let mut result = Poly::new();
@@ -543,8 +712,21 @@ impl<'p, 'a> Algebra<'p, 'a> {
                 let b = self.normalize(b)?;
                 let raw = mul(a.expression.clone(), b.expression.clone());
                 self.known(e.clone(), raw.clone())?;
+                let scalar = |n: &Normal, value: i64| {
+                    n.poly.len() == 1 && n.poly.get(&Vec::new()) == Some(&BigInt::from(value))
+                };
                 if a.poly.is_empty() || b.poly.is_empty() {
                     self.collect(raw, vec![])?
+                } else if scalar(&a, 1) {
+                    self.known(raw, b.expression.clone())?;
+                    b
+                } else if scalar(&b, 1) {
+                    self.known(raw, a.expression.clone())?;
+                    a
+                } else if scalar(&a, -1) {
+                    self.multiply_by_minus_one(b, true)?
+                } else if scalar(&b, -1) {
+                    self.multiply_by_minus_one(a, false)?
                 } else {
                     self.charge(a.poly.len().saturating_mul(b.poly.len()))?;
                     let expanded = self.distribute(a.expression, b.expression)?;
@@ -576,42 +758,10 @@ impl<'p, 'a> Algebra<'p, 'a> {
                 }
             }
             _ => {
-                // A fresh Integer binder prevents a reflexive comparison from
-                // folding away the operand or selecting a native equality carrier.
-                let mut names = BTreeSet::new();
-                collect_click_proposition_referenced_names(&eq(e.clone(), num(0)), &mut names);
-                let mut name = "_algebra_operand".to_owned();
-                while names.contains(&name) {
-                    name.push('_');
-                }
-                let mut body = eq(e.clone(), Expr::Binding(name.clone()));
-                for domain in argument_domains(std::slice::from_ref(e)).into_iter().rev() {
-                    body = ClickProposition::Implies(Box::new(domain), Box::new(body));
-                }
-                let probe = ClickProposition::ForAll {
-                    click_type: ClickType::Integer,
-                    name: name.clone(),
-                    written_name: None,
-                    body: Box::new(body),
-                };
-                let p = self
-                    .proof
-                    .lower_cited_surface_proposition(&probe, "Integer algebra operand")?;
-                let Proposition::ForAll { body, .. } = p else {
-                    return Err(self
-                        .proof
-                        .step_error("Integer operand binder was not retained"));
-                };
-                let mut body = body.as_ref();
-                while let Proposition::Implies(_, consequent) = body {
-                    body = consequent;
-                }
-                let Proposition::ConditionIs(ConditionTerm::IntegerEqual(term, _), true) = body
-                else {
-                    return Err(self
-                        .proof
-                        .step_error("Integer algebra requires mathematical operands"));
-                };
+                // Use the ordinary argument capture at this proof state. A
+                // fresh quantifier would discard the operand's native domains.
+                let term =
+                    SharedIntegerTerm::from(self.proof.capture_instantiate_integer_argument(e)?);
                 let (key, c) = if let Some(c) = term.as_const() {
                     (vec![], c.clone())
                 } else {
@@ -691,6 +841,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !multiplication {
             return Ok(None);
         }
+        let mut shapes = std::collections::HashMap::new();
+        let Some(left_shape) = symbolic_shape(a, 0, &mut shapes) else {
+            return Ok(None);
+        };
+        let Some(right_shape) = symbolic_shape(b, 0, &mut shapes) else {
+            return Ok(None);
+        };
+        if left_shape
+            .iter()
+            .filter(|(keys, _)| !keys.is_empty())
+            .ne(right_shape.iter().filter(|(keys, _)| !keys.is_empty()))
+        {
+            return Ok(None);
+        }
         let Some(surface) = input
             .surface_goal()
             .and_then(integer_composition::canonical_surface)
@@ -750,7 +914,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if proof.focused_discharged() {
                 break;
             }
-            proof = proof.driver().apply_step(step)?;
+            proof = super::super::without_implicit_solve(|| match step {
+                ProofStep::Have {
+                    proposition,
+                    proof: body,
+                } => {
+                    let mut scope = proof.driver().open_have(proposition)?;
+                    for step in body.steps() {
+                        if scope.is_complete() {
+                            break;
+                        }
+                        scope = scope.driver().apply_step(step.clone())?;
+                    }
+                    scope.join()
+                }
+                step => proof.driver().apply_step(step),
+            })?;
         }
         if !proof.focused_discharged() {
             proof = proof.driver().apply_step(ProofStep::Known)?;
@@ -770,6 +949,7 @@ mod tests {
         let mut failures = Vec::new();
         for source in [
             "theorem bridge(x:Integer,y:Integer) { ensures 3*(x+y)-2*x == x+3*y by solve(); }",
+            "theorem bridge(x:Integer) { ensures 2*(x+1) == 2*x+2 by solve(); }",
             "theorem bridge(x:Integer,y:Integer) { ensures -(-2*x+3*y)+4*y == 2*x+y by solve(); }",
             "theorem bridge(a:Integer,b:Integer) { ensures (a+b)*(a-b) == a*a-b*b by solve(); }",
             "theorem bridge(a:Integer,b:Integer,c:Integer) { ensures (a*b)*c == c*(b*a) by solve(); }",
@@ -797,6 +977,13 @@ mod tests {
             }
         }
         assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+        // Native bridge leaves retain their independent compatibility paths.
+        // This regression checks that algebra analysis keeps their domains.
+        let native = "theorem bridge(i:int32,len:int32) { requires 0<=i; requires i<len; ensures to_integer(i)<=to_integer(i+1) by {solve() using {0<=i;i<len;};} }";
+        verify_c_sources(native, &[]).unwrap();
+        let expanded = expand_c_claim_source_by_label(native, &[], "bridge.ensures_0").unwrap();
+        without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+
         for source in [
             "theorem bad(x:Integer,y:Integer) { ensures (x+y)*(x-y)==x*x+y*y by solve(); }",
             "theorem bad(x:Integer,y:Integer) { requires x==y; ensures 3*x==3*y by {solve() using {};} }",

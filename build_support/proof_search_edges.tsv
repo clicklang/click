@@ -743,7 +743,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_so
 
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_integer_algebra	1
 src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_integer_algebra	1
-src/surface/proof/smart_closures/integer_algebra.rs	search	ProofSearch::try_integer_algebra	driver	3
+src/surface/proof/smart_closures/integer_algebra.rs	search	ProofSearch::try_integer_algebra	driver	5
 src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	try_integer_algebra	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_integer_algebra	try_integer_algebra	1
 
