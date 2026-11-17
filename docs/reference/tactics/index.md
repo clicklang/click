@@ -1093,7 +1093,7 @@ step is still checked.
 
 | Form | Class | Audience | Purpose | Details |
 | --- | --- | --- | --- | --- |
-| `both { ... } and { ... }` | control | Expansion output | Prove both sides of a conjunction. | [Reference](#conjunctions) |
+| `both { left => { ... } right => { ... } }` | control | Expansion output | Prove both sides of a conjunction. | [Reference](#conjunctions) |
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
 | `solve()` | smart | Core | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
 | `solve() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
@@ -1138,8 +1138,8 @@ cannot reuse a live proof binding. Narrow machine binders also supply their
 intrinsic bounds at introduction; these type facts need no extra `intro()`.
 A written range quantifier still has its explicit range-membership guard.
 
-`both { ... } and { ... }` proves an `A and B` goal by opening the exact `A`
-and `B` child goals. Both arms inherit the parent assumptions; neither inherits
+`both { left => { ... } right => { ... } }` opens the exact `A` and `B` child
+goals of `A and B`. Both arms inherit the parent assumptions; neither inherits
 facts proved only in the other arm. This differs from `known()`, which
 closes a conjunction from already-established facts. Empty or unfinished arms fail.
 The `both` source location owns expansion and profiling of its nested proof;
@@ -1265,12 +1265,13 @@ complete rewritten surface proof through the ordinary entry point.
 
 ### Conjunctions
 
-**Form:** `both { ... } and { ... }`
+**Form:** `both { left => { ... } right => { ... } }`
 
 **Expansion output.** `click expand` writes it; by hand, a conjunction goal is
-normally split by `solve` or the implicit closer; write `both` only when each side needs its
-own explicit proof. Prove the exact left and right children of an `and` goal in
-separate scopes.
+normally split by `solve` or the implicit closer. Write `both` when each side
+needs its own explicit proof. Write the `left` arm first for the left child
+of the `and` goal, then the `right` arm for the right child. Each arm has
+its own proof scope.
 
 **Failure, checking, and tools:**
 

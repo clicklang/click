@@ -199,9 +199,12 @@ int32 sum(int32 a[], int32 n) {
             have defined((total + a[i])) by {
                 have defined(total + a[i]);
                 both {
-                    known();
-                } and {
-                    known();
+                    left => {
+                        known();
+                    }
+                    right => {
+                        known();
+                    }
                 }
             }
             have to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i]));

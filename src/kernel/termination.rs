@@ -5337,7 +5337,7 @@ mod ranking_member_tests {
     /// component is read at, not a state the surface named.
     fn current_load(cell: &Address) -> SpecExpression {
         SpecExpression::MemoryLoad {
-            memory: SpecPoint::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
                 PointerValue::new(cell.clone(), ProgramType::Int32Pointer),
             ))),
