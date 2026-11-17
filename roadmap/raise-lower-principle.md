@@ -594,7 +594,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | Slice | Scope | Acceptance / dependency | Status |
 | --- | --- | --- | --- |
 | 10j | Remove redundant native payloads from stored execution and memory values. | Audit actual wrapper-owned and reachable duplicate payloads first; remove demonstrated redundancy while preserving producer, storage and exact-refresh contracts. Account for live compatibility readers. | Audit complete; wrapper field duplication already absent; live dependencies below remain. |
-| 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Implemented; validation and PR integration in progress. See evidence below. |
+| 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Implementation and local validation complete; [PR #3151](https://github.com/clicklang/click/pull/3151) has auto-merge requested. Integration pending; evidence below. |
 | 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Planned. |
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Planned. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Planned. |
