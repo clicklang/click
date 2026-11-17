@@ -1232,7 +1232,7 @@ fn add_path_fact_with_visibility_after_effect(
     // the fact instead costs one fact-store entry and keeps the path's public
     // post-state exact.
     if assumptions.proves_exact(&proposition)
-        || facts.iter().any(|fact| fact.proposition == proposition)
+        || facts.iter().any(|fact| fact.proposition() == &proposition)
     {
         return Some(());
     }

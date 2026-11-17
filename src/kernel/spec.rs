@@ -8958,17 +8958,49 @@ fn evaluate_spec_if_paths_in(
             &condition_path.facts,
             &condition_path.obligations,
         );
-        // A retained order guard is part of the conditional's syntax even
+        // A retained comparison guard is part of the conditional's syntax even
         // when its two literal operands determine its truth. Checking may
         // select an arm; logical lowering retains both guarded values.
-        let retained_order = !budget.machine_result_production_disabled
-            && matches!(&condition_path.proposition,
-                Proposition::ConditionIs(ConditionTerm::Compare { format, relation, left, right }, _)
-                if *relation != CompareRelation::Equal
-                    && matches!(format, MachineIntegerType::Int32 | MachineIntegerType::UInt32 | MachineIntegerType::Int64 | MachineIntegerType::UInt64)
-                    && format.constant_from_term(left).is_some()
-                    && format.constant_from_term(right).is_some());
-        let condition_truth = if retained_order {
+        let retained_comparison = !budget.machine_result_production_disabled
+            && match &condition_path.proposition {
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format,
+                        relation: CompareRelation::Equal,
+                        left,
+                        right,
+                    },
+                    _,
+                ) => {
+                    // Wide equality reads words, including unsigned literal
+                    // payloads filed under the native Int64 equality format.
+                    matches!(
+                        format,
+                        MachineIntegerType::Int64 | MachineIntegerType::UInt64
+                    ) && left.bitvector64_as_const().is_some()
+                        && right.bitvector64_as_const().is_some()
+                }
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format,
+                        left,
+                        right,
+                        ..
+                    },
+                    _,
+                ) => {
+                    matches!(
+                        format,
+                        MachineIntegerType::Int32
+                            | MachineIntegerType::UInt32
+                            | MachineIntegerType::Int64
+                            | MachineIntegerType::UInt64
+                    ) && format.constant_from_term(left).is_some()
+                        && format.constant_from_term(right).is_some()
+                }
+                _ => false,
+            };
+        let condition_truth = if retained_comparison {
             None
         } else {
             constant_spec_condition_value(&condition_path.proposition)
@@ -9014,7 +9046,7 @@ fn evaluate_spec_if_paths_in(
                         budget,
                     )
                 };
-                let (then_paths, else_paths) = if retained_order
+                let (then_paths, else_paths) = if retained_comparison
                     && let Some(truth) = constant_spec_condition_value(condition)
                 {
                     let selected = evaluate(if truth { then_branch } else { else_branch })?;
@@ -9037,7 +9069,7 @@ fn evaluate_spec_if_paths_in(
                     .first()
                     .zip(else_paths.first())
                     .is_some_and(|(left, right)| scalar(left) && scalar(right));
-                if retained_order
+                if retained_comparison
                     && !scalar_arms
                     && let Some(truth) = constant_spec_condition_value(condition)
                 {

@@ -4280,12 +4280,7 @@ fn execute_program_loop_exit_paths(
                 value: exit.value().clone(),
                 state: Box::new(head.restored_exit_state(exit.state(), assumptions)),
             },
-            facts: exit
-                .pure_facts()
-                .iter()
-                .cloned()
-                .map(ExecutionPureFact::certified)
-                .collect(),
+            facts: exit.pure_facts().certified_facts(),
             obligations: loop_check_obligations.clone(),
             loan_evidence: exit.loan_evidence().clone(),
         });
@@ -4307,20 +4302,14 @@ fn execute_program_loop_exit_paths(
                 // loop guard, which never becomes false in a natural cycle.
                 jump_exit_entries.entry(target).or_default().push((
                     head.restored_exit_state(candidate.state(), assumptions),
-                    candidate
-                        .pure_facts()
-                        .iter()
-                        .cloned()
-                        .map(ExecutionPureFact::certified)
-                        .collect(),
+                    candidate.pure_facts().certified_facts(),
                     obligations,
                     candidate.loan_evidence().clone(),
                     None,
                 ));
                 continue;
             }
-            let candidate_assumptions =
-                assumptions_with_propositions(assumptions, candidate.pure_facts());
+            let candidate_assumptions = candidate.pure_facts().context_with(assumptions);
             let mut exits = Vec::new();
             for assumption in assume_condition_truthiness(
                 candidate.state(),
@@ -4332,12 +4321,7 @@ fn execute_program_loop_exit_paths(
                 false,
                 budget,
             )? {
-                let candidate_facts = candidate
-                    .pure_facts()
-                    .iter()
-                    .cloned()
-                    .map(ExecutionPureFact::certified)
-                    .collect::<ExecutionFacts>();
+                let candidate_facts = candidate.pure_facts().certified_facts();
                 let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                     &candidate_facts,
                     &[],
@@ -4423,11 +4407,7 @@ fn execute_program_loop_exit_paths(
         .map(|exit| {
             (
                 head.restored_exit_state(exit.state(), assumptions),
-                exit.pure_facts()
-                    .iter()
-                    .cloned()
-                    .map(ExecutionPureFact::certified)
-                    .collect::<ExecutionFacts>(),
+                exit.pure_facts().certified_facts(),
                 loop_check_obligations.clone(),
                 exit.loan_evidence().clone(),
                 exit.fact_context().cloned(),

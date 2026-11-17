@@ -1462,10 +1462,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 return Err(ClickError::new("nested loop return has no returned value"));
             };
             return_exits.push(
-                LoopReturnExit::new(
+                LoopReturnExit::from_proof_facts(
                     value.clone(),
                     (**state).clone(),
-                    pending.pure_facts.to_vec(),
+                    &pending.pure_facts,
                 )
                 .with_loan_evidence(pending.loan_evidence.clone()),
             );
@@ -1498,7 +1498,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 checked.facts(),
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = LoopReturnExit::new(value, state, exit_facts)
+            let exit = LoopReturnExit::from_proof_facts(value, state, &exit_facts)
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             // Equal semantic exits may carry different written proofs. Keep
             // each arm so no source proof disappears through deduplication.
@@ -1556,7 +1556,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 checked.facts(),
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = LoopFinalExitCandidate::new(state, exit_facts)
+            let exit = LoopFinalExitCandidate::from_proof_facts(state, &exit_facts)
                 .with_jump_target(match context_frontier.loop_control {
                     crate::kernel::proof::LoopControlExit::NaturalExit(target) => target,
                     _ => unreachable!("the checked frontier is a natural exit jump"),
@@ -1627,7 +1627,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     checked.facts(),
                     &join_assumptions,
                 );
-                let candidate = LoopFinalExitCandidate::new(state, exit_facts)
+                let candidate = LoopFinalExitCandidate::from_proof_facts(state, &exit_facts)
                     .with_loan_evidence(checked_execution.core.loan_evidence().clone());
                 if seen_final_exits.is_new(
                     candidate.state(),
@@ -1756,15 +1756,18 @@ impl SeenLoopExits {
     fn is_new<T: PartialEq>(
         &mut self,
         state: &ExecutionState,
-        facts: &[Proposition],
+        facts: &crate::kernel::LoopExitFacts,
         recorded: &[T],
         exit: &T,
     ) -> bool {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         state.hash(&mut hasher);
-        facts.hash(&mut hasher);
-        crate::instrumentation::record_deterministic_work(1 + facts.len());
+        for fact in facts.iter() {
+            fact.hash(&mut hasher);
+            crate::instrumentation::record_deterministic_work(1);
+        }
+        crate::instrumentation::record_deterministic_work(1);
         let bucket = self.by_hash.entry(hasher.finish()).or_default();
         if bucket.iter().any(|index| {
             crate::instrumentation::record_deterministic_work(1);

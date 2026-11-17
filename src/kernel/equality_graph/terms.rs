@@ -35,21 +35,9 @@ pub(super) use congruence::has_machine_operands;
 /// read meets a function pointer cell directly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum CellRead {
-    Int32,
-    UInt64,
     FunctionPointer,
     /// An 8- or 16-bit read, equal to a stored value of its width.
     Narrow(crate::kernel::CarrierWidth),
-}
-
-/// Shallow registration key: the read, its exact state and observation
-/// source, and the graph's address application before class normalization.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct WideReadSource {
-    read: u64,
-    retained_state: (u32, u32),
-    origin: Option<(u32, u32)>,
-    address: u64,
 }
 
 /// A read to look up, and the blocks to look in: all of its block class, or
@@ -63,20 +51,6 @@ pub(super) struct PendingCellRead {
     pub(super) pointer: Pointer,
     pub(super) kind: CellRead,
     pub(super) only: Option<Arc<[(PointerBlock, AffineOffset)]>>,
-}
-
-/// The memory a load variable was read in, when it is the naming state
-/// under another value: an observed cell names a value without changing
-/// memory, so it keeps the state identity and may hold cells the naming
-/// value lacks. An origin at another state is not consulted; the graph
-/// does not equate distinct states.
-fn load_origin(
-    term: &crate::kernel::MachineTerm,
-    named: &crate::kernel::SharedMemory,
-) -> Option<crate::kernel::SharedMemory> {
-    crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(term))
-        .and_then(|read| read.origin)
-        .filter(|origin| origin.read_identity() == named.read_identity())
 }
 
 /// The producer distinguishes affine definitions from assumed equalities.
@@ -738,10 +712,6 @@ pub(super) struct TermClasses {
     load_blocks: PersistentMap<PointerBlock, u64>,
     // The load nodes, four-byte and narrow, already queued for registration.
     registered_int32_loads: PersistentSet<u64>,
-    // An observed word may name its own read. Register each exact source
-    // once, before interning its stored value, to close that cycle. Keep
-    // distinct states, origins and address spellings as separate sources.
-    registered_uint64_cell_reads: PersistentSet<WideReadSource>,
     // Registration dependencies are drained before any public answer. Keeping
     // this worklist iterative handles loads used as indices of further loads.
     pending_loads: Vec<(
@@ -2109,14 +2079,10 @@ impl TermClasses {
                     self.intern_node(Node::Int32Read(source.read_identity(), address));
                 self.close_with_affine_definition(vec![(id, source_read)], true);
             }
-            self.pending_cell_reads.push(PendingCellRead {
-                read: id,
-                memory,
-                origin,
-                pointer,
-                kind: CellRead::Int32,
-                only: None,
-            });
+            // The store's explicit equation supplies a word read's value.
+            // Registering a read only establishes its address/state application;
+            // it must not import additional equalities from cached memory.
+            let _ = origin;
         }
         while let Some(pending) = self.pending_cell_reads.pop() {
             self.equate_read_with_aliased_cell(pending);
@@ -2180,25 +2146,14 @@ impl TermClasses {
                 .find_map(|memory| memory.known_value(&cell));
             use crate::kernel::ProgramValue as V;
             found = match (stored, kind) {
-                (Some(V::Int64(value) | V::UInt64(value)), CellRead::UInt64)
-                | (Some(V::Int32(value)), CellRead::Int32) => Some(Ok(value)),
-                // The `int32` read of a cell storing a `uint32` value is σ of
-                // that value (rule K5's reinterpretation, σ a node).
-                (Some(V::UInt32(value)), CellRead::Int32) => {
-                    Some(Ok(crate::kernel::MachineTerm::sign_cast32(
-                        crate::kernel::MachineIntegerType::UInt32,
-                        crate::kernel::MachineIntegerType::Int32,
-                        value,
-                    )))
-                }
                 (
                     Some(V::Bool(value) | V::Int8(value) | V::UInt8(value)),
-                    CellRead::Narrow(crate::kernel::CarrierWidth::Bits8),
+                    CellRead::Narrow(width @ crate::kernel::CarrierWidth::Bits8),
                 )
                 | (
                     Some(V::Int16(value) | V::UInt16(value)),
-                    CellRead::Narrow(crate::kernel::CarrierWidth::Bits16),
-                ) => Some(Ok(value)),
+                    CellRead::Narrow(width @ crate::kernel::CarrierWidth::Bits16),
+                ) => Some(Ok((value, width))),
                 (Some(V::Pointer(value)), CellRead::FunctionPointer)
                     if matches!(
                         value.program_type(),
@@ -2212,10 +2167,7 @@ impl TermClasses {
             break;
         }
         let value = match found {
-            Some(Ok(value)) => match kind {
-                CellRead::Narrow(width) => self.intern_typed_machine(&value, width),
-                _ => self.intern_machine(&value, kind == CellRead::UInt64),
-            },
+            Some(Ok((value, width))) => self.intern_typed_machine(&value, width),
             // The read's value is a pointer; its address is the designator's.
             Some(Err(stored)) => self.address(stored.block, stored.offset).0,
             None => {

@@ -4947,7 +4947,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
         source.and_then(|source| GeneratedLoadSourceEvent::new(source.clone(), binding.clone()));
     let existing_index = facts
         .iter()
-        .position(|fact| fact.proposition == defining_proposition);
+        .position(|fact| fact.proposition() == &defining_proposition);
     if let Some(index) = existing_index {
         let existing = facts.get_mut(index);
         if existing.generated_load_binding.is_none() || typed_pointer_value.is_some() {

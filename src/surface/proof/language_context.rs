@@ -39,11 +39,49 @@ pub(in crate::surface::proof) enum FixedStateFacts<'a> {
     List(&'a crate::surface::PureFactList),
 }
 
-impl<'a> FixedStateFacts<'a> {
-    pub(in crate::surface::proof) fn as_slice(self) -> &'a [Proposition] {
+impl FixedStateFacts<'_> {
+    pub(in crate::surface::proof) fn len(&self) -> usize {
         match self {
-            Self::Slice(facts) => facts,
-            Self::List(facts) => facts.as_slice(),
+            Self::Slice(facts) => facts.len(),
+            Self::List(facts) => facts.len(),
+        }
+    }
+    pub(in crate::surface::proof) fn get(&self, index: usize) -> Option<&Proposition> {
+        match self {
+            Self::Slice(facts) => facts.get(index),
+            Self::List(facts) => facts.get(index),
+        }
+    }
+}
+impl PropositionSource for FixedStateFacts<'_> {
+    fn exact_available(&self, required: &Proposition) -> bool {
+        match self {
+            Self::Slice(facts) => facts.exact_available(required),
+            Self::List(facts) => facts.exact_available(required),
+        }
+    }
+    fn propositions(&self) -> impl Iterator<Item = &Proposition> {
+        match self {
+            Self::Slice(facts) => Box::new(facts.iter()) as Box<dyn Iterator<Item = &Proposition>>,
+            Self::List(facts) => facts.iter(),
+        }
+    }
+    fn pure_context(&self) -> PureFactContext {
+        match self {
+            Self::Slice(facts) => facts.pure_context(),
+            Self::List(facts) => facts.context(),
+        }
+    }
+    fn indexed_proof_facts(&self) -> ProofFacts {
+        match self {
+            Self::Slice(facts) => facts.indexed_proof_facts(),
+            Self::List(facts) => facts.proof_facts(),
+        }
+    }
+    fn ordered_proof_facts(&self) -> ProofFacts {
+        match self {
+            Self::Slice(facts) => facts.ordered_proof_facts(),
+            Self::List(facts) => facts.ordered_proof_facts(),
         }
     }
 }

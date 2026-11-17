@@ -1435,12 +1435,12 @@ pub(super) fn project_initial_resource_facts(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    available_pure_facts: &[Proposition],
+    available_pure_facts: &(impl PropositionSource + ?Sized),
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
-) -> Result<Vec<Proposition>, ClickError> {
+) -> Result<PureFactList, ClickError> {
     let result = ProgramValue::Int32(MachineTerm::constant(0));
-    let mut facts = ProofResourcePureFacts::new(ProofFacts::from_ordered(available_pure_facts));
+    let mut facts = ProofResourcePureFacts::new(available_pure_facts.indexed_proof_facts());
     append_state_resource_context_observable_facts_with_store(
         parameter_binding,
         state,
@@ -1457,7 +1457,7 @@ pub(super) fn project_initial_resource_facts(
         spec_definitions,
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
-    Ok(facts.facts.to_vec())
+    Ok(PureFactList::from_proof_facts(&facts.facts))
 }
 
 pub(super) fn project_outcome_resource_facts(

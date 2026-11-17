@@ -525,7 +525,7 @@ pub(super) fn diagnostic_item_limit() -> usize {
 }
 
 fn describe_context_pure_and_execution_facts(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
@@ -533,7 +533,7 @@ fn describe_context_pure_and_execution_facts(
 }
 
 fn describe_context_facts_with_result(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
     result: Option<&ProgramValue>,
@@ -548,14 +548,14 @@ fn describe_context_facts_with_result(
 }
 
 fn describe_context_facts_labeled(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
 ) -> String {
     let item_limit = diagnostic_item_limit();
     let mut total = 0;
     let mut entries = Vec::new();
-    for fact in pure_facts.iter().chain(
+    for fact in pure_facts.propositions().chain(
         execution_pure_facts
             .fact_iter()
             .map(ExecutionPureFact::proposition),
@@ -962,7 +962,7 @@ pub(super) fn describe_execution_pure_facts(facts: &(impl ExecutionFactSource + 
 }
 
 pub(super) fn describe_available_facts(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -995,7 +995,7 @@ pub(super) fn describe_required_pure_fact(
 
 pub(super) fn describe_missing_pure_fact(
     required: &Proposition,
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -1018,7 +1018,7 @@ pub(super) fn describe_missing_pure_fact(
 
 fn describe_missing_fact_context(
     requirement: &str,
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
@@ -1036,7 +1036,7 @@ fn describe_missing_fact_context(
 
 pub(super) fn describe_missing_resource_fact(
     required: &ResourceFact,
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -1276,7 +1276,7 @@ pub(super) fn describe_goal_proof_context(
 }
 
 pub(super) fn describe_proof_context(
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     resource_facts: &[ResourceFact],
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
@@ -1585,12 +1585,12 @@ pub(super) fn describe_missing_proof_obligations(
 /// [x == 300]".
 pub(super) fn describe_refuted_condition(
     required: &Proposition,
-    pure_facts: &[Proposition],
+    pure_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let variables = crate::kernel::proposition_variables(required);
     let about = pure_facts
-        .iter()
+        .propositions()
         .filter(|fact| {
             matches!(fact, Proposition::ConditionIs(_, _))
                 && (variables.is_empty()
