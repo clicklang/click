@@ -5852,6 +5852,13 @@ pub enum LoopTestPosition {
     AfterBody,
 }
 
+/// The phase selected at an iteration entry or a checked preservation point.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LoopEntryPhase {
+    Test,
+    Body,
+}
+
 /// Every loop has one test region: optional preparation, a decision and cleanup.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct LoopTestRegion {

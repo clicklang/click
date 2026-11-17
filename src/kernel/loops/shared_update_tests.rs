@@ -1,5 +1,7 @@
 use super::*;
 use crate::kernel::program_expression::{add, equal, int32_literal, less_than, variable};
+use crate::kernel::program_loop_regions;
+use std::sync::Arc;
 
 #[test]
 fn shared_update_runs_once_on_fallthrough_and_continue() {
@@ -237,4 +239,76 @@ fn loop_test_false_is_distinct_from_break_and_propagates_to_its_loop() {
         exited.locals.get_native("after").as_deref(),
         Some(&int32(0))
     );
+}
+
+#[test]
+fn every_loop_test_is_a_phase_and_post_tests_keep_their_placement() {
+    for position in [LoopTestPosition::BeforeBody, LoopTestPosition::AfterBody] {
+        for prepared in [false, true] {
+            let decision = Arc::new(ProgramStatement::LoopTest {
+                condition: int32_literal(0),
+                aggregate_steps: Vec::new(),
+            });
+            let test = LoopTestRegion {
+                position,
+                statement: if prepared {
+                    Arc::new(ProgramStatement::seq(
+                        Arc::new(program_assign("tested", int32_literal(1))),
+                        decision,
+                    ))
+                } else {
+                    decision
+                },
+            };
+            let body = program_assign("visited", int32_literal(1));
+            let regions = program_loop_regions(&body, None, Some(&test)).collect::<Vec<_>>();
+            assert_eq!(regions.len(), 2, "every pass includes its actual test");
+            let test_index = usize::from(position == LoopTestPosition::AfterBody);
+            assert!(std::ptr::eq(regions[test_index], test.statement.as_ref()));
+            let statement = program_while(int32_literal(1), Vec::new(), body)
+                .with_loop_test((*test.statement).clone(), position);
+            let state = ExecutionState::new()
+                .with_local("visited", int32(0))
+                .with_local("tested", int32(0));
+            let StatementOutcome::Normal(exit) = crate::kernel::eval::execute_execution_statement(
+                &state,
+                &statement,
+                &PureFactContext::new(),
+            )
+            .unwrap() else {
+                panic!("the false test exits its loop");
+            };
+            assert_eq!(
+                exit.locals.get_native("visited").as_deref(),
+                Some(&int32(u32::from(position == LoopTestPosition::AfterBody)))
+            );
+            assert_eq!(
+                exit.locals.get_native("tested").as_deref(),
+                Some(&int32(u32::from(prepared)))
+            );
+            let ProgramStatement::Loop { test: retained, .. } = statement else {
+                unreachable!()
+            };
+            assert_eq!(retained.position, position);
+        }
+    }
+}
+
+#[test]
+fn a_false_pre_test_does_not_exit_the_unentered_body_scope() {
+    let state = ExecutionState::new().with_local("kept", int32(7));
+    let statement = program_while(
+        int32_literal(0),
+        Vec::new(),
+        program_declare("kept", ProgramType::Int32),
+    );
+    let StatementOutcome::Normal(exit) = crate::kernel::eval::execute_execution_statement(
+        &state,
+        &statement,
+        &PureFactContext::new(),
+    )
+    .unwrap() else {
+        panic!("the false test exits");
+    };
+    assert_eq!(exit.locals.get_native("kept").as_deref(), Some(&int32(7)));
 }

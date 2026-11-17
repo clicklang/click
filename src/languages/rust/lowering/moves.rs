@@ -80,7 +80,7 @@ pub(super) fn region_count(statement: &ProgramStatement) -> usize {
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             1 + region_count(body)
                 + test
                     .as_ref()

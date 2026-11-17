@@ -66,7 +66,7 @@ pub(in crate::surface) fn count_loop_regions(
                 body,
                 ..
             } => {
-                let (_, _, test) = loop_test.execution_parts();
+                let test = loop_test.source_region();
                 count += 1;
                 pending.push(body);
                 if let Some(test) = test {
@@ -101,6 +101,10 @@ struct SourceExecutionLayoutData {
     automatic_break_heads: BTreeMap<usize, usize>,
     loop_bodies: BTreeMap<usize, usize>,
     loop_updates: BTreeMap<usize, usize>,
+    /// Pure decisions receive semantic regions after all written operations,
+    /// preserving every existing statement number and their own footprints.
+    loop_test_phases: BTreeMap<usize, (crate::kernel::LoopTestPosition, usize, usize)>,
+    hidden_loop_tests: BTreeMap<usize, usize>,
     natural_loop_targets: BTreeMap<usize, crate::kernel::ControlTargetId>,
     natural_exit_targets: BTreeMap<usize, crate::kernel::ControlTargetId>,
     natural_exit_statement_indices: BTreeMap<usize, usize>,
@@ -277,7 +281,9 @@ fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
         | ProgramStatement::HeapFree {
             pointer: expression,
         } => expression_reads(expression),
-        ProgramStatement::Loop { test, .. } => expression_reads(test.execution_parts().0),
+        ProgramStatement::Loop { test, .. } => {
+            test.source_condition().is_some_and(expression_reads)
+        }
         ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallConstruct { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. } => arguments.iter().any(expression_reads),
@@ -372,7 +378,110 @@ fn aggregate_result_fields(layout: &crate::kernel::AggregateLayout) -> Aggregate
     )
 }
 
+/// Allocate semantic decisions only after written source numbering and lexical
+/// exits are complete. Each read is keyed by the selected loop/header.
+fn finish_loop_phase_regions(data: &mut SourceExecutionLayoutData) {
+    if data.loop_test_phases.is_empty() {
+        return;
+    }
+    // Index the original written-source successors once. Each redirected
+    // edge is removed, so nested post-tests never revisit inner edges.
+    let mut successors: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+    let mut next = 0;
+    for (index, region) in &data.statements {
+        crate::instrumentation::record_deterministic_work(1);
+        next = next.max(index + 1).max(region.continuation_node + 1);
+        successors
+            .entry(region.continuation_node)
+            .or_default()
+            .insert(*index);
+    }
+    let mut post_tests = Vec::new();
+    for (loop_index, (position, region, written_end)) in &mut data.loop_test_phases {
+        let body = data.loop_bodies[loop_index];
+        let header = body - 1;
+        let after = *written_end;
+        assert_ne!(
+            after,
+            usize::MAX,
+            "loop written extent must be completed before phase routing"
+        );
+        *region = next;
+        if *position == crate::kernel::LoopTestPosition::AfterBody {
+            post_tests.push((body, after, *region));
+        }
+        next += 1;
+        data.statements.insert(
+            *region,
+            SourceStatementRegion {
+                kind: SourceStatementKind::Plain,
+                continuation_node: if *position == crate::kernel::LoopTestPosition::BeforeBody {
+                    body
+                } else {
+                    header
+                },
+            },
+        );
+        data.hidden_loop_tests.insert(*region, *loop_index);
+        data.loop_tests.insert(*region);
+        data.full_expression_ends.insert(*region);
+        if let Some(exits) = data.automatic_exits.get(&header) {
+            data.automatic_abrupt_exits.insert(*region, exits.clone());
+        }
+        if let Some(site) = data.sites.get(&header) {
+            data.sites.insert(*region, site.clone());
+        }
+        if let Some(path) = data.loop_paths.get(loop_index) {
+            data.region_paths.insert(*region, path.clone());
+            data.source_statements
+                .entry(path.clone())
+                .or_default()
+                .push(*region);
+        }
+        if data.reads.binary_search(&header).is_ok() {
+            data.reads.push(*region);
+        }
+    }
+    for (body, after, test) in post_tests.into_iter().rev() {
+        let Some(edges) = successors.get_mut(&after) else {
+            continue;
+        };
+        let selected = edges.range(body..after).copied().collect::<Vec<_>>();
+        for source in selected {
+            crate::instrumentation::record_deterministic_work(1);
+            edges.remove(&source);
+            data.statements
+                .get_mut(&source)
+                .expect("indexed source edge")
+                .continuation_node = test;
+        }
+    }
+}
+
 impl SourceExecutionLayout {
+    pub(in crate::surface) fn is_hidden_loop_test(&self, region: usize) -> bool {
+        self.data.hidden_loop_tests.contains_key(&region)
+    }
+
+    pub(in crate::surface) fn loop_test_phase_entry(&self, index: usize) -> Option<usize> {
+        self.data
+            .loop_test_phases
+            .get(&index)
+            .map(|(_, region, _)| *region)
+    }
+
+    pub(in crate::surface) fn loop_index_at_header(&self, region: usize) -> Option<usize> {
+        match self.data.statements.get(&region)?.kind {
+            SourceStatementKind::Loop { loop_index } => Some(loop_index),
+            _ => None,
+        }
+    }
+
+    pub(in crate::surface) fn loop_continuation_entry(&self, index: usize) -> Option<usize> {
+        self.loop_update_entry(index)
+            .or_else(|| self.loop_test_phase_entry(index))
+    }
+
     pub(in crate::surface) fn loop_update_entry(&self, index: usize) -> Option<usize> {
         self.data.loop_updates.get(&index).copied()
     }
@@ -529,11 +638,16 @@ impl SourceExecutionLayout {
                     body,
                     ..
                 } => {
-                    let (_, _, test) = loop_test.execution_parts();
+                    let test = loop_test.source_region();
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
                     let loop_index = layout.loop_bodies.len();
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
+                    if loop_test.source_condition().is_some() {
+                        layout
+                            .loop_test_phases
+                            .insert(loop_index, (loop_test.position, usize::MAX, usize::MAX));
+                    }
                     if let Some(test) = test
                         .as_ref()
                         .filter(|test| test.position == crate::kernel::LoopTestPosition::BeforeBody)
@@ -566,6 +680,9 @@ impl SourceExecutionLayout {
                             layout,
                             aggregate_objects,
                         )?;
+                    }
+                    if let Some((_, _, end)) = layout.loop_test_phases.get_mut(&loop_index) {
+                        *end = *next_statement_index;
                     }
                     layout.statements.insert(
                         statement_index,
@@ -798,6 +915,7 @@ impl SourceExecutionLayout {
             Vec::new()
         };
         collect_kernel_automatic_exits(function.body(), return_parameters, &mut layout);
+        finish_loop_phase_regions(&mut layout);
         Ok(Self {
             data: std::sync::Arc::new(layout),
         })
@@ -1086,6 +1204,20 @@ impl SourceExecutionLayout {
                     *next_loop_index += 1;
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
                     let post_test = matches!(statement, syntax::CStatement::DoWhile { .. });
+                    if test.is_none() {
+                        layout.loop_test_phases.insert(
+                            loop_index,
+                            (
+                                if post_test {
+                                    crate::kernel::LoopTestPosition::AfterBody
+                                } else {
+                                    crate::kernel::LoopTestPosition::BeforeBody
+                                },
+                                usize::MAX,
+                                usize::MAX,
+                            ),
+                        );
+                    }
                     if !post_test && let Some(test) = test {
                         visit(
                             test,
@@ -1113,6 +1245,9 @@ impl SourceExecutionLayout {
                             layout,
                             own.as_ref(),
                         );
+                    }
+                    if let Some((_, _, end)) = layout.loop_test_phases.get_mut(&loop_index) {
+                        *end = *next_statement_index;
                     }
                     layout.statements.insert(
                         statement_index,
@@ -1147,6 +1282,16 @@ impl SourceExecutionLayout {
                     *next_statement_index += 1;
                     *next_loop_index += 1;
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
+                    if test.is_none() {
+                        layout.loop_test_phases.insert(
+                            loop_index,
+                            (
+                                crate::kernel::LoopTestPosition::BeforeBody,
+                                usize::MAX,
+                                usize::MAX,
+                            ),
+                        );
+                    }
                     if let Some(test) = test {
                         visit(
                             test,
@@ -1173,6 +1318,9 @@ impl SourceExecutionLayout {
                         layout,
                         own.as_ref(),
                     );
+                    if let Some((_, _, end)) = layout.loop_test_phases.get_mut(&loop_index) {
+                        *end = *next_statement_index;
+                    }
                     layout.statements.insert(
                         statement_index,
                         SourceStatementRegion {
@@ -1332,6 +1480,7 @@ impl SourceExecutionLayout {
             visit(statement, &mut 0, &mut 0, &mut data, None);
         }
         collect_automatic_exits(statement, &mut data);
+        finish_loop_phase_regions(&mut data);
         Self {
             data: std::sync::Arc::new(data),
         }
@@ -1752,10 +1901,10 @@ impl SourceExecutionLayout {
     fn source_statement_exit(&self, path: &[u32]) -> usize {
         let data = &self.data;
         if let Some(regions) = data.source_statements.get(path) {
-            if let Some(last) = regions
-                .last()
-                .filter(|last| data.full_expression_ends.contains(last))
-            {
+            if let Some(last) = regions.last().filter(|last| {
+                data.full_expression_ends.contains(last)
+                    && !data.hidden_loop_tests.contains_key(last)
+            }) {
                 return *last;
             }
             let compound = regions.iter().find(|region| {
@@ -2161,7 +2310,7 @@ fn collect_kernel_automatic_exits(
                 body,
                 ..
             } => {
-                let (_, _, test) = loop_test.execution_parts();
+                let test = loop_test.source_region();
                 if let Some(test) = test
                     .as_ref()
                     .filter(|test| test.position == crate::kernel::LoopTestPosition::BeforeBody)
@@ -2635,6 +2784,8 @@ mod source_execution_layout_tests {
                 automatic_break_heads: BTreeMap::new(),
                 loop_bodies: BTreeMap::new(),
                 loop_updates: BTreeMap::new(),
+                loop_test_phases: BTreeMap::new(),
+                hidden_loop_tests: BTreeMap::new(),
                 natural_loop_targets: BTreeMap::new(),
                 natural_exit_targets: BTreeMap::new(),
                 natural_exit_statement_indices: BTreeMap::new(),
@@ -2809,4 +2960,76 @@ mod source_execution_layout_tests {
 mod shared_loop_scope_scaling_tests {
     use super::*;
     include!("../../scaling_tests/surface/lowering/source_layout/shared_loop_scopes.rs");
+}
+
+#[cfg(test)]
+mod loop_phase_source_tests {
+    use super::*;
+
+    #[test]
+    fn pure_test_regions_follow_written_numbers_and_own_their_footprints() {
+        let function =
+            syntax::parse_function("int32 f(int32 n) { while (n > 0) { n = n - 1; } return n; }")
+                .unwrap();
+        let typed = function
+            .clone()
+            .with_prelowered_kernel_function(function.to_kernel_function());
+        for function in [&function, &typed] {
+            let layout = SourceExecutionLayout::for_function(function).unwrap();
+            assert_eq!(layout.loop_body_entry(0), Some(1));
+            assert!(matches!(
+                layout.statement(0).unwrap().kind,
+                SourceStatementKind::Loop { loop_index: 0 }
+            ));
+            assert!(matches!(
+                layout.statement(2).unwrap().kind,
+                SourceStatementKind::Plain
+            ));
+            let test = layout.loop_test_phase_entry(0).unwrap();
+            assert!(
+                test > 3,
+                "the test must not overwrite source statements or their end boundary"
+            );
+            assert!(layout.is_hidden_loop_test(test));
+            assert_eq!(layout.statement(test).unwrap().continuation_node, 1);
+            assert_ne!(
+                test, 0,
+                "test effects must not be labelled as whole-loop effects"
+            );
+        }
+    }
+    #[test]
+    fn nested_post_test_successors_reach_the_innermost_pending_phase() {
+        let function = syntax::parse_function(
+            "int32 f(int32 n) { do { do { n = 0; } while(n > 0); } while(n > 0); return n; }",
+        )
+        .unwrap();
+        let typed = function
+            .clone()
+            .with_prelowered_kernel_function(function.to_kernel_function());
+        for function in [&function, &typed] {
+            let layout = SourceExecutionLayout::for_function(function).unwrap();
+            let outer = layout.loop_test_phase_entry(0).unwrap();
+            let inner = layout.loop_test_phase_entry(1).unwrap();
+            assert_eq!(layout.statement(2).unwrap().continuation_node, inner);
+            assert_eq!(layout.statement(1).unwrap().continuation_node, outer);
+            assert_eq!(layout.statement(0).unwrap().continuation_node, 3);
+            assert_eq!(layout.statement(inner).unwrap().continuation_node, 1);
+            assert_eq!(layout.statement(outer).unwrap().continuation_node, 0);
+        }
+    }
+    #[test]
+    fn a_post_test_routes_its_body_without_redirecting_a_sibling_branch() {
+        let function = syntax::parse_function("int32 f(int32 n) { if(n > 0) { do { n = 0; } while(n > 0); } else { n = 1; } return n; }").unwrap();
+        let typed = function
+            .clone()
+            .with_prelowered_kernel_function(function.to_kernel_function());
+        for function in [&function, &typed] {
+            let layout = SourceExecutionLayout::for_function(function).unwrap();
+            let test = layout.loop_test_phase_entry(0).unwrap();
+            assert_eq!(layout.statement(2).unwrap().continuation_node, test);
+            assert_eq!(layout.statement(1).unwrap().continuation_node, 4);
+            assert_eq!(layout.statement(3).unwrap().continuation_node, 4);
+        }
+    }
 }

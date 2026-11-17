@@ -1552,7 +1552,7 @@ impl<'a> Proof<'a> {
         loop_entry_state: &ExecutionState,
         loop_head_state: &ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
-        condition: &ProgramExpression,
+        condition: Option<&ProgramExpression>,
         invariant_checks: &[LoopInvariantCheck],
         binders: &[crate::kernel::LoopBinder],
         structural_measure: Option<&str>,
@@ -1607,7 +1607,12 @@ impl<'a> Proof<'a> {
             .into_iter()
             .map(|obligation| obligation.proposition().clone())
             .fold(assumptions, PureFactContext::assume_proposition);
-        if !crate::kernel::loop_condition_may_continue(&back_edge_state, condition, &assumptions)
+        if let Some(condition) = condition
+            && !crate::kernel::loop_condition_may_continue(
+                &back_edge_state,
+                condition,
+                &assumptions,
+            )
             .map_err(|message| {
                 self.step_error(format!("loop condition classification: {message}"))
             })?

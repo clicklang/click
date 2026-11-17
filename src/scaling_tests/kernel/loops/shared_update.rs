@@ -107,3 +107,56 @@ fn loop_test_outcomes_ignore_unrelated_locals_and_track_selected_cleanup() {
         }
     }
 }
+
+#[test]
+fn iteration_phase_work_tracks_its_test_preparation() {
+    for position in [LoopTestPosition::BeforeBody, LoopTestPosition::AfterBody] {
+        let mut samples = Vec::new();
+        for size in [4, 16, 64, 256] {
+            let test = (0..size).fold(
+                ProgramStatement::LoopTest {
+                    condition: int32_literal(0),
+                    aggregate_steps: Vec::new(),
+                },
+                |rest, _| {
+                    program_seq(
+                        program_assign("tested", add(variable("tested"), int32_literal(1))),
+                        rest,
+                    )
+                },
+            );
+            let statement = program_while(
+                int32_literal(1),
+                Vec::new(),
+                program_assign("visited", int32_literal(1)),
+            )
+            .with_loop_test(test, position);
+            let state = ExecutionState::new()
+                .with_local("tested", int32(0))
+                .with_local("visited", int32(0));
+            let (outcome, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::eval::execute_execution_statement(
+                    &state,
+                    &statement,
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+            });
+            let StatementOutcome::Normal(exit) = outcome else {
+                panic!("test must exit")
+            };
+            assert_eq!(
+                exit.locals.get_native("tested").as_deref(),
+                Some(&int32(size as u32))
+            );
+            samples.push((size, work));
+        }
+        let base = samples[0].1;
+        assert!(
+            samples
+                .iter()
+                .all(|(size, work)| *work <= base * (size / 4) * 2 + 16),
+            "{position:?}: {samples:?}"
+        );
+    }
+}

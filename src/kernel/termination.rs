@@ -1455,8 +1455,11 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            escapes(condition);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                escapes(condition);
+            }
             collect_address_taken_locals(body, names);
             if let Some(test) = test {
                 collect_address_taken_locals(&test.statement, names);
@@ -1802,7 +1805,7 @@ fn statement_calls_visiting(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_calls_visiting(body, calls, visit);
             if let Some(test) = test {
                 statement_calls_visiting(&test.statement, calls, visit);
@@ -1896,7 +1899,7 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_declared_variables(body, names);
             if let Some(test) = test {
                 statement_declared_variables(&test.statement, names);
@@ -2124,14 +2127,18 @@ fn walk_termination_paths<W: TerminationWalk>(
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
             // A `break` in the body lands where the loop's own exit lands,
             // carrying what the incoming paths already carry, so it is
             // covered by the incoming paths this returns.
             if let Some(test) = test {
                 descend(&test.statement, paths.clone())?;
             }
-            let entered = walk.refine(condition, true, paths.clone());
+            let entered = condition.map_or_else(
+                || paths.clone(),
+                |condition| walk.refine(condition, true, paths.clone()),
+            );
             let body_paths = descend(body, entered.clone())?;
             if let Some(update) = update {
                 descend(update, body_paths.continuing)?;
@@ -3583,7 +3590,7 @@ fn collect_loops_in_order<'a>(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             loops.push(statement);
             for region in program_loop_regions(body, update.as_deref(), test) {
                 collect_loops_in_order(region, loops);
@@ -3858,7 +3865,7 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             loops.push(statement);
             for region in program_loop_regions(body, update.as_deref(), test) {
                 collect_loops(region, loops);
@@ -4135,7 +4142,7 @@ fn visit_loop_obligations(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             let index = *next_index;
             *next_index += 1;
             for region in program_loop_regions(body, update.as_deref(), test) {
@@ -4514,8 +4521,11 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            visit(condition);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                visit(condition);
+            }
             statement_function_addresses(body, taken);
             if let Some(test) = test {
                 statement_function_addresses(&test.statement, taken);
@@ -4776,7 +4786,7 @@ fn self_call_loop_indices(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             let index = *next_index;
             *next_index += 1;
             enclosing.push(index);

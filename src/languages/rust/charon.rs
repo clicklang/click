@@ -5550,7 +5550,9 @@ mod tests {
                     }
                 }
                 C::Loop { test, body, .. } => {
-                    let condition = test.execution_parts().0;
+                    let condition = test
+                        .source_condition()
+                        .expect("reconstructed while has one decision");
                     guards.push(format!("{condition:?}"));
                     visit(body, guards);
                 }

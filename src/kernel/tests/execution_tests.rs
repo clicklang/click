@@ -1848,9 +1848,9 @@ fn unreadable_guard_operand_leaves_the_condition_undecided() {
     );
     let mut budget = ExecutionBudget::for_program_expression(&condition);
     for desired_truthiness in [false, true] {
-        let assumptions = crate::kernel::loops::assume_condition_truthiness(
+        let assumptions = crate::kernel::loops::assume_loop_entry_truthiness(
             &state,
-            &condition,
+            Some(&condition),
             &[],
             &PureFactContext::new(),
             &[],

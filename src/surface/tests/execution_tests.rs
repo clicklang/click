@@ -1453,7 +1453,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                     else {
                         panic!("fill3 suffix should start with a loop");
                     };
-                    let condition = test.execution_parts().0.clone();
+                    let condition = test.source_condition().expect("pure fixture test").clone();
                     program_function(
                         ProgramType::Int32,
                         "fill3",
@@ -2605,5 +2605,30 @@ fn recorded_points_are_named_by_the_point_each_path_reached() {
     assert_eq!(
         name(&right),
         Some(&ProgramPointSelector::Mark("right".into()))
+    );
+}
+
+#[test]
+fn a_loop_test_does_not_publish_the_whole_loops_exit_state() {
+    let c_source = r#"
+        int32 count_two() {
+            int32 i;
+            i = 0;
+            while (i < 2) { i = i + 1; }
+            return i;
+        }
+    "#;
+    let source = r#"
+        verifying "count_two.c";
+        int32 count_two() {
+            ensures result == 2 by {
+                step(); step(); step();
+                have at(statement(2).exit, i) == 0 by known();
+            }
+        }
+    "#;
+    assert!(
+        verify_c_sources(source, &[("count_two.c", c_source)]).is_err(),
+        "a successful head test must not establish the later whole-loop exit"
     );
 }

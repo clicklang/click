@@ -8819,7 +8819,7 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 body,
                 ..
             } => {
-                let (_, _, test) = loop_test.execution_parts();
+                let test = loop_test.source_region();
                 effect_checks
                     .iter()
                     .any(|check| check.origin() == LoopEffectOrigin::InheritedResourceDerived)
@@ -8885,7 +8885,7 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 body,
                 ..
             } => {
-                let (_, _, test) = loop_test.execution_parts();
+                let test = loop_test.source_region();
                 if let Err(error) = check(effect_checks)? {
                     return Ok(Err(error));
                 }

@@ -1021,14 +1021,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         loop_entry_state: &ExecutionState,
         loop_head_state: &ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
-        condition: &ProgramExpression,
+        condition: Option<&ProgramExpression>,
         invariant_checks: &[LoopInvariantCheck],
         ranking_measures: &[crate::kernel::RankingComponent],
         structural_measure: Option<&str>,
         invariant_surfaces: &[ClickProposition],
         binders: &[crate::kernel::LoopBinder],
         composite_resource_definitions: &[CompositeResourceDefinition],
-        do_while: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;
         driver_proof.check_loop_state_join(
@@ -1056,19 +1055,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             );
         }
 
-        if do_while {
-            let condition_may_continue = crate::kernel::loop_condition_may_continue(
-                &execution.core.state,
-                condition,
-                &driver_proof.back_edge_assumptions(execution),
-            )
-            .map_err(|message| {
-                driver_proof.step_error(format!("loop condition classification: {message}"))
-            })?;
-            if !condition_may_continue {
-                return Ok(None);
-            }
-        }
         if invariant_surfaces.len() != invariant_checks.len() {
             return Err(driver_proof.step_error(
                 "explicit invariant evidence does not align with the invariant bundle",

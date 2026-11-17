@@ -619,7 +619,7 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_contains_call(body)
                 || test
                     .as_ref()

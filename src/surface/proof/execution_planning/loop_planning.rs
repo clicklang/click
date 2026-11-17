@@ -683,17 +683,21 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
         crate::kernel::program_loop_continuation(update.map(|update| update.as_ref()), test);
     let frontier = ExecutionFrontier {
         position: FrontierPosition::StatementEntry {
-            remaining: Arc::new(crate::kernel::program_loop_pass(
+            remaining: Arc::new(crate::kernel::program_loop_preservation_pass(
                 body,
                 update.map(|update| update.as_ref()),
-                test,
+                test.expect("loop preservation owns its test"),
             )),
         },
         region: ExecutionRegionKind::LoopBody,
         in_loop_body: true,
+        loop_phase_source: test.map(|test| crate::kernel::proof::LoopPhaseSource {
+            header_index: loop_body_statement_index - 1,
+            test_position: test.position,
+        }),
         loop_update: continuation.as_ref().and_then(|update| {
             source_layout
-                .loop_update_entry(loop_index)
+                .loop_continuation_entry(loop_index)
                 .map(|index| (update.clone(), index))
         }),
         natural_backedge_target: source_layout.natural_loop_target(loop_index),
@@ -705,6 +709,19 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     // A preservation proof is nested in the enclosing execution proof.
     // Its marks still name fixed states; share their persistent map prefix.
     let mut recorded_states = enclosing_states.clone();
+    if test.is_some_and(|test| test.entry_condition().is_some())
+        && let Some(region) = source_layout.loop_test_phase_entry(loop_index)
+    {
+        for kind in [ProgramPointKind::Entry, ProgramPointKind::Exit] {
+            record_statement_program_state(
+                &mut recorded_states,
+                environment.function_block,
+                region,
+                kind,
+                preservation.state().clone(),
+            );
+        }
+    }
     let constants = ExecutionProofConstants {
         proof_site: environment.frontier_loop_source.proof_site.clone(),
         source_layout,
@@ -929,11 +946,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     invariant_checks: &[LoopInvariantCheck],
     ranking_measures: &[crate::kernel::RankingComponent],
     structural_measure: Option<&str>,
-    condition: &ProgramExpression,
+    condition: Option<&ProgramExpression>,
     body: &ProgramStatement,
     update: Option<&Arc<ProgramStatement>>,
     test: Option<&crate::kernel::LoopTestRegion>,
-    direct_post_test: bool,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<LoopPreservationProofResult, ClickError> {
     // A `cases` that rejoins its arms is noted for the rest of this proof's
@@ -990,17 +1006,21 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         crate::kernel::program_loop_continuation(update.map(|update| update.as_ref()), test);
     let frontier = ExecutionFrontier {
         position: FrontierPosition::StatementEntry {
-            remaining: Arc::new(crate::kernel::program_loop_pass(
+            remaining: Arc::new(crate::kernel::program_loop_preservation_pass(
                 body,
                 update.map(|update| update.as_ref()),
-                test,
+                test.expect("loop preservation owns its test"),
             )),
         },
         region: ExecutionRegionKind::LoopBody,
         in_loop_body: true,
+        loop_phase_source: test.map(|test| crate::kernel::proof::LoopPhaseSource {
+            header_index: loop_body_statement_index - 1,
+            test_position: test.position,
+        }),
         loop_update: continuation.as_ref().and_then(|update| {
             source_layout
-                .loop_update_entry(loop_index)
+                .loop_continuation_entry(loop_index)
                 .map(|index| (update.clone(), index))
         }),
         natural_backedge_target: source_layout.natural_loop_target(loop_index),
@@ -1011,6 +1031,19 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     };
     // Inner marks remain local to this proof's persistent-map version.
     let mut recorded_states = enclosing_states.clone();
+    if test.is_some_and(|test| test.entry_condition().is_some())
+        && let Some(region) = source_layout.loop_test_phase_entry(loop_index)
+    {
+        for kind in [ProgramPointKind::Entry, ProgramPointKind::Exit] {
+            record_statement_program_state(
+                &mut recorded_states,
+                environment.function_block,
+                region,
+                kind,
+                preservation.state().clone(),
+            );
+        }
+    }
     let nested_tactic_capture = expansion_capture
         .as_deref()
         .and_then(|capture| capture.nested_for_site(preserve_site));
@@ -1072,7 +1105,9 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     // The invariants are available at the body entry as kernel facts. A
     // pre-tested loop also has its condition there; a do-while does not, so
     // it must not be recorded as an available premise for the first body.
-    let loop_condition = surface_program_condition(condition, preservation.state())?;
+    let loop_condition = condition
+        .map(|condition| surface_program_condition(condition, preservation.state()))
+        .transpose()?;
     // The loop head's own clauses, in declaration order, are what a smart
     // bundle closure may cite for a ranking member. Each declared invariant
     // is named twice, once as written and once re-read at iteration entry:
@@ -1091,7 +1126,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         preservation,
         loop_body_statement_index,
     )?);
-    if !direct_post_test
+    if let Some(loop_condition) = loop_condition
         && let Ok(lowered) = lower_fixed_state_proposition(
             &loop_condition,
             pure_facts,
@@ -1421,7 +1456,6 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     &invariant_surfaces,
                     preservation.binders(),
                     environment.function.composite_resource_definitions(),
-                    direct_post_test,
                 )
                 .and_then(|prepared| match prepared {
                     Some(proof) => {
@@ -1613,7 +1647,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             // it only when the back edge fails to close exported no exit at
             // all for a body that does close it, and every claim after the
             // loop was then vacuous.
-            if direct_post_test || back_edge_fails {
+            if back_edge_fails {
                 // The guard-false exit exports the loop's named instances at
                 // their final arguments, just as the checked kernel back edge
                 // does. Keeping a body-local fold name here loses the binder's
