@@ -206,8 +206,11 @@ Class types use an elaborated `struct Name` identity distinct from generic
 type parameters. Construction has no trusted user-constructor contract;
 nontrivial copying, destruction and class handlers remain refused.
 
-C++ record-reference locals reuse the parameter carrier (`&name`) and retain
-the record layout in the imported function's local struct-pointer metadata.
+C++ references use a typed `BindingName::ReferenceCarrier` of the referent
+binding. Carrier values and their frame/lifetime storage retain that structural
+identity; the source name remains `name` and its address still spells `&name`.
+Record-reference locals retain the record layout in the imported function's
+local struct-pointer metadata.
 Surface therefore resolves `name.field` as a record place, without treating the
 alias as a new object or granting memory authority. Binding through a record
 pointer uses checked address formation on a byte-array lvalue of the complete

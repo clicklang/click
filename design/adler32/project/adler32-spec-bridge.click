@@ -16,7 +16,7 @@ theorem adler_byte_widen(value: uint8) {
 
 theorem adler_byte_sum_bridge(bytes: uint8[], m: uint64) {
  ensures forall (n: int32) { to_integer(n) == to_integer(m) implies adler_byte_sum(bytes, n) == adler_byte_sum_u64(bytes, m) } by {
-  induct(m) as ih;
+  let ih = induct(m);
   intro();
   intro();
   if m <= 0u64 {
@@ -57,7 +57,7 @@ theorem adler_byte_sum_bridge(bytes: uint8[], m: uint64) {
 
 theorem adler_weighted_sum_bridge(bytes: uint8[], m: uint64, w: int32) {
  ensures forall (n: int32) { to_integer(n) == to_integer(m) implies adler_weighted_sum(bytes, n, w) == adler_weighted_sum_u64(bytes, m, to_integer(w)) } by {
-  induct(m) as ih;
+  let ih = induct(m);
   intro();
   intro();
   if m <= 0u64 {

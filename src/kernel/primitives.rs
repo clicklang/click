@@ -2535,6 +2535,7 @@ impl PointerValue {
                     | PointerBlock::ContractException
                     | PointerBlock::StaticObject { .. }
                     | PointerBlock::AutomaticLocal { .. }
+                    | PointerBlock::ReferenceCarrier { .. }
                     | PointerBlock::Concrete(_)
                     | PointerBlock::Heap(_)
                     | PointerBlock::Temporary(_)
@@ -3051,6 +3052,12 @@ pub enum PointerBlock {
         binding: LocalBindingId,
         instance: LocalStorageInstance,
     },
+    /// Internal storage of the pointer carrying a reference, distinct from
+    /// the referent object and from an ordinary address-looking source name.
+    ReferenceCarrier {
+        referent: Arc<BindingName>,
+        instance: LocalStorageInstance,
+    },
     StaticObject {
         binding: StaticBindingId,
     },
@@ -3080,6 +3087,11 @@ impl std::hash::Hash for PointerBlock {
             Self::StaticObject { binding } => {
                 12u64.hash(state);
                 binding.hash(state);
+            }
+            Self::ReferenceCarrier { referent, instance } => {
+                16u64.hash(state);
+                referent.hash(state);
+                instance.hash(state);
             }
             Self::AutomaticLocal { binding, instance } => {
                 11u64.hash(state);
@@ -3197,7 +3209,7 @@ impl PointerBlock {
 
     pub(crate) fn starts_with(&self, prefix: &str) -> bool {
         match self {
-            Self::AutomaticLocal { instance, .. } => {
+            Self::AutomaticLocal { instance, .. } | Self::ReferenceCarrier { instance, .. } => {
                 prefix == "local:"
                     || match instance {
                         LocalStorageInstance::ValueParameter => prefix == "local:value-parameter:",
@@ -3222,6 +3234,7 @@ impl PointerBlock {
             | Self::ContractException
             | Self::StaticObject { .. }
             | Self::AutomaticLocal { .. }
+            | Self::ReferenceCarrier { .. }
             | Self::StringLiteral { .. }
             | Self::Function(_)
             | Self::FunctionSymbolic(_)
@@ -3334,6 +3347,7 @@ impl PointerBlock {
                         | Self::ContractException
                         | Self::StaticObject { .. }
                         | Self::AutomaticLocal { .. }
+                        | Self::ReferenceCarrier { .. }
                         | Self::Concrete(_)
                         | Self::Function(_)
                 )
@@ -3358,6 +3372,7 @@ impl PointerBlock {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(
                     other,
@@ -3365,6 +3380,7 @@ impl PointerBlock {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                         | Self::Concrete(_)
                 ))
@@ -3374,6 +3390,7 @@ impl PointerBlock {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(self, Self::Concrete(_)))
                 || literal_versus_declared(self, other)
@@ -3437,6 +3454,12 @@ impl std::fmt::Display for PointerBlock {
             Self::ContractResult => formatter.write_str("result.storage()"),
             Self::ContractException => formatter.write_str("exception.storage()"),
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
+            Self::ReferenceCarrier { referent, instance } => {
+                write!(
+                    formatter,
+                    "reference-carrier({referent}).storage({instance})"
+                )
+            }
             Self::AutomaticLocal { binding, instance } => {
                 write!(formatter, "{}.storage({instance})", binding.canonical())
             }
@@ -5402,6 +5425,9 @@ pub enum SpecProposition {
         expression: SpecExpression,
         classification: FloatClassification,
     },
+    /// A written `true` or `false`: lowers to that constant condition
+    /// directly, not through a comparison.
+    Truth(bool),
     And(Box<SpecProposition>, Box<SpecProposition>),
     Or(Box<SpecProposition>, Box<SpecProposition>),
     Not(Box<SpecProposition>),
@@ -12702,7 +12728,7 @@ impl ResourceSpec {
                     {
                         if *state_source == ResourceStateSource::Entry
                             && let ProgramExpression::Variable(name) = argument
-                            && let Some(value) = name.named_in(entry_values)
+                            && let Some(value) = name.metadata_in(entry_values)
                         {
                             *argument = ProgramExpression::Value(value.clone());
                         }
@@ -15742,7 +15768,9 @@ impl CallParameters {
             let Some(layout) = parameter.aggregate_layout() else {
                 continue;
             };
-            let slot = entry.locals.aggregate_object_pointer(parameter.name())?;
+            let slot = entry
+                .locals
+                .aggregate_object_pointer(parameter.binding_name().clone())?;
             bound.locals.set_aggregate_object_at(
                 parameter.name().to_string(),
                 layout.clone(),

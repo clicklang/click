@@ -1715,7 +1715,7 @@ impl CheckedResourceRewrite {
                 return Err("authority control argument type mismatch".into());
             }
             evaluation.locals.set_typed(
-                parameter.name().to_string(),
+                parameter.binding_name().clone(),
                 value.clone(),
                 parameter.program_type(),
             );

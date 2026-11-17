@@ -315,7 +315,7 @@ fn struct_owners(
         found.push(StructOwner {
             base: ProgramExpression::Cast {
                 expression: Box::new(ProgramExpression::Variable(
-                    (parameter.name().to_string()).into(),
+                    crate::surface::surface_parameter_binding(parameter.binding_name()),
                 )),
                 target_type: ProgramType::Int32Pointer,
                 integer_mode: crate::kernel::IntegerCastMode::Standard,
@@ -383,7 +383,9 @@ fn range_struct_owners(
             argument,
         ) {
             owners.push(StructOwner {
-                base: ProgramExpression::Variable((parameter.name().to_string()).into()),
+                base: ProgramExpression::Variable(crate::surface::surface_parameter_binding(
+                    parameter.binding_name(),
+                )),
                 pointer: base.clone(),
                 layout: layout.clone(),
             });
@@ -1293,7 +1295,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::ContractResult | PointerBlock::ContractException | PointerBlock::AggregateReturn { .. } | PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::StaticObject { .. }))
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::ContractResult | PointerBlock::ContractException | PointerBlock::AggregateReturn { .. } | PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::ReferenceCarrier { .. } | PointerBlock::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Value(value.clone()),
@@ -1810,7 +1812,7 @@ fn synthesize_exact_external_zero_based_byte_range(
                 _ => return None,
             };
             (pointer.pointer() == base && pointer.program_type().pointee_type()?.byte_width() == 1)
-                .then(|| parameter.name().to_string())
+                .then(|| crate::surface::surface_parameter_binding(parameter.binding_name()))
         });
     let Some(name) = matches.next() else {
         return Ok(None);
@@ -2048,7 +2050,10 @@ fn synthesize_external_symbolic_element_range(
             if !matches!(bytes, bits32_constant!(1)) && bytes != &one_element {
                 return None;
             }
-            (!matches!(index, bits32_constant!(_))).then_some((parameter.name(), index))
+            (!matches!(index, bits32_constant!(_))).then_some((
+                crate::surface::surface_parameter_binding(parameter.binding_name()),
+                index,
+            ))
         })?;
     if matches!(bytes, bits32_constant!(1)) {
         // Keep the byte count constant in the re-lowered proposition by
@@ -2144,7 +2149,11 @@ fn named_pointer_bases<'a>(
                 .pointee_type()?
                 .to_kernel_type()
                 .byte_width();
-            Some((parameter.binding_name().clone(), base.clone(), width))
+            Some((
+                crate::surface::surface_parameter_binding(parameter.binding_name()),
+                base.clone(),
+                width,
+            ))
         })
         .chain(state.into_iter().flat_map(|state| {
             state.locals().object_values().filter_map(|(name, value)| {
@@ -2700,6 +2709,22 @@ fn synthesize_surface_atomic_proposition(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
+    // A closed `bool` comparison is spelled as written: `true == false`
+    // lowers back to exactly this retained comparison.
+    if let ConditionTerm::BoolEqual(left, right) = condition
+        && let (ConditionTerm::Constant(left), ConditionTerm::Constant(right)) =
+            (left.as_ref(), right.as_ref())
+    {
+        return Some(ClickProposition::Comparison {
+            left: crate::surface::bool_literal(*left),
+            operator: if *value {
+                ComparisonOperator::Equal
+            } else {
+                ComparisonOperator::NotEqual
+            },
+            right: crate::surface::bool_literal(*right),
+        });
+    }
     if matches!(
         condition,
         ConditionTerm::Variable(_)
@@ -2755,17 +2780,13 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let ConditionTerm::Constant(condition) = condition {
-        // A native equality folds to precisely this constant condition;
-        // using != would instead change its polarity.
-        let comparison = ClickProposition::Comparison {
-            left: ContractExpression::IntegerLiteral("0".into()),
-            operator: ComparisonOperator::Equal,
-            right: ContractExpression::IntegerLiteral(if *condition { "0" } else { "1" }.into()),
-        };
+        // The `bool` literal lowers to exactly this constant condition. A
+        // closed comparison such as `0 == 1` does not: lowering retains it.
+        let literal = ClickProposition::Value(crate::surface::bool_literal(*condition));
         return Some(if *value {
-            comparison
+            literal
         } else {
-            ClickProposition::Not(Box::new(comparison))
+            ClickProposition::Not(Box::new(literal))
         });
     }
     if let ConditionTerm::PointerOffsetEqual(left, right) = condition {
@@ -3107,11 +3128,25 @@ fn synthesize_surface_atomic_proposition(
         // read to int64 before an unsigned operation consumes it.
         let expression = if let ConditionTerm::Compare {
             format: format @ (MachineIntegerType::Int64 | MachineIntegerType::UInt64),
+            relation,
             ..
         } = condition
         {
             let root = crate::kernel::KernelTermImport::default().machine(*format, term);
-            raise_kernel_term(&root, parameter_binding, state, bound_variables)?
+            match root.node() {
+                // A 64-bit equality reads both words at its own format,
+                // so a call there is the call as declared: lowering
+                // `x == f(..)` reads `f`'s word at the equality's format
+                // itself. A narrower call would be a widening cast here,
+                // not a bare call, so no width changes. Casting the call
+                // to the format would lower to a cast node instead.
+                crate::kernel::KernelTermNode::Call { name, arguments }
+                    if *relation == CompareRelation::Equal =>
+                {
+                    raise_call(name, arguments, parameter_binding, state, bound_variables)?
+                }
+                _ => raise_kernel_term(&root, parameter_binding, state, bound_variables)?,
+            }
         } else {
             synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?
         };
@@ -3478,7 +3513,7 @@ fn raise_algebraic_read(
     {
         return Some(SurfaceTerm::ProgramExpression(ProgramExpression::Load(
             Box::new(ProgramExpression::Variable(
-                parameter.name().to_string().into(),
+                crate::surface::surface_parameter_binding(parameter.binding_name()),
             )),
         )));
     }
@@ -4397,7 +4432,7 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
 /// once the function has reassigned it, when the bare name means the new value
 /// and the passed one is spelled at function entry instead.
 fn parameter_names_its_argument(
-    name: &str,
+    name: &crate::kernel::BindingName,
     argument: &ProgramExpression,
     state: &ExecutionState,
 ) -> bool {
@@ -4424,10 +4459,16 @@ pub(super) fn synthesize_surface_pointer_offset(
     {
         if let ProgramExpression::Value(ProgramValue::Pointer(pointer)) = argument
             && pointer.offset == *term
-            && parameter_names_its_argument(parameter.name(), argument, state)
+            && parameter_names_its_argument(
+                &crate::surface::surface_parameter_binding(parameter.binding_name()),
+                argument,
+                state,
+            )
         {
             return Some(ContractExpression::ProgramExpression(
-                ProgramExpression::Variable((parameter.name().to_string()).into()),
+                ProgramExpression::Variable(crate::surface::surface_parameter_binding(
+                    parameter.binding_name(),
+                )),
             ));
         }
     }
@@ -4550,8 +4591,9 @@ fn synthesize_parameter_field_pointer_value(
             if !crate::kernel::offsets_have_same_canonical_form(&loaded_offset, term) {
                 continue;
             }
-            let base_expression =
-                ProgramExpression::Variable((parameter.name().to_string()).into());
+            let base_expression = ProgramExpression::Variable(
+                crate::surface::surface_parameter_binding(parameter.binding_name()),
+            );
             let lowered_pointer = if field.offset_bytes() == 0 {
                 base_expression.clone()
             } else {
@@ -6144,7 +6186,9 @@ fn synthesize_parameter_field_load_matching(
             continue;
         }
         let value_type = declared_type;
-        let base = ProgramExpression::Variable(parameter.name().to_string().into());
+        let base = ProgramExpression::Variable(crate::surface::surface_parameter_binding(
+            parameter.binding_name(),
+        ));
         let field_pointer = if offset_bytes == 0 {
             base.clone()
         } else {
@@ -6395,6 +6439,7 @@ fn synthesize_surface_pointer(
             | PointerBlock::AggregateReturn { .. }
             | PointerBlock::StringLiteral { .. }
             | PointerBlock::AutomaticLocal { .. }
+            | PointerBlock::ReferenceCarrier { .. }
             | PointerBlock::StaticObject { .. }
     ) {
         return Some(ProgramExpression::Value(ProgramValue::typed_pointer(
@@ -6421,10 +6466,14 @@ fn synthesize_surface_pointer(
     if let Some((parameter, argument)) = parameter_binding
         .naming
         .and_then(|names| names.pointer_source(pointer))
-        && parameter_names_its_argument(parameter.name(), argument, state)
+        && parameter_names_its_argument(
+            &crate::surface::surface_parameter_binding(parameter.binding_name()),
+            argument,
+            state,
+        )
     {
         return Some(ProgramExpression::Variable(
-            (parameter.name().to_string()).into(),
+            crate::surface::surface_parameter_binding(parameter.binding_name()),
         ));
     }
     if let Some(expression) = parameter_binding
@@ -6435,7 +6484,11 @@ fn synthesize_surface_pointer(
             let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                 return None;
             };
-            if !parameter_names_its_argument(parameter.name(), argument, state) {
+            if !parameter_names_its_argument(
+                &crate::surface::surface_parameter_binding(parameter.binding_name()),
+                argument,
+                state,
+            ) {
                 return None;
             }
             let element_width = parameter
@@ -6450,7 +6503,9 @@ fn synthesize_surface_pointer(
                     element_width,
                     crate::languages::interface::RecordLayout::size_bytes,
                 );
-            let name = ProgramExpression::Variable((parameter.name().to_string()).into());
+            let name = ProgramExpression::Variable(crate::surface::surface_parameter_binding(
+                parameter.binding_name(),
+            ));
             let Some(index) = synthesis_element_index(pointer, base, element_width) else {
                 let bytes = pointer
                     .element_index_from_base_with_width(base, 1)?
@@ -7189,7 +7244,9 @@ fn synthesize_surface_algebraic(
                 })
             {
                 return Some(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable((parameter.name().to_string()).into()),
+                    ProgramExpression::Variable(crate::surface::surface_parameter_binding(
+                        parameter.binding_name(),
+                    )),
                 ));
             }
             // A value a call returned is spelled by its call.
@@ -7287,7 +7344,9 @@ fn synthesize_surface_algebraic(
             })
             .map(|(parameter, _)| {
                 ContractExpression::ProgramExpression(ProgramExpression::Load(Box::new(
-                    ProgramExpression::Variable((parameter.name().to_string()).into()),
+                    ProgramExpression::Variable(crate::surface::surface_parameter_binding(
+                        parameter.binding_name(),
+                    )),
                 )))
             })
             .or_else(|| synthesize_held_value_local(term, pointer, state))

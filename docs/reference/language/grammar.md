@@ -723,8 +723,8 @@ theorem existential_range_lambda(lo: int32, hi: int32) {
 
 The value forms use `item` as the written range binder. An `.any` witness
 therefore names `item`; an `.all` proof may choose a binder with
-`intro() as k`. The universal range proof introduces both its index and
-its range condition, as `intro() as k; intro();`. Elaborated applications
+`let k = intro()`. The universal range proof introduces both its index and
+its range condition, as `let k = intro(); intro();`. Elaborated applications
 use the existing universal/existential range terms and add no proof search.
 
 ### Range folds
@@ -771,7 +771,7 @@ Expansion spells generated specification binders as `binder(N)`. This is a
 structured binder identity in a namespace separate from source identifiers;
 it is not a C object and has no address. Quantifiers, specification lambdas,
 lexical lets, match patterns, and range operations accept this binder form.
-`intro() as binder(N)` names an introduced universal value. References use the
+`let binder(N) = intro()` names an introduced universal value. References use the
 same `binder(N)` form within the binder's scope. An introduction uses an
 identity not already introduced in the active proof scope. Numeric spellings survive
 printing and reparsing; the elaborator allocates fresh identities without

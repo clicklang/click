@@ -15,7 +15,7 @@ theorem countdown_is_zero(n: int32) {
     ensures countdown(n) == 0 by {
         have n == n;
         have 0 <= to_integer(n);
-        induct(n) as ih;
+        let ih = induct(n);
         if n <= 0 {
             unfold(countdown(n));
             normalize() using { n <= 0; };

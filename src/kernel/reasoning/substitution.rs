@@ -3098,6 +3098,7 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
         | PointerBlock::AggregateReturn { .. }
         | PointerBlock::StaticObject { .. }
         | PointerBlock::AutomaticLocal { .. }
+        | PointerBlock::ReferenceCarrier { .. }
         | PointerBlock::Concrete(_)
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
@@ -7879,6 +7880,7 @@ fn substitute_pointer_variable_in_spec_proposition(
     to: &Pointer,
 ) -> SpecProposition {
     match proposition {
+        SpecProposition::Truth(value) => SpecProposition::Truth(*value),
         SpecProposition::ForAllInteger {
             name,
             variable,

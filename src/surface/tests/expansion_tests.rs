@@ -73,6 +73,25 @@ fn symbolic_return_boundary_expands_and_replays_its_explicit_frame_proof() {
 }
 
 #[test]
+#[ignore = "nightly: symbolic loop frame verification, expansion and cold replay"]
+fn symbolic_loop_frame_expands_and_cold_replays() {
+    let (source, sources) = mdtest_sources("mdtests/loop_symbolic_disjoint_array_store_frame.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("), "{source}");
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "traverse.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve("), "{expanded}");
+    without_implicit_solve_for_claim("traverse.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: unrelated equality refusal and related-premise replay"]
 fn unrelated_equality_is_refused_without_transport() {
     let (source, sources) =
@@ -3997,7 +4016,7 @@ fn whole_claim_expansion_closes_a_claim_opened_after_execution() {
         (
             "intro_as_in_a_function_proof",
             "keep.contract",
-            "intro() as below;",
+            "let below = intro();",
         ),
     ] {
         let (click, sources) = mdtest_sources(&format!("mdtests/{mdtest}.md"));
@@ -22787,7 +22806,7 @@ fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
         .collect::<Vec<_>>();
     let error = verify_c_sources(&source, &wrong_refs)
         .expect_err("a null store cannot produce the nonempty tree");
-    assert!(!error.message().contains("no Surface spelling"), "{error}");
+    assert!(!error.message().contains("no Surface form"), "{error}");
 }
 
 #[test]

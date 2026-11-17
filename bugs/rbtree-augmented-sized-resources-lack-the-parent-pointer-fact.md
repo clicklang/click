@@ -355,3 +355,24 @@ audit sites at default limits.
 The C, three original function contracts, inorder theorem, tree models,
 callbacks, existing tree resources, and verifier are unchanged. Other sidecars
 and the full-directory audit still leave this report open.
+
+## Context rotation with a nonempty black middle leaf
+
+All three selected proofs in
+`rbtree_size_insert_context_middle_rotation.click` now verify at default
+limits on master `81adf013b` plus the proof repair, including both insertion
+wrappers. Complete node observations retain the child inequalities and typed
+parent relationships through initialization and read-only loop steps. The
+proof executes the missing local declaration and middle-child store, retains
+the unchanged and newly written child links through both parent-update calls,
+and reparents the black middle leaf before restoring the ancestor context.
+The callback count equation closes explicitly from `gv == 3 + nv`. Arbitrary
+focused-node subtrees, symbolic valid cached sizes, and the writable size
+callback remain in the proof.
+
+Expansion, retained and cold verification, and fixed-point checks pass all 13
+audit sites at default limits.
+
+The C, three original function contracts, tree models, imported inorder
+theorem, callback, existing tree resources, and verifier are unchanged. Other
+sidecars and the full-directory audit still leave this report open.

@@ -1,6 +1,6 @@
 # an induction hypothesis cannot be handed a wrapped range
 
-`induct(n) as ih` builds the hypothesis from the theorem's written `requires`,
+`let ih = induct(n)` builds the hypothesis from the theorem's written `requires`,
 so the extent guards the theorem's own proof assumes are not among the
 hypothesis's premises. That is only safe because of what it takes to satisfy a
 range premise whose extent wraps.
@@ -22,7 +22,7 @@ theorem a_cell_from_a_wrapped_hypothesis(v: int32[], n: int32) {
     requires 1073741825 <= n;
     requires n >= 0 and viewable(v[0..n]);
     ensures viewable(v[0..1]) by {
-        induct(n) as ih;
+        let ih = induct(n);
         have 0 <= 1073741824;
         have 1073741824 < n by { solve() using { 1073741825 <= n; }; }
         have viewable(v[0..1073741824]);

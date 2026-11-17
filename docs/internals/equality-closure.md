@@ -1832,9 +1832,22 @@ Restriction resets the closure and refiles only the selected facts. Branch clone
 share persistent input roots and fork subsequent changes. Pointer-predicate source handles are retained with
 the service so reconstruction cannot import facts from a sibling context.
 Atomic condition matching checks only the selected forms for full-width
-sources. Parameter-store shortcuts consult selected coordinate dependencies;
-complex deferred load dependencies conservatively use ordinary store reasoning.
-Unrelated ordinary scalar or offset premises do not disable these paths.
+sources. Parameter-store shortcuts consult selected coordinate dependencies.
+An admitted read equality records its written coordinate variables without
+inspecting the values cached in its memory state. There is no global read/state
+dependency flag: unrelated read, scalar, or offset premises do not disable the
+shortcut. A source mentioning the selected coordinate, or a read in the selected
+offset itself, still uses ordinary store reasoning. Atomic parameter bases also
+exclude registered loaded-pointer variables. The alias and ownership checks are
+unchanged.
+
+`unrelated_read_inputs_preserve_the_selected_parameter_partition` checks fixed
+query work as unrelated read facts grow, with controls for a relevant equality,
+a read-valued offset, and sibling-context isolation.
+`sequential_owned_parameter_stores_ignore_earlier_cached_fields` checks bounded
+per-store work beside growing scalar/pointer cells with an unrelated read fact;
+`a_cached_parameter_partition_does_not_hide_aliases_or_wide_cells` also checks
+that explicit read equations connecting parameter coordinates invalidate aliases.
 
 Memory authorization, contextual
 state reasoning, and explicit tactic search remain separate judgments with
