@@ -1134,7 +1134,7 @@ fn apply_frontier_source_tactic<'a>(
     let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
         proof
             .driver()
-            .apply_close_invariants_body(&[ProofTactic::Solve])?
+            .apply_close_invariants_body(&[ProofTactic::Solve], None)?
     } else if let Some(step) = SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic) {
         proof
             .driver()
@@ -1151,7 +1151,7 @@ fn apply_frontier_source_tactic<'a>(
     {
         apply_source_step_proofs(&proof, step, step_proof, indexed.index)?
     } else if let ProofTactic::CloseInvariantsBy(body) = &indexed.tactic {
-        proof.driver().apply_close_invariants_body(body)?
+        proof.driver().apply_close_invariants_body(body, None)?
     } else if let ProofTactic::Choose(choice) = &indexed.tactic {
         proof
             .driver()

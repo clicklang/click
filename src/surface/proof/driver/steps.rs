@@ -283,7 +283,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         if let ProofStep::CloseInvariantsBy(body) = &step {
             return driver_proof
                 .driver()
-                .apply_close_invariants_body(&body.to_proof_tactics());
+                .apply_close_invariants_body(&body.to_proof_tactics(), None);
         }
         if !super::execution_statements::implicit_solve_disabled()
             && matches!(
