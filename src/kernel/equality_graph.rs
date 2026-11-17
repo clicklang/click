@@ -3363,9 +3363,9 @@ impl EqualityGraph {
     }
 }
 
-/// A raw descriptor of an already registered read is the same selected input
-/// as its retained name. Preserve that exact state before applying the
-/// legacy comparison form to inputs that do not already have an identity.
+/// Select raw read identities without replacing reads by cached values.
+/// Compound expressions retain their written structure: their read leaves
+/// register as applications, and explicit equations supply their values.
 fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
     if let MachineTerm::MemoryLoad(memory, pointer, kind) = term {
         if crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind) {
@@ -3385,8 +3385,10 @@ fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
                 *kind,
             );
         }
+        // Unmigrated raw read kinds retain their existing preparation policy.
+        return crate::kernel::canonical_term(term);
     }
-    crate::kernel::canonical_term(term)
+    crate::kernel::eval::select_graph_scalar_reads(term)
 }
 
 #[cfg(test)]
@@ -4530,3 +4532,6 @@ mod boolean_cast_dependency_tests {
 
 #[cfg(test)]
 mod function_read_tests;
+
+#[cfg(test)]
+mod compound_read_tests;

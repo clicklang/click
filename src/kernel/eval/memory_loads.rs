@@ -3807,6 +3807,16 @@ pub(crate) fn canonical_condition_fact(fact: &Proposition) -> Proposition {
 /// Select unresolved read descriptors with an explicit worklist. Range-fold
 /// bodies remain scoped and are not assigned a global read identity.
 fn select_scalar_reads(term: &MachineTerm) -> MachineTerm {
+    select_scalar_reads_impl(term, false)
+}
+
+/// Prepare an equality-graph expression by selecting only read identities.
+/// Preserve a producer-selected read exactly; never substitute cached values.
+pub(in crate::kernel) fn select_graph_scalar_reads(term: &MachineTerm) -> MachineTerm {
+    select_scalar_reads_impl(term, true)
+}
+
+fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> MachineTerm {
     enum Task<'a> {
         VisitTerm(&'a MachineTerm),
         VisitCondition(&'a ConditionTerm),
@@ -3859,8 +3869,16 @@ fn select_scalar_reads(term: &MachineTerm) -> MachineTerm {
                                 .unwrap_or_else(|| term.clone()),
                         );
                     }
-                    MachineTerm::MemoryLoad(_, _, _) => {
-                        term_results.push(canonical_scalar_read(term));
+                    MachineTerm::MemoryLoad(memory, pointer, kind) => {
+                        term_results.push(
+                            if retain_selected
+                                && is_selected_scalar_read(memory.shared_memory(), pointer, *kind)
+                            {
+                                term.clone()
+                            } else {
+                                canonical_scalar_read(term)
+                            },
+                        );
                     }
                     MachineTerm::PointerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {
                         term_results.push(term.clone())
