@@ -3546,7 +3546,10 @@ fn raise_algebraic_read(
     held_at(state).or_else(|| {
         SYNTHESIS_RECORDED_POINTS.with(|slot| {
             let slot = slot.borrow();
-            let (selector, recorded) = slot.as_ref()?.point_reading_memory(memory)?;
+            let points = slot.as_ref()?;
+            let (selector, recorded) = points
+                .point_reading_memory(memory)
+                .or_else(|| points.point_reading_load(memory, &address.export().ok()?))?;
             Some(SurfaceTerm::At {
                 selector: selector.clone(),
                 expression: Box::new(held_at(recorded)?),
