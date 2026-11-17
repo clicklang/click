@@ -762,3 +762,57 @@ fn pointer_storage_comparison_visits_shared_offset_pairs_once() {
         previous = Some(work);
     }
 }
+
+#[test]
+fn memory_value_hash_stream_should_scale_with_shared_float_dags() {
+    use std::hash::{Hash, Hasher};
+    #[derive(Default)]
+    struct ByteCount(usize);
+    impl Hasher for ByteCount {
+        fn finish(&self) -> u64 {
+            self.0 as u64
+        }
+        fn write(&mut self, bytes: &[u8]) {
+            self.0 += bytes.len();
+        }
+    }
+    let mut counts = Vec::new();
+    for depth in [2, 4, 8] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Float64), Variable(998790));
+        for _ in 0..depth {
+            root = KernelTerm::float_binary(
+                KernelFloatType::Float64,
+                FloatBinaryOperator::Add,
+                [root.clone(), root],
+            )
+            .unwrap();
+        }
+        let local = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+        let mut local_hash = ByteCount::default();
+        local.hash(&mut local_hash);
+        assert!(!root.has_cached_native_argument());
+        let cell = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
+        let mut memory_hash = ByteCount::default();
+        cell.hash(&mut memory_hash);
+        let mut native_hash = ByteCount::default();
+        cell.native().hash(&mut native_hash);
+        assert_eq!(
+            memory_hash.0, native_hash.0,
+            "existing native hash-stream contract"
+        );
+        eprintln!(
+            "depth={depth} shared_nodes={} local_hash_bytes={} memory_hash_bytes={} native_cache={}",
+            depth + 1,
+            local_hash.0,
+            memory_hash.0,
+            root.has_cached_native_argument()
+        );
+        counts.push(memory_hash.0);
+    }
+    assert!(
+        counts.windows(2).all(|pair| pair[1] <= 5 * pair[0]),
+        "memory hash input grows faster than the shared DAG: {counts:?}"
+    );
+}
