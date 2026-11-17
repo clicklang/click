@@ -3443,7 +3443,7 @@ mod tests {
             ProofExecutionState<()>,
         >;
         let load = SpecExpression::MemoryLoad {
-            memory: SpecPoint::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
                 crate::kernel::PointerValue::new(
                     Address {
