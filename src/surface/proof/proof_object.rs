@@ -633,11 +633,6 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// since the split root, just like generated-load binding observations.
     pub(in crate::surface::proof) generated_load_source_events:
         PersistentSequence<crate::kernel::GeneratedLoadSourceEvent>,
-    /// The fact list the last `loop` tactic on this path copied from the
-    /// proof's facts, as it was copied. The next `loop` extends it by the
-    /// facts the proof gained since (`PureFactList::extended_to_proof_facts`)
-    /// instead of copying and indexing every fact again.
-    pub(in crate::surface::proof) loop_fact_list: Option<crate::surface::PureFactList>,
     /// The environment the last `loop` tactic on this path stepped its rule
     /// under, before that rule: its claim's environment holding the frontier
     /// loop rules of `rules`. The next `loop` adds the rules since instead
@@ -872,7 +867,6 @@ impl ExecutionProofState {
                 generated_load_source_events: PersistentSequence::default(),
                 existential_projection: None,
                 store_separation_misses: PersistentSequence::default(),
-                loop_fact_list: None,
                 loop_rule_environment: None,
                 loop_annotation: None,
             },

@@ -560,7 +560,7 @@ impl<'a> Proof<'a> {
         original_requirements: &'a [Requirement],
         indexed: Option<ProofFacts>,
     ) -> Self {
-        let facts = indexed.unwrap_or_else(|| ProofFacts::from_ordered(available.as_slice()));
+        let facts = indexed.unwrap_or_else(|| available.indexed_proof_facts());
         let lowering_context = resource_context_observable_facts_for_proof(
             fixed_state.state.resources(),
             facts.clone(),

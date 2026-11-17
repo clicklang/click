@@ -226,7 +226,7 @@ fn exact_propagation_preserves_models_of_nested_boolean_formulas() {
                     let mut index = Index::default();
                     let mut pending = premises.clone();
                     while let Some(fact) = pending.pop() {
-                        pending.extend(index.admit(fact));
+                        pending.extend(index.admit(&fact));
                     }
                     for model in 0..8 {
                         if premises.iter().all(|p| eval(p, model)) {

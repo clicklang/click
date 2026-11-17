@@ -26,7 +26,7 @@ pub(in crate::kernel) struct Index {
     watches: PersistentMap<Literal, PersistentSet<u64>>,
     clauses: PersistentMap<u64, PersistentSet<Literal>>,
     next_clause: u64,
-    pending: imbl::Vector<Proposition>,
+    pending: imbl::Vector<Arc<Proposition>>,
     draining: bool,
 }
 
@@ -171,8 +171,8 @@ fn falsehood() -> Proposition {
 }
 
 impl Index {
-    fn admit(&mut self, proposition: Proposition) -> Vec<Proposition> {
-        let fact = literal(&proposition, true);
+    fn admit(&mut self, proposition: &Proposition) -> Vec<Proposition> {
+        let fact = literal(proposition, true);
         if self.known.contains(&fact) {
             return Vec::new();
         }
@@ -181,7 +181,7 @@ impl Index {
         if self.known.contains(&literal(&fact.proposition, false)) {
             derived.push(falsehood());
         }
-        if fact.proposition != proposition {
+        if fact.proposition != *proposition {
             derived.push(fact.proposition.clone());
         }
         // This bucket is consumed, not rescanned on subsequent admissions.
@@ -339,21 +339,26 @@ impl PureFactContext {
     /// admitted clauses. Re-entering normal admission maintains all existing
     /// fact/equality/provenance projections, without rechecking the inference.
     pub(super) fn admit_exact_propagation(&mut self, proposition: Proposition) {
+        self.admit_shared_exact_propagation(Arc::new(proposition));
+    }
+
+    pub(super) fn admit_shared_exact_propagation(&mut self, proposition: Arc<Proposition>) {
         self.exact_propagation.pending.push_back(proposition);
         if self.exact_propagation.draining {
             return;
         }
         self.exact_propagation.draining = true;
         while let Some(fact) = self.exact_propagation.pending.pop_front() {
-            for consequence in self.exact_propagation.admit(fact) {
+            for consequence in self.exact_propagation.admit(&fact) {
+                let consequence = Arc::new(consequence);
                 if !self.contains_assumed_exact(&consequence) {
                     self.exact_propagation
                         .consequences
                         .0
-                        .push(Arc::new(consequence.clone()));
+                        .push(consequence.clone());
                 }
                 let context = std::mem::take(self);
-                *self = context.assume_proposition(consequence);
+                *self = context.assume_shared_proposition(consequence);
             }
         }
         self.exact_propagation.draining = false;

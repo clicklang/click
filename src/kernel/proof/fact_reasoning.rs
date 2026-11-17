@@ -1881,9 +1881,9 @@ pub(crate) fn exactly_available_fact(
 
 pub(crate) fn directly_matching_separation_fact(
     required: &Proposition,
-    available: &[Proposition],
+    available: &(impl super::PropositionSource + ?Sized),
 ) -> Option<Proposition> {
-    let assumptions = assumptions_from_propositions(available);
+    let assumptions = available.pure_context();
     directly_matching_separation_fact_under(required, available, &assumptions)
 }
 
@@ -1895,7 +1895,7 @@ pub(crate) fn directly_matching_separation_fact(
 /// assumptions cannot make an unlisted fact available.
 pub(crate) fn directly_matching_separation_fact_under(
     required: &Proposition,
-    available: &[Proposition],
+    available: &(impl super::PropositionSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> Option<Proposition> {
     let Proposition::ResourceSeparate {
@@ -1905,7 +1905,7 @@ pub(crate) fn directly_matching_separation_fact_under(
     else {
         return None;
     };
-    available.iter().find_map(|fact| {
+    available.propositions().find_map(|fact| {
         let Proposition::ResourceSeparate { left, right } = fact else {
             return None;
         };
@@ -1919,10 +1919,10 @@ pub(crate) fn directly_matching_separation_fact_under(
 
 pub(crate) fn directly_covering_loadability_fact(
     required: &Proposition,
-    available: &[Proposition],
+    available: &(impl super::PropositionSource + ?Sized),
 ) -> Option<Proposition> {
     matches!(required, Proposition::MemoryLoadable { .. }).then_some(())?;
-    available.iter().find_map(|fact| {
+    available.propositions().find_map(|fact| {
         matches!(fact, Proposition::MemoryLoadable { .. })
             .then(|| {
                 assumptions_from_propositions(std::slice::from_ref(fact))
@@ -3315,7 +3315,7 @@ pub(crate) fn condition_bridged_fact_is_available(
 /// it already do.
 pub(crate) fn condition_bridged_fact_is_available_among(
     required: &Proposition,
-    facts: &[Proposition],
+    facts: &(impl super::PropositionSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> bool {
     if matches!(required, Proposition::ResourceSeparate { .. }) {
@@ -3323,7 +3323,7 @@ pub(crate) fn condition_bridged_fact_is_available_among(
     }
     let key = super::fact_keys::memory_erased_proposition_key(required);
     let candidates: Vec<Proposition> = facts
-        .iter()
+        .propositions()
         .filter(|fact| {
             *fact != required && super::fact_keys::memory_erased_proposition_key(fact) == key
         })

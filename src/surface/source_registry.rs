@@ -111,7 +111,7 @@ impl CallerRequirementIndex {
         owner: CallerSourceOwnerId,
         function_block: &FunctionBlock,
         parameters: &[crate::languages::interface::ImportedParameter],
-        entry_facts: &[Proposition],
+        entry_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
         entry_fact_origins: &[EntryFactOrigin],
         entry_memory_state: crate::kernel::MemoryStateIdentity,
     ) -> Self {
@@ -135,12 +135,12 @@ impl CallerRequirementIndex {
         owner: CallerSourceOwnerId,
         function_block: &FunctionBlock,
         parameters: &[crate::languages::interface::ImportedParameter],
-        entry_facts: &[Proposition],
+        entry_facts: &(impl crate::kernel::proof::PropositionSource + ?Sized),
         entry_fact_origins: &[EntryFactOrigin],
         entry_memory_state: crate::kernel::MemoryStateIdentity,
         predicates: Option<&PredicateEnvironment>,
     ) -> Self {
-        if entry_facts.len() != entry_fact_origins.len() {
+        if entry_facts.propositions().count() != entry_fact_origins.len() {
             return Self::default();
         }
 
@@ -150,7 +150,11 @@ impl CallerRequirementIndex {
         // becomes an ambiguity tombstone rather than a first-match choice.
         let mut principals =
             PersistentMap::<RequirementSourceId, Option<(usize, Proposition)>>::default();
-        for (fact_index, (fact, origin)) in entry_facts.iter().zip(entry_fact_origins).enumerate() {
+        for (fact_index, (fact, origin)) in entry_facts
+            .propositions()
+            .zip(entry_fact_origins)
+            .enumerate()
+        {
             let EntryFactOrigin::Requirement { source_id, role } = origin else {
                 continue;
             };

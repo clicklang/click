@@ -2171,7 +2171,7 @@ pub fn resolve_minted_load_variables(
                 right,
             },
             true,
-        ) = &fact.proposition
+        ) = fact.proposition()
         else {
             continue;
         };

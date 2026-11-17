@@ -1434,13 +1434,12 @@ pub(super) fn project_initial_resource_facts(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    available_pure_facts: &[Proposition],
+    available_pure_facts: &(impl PropositionSource + ?Sized),
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
-) -> Result<Vec<Proposition>, ClickError> {
+) -> Result<PureFactList, ClickError> {
     let result = ProgramValue::Int32(MachineTerm::constant(0));
-    let mut facts = ProofResourcePureFacts::new(ProofFacts::from_ordered(available_pure_facts));
-    let retained_count = facts.facts.fact_count();
+    let mut facts = ProofResourcePureFacts::new(available_pure_facts.indexed_proof_facts());
     append_state_resource_context_observable_facts_with_store(
         parameter_binding,
         state,
@@ -1457,12 +1456,7 @@ pub(super) fn project_initial_resource_facts(
         spec_definitions,
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
-    // The input positions carry requirement-source identities. The indexed
-    // store deduplicates facts, so materializing it would shift those positions.
-    // Preserve the explicit input prefix and append only projected products.
-    let mut projected = available_pure_facts.to_vec();
-    projected.extend(facts.facts.to_vec().into_iter().skip(retained_count));
-    Ok(projected)
+    Ok(PureFactList::from_proof_facts(&facts.facts))
 }
 
 pub(super) fn project_outcome_resource_facts(

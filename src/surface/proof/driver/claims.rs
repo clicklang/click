@@ -1526,7 +1526,7 @@ fn close_claim_directly_from_outcome<'a>(
     rewrite_equalities: &[ClickProposition],
     claim_label: &str,
     path_index: usize,
-    entry_facts: &[Proposition],
+    entry_facts: &(impl PropositionSource + ?Sized),
     execution_paths: &[crate::kernel::FunctionExecutionCandidate],
     parameter_binding: ParameterBinding<'_>,
     spec_definitions: SpecDefinitions<'_>,
@@ -1866,7 +1866,7 @@ fn close_claim_directly_from_outcome<'a>(
 /// started from -- an entry `requires`, or a `have` before the first step --
 /// is never among them: every path has it.
 fn path_case_facts(
-    entry_facts: &[Proposition],
+    entry_facts: &(impl PropositionSource + ?Sized),
     paths: &[crate::kernel::FunctionExecutionCandidate],
     path_index: usize,
 ) -> Vec<Proposition> {
@@ -1886,7 +1886,7 @@ fn path_case_facts(
     };
     // An entry conjunction is assumed conjunct by conjunct.
     let mut entry = BTreeSet::new();
-    let mut pending = entry_facts.iter().collect::<Vec<_>>();
+    let mut pending = entry_facts.propositions().collect::<Vec<_>>();
     while let Some(fact) = pending.pop() {
         if let Proposition::And(left, right) = fact {
             pending.push(left);
@@ -2589,7 +2589,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                                 equalities,
                                 &claim_label,
                                 path_index,
-                                entry_pure_facts.as_slice(),
+                                &*entry_pure_facts,
                                 execution.paths(),
                                 parameter_binding,
                                 spec_definitions,
@@ -2668,7 +2668,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                             equalities,
                             &claim_label,
                             path_index,
-                            entry_pure_facts.as_slice(),
+                            &*entry_pure_facts,
                             execution.paths(),
                             parameter_binding,
                             spec_definitions,
@@ -2877,7 +2877,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 &rewrite_claim_equalities[claim_index],
                 &claim_label,
                 path_index,
-                entry_pure_facts.as_slice(),
+                &*entry_pure_facts,
                 execution.paths(),
                 parameter_binding,
                 spec_definitions,
@@ -2943,7 +2943,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             &rewrite_claim_equalities[claim_index],
             &claim_label,
             path_index,
-            entry_pure_facts.as_slice(),
+            &*entry_pure_facts,
             execution.paths(),
             ParameterBinding::new(parsed_function.parameters(), arguments),
             spec_definitions,
@@ -3252,7 +3252,7 @@ pub(super) fn finish_ordered_proof<'a>(
                 spec_definitions,
                 resource_environment,
                 Some(ResourceFrameEntry {
-                    assumptions: &assumptions_from_propositions(entry_pure_facts.as_slice()),
+                    assumptions: &assumptions_from_propositions(&*entry_pure_facts),
                     checked_entry_state: proof_context.constants.function_entry_state.as_ref(),
                 }),
                 None,
@@ -5229,7 +5229,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &rewrite_claim_equalities[claim_index],
                                     &claim_label,
                                     path_index,
-                                    entry_pure_facts.as_slice(),
+                                    &*entry_pure_facts,
                                     execution.paths(),
                                     parameter_binding,
                                     spec_definitions,

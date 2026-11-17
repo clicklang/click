@@ -12,7 +12,10 @@ fn propagated_fact_publication_visits_only_the_new_consequences() {
         });
         assert!(child.contains(&atom("result")));
         assert!(!root.contains(&atom("result")));
-        assert_eq!(child.propositions_since(&root).unwrap().1.len(), 2);
+        assert_eq!(
+            child.store().introduced_since(root.store()).unwrap().len(),
+            2
+        );
         samples.push((size, work, persistent));
     }
     eprintln!("propagated publication: {samples:?}");
