@@ -33,7 +33,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     proof_context: &ExecutionProofContext<'_>,
     available_pure_facts: &mut PureFactList,
     source_index: usize,
-) -> Result<StructuralClause, ClickError> {
+) -> Result<(StructuralClause, Vec<Proposition>), ClickError> {
     let function_block = proof_context.function_block;
     let parsed_function = proof_context.parsed_function;
     let function_environment = proof_context.function_environment;
@@ -392,9 +392,15 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         execution.core.frontier_loop_rules.push(rule);
     }
     let loop_exit_condition = match &current_loop {
-        ProgramStatement::Loop { condition, .. } => Some(ClickProposition::Not(Box::new(
-            surface_program_condition(condition, &execution.core.state)?,
-        ))),
+        ProgramStatement::Loop {
+            test: loop_test, ..
+        } => {
+            let (condition, _, _) = loop_test.execution_parts();
+            Some(ClickProposition::Not(Box::new(surface_program_condition(
+                condition,
+                &execution.core.state,
+            )?)))
+        }
         _ => None,
     };
     let certificates = loop_certificates.borrow().clone();
@@ -448,7 +454,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         &annotated,
         &local_function_environment,
     );
-    execute_step_from_frontier_position(
+    let introduced = execute_step_from_frontier_position(
         execution,
         &loop_context,
         available_pure_facts,
@@ -531,7 +537,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         .frontier_loop_clauses
         .push(scoped_template.bound_to_loop(loop_index));
     execution.core.frontier_loop_rules.push(loop_rule);
-    Ok(expanded_loop)
+    Ok((expanded_loop, introduced))
 }
 
 /// A loop label names one loop on an execution path. `at(label.exit, ...)`

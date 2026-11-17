@@ -4315,7 +4315,7 @@ impl PureFactContext {
         mut self,
         fact: &ExecutionPureFact,
     ) -> Self {
-        self = self.assume_proposition(fact.proposition().clone());
+        self = self.assume_shared_proposition(fact.shared_proposition());
         if !fact.is_certified() {
             return self;
         }
@@ -6744,6 +6744,11 @@ impl PureFactContext {
     }
 
     pub(super) fn insert_proposition_fact(&mut self, proposition: Proposition) {
+        self.insert_shared_proposition_fact(std::sync::Arc::new(proposition));
+    }
+
+    fn insert_shared_proposition_fact(&mut self, shared: std::sync::Arc<Proposition>) {
+        let proposition = shared.as_ref();
         self.execution_variable_ceiling
             .file_proposition(&proposition);
         if let Proposition::ResourceComposition(resources) = proposition {
@@ -6765,7 +6770,7 @@ impl PureFactContext {
         {
             self.execution_fact_projection.insert(
                 ContextFactKey::Proposition(proposition.clone()),
-                std::sync::Arc::new(ExecutionPureFact::new(proposition.clone())),
+                std::sync::Arc::new(ExecutionPureFact::from_shared(shared.clone())),
             );
             self.adjust_comparison_view(&proposition);
             self.adjust_atomic_connection_fact(&proposition);
@@ -7484,6 +7489,15 @@ impl PureFactContext {
     }
 
     fn assume_condition_uncharged(self, condition: ConditionTerm, value: bool) -> Self {
+        self.assume_condition_with_source(condition, value, None)
+    }
+
+    fn assume_condition_with_source(
+        self,
+        condition: ConditionTerm,
+        value: bool,
+        source: Option<std::sync::Arc<Proposition>>,
+    ) -> Self {
         let (decided, reduced) = if self.condition_facts.get(&condition) == Some(&value) {
             (None, None)
         } else {
@@ -7519,7 +7533,7 @@ impl PureFactContext {
         let sign_cast_division = (condition.names_sign_cast_division()
             && self.condition_facts.get(&condition) != Some(&value))
         .then(|| condition.clone());
-        let mut next = self.assume_condition_once(condition, value);
+        let mut next = self.assume_condition_once_shared(condition, value, source);
         if !sign_bit_equivalents.is_empty() {
             next = Self::without_sign_bit_rule(|| {
                 sign_bit_equivalents
@@ -7567,7 +7581,16 @@ impl PureFactContext {
         true
     }
 
-    fn assume_condition_once(mut self, condition: ConditionTerm, value: bool) -> Self {
+    fn assume_condition_once(self, condition: ConditionTerm, value: bool) -> Self {
+        self.assume_condition_once_shared(condition, value, None)
+    }
+
+    fn assume_condition_once_shared(
+        mut self,
+        condition: ConditionTerm,
+        value: bool,
+        source: Option<std::sync::Arc<Proposition>>,
+    ) -> Self {
         // Proof branches frequently restate a path fact (for example while
         // lowering the consequent of an implication). Preserve the shared
         // persistent view on that idempotent insertion: `Arc::make_mut`
@@ -7728,9 +7751,8 @@ impl PureFactContext {
         self.condition_facts = self.condition_facts.with_inserted(condition.clone(), value);
         self.execution_fact_projection.insert(
             ContextFactKey::Condition(condition.clone()),
-            std::sync::Arc::new(ExecutionPureFact::new(Proposition::ConditionIs(
-                condition.clone(),
-                value,
+            std::sync::Arc::new(ExecutionPureFact::from_shared(source.unwrap_or_else(
+                || std::sync::Arc::new(Proposition::ConditionIs(condition.clone(), value)),
             ))),
         );
         self.adjust_pointer_class_fact(&Proposition::ConditionIs(condition.clone(), value));
@@ -7824,6 +7846,63 @@ impl PureFactContext {
     /// mentions; see `ExecutionVariableCeiling`.
     pub(in crate::kernel) fn execution_variable_ceiling(&self) -> Option<Variable> {
         self.execution_variable_ceiling.get()
+    }
+
+    /// Share the admitted syntax with the store and with execution publication.
+    pub(crate) fn assume_shared_proposition(
+        mut self,
+        proposition: std::sync::Arc<Proposition>,
+    ) -> Self {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Proposition::ConditionIs(condition, value) = proposition.as_ref() {
+            return self.assume_condition_with_source(
+                condition.clone(),
+                *value,
+                Some(proposition.clone()),
+            );
+        }
+        if let Proposition::Not(body) = proposition.as_ref() {
+            if let Proposition::ConditionIs(condition, value) = body.as_ref() {
+                return self.assume_condition_uncharged(condition.clone(), !*value);
+            }
+            self.insert_shared_proposition_fact(proposition);
+            return self;
+        }
+        if matches!(proposition.as_ref(), Proposition::And(..)) {
+            return self.assume_proposition_uncharged(
+                crate::kernel::clone_proposition_iteratively(&proposition),
+            );
+        }
+        let decided = decided_algebraic_if(&proposition);
+        let reduced = self.reduce_by_decided_conditions(&proposition);
+        let native = self.shared_antecedent_reading(&proposition);
+        self.insert_shared_proposition_fact(proposition);
+        if let Some(native) = native {
+            self.insert_proposition_fact(native);
+        }
+        if let Some((condition, value, selected)) = decided {
+            self = self.assume_decided_algebraic_if(condition, value, selected);
+        }
+        if let Some(reduced) = reduced {
+            self = self.assume_proposition_uncharged(reduced);
+        }
+        self
+    }
+
+    /// Indexed retrieval of an already retained exact syntax object. This is
+    /// interning, not a proof query; opposite condition occurrences stay distinct.
+    pub(crate) fn shared_assumed_proposition(
+        &self,
+        proposition: &Proposition,
+    ) -> Option<std::sync::Arc<Proposition>> {
+        let key = match proposition {
+            Proposition::ConditionIs(condition, _) => ContextFactKey::Condition(condition.clone()),
+            _ => ContextFactKey::Proposition(proposition.clone()),
+        };
+        self.execution_fact_projection
+            .get(&key)
+            .filter(|fact| fact.proposition() == proposition)
+            .map(|fact| fact.shared_proposition())
     }
 
     pub fn assume_proposition(self, proposition: Proposition) -> Self {
@@ -10410,6 +10489,10 @@ impl ExecutionPureFact {
     }
 
     pub fn new(proposition: Proposition) -> Self {
+        Self::from_shared(std::sync::Arc::new(proposition))
+    }
+
+    pub(crate) fn from_shared(proposition: std::sync::Arc<Proposition>) -> Self {
         Self {
             proposition,
             public: true,
@@ -10428,7 +10511,7 @@ impl ExecutionPureFact {
 
     pub(super) fn internal(proposition: Proposition) -> Self {
         Self {
-            proposition,
+            proposition: std::sync::Arc::new(proposition),
             public: false,
             certified: false,
             logical_read_equation: false,
@@ -10465,7 +10548,7 @@ impl ExecutionPureFact {
 
     pub(super) fn certified(proposition: Proposition) -> Self {
         Self {
-            proposition,
+            proposition: std::sync::Arc::new(proposition),
             public: true,
             certified: true,
             logical_read_equation: false,
@@ -10533,11 +10616,11 @@ impl ExecutionPureFact {
         let value_equation =
             super::memory_provenance::store_value_equation(&after, &pointer, &value);
         Self {
-            proposition: Proposition::MemoryMutatesOnly {
+            proposition: std::sync::Arc::new(Proposition::MemoryMutatesOnly {
                 before: before.clone(),
                 after: after.clone(),
                 writes: vec![(pointer.clone(), value.byte_width())],
-            },
+            }),
             public: false,
             certified: true,
             logical_read_equation: false,
@@ -10566,7 +10649,7 @@ impl ExecutionPureFact {
     }
 
     pub(crate) fn with_proposition(mut self, proposition: Proposition) -> Self {
-        if self.proposition != proposition
+        if self.proposition.as_ref() != &proposition
             || self.generated_load_binding.as_ref().is_some_and(|binding| {
                 !generated_load_binding_matches_proposition(binding, &proposition)
             })
@@ -10586,7 +10669,7 @@ impl ExecutionPureFact {
                 store.source = Default::default();
             }
         }
-        self.proposition = proposition;
+        self.proposition = std::sync::Arc::new(proposition);
         self
     }
 
@@ -10613,7 +10696,7 @@ impl ExecutionPureFact {
         theorem: Theorem,
     ) -> Self {
         Self {
-            proposition: target,
+            proposition: std::sync::Arc::new(target),
             public: false,
             certified: true,
             logical_read_equation: false,
@@ -10645,6 +10728,10 @@ impl ExecutionPureFact {
 
     pub fn condition(condition: ConditionTerm, value: bool) -> Self {
         Self::new(Proposition::ConditionIs(condition, value))
+    }
+
+    pub(crate) fn shared_proposition(&self) -> std::sync::Arc<Proposition> {
+        self.proposition.clone()
     }
 
     pub fn proposition(&self) -> &Proposition {

@@ -1434,12 +1434,12 @@ pub(super) fn project_initial_resource_facts(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    available_pure_facts: &[Proposition],
+    available_pure_facts: &(impl PropositionSource + ?Sized),
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
-) -> Result<Vec<Proposition>, ClickError> {
+) -> Result<PureFactList, ClickError> {
     let result = ProgramValue::Int32(MachineTerm::constant(0));
-    let mut facts = ProofResourcePureFacts::new(ProofFacts::from_ordered(available_pure_facts));
+    let mut facts = ProofResourcePureFacts::new(available_pure_facts.indexed_proof_facts());
     append_state_resource_context_observable_facts_with_store(
         parameter_binding,
         state,
@@ -1456,7 +1456,7 @@ pub(super) fn project_initial_resource_facts(
         spec_definitions,
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
-    Ok(facts.facts.to_vec())
+    Ok(PureFactList::from_proof_facts(&facts.facts))
 }
 
 pub(super) fn project_outcome_resource_facts(
@@ -3244,6 +3244,29 @@ fn decided_by_kernel_condition_decision(
     }
 }
 
+thread_local! {
+    static UNFOLD_WITNESS_NAMES: std::cell::RefCell<Vec<(String, String)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Runs an unfold whose `let ... where` witnesses the proof names, as
+/// `(witness, proof name)` pairs, so its published body facts are spelled
+/// with those names.
+pub(super) fn with_unfold_witness_names<R>(
+    names: &[(String, String)],
+    operation: impl FnOnce() -> R,
+) -> R {
+    struct Restore(Vec<(String, String)>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = std::mem::take(&mut self.0);
+            UNFOLD_WITNESS_NAMES.with(|names| *names.borrow_mut() = previous);
+        }
+    }
+    let _restore = Restore(UNFOLD_WITNESS_NAMES.with(|current| current.replace(names.to_vec())));
+    operation()
+}
+
 fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
@@ -3289,6 +3312,20 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         claim_label,
         tactic_index,
     )?);
+    // A witness the proof names here, `let { w: name } = unfold(...)`, is
+    // written by that name in the body facts this unfold publishes.
+    UNFOLD_WITNESS_NAMES.with(|names| {
+        for (witness, name) in names.borrow().iter() {
+            if spelling_substitutions.contains_key(witness) {
+                spelling_substitutions.insert(
+                    witness.clone(),
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        name.as_str().into(),
+                    )),
+                );
+            }
+        }
+    });
     let body_active = composite_resource_body_is_active_with_assumptions(
         definition,
         &substitutions,

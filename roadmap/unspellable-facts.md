@@ -598,6 +598,30 @@ every duplicate expression payload/cache and remaining native expression field
 has either been removed or accounted for with its live consumer and reason;
 it does not mean erasing memory, allocation, binder or type identities.
 
+### 10b Storage identity contracts
+
+The kernel reference distinguishes producer equality, local/outcome observation
+keys, memory structural keys, exact refresh comparison and certification/fact
+identity. Pairwise mixed-carrier regressions preserve nonnumeric native order,
+hash congruence, raw Boolean words, float signed-zero/NaN payloads and exact call
+argument carrier distinctions. Memory hashes still match native hash streams.
+All 20 execution-value tests and quality checks passed. Existing machine
+producer/storage/refresh regressions remain part of that suite.
+
+### 10c Explicit shared machine storage keys
+
+Machine local/outcome keys select their format-tagged shared observation through
+an explicit key variant, independently of native fallback selection. This
+consolidates the already-shared route rather than claiming a new migration of
+memory structural keys. Native machine inputs retain their existing import
+policy; producer equality, exact refresh and machine key ordering are unchanged.
+
+Growing operand regressions preserve the common root, cause zero machine
+exports, and perform no operand work on repeated hashing/comparison. All 3,221
+selected API/proof/specification/execution/scaling checks and quality checks
+passed. Three exact regular Integer/return fixtures passed with zero
+fact-stability differences.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

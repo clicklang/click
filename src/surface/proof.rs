@@ -1844,7 +1844,7 @@ impl PartialEq for ProofEntryContext {
     fn eq(&self, other: &Self) -> bool {
         self.state == other.state
             && self.arguments == other.arguments
-            && *self.pure_facts == *other.pure_facts
+            && self.pure_facts == other.pure_facts
     }
 }
 
@@ -2257,7 +2257,8 @@ pub(super) fn initial_claim_context_with_caller_owner(
         &unfolded_requirement_facts,
         spec_definitions,
         claim_label,
-    )?;
+    )?
+    .into_vec();
     entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
     let definedness_state = project_initial_composite_resource_cores(
         resource_environment,
@@ -3189,3 +3190,11 @@ pub(in crate::surface) use proof_object::take_outcome_fact_reads;
 pub(in crate::surface) use proof_object::take_terminal_join_materialized_facts;
 #[cfg(test)]
 pub(in crate::surface) use proof_object::take_terminal_publication_visits;
+
+/// What closing an `open` scope adds to its source form: the `by` proving
+/// the one body fact its closing fold leaves open, or `have`s proving
+/// several at the end of its block.
+pub(in crate::surface::proof) enum ScopeCloseProof {
+    By(Box<crate::surface::ProofCertificate>),
+    BlockTail(Box<crate::surface::ProofCertificate>),
+}

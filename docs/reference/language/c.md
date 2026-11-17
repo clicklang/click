@@ -639,9 +639,13 @@ negative (`mdtests/enum_parameters_locals_and_constants_above_int_max.md`).
 Click preserves the enum name and enumerator values in imported metadata, and
 named enumerators such as `PACKET_READY` lower to their values in C expressions
 and by-value copies. Anonymous enumerations, including one a typedef defines
-(`mdtests/a_typedef_may_define_an_anonymous_enum.md`), are supported. Pointers
-to enum values, enum arrays, `static` enum locals, and enum types in callback
-signatures are not.
+(`mdtests/a_typedef_may_define_an_anonymous_enum.md`), are supported. Fixed-size
+arrays of enum values in automatic local storage, including multidimensional
+arrays and typedef-named enums, use the compatible integer element type
+(`mdtests/c_local_enum_arrays.md`); their initialization and bounds checks are
+the same as for integer arrays. Pointers to enum values, enum arrays in other
+storage classes or record fields, `static` enum locals, and enum types in
+callback signatures are not supported.
 
 ## Floating-point boundary
 

@@ -1890,17 +1890,7 @@ impl<'a> Proof<'a> {
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
         let source_facts = self.facts().clone();
-        let mut facts = execution
-            .presentation
-            .loop_fact_list
-            .as_ref()
-            .and_then(|base| PureFactList::extended_to_proof_facts(base, &source_facts))
-            .unwrap_or_else(|| PureFactList::from_proof_facts(&source_facts));
-        // The next loop extends this copy; the indexes it builds here are
-        // the ones every copy of it shares.
-        facts.prepare_indexes();
-        execution.presentation.loop_fact_list = Some(facts.clone());
-        let base_facts = facts.len();
+        let mut facts = PureFactList::from_proof_facts(&source_facts);
         let capture_this_tactic = begin_tactic_expansion_capture(
             expansion_capture.as_deref_mut(),
             source_index,
@@ -1919,7 +1909,7 @@ impl<'a> Proof<'a> {
         // before lowering them, as a `have` goal at this point would.
         let proof_locals = self.proof_local_values();
         let trace_lineage = self.trace_lineage(context.claim_label);
-        let expanded_loop =
+        let (expanded_loop, added) =
             crate::surface::proof_trace::with_loop_parent_lineage(trace_lineage, || {
                 execute_frontier_local_loop(
                     expansion_capture.as_deref_mut(),
@@ -1945,8 +1935,6 @@ impl<'a> Proof<'a> {
             };
             finish_tactic_expansion_capture(expansion_capture, &expansion, false);
         }
-        debug_assert!(facts.len() >= base_facts);
-        let added = facts.facts_after(base_facts);
         let mut proof_facts = source_facts;
         for fact in &added {
             proof_facts = proof_facts.with_kernel_checked_fact(fact.clone());

@@ -11,9 +11,14 @@ loops and checked natural cycles. Source ASTs retain their language-specific
 `While` forms; `program_while` and `program_do_while` construct the corresponding
 pre-test and post-test forms of the shared node.
 
-A loop owns its optional update once. An effectful condition owns one
-`LoopTestRegion`, with its calls, decision, temporary cleanup and placement
-before or after the body. A pure condition stays directly on the loop.
+A loop owns its optional update and one mandatory `LoopTestRegion`. Every
+test has a placement before or after the body and a shared code region. A
+pure test contains just `LoopTest`, which owns its condition and temporary
+cleanup. A prepared test prefixes that same decision with its calls or other
+preparation. The loop has no separate condition or `do_while` flag.
+A borrowed execution view reads a preparation-free decision directly; prepared
+tests enter their code region before the decision is available. This keeps
+existing proof-step numbering without storing a second test on the loop.
 `program_loop_pass` assembles the shared phase references for checked source
 execution; `program_loop_continuation` selects the update and post-test owed
 by a continuing edge. Normal body completion and `continue` leave the body
