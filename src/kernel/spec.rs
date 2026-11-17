@@ -6660,15 +6660,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             // the contract retains the value from entry, never its permission.
             // Contract validation separately refuses current reads of fields
             // modified by the body, as for ordinary by-value parameter claims.
-            let memory = if state.memory.has_block(&slot.block) {
-                state.memory()
+            let selected = if state.memory.has_block(&slot.block) {
+                state
             } else {
-                entry.memory()
+                entry
             };
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    memory: SpecPoint::At(ProgramPoint::of_memory(memory)),
+                    memory: SpecPoint::At(selected.program_point()),
                     pointer: Box::new(pointer),
                     value_type: *value_type,
                 },

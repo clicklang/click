@@ -1591,7 +1591,7 @@ fn synthesized_surface_matches_proposition(
     let array_refs = array_refs_for_parameters(
         parameter_binding.parameters,
         &parameter_values,
-        state.memory(),
+        &state.program_point(),
     );
     let (values, array_refs) = contract_environment_at_state(&parameter_values, &array_refs, state);
     let pointer_element_widths =

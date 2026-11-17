@@ -2022,7 +2022,7 @@ the loop VC needs the invariant.
 `SpecElaborationContext` in `src/surface.rs` is the bridge from Surface
 Click into Kernel Click. It records scalar spec bindings, Click array refs,
 and the memory used for C-fragment reads. The surface's contract environment
-carries array refs as `ClickArrayRef { memory, pointer, element_type }`, and
+carries array refs as `ClickArrayRef { point, pointer, element_type }`, and
 elaboration types indexing by them so `uint8[]` indexing scales by one byte
 and returns `uint8`; spec lowering mirrors this with typed `SpecArrayRef`,
 typed `SpecExpression::MemoryLoad`, and byte-width

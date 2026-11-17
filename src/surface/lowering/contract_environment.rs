@@ -8,9 +8,9 @@ use super::*;
 use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::diagnostics::describe_program_point_ref;
 
-pub(in crate::surface) fn array_refs_with_memory(
+pub(in crate::surface) fn array_refs_at_point(
     array_refs: &ClickArrayRefs,
-    memory: &Memory,
+    point: &crate::kernel::ProgramPoint,
 ) -> ClickArrayRefs {
     array_refs
         .iter()
@@ -18,7 +18,7 @@ pub(in crate::surface) fn array_refs_with_memory(
             (
                 name.clone(),
                 ClickArrayRef {
-                    memory: memory.clone(),
+                    point: point.clone(),
                     pointer: array_ref.pointer.clone(),
                     element_type: array_ref.element_type,
                 },
@@ -40,7 +40,8 @@ pub(in crate::surface) fn contract_environment_at_state(
         ))
     }));
 
-    let mut state_array_refs = array_refs_with_memory(array_refs, state.memory());
+    let point = state.program_point();
+    let mut state_array_refs = array_refs_at_point(array_refs, &point);
     // A parameter's array reference is read through the variable, exactly as
     // its value is above. `array_refs` was built from the caller's arguments,
     // so after the body assigns a pointer parameter it still holds the entry
@@ -73,7 +74,7 @@ pub(in crate::surface) fn contract_environment_at_state(
         state_array_refs.insert(
             source_name.to_owned(),
             ClickArrayRef {
-                memory: state.memory().clone(),
+                point: point.clone(),
                 pointer: pointer.pointer().clone(),
                 element_type,
             },
@@ -92,7 +93,8 @@ pub(in crate::surface) fn contract_environment_for_names(
     state: &ExecutionState,
 ) -> Result<(BTreeMap<String, ProgramValue>, ClickArrayRefs), ClickError> {
     let mut values = parameter_values_named(parameter_binding, names)?;
-    let mut array_refs = array_refs_for_values(parameter_binding, &values, state.memory());
+    let point = state.program_point();
+    let mut array_refs = array_refs_for_values(parameter_binding, &values, &point);
     for name in names {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(value) = state.locals().get(name) {
@@ -114,7 +116,7 @@ pub(in crate::surface) fn contract_environment_for_names(
             array_refs.insert(
                 name.clone(),
                 ClickArrayRef {
-                    memory: state.memory().clone(),
+                    point: point.clone(),
                     pointer: pointer.pointer().clone(),
                     element_type,
                 },
@@ -371,7 +373,7 @@ mod tests {
         let arguments = [ProgramExpression::Value(value.clone())];
         let binding = ParameterBinding::new(&parameters, &arguments);
         let values = BTreeMap::from([("bytes".to_string(), value.clone())]);
-        let arrays = array_refs_for_parameters(&parameters, &values, state.memory());
+        let arrays = array_refs_for_parameters(&parameters, &values, &state.program_point());
         let names = BTreeSet::from(["bytes".to_string()]);
         let reassigned = ProgramValue::typed_pointer(
             Pointer {
