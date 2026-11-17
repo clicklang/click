@@ -220,6 +220,190 @@ fn iterator_definition(statement: &mut S) -> Option<(IteratorKind, &mut String)>
     }
 }
 
+/// The return place MIR writes before `Return`.
+const RETURN_PLACE: &str = "__rust_mir_0";
+
+/// Returns the value MIR writes to the return place where nothing runs
+/// between the write and the return, as `return value` does in C.
+///
+/// MIR always writes `_0` and then returns `_0`. When the function writes
+/// `_0` once, and that write reaches `Return` past only source sites and
+/// storage markers, through blocks entered from nowhere else, the return
+/// returns the written value and `_0` is no longer a local:
+///
+/// - `_0 = value` ends its block in `ReturnValue { value }`;
+/// - a call whose destination is `_0`, a tail call, becomes a call step,
+///   and its successor ends in `ReturnValue` of the step's result.
+///
+/// A return place that cleanup follows, that is written more than once, or
+/// that holds a value other than a scalar keeps its local.
+pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock]) {
+    let Some(place) = locals.iter().find(|local| local.name == RETURN_PLACE) else {
+        return;
+    };
+    if !returned_directly(&place.value_type) {
+        return;
+    }
+    let transparent = |statement: &S| {
+        matches!(
+            statement,
+            S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
+        )
+    };
+    // The one place that writes the return place: a statement, or a call.
+    let mut write = None;
+    for (index, block) in blocks.iter().enumerate() {
+        let mut reads = BTreeMap::new();
+        let mut named = BTreeSet::new();
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        if reads.contains_key(RETURN_PLACE) || named.contains(RETURN_PLACE) {
+            return;
+        }
+        if call_destination(&block.terminator).is_some_and(|name| name == RETURN_PLACE) {
+            if write.is_some() {
+                return;
+            }
+            write = Some((index, None));
+        }
+        for (position, statement) in block.statements.iter().enumerate() {
+            if transparent(statement)
+                || !mentioned_locals(statement)
+                    .iter()
+                    .any(|name| name == RETURN_PLACE)
+            {
+                continue;
+            }
+            if write.is_some() {
+                return;
+            }
+            write = Some((index, Some(position)));
+        }
+    }
+    let Some((block, position)) = write else {
+        return;
+    };
+    let mut predecessors = vec![0usize; blocks.len()];
+    for candidate in blocks.iter() {
+        for target in successors(&candidate.terminator) {
+            if let Some(count) = predecessors.get_mut(target) {
+                *count += 1;
+            }
+        }
+    }
+    // Whether the end of block `from` reaches `Return` past nothing else.
+    let reaches_return = |from: usize| {
+        let mut next = from;
+        let mut visited = BTreeSet::new();
+        loop {
+            if !visited.insert(next) {
+                return false;
+            }
+            match &blocks[next].terminator {
+                T::Return => return true,
+                T::Goto { target }
+                    if predecessors.get(*target) == Some(&1)
+                        && blocks[*target].statements.iter().all(transparent) =>
+                {
+                    next = *target;
+                }
+                _ => return false,
+            }
+        }
+    };
+    match position {
+        Some(position) => {
+            let S::Assign {
+                target: E::Local { name },
+                ..
+            } = &blocks[block].statements[position]
+            else {
+                return;
+            };
+            if name != RETURN_PLACE
+                || !blocks[block].statements[position + 1..]
+                    .iter()
+                    .all(transparent)
+                || !reaches_return(block)
+            {
+                return;
+            }
+            let S::Assign { value, .. } = blocks[block].statements.remove(position) else {
+                unreachable!("the return place's write is an assignment")
+            };
+            blocks[block].terminator = T::ReturnValue { value };
+        }
+        None => {
+            let T::Call {
+                function,
+                target,
+                through_pointer,
+                ..
+            } = &blocks[block].terminator
+            else {
+                unreachable!("the return place's writer is a call")
+            };
+            // A call through a pointer assigns its destination; it is no step.
+            if *through_pointer {
+                return;
+            }
+            let (function, target) = (function.clone(), *target);
+            // The successor reads the result first: only source sites and
+            // storage ends, which lower to nothing, come before its return.
+            if target == block
+                || predecessors.get(target) != Some(&1)
+                || !blocks[target]
+                    .statements
+                    .iter()
+                    .all(|statement| matches!(statement, S::Site { .. } | S::EndStorage { .. }))
+                || !reaches_return(target)
+            {
+                return;
+            }
+            let call = blocks
+                .iter()
+                .filter_map(|block| match &block.terminator {
+                    T::Call {
+                        result: Some(step), ..
+                    } => Some(*step + 1),
+                    _ => None,
+                })
+                .max()
+                .unwrap_or(0);
+            if let T::Call { result, .. } = &mut blocks[block].terminator {
+                *result = Some(call);
+            }
+            blocks[target].terminator = T::ReturnValue {
+                value: E::CallResult {
+                    call,
+                    function,
+                    keeps: false,
+                },
+            };
+        }
+    }
+    locals.retain(|local| local.name != RETURN_PLACE);
+}
+
+/// Whether a value of `value_type` is returned as itself, a scalar.
+fn returned_directly(value_type: &super::super::schema::Type) -> bool {
+    use super::super::schema::Type;
+    matches!(
+        value_type,
+        Type::I8
+            | Type::I16
+            | Type::I32
+            | Type::I64
+            | Type::Isize
+            | Type::U8
+            | Type::U16
+            | Type::U32
+            | Type::U64
+            | Type::Usize
+            | Type::Bool
+            | Type::Enum { .. }
+    )
+}
+
 /// The iterator `statement` moves: its kind, the local it moves into, and
 /// the local it moves from.
 /// Binds a range loop's variable where `next` yields it. Once the iterator
@@ -747,7 +931,7 @@ fn successors(terminator: &T) -> Vec<usize> {
             .map(|case| case.target)
             .chain(*otherwise)
             .collect(),
-        T::Return | T::Unreachable | T::Panic { .. } => Vec::new(),
+        T::Return | T::ReturnValue { .. } | T::Unreachable | T::Panic { .. } => Vec::new(),
     }
 }
 
@@ -868,6 +1052,7 @@ fn terminator_expressions_mut(terminator: &mut T) -> Vec<&mut E> {
         T::If { condition, .. } => vec![condition],
         T::Call { arguments, .. } => arguments.iter_mut().collect(),
         T::Switch { scrutinee, .. } => vec![scrutinee],
+        T::ReturnValue { value } => vec![value],
         T::Goto { .. }
         | T::Drop { .. }
         | T::Return
@@ -900,6 +1085,7 @@ fn terminator_named_locals(terminator: &T) -> Vec<&String> {
         | T::Switch { .. }
         | T::Goto { .. }
         | T::Return
+        | T::ReturnValue { .. }
         | T::Unreachable
         | T::Panic { .. } => Vec::new(),
     }
@@ -1599,5 +1785,113 @@ mod tests {
         );
         assert!(locals.contains(&"t1".to_string()));
         assert!(locals.contains(&"t2".to_string()));
+    }
+
+    fn block(statements: Vec<S>, terminator: T) -> MirBlock {
+        MirBlock {
+            terminator_site: None,
+            statements,
+            terminator,
+        }
+    }
+    /// Runs the return-place pass over `blocks`, with locals `_0` and `x`.
+    fn returned(mut blocks: Vec<MirBlock>) -> (Vec<String>, Vec<MirBlock>) {
+        let mut locals = ["__rust_mir_0", "x"].map(place).to_vec();
+        super::return_values(&mut locals, &mut blocks);
+        (locals.into_iter().map(|local| local.name).collect(), blocks)
+    }
+
+    #[test]
+    fn a_value_written_just_before_return_is_returned() {
+        // `_0 = x + 1; goto 1;  1: StorageDead(x); return` is `return x + 1`.
+        let (locals, blocks) = returned(vec![
+            block(
+                vec![assign(
+                    "__rust_mir_0",
+                    binary(
+                        "add",
+                        local("x"),
+                        E::UnsignedInteger {
+                            value: 1,
+                            value_type: Type::U32,
+                        },
+                    ),
+                )],
+                T::Goto { target: 1 },
+            ),
+            block(vec![S::EndStorage { local: "x".into() }], T::Return),
+        ]);
+        assert_eq!(locals, ["x"]);
+        assert!(blocks[0].statements.is_empty());
+        assert!(matches!(
+            &blocks[0].terminator,
+            T::ReturnValue { value: E::Binary { operator, .. } } if operator == "add"
+        ));
+    }
+
+    #[test]
+    fn a_tail_call_returns_its_step_result() {
+        // `_0 = f(x) -> 1;  1: return` is `return f(x)`, the call a step.
+        let (locals, blocks) = returned(vec![
+            block(
+                vec![],
+                T::Call {
+                    function: "f".into(),
+                    arguments: vec![local("x")],
+                    owned_arguments: vec![],
+                    destination: "__rust_mir_0".into(),
+                    target: 1,
+                    through_pointer: false,
+                    result: None,
+                },
+            ),
+            block(vec![], T::Return),
+        ]);
+        assert_eq!(locals, ["x"]);
+        assert!(matches!(
+            &blocks[0].terminator,
+            T::Call {
+                result: Some(0),
+                ..
+            }
+        ));
+        assert!(matches!(
+            &blocks[1].terminator,
+            T::ReturnValue {
+                value: E::CallResult {
+                    call: 0,
+                    keeps: false,
+                    ..
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn a_return_place_written_on_two_paths_stays_a_local() {
+        // `if x { _0 = 0 } else { _0 = 1 }; return`: both arms reach one
+        // return, so the place keeps its local.
+        let zero = E::UnsignedInteger {
+            value: 0,
+            value_type: Type::U32,
+        };
+        let (locals, blocks) = returned(vec![
+            block(
+                vec![],
+                T::If {
+                    condition: local("x"),
+                    then_target: 1,
+                    else_target: 2,
+                },
+            ),
+            block(
+                vec![assign("__rust_mir_0", zero.clone())],
+                T::Goto { target: 3 },
+            ),
+            block(vec![assign("__rust_mir_0", zero)], T::Goto { target: 3 }),
+            block(vec![], T::Return),
+        ]);
+        assert_eq!(locals, ["__rust_mir_0", "x"]);
+        assert!(matches!(blocks[3].terminator, T::Return));
     }
 }

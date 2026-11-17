@@ -1,0 +1,111 @@
+use super::*;
+use crate::kernel::{
+    KernelTermImport, MachineBinaryOp as Op, MachineIntegerType as M, MachineOperandView as V,
+};
+
+fn sum(format: M, left: MachineTerm, right: MachineTerm) -> MachineTerm {
+    MachineTerm::machine_binary(format, Op::Add, left, right)
+}
+fn number(format: M, n: u128) -> MachineTerm {
+    match format {
+        M::Int32 => MachineTerm::constant(n as u32),
+        M::UInt64 => MachineTerm::uint64_constant(n as u64),
+        _ => unreachable!(),
+    }
+}
+fn stored(format: M, value: MachineTerm) -> ProgramValue {
+    match format {
+        M::Int32 => ProgramValue::Int32(value),
+        M::UInt64 => ProgramValue::UInt64(value),
+        _ => unreachable!(),
+    }
+}
+fn equal(graph: &EqualityGraph, format: M, left: &MachineTerm, right: &MachineTerm) -> bool {
+    match format {
+        M::Int32 => graph.are_int32_equal(left, right),
+        M::UInt64 => graph.are_uint64_equal(left, right),
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn compound_read_queries_require_explicit_equations() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for format in [M::Int32, M::UInt64] {
+        let slot = Pointer {
+            block: "compound-slot".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let value = stored(format, number(format, 7));
+        let memory = intern_memory(Memory::new().store(slot.clone(), value.clone()));
+        let kind = LoadKind::of_value(&value).unwrap();
+        if kind.is_word32() {
+            crate::kernel::eval::record_load_access_width(memory.memory(), &slot, 4);
+        }
+        let read = MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(slot.clone()), kind);
+        let expression = sum(format, read.clone(), number(format, 3));
+        let expected = number(format, 10);
+        let empty = PureFactContext::new();
+        assert!(
+            !equal(&empty.equality_graph, format, &expression, &expected),
+            "{format:?}: compound query imported a cached value"
+        );
+        let equation =
+            crate::kernel::memory_provenance::store_value_equation(memory.memory(), &slot, &value)
+                .unwrap();
+        let facts = empty.clone().assume_proposition(equation);
+        assert!(
+            equal(&facts.equality_graph, format, &expression, &expected),
+            "{format:?}: explicit equation"
+        );
+        assert!(!equal(
+            &empty.equality_graph,
+            format,
+            &expression,
+            &expected
+        ));
+        let alias = Pointer::symbolic(Variable(989101));
+        if kind.is_word32() {
+            // A typed word-read producer records this width for each address.
+            crate::kernel::eval::record_load_access_width(memory.memory(), &alias, 4);
+        }
+        let through_alias = sum(
+            format,
+            MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(alias.clone()), kind),
+            number(format, 3),
+        );
+        assert!(!equal(
+            &facts.equality_graph,
+            format,
+            &through_alias,
+            &expected
+        ));
+        let facts = facts.assume_condition(ConditionTerm::pointer_equal(slot, alias), true);
+        assert!(equal(
+            &facts.equality_graph,
+            format,
+            &through_alias,
+            &expected
+        ));
+        if format == M::Int32 {
+            let shared = KernelTermImport::default()
+                .machine_arithmetic(format, &expression)
+                .unwrap();
+            assert!(
+                !empty
+                    .equality_graph
+                    .are_int32_equal_views(V::Shared(&shared), V::Legacy(&expected))
+            );
+            assert!(
+                facts
+                    .equality_graph
+                    .are_int32_equal_views(V::Shared(&shared), V::Legacy(&expected))
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/equality_graph/compound_read_tests.rs");
+}

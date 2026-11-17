@@ -1039,10 +1039,7 @@ impl ThreadContext {
             .parent
             .resources()
             .clone()
-            .try_compose_into_valid_context_delaying_normalization(
-                outputs.facts().iter().cloned(),
-                assumptions,
-            )
+            .compose_checked_outputs(&outputs, assumptions)
             .map_err(|_| "worker outputs conflict with the current parent frame")?;
         let local_bindings = completion
             .plan

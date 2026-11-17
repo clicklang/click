@@ -35,7 +35,7 @@ fn unsupported_admission_never_discovers_related_owners_or_aliases() {
             resources.synchronize_memory_equalities(&facts);
             let output = ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 pointer(0),
-                2u32.into(),
+                4u32.into(),
                 MachineTerm::Variable(Variable(8_790_000)),
                 1,
             ));
@@ -123,6 +123,95 @@ fn first_ownership_queries_use_produced_indexes_and_direct_symbolic_bounds() {
             assert!(
                 samples.iter().all(|work| *work <= samples[0] + 64),
                 "symbolic={symbolic}, bounded={bounded}: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn certified_group_and_loop_exchange_keep_fixed_memory_boundaries_as_aliases_grow() {
+    for aliases in [false, true] {
+        let mut group_samples = Vec::new();
+        let mut loop_samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let base = Pointer::symbolic(Variable(8_797_000));
+            let owner = |start: u32, end: u32| {
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                    base.clone(),
+                    start.into(),
+                    end.into(),
+                    1,
+                ))
+            };
+            let mut assumptions = PureFactContext::new();
+            let before = owner(0, 4);
+            let body = ResourceContext::new().unchecked_with_fact(before.clone());
+            let mut frame = body.clone();
+            for index in 0..count {
+                if aliases {
+                    assumptions = assumptions.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            base.clone(),
+                            Pointer::symbolic(Variable(8_798_000 + u64::from(index))),
+                        ),
+                        true,
+                    );
+                } else {
+                    frame = frame.unchecked_with_fact(owner(32 + 8 * index, 36 + 8 * index));
+                }
+            }
+            frame.synchronize_memory_equalities(&assumptions);
+            let exit = body
+                .clone()
+                .without_exact_representation(&before)
+                .unwrap()
+                .unchecked_with_facts([owner(0, 2), owner(2, 4)]);
+            let sources = [owner(0, 2), owner(2, 4)]
+                .map(|fact| exit.unique_owned_occurrence_for_fact(&fact).unwrap().0);
+            let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
+                exit.restore_frame_after_exchange(&body, &frame, &assumptions)
+                    .unwrap()
+            });
+            for (fact, source) in [owner(0, 2), owner(2, 4)].into_iter().zip(sources) {
+                assert_eq!(restored.owned_fact_for_occurrence(source), Some(&fact));
+            }
+            loop_samples.push(work);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let added = frame
+                    .clone()
+                    .try_compose_certified_group_into_valid_context_delaying_normalization(
+                        [owner(4, 6), owner(6, 8)],
+                        &assumptions,
+                    )
+                    .unwrap();
+                assert!(added.contains_exact_representation(&owner(4, 6)));
+                let outputs = ResourceContext::new_with_equalities(&assumptions)
+                    .unchecked_with_facts([owner(4, 6), owner(6, 8)]);
+                let joined = frame
+                    .clone()
+                    .compose_checked_outputs(&outputs, &assumptions)
+                    .unwrap();
+                assert!(joined.contains_exact_representation(&owner(6, 8)));
+                assert!(
+                    frame
+                        .clone()
+                        .try_compose_certified_group_into_valid_context_delaying_normalization(
+                            [owner(3, 5)],
+                            &assumptions
+                        )
+                        .is_err()
+                );
+            });
+            group_samples.push(work);
+        }
+        eprintln!(
+            "certified boundary aliases={aliases}: {group_samples:?}; loop exchange: {loop_samples:?}"
+        );
+        for samples in [group_samples, loop_samples] {
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 32),
+                "{aliases}: {samples:?}"
             );
         }
     }

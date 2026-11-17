@@ -33,7 +33,7 @@ theorem obtained() {
             unfold(list::contains(List::Cons(z, List::Nil), z));
             solve();
         }
-        witness { y: z };
+        witness(z);
         known();
     }
 }

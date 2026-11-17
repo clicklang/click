@@ -110,7 +110,7 @@ state for a program-entry `main`) is the `function.entry` point. Entry
 construction (declaring static storage and parameter objects, seeding resource
 cells) is recorded on top of it and is no point of its own, so a version walk
 that crosses it ends at the root (`HistoryEnds`), and a read of memory nothing
-has changed since is spelled `old(...)`. Ordinary function entry declares
+has changed since raises to `old(...)`. Ordinary function entry declares
 static storage (globals, static locals, their arrays and fields) without
 contents: a read that finds no cell is a load at its version point, the root
 when nothing wrote it, and a symbolic index into a never-written array is one
@@ -134,11 +134,12 @@ behavior; its cell-version naming walk is a separate removal target.
 
 Cache preservation and read-over-store use
 `indexed_store_byte_separation_evidence` for the same complete accesses.
-Numeric-address classes retain one explicit pointer spelling per class, with
-constant-displaced spellings preferred. Class merges update that witness in
-local work; a query selects two witnesses without enumerating their classes.
-Comparing their byte windows can establish separation or actual overlap.
-Numeric equality supplies no pointer origin, ownership, or read permission.
+Numeric-address classes retain one explicit pointer representation per class,
+with constant-displaced representations preferred. Class merges update that
+witness in local work; a query selects two witnesses without enumerating their
+classes. Comparing their byte windows can establish separation or actual
+overlap. Numeric equality supplies no pointer origin, ownership, or read
+permission.
 
 If geometry is unknown, the checker queries stated separation by the two
 nonempty anchors and checks that each range covers the entire corresponding
@@ -312,8 +313,8 @@ unchanged store. In particular:
   checked in the querying proof context: distinct blocks or a decided
   common-base offset inequality, or full byte separation after re-expressing
   the store through the querying context's checked pointer-equality graph.
-  The latter retains the selected address spelling and rechecks both its full
-  pointer equality and the complete store/read widths; different addresses
+  The latter retains the selected address representation and rechecks both its
+  full pointer equality and the complete store/read widths; different addresses
   alone do not exclude partial overlap. No assumptions are captured on the edge,
   because first-wins interning lets paths with different assumptions share
   one edge, and one path's `length == 0` must not preserve another path's
@@ -323,7 +324,7 @@ unchanged store. In particular:
   caller kept owning outside the transfer holds the cell. Those ranges, and
   the facts of the residual instances they were opened from, are the edge's
   own. The write-set marker carries an exact canonical identity for the
-  retained flat-owner set and spells its placement premises, so every path
+  retained flat-owner set and states its placement premises, so every path
   that shares the edge kept the same memory; placing the cell inside one is still decided
   in the querying context;
 - a `LoopHavoc` edge with no checked footprint isn't crossed; a verified
@@ -395,7 +396,7 @@ ownership nor initialization follows from this value equality.
 The stronger bridging that crosses `BlockDeclared` and `CellsForgotten` is
 scoped to viewability reasoning through `with_extended_dag_bridging`. Enabling
 that reasoning globally can change which surface facts a planner selects and
-therefore change expansion spellings. Isolated memory-resolution fuel keeps
+therefore change what expansion raises. Isolated memory-resolution fuel keeps
 a nested graph query from consuming the caller's bounded reasoning budget.
 
 The bridging and the explicit certificate check (`with_extended_dag_bridging`,

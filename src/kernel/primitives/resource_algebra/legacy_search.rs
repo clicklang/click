@@ -20,10 +20,31 @@ impl ResourceContext {
 }
 
 impl ResourceContext {
+    /// Admit a changed partition while retaining its exact source identities.
+    /// The caller removes the old partition and excludes identity collisions.
+    pub(super) fn compose_selected_occurrences(
+        self,
+        facts: impl IntoIterator<Item = (ResourceFact, ResourceOccurrenceId)>,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, ResourceContextValidityError> {
+        match self.admit_selected_occurrences_without_discovery(
+            facts
+                .into_iter()
+                .map(|(fact, occurrence)| (fact, Some(occurrence))),
+            assumptions,
+        ) {
+            OwnershipAdmission::Admitted { context, .. } => Ok(context),
+            OwnershipAdmission::Conflict(error) => Err(error),
+            OwnershipAdmission::Unsupported(pending) => pending
+                .resume_legacy_discovery()
+                .map(|(context, _)| context),
+        }
+    }
+
     /// Compatibility query for one new memory owner. Retain the selected held
     /// fact at the comparison, rather than rediscovering it for diagnostics.
     /// Only old/new pairs are checked; neither partition is revalidated.
-    fn legacy_memory_boundary_conflict(
+    pub(super) fn legacy_memory_boundary_conflict(
         &self,
         right: &ResourceFact,
         before: ResourceEntryId,
@@ -42,9 +63,16 @@ impl ResourceContext {
                 .storage
                 .index
                 .owned_memory_by_block
-                .get(&right_range.base().block)?
-                .len();
-            self.constant_owned_neighbors(&origin, start, end, members)
+                .get(&right_range.base().block)
+                .map_or(0, ResourceEntryIds::len);
+            // A boundary query need not insert its own range just to find
+            // that this block has no retained owners. Preserve the legacy
+            // cross-block alias check below, including on this empty bucket.
+            if members == 0 {
+                Some(BTreeSet::new())
+            } else {
+                self.constant_owned_neighbors(&origin, start, end, members)
+            }
         });
         if let Some(mut candidates) = same_origin_neighbors {
             candidates.remove(&before);

@@ -1292,6 +1292,7 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
         key.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         key.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
         key.universals_by_conclusion = crate::persistent::PersistentMap::default();
+        key.universal_equality_sources = Default::default();
         key.shared_condition_variables = Default::default();
         key.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         key.state_condition_variable_base = crate::persistent::PersistentMap::default();
@@ -6742,13 +6743,13 @@ impl PureFactContext {
     fn insert_shared_proposition_fact(&mut self, shared: std::sync::Arc<Proposition>) {
         let proposition = shared.as_ref();
         self.execution_variable_ceiling
-            .file_proposition(&proposition);
+            .file_proposition(proposition);
         if let Proposition::ResourceComposition(resources) = proposition {
-            if !self.resource_compositions.contains(&resources) {
+            if !self.resource_compositions.contains(resources) {
                 self.resource_compositions =
                     self.resource_compositions.with_value(resources.clone());
-                self.composition_members.admit(&resources);
-                self.composition_object_resources.admit(&resources);
+                self.composition_members.admit(resources);
+                self.composition_object_resources.admit(resources);
                 self.composition_object_resources
                     .advance_memory_equalities(self);
                 self.content_fingerprint ^= Self::fingerprint(3, &resources);
@@ -6758,39 +6759,39 @@ impl PureFactContext {
         }
         if self
             .prop_facts
-            .insert(crate::kernel::clone_proposition_iteratively(&proposition))
+            .insert(crate::kernel::clone_proposition_iteratively(proposition))
             .is_none()
         {
             self.execution_fact_projection.insert(
                 ContextFactKey::Proposition(proposition.clone()),
                 std::sync::Arc::new(ExecutionPureFact::from_shared(shared.clone())),
             );
-            self.adjust_comparison_view(&proposition);
-            self.adjust_atomic_connection_fact(&proposition);
-            self.adjust_stated_proposition_index(&proposition);
+            self.adjust_comparison_view(proposition);
+            self.adjust_atomic_connection_fact(proposition);
+            self.adjust_stated_proposition_index(proposition);
             if matches!(proposition, Proposition::Or(_, _)) {
                 self.disjunction_facts = self
                     .disjunction_facts
-                    .with_value(crate::kernel::clone_proposition_iteratively(&proposition));
+                    .with_value(crate::kernel::clone_proposition_iteratively(proposition));
             }
             if matches!(proposition, Proposition::ResourceSeparate { .. }) {
                 self.separation_facts = self
                     .separation_facts
-                    .with_value(crate::kernel::clone_proposition_iteratively(&proposition));
+                    .with_value(crate::kernel::clone_proposition_iteratively(proposition));
             }
-            self.adjust_algebraic_constructor_field_equalities(&proposition);
-            self.adjust_algebraic_constructor_conflict(&proposition);
-            self.adjust_algebraic_variable_constructor(&proposition);
-            self.adjust_algebraic_graph_equality(&proposition);
-            self.adjust_pointer_value_equality(&proposition);
-            self.adjust_algebraic_variable_variant_evidence(&proposition);
-            self.adjust_memory_loadable_fact(&proposition);
-            self.adjust_separation_block_fact(&proposition);
-            self.adjust_memory_separation_fact(&proposition);
-            self.adjust_nonmemory_separation_fact(&proposition);
-            self.adjust_resource_contains_fact(&proposition);
-            self.adjust_memory_effect_fact(&proposition);
-            self.adjust_pointer_class_fact(&proposition);
+            self.adjust_algebraic_constructor_field_equalities(proposition);
+            self.adjust_algebraic_constructor_conflict(proposition);
+            self.adjust_algebraic_variable_constructor(proposition);
+            self.adjust_algebraic_graph_equality(proposition);
+            self.adjust_pointer_value_equality(proposition);
+            self.adjust_algebraic_variable_variant_evidence(proposition);
+            self.adjust_memory_loadable_fact(proposition);
+            self.adjust_separation_block_fact(proposition);
+            self.adjust_memory_separation_fact(proposition);
+            self.adjust_nonmemory_separation_fact(proposition);
+            self.adjust_resource_contains_fact(proposition);
+            self.adjust_memory_effect_fact(proposition);
+            self.adjust_pointer_class_fact(proposition);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
             self.admit_shared_exact_propagation(shared);
         }
@@ -8159,6 +8160,7 @@ impl PureFactContext {
         }
         if matches!(proposition, Proposition::ForAll { .. }) {
             self.atomic_quantified_facts = self.atomic_quantified_facts.with_value(shared.clone());
+            self.index_universal_equality(proposition);
             for key in UniversalConclusionKey::of(proposition) {
                 crate::instrumentation::record_deterministic_work(1);
                 let bucket = self
@@ -8199,6 +8201,7 @@ impl PureFactContext {
         self.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         self.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
         self.universals_by_conclusion = crate::persistent::PersistentMap::default();
+        self.universal_equality_sources = Default::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.scan_for_upkeep() {
             self.adjust_atomic_connection_fact(&Proposition::ConditionIs(
@@ -10414,19 +10417,14 @@ impl ProofObligation {
 impl ExecutionPureFact {
     /// The value observed by this producer's completed volatile read.
     pub(crate) fn volatile_read_result(&self) -> Option<&ProgramValue> {
+        crate::instrumentation::record_deterministic_work(1);
         if !self.is_certified() {
             return None;
         }
-        let Proposition::Predicate { name, arguments } = self.proposition() else {
+        let Proposition::VolatileAccess(event) = self.proposition() else {
             return None;
         };
-        if !name.starts_with("__click_volatile_read_") {
-            return None;
-        }
-        let [Term::ProgramValue(_), Term::ProgramValue(value)] = arguments.as_slice() else {
-            return None;
-        };
-        Some(value)
+        (event.kind == VolatileAccessKind::Read).then_some(&event.value)
     }
 
     /// Retain the exact typed producer's definition and checked cached value.

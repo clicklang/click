@@ -208,6 +208,7 @@ pub(in crate::surface) fn solve_proposition(
         Proposition::ForAll { .. }
         | Proposition::Exists { .. }
         | Proposition::Predicate { .. }
+        | Proposition::VolatileAccess(_)
         | Proposition::ProgramExpressionEvaluates { .. }
         | Proposition::ProgramConditionEvaluates { .. }
         | Proposition::ProgramStatementVerifies { .. }

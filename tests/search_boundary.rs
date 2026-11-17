@@ -1668,6 +1668,20 @@ fn ownership_fallback_inventory_pins_callers_and_reference_counts() {
                 .any(|error| error.contains(&key) && error.contains("2 references"))
         );
     }
+    let path = "src/kernel/functions/mixed_return_resources.rs";
+    let target = "try_compose_with_legacy_discovery_and_occurrences";
+    let key = format!("{path}\tlegacy-caller\tPreparedReturnComposition::finish\t{target}");
+    assert!(!proof_search_boundary::expected().contains_key(&key));
+    let file = syn::parse_file(&format!(
+        "impl PreparedReturnComposition {{ fn finish(c: C) {{ c.{target}(); }} }}"
+    ))
+    .unwrap();
+    assert!(
+        proof_search_boundary::check(path, &file)
+            .unwrap_err()
+            .iter()
+            .any(|error| error.contains(&key) && error.contains("unreviewed"))
+    );
 }
 
 #[test]

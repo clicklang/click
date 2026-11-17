@@ -103,7 +103,7 @@ theorem mathematical_callback_fold_append(lo: Integer, hi: Integer) {
 
 theorem existential_callback(lo: int32, hi: int32) {
     requires lo < hi;
-    ensures some(|i: int32| -> Prop { i == lo }, lo, hi) by { witness { item: lo }; solve(); }
+    ensures some(|i: int32| -> Prop { i == lo }, lo, hi) by { witness(lo); solve(); }
 }
 
 void write(int32* p) {

@@ -475,7 +475,7 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
                 requires x == 0;
                 let saved: Integer = x;
                 ensures exists (x: Integer) { saved == 1 } by {
-                    witness { x: 1 };
+                    witness(1);
                     normalize();
                 }
             }
@@ -520,7 +520,7 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
         theorem existential(x: Integer) {
             let saved: Integer = x;
             ensures exists (x: Integer) { saved == x } by {
-                witness { x: x };
+                witness(x);
                 normalize();
             }
         }
@@ -530,7 +530,7 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
             ensures exists (z: Integer) {
                 forall (x: Integer) { z == saved }
             } by {
-                witness { z: x };
+                witness(x);
                 intro();
                 have x == x by { normalize(); }
                 normalize();
@@ -607,7 +607,7 @@ fn parses_proof_if_tactic() {
 fn parses_existential_proof_tactics() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { step_until(function.exit); obtain (k: int32) { k == k }; witness { j: k + 1 }; solve(); }",
+        "== 2 by { step_until(function.exit); obtain (k: int32) { k == k }; witness(k + 1); solve(); }",
     );
     let file = parse(&source).expect("existential explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
@@ -621,13 +621,10 @@ fn parses_existential_proof_tactics() {
         if binding.bindings == [("k".to_string(), ClickType::Program(InterfaceType::Int32))]));
     assert_eq!(
         tactics[2],
-        ProofTactic::Witness(ProofWitness::single(
-            "j".to_string(),
-            ContractExpression::Add(
-                Box::new(ContractExpression::Binding("k".to_string())),
-                Box::new(current_int(1)),
-            )
-        ))
+        ProofTactic::Witness(ProofWitness::single(ContractExpression::Add(
+            Box::new(ContractExpression::Binding("k".to_string())),
+            Box::new(current_int(1)),
+        )))
     );
     assert!(matches!(tactics[3], ProofTactic::Solve));
 }
@@ -1356,7 +1353,7 @@ fn mid_execution_witness_solve_have_expands_to_a_simple_certificate() {
                 ensures exists (j: int32) { j == result };
             } by {
                 have exists (j: int32) { j == x } by {
-                    witness { j: x };
+                    witness(x);
                     solve();
                 }
                 step_until(function.exit);
@@ -1432,7 +1429,7 @@ fn mid_execution_choose_witness_solve_retains_the_checked_proof_path() {
             } by {
                 have exists (j: int32) { j == x } by {
                     obtain (k: int32) { k == x };
-                    witness { j: k };
+                    witness(k);
                     solve();
                 }
                 step_until(function.exit);
@@ -1494,7 +1491,7 @@ fn mid_execution_choose_witness_solve_retains_the_checked_proof_path() {
     verify_c_sources(&rewritten, &[("choose_witness.c", c_source)])
         .expect("the serialized choose proof should independently verify");
 
-    let corrupted = rewritten.replacen("witness { j: k }", "witness { j: 0 }", 1);
+    let corrupted = rewritten.replacen("witness(k)", "witness(0)", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the checked witness"
@@ -1514,7 +1511,7 @@ fn explicit_mid_execution_witness_certificate_checks_and_expands() {
                 ensures result == x;
             } by {
                 have exists (j: int32) { j == x } by {
-                    witness { j: x };
+                    witness(x);
                     normalize();
                 }
                 step_until(function.exit);
@@ -1554,7 +1551,7 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_solve() {
                 ensures result == x;
             } by {
                 have exists (j: int32) { j == 0 and y == 0 } by {
-                    witness { j: x };
+                    witness(x);
                     solve();
                 }
                 step_until(function.exit);
@@ -1582,10 +1579,7 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_solve() {
         ..expanded
             .find("step_until(function.exit);")
             .expect("expansion should retain the proof suffix")];
-    assert!(
-        expanded_have.contains("witness { j: x }"),
-        "{expanded_have}"
-    );
+    assert!(expanded_have.contains("witness(x)"), "{expanded_have}");
     assert!(expanded_have.contains("known();"), "{expanded_have}");
     assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c_sources(&expanded, &[("witness_pair.c", c_source)])
@@ -2264,7 +2258,7 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
                     ensures exists (k: int32) { k == result };
                 } by {
                     step_until(function.exit);
-                    witness { k: result };
+                    witness(result);
                     solve();
                 }
             "#,
@@ -3124,19 +3118,19 @@ fn pure_machine_witness_instantiates_supported_c_binders() {
         theorem split_sum(n: int32) {
             requires 0 <= n and n <= 100;
             ensures exists (a: int32, b: int32) { a + b == n and 0 <= a and 0 <= b } by {
-                witness { a: n, b: 0 };
+                witness(n, 0);
                 solve();
             }
         }
         theorem pointer_witness(p: int32*) {
             ensures exists (q: int32*) { q == p } by {
-                witness { q: p };
+                witness(p);
                 solve();
             }
         }
     "#;
     verify_c_sources(source, &[]).expect("pure witness accepts machine and pointer binders");
-    let false_claim = source.replace("b: 0", "b: 1");
+    let false_claim = source.replace("witness(n, 0)", "witness(n, 1)");
     assert!(
         verify_c_sources(&false_claim, &[]).is_err(),
         "the instantiated body must still be proved"
@@ -3144,31 +3138,95 @@ fn pure_machine_witness_instantiates_supported_c_binders() {
 }
 
 #[test]
+#[ignore = "nightly: mixed-type witness expansion, alpha-renaming, and cold replay"]
+fn positional_witnesses_preserve_mixed_types_and_cold_replay() {
+    for proof in [
+        "witness(n, m, p);",
+        "witness(n); have m == m; witness(m, p);",
+    ] {
+        let source = format!(
+            r#"
+            theorem positional(n: int32, m: Integer, p: int32*) {{
+                ensures answer: exists (first: int32, second: Integer, third: int32*) {{
+                    first == n and second == m and third == p
+                }} by {{ {proof} solve(); }}
+            }}
+        "#
+        );
+        for source in [
+            source.clone(),
+            source
+                .replace("first", "renamed")
+                .replace("second", "another"),
+        ] {
+            verify_c_sources(&source, &[]).expect("positional witnesses ignore binder spelling");
+            let expanded = expand_c_claim_source_by_label(&source, &[], "positional.answer")
+                .expect("mixed positional witnesses expand");
+            assert!(expanded.contains("witness("), "{expanded}");
+            assert!(!expanded.contains("solve("), "{expanded}");
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+                .expect("positional expansion cold-replays without search");
+        }
+    }
+    let bindings = [
+        ("i: Integer", "3"),
+        ("m: int32", "4"),
+        ("f: Flag", "Flag::Set"),
+    ];
+    for order in [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ] {
+        let declarations = order.map(|index| bindings[index].0).join(", ");
+        let arguments = order.map(|index| bindings[index].1).join(", ");
+        let source = format!(
+            "spec enum Flag {{ Set }} theorem ordered() {{ ensures answer: exists ({declarations}) {{ i == 3 and m == 4 and f == Flag::Set }} by {{ witness({arguments}); solve(); }} }}"
+        );
+        verify_c_sources(&source, &[])
+            .expect("each positional value keeps its declared binder type");
+        let expanded = expand_c_claim_source_by_label(&source, &[], "ordered.answer").unwrap();
+        crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+            .expect("mixed binder orders cold-replay without search");
+    }
+    for source in [
+        "spec enum Flag { Set } theorem bad() { ensures exists (i: Integer, f: Flag) { i == 3 and f == Flag::Set } by { witness(Flag::Set, 3); solve(); } }",
+        "theorem bad() { ensures exists (x: int32) { x == 3 } by { witness(3, 4); solve(); } }",
+        "theorem bad() { ensures exists (x: Integer, y: Integer) { x == 3 and y == 4 } by { witness(4, 3); solve(); } }",
+    ] {
+        assert!(verify_c_sources(source, &[]).is_err(), "{source}");
+    }
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_21")]
 fn pure_machine_witness_rejects_wrong_types_with_binder_and_types() {
     for (source, expected, actual) in [
         (
-            r#"spec enum Flag { Clear } theorem bad(n: Flag) { ensures exists (x: int32) { x == 0 } by { witness { x: n }; solve(); } }"#,
+            r#"spec enum Flag { Clear } theorem bad(n: Flag) { ensures exists (x: int32) { x == 0 } by { witness(n); solve(); } }"#,
             "int32",
             "Flag",
         ),
         (
-            r#"theorem bad(n: Integer) { ensures exists (x: int32) { x == 0 } by { witness { x: n }; solve(); } }"#,
+            r#"theorem bad(n: Integer) { ensures exists (x: int32) { x == 0 } by { witness(n); solve(); } }"#,
             "int32",
             "Integer",
         ),
         (
-            r#"theorem bad(p: int32*) { ensures exists (x: int32) { x == 0 } by { witness { x: p }; solve(); } }"#,
+            r#"theorem bad(p: int32*) { ensures exists (x: int32) { x == 0 } by { witness(p); solve(); } }"#,
             "int32",
             "int32*",
         ),
         (
-            r#"theorem bad(n: int32) { ensures exists (x: int32*) { x == x } by { witness { x: n }; solve(); } }"#,
+            r#"theorem bad(n: int32) { ensures exists (x: int32*) { x == x } by { witness(n); solve(); } }"#,
             "int32*",
             "int32",
         ),
         (
-            r#"theorem bad(p: int64*) { ensures exists (x: int32*) { x == x } by { witness { x: p }; solve(); } }"#,
+            r#"theorem bad(p: int64*) { ensures exists (x: int32*) { x == x } by { witness(p); solve(); } }"#,
             "int32*",
             "int64*",
         ),
@@ -3192,12 +3250,12 @@ fn pure_machine_witness_preserves_lexical_bindings_and_pointer_types() {
         "int32**",
     ] {
         let source = format!(
-            "theorem retain(p: {pointer_type}) {{ let saved = p; ensures exists (p: {pointer_type}) {{ p == saved }} by {{ witness {{ p: p }}; solve(); }} }}"
+            "theorem retain(p: {pointer_type}) {{ let saved = p; ensures exists (p: {pointer_type}) {{ p == saved }} by {{ witness(p); solve(); }} }}"
         );
         verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{pointer_type}: {}", error.message()));
     }
-    let source = "theorem retain(n: int32) { let saved = n; ensures exists (n: int32) { n == saved } by { witness { n: n }; solve(); } }";
+    let source = "theorem retain(n: int32) { let saved = n; ensures exists (n: int32) { n == saved } by { witness(n); solve(); } }";
     verify_c_sources(source, &[])
         .expect("a witness keeps its lexical alias despite binder shadowing");
     let position = expansion::position_at_offset(source, source.find("solve();").unwrap());
@@ -3213,14 +3271,14 @@ fn pure_machine_witness_preserves_binder_widths() {
         "int8", "int16", "int32", "uint8", "uint16", "uint32", "int64", "uint64",
     ] {
         let source = format!(
-            "theorem retain(n: {scalar_type}) {{ ensures exists (x: {scalar_type}) {{ x == n }} by {{ witness {{ x: n }}; solve(); }} }}"
+            "theorem retain(n: {scalar_type}) {{ ensures exists (x: {scalar_type}) {{ x == n }} by {{ witness(n); solve(); }} }}"
         );
         verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{scalar_type}: {}", error.message()));
         // Type bounds are supplied by the typed binder's introduction;
         // only the written forall needs an intro, at every machine width.
         let source = format!(
-            "theorem retain(n: {scalar_type}) {{ ensures forall (x: {scalar_type}) {{ exists (y: {scalar_type}) {{ y == x }} }} by {{ intro(); witness {{ y: x }}; solve(); }} }}"
+            "theorem retain(n: {scalar_type}) {{ ensures forall (x: {scalar_type}) {{ exists (y: {scalar_type}) {{ y == x }} }} by {{ intro(); witness(x); solve(); }} }}"
         );
         verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{scalar_type} universal: {}", error.message()));
@@ -3241,7 +3299,7 @@ fn pure_machine_witness_rejects_different_widths_and_signedness() {
         ("int64", "uint64"),
     ] {
         let source = format!(
-            "theorem bad(n: {witness}) {{ ensures exists (x: {binder}) {{ x == x }} by {{ witness {{ x: n }}; solve(); }} }}"
+            "theorem bad(n: {witness}) {{ ensures exists (x: {binder}) {{ x == x }} by {{ witness(n); solve(); }} }}"
         );
         let error =
             verify_c_sources(&source, &[]).expect_err("witness must have the exact binder type");
@@ -3269,7 +3327,7 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 let saved{annotation} = p;
                 let again{annotation} = saved;
                 ensures exists (p: {ty}) {{ p == saved }} by {{
-                    witness {{ p: again }};
+                    witness(again);
                     solve();
                 }}
             }}
@@ -3277,7 +3335,7 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 let saved{annotation} = p;
                 ensures forall (p: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
                     intro();
-                    witness {{ q: saved }};
+                    witness(saved);
                     solve();
                 }}
             }}
@@ -3285,7 +3343,7 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 let saved{annotation} = p;
                 ensures forall (saved: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
                     intro();
-                    witness {{ q: saved }};
+                    witness(saved);
                     solve();
                 }}
             }}
@@ -3293,7 +3351,7 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 let saved{annotation} = p;
                 ensures forall (p: {ty}) {{ exists (saved: {ty}) {{ saved == p }} }} by {{
                     intro();
-                    witness {{ saved: p }};
+                    witness(p);
                     solve();
                 }}
             }}
@@ -3320,7 +3378,7 @@ fn pure_witness_aliases_preserve_outer_binding_and_do_not_prove_false_bodies() {
                 let saved{annotation} = p;
                 ensures forall (p: {ty}) {{ exists (q: {ty}) {{ q == p }} }} by {{
                     intro();
-                    witness {{ q: saved }};
+                    witness(saved);
                     normalize();
                 }}
             }}
@@ -3343,19 +3401,19 @@ fn pure_witness_declaration_aliases_keep_literal_types_and_source_scope() {
         theorem literals() {
             let machine = 0;
             let integer: Integer = 0;
-            ensures exists (n: int32) { n == 0 } by { witness { n: machine }; solve(); }
-            ensures exists (n: Integer) { n == 0 } by { witness { n: integer }; solve(); }
+            ensures exists (n: int32) { n == 0 } by { witness(machine); solve(); }
+            ensures exists (n: Integer) { n == 0 } by { witness(integer); solve(); }
         }
         spec enum Flag { Clear }
         theorem algebraic(p: Flag) {
             let saved = p;
-            ensures exists (q: Flag) { q == saved } by { witness { q: saved }; solve(); }
+            ensures exists (q: Flag) { q == saved } by { witness(saved); solve(); }
         }
     "#;
     verify_c_sources(source, &[]).expect("aliases retain their C, Integer and algebraic types");
     let later = r#"
         theorem later(p: int32) {
-            ensures exists (q: int32) { q == p } by { witness { q: saved }; solve(); }
+            ensures exists (q: int32) { q == p } by { witness(saved); solve(); }
             let saved = p;
         }
     "#;
@@ -3439,7 +3497,7 @@ fn terminal_if_tactics_keep_claim_local_existential_witnesses() {
         )
         .replace(
             "solve();\n            }",
-            "obtain (w: int32) { w == n }; witness { j: w }; solve();\n            }",
+            "obtain (w: int32) { w == n }; witness(w); solve();\n            }",
         );
     verify_c_sources(&existential, &sources)
         .expect("post-execution existence proofs retain their own obtained witnesses");

@@ -242,13 +242,14 @@ mod tests {
                 "rb_child_links(int32(7)) contains",
             ),
             (
-                Proposition::Predicate {
-                    name: "__click_volatile_write_123".into(),
-                    arguments: vec![Term::ProgramValue(ProgramValue::UInt64(
-                        MachineTerm::uint64_constant(1),
-                    ))],
-                },
-                "volatile-write-event#123(uint64(1u64))",
+                Proposition::VolatileAccess(std::sync::Arc::new(crate::kernel::VolatileAccess {
+                    id: crate::kernel::VolatileEventId(123),
+                    kind: crate::kernel::VolatileAccessKind::Write,
+                    pointer: Pointer::symbolic(Variable(986_703)),
+                    value_type: crate::kernel::ProgramType::UInt64,
+                    value: ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
+                })),
+                "volatile-write-event#123(",
             ),
         ];
         for (fact, expected) in facts {

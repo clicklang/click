@@ -16,7 +16,7 @@ step, and nothing can remove that cost later.
 
 The **slow part** searches. It is the smart tactics, whose kinds in
 `SmartTacticKind` are `Solve` (written `solve()` and `solve() using`),
-`Arithmetic` (the arithmetic engine alone, whose written spelling
+`Arithmetic` (the arithmetic engine alone, whose written form
 `arithmetic() using` the parser now refuses), and `Execute` (`step_until`, and
 the stepping and splitting of the implicit tail that ends every proof script);
 the implicit closer, `SmartSite::Implicit`; and the search helpers that fill an
@@ -215,17 +215,17 @@ entry point and rejects the test-only whole-block census. The atomic coverage
 fallback uses the same checked candidate lookup. Checked view lookup uses
 structural offsets, the maintained affine class coordinate and its unique
 concrete storage anchor; it never enumerates the alias class. A singleton
-selected source may have another block spelling: checking aligns the two
+selected source may have another block form: checking aligns the two
 supplied addresses through the graph and retains bounds, lifetime and
 structural-distinctness checks. Preserve existing same-block endpoint expressions
 unless the addresses are already equal; coordinate projection must not obscure
-their stated bounds. Other spellings require search permission.
+their stated bounds. Other forms require search permission.
 The build boundary rejects alias enumeration in these migrated view queries.
 
 Condition-fact queries use the maintained truth index and singleton canonical
 shape/variable buckets. Atomic memory-order queries use indexed truth for both
 orientations, retaining the comparison carrier; compound memory queries still
-require their canonical key or an explicit spelling. No query enumerates scalar
+require their canonical key or an explicit form. No query enumerates scalar
 classes to select a premise. Other condition-side bucket helpers remain audit
 targets.
 
@@ -378,7 +378,7 @@ without traversing equality evidence edges.
 
 Store ownership footprint lookup uses only the additive bases written in the
 access. It does not enumerate their pointer alias classes. When a resource is
-owned under another spelling, state the alias and separation explicitly and
+owned under another form, state the alias and separation explicitly and
 use `transport ... using` to carry the required read across the write, as in
 `mdtests/do_while_restored_field_frame_remains_separate.md`. Build-boundary
 checks reject the removed evidence and alias enumeration routes. Automatic
@@ -426,7 +426,7 @@ store. After a smart statement step (`try_statement_step_with_retries`),
 `retry_statement_keeping_store_cells` diffs the statement's input and output
 cell maps (`kernel::search::store_separation`, proportional to the changed
 cells, at most 64 pairs compared), pairs each dropped cell with a written cell
-of the same array, and spells the index disequality the store-time check
+of the same array, and states the index disequality the store-time check
 reads, by construction from the two index words
 (`synthesize_store_index_disequality`: `((m - 1) as int32) != 0`,
 `((n - 1u64) as uint64) != 0u64`). It proves at most four at the pre-state with the narrow closure
@@ -434,12 +434,12 @@ reads, by construction from the two index words
 refutation, disequality bridge), retains them as
 `have`s and reruns the statement; expansion writes those `have`s and the
 expanded proof searches nothing. A disequality it does not prove is kept,
-already spelled, in the path's presentation (`store_separation_misses`, at
+already raised, in the path's presentation (`store_separation_misses`, at
 most 32, carried across joins as arm suffixes) and is never read while
 checking. A refusal whose goal reads a cell a recorded miss dropped explains
 that read with one bounded history walk and, when the walk stops at that
-miss's store, prints the statement and the spelled fact; it searches for no
-spelling. `solve`'s last strategy,
+miss's store, prints the statement and the raised fact; it does not search
+to raise anything. `solve`'s last strategy,
 `try_disequality_by_refuted_equality`, proves a disequality from a connected
 one by cases on the goal's equality, so the Integer fact `m - 1 != 0` gives
 the word fact where the word cannot wrap. Regressions:
@@ -448,7 +448,7 @@ its `size_t` sibling
 `wide_store_index_separation_search_scales_with_unrelated_stores_and_facts`.
 After it, `try_element_address_disequality` reduces a goal
 `&q[j] != &q[0]` whose two addresses share a base and scaled indices of one
-width and format to `have j != 0` (spelled the same way, proved by a nested
+width and format to `have j != 0` (written the same way, proved by a nested
 `solve`) and closes it with
 `apply(click::separation::distinct_elements(q, j, 0))`, the explicit law
 expansion writes.

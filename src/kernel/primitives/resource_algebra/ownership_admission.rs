@@ -180,8 +180,23 @@ impl ResourceContext {
     /// Admit explicit resources using maintained indexes only. This operation
     /// never invokes discovery when the index cannot decide an overlap.
     pub(crate) fn admit_without_discovery(
-        mut self,
+        self,
         facts: impl IntoIterator<Item = ResourceFact>,
+        assumptions: &PureFactContext,
+    ) -> OwnershipAdmission<'_> {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("admit_without_discovery");
+        self.admit_selected_occurrences_without_discovery(
+            facts.into_iter().map(|fact| (fact, None)),
+            assumptions,
+        )
+    }
+
+    /// Build the admitted successor with the producer's selected identities.
+    /// No temporary successor is checked and discarded before publication.
+    pub(super) fn admit_selected_occurrences_without_discovery(
+        mut self,
+        facts: impl IntoIterator<Item = (ResourceFact, Option<ResourceOccurrenceId>)>,
         assumptions: &PureFactContext,
     ) -> OwnershipAdmission<'_> {
         #[cfg(test)]
@@ -192,7 +207,7 @@ impl ResourceContext {
         let first_new = self.storage.next_entry_id;
         let mut inserted = Vec::new();
         let mut indexed_checked = Vec::new();
-        for fact in facts {
+        for (fact, occurrence) in facts {
             // Check the new footprint against the maintained caller frame
             // before insertion, so the query never has to skip its own entry.
             let checked = match self.constant_owned_overlap(&fact, assumptions) {
@@ -212,7 +227,13 @@ impl ResourceContext {
                 }
             };
             let entry = self.storage.next_entry_id;
-            self.insert_fact(fact.clone());
+            self.insert_fact_with_support_occurrence_and_metadata_at(
+                fact.clone(),
+                None,
+                None,
+                None,
+                occurrence,
+            );
             inserted.push((fact, self.occurrence(entry)));
             indexed_checked.push(checked);
         }
@@ -291,5 +312,34 @@ impl ResourceContext {
         }
         self.advance_prepared_memory_equalities(assumptions);
         Ok(self)
+    }
+}
+
+impl ResourceContext {
+    /// Select only newly changed owned occurrences from the retained parent
+    /// lineage. Persistent differences skip shared frame/history nodes.
+    pub(in crate::kernel) fn new_owned_occurrences_from(
+        &self,
+        before: &Self,
+    ) -> Option<Vec<(ResourceFact, ResourceOccurrenceId)>> {
+        if !std::sync::Arc::ptr_eq(&self.storage.origin, &before.storage.origin) {
+            return None;
+        }
+        Some(
+            before
+                .storage
+                .facts
+                .diff(&self.storage.facts)
+                .filter_map(|(entry, _, new)| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let fact = new?;
+                    let occurrence = self.occurrence(*entry);
+                    if before.owned_fact_for_occurrence(occurrence) == Some(fact) {
+                        return None;
+                    }
+                    fact.is_own().then(|| (fact.clone(), occurrence))
+                })
+                .collect(),
+        )
     }
 }

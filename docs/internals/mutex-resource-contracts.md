@@ -73,7 +73,7 @@ protected assertion from the checked input authority; do not require a
 separate description argument or add angle-bracket resource parameters.
 
 In the sketches below, `P` remains explanatory notation for that recorded
-assertion. The unary `mutex_live(mu)` and `mutex_use(mu)` spellings retain the
+assertion. The unary `mutex_live(mu)` and `mutex_use(mu)` forms retain the
 association internally. An independent helper uses
 `mutex_use(mu, counter_state(p))` to identify its protected resource type.
 An opaque unary input must not be treated as a known concrete payload.
@@ -239,7 +239,7 @@ remain available, but its interaction with explicit named input maps must be
 specified. It must select supplied authority rather than search for a
 convenient matching instance, and an escaping guard must retain the loan.
 
-The former initialization spelling
+The former initialization syntax
 `step(pthread_mutex_init, { invariant: initial })` was a hard-coded
 selection hook. It has been replaced by schema-declared state input and lifetime
 output transport. The complete storage transfer and protected-state association

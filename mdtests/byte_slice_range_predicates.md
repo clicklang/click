@@ -30,7 +30,7 @@ int32 byte_slice_range_predicates(uint8 p[], int32 n) {
         obtain (found: uint64) {
             0u64 <= found and found < n as uint64 and p[found] == 'x'
         }
-        witness { k: found };
+        witness(found);
         solve();
     }
 

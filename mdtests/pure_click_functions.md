@@ -118,7 +118,7 @@ int32 range_helpers() {
     ensures all_reflexive: (0..3).all(|k| { k == k });
     ensures any_has_one: (0..3).any(|k| { k == 1 }) by {
         step_until(function.exit);
-        witness { k: 1 };
+        witness(1);
         solve();
     }
 }

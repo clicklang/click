@@ -807,6 +807,9 @@ impl PreparedReturnComposition {
                 .collect();
             return Ok((frame, transfers));
         }
+        // Description admission already established the pending group's
+        // internal composition. Only its boundary with the restored frame
+        // is missing; construct that successor without checking it twice.
         let (frame, inserted) = if self.pending.facts().is_empty() {
             (self.frame, Vec::new())
         } else {
@@ -1469,6 +1472,18 @@ pub(in crate::kernel) struct EscrowRecoveryBoundary {
 }
 
 impl EscrowRecoveryBoundary {
+    pub(in crate::kernel) fn from_raw_outputs(
+        outputs: impl IntoIterator<Item = (ResourceFact, ResourceOccurrenceId)>,
+    ) -> Self {
+        Self {
+            entries: outputs
+                .into_iter()
+                .filter(|(fact, _)| fact.is_own())
+                .map(|(fact, occurrence)| (occurrence, vec![fact]))
+                .collect(),
+        }
+    }
+
     pub(super) fn record(
         &mut self,
         output: ResourceOccurrenceId,

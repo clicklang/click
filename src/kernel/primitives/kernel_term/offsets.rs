@@ -197,6 +197,28 @@ impl KernelPointerOffset {
         values.pop().expect("offset root")
     }
 
+    /// The native offset index contract, shared by explicit output and storage keys.
+    pub(in crate::kernel) fn index_key(
+        value: &KernelTerm,
+    ) -> Result<SharedMachineIntegerTerm, &'static str> {
+        let KernelType::Program(ty) = value.ty() else {
+            return Err("expected machine offset index");
+        };
+        let format =
+            MachineIntegerType::from_program_type(*ty).ok_or("expected machine offset index")?;
+        if let KernelTermNode::Legacy(payload) = value.node()
+            && let Some(native) = payload.machine_operand()
+        {
+            return Ok(SharedMachineIntegerTerm::index(format, native.clone()));
+        }
+        if let Some(value) = SharedMachineIntegerTerm::from_shared(format, value.clone()) {
+            return Ok(value);
+        }
+        // Preserve the existing selected native reader for an opaque index.
+        KernelTermExport::machine(value)
+            .map(|native| SharedMachineIntegerTerm::index(format, native))
+    }
+
     /// Explicit native output. Completed offset children are moved, never
     /// cached and cloned at every prefix. Shared numeric indices stay shared.
     pub(crate) fn export(root: &SharedPointerOffset) -> Result<PointerOffsetTerm, &'static str> {
@@ -206,24 +228,7 @@ impl KernelPointerOffset {
         }
         let mut pending = vec![Task::Enter(root)];
         let mut values = Vec::new();
-        let index = |value: &KernelTerm| {
-            let KernelType::Program(ty) = value.ty() else {
-                return Err("expected machine offset index");
-            };
-            let format = MachineIntegerType::from_program_type(*ty)
-                .ok_or("expected machine offset index")?;
-            if let KernelTermNode::Legacy(payload) = value.node()
-                && let Some(native) = payload.machine_operand()
-            {
-                return Ok(SharedMachineIntegerTerm::index(format, native.clone()));
-            }
-            if let Some(value) = SharedMachineIntegerTerm::from_shared(format, value.clone()) {
-                return Ok(value);
-            }
-            // This is explicit native output, not an implicit checker read.
-            KernelTermExport::machine(value)
-                .map(|native| SharedMachineIntegerTerm::index(format, native))
-        };
+        let index = Self::index_key;
         while let Some(task) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             let value = match task {

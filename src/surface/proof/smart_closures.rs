@@ -3537,8 +3537,7 @@ impl<'a> Proof<'a> {
                 source_backed_direct_caller_requirement(requirement, step, execution, context);
             let candidate = match &direct_caller {
                 Some((predicate_name, _)) => {
-                    let mut unfolded = Vec::<String>::new();
-                    unfolded.push(predicate_name.clone());
+                    let unfolded = vec![predicate_name.clone()];
                     unfold_surface_predicates(
                         context.spec_definitions.predicates,
                         &registry_surface.proposition,

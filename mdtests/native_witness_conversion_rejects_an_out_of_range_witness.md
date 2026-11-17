@@ -8,7 +8,7 @@ theorem native_witness_conversion() {
     ensures exists (k: int32) {
         k == 256 and to_uint8(to_integer(k)) == to_uint8(to_integer(k))
     } by {
-        witness { k: 256 };
+        witness(256);
         solve();
     }
 }

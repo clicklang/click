@@ -80,7 +80,13 @@ impl Boundary<'_> {
             self.errors.push(format!("{}: legacy loop preparation belongs only to the explicit independent-input adapter", self.path));
         }
         if self.path == "src/kernel/loans.rs"
-            && self.function == "recover_stable_views_impl"
+            && matches!(
+                self.function.as_str(),
+                "recover_stable_views_impl"
+                    | "recover_returned_views"
+                    | "recover_suspended_views"
+                    | "restore_returned_escrows"
+            )
             && matches!(
                 name,
                 "try_compose_into_valid_context_delaying_normalization"

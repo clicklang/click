@@ -1511,6 +1511,68 @@ fn loan_access_requirement_is_retained_and_branch_local() {
 }
 
 #[test]
+fn returned_view_recovery_retains_the_constructed_frame_as_aliases_and_owners_grow() {
+    for aliases in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut assumptions = PureFactContext::new();
+            let owner = memory(0, 8, true);
+            let base = owner.memory_own_range().unwrap().base().clone();
+            let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+            for index in 0..count {
+                if aliases {
+                    assumptions = assumptions.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            base.clone(),
+                            Pointer::symbolic(Variable(8_799_000 + u64::from(index))),
+                        ),
+                        true,
+                    );
+                } else {
+                    resources =
+                        resources.unchecked_with_fact(memory(32 + index * 8, 36 + index * 8, true));
+                }
+            }
+            resources.synchronize_memory_equalities(&assumptions);
+            let (ledger, caller, callee) = participants();
+            let plan = plan_stable_view_transfer(
+                &resources,
+                &[checked(memory(0, 8, false))],
+                &assumptions,
+                &ledger,
+                caller,
+                callee,
+            )
+            .unwrap();
+            let (output, emitted) = plan
+                .caller_resources_after_requirements
+                .clone()
+                .unchecked_with_facts_and_occurrences([memory(8, 12, true)]);
+            let boundary =
+                crate::kernel::functions::EscrowRecoveryBoundary::from_raw_outputs(emitted);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let recovery = plan
+                    .recover_returned_views(output, &boundary, &assumptions, &BTreeMap::new(), &[])
+                    .unwrap();
+                assert!(recovery.resources.contains_exact_representation(&owner));
+                assert!(
+                    recovery
+                        .resources
+                        .contains_exact_representation(&memory(8, 12, true))
+                );
+            });
+            samples.push(work);
+        }
+        eprintln!("returned escrow aliases={aliases}: {samples:?}");
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "{aliases}: {samples:?}"
+        );
+    }
+}
+
+#[test]
 fn escrow_restoration_ignores_unrelated_frame_owners() {
     let mut samples = Vec::new();
     for count in [4usize, 16, 64, 256] {

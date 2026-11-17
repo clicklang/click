@@ -58,7 +58,7 @@ expressions. A signed machine-addition equality needs evidence that the C
 operation is defined; an unsigned equality must account for modular arithmetic.
 No unconditional conversion distribution rule is sound.
 
-### Structural arithmetic and spelling
+### Structural arithmetic and raising
 
 Specification lowering retains mathematical addition, subtraction,
 multiplication, negation, truncating quotient/remainder, and comparison
@@ -121,7 +121,7 @@ comparison the filed fact makes.
   to_integer(b)` on `uint32`, which `have a <= 4294967295u32 - b` records,
   files `a <= 4294967295u32 - b`, the Rust add check. A range bound the
   operands' types imply needs nothing; any other must already be a fact, in
-  either spelling or as the signed definedness fact
+  either form or as the signed definedness fact
   (`IntegerOperationRangeBound`). So `x <= 18446744073709551614u64 - y`
   files nothing: its difference may underflow.
 - A quantified fact `forall (k) { A(k) implies B(k) }` whose antecedent
@@ -169,7 +169,7 @@ comparison of its operands' observations (`integer_affine_claims`). A 64-bit or
 proof may use either; an order names its signedness, so a `uint32`
 order reads as the `uint32` observations of its operands. The
 special Integer rules read only the premises a node cites. `solve` refutes a
-native goal as its Integer reading and spells each cited native fact through
+native goal as its Integer reading and raises each cited native fact through
 its written operands, so an expanded proof cites the facts as written
 (`mdtests/solve_observes_an_operation_term_by_term.md`,
 `mdtests/solve_proves_a_64_bit_equality_from_bounds.md`).
@@ -206,7 +206,7 @@ arithmetic does not overflow. Bitwise operations remain machine operations.
 Checked Integer equality rewriting preserves lowering's multiplication by zero
 and one identities. These folds only remove expression nodes; other products
 retain their shared symbolic structure. Rewritten native observations therefore
-keep a checked source spelling for ordinary arithmetic proofs, including unsigned
+keep a checked Surface form for ordinary arithmetic proofs, including unsigned
 values above the sign bit. See the [identity rewrite regression](https://github.com/clicklang/click/blob/master/mdtests/integer_observed_product_identity_rewrite.md).
 
 Division and remainder are deliberately deferred from the current supported
@@ -229,7 +229,7 @@ evaluation raised the condition, and the condition as a requirement in the
 reader's own names -- the four bytes at `p[hi - 1]` must be viewable, `hi - 1`
 must not overflow, an `Integer` must fit the machine type it is converted back
 to. It says how many of that evaluation's conditions the premises did establish
-and names them, lists the premises it consulted in source spelling (a premise
+and names them, lists the premises it consulted in source form (a premise
 that is a conjunction counted as its conjuncts, bounded like every other fact
 list), says why a viewability premise over a wider range did not settle a single
 cell, and gives one repair: the cell's own viewability as a one-element range,
@@ -472,7 +472,7 @@ C++ literals use it as well. The runtime bridge requires an exact format match,
 including signedness; narrow signed constants retain the
 existing sign-extended 32-bit carrier. An arbitrary Integer larger than the
 format is refused from its cached bit length before inspecting its limbs.
-Parsing work scales with the explicitly written decimal spelling, and numeric
+Parsing work scales with the decimal source text as written, and numeric
 allocation is charged before constructing bounded exact values.
 
 Signed and unsigned 128-bit constants, their full endpoint ranges, widening,
@@ -613,7 +613,7 @@ lie in `[0, A]`, which both formats hold.
 
 A term keeps σ as its source wrote it: printed facts and steps show
 `(x as uint32)` or `(x as int32)` wherever σ is, inside operators and
-comparisons too. An `int32` order of a `uint32` value is spelled with the
+comparisons too. An `int32` order of a `uint32` value is raised with the
 operand converted: the case condition the implicit tail synthesizes for
 `bool set = (int)u < 0;` is `u as int32 < 0`, which lowers back to that
 order, where the bare `u < 0` would be the `uint32` order
@@ -667,7 +667,7 @@ lookup-level equivalence by step 4b). An equality of `uint32` values is a
 (`old(u[0]) == 4294967295u32`, not `== -1`); no rewrite re-files it at
 `int32`. `ConditionTerm` and `BitvectorComparisonOp` compare, hash and
 order it as the `int32` equality of the same bits: `comparison_identity`
-reads each side through one σ and a constant of either spelling as its
+reads each side through one σ and a constant of either format as its
 bits, one match per side with no clone, and `condition_match_key` and the
 structural fact keys read the same form, so every fact index, key and
 lookup finds it at either format, and it is never filed twice
@@ -694,7 +694,7 @@ Every conversion into an 8- or 16-bit format, in C, C++, Rust or a
 specification, is a generic `Cast` node (the conversion table's `Cast`
 entry). Rule K7 (decision of 2026-10-26) gives its 32-bit word: for a
 destination of `b` bits, `m = 2^b - 1` and `s = 2^(b-1)`, and `w` the
-operand's word (its low word, the `UInt32From64` spelling of `Cast`, for a
+operand's word (its low word, the `UInt32From64` kind of `Cast`, for a
 64-bit operand),
 
 | Destination | Word of `Cast(S -> F, x)` |
@@ -808,7 +808,7 @@ matching-width call captures, modulo integral casts, Boolean conversions, and
 checked signed multiplication, division/remainder, and comparisons. Contracts
 observe these values through `to_integer` and use checked reverse conversions.
 Wide source pointers, references, arrays, and record fields
-remain unsupported, as do ordinary C and Rust wide source spellings. Internal
+remain unsupported, as do ordinary C and Rust wide source syntax. Internal
 C identities model the wider memory profile without granting source admission.
 
 ## Work budgets and proof scaling
@@ -852,7 +852,7 @@ native execution guard, rather than the mathematical term constructor.
 A zero divisor stays opaque. Constructors do not cancel `x/x` or `0/x`;
 these nodes do not certify a native division's definedness. Native execution
 must establish nonzero divisors and the signed overflow exclusion before
-producing results. Proof spellings and C++ source admission build on this
+producing results. Proof syntax and C++ source admission build on this
 representation as described below.
 
 Interning, alpha keys, variable collectors, binder-aware rewriting, fold
@@ -880,7 +880,7 @@ The term has the machine conditional's capabilities and no more. Its shallow
 interning key is its condition and its arms' ids. Substitution, variable
 collectors, alpha keys, memory-load and resource-read collectors, narrow
 carrier and fold-read checks, and both printers walk the condition and the
-arms; the Surface spelling is `if c { a } else { b }`. A rewrite that decides
+arms; the Surface form is `if c { a } else { b }`. A rewrite that decides
 the condition (a substitution, `normalize() using`, or `solve`'s known
 conditions) leaves the selected arm, and arms a rewrite makes equal leave one,
 also under an exact Integer substitution, since that only deletes a node:
@@ -933,7 +933,7 @@ requires the machine addition to be defined.
 Nonzero constants fold exactly at arbitrary width. Mathematical `MIN/-1`
 therefore denotes the positive unbounded quotient; it does not establish that
 a native signed division is defined. Symbolic terms remain opaque to affine
-reasoning. These explicit spellings leave mathematical Integer `/` and `%`
+reasoning. These explicit forms leave mathematical Integer `/` and `%`
 unavailable, preserving their separate planned Euclidean policy.
 
 <!-- verified-example: mdtests/integer_truncation.md -->
@@ -949,7 +949,7 @@ The kernel retains deferred operands and mandatory domain obligations before
 constructing shared terms. A pure expression with a nonzero constant divisor
 can use the shared Integer DAG directly. Deferred truncation is not treated
 as an obligation-free argument or a total fold summary. Expansion preserves
-the spellings and verifies again; regressions check hostile constants, erased
+the written forms and verifies again; regressions check hostile constants, erased
 guards, full-width signs, native operand obligations, shared aliases, and
 lookup with unrelated facts. The proof notation has mathematical Integer
 semantics; C++ source division/remainder separately retains native guards and
@@ -997,7 +997,7 @@ Smart `apply` proposes source evidence for argument evaluation as well as the
 callee's declared requirements. It rechecks capture using only that proposed
 evidence before emitting a simple `apply ... using` proof step. Removing a
 required guard makes expansion/reverification fail. A guard without a supported
-source spelling produces a bounded search refusal; explicit `using` evidence
+Surface form produces a bounded search refusal; explicit `using` evidence
 can supply it. Capturing an observation supplies no native range or narrowing
 identity automatically.
 
@@ -1357,7 +1357,7 @@ endpoints. The modular caller frames unrelated memory. Neither `quot + 1` nor
 See the [checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_correction_endpoint_bounds.md).
 
 Integer equality proofs produced from normalized opposite bounds now
-retain the checked goal's spelling at their conclusion. For example, `b <= x`
+retain the checked goal's written form at their conclusion. For example, `b <= x`
 and `not (b + 1 <= x)` prove `x == b` even though the source operands are not
 syntactic opposites. The kernel still recomputes every premise and node; this
 adds no search or unchecked equality. Expansion preserves the ordinary proof and

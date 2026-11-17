@@ -418,15 +418,13 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
         .facts
         .iter()
         .filter_map(|fact| match fact.proposition() {
-            Proposition::Predicate { name, .. } if name.starts_with("__click_volatile_") => {
-                Some(name.clone())
-            }
+            crate::kernel::Proposition::VolatileAccess(event) => Some(event.clone()),
             _ => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(accesses.len(), 2);
-    assert!(accesses[0].starts_with("__click_volatile_write_"));
-    assert!(accesses[1].starts_with("__click_volatile_read_"));
+    assert_eq!(accesses[0].kind, crate::kernel::VolatileAccessKind::Write);
+    assert_eq!(accesses[1].kind, crate::kernel::VolatileAccessKind::Read);
     assert_ne!(accesses[0], accesses[1]);
 
     // A volatile event id is one allocation from the execution's counter like

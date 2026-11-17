@@ -3033,7 +3033,7 @@ fn contract_quantifier_domains_keep_the_chosen_witness_and_polarity() {
     for (claim, proof, passes) in [
         (
             "exists (k: int32) { to_integer(k + 1) == 0 }",
-            "witness { k: -1 }; solve();",
+            "witness(-1); solve();",
             true,
         ),
         (
@@ -3048,12 +3048,12 @@ fn contract_quantifier_domains_keep_the_chosen_witness_and_polarity() {
         ),
         (
             "not (forall (k: int32) { to_integer(k + 1) != 0 })",
-            "witness { k: -1 }; solve();",
+            "witness(-1); solve();",
             true,
         ),
         (
             "not (forall (k: int32) { to_integer(k + 1) != to_integer(k + 1) })",
-            "witness { k: 2147483647 }; solve();",
+            "witness(2147483647); solve();",
             false,
         ),
     ] {

@@ -2015,6 +2015,7 @@ pub(crate) struct StableViewRecovery {
     pub(crate) hold_transitions: Vec<CheckedLoanTransition>,
     pub(crate) resources: ResourceContext,
     restorations: Vec<RecoveredEscrow>,
+    pub(crate) recovered_hold_occurrences: Vec<(ResourceOccurrenceId, LoanViewBinding)>,
     protected_escrows: BTreeMap<ResourceOccurrenceId, RecoveredEscrow>,
     pub(crate) mutex_authority_updates: Vec<mutex_calls::MutexAuthorityUpdate>,
     /// The holds this call's produced borrowing composites now carry.
@@ -2041,6 +2042,25 @@ impl StableViewRecovery {
     > {
         #[cfg(test)]
         let _fast = crate::kernel::search::FastOperationScope::enter("escrow return restoration");
+        self.check_escrow_boundary(&resources, boundary, assumptions)?;
+        let mut bindings = Vec::new();
+        for member in &self.restorations {
+            resources = resources
+                .restore_checked_escrow(member, assumptions)
+                .map_err(super::functions::resource_context_runtime_error)?;
+            if let Some(binding) = member.binding() {
+                bindings.push((member.occurrence(), binding.clone()));
+            }
+        }
+        Ok((resources, bindings))
+    }
+
+    fn check_escrow_boundary(
+        &self,
+        resources: &ResourceContext,
+        boundary: &crate::kernel::functions::EscrowRecoveryBoundary,
+        assumptions: &PureFactContext,
+    ) -> Result<(), super::RuntimeError> {
         let mut protected = ResourceContext::new_with_equalities(assumptions);
         let mut opaque = false;
         let members = self.protected_escrows.values().chain(
@@ -2063,17 +2083,7 @@ impl StableViewRecovery {
             });
             protected = protected.unchecked_with_facts(member.frontier.iter().cloned());
         }
-        boundary.admit(&protected, opaque, &resources, assumptions)?;
-        let mut bindings = Vec::new();
-        for member in &self.restorations {
-            resources = resources
-                .restore_checked_escrow(member, assumptions)
-                .map_err(super::functions::resource_context_runtime_error)?;
-            if let Some(binding) = member.binding() {
-                bindings.push((member.occurrence(), binding.clone()));
-            }
-        }
-        Ok((resources, bindings))
+        boundary.admit(&protected, opaque, resources, assumptions)
     }
 
     pub(crate) fn diagnostic_subject(&self) -> LoanRefusalSubject {
@@ -4194,6 +4204,36 @@ impl StableViewTransferPlan {
         self.recover_stable_views_impl(assumptions, escaping, consumed_holds, false)
     }
 
+    /// Recover directly into the constructed call return, preserving its
+    /// output occurrences and projections. This establishes only the missing
+    /// output/escrow boundary; it does not rebuild the captured entry frame.
+    pub(in crate::kernel) fn recover_returned_views(
+        self,
+        resources: ResourceContext,
+        boundary: &crate::kernel::functions::EscrowRecoveryBoundary,
+        assumptions: &PureFactContext,
+        escaping: &BTreeMap<LoanId, Vec<EscapingComposite>>,
+        consumed_holds: &[LoanViewBinding],
+    ) -> Result<StableViewRecovery, super::RuntimeError> {
+        let mut recovery = self
+            .recover_stable_views(assumptions, escaping, consumed_holds)
+            .map_err(|error| {
+                error
+                    .loan_diagnostic(LoanRefusalOperation::Recovery)
+                    .map(|diagnostic| super::RuntimeError::LoanRefusal(Box::new(diagnostic)))
+                    .unwrap_or_else(|| {
+                        super::RuntimeError::FunctionContract(
+                            "stable-view call recovery refused".into(),
+                        )
+                    })
+            })?;
+        let (resources, bindings) =
+            recovery.restore_returned_escrows(resources, boundary, assumptions)?;
+        recovery.resources = resources;
+        recovery.recovered_hold_occurrences = bindings;
+        Ok(recovery)
+    }
+
     pub(crate) fn supports_suspended_memory_recovery(&self) -> bool {
         self.transferred_holds.is_empty()
             && self.escrowed_holds.is_empty()
@@ -4211,11 +4251,20 @@ impl StableViewTransferPlan {
         local_bindings: BTreeMap<ResourceFact, LoanViewBinding>,
         assumptions: &PureFactContext,
     ) -> Result<StableViewRecovery, StableViewPlanError> {
+        let additions = resources
+            .new_owned_occurrences_from(&self.caller_resources_after_requirements)
+            .ok_or(StableViewPlanError::InvalidResidual)?;
+        let boundary =
+            crate::kernel::functions::EscrowRecoveryBoundary::from_raw_outputs(additions);
         self.ledger = ledger;
         self.caller_resources_after_requirements = resources;
         self.parent_view_bindings = bindings;
         self.suspended_local_parents = local_bindings;
-        self.recover_stable_views_impl(assumptions, &BTreeMap::new(), &[], true)
+        let recovery = self.recover_stable_views_impl(assumptions, &BTreeMap::new(), &[], true)?;
+        recovery
+            .check_escrow_boundary(&recovery.resources, &boundary, assumptions)
+            .map_err(|_| StableViewPlanError::InvalidResidual)?;
+        Ok(recovery)
     }
 
     fn recover_stable_views_impl(
@@ -4504,6 +4553,14 @@ impl StableViewTransferPlan {
                 });
             }
         }
+        let recovered_hold_occurrences = restorations
+            .iter()
+            .filter_map(|member| {
+                member
+                    .binding()
+                    .map(|binding| (member.occurrence(), binding.clone()))
+            })
+            .collect();
         Ok(StableViewRecovery {
             ledger,
             terminal_ledger,
@@ -4511,6 +4568,7 @@ impl StableViewTransferPlan {
             hold_transitions,
             resources,
             restorations,
+            recovered_hold_occurrences,
             protected_escrows: self.protected_escrows,
             mutex_authority_updates,
             escaped_holds,
