@@ -2393,6 +2393,7 @@ impl Renderer<'_> {
         }
         self.push("pointer(");
         match &p.base {
+            crate::kernel::AddressBase::SliceLength { .. } => self.fmt(format_args!("{}", p.base)),
             crate::kernel::AddressBase::ReferenceCarrier { referent, instance } => self.fmt(
                 format_args!("reference carrier of {referent} [{instance:?}]"),
             ),

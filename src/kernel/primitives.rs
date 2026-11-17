@@ -2526,6 +2526,7 @@ impl PointerValue {
                     | AddressBase::ContractException
                     | AddressBase::StaticObject { .. }
                     | AddressBase::AutomaticLocal { .. }
+                    | AddressBase::SliceLength { .. }
                     | AddressBase::ReferenceCarrier { .. }
                     | AddressBase::Concrete(_)
                     | AddressBase::Heap(_)
@@ -3049,6 +3050,11 @@ pub enum AddressBase {
         referent: Arc<BindingName>,
         instance: LocalStorageInstance,
     },
+    /// Internal bookkeeping for the length component of a slice parameter.
+    SliceLength {
+        slice: Arc<str>,
+        instance: LocalStorageInstance,
+    },
     StaticObject {
         binding: StaticBindingId,
     },
@@ -3075,6 +3081,11 @@ impl std::hash::Hash for AddressBase {
             }
             Self::ContractResult => 13u64.hash(state),
             Self::ContractException => 15u64.hash(state),
+            Self::SliceLength { slice, instance } => {
+                17u64.hash(state);
+                slice.hash(state);
+                instance.hash(state);
+            }
             Self::StaticObject { binding } => {
                 12u64.hash(state);
                 binding.hash(state);
@@ -3200,7 +3211,9 @@ impl AddressBase {
 
     pub(crate) fn starts_with(&self, prefix: &str) -> bool {
         match self {
-            Self::AutomaticLocal { instance, .. } | Self::ReferenceCarrier { instance, .. } => {
+            Self::AutomaticLocal { instance, .. }
+            | Self::ReferenceCarrier { instance, .. }
+            | Self::SliceLength { instance, .. } => {
                 prefix == "local:"
                     || match instance {
                         LocalStorageInstance::ValueParameter => prefix == "local:value-parameter:",
@@ -3225,6 +3238,7 @@ impl AddressBase {
             | Self::ContractException
             | Self::StaticObject { .. }
             | Self::AutomaticLocal { .. }
+            | Self::SliceLength { .. }
             | Self::ReferenceCarrier { .. }
             | Self::StringLiteral { .. }
             | Self::Function(_)
@@ -3338,6 +3352,7 @@ impl AddressBase {
                         | Self::ContractException
                         | Self::StaticObject { .. }
                         | Self::AutomaticLocal { .. }
+                        | Self::SliceLength { .. }
                         | Self::ReferenceCarrier { .. }
                         | Self::Concrete(_)
                         | Self::Function(_)
@@ -3363,6 +3378,7 @@ impl AddressBase {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::SliceLength { .. }
                         | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(
@@ -3371,6 +3387,7 @@ impl AddressBase {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::SliceLength { .. }
                         | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                         | Self::Concrete(_)
@@ -3381,6 +3398,7 @@ impl AddressBase {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::SliceLength { .. }
                         | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(self, Self::Concrete(_)))
@@ -3444,6 +3462,9 @@ impl std::fmt::Display for AddressBase {
             Self::AggregateReturn { frame } => write!(formatter, "result.storage(frame, {frame})"),
             Self::ContractResult => formatter.write_str("result.storage()"),
             Self::ContractException => formatter.write_str("exception.storage()"),
+            Self::SliceLength { slice, instance } => {
+                write!(formatter, "{slice}.len().storage({instance})")
+            }
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
             Self::ReferenceCarrier { referent, instance } => {
                 write!(

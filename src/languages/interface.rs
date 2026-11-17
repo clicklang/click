@@ -1392,7 +1392,9 @@ impl ImportedParameter {
                 binding.reference_referent(),
             ) {
                 (Some(actual), Some(written)) => written.is_named(actual.source_name()),
-                (None, None) => binding.is_named(self.name()),
+                (None, None) if self.binding_name().slice_length_of().is_none() => {
+                    binding.is_named(self.name())
+                }
                 _ => false,
             }
     }

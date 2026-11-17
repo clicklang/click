@@ -3047,6 +3047,7 @@ fn collect_pointer_bound_variables(pointer: &Address, variables: &mut BTreeSet<V
         | AddressBase::AggregateReturn { .. }
         | AddressBase::StaticObject { .. }
         | AddressBase::AutomaticLocal { .. }
+        | AddressBase::SliceLength { .. }
         | AddressBase::ReferenceCarrier { .. }
         | AddressBase::Concrete(_)
         | AddressBase::StringLiteral { .. }

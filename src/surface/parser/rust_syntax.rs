@@ -170,7 +170,7 @@ impl Parser {
             if let Some(element) = self.parse_rust_slice_type()? {
                 // `bytes: &[T]` is the pointer and length Rust passes. The
                 // sidecar names the slice once and reads `bytes.len()`.
-                let length = format!("{parameter_name}_len");
+                let length = FunctionParameter::rust_slice_length(&parameter_name);
                 self.rust_slice_params.insert(parameter_name.clone());
                 if let Some(pointee) = element.interface_type.pointee_type() {
                     self.rust_slice_elements
@@ -182,18 +182,7 @@ impl Parser {
                     self.parse_parameter_array_suffix(parameter_name, element)?
                         .parameter,
                 );
-                let length_type = ParsedType {
-                    interface_type: InterfaceType::UInt64(LongRank::Long),
-                    struct_name: None,
-                    struct_pointer: false,
-                    constant: false,
-                    pointee_constant: false,
-                    reference: false,
-                };
-                parameters.push(
-                    self.parse_parameter_array_suffix(length, length_type)?
-                        .parameter,
-                );
+                parameters.push(length);
                 if self.peek() != Some(&Token::Comma) {
                     break;
                 }
@@ -210,6 +199,7 @@ impl Parser {
             {
                 self.position += 1;
                 parameters.push(FunctionParameter {
+                    slice_length: None,
                     click_type: ClickType::Program(interface_type),
                     name: parameter_name,
                     struct_name: None,
@@ -237,6 +227,7 @@ impl Parser {
                     self.parse_rust_fn_pointer_type()?
                 };
                 parameters.push(FunctionParameter {
+                    slice_length: None,
                     click_type: ClickType::Program(interface_type),
                     name: parameter_name,
                     struct_name: None,
@@ -1236,7 +1227,7 @@ impl Parser {
             .map_err(|message| self.error(message))
     }
 
-    pub(super) fn take_rust_slice_len(&mut self, name: &str) -> Option<String> {
+    pub(super) fn take_rust_slice_len(&mut self, name: &str) -> Option<crate::kernel::BindingName> {
         if !self.rust_slice_params.contains(name)
             || self.peek() != Some(&Token::Dot)
             || self.peek_next() != Some(&Token::Ident("len".into()))
@@ -1246,7 +1237,7 @@ impl Parser {
             return None;
         }
         self.position += 4;
-        Some(format!("{name}_len"))
+        Some(crate::kernel::BindingName::slice_length(name))
     }
 
     /// `&T` and `&mut T` in a signature. The parameter is the pointer that
@@ -1837,7 +1828,9 @@ pub(super) fn rust_signature_hint(parsed: &ParsedFunctionSignature) -> Option<St
             };
             let base = scalar_name(pointee)?;
             let slice = signature.parameters.get(index + 1).is_some_and(|length| {
-                length.name == format!("{}_len", parameter.name)
+                // This diagnostic is for rejected C-shaped Rust signatures.
+                // Recognize the old spelling only to suggest its replacement.
+                length.name.strip_suffix("_len") == Some(parameter.name.as_str())
                     && matches!(length.interface_type(), InterfaceType::UInt64(_))
             });
             if slice {

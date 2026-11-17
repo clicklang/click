@@ -541,14 +541,6 @@ fn lower_function(
     let mut shared_scalar_slices = BTreeMap::new();
     let mut arrays = BTreeMap::new();
     let mut references = BTreeMap::new();
-    let parameter_names: BTreeSet<_> = f
-        .parameters
-        .iter()
-        .map(|p| {
-            crate::instrumentation::record_deterministic_work(1);
-            p.name.as_str()
-        })
-        .collect();
     for p in &f.parameters {
         crate::instrumentation::record_deterministic_work(1);
         if matches!(p.value_type, Type::Array { .. }) {
@@ -572,19 +564,14 @@ fn lower_function(
             continue;
         }
         if let Type::ByteSlice { mutable } = &p.value_type {
-            let length = format!("{}_len", p.name);
-            if parameter_names.contains(length.as_str()) || !locals.insert(length.clone()) {
-                return Err(format!(
-                    "Rust slice length parameter `{length}` collides with a parameter"
-                ));
-            }
+            let length = BindingName::slice_length(&p.name);
             slices.insert(p.name.clone(), (length.clone(), !mutable));
             parameters.push(
                 ImportedParameter::new(InterfaceType::UInt8Pointer, p.name.clone(), None)
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
-            parameters.push(ImportedParameter::new(
+            parameters.push(ImportedParameter::from_binding(
                 InterfaceType::UInt64(LongRank::Long),
                 length.clone(),
                 None,
@@ -601,12 +588,7 @@ fn lower_function(
             if !element.is_integer() {
                 return Err("scalar slice parameters require integer elements".into());
             }
-            let length = format!("{}_len", p.name);
-            if parameter_names.contains(length.as_str()) || !locals.insert(length.clone()) {
-                return Err(format!(
-                    "Rust slice length parameter `{length}` collides with a parameter"
-                ));
-            }
+            let length = BindingName::slice_length(&p.name);
             let pointer = scalar_type(&Type::Reference {
                 mutable: *mutable,
                 pointee: element.clone(),
@@ -620,7 +602,7 @@ fn lower_function(
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
-            parameters.push(ImportedParameter::new(
+            parameters.push(ImportedParameter::from_binding(
                 InterfaceType::UInt64(LongRank::Long),
                 length.clone(),
                 None,
@@ -826,7 +808,7 @@ struct Context<'a> {
     /// The enumerated slice iterators and their `Option` locals.
     enumerated: BTreeSet<String>,
     shared_array_options: BTreeMap<String, ProgramType>,
-    shared_scalar_slices: BTreeMap<String, (String, ProgramType)>,
+    shared_scalar_slices: BTreeMap<String, (BindingName, ProgramType)>,
     mir_chunk_iterators: BTreeSet<String>,
     chunk_options: BTreeSet<String>,
     local_arrays: BTreeSet<String>,
@@ -838,7 +820,7 @@ struct Context<'a> {
     /// these live in their object's memory, so a write through the borrow
     /// is the value later reads see.
     memory_values: BTreeMap<String, ProgramType>,
-    slices: BTreeMap<String, (String, bool)>,
+    slices: BTreeMap<String, (BindingName, bool)>,
     arrays: BTreeMap<String, (u64, ProgramType, bool)>,
     references: BTreeMap<String, bool>,
     source: &'a str,
@@ -958,7 +940,7 @@ impl Context<'_> {
                         return Err("slice local length collision".into());
                     }
                     self.slices
-                        .insert(place.name.clone(), (length.clone(), !mutable));
+                        .insert(place.name.clone(), (length.as_str().into(), !mutable));
                     return Ok(program_seq(
                         program_declare_with_all_qualifiers(
                             &place.name,
@@ -1234,7 +1216,7 @@ impl Context<'_> {
                     return Err("duplicate split_at local identity".into());
                 }
                 self.slices
-                    .insert(place.name.clone(), (length_name.clone(), true));
+                    .insert(place.name.clone(), (length_name.as_str().into(), true));
                 result = program_seq(
                     result,
                     program_seq(
@@ -1249,7 +1231,7 @@ impl Context<'_> {
                         program_declare(&length_name, ProgramType::UInt64),
                     ),
                 );
-                length_name
+                length_name.into()
             } else {
                 self.slices
                     .get(&place.name)

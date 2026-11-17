@@ -1207,7 +1207,7 @@ pub(super) fn check_quantity_exchange_at_return(
         .map(|parameter| {
             entry
                 .locals()
-                .get(parameter.name())
+                .get(parameter.binding_name())
                 .map(|value| value.clone().into_native())
         })
         .collect::<Option<Vec<_>>>()

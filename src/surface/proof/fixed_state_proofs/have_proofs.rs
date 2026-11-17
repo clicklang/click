@@ -1006,10 +1006,18 @@ fn evaluate_program_expression_with_binding_policy(
     let mut states =
         FixedStateLowering::for_expression(elaborated, contract_environment, state, state, result);
     if logical_arguments {
-        for name in crate::surface::lowering::contract_expression_referenced_names(elaborated) {
-            if let Some(value) = contract_environment.values.get(&name) {
-                states.entry_values.insert(name.clone(), value.clone());
-                states.current_values.insert(name, value.clone());
+        for binding in crate::surface::lowering::contract_expression_referenced_bindings(elaborated)
+        {
+            if let Some(name) = binding.unresolved_name()
+                && let Some(value) = contract_environment.values.get(name)
+            {
+                states.entry_values.insert(name.to_owned(), value.clone());
+                states.current_values.insert(name.to_owned(), value.clone());
+            } else if binding.slice_length_of().is_some()
+                && let Some(value) = contract_environment.parameter_value(&binding)
+            {
+                states.entry_state = states.entry_state.with_local(&binding, value.clone());
+                states.lowering_state = states.lowering_state.with_local(binding, value.clone());
             }
         }
     }

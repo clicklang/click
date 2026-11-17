@@ -210,6 +210,7 @@ impl ProvenanceKind {
             | AddressBase::ContractException
             | AddressBase::AggregateReturn { .. }
             | AddressBase::AutomaticLocal { .. }
+            | AddressBase::SliceLength { .. }
             | AddressBase::ReferenceCarrier { .. } => Self::Local,
             AddressBase::Concrete(name) if AddressBase::is_local_name(name) => Self::Local,
             AddressBase::StaticObject { .. } | AddressBase::Concrete(_) => Self::Global,
@@ -931,6 +932,7 @@ fn may_alias_automatic_storage(block: &super::AddressBase) -> bool {
         | AddressBase::AggregateReturn { .. }
         | AddressBase::StaticObject { .. }
         | AddressBase::AutomaticLocal { .. }
+        | AddressBase::SliceLength { .. }
         | AddressBase::ReferenceCarrier { .. }
         | AddressBase::Concrete(_)
         | AddressBase::ExternalArgument

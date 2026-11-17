@@ -488,15 +488,75 @@ pub enum BindingName {
     /// The address carrying a reference binding. The referent's binding is
     /// structural identity; an address-looking source string is never a carrier.
     ReferenceCarrier(Arc<BindingName>),
+    /// The length component of a Rust slice parameter in the current function.
+    SliceLength(SliceLengthBinding),
+}
+
+#[derive(Clone, Debug)]
+pub struct SliceLengthBinding(Arc<SliceLengthMetadata>);
+
+#[derive(Debug)]
+struct SliceLengthMetadata {
+    slice: Arc<str>,
+    /// Proof spelling for interfaces that also carry presentation names.
+    spelling: Arc<str>,
+}
+
+impl SliceLengthBinding {
+    pub(super) fn slice(&self) -> &Arc<str> {
+        &self.0.slice
+    }
+}
+
+impl PartialEq for SliceLengthBinding {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) || self.slice() == other.slice()
+    }
+}
+impl Eq for SliceLengthBinding {}
+impl PartialOrd for SliceLengthBinding {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for SliceLengthBinding {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.slice().cmp(other.slice())
+    }
+}
+impl Hash for SliceLengthBinding {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.slice().hash(state);
+    }
 }
 
 impl BindingName {
+    pub(crate) fn slice_length(slice: &str) -> Self {
+        Self::SliceLength(SliceLengthBinding(Arc::new(SliceLengthMetadata {
+            slice: Arc::from(slice),
+            spelling: Arc::from(format!("{slice}.len()")),
+        })))
+    }
+    pub(crate) fn slice_length_of(&self) -> Option<&str> {
+        match self {
+            Self::SliceLength(length) => Some(length.slice()),
+            _ => None,
+        }
+    }
+
     pub fn reference_carrier(referent: impl Into<BindingName>) -> Self {
         Self::ReferenceCarrier(Arc::new(referent.into()))
     }
     /// A source type-table lookup, separate from lexical value/storage lookup.
     pub(crate) fn metadata_in<'a, T>(&self, map: &'a impl NamedBindingMap<T>) -> Option<&'a T> {
-        self.unresolved_name().and_then(|name| map.get_named(name))
+        self.metadata_name().and_then(|name| map.get_named(name))
+    }
+    /// Key for Surface tables that carry parameter metadata by proof spelling.
+    pub(crate) fn metadata_name(&self) -> Option<&str> {
+        match self {
+            Self::SliceLength(length) => Some(&length.0.spelling),
+            _ => self.unresolved_name(),
+        }
     }
     pub fn reference_referent(&self) -> Option<&BindingName> {
         match self {
@@ -520,6 +580,7 @@ impl BindingName {
             Self::Local(id) => id.spelling(),
             Self::Static(id) => Some(id.spelling()),
             Self::ReferenceCarrier(_)
+            | Self::SliceLength(_)
             | Self::ContractResult
             | Self::ContractException
             | Self::Generated(_) => None,
@@ -528,6 +589,7 @@ impl BindingName {
     pub fn source_name(&self) -> &str {
         match self {
             Self::Named(name) => name,
+            Self::SliceLength(length) => &length.0.spelling,
             Self::ReferenceCarrier(referent) => referent.source_name(),
             Self::Local(id) => id.spelling().unwrap_or(""),
             Self::Static(id) => id.spelling(),
@@ -546,6 +608,7 @@ impl BindingName {
         match self {
             Self::Local(id) => id.program_type(),
             Self::Static(id) => id.program_type(),
+            Self::SliceLength(_) => Some(ProgramType::UInt64),
             _ => None,
         }
     }
@@ -608,6 +671,7 @@ impl From<BindingName> for BindingDeclaration {
             BindingName::ContractResult => Some(Arc::from("result")),
             BindingName::ContractException => Some(Arc::from("exception")),
             BindingName::Generated(_) => None,
+            BindingName::SliceLength(length) => Some(length.0.spelling.clone()),
             BindingName::ReferenceCarrier(referent) => Some(Arc::from(referent.source_name())),
         };
         let scope_depth = reference.local_id().map_or(0, LocalBindingId::scope_depth);
@@ -718,6 +782,7 @@ impl std::fmt::Display for BindingName {
             Self::ContractResult => f.write_str("result"),
             Self::ContractException => f.write_str("exception"),
             Self::Generated(id) => id.fmt(f),
+            Self::SliceLength(length) => f.write_str(&length.0.spelling),
         }
     }
 }

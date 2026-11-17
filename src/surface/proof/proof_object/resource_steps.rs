@@ -813,6 +813,7 @@ impl<'a> Proof<'a> {
                             // int32 field must not become Integer arithmetic.
                             *value = crate::surface::lowering::pure_function_parameter_argument(
                                 &FunctionParameter {
+                                    slice_length: None,
                                     name: field.name().to_owned(),
                                     click_type: field.click_type().clone(),
                                     struct_name: None,
@@ -854,6 +855,7 @@ impl<'a> Proof<'a> {
                                     } else {
                                         crate::surface::lowering::pure_function_parameter_argument(
                                             &FunctionParameter {
+                                                slice_length: None,
                                                 name: name.clone(),
                                                 click_type,
                                                 struct_name: None,
@@ -1412,7 +1414,7 @@ impl<'a> Proof<'a> {
             .zip(&checked_arguments)
             .map(|(parameter, argument)| {
                 (
-                    parameter.name().to_string(),
+                    parameter.binding_name(),
                     crate::surface::lowering::pure_function_parameter_argument_of_type(
                         parameter,
                         argument,
@@ -1628,7 +1630,7 @@ impl<'a> Proof<'a> {
                     .zip(application.arguments.iter().zip(&checked_arguments))
                     .map(|(parameter, (argument, checked_argument))| {
                         (
-                            parameter.name().to_string(),
+                            parameter.binding_name(),
                             crate::surface::lowering::pure_function_parameter_argument_of_type(
                                 parameter,
                                 argument,
@@ -1861,12 +1863,12 @@ impl<'a> Proof<'a> {
             else {
                 return Ok(None);
             };
-            let Some(end_parameter) = fold_end_parameter_name(end) else {
+            let Some(end_parameter) = fold_end_parameter_binding(end) else {
                 return Ok(None);
             };
             if [start.as_ref(), initial.as_ref(), body.as_ref()]
                 .into_iter()
-                .any(|part| contract_expression_reads_binding(part, end_parameter))
+                .any(|part| contract_expression_reads_binding(part, &end_parameter))
             {
                 return Ok(None);
             }
@@ -1972,7 +1974,7 @@ impl<'a> Proof<'a> {
                 "`unfold({name}(...))` requires the body of `{name}` to be exactly a range fold"
             )));
         };
-        let Some(end_parameter) = fold_end_parameter_name(end).cloned() else {
+        let Some(end_parameter) = fold_end_parameter_binding(end) else {
             return Err(self.step_error(format!(
                 "`unfold({name}(...))`: the append-last-cell equation restates the shorter fold as `{name}` at the predecessor endpoint, so the fold's end must be a parameter of `{name}`"
             )));
@@ -1991,7 +1993,7 @@ impl<'a> Proof<'a> {
         let position = definition
             .parameters()
             .iter()
-            .position(|parameter| parameter.name() == end_parameter)
+            .position(|parameter| parameter.binding_name() == end_parameter)
             .ok_or_else(|| {
                 self.step_error(format!(
                     "`unfold({name}(...))`: `{end_parameter}` is not a parameter of `{name}`"
@@ -2043,7 +2045,7 @@ impl<'a> Proof<'a> {
             .zip(&application.arguments)
             .map(|(parameter, argument)| {
                 (
-                    parameter.name().to_string(),
+                    parameter.binding_name(),
                     crate::surface::lowering::pure_function_parameter_argument(parameter, argument),
                 )
             })
@@ -2059,12 +2061,12 @@ impl<'a> Proof<'a> {
         if let Some(initial) = substitute(initial) {
             candidates.push(initial);
         }
-        if let Some(position) = fold_end_parameter_name(end)
+        if let Some(position) = fold_end_parameter_binding(end)
             .and_then(|end| {
                 definition
                     .parameters()
                     .iter()
-                    .position(|parameter| parameter.name() == end)
+                    .position(|parameter| parameter.binding_name() == end)
             })
             .filter(|position| *position < application.arguments.len())
             && let Some(body) = substitute(body)
@@ -3180,9 +3182,12 @@ impl<'a> Proof<'a> {
 /// that end, or the shorter fold would not be the same function applied at a
 /// smaller endpoint. A substitution failure counts as an occurrence: the
 /// check refuses rather than guesses.
-fn contract_expression_reads_binding(expression: &ContractExpression, binding: &str) -> bool {
+fn contract_expression_reads_binding(
+    expression: &ContractExpression,
+    binding: &crate::kernel::BindingName,
+) -> bool {
     let substitutions = BTreeMap::from([(
-        binding.to_string(),
+        binding.clone(),
         ContractExpression::IntegerLiteral("0".to_string()),
     )]);
     substitute_contract_expression(expression, &substitutions)
@@ -3190,17 +3195,18 @@ fn contract_expression_reads_binding(expression: &ContractExpression, binding: &
         .unwrap_or(true)
 }
 
-/// The parameter name a range fold's end endpoint is written as, when it is
-/// written as a bare name at all. The append form of the fold law restates the
-/// shorter fold as the same application at the predecessor endpoint, so both
-/// the law's own check and the refreshed goal's Surface spelling need it.
-fn fold_end_parameter_name(end: &ContractExpression) -> Option<&String> {
+/// The parameter a range fold uses directly as its end. The append law
+/// restates the shorter fold as the same application at the predecessor.
+fn fold_end_parameter_binding(end: &ContractExpression) -> Option<crate::kernel::BindingName> {
     match end {
-        ContractExpression::Binding(binding)
-        | ContractExpression::ProgramBinding(binding)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            crate::kernel::BindingName::Named(binding),
-        )) => Some(binding),
+        ContractExpression::Binding(binding) | ContractExpression::ProgramBinding(binding) => {
+            Some(binding.into())
+        }
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(binding))
+            if binding.named().is_some() || binding.slice_length_of().is_some() =>
+        {
+            Some(binding.clone())
+        }
         _ => None,
     }
 }

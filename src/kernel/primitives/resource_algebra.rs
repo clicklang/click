@@ -669,6 +669,7 @@ impl ResourceContextIndex {
                 AddressBase::Concrete(_)
                     | AddressBase::StaticObject { .. }
                     | AddressBase::AutomaticLocal { .. }
+                    | AddressBase::SliceLength { .. }
                     | AddressBase::ReferenceCarrier { .. }
             ) {
                 result.nonconcrete_memory_count += 1;
@@ -1024,6 +1025,7 @@ impl ResourceContextIndex {
                 AddressBase::Concrete(_)
                     | AddressBase::StaticObject { .. }
                     | AddressBase::AutomaticLocal { .. }
+                    | AddressBase::SliceLength { .. }
                     | AddressBase::ReferenceCarrier { .. }
             ) {
                 result.nonconcrete_memory_count -= 1;

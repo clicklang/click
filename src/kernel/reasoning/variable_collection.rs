@@ -3623,7 +3623,7 @@ fn collect_pointer_capture_variables(
         | AddressBase::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StaticObject { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::Concrete(_)
+        AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StaticObject { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::SliceLength { .. } | AddressBase::Concrete(_)
         | AddressBase::StringLiteral { .. }
         | AddressBase::Function(_)
         | AddressBase::ExternalArgument
@@ -5682,6 +5682,7 @@ fn collect_address_base_bitvector_variables(
         | AddressBase::AggregateReturn { .. }
         | AddressBase::StaticObject { .. }
         | AddressBase::AutomaticLocal { .. }
+        | AddressBase::SliceLength { .. }
         | AddressBase::ReferenceCarrier { .. }
         | AddressBase::Concrete(_)
         | AddressBase::StringLiteral { .. }
@@ -6317,6 +6318,7 @@ fn block_variables(block: &AddressBase, contents: &MemoryBlock) -> BTreeSet<Vari
         | AddressBase::AggregateReturn { .. }
         | AddressBase::StaticObject { .. }
         | AddressBase::AutomaticLocal { .. }
+        | AddressBase::SliceLength { .. }
         | AddressBase::ReferenceCarrier { .. }
         | AddressBase::Concrete(_)
         | AddressBase::StringLiteral { .. }
@@ -6631,6 +6633,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
             | AddressBase::AggregateReturn { .. }
             | AddressBase::StaticObject { .. }
             | AddressBase::AutomaticLocal { .. }
+            | AddressBase::SliceLength { .. }
             | AddressBase::ReferenceCarrier { .. }
             | AddressBase::Concrete(_)
             | AddressBase::StringLiteral { .. }

@@ -9400,7 +9400,7 @@ impl AnnotationLowerer<'_> {
             });
         }
 
-        if name.local_id().is_some()
+        if (name.local_id().is_some() || name.slice_length_of().is_some())
             && let Some(state) = environment.reference_state.as_ref().or_else(|| {
                 (environment.at_function_entry && !environment.function_contract)
                     .then_some(self.entry_state)

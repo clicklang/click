@@ -48,6 +48,10 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
 
 fn write_havoc_block(identity: &mut String, block: AddressBase) {
     match block {
+        AddressBase::SliceLength { slice, instance } => {
+            write_havoc_string(identity, "bslice", &slice);
+            let _ = write!(identity, "{instance:?};");
+        }
         AddressBase::ReferenceCarrier { referent, instance } => {
             identity.push_str("bref;");
             write_havoc_block(
@@ -1351,7 +1355,8 @@ impl LocalEnvironment {
                 .and_then(|entries| entries.last())
                 .map(|(_, binding)| binding.clone())
                 .unwrap_or_else(|| name.clone()),
-            BindingName::ReferenceCarrier(_)
+            BindingName::SliceLength(_)
+            | BindingName::ReferenceCarrier(_)
             | BindingName::Local(_)
             | BindingName::Static(_)
             | BindingName::ContractResult
@@ -1366,7 +1371,8 @@ impl LocalEnvironment {
             BindingName::Local(id) => id.spelling()?,
             BindingName::Static(id) => id.spelling(),
             BindingName::Named(name) => name,
-            BindingName::ReferenceCarrier(_)
+            BindingName::SliceLength(_)
+            | BindingName::ReferenceCarrier(_)
             | BindingName::ContractResult
             | BindingName::ContractException
             | BindingName::Generated(_) => return None,
@@ -7581,6 +7587,10 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn value_parameter_pointer(name: impl Into<BindingName>) -> Address {
         let name = name.into();
         let block = match name {
+            BindingName::SliceLength(length) => AddressBase::SliceLength {
+                slice: length.slice().clone(),
+                instance: LocalStorageInstance::ValueParameter,
+            },
             BindingName::ReferenceCarrier(referent) => AddressBase::ReferenceCarrier {
                 referent,
                 instance: LocalStorageInstance::ValueParameter,
@@ -7606,6 +7616,10 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn local_pointer(name: impl Into<BindingName>) -> Address {
         let name = name.into();
         let block = match name {
+            BindingName::SliceLength(length) => AddressBase::SliceLength {
+                slice: length.slice().clone(),
+                instance: LocalStorageInstance::Implicit,
+            },
             BindingName::ReferenceCarrier(referent) => AddressBase::ReferenceCarrier {
                 referent,
                 instance: LocalStorageInstance::Implicit,
@@ -7632,6 +7646,10 @@ impl SymbolicMemory {
     ) -> Address {
         let name = name.into();
         let block = match name {
+            BindingName::SliceLength(length) => AddressBase::SliceLength {
+                slice: length.slice().clone(),
+                instance: LocalStorageInstance::Lifetime(lifetime),
+            },
             BindingName::ReferenceCarrier(referent) => AddressBase::ReferenceCarrier {
                 referent,
                 instance: LocalStorageInstance::Lifetime(lifetime),
@@ -7658,7 +7676,8 @@ impl SymbolicMemory {
         let block = match name.into() {
             BindingName::Static(binding) => AddressBase::StaticObject { binding },
             BindingName::Named(name) => format!("global:{name}").into(),
-            BindingName::ReferenceCarrier(_)
+            BindingName::SliceLength(_)
+            | BindingName::ReferenceCarrier(_)
             | BindingName::Local(_)
             | BindingName::ContractResult
             | BindingName::ContractException
@@ -7686,7 +7705,8 @@ impl SymbolicMemory {
         let block = match name.into() {
             BindingName::Static(binding) => AddressBase::StaticObject { binding },
             BindingName::Named(name) => format!("static:{function}:{name}").into(),
-            BindingName::ReferenceCarrier(_)
+            BindingName::SliceLength(_)
+            | BindingName::ReferenceCarrier(_)
             | BindingName::Local(_)
             | BindingName::ContractResult
             | BindingName::ContractException
@@ -7713,6 +7733,13 @@ impl SymbolicMemory {
         name: impl Into<BindingName>,
     ) -> Address {
         match name.into() {
+            BindingName::SliceLength(length) => Address {
+                base: AddressBase::SliceLength {
+                    slice: length.slice().clone(),
+                    instance: LocalStorageInstance::Frame(frame),
+                },
+                offset: AddressOffset::Constant(0),
+            },
             BindingName::ReferenceCarrier(referent) => Address {
                 base: AddressBase::ReferenceCarrier {
                     referent,

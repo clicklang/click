@@ -1496,6 +1496,7 @@ fn resource_body_fields_as_parameters(
     let substitutions = ContractSubstitutions::with_body_fields_as_program_names(&no_values);
     let mut parameters = definition.parameters.clone();
     parameters.extend(scalar.iter().map(|field| FunctionParameter {
+        slice_length: None,
         name: field.name.clone(),
         click_type: field.click_type.clone(),
         struct_name: None,
@@ -2853,7 +2854,7 @@ fn collect_resource_fact_reads_from_contract_expression(
                 .parameters()
                 .iter()
                 .zip(arguments)
-                .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+                .map(|(parameter, argument)| (parameter.binding_name(), argument.clone()))
                 .collect();
             let Some(definition_body) = definition.body() else {
                 return Ok(());

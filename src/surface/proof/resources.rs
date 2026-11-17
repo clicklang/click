@@ -765,6 +765,7 @@ fn unmatched_instance_body(
     for field in definition.fields() {
         if matches!(field.click_type(), ClickType::Program(_)) {
             parameters.push(FunctionParameter {
+                slice_length: None,
                 name: field.name().to_string(),
                 click_type: field.click_type().clone(),
                 struct_name: None,

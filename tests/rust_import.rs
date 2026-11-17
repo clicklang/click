@@ -4054,8 +4054,7 @@ fn rust_sidecar_impl_blocks_verify() {
 
 #[cfg(not(feature = "fast-gate"))]
 /// A slice parameter in a Rust signature is one name: `bytes.len()` is its
-/// length. These are the contracts `examples/rust-slices` states in C shape,
-/// where the slice is a pointer and a `bytes_len` parameter.
+/// length. The fixture exercises the contracts from `examples/rust-slices`.
 #[test]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn rust_sidecar_slices_in_rust_syntax_verify() {
@@ -6788,6 +6787,45 @@ fn rust_methods_resolve_by_the_receivers_type() {
 }
 
 #[test]
+fn rust_slice_parameter_length_and_source_parameter_are_distinct() {
+    let p = Project::new(
+        "pub fn byte_count(bytes: &[u8], bytes_len: usize) -> usize { bytes.len() + bytes_len }
+         pub fn word_count(words: &[u32], words_len: usize) -> usize { words.len() + words_len }",
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let sidecar = r#"
+        verifying "borrow.rs";
+        fn byte_count(bytes: &[u8], bytes_len: usize) -> usize {
+            requires bytes.len() == 2u64;
+            requires bytes_len == 3u64;
+            ensures result == old(bytes.len()) + bytes_len;
+        } by {
+            have bytes.len() < bytes_len;
+            step_until(function.exit);
+            solve();
+        }
+        fn word_count(words: &[u32], words_len: usize) -> usize {
+            requires words.len() == 4u64;
+            requires words_len == 5u64;
+            ensures result == words.len() + words_len;
+        }
+    "#;
+    ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    let claim = "byte_count.contract";
+    let expanded =
+        click::surface::expand_program_prepared_claim_source_by_label(sidecar, &prepared, claim)
+            .unwrap();
+    assert!(expanded.contains("bytes.len() < bytes_len"), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 fn rust_slice_values_read_with_rust_methods() {
     let p = Project::new("pub fn first(bytes: &[u8]) -> u8 { bytes[0] }\n");
     p.refresh().unwrap();
@@ -6839,14 +6877,11 @@ fn rust_slice_values_read_with_rust_methods() {
         ),
         (
             "have half(bytes)[1] == 7u8;",
-            &[
-                "`half(bytes)[1] == 7u8`",
-                "goal: old(half(old(bytes))[1]) == 7",
-            ],
+            &["`half(bytes)[1] == 7u8`", "goal: old(half(bytes)[1]) == 7"],
         ),
         (
             "have half(bytes).as_ptr() == bytes + 1;",
-            &["goal: half(old(bytes)).as_ptr() == &bytes[1]"],
+            &["goal: half(bytes).as_ptr() == &bytes[1]"],
         ),
         (
             "have bytes[1..3][1] == 7u8;",
@@ -6884,7 +6919,7 @@ fn rust_slice_values_read_with_rust_methods() {
         ),
         (
             "have half(bytes)[3..].len() == 0u64;",
-            &["not established", "`3u64 <= half(old(bytes)).len()`"],
+            &["not established", "`3u64 <= (half(bytes).len() as u64)`"],
         ),
         (
             "have forall (k: uint64) { bytes[k..2] == bytes[k..2] };",

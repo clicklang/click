@@ -236,7 +236,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     return Err("MIR scalar slice length collision".into());
                 }
                 cx.shared_scalar_slices
-                    .insert(local.name.clone(), (length.clone(), element_type));
+                    .insert(local.name.clone(), (length.as_str().into(), element_type));
                 program_seq(
                     program_declare_with_all_qualifiers(
                         &local.name,
@@ -255,7 +255,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     return Err("MIR slice local length collision".into());
                 }
                 cx.slices
-                    .insert(local.name.clone(), (length.clone(), !mutable));
+                    .insert(local.name.clone(), (length.as_str().into(), !mutable));
                 program_seq(
                     program_declare_with_all_qualifiers(
                         &local.name,

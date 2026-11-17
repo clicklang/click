@@ -221,6 +221,7 @@ impl MemoryStateLabels {
             match &pointer.base {
                 AddressBase::Concrete(name) => format!("object `{}`", short(name)),
                 block @ (AddressBase::AutomaticLocal { .. }
+                | AddressBase::SliceLength { .. }
                 | AddressBase::ReferenceCarrier { .. }
                 | AddressBase::StaticObject { .. }) => format!("object `{block}`"),
                 AddressBase::Symbolic(variable) | AddressBase::ExternalObject(variable) => {
