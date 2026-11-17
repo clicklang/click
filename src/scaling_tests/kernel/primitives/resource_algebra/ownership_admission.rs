@@ -35,7 +35,8 @@ fn unsupported_admission_never_discovers_related_owners_or_aliases() {
             resources.synchronize_memory_equalities(&facts);
             let output = ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 pointer(0),
-                4u32.into(),
+                // Neither endpoint supplies a separation certificate.
+                MachineTerm::Variable(Variable(8_790_001)),
                 MachineTerm::Variable(Variable(8_790_000)),
                 1,
             ));
