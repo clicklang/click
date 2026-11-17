@@ -2353,7 +2353,6 @@ pub(super) fn execute_program_function_call_paths(
                     outcome,
                     facts,
                     obligations,
-
                     loan_evidence: body_path.loan_evidence,
                 });
             }
@@ -8772,7 +8771,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
                 rewrite(else_branch, ranges);
             }
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
                 effect_checks,
                 body,
@@ -8784,9 +8783,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
                     }
                 }
                 rewrite(body, ranges);
-                if let Some(test) = test {
-                    rewrite(std::sync::Arc::make_mut(&mut test.statement), ranges);
-                }
+                rewrite(std::sync::Arc::make_mut(&mut loop_test.statement), ranges);
                 if let Some(update) = update {
                     rewrite(std::sync::Arc::make_mut(update), ranges);
                 }
@@ -8826,12 +8823,13 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 ..
             } => has_inherited_loop_frame(then_branch) || has_inherited_loop_frame(else_branch),
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
                 effect_checks,
                 body,
                 ..
             } => {
+                let (_, _, test) = loop_test.execution_parts();
                 effect_checks
                     .iter()
                     .any(|check| check.origin() == LoopEffectOrigin::InheritedResourceDerived)
@@ -8891,12 +8889,13 @@ pub(crate) fn validate_resource_derived_loop_frames(
                 check_statement(else_branch)
             }
             ProgramStatement::Loop {
-                test,
+                test: loop_test,
                 update,
                 effect_checks,
                 body,
                 ..
             } => {
+                let (_, _, test) = loop_test.execution_parts();
                 if let Err(error) = check(effect_checks)? {
                     return Ok(Err(error));
                 }

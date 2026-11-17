@@ -3586,8 +3586,12 @@ fn statement_contains_internal_throw(statement: &ProgramStatement) -> bool {
                 || statement_contains_internal_throw(else_branch)
         }
         ProgramStatement::Loop {
-            test, update, body, ..
+            test: loop_test,
+            update,
+            body,
+            ..
         } => {
+            let (_, _, test) = loop_test.execution_parts();
             statement_contains_internal_throw(body)
                 || test
                     .as_ref()

@@ -1667,8 +1667,9 @@ retirement. This includes a `for` initializer's scope. The saved loop-exit
 state still names its final index for proof provenance; the subsequent
 execution state has retired its storage.
 
-A loop owns one shared update and, for an effectful condition, one shared test
-region. Body locals end before fallthrough or `continue` reaches the update or
+A loop owns one test region and an optional shared update. A plain test region
+contains only its decision; calls and other preparation precede that same
+decision. Body locals end before fallthrough or `continue` reaches the update or
 post-test. A continuing update resumes the loop head; a false post-test exits
 without a back edge. Nested loops keep their own control edges. A non-inline
 function also retires its body locals before postconditions

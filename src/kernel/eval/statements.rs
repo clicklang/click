@@ -4995,19 +4995,18 @@ fn execute_execution_statement_leaf_paths(
             paths
         }
         ProgramStatement::Loop {
-            test,
+            test: loop_test,
             update,
-            condition,
             invariant,
             invariant_checks: _,
             effect_checks: _,
             resource_specs: _,
             ranking_measures: _,
             structural_measure: _,
-            do_while,
             body,
             ..
         } => {
+            let (condition, direct_post_test, test) = loop_test.execution_parts();
             // The one judgment-specific step: verification takes an
             // annotated loop, or one an environment rule covers, as its
             // checked abstraction. Execution, and verification of a loop
@@ -5031,10 +5030,10 @@ fn execute_execution_statement_leaf_paths(
                     state,
                     condition,
                     invariant,
-                    *do_while,
+                    direct_post_test,
                     body,
                     update.as_deref(),
-                    test.as_ref(),
+                    test,
                     assumptions,
                     execution_context,
                     budget,
@@ -5404,7 +5403,7 @@ pub(in crate::kernel) fn execute_program_loop_paths(
     state: &ExecutionState,
     condition: &ProgramExpression,
     invariant: &[Proposition],
-    do_while: bool,
+    direct_post_test: bool,
     body: &ProgramStatement,
     update: Option<&ProgramStatement>,
     test: Option<&LoopTestRegion>,
@@ -5429,7 +5428,7 @@ pub(in crate::kernel) fn execute_program_loop_paths(
         state: state.clone(),
         facts: Vec::new().into(),
         obligations: Vec::new(),
-        check_condition: !do_while,
+        check_condition: !direct_post_test,
     }];
     let mut paths = Vec::new();
 

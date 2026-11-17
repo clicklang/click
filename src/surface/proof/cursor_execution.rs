@@ -826,22 +826,21 @@ fn execute_concrete_loop_head_step(
 
     execution.core.concrete_loop_execution = true;
     let ProgramStatement::Loop {
-        test,
+        test: loop_test,
         update,
-        condition,
         invariant,
         invariant_checks,
         effect_checks,
         resource_specs,
         ranking_measures,
         structural_measure,
-        do_while,
         body,
         ..
     } = loop_statement.clone()
     else {
         unreachable!("concrete loop stepping requires a loop statement");
     };
+    let (condition, direct_post_test, test) = loop_test.execution_parts();
 
     record_statement_program_state(
         &mut execution.presentation.recorded_states,
@@ -859,16 +858,14 @@ fn execute_concrete_loop_head_step(
     );
 
     let loop_head = ProgramStatement::Loop {
-        test: test.clone(),
+        test: loop_test.for_repeated_iteration(),
         update: update.clone(),
-        condition: condition.clone(),
         invariant: invariant.clone(),
         invariant_checks: invariant_checks.clone(),
         effect_checks: effect_checks.clone(),
         resource_specs: resource_specs.clone(),
         ranking_measures: ranking_measures.clone(),
         structural_measure: structural_measure.clone(),
-        do_while: false,
         backedge_target: None,
         natural_exit_target: None,
         body: body.clone(),
@@ -877,9 +874,9 @@ fn execute_concrete_loop_head_step(
     let body = Box::new(crate::kernel::program_loop_pass(
         &body,
         update.as_deref(),
-        test.as_ref(),
+        test,
     ));
-    let update = crate::kernel::program_loop_continuation(update.as_deref(), test.as_ref());
+    let update = crate::kernel::program_loop_continuation(update.as_deref(), test);
     let update_index = proof_context
         .constants
         .source_layout
@@ -891,7 +888,7 @@ fn execute_concrete_loop_head_step(
     // C's `do ... while` enters its body before evaluating the condition. The
     // continuation is an ordinary while head: after the first body, every
     // iteration checks the condition before re-entering the body.
-    if do_while {
+    if direct_post_test {
         // Entering the body records no evidence of its own. When the loop is
         // the first thing this trace executes, the proof object would start
         // matching evidence from the frontier position set below, which
@@ -4471,7 +4468,10 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
                 describe_program_expression(condition)
             )
         }
-        ProgramStatement::Loop { condition, .. } => {
+        ProgramStatement::Loop {
+            test: loop_test, ..
+        } => {
+            let (condition, _, _) = loop_test.execution_parts();
             format!("while ({})", describe_program_expression(condition))
         }
         ProgramStatement::Switch { expression, .. } => {

@@ -4109,7 +4109,6 @@ impl CStatement {
         match self {
             Self::StepValue {
                 aggregate_layout,
-
                 steps,
                 expression,
                 interface_type,
@@ -4205,7 +4204,6 @@ impl CStatement {
             },
             Self::CallResult {
                 aggregate_layout,
-
                 call,
                 function_name,
                 arguments,
@@ -14930,7 +14928,6 @@ impl Parser {
             }
             CStatement::StepValue {
                 aggregate_layout,
-
                 steps,
                 expression,
                 interface_type,
@@ -14943,7 +14940,6 @@ impl Parser {
                     prefix,
                     CStatement::StepValue {
                         aggregate_layout,
-
                         steps,
                         expression,
                         interface_type,

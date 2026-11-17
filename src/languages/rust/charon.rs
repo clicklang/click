@@ -5602,9 +5602,8 @@ mod tests {
                         visit(statement, guards);
                     }
                 }
-                C::Loop {
-                    condition, body, ..
-                } => {
+                C::Loop { test, body, .. } => {
+                    let condition = test.execution_parts().0;
                     guards.push(format!("{condition:?}"));
                     visit(body, guards);
                 }

@@ -610,8 +610,12 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
             ..
         } => statement_contains_call(then_branch) || statement_contains_call(else_branch),
         ProgramStatement::Loop {
-            test, update, body, ..
+            test: loop_test,
+            update,
+            body,
+            ..
         } => {
+            let (_, _, test) = loop_test.execution_parts();
             statement_contains_call(body)
                 || test
                     .as_ref()
