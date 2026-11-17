@@ -1363,8 +1363,9 @@ theorem countdown_is_zero(n: int32) {
 }
 ```
 
-`induct` must be the first tactic and the current requirements must establish
-that its parameter is nonnegative. `ih(m)` is available only in that proof and
+Scalar `induct` may follow earlier helper proofs while the original theorem
+goal remains focused. The facts available at that step must establish that
+its parameter is nonnegative. `ih(m)` is available after that declaration and
 requires `m` to be nonnegative and strictly smaller, plus all theorem
 requirements after substituting `m` for the induction parameter. Other theorem
 parameters remain fixed. This is a pure proposition rule, not C execution or

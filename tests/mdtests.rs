@@ -43,6 +43,7 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    "scalar_induction_after_helper_facts.md", // 0.78s in the parallel induction fixture selection
     "witness_mixed_type_values.md", // 1.36s focused: pointer, Integer, and machine binders
     "modeled_pthread_copied_handle.md", // 0.6s focused: forwarded handle and retained equality
     "modeled_pthread_copied_handle_join_twice.md", // forwarded handle must consume one right

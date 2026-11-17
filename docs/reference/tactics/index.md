@@ -1165,8 +1165,9 @@ unfold alone closed the goal
 closure is refused by naming the tactic that closed it
 (`mdtests/tactic_after_closed_goal_is_named.md`).
 
-`induct` is available only in a pure theorem, must be the first tactic, and
-names a proof-local hypothesis. The algebraic form is the enclosing control
+Scalar `induct` is available only in a pure theorem and may follow earlier
+proof steps while the original theorem goal remains focused. Its hypothesis
+is introduced at that step. The algebraic form is the enclosing control
 tactic and therefore the only top-level tactic; its constructor arms contain
 the proof steps. It is never inserted by `solve` or the implicit closer.
 
@@ -2831,12 +2832,12 @@ after local proof prefixes and all-impossible matches remain unsupported.
 
 **Form:** `induct(n) as ih`
 
-**Core.** As the first step of a pure theorem over an `int32` or `uint64` parameter
-`n`, introduce a strong induction hypothesis named `ih`. The signed measure
+**Core.** At a pure theorem's original goal, introduce a strong induction
+hypothesis named `ih` over an `int32` or `uint64` parameter `n`. The signed measure
 requires a nonnegative domain; the unsigned measure has that domain intrinsically.
 
-**Accepts** a pure theorem `ensures ... by { ... }` script whose first tactic is
-`induct(n) as ih`, when:
+**Accepts** a pure theorem `ensures ... by { ... }` script containing one
+top-level `induct(n) as ih`, when:
 
 - `n` names a theorem parameter of type `int32` or `uint64`. Other parameters
   of any type, including `Integer`, may sit beside it.
@@ -2849,33 +2850,34 @@ It adds one fact, `ih`: for every `m` of the measure's type, `m >= 0` (signed
 only), `m < n`, and every theorem requirement at `m`, together with the extent
 halves of each range that requirement names at `m`, imply the theorem's goal
 at `m`. Every other parameter keeps its current value. The goal is unchanged.
-The script then uses `ih` through `apply(ih(m))` or
+Earlier helper proofs may precede `induct`; the hypothesis is unavailable
+before its declaration. The script then uses `ih` through `apply(ih(m))` or
 `apply(ih(m)) using { ... }`, at its top level and inside nested `if`, `both`,
 `cases`, `have`, and `match` blocks.
 
 **Outside it**, with what to write instead:
 
-- `induct` after another tactic, or a second `induct` in the same script: make
-  it the first tactic and induct once.
+- A second `induct` in the same script: induct once.
+- A changed goal, after `intro` or a goal-changing `rewrite`: introduce
+  induction while the original theorem goal remains focused.
 - A parameter of another C width (`uint32`, `int64`, ...), an `Integer`, or an
   algebraic value: induct on an `int32` or `uint64` parameter, or use
   `induct(xs) as ih { ... }` for an algebraic one.
 - A signed domain that only follows from other facts, such as `0 <= m` and
-  `m <= n`: add `requires n >= 0;` and prove that requirement where the
-  theorem is applied.
+  `m <= n`: prove `have n >= 0;` before `induct`.
 - `induct` in a C function proof: state the property as a pure theorem and
   apply it.
 
 **Failure, checking, and tools:**
 
-A later position, unsupported parameter type, or unproved signed nonnegative
-domain fails with a message naming the case. `induct` in a C function proof
-is refused with the generic "no checked proof driver accepts this proof
+An unsupported parameter type, changed goal, repeated induction, or unproved
+signed nonnegative domain fails with a message naming the case. `induct` in
+a C function proof is refused with the generic "no checked proof driver accepts this proof
 script's shape". Click opens the
 induction rule; expansion is unchanged, and profiling charges the structural
 setup.
 
-**Checked examples:** [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md),
+**Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md),
 [`an_induction_hypothesis_applies_inside_a_have.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_inside_a_have.md),
 [`an_induction_hypothesis_applies_inside_match_arms.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_inside_match_arms.md),
 [`an_induction_hypothesis_applies_in_a_have_and_a_match_nested_either_way.md`](https://github.com/clicklang/click/blob/master/mdtests/an_induction_hypothesis_applies_in_a_have_and_a_match_nested_either_way.md),
@@ -2921,7 +2923,7 @@ fails. A premise that is not an available fact is a search miss: the refusal
 says so and names the `have` that states the premise. Click checks the
 selected operations; expansion adds a `using` block.
 
-**Checked examples:** [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md)
+**Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md)
 
 ### Induction hypotheses with selected premises
 
