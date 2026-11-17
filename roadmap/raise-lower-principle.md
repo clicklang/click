@@ -606,7 +606,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Landed in [PR #3151](https://github.com/clicklang/click/pull/3151); all eight pushed commits verified on upstream. Evidence below. |
 | 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five pushed commits verified on upstream. |
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four pushed commits verified on upstream. |
-| 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Implemented; validation in progress. |
+| 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Implemented; 287 focused checks and all 1,890 scaling cases passed on integrated upstream. Regular fixtures, fact stability and quality are running. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Planned. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Planned; family split may be needed. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
@@ -980,7 +980,16 @@ No state, address, allocation, binder or source-event identity is replaced.
 
 Regression coverage checks selected lookup without exporting unrelated bindings,
 root-only growing-DAG handoffs, call-form/bit/metadata round trips, and loop-count
-replacement with persistent state naming. Validation and PR delivery are pending.
+replacement with persistent state naming. Fixed-state binding and local-environment
+capture retain the existing local producer through the same type/qualifier setter
+policy; selected captures neither export unrelated values nor walk their DAGs.
+The cold-application scaling control uses distinct operands at each size because
+interner cleanup can retain an earlier operand's compatibility cache. Cold and
+warm application costs are each checked independently of declaration proof length.
+
+On integrated upstream `7bf3ad91f`, 287 focused checks and all 1,890 scaling cases
+passed (4 isolated and 1,886 remaining). The regular mdtest corpus, fact-stability
+recording and quality checks are running. PR delivery is pending.
 
 ## Chunk 3: machine-valued pure-function results
 

@@ -33,12 +33,11 @@ pub(in crate::surface) fn contract_environment_at_state(
     state: &ExecutionState,
 ) -> (ProgramValueBindings, ClickArrayRefs) {
     let mut values = parameter_values.clone();
-    values.extend(state.locals().object_values().filter_map(|(name, value)| {
-        Some((
-            state.locals().active_source_name(name)?.to_owned(),
-            value.clone().into_native(),
-        ))
-    }));
+    for (name, value) in state.locals().object_values() {
+        if let Some(name) = state.locals().active_source_name(name) {
+            values.insert_retained(name.to_owned(), value.clone().into_value());
+        }
+    }
 
     let mut state_array_refs = array_refs_with_memory(array_refs, state.memory());
     // A parameter's array reference is read through the variable, exactly as
@@ -103,7 +102,7 @@ pub(in crate::surface) fn contract_environment_for_names(
             {
                 array_ref.pointer = pointer.pointer().clone();
             }
-            values.insert(name.clone(), value.clone().into_native());
+            values.insert_retained(name.clone(), value.clone().into_value());
         } else if let Some((value, element_type)) = state.locals().array_object_value(name) {
             let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!("local array values are pointers")

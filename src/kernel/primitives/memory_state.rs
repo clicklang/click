@@ -9864,6 +9864,29 @@ impl ExecutionState {
         self
     }
 
+    /// Bind an existing producer for proof-side expression lowering through
+    /// the same local type/qualifier policy as `with_local`.
+    pub(crate) fn with_retained_local(
+        mut self,
+        name: impl Into<BindingName>,
+        value: ExecutionValue,
+    ) -> Self {
+        if let ExecutionValue::Native(value) = value {
+            return self.with_local(name, value);
+        }
+        let program_type = value.program_type();
+        self.locals.set_retained_typed_with_all_qualifiers(
+            name,
+            value,
+            program_type,
+            false,
+            false,
+            false,
+            false,
+        );
+        self
+    }
+
     pub fn with_memory(mut self, memory: SymbolicMemory) -> Self {
         self.set_memory(memory);
         self

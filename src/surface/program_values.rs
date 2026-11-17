@@ -39,6 +39,11 @@ impl ProgramValueBindings {
     pub(super) fn keys(&self) -> impl DoubleEndedIterator<Item = &String> + ExactSizeIterator {
         self.0.keys()
     }
+    pub(super) fn iter_retained(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = (&String, &RetainedProgramValue)> + ExactSizeIterator {
+        self.0.iter()
+    }
     pub(super) fn iter(
         &self,
     ) -> impl DoubleEndedIterator<Item = (&String, &ProgramValue)> + ExactSizeIterator {

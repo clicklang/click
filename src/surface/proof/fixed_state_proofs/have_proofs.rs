@@ -1265,18 +1265,20 @@ impl FixedStateLowering {
                 .named()
                 .expect("a nonlocal binding has a lexical name")
                 .to_owned();
-            if let Some(value) = contract_environment.values.get(&name) {
+            if let Some(value) = contract_environment.values.get_retained(&name) {
                 if entry_state.locals().get(&name).is_none()
                     && (result.is_some() || !has_live_aggregate_binding(&entry_state, &name))
                     && (!preserve_place_bindings || !entry_state.locals().contains_name(&name))
                 {
-                    entry_state = entry_state.with_local(name.clone(), value.clone());
+                    entry_state =
+                        entry_state.with_retained_local(name.clone(), value.clone().into_value());
                 }
                 if lowering_state.locals().get(&name).is_none()
                     && (result.is_some() || !has_live_aggregate_binding(&lowering_state, &name))
                     && (!preserve_place_bindings || !lowering_state.locals().contains_name(&name))
                 {
-                    lowering_state = lowering_state.with_local(name.clone(), value.clone());
+                    lowering_state = lowering_state
+                        .with_retained_local(name.clone(), value.clone().into_value());
                 }
             }
             if let Some(element_type) = lowering_state
@@ -1291,35 +1293,30 @@ impl FixedStateLowering {
             {
                 element_types.insert(name.clone(), element_type);
             }
-            // A local that keeps its value in memory, a borrowed Rust enum
-            // local, is named by the read of its object.
-            if let Some(value) = entry_state
-                .locals()
-                .get(&name)
-                .map(|value| value.clone().into_native())
-                .or_else(|| entry_state.held_local_value(&name))
-                .or_else(|| {
-                    entry_state
-                        .locals()
-                        .array_object_value(&name)
-                        .map(|(value, _)| value)
-                })
-            {
-                entry_values.insert(name.clone(), value);
+            // Preserve stored producers. Borrowed enum/array readings remain
+            // explicit native input boundaries when no stored producer exists.
+            let selected_value = |state: &ExecutionState| {
+                state
+                    .locals()
+                    .get(&name)
+                    .map(|value| value.clone().into_value())
+                    .or_else(|| {
+                        state
+                            .held_local_value(&name)
+                            .map(crate::kernel::ExecutionValue::Native)
+                    })
+                    .or_else(|| {
+                        state
+                            .locals()
+                            .array_object_value(&name)
+                            .map(|(value, _)| crate::kernel::ExecutionValue::Native(value))
+                    })
+            };
+            if let Some(value) = selected_value(&entry_state) {
+                entry_values.insert_retained(name.clone(), value);
             }
-            if let Some(value) = lowering_state
-                .locals()
-                .get(&name)
-                .map(|value| value.clone().into_native())
-                .or_else(|| lowering_state.held_local_value(&name))
-                .or_else(|| {
-                    lowering_state
-                        .locals()
-                        .array_object_value(&name)
-                        .map(|(value, _)| value)
-                })
-            {
-                current_values.insert(name, value);
+            if let Some(value) = selected_value(&lowering_state) {
+                current_values.insert_retained(name, value);
             }
         }
         if let Some(result) = result {
@@ -1343,11 +1340,11 @@ impl FixedStateLowering {
     ) -> Self {
         let bound = |state: &ExecutionState| {
             let mut bound = state.clone();
-            for (name, value) in contract_environment.values {
+            for (name, value) in contract_environment.values.iter_retained() {
                 if bound.locals().get(name).is_none()
                     && (result.is_some() || !has_live_aggregate_binding(&bound, name))
                 {
-                    bound = bound.with_local(name.clone(), value.clone());
+                    bound = bound.with_retained_local(name.clone(), value.clone().into_value());
                 }
             }
             bound
@@ -1375,10 +1372,12 @@ impl FixedStateLowering {
             .locals()
             .object_values()
             .filter_map(|(name, value)| {
-                entry_state
-                    .locals()
-                    .active_source_name(name)
-                    .map(|name| (name.to_owned(), value.clone().into_native()))
+                entry_state.locals().active_source_name(name).map(|name| {
+                    (
+                        name.to_owned(),
+                        RetainedProgramValue::from(value.clone().into_value()),
+                    )
+                })
             })
             .collect();
         let current_values = lowering_state
@@ -1388,7 +1387,12 @@ impl FixedStateLowering {
                 lowering_state
                     .locals()
                     .active_source_name(name)
-                    .map(|name| (name.to_owned(), value.clone().into_native()))
+                    .map(|name| {
+                        (
+                            name.to_owned(),
+                            RetainedProgramValue::from(value.clone().into_value()),
+                        )
+                    })
             })
             .collect();
         Self {
@@ -1778,6 +1782,50 @@ mod retained_capture_tests {
         use super::*;
         include!(
             "../../../scaling_tests/surface/proof/fixed_state_proofs/have_proofs/retained_capture.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod retained_binding_tests {
+    use super::*;
+    use crate::kernel::{
+        ExecutionValue, KernelTerm, KernelType, MachineBinaryOp, MachineIntegerType,
+    };
+
+    #[test]
+    fn fixed_state_binding_keeps_theorem_roots_in_both_states_and_maps() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let atom = KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(996941));
+        let root = KernelTerm::machine_binary_shared(
+            MachineIntegerType::UInt64,
+            MachineBinaryOp::Add,
+            [atom.clone(), atom],
+        );
+        let mut values = ProgramValueBindings::new();
+        values.insert_retained("value".into(), ExecutionValue::Shared(root.clone()));
+        let arrays = ClickArrayRefs::new();
+        let state = ExecutionState::new();
+        let lowering = FixedStateLowering::for_expression_values(
+            &ContractExpression::Binding("value".into()),
+            ContractEnvironment::new(&values, &arrays),
+            &state,
+            &state,
+            None,
+        );
+        for state in [&lowering.entry_state, &lowering.lowering_state] {
+            assert_eq!(state.locals().get("value").unwrap().shared(), Some(&root));
+        }
+        for values in [&lowering.entry_values, &lowering.current_values] {
+            assert_eq!(values.get_retained("value").unwrap().root(), Some(&root));
+        }
+        assert!(!root.has_cached_native_argument());
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../../scaling_tests/surface/proof/fixed_state_proofs/have_proofs/retained_bindings.rs"
         );
     }
 }

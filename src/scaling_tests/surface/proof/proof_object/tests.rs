@@ -2686,7 +2686,9 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
         let functions = ClickFunctionEnvironment::new(&[]);
         let definitions = SpecDefinitions::new(&predicates, &functions);
         let theorems = TheoremEnvironment::new(file.theorem_definitions());
-        let value = ProgramValue::Int32(MachineTerm::Variable(Variable(8_900_000)));
+        // Distinct operands keep each size cold even when interner keys
+        // retain an earlier operand until their bounded cleanup reaches it.
+        let value = ProgramValue::Int32(MachineTerm::Variable(Variable(8_900_000 + size as u64)));
         let state = ExecutionState::new().with_local("x", value.clone());
         let arguments = vec![ProgramExpression::Value(value)];
         let binding = ParameterBinding::new(parsed.parameters(), &arguments);
