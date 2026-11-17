@@ -308,6 +308,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_signed_definedness_closure");
+        // Negation shares subtraction-from-zero's domain. Keep the selected
+        // premises when proving that ordinary subtraction domain.
+        if let Some(ClickProposition::Defined {
+            expression: ContractExpression::Negate(operand),
+        }) = search_input.surface_goal()
+        {
+            let domain = ClickProposition::Defined {
+                expression: ContractExpression::Subtract(
+                    Box::new(signed_literal(0)),
+                    operand.clone(),
+                ),
+            };
+            let scope = search_input.driver().open_have(domain)?;
+            let Some(closed) = scope
+                .driver()
+                .try_restricted_signed_definedness_closure(premise_pairs)?
+            else {
+                return Ok(None);
+            };
+            return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
+        }
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };

@@ -331,6 +331,24 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
+    /// Preserve the selected sources in an owned signed-domain proof.
+    pub(in crate::surface::proof) fn try_restricted_signed_definedness_closure(
+        &self,
+        premises: &[(crate::kernel::Proposition, ClickProposition)],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_restricted_signed_definedness_closure(
+                &self.proof.body,
+                premises,
+            )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Closes the body's `int32` or `int64` definedness goal from the
     /// operands' indexed constant bounds.
     pub(in crate::surface::proof) fn try_signed_definedness_closure(

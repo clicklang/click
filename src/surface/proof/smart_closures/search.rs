@@ -347,9 +347,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_signed_interval_using");
-        if let Some(closed) = Self::try_interval_fact_using(search_input, premises)? {
-            return Ok(Some(closed));
-        }
         let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
         else {
             return Ok(None);
@@ -369,6 +366,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         }
         let kernels = pairs.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
+        if signed_intervals::has_retained_read_source(surface_goal)
+            && crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                goal,
+                &kernels,
+                &crate::kernel::proof::PureFactStore::from_ordered(&kernels),
+            )
+            .is_ok()
+        {
+            return search_input
+                .driver()
+                .apply_step(ProofStep::NormalizeUsing(premises.to_vec()))
+                .map(Some);
+        }
+        if let Some(closed) = Self::try_interval_fact_using(search_input, premises)? {
+            return Ok(Some(closed));
+        }
         let Some(plan) =
             plan_arithmetic(ArithmeticEngine::SignedInt32WithWeakening, goal, &kernels)
                 .and_then(ArithmeticPlan::signed_int32)
@@ -10451,21 +10464,30 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let arithmetic_domain = signed_definedness_operands(goal).is_some()
             || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                 .is_some();
-        // An Integer observation can still name a native 32-bit operation.
-        // Give its ordinary interval proof the same priority as a native
-        // comparison, before the selected compatibility normalizer closes it.
-        let observed_word32 =
-            crate::kernel::proof::integer_arithmetic::integer_affine_machine_values(goal)
+        let typed_first = signed_order || arithmetic_domain;
+        // Give memory-independent word observations the ordinary interval
+        // emitter before compatibility normalization. Keep retained reads and
+        // history on their existing paths, and do not broaden the speculative
+        // typed-derivation search along with this priority change.
+        let scalar_observation = proof
+            .surface_goal()
+            .is_some_and(|surface| !signed_intervals::has_retained_read_source(surface))
+            && !surfaces
+                .iter()
+                .any(signed_intervals::has_retained_read_source)
+            && crate::kernel::proof::integer_arithmetic::integer_affine_machine_values(goal)
                 .iter()
                 .any(|value| value.ty().format().bits() == 32);
-        let typed_first = signed_order || arithmetic_domain || observed_word32;
+        let interval_first = typed_first || scalar_observation;
         if arithmetic_domain
             && let Ok(Some(closed)) =
                 Self::try_restricted_signed_definedness_closure(&proof, &premise_pairs)
         {
             return Some(closed);
         }
-        if typed_first && let Ok(Some(closed)) = Self::try_signed_interval_using(&proof, surfaces) {
+        if interval_first
+            && let Ok(Some(closed)) = Self::try_signed_interval_using(&proof, surfaces)
+        {
             return Some(closed);
         }
         if typed_first && let Some(closed) = try_typed_derivation() {
@@ -10495,13 +10517,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &crate::kernel::proof::PureFactStore::from_ordered(&restricted),
                 )
                 .is_ok()
-                && let Ok(closed) = crate::kernel::search::ProofSearch::apply_normalization_closure(
-                    &proof,
-                    Some(conditions),
-                )
-                && closed.is_complete()
             {
-                return Some(closed);
+                // Only a successful selected discovery hint gives an Integer
+                // observation this extra typed route. A failed goal must keep
+                // its original bounded search and diagnostic behavior.
+                if !interval_first
+                    && let Ok(Some(closed)) = Self::try_signed_interval_using(&proof, surfaces)
+                {
+                    return Some(closed);
+                }
+                if let Ok(closed) = Self::apply_normalization_closure(&proof, Some(conditions))
+                    && closed.is_complete()
+                {
+                    return Some(closed);
+                }
             }
         }
         if let Ok(Some(closed)) = Self::try_integer_composition_using(&proof, surfaces) {

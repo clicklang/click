@@ -2235,9 +2235,10 @@ to these leaves, explicit product bounds, and rounding laws. A root conditional
 with an available guard expands to a `known()` arm equation and a rewrite.
 Scalar signed interval claims, operation bounds, and narrowed casts expand
 through selected Integer and machine-observation proofs, without `normalize()`.
-Their intermediate facts replay with implicit solving disabled. The initialized
-read-domain adapter retains its compatibility normalizer; it does not select a
-different memory state or version point. Other specialized selected rules
+Their intermediate facts replay with implicit solving disabled. Retained-read
+and history adapters keep their compatibility normalizer while read/state
+transport is migrated separately; they do not select a different memory state
+or version point. Other specialized selected rules
 normalize from explicit inputs, while polynomial
 search emits separate distribution and rewrite steps. All library proofs use
 ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)

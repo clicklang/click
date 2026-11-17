@@ -76,3 +76,4 @@ try_integer_algebra
 try_address_words_using
 
 try_interval_fact_using
+try_restricted_signed_definedness_closure

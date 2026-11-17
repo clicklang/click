@@ -76,6 +76,41 @@ fn apply(
     }
 }
 
+/// History and memory reads keep the selected compatibility adapter while
+/// scalar arithmetic is migrated independently of read/state transport.
+pub(super) fn has_retained_read_source(proposition: &ClickProposition) -> bool {
+    let expressions = match proposition {
+        ClickProposition::Comparison { left, right, .. } => vec![left, right],
+        ClickProposition::Defined { expression } => vec![expression],
+        ClickProposition::And(a, b) | ClickProposition::Or(a, b) => {
+            return has_retained_read_source(a) || has_retained_read_source(b);
+        }
+        ClickProposition::Not(p) => return has_retained_read_source(p),
+        ClickProposition::At { .. } => return true,
+        _ => return false,
+    };
+    let mut found = false;
+    for expression in expressions {
+        super::super::fixed_state_proofs::conversion_conditions::walk_written_expressions(
+            expression,
+            &mut |part| {
+                found |= matches!(
+                    part,
+                    ContractExpression::At { .. }
+                        | ContractExpression::Old(_)
+                        | ContractExpression::Field { .. }
+                        | ContractExpression::Index(..)
+                        | ContractExpression::ArrayIndex { .. }
+                        | ContractExpression::ProgramExpression(
+                            ProgramExpression::Load(_) | ProgramExpression::TypedLoad { .. }
+                        )
+                );
+            },
+        );
+    }
+    found
+}
+
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Retain a native read's available domain or its recorded initialization.
     /// Observation identities themselves need only their outer range guards.
@@ -242,6 +277,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let premises = atomic.as_slice();
         let scope = proof.driver().open_have(target.clone())?;
+        if (has_retained_read_source(&target) || premises.iter().any(has_retained_read_source))
+            && let Some(closed) = attempt::candidate_outcome(
+                scope
+                    .driver()
+                    .apply_step(ProofStep::NormalizeUsing(premises.to_vec())),
+            )?
+            && closed.is_complete()
+        {
+            return Ok(Some(closed.join()?));
+        }
         if let Some(closed) = scope.driver().try_interval_fact_using(premises)? {
             return Ok(Some(closed.join()?));
         }
@@ -1023,12 +1068,23 @@ mod tests {
                 failures.push(goal);
             }
         }
+        for (parameters, requirements, goal) in [
+            (
+                "a: int32, b: int32",
+                "requires a == b + 1; requires 0 <= b; requires b <= 100;",
+                "to_integer(a - 1) == to_integer(b)",
+            ),
+            (
+                "a: int64",
+                "requires a > -9223372036854775808i64;",
+                "defined(-a)",
+            ),
+        ] {
+            if std::panic::catch_unwind(|| check(parameters, requirements, goal)).is_err() {
+                failures.push(goal);
+            }
+        }
         assert!(failures.is_empty(), "{failures:?}");
-        check(
-            "a: int32, b: int32",
-            "requires a == b + 1; requires 0 <= b; requires b <= 100;",
-            "to_integer(a - 1) == to_integer(b)",
-        );
     }
     #[test]
     fn signed_interval_migration_rejects_missing_evidence_and_undefined_operations() {
