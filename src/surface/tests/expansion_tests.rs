@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: consumed field refusal, preservation expansion and cold replay"]
+fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
+    let (source, sources) =
+        mdtest_sources("mdtests/resource_unfold_field_binding_rejects_consumed_read.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c_sources(&source, &sources).unwrap_err();
+    assert!(
+        error.message().contains("before.prefix"),
+        "{}",
+        error.report()
+    );
+    assert!(
+        error.message().contains("unfold(before)` consumed it"),
+        "{}",
+        error.report()
+    );
+    // Only the intentionally invalid invariant changes in the positive control.
+    let control = source.replace(
+        "invariant 0 <= i and i <= old(before.prefix);",
+        "invariant 0 <= i and i <= p;",
+    );
+    assert_ne!(control, source);
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!source.contains("transport("), "{source}");
+    let expanded = expand_c_claim_source_by_label(&control, &sources, "claim.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("claim.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: repeated entry guard provenance"]
 fn entry_requirement_provenance_survives_repeated_extent_guards() {
     let sources = [("entry.c", "int32 entry(int32 a[], int32 n) { return 0; }")];
@@ -2718,14 +2754,46 @@ fn integer_sum_range_fold_expands_and_reverifies() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let verified_for_expansion =
+    assert!(!click_source.contains("transport("), "{click_source}");
+    let verified_for_expansion = with_proof_trace("sum", || {
         verify_c_sources(click_source, &c_sources).unwrap_or_else(|error| {
-            panic!("summation ordinary verification failed: {}", error.report())
-        });
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        })
+    });
     let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "sum")
         .expect("the summation grouped proof should expand");
-    verify_c_sources(&expanded, &c_sources)
-        .expect("the expanded summation proof should reverify independently");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("sum.contract", || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // Omitting accumulation preserves the memory frame but falsifies the sum.
+    let wrong_sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| {
+            (
+                name.as_str(),
+                source.replace("total = total + a[i];", "total = total;"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_ne!(wrong_sources[0].1, c_sources[0].1);
+    let wrong_sources = wrong_sources
+        .iter()
+        .map(|(name, source)| (*name, source.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c_sources(click_source, &wrong_sources).unwrap_err();
+    assert!(
+        error.report().contains("error kind: proof error"),
+        "{}",
+        error.report()
+    );
 }
 
 #[test]
@@ -23016,4 +23084,43 @@ fn refuted_match_arm_retains_its_bridge_proof_from_propagated_false() {
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let reachable = expanded.replace("requires r.model != Tag::A;", "");
     assert!(without_implicit_solve(|| verify_c_sources(&reachable, &sources)).is_err());
+}
+
+#[test]
+#[ignore = "nightly: member-domain resource fold, expansion and strict cold/retained replay"]
+fn returned_member_domain_access_expands_and_replays() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_returned_member_domain_supports_a_logical_read.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let child_expanded = expand_c_claim_source_by_label(&source, &sources, "child.ensures_0")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&child_expanded, &sources, "probe.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    let position = expansion::position_at_offset(
+        &expanded,
+        expanded.find("ensures result == p->child.value").unwrap(),
+    );
+    let (session, _) = ProgramVerificationSession::new(&child_expanded, &sources).unwrap();
+    session
+        .verify_at(&expanded, position.line, position.column)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    drop(session);
+    for bad in [
+        source.replace("owns p->child.value;", "views p->child.value;"),
+        source.replace(
+            "ensures result == p->child.value;",
+            "ensures result != p->child.value;",
+        ),
+        source.replace(
+            "ensures result == &p->child.value;",
+            "ensures (result as uint64) == (&p->child.value as uint64);",
+        ),
+    ] {
+        assert!(verify_c_sources(&bad, &sources).is_err());
+    }
 }
