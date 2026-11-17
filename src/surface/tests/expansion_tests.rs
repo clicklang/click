@@ -1,6 +1,45 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: C string viewability and call authority"]
+fn cstr_viewability_without_transport_does_not_supply_call_authority() {
+    let (source, sources) = mdtest_sources("mdtests/cstr_dynamic_invalidated_transport.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    with_proof_trace("read_terminator", || {
+        let error = verify_c_sources(&source, &sources).unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("call to `strlen` needs a held `cstr_at` instance to give `n` its value"),
+            "{}\n{}",
+            error.report(),
+            error.trace_context_report().unwrap_or_default()
+        );
+    });
+
+    // Use the caller's length directly in the control so the whole proof,
+    // including witness construction and the self-assignment, can finish.
+    let stripped_call = sources[0]
+        .1
+        .replace("length = strlen(bytes);", "length = known_len;");
+    assert_ne!(sources[0].1, stripped_call);
+    let control = [(sources[0].0, stripped_call.as_str())];
+    verify_c_sources(&source, &control).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "read_terminator.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &control, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &control).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: viewability restriction expansion and cold replay"]
 fn viewable_requirement_supports_a_narrower_span_without_transport() {
     let (source, sources) =
