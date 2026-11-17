@@ -29,7 +29,7 @@ int caller::(lambda#0)(int y) {
     ensures result == y + y;
 }
 theorem lambda_doubles() {
-    ensures Doubling(&caller::(lambda#0)) by { unfold(Doubling); solve(); }
+    ensures Doubling(&caller::(lambda#0)) by { unfold(Doubling(&caller::(lambda#0))); solve(); }
 }
 int caller(int x) {
     requires 0 <= x and x <= 1000;

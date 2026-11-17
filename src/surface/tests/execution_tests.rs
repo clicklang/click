@@ -1800,10 +1800,10 @@ fn explicit_store_step_with_unfolded_resource_facts_verifies() {
             ensures owner->data[index] == value;
         } by {
             unfold(owned_string(owner));
-            unfold(terminated_at);
+            unfold(terminated_at(owner->data, owner->len));
             step();
             have terminated_at(owner->data, owner->len) by {
-                unfold(terminated_at);
+                unfold(terminated_at(owner->data, owner->len));
                 solve();
             }
             have owner->data[owner->len] == 0 by solve();
@@ -1898,7 +1898,7 @@ fn expanded_read_step_uses_contextual_range_separation() {
             have owner->len - 1 < owner->len by solve();
             step_until(function.exit);
             have terminated_at(owner->data, owner->len) by {
-                unfold(terminated_at);
+                unfold(terminated_at(owner->data, owner->len));
                 solve();
             }
             have 0 <= owner->len by solve();
@@ -2419,7 +2419,7 @@ fn solve_keeps_valid_integer_offset_function_goals() {
 /// One read, one name: a read through a loop alias of a field a call left
 /// unchanged reads the call's unchanged-bytes source, whose cell holds the
 /// field's read at the loop head. That read names it; it is not named again
-/// at the projected state (`docs/internals/spellability.md`).
+/// at the projected state (`docs/internals/raise-lower-principle.md`).
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_14")]
 fn a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name() {

@@ -12,7 +12,7 @@ The original proposal for a new built-in kernel slice type was not adopted.
 A slice is one surface concept with two internal representations:
 
 - **Pair:** data pointer and uint64 length for native and pure-function slice
-  parameters, including existing folds and `peel` equations.
+  parameters, including existing folds and `unfold` equations.
 - **Value:** `Slice<T>` from `library/rust/slice.click` for pure-function
   results, `Option` payloads, enum fields and library iterator contracts.
 

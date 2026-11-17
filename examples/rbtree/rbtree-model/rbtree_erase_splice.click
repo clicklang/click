@@ -233,7 +233,7 @@ theorem rb_minimum_list(tree: RbTree, successor: struct rb_node*, color: Color, 
                         rewrite(RbMinimum::Found(node, ncolor, right), rb_minimum(RbTree::Node(node, parent, ncolor, left, right)));
                         known();
                     }
-                    extract(node == successor);
+                    have node == successor;
                     rewrite(left, RbTree::Empty);
                     unfold(rb_min_list(RbTree::Node(node, parent, ncolor, RbTree::Empty, right)));
                     rewrite(node, successor);
@@ -310,7 +310,7 @@ theorem rb_min_context_cut_leaf(tree: RbTree, up: Context, successor: struct rb_
             RbTree::Node(node, parent, color, left, right) => {
                 if left == RbTree::Empty {
                     apply(rb_minimum_empty_left(node, parent, color, left, right, successor, min_color));
-                    extract(right == RbTree::Empty);
+                    have right == RbTree::Empty;
                     rewrite(left, RbTree::Empty);
                     unfold(rb_min_context(RbTree::Node(node, parent, color, RbTree::Empty, right), up));
                     unfold(rb_remove_min(RbTree::Node(node, parent, color, RbTree::Empty, right)));
@@ -353,7 +353,7 @@ theorem rb_min_context_child(tree: RbTree, up: Context, successor: struct rb_nod
             RbTree::Node(node, parent, color, left, right) => {
                 if left == RbTree::Empty {
                     apply(rb_minimum_child_empty_left(node, parent, color, left, right, successor, min_color, child));
-                    extract(color == min_color);
+                    have color == min_color;
                     apply(black_height_node_frame(node, parent, color, left, right));
                     have black_height(RbTree::Node(node, parent, color, left, right))
                         == frame_black_height(min_color, Nat::Zero) by {
@@ -738,7 +738,7 @@ theorem rb_min_context_cut_child(tree: RbTree, up: Context, successor: struct rb
                 if left == RbTree::Empty {
                     apply(rb_minimum_child_empty_left(node, parent, color, left, right,
                         successor, min_color, child));
-                    extract(right == child);
+                    have right == child;
                     rewrite(left, RbTree::Empty);
                     unfold(rb_min_context(RbTree::Node(node, parent, color, RbTree::Empty, right), up));
                     unfold(rb_min_parent(RbTree::Node(node, parent, color, RbTree::Empty, right)));

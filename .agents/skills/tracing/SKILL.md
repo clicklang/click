@@ -77,7 +77,7 @@ write one of the intermediate facts in Click, it is `inexpressible-fact`.
 The first link that fails becomes the new `G`; go back to step 2.
 
 For one recorded transition, write
-`preserve(separate(region.footprint, B));` under a read-equality goal.
+`preserve(B, region);` under a read-equality goal.
 The execution-produced footprint includes stores, call effects and releases;
 no free-specific rule is needed. Establish footprint separation with explicitly
 selected premises in `normalize() using`. Compose transitions with `have`, `rewrite` and `known`;

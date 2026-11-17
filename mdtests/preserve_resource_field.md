@@ -17,7 +17,7 @@ void keep(int *p) {
         normalize() using { separate(memory(*p), m); };
     }
     have m.value == at(statement(0).entry, m.value) by {
-        preserve(separate(statement(0).footprint, m));
+        preserve(m, statement(0));
     }
     step();
     known(); known();

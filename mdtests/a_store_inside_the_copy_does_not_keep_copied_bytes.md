@@ -22,7 +22,7 @@ void copy_n(char* dst, const char* src, uint64 n) {
     requires separate(memory(dst[0u64..n + 1u64]), memory(src[0u64..n]));
     ensures bytes::equal(dst, 0u64, src, 0u64, n);
 } by {
-    unfold(bytes::equal);
+    unfold(bytes::equal(dst, 0u64, src, 0u64, n));
     step();
     have 0 <= to_integer(n - 1u64) by { solve(); }
     have to_integer(n - 1u64) < to_integer(n + 1u64) by { solve(); }
@@ -49,7 +49,7 @@ void copy_n(char* dst, const char* src, uint64 n) {
         } by {
             intro(); intro();
             have separate(statement(1).footprint, memory((dst as (uint8 *))[k])) by { known(); }
-            preserve(separate(statement(1).footprint, memory((dst as (uint8 *))[k])));
+            preserve(memory((dst as (uint8 *))[k]), statement(1));
         }
         known();
     }

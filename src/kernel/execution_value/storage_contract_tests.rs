@@ -18,6 +18,7 @@ fn nonnumeric_storage_keys_preserve_native_pairwise_order_and_hash_classes() {
     let _session = VerificationSession::enter();
     let mut values = vec![ProgramValue::Void];
     for word in [
+        MachineTerm::ThreadHandle(crate::kernel::primitives::ThreadHandleId(998696)),
         MachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 2,
@@ -91,4 +92,284 @@ fn float_storage_preserves_exact_call_argument_carrier_distinctions() {
             assert_eq!(left.same_native_value(&right), a == b);
         }
     }
+}
+
+#[test]
+fn boolean_connective_keys_keep_native_condition_identity_and_order() {
+    let _session = VerificationSession::enter();
+    let a = ConditionTerm::Variable(Variable(998670));
+    let b = ConditionTerm::Variable(Variable(998671));
+    let cases = [
+        ConditionTerm::Constant(false),
+        a.clone(),
+        ConditionTerm::BoolEqual(Box::new(a.clone()), Box::new(b.clone())),
+        ConditionTerm::BoolIf {
+            condition: Box::new(a.clone()),
+            then_condition: Box::new(b.clone()),
+            else_condition: Box::new(a.clone()),
+        },
+        ConditionTerm::BoolApplication(SharedPureApplication::intern("key_bool".into(), vec![])),
+    ];
+    let roots = cases
+        .iter()
+        .map(|term| KernelTermImport::default().condition(term))
+        .collect::<Vec<_>>();
+    let native = roots
+        .iter()
+        .map(|root| ExecutionValue::Shared(root.clone()).into_native())
+        .collect::<Vec<_>>();
+    for (i, a) in roots.iter().enumerate() {
+        for (j, b) in roots.iter().enumerate() {
+            let left = StoredExecutionValue::from(ExecutionValue::Shared(a.clone()));
+            let right = StoredExecutionValue::from(ExecutionValue::Shared(b.clone()));
+            assert_eq!(left.cmp(&right), native[i].cmp(&native[j]));
+            assert_eq!(left == right, native[i] == native[j]);
+            let legacy = StoredExecutionValue::from(native[i].clone());
+            assert_eq!(left, legacy);
+            assert_eq!(hash(&left), hash(&legacy));
+        }
+    }
+}
+
+#[test]
+fn deep_boolean_key_construction_and_drop_use_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(256 << 10)
+        .spawn(|| {
+            let _session = VerificationSession::enter();
+            let atom = KernelTerm::variable(KernelType::Bool, Variable(998675));
+            let other = KernelTerm::variable(KernelType::Bool, Variable(998676));
+            let mut root = atom.clone();
+            for _ in 0..4096 {
+                root = KernelTerm::boolean_if_raw([atom.clone(), root, other.clone()]);
+            }
+            let value = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+            assert!(!root.has_cached_native_argument());
+            let _ = hash(&value);
+            assert!(!root.has_cached_native_argument());
+            drop(root);
+            drop(value);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn float_operation_keys_preserve_native_order_and_payloads() {
+    let _session = VerificationSession::enter();
+    let mut roots = Vec::new();
+    for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+        let atom =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(998690));
+        roots.push(atom.clone());
+        roots.push(KernelTerm::float_negate(format, atom.clone()).unwrap());
+        roots.push(
+            KernelTerm::float_binary(
+                format,
+                FloatBinaryOperator::Add,
+                [atom.clone(), atom.clone()],
+            )
+            .unwrap(),
+        );
+        roots.push(KernelTerm::float_call(
+            format,
+            "outer".into(),
+            vec![(atom.clone(), None)],
+        ));
+        let integer =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998691));
+        roots.push(KernelTerm::float_convert(format, ProgramType::Int32, integer).unwrap());
+        // A newly added opaque native word keeps its identity and native
+        // ordering even when carried by an unsupported legacy float input.
+        roots.push(KernelTermImport::default().float(
+            format,
+            &MachineTerm::ThreadHandle(crate::kernel::primitives::ThreadHandleId(998696)),
+        ));
+        let native = MachineTerm::If {
+            condition: Box::new(ConditionTerm::Variable(Variable(998692))),
+            then_term: Box::new(MachineTerm::constant(1)),
+            else_term: Box::new(MachineTerm::constant(2)),
+        };
+        roots.push(KernelTermImport::default().float(format, &native));
+    }
+    let values = roots
+        .iter()
+        .map(|root| ExecutionValue::Shared(root.clone()).into_native())
+        .collect::<Vec<_>>();
+    for (i, a) in roots.iter().enumerate() {
+        let a = StoredExecutionValue::from(ExecutionValue::Shared(a.clone()));
+        let native = StoredExecutionValue::from(values[i].clone());
+        assert_eq!(a, native);
+        assert_eq!(hash(&a), hash(&native));
+        for (j, b) in roots.iter().enumerate() {
+            let b = StoredExecutionValue::from(ExecutionValue::Shared(b.clone()));
+            assert_eq!(a.cmp(&b), values[i].cmp(&values[j]));
+            assert_eq!(a == b, values[i] == values[j]);
+        }
+    }
+}
+
+#[test]
+fn deep_float_key_construction_and_drop_use_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(256 << 10)
+        .spawn(|| {
+            let _session = VerificationSession::enter();
+            let mut root =
+                KernelTerm::variable(KernelType::Program(ProgramType::Float32), Variable(998695));
+            for _ in 0..4096 {
+                root = KernelTerm::float_negate(KernelFloatType::Float32, root).unwrap();
+            }
+            let stored = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
+            let exports = KernelTermExport::float_export_count();
+            let _ = hash(&stored);
+            assert_eq!(KernelTermExport::float_export_count(), exports);
+            assert!(!root.has_cached_native_argument());
+            drop(root);
+            drop(stored);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = KernelMatch::test_scrutinee(vec![]);
+    let ty = variable.algebraic_type.clone();
+    let make = |node| AlgebraicTerm {
+        algebraic_type: ty.clone(),
+        node,
+    };
+    let mut values = vec![variable.clone()];
+    for name in ["A", "B"] {
+        for fields in [
+            vec![],
+            vec![AlgebraicValue::Algebraic(variable.clone())],
+            vec![AlgebraicValue::Program(ProgramValue::Parameter(Box::new(
+                variable.clone(),
+            )))],
+            vec![AlgebraicValue::Integer(IntegerTerm::Variable(Variable(
+                998733,
+            )))],
+            vec![AlgebraicValue::Program(ProgramValue::Bool(
+                MachineTerm::Variable(Variable(998734)),
+            ))],
+        ] {
+            values.push(make(AlgebraicTermNode::Constructor {
+                variant: name.into(),
+                fields,
+            }));
+        }
+    }
+    let word = MachineTerm::Variable(Variable(998735));
+    for arg in [
+        PureFunctionArgument::Value(ProgramValue::Int32(word.clone())),
+        PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            word,
+        )),
+        PureFunctionArgument::Algebraic(variable.clone()),
+        PureFunctionArgument::Value(ProgramValue::Parameter(Box::new(variable.clone()))),
+    ] {
+        values.push(make(AlgebraicTermNode::PureFunctionApplication {
+            name: "key_call".into(),
+            arguments: vec![arg],
+        }));
+    }
+    let pointer = PointerValue::new(
+        Pointer::symbolic(Variable(998737)),
+        ProgramType::Int32Pointer,
+    );
+    for pointer in [pointer.clone(), pointer.with_pointee_constant(true)] {
+        values.push(make(AlgebraicTermNode::Constructor {
+            variant: "Pointer".into(),
+            fields: vec![AlgebraicValue::Program(ProgramValue::Pointer(pointer))],
+        }));
+    }
+    for address in [998738, 998739] {
+        values.push(make(AlgebraicTermNode::MemoryLoad {
+            memory: intern_memory(Memory::new()),
+            pointer: Box::new(Pointer::symbolic(Variable(address))),
+        }));
+    }
+    let condition = ConditionTerm::Variable(Variable(998736));
+    for branch in values[..3].to_vec() {
+        values.push(make(AlgebraicTermNode::If {
+            condition: Box::new(condition.clone()),
+            then_term: Box::new(branch.clone()),
+            else_term: Box::new(variable.clone()),
+        }));
+    }
+    for binding in [
+        AlgebraicValue::Algebraic(variable.clone()),
+        AlgebraicValue::Program(ProgramValue::Parameter(Box::new(variable.clone()))),
+    ] {
+        values.push(make(AlgebraicTermNode::Match {
+            scrutinee: Box::new(variable.clone()),
+            arms: vec![AlgebraicResultMatchArm {
+                variant: "Arm".into(),
+                bindings: vec![binding],
+                body: variable.clone(),
+                binding_names: BindingNames::written(&["ignored".into()]),
+            }],
+        }));
+    }
+    let natives: Vec<_> = values
+        .iter()
+        .map(|value| ProgramValue::Parameter(Box::new(value.clone())))
+        .collect();
+    let shared: Vec<_> = values
+        .iter()
+        .map(|value| {
+            StoredExecutionValue::from(ExecutionValue::Shared(
+                KernelTermImport::default().algebraic(value),
+            ))
+        })
+        .collect();
+    let native: Vec<_> = natives
+        .iter()
+        .cloned()
+        .map(StoredExecutionValue::from)
+        .collect();
+    let exports = KernelTermExport::algebraic_export_count();
+    for i in 0..values.len() {
+        for j in 0..values.len() {
+            let expected = natives[i].cmp(&natives[j]);
+            assert_eq!(shared[i].cmp(&shared[j]), expected, "shared {i}/{j}");
+            assert_eq!(native[i].cmp(&shared[j]), expected, "mixed {i}/{j}");
+            assert_eq!(native[i] == shared[j], expected.is_eq());
+            if expected.is_eq() {
+                assert_eq!(hash(&native[i]), hash(&shared[j]));
+            }
+        }
+        assert!(!shared[i].shared().unwrap().has_cached_native_argument());
+    }
+    assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+}
+
+#[test]
+fn deep_algebraic_storage_keys_use_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(|| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let native = KernelMatch::test_scrutinee(vec![]);
+            let mut root = KernelTermImport::default().algebraic(&native);
+            for _ in 0..4096 {
+                root = KernelConstructor {
+                    algebraic_type: native.algebraic_type.clone(),
+                    variant: "Deep".into(),
+                    fields: vec![root],
+                }
+                .into_term();
+            }
+            let stored = StoredExecutionValue::from(ExecutionValue::Shared(root));
+            let _ = hash(&stored);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
 }

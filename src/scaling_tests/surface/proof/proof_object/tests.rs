@@ -45,7 +45,7 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
             kind: ProgramPointKind::Entry,
         };
         let root = Proof::for_fixed_state_goal_with_requirements(
-            "missing premise spelling",
+            "missing premise raising",
             0,
             &facts,
             Proposition::ConditionIs(ConditionTerm::Constant(true), true),
@@ -55,7 +55,6 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
             &surfaces,
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
-            &[],
             &[],
             &[],
         );
@@ -275,7 +274,6 @@ fn same_block_offset_rewrite_work(
         &theorems,
         &[],
         &[],
-        &[],
     );
     let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
         crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure(&(root))
@@ -398,7 +396,7 @@ fn both_and_scopes_are_isolated_check_provenance_and_scale() {
 
 #[test]
 #[ignore = "nightly: 5.7s in the parallel gate"]
-fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
+fn loop_entry_solve_keeps_checked_unraisable_assumptions_and_scales() {
     let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
     let state = ExecutionState::new();
     let result = int32(0);
@@ -439,7 +437,7 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
             .collect::<Vec<_>>();
         facts.push(goal.clone());
         let root = Proof::for_fixed_state_frontier(
-            "loop entry unspellable assumption",
+            "loop entry unraisable assumption",
             0,
             &facts,
             ParameterBinding::new(parsed.parameters(), &arguments),
@@ -447,7 +445,6 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
             &surfaces,
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
-            &[],
             &[],
         );
         let scope = root
@@ -482,7 +479,6 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
             &[],
-            &[],
         );
         let missing = missing
             .begin_loop_entry_goal(surface.clone(), &obligation)
@@ -494,7 +490,7 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
 
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
-fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
+fn choose_body_indexing_scales_with_selected_body_size() {
     let click_file = crate::surface::parse(
         r#"
             int32 identity(int32 x) {
@@ -604,7 +600,6 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
             SpecDefinitions::new(&predicates, &click_functions),
             &theorems,
         );
-        CHOSEN_PROJECTION_WALK_WORK.with(|count| count.set((0, 0)));
         let chosen = root
             .driver()
             .apply_step(ProofStep::Choose(ProofChoice {
@@ -612,68 +607,22 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
                 source: ProofFactSource::Requirement(0),
             }))
             .expect("the selected existential should check");
-        let leaves = chosen
-            .execution()
-            .and_then(|execution| execution.presentation.chosen_projection.as_ref())
-            .map_or(0, |projection| projection.leaves.len());
-        (
-            leaves,
-            CHOSEN_PROJECTION_WALK_WORK.with(std::cell::Cell::get),
-            fact_node_allocations() - before,
-        )
+        assert!(chosen.local_binding(&"candidate".to_string()).is_some());
+        fact_node_allocations() - before
     };
 
-    let mut samples = Vec::new();
     for size in [8_u32, 32, 128, 512] {
-        let _ = run(size);
-        let first = crate::instrumentation::measure_deterministic_work(|| run(size));
-        let second = crate::instrumentation::measure_deterministic_work(|| run(size));
-        assert_eq!(
-            first.0.0, second.0.0,
-            "leaf count must be deterministic at {size}"
-        );
-        assert_eq!(
-            first.0.0, size as usize,
-            "all selected leaves must be retained at {size}"
-        );
-        // Fact indexing and proof setup are outside the projection walk.
-        // Their AVL shapes can differ between identical semantic samples:
-        // a phased reproduction had totals 3047/3049 at 32 leaves, while
-        // setup used 6 nodes and the walk used 96 nodes in both runs.
-        assert_eq!(
-            first.0.1, second.0.1,
-            "projection visits and allocations must be deterministic at {size}"
-        );
-        assert_eq!(
-            first.0.1.0,
-            (2 * size - 1) as usize,
-            "the walk must visit each selected conjunction node once"
-        );
-        samples.push((size, first.1, first.0.1.1, first.0.2));
-        samples.push((size, second.1, second.0.1.1, second.0.2));
-    }
-    let (base_size, base_work, base_walk_allocations, _) = samples[0];
-    for (size, work, walk_allocations, total_allocations) in samples {
-        assert!(
-            work <= base_work + 64 * (size - base_size) as usize,
-            "selected-body projection work exceeded the linear bound at {size}: {work}"
-        );
-        assert!(
-            walk_allocations <= base_walk_allocations + 8 * (size - base_size) as usize,
-            "projection walk allocations exceeded the linear bound at {size}: {walk_allocations}"
-        );
-        // The complete choose also updates persistent fact indexes; their
-        // logarithmic search paths have a separate size-dependent bound.
+        let allocations = run(size);
         let index_height = (u32::BITS - size.leading_zeros()) as usize;
         assert!(
-            total_allocations <= 32 * size as usize * index_height,
-            "proof setup and choose allocations exceeded the indexed bound at {size}: {total_allocations}"
+            allocations <= 32 * size as usize * index_height,
+            "choose indexing exceeded the selected-body bound at {size}: {allocations}"
         );
     }
 }
 
 #[test]
-fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
+fn explicit_loop_have_checks_complete_invariant_bundle() {
     let file = crate::surface::parse(
         r#"
         predicate selected(x: int32) { x == x }
@@ -690,15 +639,12 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
     let environment = ExecutionEnvironment::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
     let value = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7)));
-    let surface = ClickProposition::PredicateCall {
-        name: "selected".into(),
-        arguments: vec![value.clone()],
-    };
     let body_surface = ClickProposition::Comparison {
         left: value.clone(),
         operator: ComparisonOperator::Equal,
         right: value,
     };
+    let surface = body_surface.clone();
     let spec = crate::kernel::SpecProposition::Comparison {
         left: crate::kernel::SpecExpression::Value(int32(7)),
         operator: crate::kernel::ComparisonOperator::Equal,
@@ -758,10 +704,7 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
             &resources,
             SpecDefinitions::new(&predicates, &click_functions),
             &theorems,
-        )
-        .driver()
-        .apply_step(ProofStep::UnfoldPredicate("selected".into()))
-        .unwrap();
+        );
         let body_kernel = root.lower_surface_goal(&body_surface, "test body").unwrap();
         let scope = root.driver().open_have(surface.clone()).unwrap();
         assert!(scope.clone().join().is_err());
@@ -771,7 +714,7 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
         samples.push(work);
         assert!(joined.facts().contains(&body_kernel));
         assert!(!root.facts().contains(&body_kernel));
-        assert_eq!(joined.added_facts().len(), 2);
+        assert_eq!(joined.added_facts().len(), 1);
         assert!(
             joined
                 .execution()
@@ -1570,7 +1513,6 @@ fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
             &[],
-            &[],
         );
         let (_, units) = crate::instrumentation::measure_deterministic_work(|| {
             let scope = root
@@ -1640,7 +1582,6 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
             &[],
-            &[],
         );
         assert_eq!(
             root.lower_surface_proposition(&surface, "stale source")
@@ -1667,7 +1608,6 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
             &empty_surfaces,
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
-            &[],
             &[],
         );
         let completed = wrong.driver().apply_step(ProofStep::Known).unwrap();
@@ -1772,7 +1712,6 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
             &theorems,
             &[],
             &[],
-            &[],
         );
         let ((closed, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -1823,7 +1762,6 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
                 &alias_surfaces,
                 SpecDefinitions::new(&predicates, &functions),
                 &theorems,
-                &[],
                 &[],
                 &[],
             );
@@ -1894,7 +1832,6 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_states() {
             &theorems,
             &[],
             &[],
-            &[],
         );
         let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::search::ProofSearch::available_surface_fact(
@@ -1934,7 +1871,7 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_states() {
     }
     assert!(
         samples.iter().all(|work| *work <= samples[0] + 64),
-        "current premise spelling searched unrelated states: {samples:?}"
+        "current premise raising searched unrelated states: {samples:?}"
     );
 }
 
@@ -2012,7 +1949,6 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
             &theorems,
             &[],
             &[],
-            &[],
         );
         let (spelled, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::search::ProofSearch::available_surface_fact(
@@ -2033,7 +1969,7 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
     }
     assert!(
         samples.iter().all(|work| *work <= samples[0] + 64),
-        "mixed premise spelling searched unrelated history: {samples:?}"
+        "mixed premise raising searched unrelated history: {samples:?}"
     );
 }
 
@@ -2197,7 +2133,6 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             &theorems,
             &[],
             &[],
-            &[],
         );
         let ((closed, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -2274,7 +2209,6 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             &theorems,
             &[],
             &[],
-            &[],
         );
         assert_eq!(
             recorded
@@ -2314,7 +2248,6 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 &alias_surfaces,
                 SpecDefinitions::new(&predicates, &functions),
                 &theorems,
-                &[],
                 &[],
                 &[],
             );
@@ -2637,7 +2570,6 @@ fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
             &[],
-            &[],
         );
         let event = crate::instrumentation::TacticEvent {
             source_tactic_path: None,
@@ -2725,7 +2657,6 @@ fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
                 SpecDefinitions::new(&predicates, &functions),
                 &theorems,
                 &[],
-                &[],
             );
             let scope = root.driver().open_have(surface.clone()).unwrap();
             let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2806,7 +2737,6 @@ fn fixed_state_application_proves_premises_and_replays_explicitly() {
             definitions,
             &theorems,
             &[],
-            &[],
         );
         let (prepared, work) = crate::instrumentation::measure_deterministic_work(|| {
             root.prepare_theorem_application(&application)
@@ -2842,7 +2772,6 @@ fn fixed_state_application_proves_premises_and_replays_explicitly() {
             &forms,
             definitions,
             &theorems,
-            &[],
             &[],
         );
         assert!(
@@ -2921,7 +2850,6 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
             definitions,
             &theorems,
             &[],
-            &[],
         );
         let application = TheoremApplication {
             name: "identity".into(),
@@ -2997,7 +2925,6 @@ fn retained_conditional_premise_spelling_does_not_search_state_history() {
             &surfaces,
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
-            &[],
             &[],
             &[],
         );
@@ -3145,4 +3072,121 @@ fn proof_binding_name_production_and_queries_follow_only_changed_bindings() {
         samples[3] < samples[0] * 4 + 128,
         "binding update/query scanned a scope: {samples:?}"
     );
+}
+
+#[test]
+fn local_predicate_unfold_ignores_unrelated_and_same_predicate_facts() {
+    check_local_predicate_unfold_scaling(false, true);
+}
+
+#[test]
+fn local_predicate_unfold_miss_ignores_unrelated_and_same_predicate_facts() {
+    check_local_predicate_unfold_scaling(false, false);
+}
+
+#[test]
+fn local_quantified_unfold_ignores_unrelated_and_same_predicate_facts() {
+    check_local_predicate_unfold_scaling(true, true);
+}
+
+#[test]
+fn local_quantified_unfold_miss_ignores_unrelated_and_same_predicate_facts() {
+    check_local_predicate_unfold_scaling(true, false);
+}
+
+fn check_local_predicate_unfold_scaling(quantified: bool, present: bool) {
+    let file = crate::surface::parse("predicate selected(x: int32) { x == x }").unwrap();
+    let predicates = PredicateEnvironment::new(file.predicate_definitions());
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let state = ExecutionState::new();
+    let snapshots = RecordedStates::new();
+    let surfaces = SurfacePropositionMap::default();
+    let definitions = SpecDefinitions::new(&predicates, &functions);
+    let application = |value| ClickProposition::PredicateCall {
+        name: "selected".into(),
+        arguments: vec![ContractExpression::ProgramExpression(
+            ProgramExpression::Value(int32(value)),
+        )],
+    };
+    let lower = |surface: &ClickProposition| {
+        lower_fixed_state_proposition_with_assumptions(
+            surface,
+            &PureFactContext::new(),
+            ParameterBinding::default(),
+            FixedStateFrame::new(&state, &state, None, &snapshots),
+            definitions,
+        )
+        .unwrap()
+    };
+    let target = |value| {
+        let call = application(value);
+        if quantified {
+            ClickProposition::ForAll {
+                name: "q".into(),
+                click_type: ClickType::Program(InterfaceType::Int32),
+                written_name: None,
+                body: Box::new(call),
+            }
+        } else {
+            call
+        }
+    };
+    let selected_surface = target(0);
+    let selected = lower(&selected_surface);
+    let mut selected_fact = selected.clone();
+    if let Proposition::ForAll { var, name, .. } = &mut selected_fact {
+        *var = Variable(8_998_000);
+        *name = crate::kernel::BinderName::written("other");
+        assert_ne!(selected_fact, selected);
+    }
+    for same_predicate in [false, true] {
+        let mut samples = Vec::new();
+        for size in [4u32, 16, 64, 256] {
+            let mut facts = (1..=size)
+                .map(|index| {
+                    if same_predicate {
+                        lower(&target(index))
+                    } else {
+                        indexed_fact(index)
+                    }
+                })
+                .collect::<Vec<_>>();
+            if present {
+                facts.push(selected_fact.clone());
+            }
+            let root = Proof::for_fixed_state_surface_goal(
+                "local unfold scaling",
+                0,
+                &facts,
+                selected.clone(),
+                selected_surface.clone(),
+                ParameterBinding::default(),
+                &state,
+                &state,
+                &snapshots,
+                &surfaces,
+                definitions,
+                &theorems,
+                &[],
+            );
+            let (successor, work) = crate::instrumentation::measure_deterministic_work(|| {
+                root.driver()
+                    .apply_step(ProofStep::UnfoldProposition(selected_surface.clone()))
+                    .unwrap()
+            });
+            assert_eq!(successor.added_facts().len(), if present { 2 } else { 1 });
+            assert_eq!(root.facts().contains(&selected_fact), present);
+            assert_eq!(root.certificate().steps().len(), 0);
+            samples.push((size, work));
+        }
+        let baseline = samples[0].1;
+        for (size, work) in samples {
+            let height = (u32::BITS - size.leading_zeros()) as usize;
+            assert!(
+                work <= baseline + 128 * height,
+                "quantified={quantified}, present={present}, same_predicate={same_predicate}: {size} distractors caused {work} checking work; baseline {baseline}"
+            );
+        }
+    }
 }

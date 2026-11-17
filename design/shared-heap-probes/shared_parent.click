@@ -227,7 +227,7 @@ int32 run_first_destroyed(int32 payload) {
     step(parent_detach, { link: first_link });
     have at(detaching, first->kid) == kid by known();
     have at(detaching, first->kid)->payload == at(detaching, first->kid->payload) by {
-        extract(at(detaching, first->kid)->payload == at(detaching, first->kid->payload));
+        have at(detaching, first->kid)->payload == at(detaching, first->kid->payload);
         known();
     }
     have at(detaching, first->kid->payload) == payload by known();
@@ -305,7 +305,7 @@ int32 run_second_destroyed(int32 payload) {
     step(parent_detach, { link: second_link });
     have at(detaching, second->kid) == kid by known();
     have at(detaching, second->kid)->payload == at(detaching, second->kid->payload) by {
-        extract(at(detaching, second->kid)->payload == at(detaching, second->kid->payload));
+        have at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
         known();
     }
     have at(detaching, second->kid->payload) == payload by known();

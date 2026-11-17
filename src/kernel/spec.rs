@@ -1984,6 +1984,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 .into_checked_path(),
             ])
         }
+        SpecProposition::MutexHeld(mutex) => {
+            lower_mutex_held_at_state_in(scope, mutex, assumptions, budget)
+        }
         SpecProposition::Predicate {
             name,
             arguments,
@@ -5696,6 +5699,69 @@ fn lower_spec_comparison_proposition_at_state_in(
     Ok(paths)
 }
 
+fn lower_mutex_held_at_state_in(
+    scope: SpecScope<'_>,
+    mutex: &SpecExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    let state = scope.state;
+    let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        scope,
+        mutex,
+        assumptions,
+        budget,
+    )?;
+    Ok(paths
+        .into_iter()
+        .map(|path| {
+            let ProgramValue::Pointer(mutex) = path.value.into_native() else {
+                return invalid_mutex_held_path(
+                    path.facts,
+                    path.obligations,
+                    "held expects one mutex pointer",
+                );
+            };
+            if state.preserves_mutex_protocols
+                && (state.mutex_ledger.is_none() || state.opaque_mutex_acquisitions.is_some())
+            {
+                let guard = super::mutexes::guard_resource(state, mutex.pointer(), true)
+                    .expect("abstract guard description");
+                // The guard is matched as written: the facts never make
+                // an aliased mutex held.
+                if state
+                    .resources
+                    .satisfies_fact(&guard, &PureFactContext::new())
+                {
+                    return SpecPropositionPath {
+                        introductions: Vec::new(),
+                        proposition: Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                        facts: path.facts,
+                        obligations: path.obligations,
+                    };
+                }
+                return invalid_mutex_held_path(
+                    path.facts,
+                    path.obligations,
+                    "held cannot inspect an opaque contract protocol",
+                );
+            }
+            let held = state
+                .mutex_ledger
+                .as_ref()
+                .map_or(ConditionTerm::Constant(false), |ledger| {
+                    ledger.held_condition(mutex.pointer())
+                });
+            SpecPropositionPath {
+                introductions: Vec::new(),
+                proposition: Proposition::ConditionIs(held, true),
+                facts: path.facts,
+                obligations: path.obligations,
+            }
+        })
+        .collect())
+}
+
 fn lower_spec_predicate_proposition_at_state_in(
     scope: SpecScope<'_>,
     name: &str,
@@ -5720,72 +5786,6 @@ fn lower_spec_predicate_proposition_at_state_in(
             facts: ExecutionFacts::new(),
             obligations: Vec::new(),
         }]);
-    }
-    if name == MUTEX_HELD_PREDICATE_NAME {
-        let [SpecPredicateArgument::Value(mutex)] = arguments else {
-            return Ok(vec![invalid_mutex_held_path(
-                Vec::new().into(),
-                Vec::new(),
-                "held expects one mutex pointer",
-            )]);
-        };
-        let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            scope,
-            mutex,
-            assumptions,
-            budget,
-        )?;
-        return Ok(paths
-            .into_iter()
-            .map(|path| {
-                let ProgramValue::Pointer(mutex) = path.value.into_native() else {
-                    return invalid_mutex_held_path(
-                        path.facts,
-                        path.obligations,
-                        "held expects one mutex pointer",
-                    );
-                };
-                if state.preserves_mutex_protocols
-                    && (state.mutex_ledger.is_none() || state.opaque_mutex_acquisitions.is_some())
-                {
-                    let guard = super::mutexes::guard_resource(state, mutex.pointer(), true)
-                        .expect("abstract guard description");
-                    // The guard is matched as written: the facts never make
-                    // an aliased mutex held.
-                    if state
-                        .resources
-                        .satisfies_fact(&guard, &PureFactContext::new())
-                    {
-                        return SpecPropositionPath {
-                            introductions: Vec::new(),
-                            proposition: Proposition::ConditionIs(
-                                ConditionTerm::Constant(true),
-                                true,
-                            ),
-                            facts: path.facts,
-                            obligations: path.obligations,
-                        };
-                    }
-                    return invalid_mutex_held_path(
-                        path.facts,
-                        path.obligations,
-                        "held cannot inspect an opaque contract protocol",
-                    );
-                }
-                let held = state
-                    .mutex_ledger
-                    .as_ref()
-                    .map_or(ConditionTerm::Constant(false), |ledger| {
-                        ledger.held_condition(mutex.pointer())
-                    });
-                SpecPropositionPath {
-                    introductions: Vec::new(),
-                    proposition: Proposition::ConditionIs(held, true),
-                    facts: path.facts,
-                    obligations: path.obligations,
-                }
-            })
-            .collect());
     }
     // A function-contract fact describes the behavior of its pointer value;
     // it is independent of the caller's current resource-population state.
@@ -10566,3 +10566,6 @@ mod execution_handoff_tests;
 
 #[cfg(test)]
 mod float_comparison_tests;
+
+#[cfg(test)]
+mod mutex_held_tests;

@@ -35,7 +35,7 @@ int32 caller(int32 **slot) {
         normalize() using { separate(memory(ignored), memory(*slot)); };
     }
     have defined(*slot) by {
-        preserve(separate(statement(1).assignment(ignored, 0).footprint, memory(*slot)));
+        preserve(memory(*slot), statement(1).assignment(ignored, 0));
     }
 }
 ```

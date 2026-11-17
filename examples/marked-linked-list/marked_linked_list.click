@@ -108,7 +108,7 @@ uint32 list_count_live(struct node* node) {
             normalize() using {};
         }
         have *((&node->word) as (int32 **)) == at(before_local, *((&node->word) as (int32 **))) by {
-            preserve(separate(statement(1).region(0).footprint, memory(node->word)));
+            preserve(memory(node->word), statement(1).region(0));
         }
         have ((node->word & ~1) as (struct node *)) == child by { known(); }
         have separate(marked_list(child), memory(node->word)) by { known(); }
@@ -122,7 +122,7 @@ uint32 list_count_live(struct node* node) {
             contains(memory(node->word), memory(node->word));
         };
         have *((&node->word) as (int32 **)) == at(before_call, *((&node->word) as (int32 **))) by {
-            preserve(separate(statement(1).region(1).footprint, memory(node->word)));
+            preserve(memory(node->word), statement(1).region(1));
         }
         have ((node->word & ~1) as (struct node *)) == child by { known(); }
     }

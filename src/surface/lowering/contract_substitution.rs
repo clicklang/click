@@ -3,45 +3,42 @@ use crate::kernel::{bits32_constant, constant_u32};
 use std::borrow::Cow;
 use std::sync::Arc;
 
-pub(in crate::surface) fn unfold_structural_invariant_proposition(
+pub(in crate::surface) fn unfold_surface_predicates(
     predicate_environment: &PredicateEnvironment,
     proposition: &ClickProposition,
-    unfolded_predicates: &[String],
+    selected_definitions: &[String],
 ) -> Result<ClickProposition, String> {
-    if unfolded_predicates.is_empty() {
-        return Ok(proposition.clone());
-    }
-
-    for name in unfolded_predicates {
+    for name in selected_definitions {
         if predicate_environment.get(name).is_none() {
             return Err(format!("unknown predicate `{name}`"));
         }
     }
 
-    let mut active = BTreeSet::new();
-    unfold_click_predicates_in_proposition_with_active(
+    unfold_selected_predicates_in_proposition(
         predicate_environment,
-        unfolded_predicates,
+        &|name| selected_definitions.contains(name),
         proposition,
-        &mut active,
+        &mut BTreeSet::new(),
+        false,
     )
 }
 
 pub(in crate::surface) fn unfold_click_predicates_in_proposition_with_active(
     predicate_environment: &PredicateEnvironment,
-    unfolded_predicates: &[String],
+    selected_definitions: &[String],
     proposition: &ClickProposition,
     active: &mut BTreeSet<String>,
 ) -> Result<ClickProposition, String> {
     unfold_selected_predicates_in_proposition(
         predicate_environment,
         &|name| {
-            unfolded_predicates
+            selected_definitions
                 .iter()
                 .any(|predicate| predicate == name)
         },
         proposition,
         active,
+        true,
     )
 }
 
@@ -51,6 +48,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
     selected: &impl Fn(&String) -> bool,
     proposition: &ClickProposition,
     active: &mut BTreeSet<String>,
+    recursive: bool,
 ) -> Result<ClickProposition, String> {
     match proposition {
         ClickProposition::Value(expression) => {
@@ -61,6 +59,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                     selected,
                     body,
                     active,
+                    recursive,
                 )
             } else {
                 Ok(ClickProposition::Value(reduced.into_owned()))
@@ -75,12 +74,17 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 .get(name)
                 .ok_or_else(|| format!("unknown predicate `{name}`"))?;
             let unfolded = instantiate_click_predicate_definition(definition, arguments)?;
-            let unfolded = unfold_selected_predicates_in_proposition(
-                predicate_environment,
-                selected,
-                &unfolded,
-                active,
-            )?;
+            let unfolded = if recursive {
+                unfold_selected_predicates_in_proposition(
+                    predicate_environment,
+                    selected,
+                    &unfolded,
+                    active,
+                    true,
+                )?
+            } else {
+                unfolded
+            };
             active.remove(name);
             Ok(unfolded)
         }
@@ -127,6 +131,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 proposition,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::And(left, right) => Ok(ClickProposition::And(
@@ -135,12 +140,14 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 left,
                 active,
+                recursive,
             )?),
             Box::new(unfold_selected_predicates_in_proposition(
                 predicate_environment,
                 selected,
                 right,
                 active,
+                recursive,
             )?),
         )),
         ClickProposition::Or(left, right) => Ok(ClickProposition::Or(
@@ -149,12 +156,14 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 left,
                 active,
+                recursive,
             )?),
             Box::new(unfold_selected_predicates_in_proposition(
                 predicate_environment,
                 selected,
                 right,
                 active,
+                recursive,
             )?),
         )),
         ClickProposition::Not(body) => Ok(ClickProposition::Not(Box::new(
@@ -163,6 +172,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?,
         ))),
         ClickProposition::Implies(left, right) => Ok(ClickProposition::Implies(
@@ -171,12 +181,14 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 left,
                 active,
+                recursive,
             )?),
             Box::new(unfold_selected_predicates_in_proposition(
                 predicate_environment,
                 selected,
                 right,
                 active,
+                recursive,
             )?),
         )),
         ClickProposition::ForAll {
@@ -193,6 +205,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::Exists {
@@ -209,6 +222,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::RangeAll {
@@ -227,6 +241,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::RangeAny {
@@ -245,6 +260,7 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
                 selected,
                 body,
                 active,
+                recursive,
             )?),
         }),
         ClickProposition::PredicateCall { name, arguments } => {
@@ -971,6 +987,38 @@ fn rewrite_resource_subject_exact(
     preserve_states: bool,
 ) -> (ResourceSubject, bool) {
     match subject {
+        ResourceSubject::At { selector, resource } => {
+            let (source, target) = if preserve_states {
+                let (
+                    ContractExpression::At {
+                        selector: from,
+                        expression: source,
+                    },
+                    ContractExpression::At {
+                        selector: to,
+                        expression: target,
+                    },
+                ) = (source, target)
+                else {
+                    return (subject.clone(), false);
+                };
+                if from != selector || to != selector {
+                    return (subject.clone(), false);
+                }
+                (source.as_ref(), target.as_ref())
+            } else {
+                (source, target)
+            };
+            let (resource, changed) =
+                rewrite_resource_subject_exact(resource, source, target, preserve_states);
+            (
+                ResourceSubject::At {
+                    selector: selector.clone(),
+                    resource: Box::new(resource),
+                },
+                changed,
+            )
+        }
         ResourceSubject::Emp => (ResourceSubject::Emp, false),
         ResourceSubject::Star(left, right) => {
             let (a, x) = rewrite_resource_subject_exact(left, source, target, preserve_states);
@@ -1670,6 +1718,10 @@ fn substitute_resource_subject(
     }
 
     match resource {
+        ResourceSubject::At { selector, resource } => Ok(ResourceSubject::At {
+            selector: selector.clone(),
+            resource: Box::new(substitute_resource_subject(resource, substitutions)?),
+        }),
         ResourceSubject::Emp => Ok(ResourceSubject::Emp),
         ResourceSubject::Star(left, right) => Ok(ResourceSubject::Star(
             Box::new(substitute_resource_subject(left, substitutions)?),
@@ -1866,6 +1918,12 @@ fn apply_contract_lets_to_resource_subject(
     bindings: &[ContractLetBinding],
 ) -> Result<ResourceSubject, String> {
     match resource {
+        ResourceSubject::At { selector, resource } => Ok(ResourceSubject::At {
+            selector,
+            resource: Box::new(apply_contract_lets_to_resource_subject(
+                *resource, bindings,
+            )?),
+        }),
         ResourceSubject::Emp => Ok(ResourceSubject::Emp),
         ResourceSubject::Star(left, right) => Ok(ResourceSubject::Star(
             Box::new(apply_contract_lets_to_resource_subject(*left, bindings)?),
@@ -2718,6 +2776,9 @@ fn collect_resource_subject_referenced_bindings<N: ReferencedBinding>(
     names: &mut BTreeSet<N>,
 ) {
     match subject {
+        ResourceSubject::At { resource, .. } => {
+            collect_resource_subject_referenced_bindings(resource, names)
+        }
         ResourceSubject::Emp => (),
         ResourceSubject::Star(left, right) => {
             collect_resource_subject_referenced_bindings(left, names);

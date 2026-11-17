@@ -26,7 +26,7 @@ int32 set_second_return_first(int32 p[2]) {
 
     ensures result == 7;
 } by {
-    unfold(first_is_seven);
+    unfold(first_is_seven(p));
     step();
     transport(old(p[0]) == 7, p[0] == 7);
     step();

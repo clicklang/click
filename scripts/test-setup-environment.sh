@@ -93,7 +93,7 @@ if "$repository/scripts/setup-environment.sh" --docs-only > "$directory/output" 
     exit 1
 fi
 
-# Archive consumers need no Rust compiler or documentation-tool installation.
+# Generic archive consumers need no compiler or documentation-tool installation.
 source "$repository/scripts/charon-toolchain.sh"
 mkdir -p "$CHARON_SYSROOT/lib/rustlib/$CHARON_TARGET/lib"
 touch "$CHARON_SYSROOT/lib/librustc_driver-mock.so"
@@ -119,13 +119,35 @@ EOF
 chmod +x "$directory/bin/llvm-config-19" "$directory/bin/uname"
 "$repository/scripts/setup-environment.sh" --test-runner >/dev/null
 
+# Unit archives compile visibility probes. Provision the pinned compiler during
+# setup, not through an implicit rustup download inside a timed test. A failed
+# installation must fail setup; do not install Charon or documentation tools.
+export MOCK_RUSTUP_CALLS="$directory/rustup-calls"
+cat > "$directory/bin/rustup" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$MOCK_RUSTUP_CALLS"
+exit "${MOCK_RUSTUP_STATUS:-0}"
+EOF
+"$repository/scripts/setup-environment.sh" --unit-test-runner >/dev/null
+[[ "$(cat "$MOCK_RUSTUP_CALLS")" == 'toolchain install' ]]
+export MOCK_RUSTUP_STATUS=1
+if "$repository/scripts/setup-environment.sh" --unit-test-runner > "$directory/output" 2>&1; then
+    echo 'error: unit runner accepted a failed compiler installation' >&2
+    exit 1
+fi
+unset MOCK_RUSTUP_STATUS
+cat > "$directory/bin/rustup" <<'EOF'
+#!/usr/bin/env bash
+echo 'error: an archive runner tried to install Rust or mdBook' >&2
+exit 1
+EOF
+
 # Fresh archive consumers have no runtime cache and still never call rustup.
 "$repository/scripts/charon-runtime.sh" pack "$directory/runtime.tar.gz"
 cached_runtime="$CHARON_SYSROOT"
 export RUSTUP_HOME="$directory/cold-rustup"
 source "$repository/scripts/charon-toolchain.sh"
-# An ordinary test runner starts no compiler and needs no runtime; a Rust
-# test runner does.
+# A generic test runner needs no runtime; a Rust import test runner does.
 "$repository/scripts/setup-environment.sh" --test-runner >/dev/null
 if "$repository/scripts/setup-environment.sh" --rust-test-runner > "$directory/output" 2>&1; then
     echo "error: setup accepted a missing Charon runtime" >&2

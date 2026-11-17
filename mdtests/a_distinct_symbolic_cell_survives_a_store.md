@@ -31,7 +31,7 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
         normalize() using { separate(memory(a[i]), memory(a[m])); };
     }
     have a[m] == at(entry, a[m]) by {
-        preserve(separate(statement(0).footprint, memory(a[m])));
+        preserve(memory(a[m]), statement(0));
     }
 }
 ```

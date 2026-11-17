@@ -49,7 +49,7 @@ int32 apply_step(int32 (*callback)(int32), int32 input) {
 
 theorem proposed_increasing_contract() {
     ensures PositiveStep(&increasing) by {
-        unfold(PositiveStep);
+        unfold(PositiveStep(&increasing));
         solve();
     }
 }

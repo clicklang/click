@@ -43,7 +43,7 @@ void apply_step(void (*step)(int32*), int32* cells) {
 
 theorem proposed_needs_two_cells_contract() {
     ensures Progress(&needs_two_cells) by {
-        unfold(Progress);
+        unfold(Progress(&needs_two_cells));
         solve();
     }
 }

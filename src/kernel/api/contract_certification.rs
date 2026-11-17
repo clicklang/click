@@ -1274,7 +1274,7 @@ pub enum ContractEntryFactOrigin {
     /// The facts of the instance arm the requirements select.
     Publication,
     /// The identity of a registered predicate whose body the entry holds.
-    PredicateIdentity,
+    PredicateIdentity(Option<usize>),
     /// A fact of `requires` clause `index` where that clause is the body of
     /// a registered predicate: what the predicate says once unfolded.
     PredicateBody(usize),
@@ -1443,19 +1443,20 @@ pub fn program_function_contract_entry(
                 continue;
             };
             if PureFactContext::settles_exactly(&assumptions, &body) {
-                identities.push(predicate);
+                identities.push((predicate, unfolding.requirement_source()));
             }
         }
     }
-    let assumptions = identities
-        .into_iter()
-        .fold(assumptions, |assumptions, identity| {
-            entry_facts.assume(
-                assumptions,
-                ContractEntryFactOrigin::PredicateIdentity,
-                identity,
-            )
-        });
+    let assumptions =
+        identities
+            .into_iter()
+            .fold(assumptions, |assumptions, (identity, source)| {
+                entry_facts.assume(
+                    assumptions,
+                    ContractEntryFactOrigin::PredicateIdentity(source),
+                    identity,
+                )
+            });
     let stated = entry_facts
         .0
         .iter()
@@ -2617,20 +2618,14 @@ pub fn prove_program_function_satisfies_specification_from_symbolic_path(
         premises.push(premise.as_ref().clone());
         proved = body;
     }
-    let (state, proved_function, arguments, outcome, verifies) = match proved {
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        } => (state, function, arguments, outcome, false),
-        Proposition::ProgramFunctionVerifies {
-            state,
-            function,
-            arguments,
-            outcome,
-        } => (state, function, arguments, outcome, true),
-        _ => return None,
+    let Proposition::ProgramFunctionVerifies {
+        state,
+        function: proved_function,
+        arguments,
+        outcome,
+    } = proved
+    else {
+        return None;
     };
     if **state != *specification.state()
         || **proved_function != function
@@ -2641,16 +2636,9 @@ pub fn prove_program_function_satisfies_specification_from_symbolic_path(
     }
 
     let requires = specification.requires().to_vec();
-    let conclusion = if verifies {
-        Proposition::ProgramFunctionPartiallySatisfiesSpecification {
-            function: Box::new(function),
-            specification: Box::new(specification),
-        }
-    } else {
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function: Box::new(function),
-            specification: Box::new(specification),
-        }
+    let conclusion = Proposition::ProgramFunctionPartiallySatisfiesSpecification {
+        function: Box::new(function),
+        specification: Box::new(specification),
     };
     let proposition = requires
         .into_iter()
@@ -2682,13 +2670,7 @@ fn certified_function_path_parts<'a>(
         proposition = body;
     }
     let (state, proved_function, arguments, outcome) = match proposition {
-        Proposition::ProgramFunctionExecutes {
-            state,
-            function,
-            arguments,
-            outcome,
-        }
-        | Proposition::ProgramFunctionVerifies {
+        Proposition::ProgramFunctionVerifies {
             state,
             function,
             arguments,
@@ -2840,7 +2822,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
             crate::kernel::functions::expand_all_composite_resource_facts_with_composites(
                 left,
                 composite_resource_definitions,
-                left_memory,
+                &crate::kernel::ProgramPoint::of_memory(left_memory),
                 assumptions,
             )
         },
@@ -2853,7 +2835,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
             crate::kernel::functions::expand_all_composite_resource_facts_with_composites(
                 right,
                 composite_resource_definitions,
-                right_memory,
+                &crate::kernel::ProgramPoint::of_memory(right_memory),
                 assumptions,
             )
         },
@@ -3971,7 +3953,6 @@ mod entry_authority_tests {
                 ProofObligation::FunctionOutcome(goal),
                 ProofBranchState {
                     facts: ProofFacts::default(),
-                    unfolded_predicates: Default::default(),
                     execution: None,
                 },
             ),

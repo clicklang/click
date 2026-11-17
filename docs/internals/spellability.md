@@ -383,16 +383,17 @@ arithmetic evaluation or the existing 32-bit equality normal forms. Closed
 sign-free word-equality format `Int64` with their literal operand payloads.
 
 Machine conditionals with closed 32/64-bit order guards or closed 64-bit
-equality guards retain their `if` node and guard during logical lowering. Their arm domains remain guarded, including
-unselected reads and invalid shifts. Checking selects the arm when needed.
-The comparison boundary recognizes a conditional whose 32/64-bit order guard
-and arms have only literal or variable operands as a fixed-size native atom.
-It retains the comparison family even with a symbolic guard, without exporting
-arithmetic DAGs or selecting an arm from ambient facts. Closed 64-bit equality
-guards over literal/variable arms use the same bounded reading. Unsigned literal
-guard operands keep unsigned spellings rather than signed casts that would
-change their payloads. Other result families retain their existing selected-arm
-behavior; literal Boolean and 32-bit equality guards keep their normal forms.
+equality guards retain their `if` node and guard during logical lowering.
+Their arm domains remain guarded, including unselected reads and invalid
+shifts. Checking selects the arm when needed.
+The comparison boundary recognizes a conditional whose 32/64-bit comparison
+guard and arms have only literal or variable operands as a fixed-size native
+atom. It retains the comparison family for symbolic order and equality guards,
+without exporting arithmetic DAGs or selecting an arm from ambient facts.
+Unsigned literal guard operands keep unsigned spellings, including beside
+variables; signed casts would change their payloads. Other result families
+retain their existing selected-arm behavior; literal Boolean and closed
+32-bit equality guards keep their normal forms.
 
 Generated comparison operands that are negative `int64` literals keep an explicit
 `as int64` cast, including under `old` and `at`. Their printed unary minus would

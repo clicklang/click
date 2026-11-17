@@ -5,9 +5,8 @@
 //! attachments as evidence.
 
 use super::{
-    BranchId, CheckedProofCasePartition, FrontierObligation, OutcomeProofState,
-    PersistentOrderedSet, ProofBranch, ProofBranchState, ProofBranches, ProofExecutionState,
-    ProofFacts, ProofObligation,
+    BranchId, CheckedProofCasePartition, FrontierObligation, OutcomeProofState, ProofBranch,
+    ProofBranchState, ProofBranches, ProofExecutionState, ProofFacts, ProofObligation,
 };
 #[cfg(test)]
 use crate::kernel::CompareRelation;
@@ -169,9 +168,8 @@ pub(crate) enum PropositionCloseError {
     ContradictionUnavailable {
         fact_held: bool,
     },
-    ExtractUnavailable,
-    /// The explicit premise at this index of the `using` list is not held.
-    InstantiatePremiseUnavailable(usize, Proposition),
+    /// An explicit premise of a guarded induction application is not held.
+    InductionPremiseUnavailable(Proposition),
     InstantiateQuantifiedUnavailable,
     InstantiateInvalid(super::fact_reasoning::ForallInstantiationError),
 }
@@ -450,7 +448,6 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
             .ok_or(ProofFocusError::NotOpen)?;
         let state = ProofBranchState {
             facts,
-            unfolded_predicates: branch.state.unfolded_predicates.clone(),
             execution: branch.state.execution.clone(),
         };
         Ok(Self::new(
@@ -477,8 +474,7 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
         added_facts: Vec<Proposition>,
         checked_facts: Vec<Proposition>,
     ) -> Result<Self, ProofFocusError> {
-        let branch = self
-            .state
+        self.state
             .open_branches
             .get(self.focused_branch)
             .ok_or(ProofFocusError::NotOpen)?;
@@ -489,14 +485,7 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
                 locals: self.state.locals.clone(),
                 open_branches: self.state.open_branches.replace_at(
                     self.focused_branch,
-                    ProofBranch::new(
-                        obligation,
-                        ProofBranchState {
-                            facts,
-                            unfolded_predicates: branch.state.unfolded_predicates.clone(),
-                            execution,
-                        },
-                    ),
+                    ProofBranch::new(obligation, ProofBranchState { facts, execution }),
                 ),
                 added_facts: Arc::new(added_facts),
                 checked_facts: Arc::new(checked_facts),
@@ -1008,6 +997,17 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .ok_or(PropositionCloseError::NotProposition)?;
         let proposition = goal.proposition();
         let available = |proposition: &Proposition| {
+            // Re-lowering a quoted quantified fact freshens its binders.
+            // Its exact typed identity already has a persistent index,
+            // including memory-reading forms outside the older equivalence
+            // index. This recognizes the held fact without any search.
+            if matches!(
+                proposition,
+                Proposition::ForAll { .. } | Proposition::Exists { .. } | Proposition::Implies(..)
+            ) && facts.contains_quantified_identity(proposition)
+            {
+                return true;
+            }
             if let Some(outcome) = goal.outcome.as_deref() {
                 facts.pure_known_available(proposition)
                     || facts.available_across_effects(proposition, &*outcome.core.effect_facts)
@@ -1498,7 +1498,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .expect("a proposition introduction retains its focused branch");
         let branch_state = ProofBranchState {
             facts,
-            unfolded_predicates: branch.state.unfolded_predicates.clone(),
             execution: branch.state.execution.clone(),
         };
         Ok(Self::new(
@@ -1596,49 +1595,51 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             })
     }
 
-    pub(crate) fn apply_extract(
+    /// Modus ponens with an explicitly selected implication and evidence.
+    /// Only the written source and premises are visited; ambient facts are
+    /// queried by exact keys to establish their availability.
+    pub(crate) fn apply_fact(
         &self,
-        proposition: Proposition,
-    ) -> Result<Self, PropositionCloseError> {
+        fact: &Proposition,
+        premises: &[Proposition],
+    ) -> Result<Self, &'static str> {
         let branch = self
             .state
             .open_branches
             .get(self.focused_branch)
-            .ok_or(PropositionCloseError::Unavailable)?;
-        let proposition = if branch.state.facts.contains_proper_conjunct(&proposition)
-            || branch
-                .state
-                .facts
-                .contains_discharged_implication_consequent(&proposition)
-            || branch
-                .state
-                .facts
-                .assumptions()
-                .contains_algebraic_constructor_field_equality(&proposition)
-        {
-            proposition
-        } else if let Some(conjunct) = branch
-            .state
-            .facts
-            .alpha_equivalent_proper_conjunct(&proposition)
-        {
-            // The cited universal under other binder names: extract the
-            // conjunct itself.
-            conjunct
-        } else if branch
-            .state
-            .facts
-            .contains_disjunction_projection(&proposition)
-        {
-            proposition
-        } else {
-            return Err(PropositionCloseError::ExtractUnavailable);
-        };
-        let added_facts = (!branch.state.facts.contains_top_level(&proposition))
-            .then(|| proposition.clone())
+            .ok_or("`apply(fact)` requires an open proof branch")?;
+        let facts = &branch.state.facts;
+        if !matches!(fact, Proposition::Implies(..)) {
+            return Err("`apply(fact)` requires an implication fact");
+        }
+        if !facts.contains_quantified_identity(fact) {
+            return Err("`apply(fact)` source implication is not an available fact");
+        }
+        let mut selected = crate::kernel::PureFactContext::new();
+        for premise in premises {
+            if !facts.listed_premise_available(premise, &[], true) {
+                return Err("`apply(fact) using` lists a premise that is not available");
+            }
+            selected = selected.assume_proposition(premise.clone());
+        }
+        let mut conclusion = fact;
+        while let Proposition::Implies(antecedent, consequent) = conclusion {
+            if first_unavailable_connective_side(antecedent, &|side| {
+                selected.contains_known(side) || super::fact_reasoning::computes_leaf(side)
+            })
+            .is_some()
+            {
+                return Err(
+                    "`apply(fact) using` cannot prove an antecedent from the listed premises",
+                );
+            }
+            conclusion = consequent;
+        }
+        let added = (!facts.contains_top_level(conclusion))
+            .then(|| conclusion.clone())
             .into_iter()
             .collect::<Vec<_>>();
-        let facts = branch.state.facts.with_fact(proposition);
+        let facts = facts.with_fact(conclusion.clone());
         let complete = match &branch.obligation {
             ProofObligation::Proposition(goal) => facts.contains(goal.proposition()),
             _ => false,
@@ -1653,8 +1654,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     complete,
                     facts,
                 ),
-                checked_facts: Arc::new(added_facts.clone()),
-                added_facts: Arc::new(added_facts),
+                checked_facts: Arc::new(added.clone()),
+                added_facts: Arc::new(added),
             },
             self.focused_branch,
         ))
@@ -1664,43 +1665,53 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         &self,
         quantified: Proposition,
         argument: super::fact_reasoning::InstanceArgument,
-        explicit_premises: Option<&[Proposition]>,
     ) -> Result<Self, PropositionCloseError> {
         let (_, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
-        // Without a written list the premises are the instantiated guards
-        // themselves: one availability lookup per guard conjunct, no search.
-        let guard_premises;
-        let explicit_premises = match explicit_premises {
-            Some(premises) => premises,
-            None => {
-                guard_premises = super::fact_reasoning::instantiated_guard_conjuncts(
-                    facts
-                        .contains(&quantified)
-                        .then_some(&quantified)
-                        .or(facts.matching_quantified_fact(&quantified).as_ref())
-                        .ok_or(PropositionCloseError::InstantiateQuantifiedUnavailable)?,
-                    &argument,
-                )
-                .map_err(PropositionCloseError::InstantiateInvalid)?;
-                if let Some(missing) = guard_premises
-                    .iter()
-                    .find(|guard| !facts.listed_premise_available(guard, &[], true))
-                {
-                    return Err(PropositionCloseError::InstantiateInvalid(
-                        super::fact_reasoning::ForallInstantiationError::MissingGuard(
-                            missing.clone(),
-                        ),
-                    ));
-                }
-                &guard_premises
-            }
-        };
-        for (index, premise) in explicit_premises.iter().enumerate() {
+        let quantified =
+            if facts.contains(&quantified) || facts.assumptions().contains_known(&quantified) {
+                quantified
+            } else if let Some(available) = facts.matching_quantified_fact(&quantified) {
+                available
+            } else {
+                return Err(PropositionCloseError::InstantiateQuantifiedUnavailable);
+            };
+        let conclusion = super::fact_reasoning::instantiate_universal(&quantified, &argument)
+            .map_err(PropositionCloseError::InstantiateInvalid)?;
+        let added_facts = (!facts.contains_top_level(&conclusion))
+            .then(|| conclusion.clone())
+            .into_iter()
+            .collect::<Vec<_>>();
+        let facts = facts.with_fact(conclusion);
+        Ok(Self::new(
+            ProofState {
+                termination: self.state.termination.clone(),
+                termination_root: self.state.termination_root,
+                locals: self.state.locals.clone(),
+                open_branches: self
+                    .state
+                    .open_branches
+                    .with_facts_at(self.focused_branch, facts),
+                checked_facts: Arc::new(added_facts.clone()),
+                added_facts: Arc::new(added_facts),
+            },
+            self.focused_branch,
+        ))
+    }
+
+    pub(crate) fn apply_induction_instance(
+        &self,
+        quantified: Proposition,
+        argument: super::fact_reasoning::InstanceArgument,
+        explicit_premises: &[Proposition],
+    ) -> Result<Self, PropositionCloseError> {
+        let (_, facts) = self
+            .focused_proposition()
+            .ok_or(PropositionCloseError::NotProposition)?;
+        for premise in explicit_premises {
             if !facts.listed_premise_available(premise, &[], true) {
-                return Err(PropositionCloseError::InstantiatePremiseUnavailable(
-                    index,
+                return Err(PropositionCloseError::InductionPremiseUnavailable(
                     premise.clone(),
                 ));
             }
@@ -1895,7 +1906,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 ProofObligation::Proposition(goal.clone()),
                 ProofBranchState {
                     facts: branch.state.facts.with_fact(disjunct),
-                    unfolded_predicates: branch.state.unfolded_predicates.clone(),
                     execution: branch.state.execution.clone(),
                 },
             )
@@ -1949,7 +1959,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 ProofObligation::Proposition(goal.clone()),
                 ProofBranchState {
                     facts: branch.state.facts.with_fact(fact),
-                    unfolded_predicates: branch.state.unfolded_predicates.clone(),
                     execution: branch.state.execution.clone(),
                 },
             )
@@ -2130,7 +2139,6 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
                 ProofObligation::Proposition(super::PropositionObligation::new(goal, display)),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: branch.state.unfolded_predicates.clone(),
                     execution: branch.state.execution.clone(),
                 },
             ),
@@ -2221,7 +2229,6 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
                     requested.focused_branch,
                     ProofBranchState {
                         facts: branch.state.facts.clone(),
-                        unfolded_predicates: branch.state.unfolded_predicates.clone(),
                         execution: Some(Arc::new(ProofExecutionState::new(
                             core,
                             execution.presentation.clone(),
@@ -2271,7 +2278,6 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         let (branch, execution) = self.focused_frontier_execution()?;
         let state = ProofBranchState {
             facts: branch.state.facts.clone(),
-            unfolded_predicates: branch.state.unfolded_predicates.clone(),
             execution: Some(Arc::new(ProofExecutionState::new(
                 execution.core.clone(),
                 presentation,
@@ -2315,11 +2321,7 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         };
         let mut state = Arc::unwrap_or_clone(self.state);
         state.open_branches = state.open_branches.without_at(focused_branch);
-        let ProofBranchState {
-            facts,
-            unfolded_predicates,
-            execution,
-        } = goal.state;
+        let ProofBranchState { facts, execution } = goal.state;
         let mut execution =
             Arc::unwrap_or_clone(execution.ok_or(ExecutionUpdateError::MissingExecution)?);
         let result = edit(&mut execution.presentation);
@@ -2329,7 +2331,6 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
                 ProofObligation::Frontier(frontier),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates,
                     execution: Some(Arc::new(execution)),
                 },
             ),
@@ -2395,7 +2396,6 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         core.region_invariants_close_requested = true;
         let state = ProofBranchState {
             facts: branch.state.facts.clone(),
-            unfolded_predicates: branch.state.unfolded_predicates.clone(),
             execution: Some(Arc::new(ProofExecutionState::new(
                 core,
                 execution.presentation.clone(),
@@ -2419,7 +2419,7 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
 
     /// Publishes the result of a separately checked frontier transition while
     /// preserving every unrelated branch and the focused frontier's
-    /// obligation and unfold set. The caller remains responsible for checking
+    /// obligation. The caller remains responsible for checking
     /// the semantic transition; replacing that checked-driver boundary with
     /// typed kernel evidence would be a separate interface redesign.
     pub(crate) fn publish_checked_frontier_transition(
@@ -2459,7 +2459,7 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
 
     /// Publishes two separately checked frontier successors as sibling proof
     /// branches. The checked driver supplies each arm's semantic result; the
-    /// kernel preserves the current obligation and unfold state and owns the
+    /// kernel preserves the current obligation and owns the
     /// branch identities and split topology.
     pub(crate) fn publish_checked_frontier_split(
         &self,
@@ -2479,13 +2479,12 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         if branch.state.execution.is_none() {
             return Err(ExecutionUpdateError::MissingExecution);
         }
-        let unfolded_predicates = branch.state.unfolded_predicates.clone();
+
         let [then_arm, else_arm] = arms.map(|(facts, execution)| {
             ProofBranch::new(
                 ProofObligation::Frontier(frontier.clone()),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: unfolded_predicates.clone(),
                     execution: Some(Arc::new(execution)),
                 },
             )
@@ -2548,7 +2547,6 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
                     ProofObligation::Frontier(frontier.clone()),
                     ProofBranchState {
                         facts,
-                        unfolded_predicates: branch.state.unfolded_predicates.clone(),
                         execution: Some(execution),
                     },
                 ),
@@ -2584,7 +2582,6 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         children: [BranchId; 2],
         parent: BranchId,
         facts: ProofFacts,
-        unfolded_predicates: PersistentOrderedSet<String>,
         execution: ProofExecutionState<S>,
         added_facts: Vec<Proposition>,
         checked_facts: Vec<Proposition>,
@@ -2603,7 +2600,6 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
             ProofObligation::Frontier(FrontierObligation),
             ProofBranchState {
                 facts,
-                unfolded_predicates,
                 execution: Some(Arc::new(execution)),
             },
         );
@@ -2669,7 +2665,6 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
                 ProofObligation::Frontier(frontier.clone()),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: branch.state.unfolded_predicates.clone(),
                     execution: Some(Arc::new(ProofExecutionState::new(core, presentation))),
                 },
             )
@@ -2823,7 +2818,6 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
             at,
             ProofBranchState {
                 facts,
-                unfolded_predicates: branch.state.unfolded_predicates.clone(),
                 execution: branch.state.execution.clone(),
             },
         )
@@ -2837,14 +2831,13 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
         facts: ProofFacts,
         execution: E,
     ) -> Self {
-        let Some(branch) = self.get(at) else {
+        let Some(_) = self.get(at) else {
             unreachable!("an execution successor requires the addressed open branch");
         };
         self.with_branch_state_at(
             at,
             ProofBranchState {
                 facts,
-                unfolded_predicates: branch.state.unfolded_predicates.clone(),
                 execution: Some(Arc::new(execution)),
             },
         )
@@ -2916,7 +2909,6 @@ mod tests {
                 ProofObligation::Proposition(PropositionObligation::new(goal, ())),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),
@@ -2981,7 +2973,6 @@ mod tests {
                 ProofObligation::Proposition(PropositionObligation::new(goal, ())),
                 ProofBranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),
@@ -3141,7 +3132,6 @@ mod tests {
                 ProofObligation::Proposition(PropositionObligation::new(goal, ())),
                 ProofBranchState {
                     facts: ProofFacts::from_ordered(std::slice::from_ref(&source)),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             ),
@@ -3183,7 +3173,6 @@ mod tests {
                     )),
                     ProofBranchState {
                         facts,
-                        unfolded_predicates: PersistentOrderedSet::default(),
                         execution: None,
                     },
                 ),
@@ -3301,7 +3290,6 @@ mod tests {
                     ProofObligation::Proposition(PropositionObligation::new(goal, ())),
                     ProofBranchState {
                         facts,
-                        unfolded_predicates: PersistentOrderedSet::default(),
                         execution: Some(Arc::new(ProofExecutionState::new(
                             ExecutionProofCore::at_entry(
                                 ExecutionState::new(),
@@ -3474,7 +3462,6 @@ mod tests {
                 ProofObligation::Frontier(FrontierObligation),
                 ProofBranchState {
                     facts: ProofFacts::default(),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: Some(Arc::new(ProofExecutionState::new(
                         ExecutionProofCore::at_entry(
                             ExecutionState::new(),
@@ -3533,7 +3520,6 @@ mod tests {
                     } else {
                         &[]
                     }),
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: None,
                 },
             );
@@ -3589,7 +3575,6 @@ mod tests {
                     ProofObligation::Proposition(PropositionObligation::new(goal, ())),
                     ProofBranchState {
                         facts: ProofFacts::from_ordered(&[]),
-                        unfolded_predicates: PersistentOrderedSet::default(),
                         execution: None,
                     },
                 ),
@@ -3636,7 +3621,6 @@ mod tests {
             ProofObligation::Proposition(PropositionObligation::new(goal, ())),
             ProofBranchState {
                 facts: ProofFacts::from_ordered(std::slice::from_ref(&body)),
-                unfolded_predicates: PersistentOrderedSet::default(),
                 execution: None,
             },
         );

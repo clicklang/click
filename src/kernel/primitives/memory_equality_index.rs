@@ -2479,25 +2479,6 @@ impl ResourceContext {
         self.concrete_access_entries(pointer, bytes, assumptions, true)
     }
 
-    /// Whole-scalar consumption requires an unambiguous supplier. Inspecting
-    /// the first two indexed entries establishes uniqueness without a bucket scan.
-    pub(super) fn unique_write_access(
-        &self,
-        pointer: &Pointer,
-        bytes: u32,
-        assumptions: &PureFactContext,
-    ) -> Option<SelectedMemoryAccess> {
-        let mut candidates = self.access_entries(pointer, bytes, assumptions, true)?;
-        let entry = candidates.next()?;
-        if candidates.next().is_some() {
-            return None;
-        }
-        Some(SelectedMemoryAccess {
-            source: candidates,
-            entry,
-        })
-    }
-
     /// One write supplier from the shared trusted graph/index checkpoint.
     /// Beside views, a prepared, complete affine block with one memory owner
     /// needs no supplier search even when its bounds or access are symbolic.

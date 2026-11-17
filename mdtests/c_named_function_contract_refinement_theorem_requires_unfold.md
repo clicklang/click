@@ -30,5 +30,5 @@ theorem increment_implements_increment() {
 ```
 
 ```expect
-fail: contract-refinement proof must begin with `unfold(Increment);`
+fail: contract refinement requires explicit `unfold(contract(callback))` applications
 ```

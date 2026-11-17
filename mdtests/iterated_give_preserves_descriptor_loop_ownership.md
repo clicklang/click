@@ -211,13 +211,13 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->data))); };
             }
             have arena->data == at(opened, arena->data) by {
-                preserve(at(opened, separate(loop(0).statement(0).footprint, memory(arena->data))));
+                preserve(at(opened, memory(arena->data)), loop(0).statement(0));
             }
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied))) by {
                 normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied))); };
             }
             have arena->occupied == at(opened, arena->occupied) by {
-                preserve(at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied))));
+                preserve(at(opened, memory(arena->occupied)), loop(0).statement(0));
             }
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->capacity))) by {
                 normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->capacity))); };
@@ -231,19 +231,18 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             } by {
                 intro();
                 intro();
-                extract(start <= k);
-                extract(to_integer(k) < to_integer(at(opened, i) + 1));
+                have start <= k;
+                have to_integer(k) < to_integer(at(opened, i) + 1);
                 if k < at(opened, i) {
                     have k < m;
                     have at(opened, arena->occupied[k]) == 0 by {
+                        have at(opened, start) <= at(opened, k) and
+                                at(opened, k) < at(opened, m);
                         instantiate(forall (j: int32) {
                             at(opened, start) <= at(opened, j) and
                                 at(opened, j) < at(opened, m) implies
                                 at(opened, arena->occupied[j]) == at(opened, 0)
-                        }, k) using {
-                            start <= k;
-                            k < m;
-                        };
+                        }, k);
                         known();
                     }
                     have 0 <= k;
@@ -257,13 +256,13 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
                     }
                     have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
-                        preserve(at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))));
+                        preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
                     }
                     have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
                         normalize() using {};
                     }
                     have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
-                        preserve(separate(loop(0).statement(1).footprint, memory(arena->occupied[k])));
+                        preserve(memory(arena->occupied[k]), loop(0).statement(1));
                     }
                     known();
                 } else {
@@ -279,19 +278,18 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < start);
+                have 0 <= k;
+                have k < start;
                 have at(opened, arena->occupied[k]) ==
                     at(clear_occupied.entry, arena->occupied[k]) by {
+                    have at(opened, 0) <= at(opened, k) and
+                            at(opened, k) < at(opened, start);
                     instantiate(forall (j: int32) {
                         at(opened, 0) <= at(opened, j) and
                             at(opened, j) < at(opened, start) implies
                             at(opened, arena->occupied[j]) ==
                                 at(clear_occupied.entry, arena->occupied[j])
-                    }, k) using {
-                        0 <= k;
-                        k < start;
-                    };
+                    }, k);
                     known();
                 }
                 have k < at(opened, i);
@@ -305,13 +303,13 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
                 }
                 have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
-                    preserve(at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))));
+                    preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
                 }
                 have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
                     normalize() using {};
                 }
                 have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
-                    preserve(separate(loop(0).statement(1).footprint, memory(arena->occupied[k])));
+                    preserve(memory(arena->occupied[k]), loop(0).statement(1));
                 }
                 known();
             }
@@ -321,19 +319,18 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             } by {
                 intro();
                 intro();
-                extract(end <= k);
-                extract(k < arena->capacity);
+                have end <= k;
+                have k < arena->capacity;
                 have at(opened, arena->occupied[k]) ==
                     at(clear_occupied.entry, arena->occupied[k]) by {
+                    have at(opened, end) <= at(opened, k) and
+                            at(opened, k) < at(opened, arena->capacity);
                     instantiate(forall (j: int32) {
                         at(opened, end) <= at(opened, j) and
                             at(opened, j) < at(opened, arena->capacity) implies
                             at(opened, arena->occupied[j]) ==
                                 at(clear_occupied.entry, arena->occupied[j])
-                    }, k) using {
-                        end <= k;
-                        k < arena->capacity;
-                    };
+                    }, k);
                     known();
                 }
                 have at(opened, i) < k;
@@ -349,13 +346,13 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
                 }
                 have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
-                    preserve(at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))));
+                    preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
                 }
                 have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
                     normalize() using {};
                 }
                 have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
-                    preserve(separate(loop(0).statement(1).footprint, memory(arena->occupied[k])));
+                    preserve(memory(arena->occupied[k]), loop(0).statement(1));
                 }
                 known();
             }

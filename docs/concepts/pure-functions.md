@@ -328,13 +328,12 @@ Pure theorem induction is also unrelated to a C function's optional
 termination evidence: it proves a proposition about specification values, not
 that a C call returns.
 
-### Peeling a fold-bodied function over a symbolic range
+### Unfolding a fold-bodied function over a symbolic range
 
-A function whose body is exactly a range fold is the usual way to summarize an
-array range, and for those the raw defining equation is rarely the layer a
-proof wants: it replaces the call with a fold nobody can then reason about
-without retyping it. `peel(function(args)) using { ... }` opens a different
-layer — the range-fold law the listed guards select, stated over the call:
+A function whose body is a range fold can summarize an array range.
+`unfold(function(args))` opens the range-fold law selected by the available
+range conditions, stated over that function call. Any remaining law guards
+are ordinary obligations, so the proof uses the same syntax as other unfolds.
 
 <!-- verified-example: mdtests/unfold_fold_function_empty_range.md -->
 ```click
@@ -345,8 +344,8 @@ function icount(p: int32[], lo: int32, hi: int32, x: int32) -> Integer {
 }
 ```
 
-With `hi <= lo` listed, the step opens `icount(p, lo, hi, x) == 0`. With
-`lo <= hi - 1` and `hi - 1 < 2147483647` listed, it opens
+With `hi <= lo` established, the step opens `icount(p, lo, hi, x) == 0`. With
+`lo <= hi - 1` and `hi - 1 < 2147483647` established, it opens
 `icount(p, lo, hi, x) == icount(p, lo, hi - 1, x) + <the cell at hi - 1>`. Both
 sides of that equation are the same function, so the shorter range is the term
 an induction hypothesis already speaks about, and a range property follows by

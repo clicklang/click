@@ -125,7 +125,7 @@ fn certify_worker(
         vec![argument],
         vec![],
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     let claims =
@@ -176,7 +176,7 @@ fn modeled_pthread_calls_cannot_fall_back_to_ordinary_function_rules() {
             &ExecutionState::new(),
             &statement,
             &PureFactContext::new(),
-            ExecutionContext::execute_bodies(&environment),
+            ExecutionContext::verify_loops(&environment),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
@@ -225,7 +225,7 @@ fn completion_right_survives_an_unrelated_c_statement_in_path_state() {
         spawned.parent(),
         &program_declare("unrelated", ProgramType::Int32),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
@@ -238,7 +238,7 @@ fn completion_right_survives_an_unrelated_c_statement_in_path_state() {
         carried.parent(),
         &program_return(crate::kernel::program_expression::int32_literal(0)),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
@@ -276,7 +276,7 @@ fn completion_right_survives_an_unrelated_c_statement_in_path_state() {
         joined.parent(),
         &program_return(crate::kernel::program_expression::int32_literal(0)),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
@@ -1624,10 +1624,10 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
                 vec![crate::kernel::program_expression::pointer_value(pointer(0))],
                 PureFactContext::new(),
                 ExecutionEnvironment::new(),
-                ExecutionSemantics::EXECUTE_BODIES,
+                ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
             )
             .unwrap();
-            let Proposition::ProgramFunctionExecutes { outcome, .. } = theorem.proposition() else {
+            let Proposition::ProgramFunctionVerifies { outcome, .. } = theorem.proposition() else {
                 panic!("function outcome");
             };
             if accessible {
@@ -1705,7 +1705,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         &ExecutionState::new().with_population_creation_tracking(),
         &program_declare("job", ProgramType::Int32Array(2)),
         &PureFactContext::new(),
-        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
+        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
@@ -1817,7 +1817,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         )],
         PureFactContext::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .unwrap();
     let Proposition::Implies(requirement, _) = theorem.proposition() else {
@@ -1875,12 +1875,12 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         )],
         PureFactContext::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .unwrap();
     assert!(matches!(
         theorem.proposition(),
-        Proposition::ProgramFunctionExecutes {
+        Proposition::ProgramFunctionVerifies {
             outcome: FunctionOutcome::Return { .. },
             ..
         }

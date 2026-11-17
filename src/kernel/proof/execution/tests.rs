@@ -3294,7 +3294,7 @@ fn opened_contract_entry_selects_premises_before_body_execution() {
             .filter(|(fact, _)| **fact == requirement)
             .map(|(_, origin)| *origin)
             .collect::<Vec<_>>(),
-        vec![Some(1)]
+        vec![Some(OpenedEntryFactSource::SourceFact(1))]
     );
     assert!(!opened.facts().contains(&foreign));
     assert!(opened.facts().contains(&environment.byte_order_fact()));

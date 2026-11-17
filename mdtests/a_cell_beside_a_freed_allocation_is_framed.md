@@ -34,7 +34,7 @@ void dispose_beside(int32* data, int32 n, int32* r) {
         };
     }
     have r[0] == at(statement(0).entry, r[0]) by {
-        preserve(separate(statement(0).footprint, memory(r[0])));
+        preserve(memory(r[0]), statement(0));
     }
     step();
     known();

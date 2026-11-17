@@ -430,6 +430,7 @@ Try the remaining function, `label_copy`:
 ```click filename=label.click
 import click::bytes;
 import click::cstr;
+import click::separation;
 
 verifying "label_fit.c";
 verifying "label_copy.c";
@@ -461,12 +462,20 @@ uint64 label_copy(char* dst, const char* src) {
     step();
     step();
     step();
+    step();
+    have 0u64 <= n by { normalize(); }
+    have n < 32u64 by { solve(); }
+    have contains(memory(dst[0u64..32u64]), memory(dst[n])) by {
+        apply(separation::contains_element(dst, 0u64, 32u64, n)) using { 0u64 <= n; n < 32u64; };
+    }
+    have separate(memory(dst[n]), memory(src[0u64..len + 1u64])) by { solve(); }
     open(cstr_at(src, len)) {
-        unfold(bytes::equal);
         step();
         mark copied;
+        unfold(at(copied, bytes::equal(dst, 0u64, old(src), 0u64, n)));
         step();
         have bytes::equal(dst, 0u64, src, 0u64, n) by {
+            unfold(bytes::equal(dst, 0u64, src, 0u64, n));
             transport(
                 at(copied, (0u64..n).all(|k| {
                     (dst as (uint8 *))[0u64 + k] == old((src as (uint8 *))[0u64 + k])

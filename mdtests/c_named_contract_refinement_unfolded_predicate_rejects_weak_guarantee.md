@@ -29,8 +29,8 @@ void choose_nonnegative(int32* cell) {
 
 theorem nonnegative_is_positive() {
     ensures ProducesPositive(&choose_nonnegative) by {
-        unfold(ProducesPositive);
-        unfold(IsPositive);
+        unfold(ProducesPositive(&choose_nonnegative));
+        unfold(IsPositive(cell));
         solve();
     }
 }

@@ -10,7 +10,7 @@ theorem guarded_universal_reordered() {
     } by {
         intro();
         intro();
-        extract(k >= 0);
+        have k >= 0;
         intro();
         known();
     }

@@ -46,7 +46,7 @@ void probe(struct node *p, struct node *q) {
                 normalize() using { separate(memory(q->next), memory(id->other)); };
             }
             have id->other == at(before_0, id->other) by {
-                preserve(separate(statement(0).footprint, memory(id->other)));
+                preserve(memory(id->other), statement(0));
             }
             mark before_1;
             step();
@@ -54,7 +54,7 @@ void probe(struct node *p, struct node *q) {
                 normalize() using { separate(memory(q->tag), memory(id->other)); };
             }
             have id->other == at(before_1, id->other) by {
-                preserve(separate(statement(1).footprint, memory(id->other)));
+                preserve(memory(id->other), statement(1));
             }
             have id->other == at(before_0, id->other) by {
                 rewrite(id->other, at(before_1, id->other));
@@ -66,7 +66,7 @@ void probe(struct node *p, struct node *q) {
                 normalize() using { separate(memory(q->other), memory(id->other)); };
             }
             have id->other == at(before_2, id->other) by {
-                preserve(separate(statement(2).footprint, memory(id->other)));
+                preserve(memory(id->other), statement(2));
             }
             have id->other == at(before_0, id->other) by {
                 rewrite(id->other, at(before_2, id->other));

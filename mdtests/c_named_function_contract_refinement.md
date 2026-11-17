@@ -54,7 +54,7 @@ int32 apply_step(int32 (*callback)(int32), int32 input) {
 
 theorem increment_is_positive_step() {
     ensures PositiveStep(&increment) by {
-        unfold(PositiveStep);
+        unfold(PositiveStep(&increment));
         intro();
         have -100 <= to_integer(input) by {
             solve() using { 0 <= input; };

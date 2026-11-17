@@ -1256,7 +1256,14 @@ fn instantiate_proof_tactic(
             |assumption| proposition(assumption),
             |tactics| instantiate_proof_tactics(tactics, substitution, algebraic_parameters),
         )?),
-        ProofTactic::Extract(value) => ProofTactic::Extract(proposition(value)?),
+        ProofTactic::ApplyFact(fact) => ProofTactic::ApplyFact(proposition(fact)?),
+        ProofTactic::ApplyFactUsing { fact, premises } => ProofTactic::ApplyFactUsing {
+            fact: proposition(fact)?,
+            premises: premises
+                .iter()
+                .map(proposition)
+                .collect::<Result<Vec<_>, _>>()?,
+        },
         ProofTactic::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(
             premises
                 .iter()
@@ -1287,22 +1294,12 @@ fn instantiate_proof_tactic(
                 .map(proposition)
                 .collect::<Result<Vec<_>, _>>()?,
         },
-        ProofTactic::InstantiateUsing {
+        ProofTactic::Instantiate {
             quantified,
             argument,
-            premises,
-        } => ProofTactic::InstantiateUsing {
+        } => ProofTactic::Instantiate {
             quantified: proposition(quantified)?,
             argument: expression(argument)?,
-            premises: premises
-                .as_ref()
-                .map(|premises| {
-                    premises
-                        .iter()
-                        .map(proposition)
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?,
         },
         ProofTactic::SolveUsing(using) => ProofTactic::SolveUsing(ProofSolveUsing {
             premises: using

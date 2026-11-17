@@ -39,7 +39,7 @@ void increment_first(int32* state) {
 
 theorem increment_first_is_progress() {
     ensures Progress(&increment_first) by {
-        unfold(Progress);
+        unfold(Progress(&increment_first));
         solve();
     }
 }

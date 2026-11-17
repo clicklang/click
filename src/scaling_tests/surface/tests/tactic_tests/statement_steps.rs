@@ -29,7 +29,7 @@ void write(struct job *job, int32 *dest) {
         have separate(statement({index}).footprint, memory(job->output)) by {{
             normalize() using {{ at(entry, separate(memory(job->output), memory(dest[0..1]))); }};
         }}
-        preserve(separate(statement({index}).footprint, memory(job->output)));
+        preserve(memory(job->output), statement({index}));
     }}
 "#
             ));
@@ -538,7 +538,7 @@ void make(int32 x) {{ requires x > 0; produces positive(x); }} by {{
             let source = if opaque {
                 source.replace("resource positive", "predicate positive_value(x: int32) { x > 0 }\nresource positive")
                 .replace("fact x > 0;", "fact positive_value(x);")
-                .replace("by { known(); }", "by { have positive_value(x) by { unfold(positive_value); known(); } known(); }")
+                .replace("by { known(); }", "by { have positive_value(x) by { unfold(positive_value(x)); known(); } known(); }")
             } else {
                 source
             };

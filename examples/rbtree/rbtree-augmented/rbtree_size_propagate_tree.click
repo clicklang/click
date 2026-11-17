@@ -131,7 +131,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             }
         }
     }
-    extract(address(rb) == address(stop) or sized_walk_pending(walk.model) == 0);
+    have address(rb) == address(stop) or sized_walk_pending(walk.model) == 0;
     mark joined;
     match walk.model {
         SizedWalk::Active(previous, sub_model, path_model) => {

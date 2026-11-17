@@ -47,7 +47,7 @@ pub(in crate::surface) fn source_site_kind(tactic: &ProofTactic) -> SourceSiteKi
         };
     }
     if let ProofTactic::Have(have) = tactic {
-        if smart_solve_unfold_prefix(&have.proof).is_some() {
+        if super::surface_construction::have_proof_is_smart_solve(&have.proof) {
             return SourceSiteKind::ExpandableAutomation;
         }
         if let SourceProof::Script(tactics) = &have.proof

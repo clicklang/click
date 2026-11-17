@@ -59,14 +59,8 @@ pub enum ProofStep {
     StepCall(CallBinderTransport),
     /// One application of a user-defined tactic's verified contract.
     UserTactic(CallBinderTransport),
-    UnfoldPredicate(String),
+    UnfoldProposition(ClickProposition),
     UnfoldFunction(ClickFunctionApplication),
-    /// `peel(f(args)) using { ... }`: the same defining equation, plus
-    /// the range-fold law the listed guards select, stated over `f(args)`.
-    PeelFunction {
-        application: ClickFunctionApplication,
-        premises: Vec<ClickProposition>,
-    },
     UnfoldResource(ResourceClause),
     /// `let { witness: name, ... } = unfold(resource)` on a declared
     /// resource: the unfold, with each named `let ... where` witness of the
@@ -88,6 +82,10 @@ pub enum ProofStep {
     ApplyInductionUsing {
         hypothesis: String,
         arguments: Vec<ContractExpression>,
+        premises: Vec<ClickProposition>,
+    },
+    ApplyFactUsing {
+        fact: ClickProposition,
         premises: Vec<ClickProposition>,
     },
     ApplyTheoremUsing {
@@ -113,7 +111,6 @@ pub enum ProofStep {
     },
     CheckTerminationCallbacks,
     Known,
-    Extract(ClickProposition),
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
@@ -130,12 +127,10 @@ pub enum ProofStep {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
-    /// `instantiate(F, value)`, with `premises` the written `using` list.
-    /// Without a list, each instantiated guard must itself be an exact fact.
-    InstantiateUsing {
+    /// Substitute one universal binder, preserving its whole body and guards.
+    Instantiate {
         quantified: ClickProposition,
         argument: ContractExpression,
-        premises: Option<Vec<ClickProposition>>,
     },
     Have {
         proposition: ClickProposition,
@@ -720,15 +715,8 @@ impl ProofStep {
             ProofTactic::StepContract(name) => Self::StepContract(name.clone()),
             ProofTactic::StepCall(transport) => Self::StepCall(transport.clone()),
             ProofTactic::UserTactic(application) => Self::UserTactic(application.clone()),
-            ProofTactic::UnfoldPredicate(name) => Self::UnfoldPredicate(name.clone()),
+            ProofTactic::UnfoldProposition(target) => Self::UnfoldProposition(target.clone()),
             ProofTactic::UnfoldFunction(application) => Self::UnfoldFunction(application.clone()),
-            ProofTactic::PeelFunction {
-                application,
-                premises,
-            } => Self::PeelFunction {
-                application: application.clone(),
-                premises: premises.clone(),
-            },
             ProofTactic::UnfoldResource(resource) => Self::UnfoldResource(resource.clone()),
             ProofTactic::UnfoldWitnesses { resource, names } => Self::UnfoldWitnesses {
                 resource: resource.clone(),
@@ -779,8 +767,11 @@ impl ProofStep {
                 }
             }
             ProofTactic::CheckTerminationCallbacks => Self::CheckTerminationCallbacks,
+            ProofTactic::ApplyFactUsing { fact, premises } => Self::ApplyFactUsing {
+                fact: fact.clone(),
+                premises: premises.clone(),
+            },
             ProofTactic::Known => Self::Known,
-            ProofTactic::Extract(proposition) => Self::Extract(proposition.clone()),
             ProofTactic::Normalize => Self::Normalize,
             ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
             ProofTactic::ArithmeticUsing(premises) => Self::ArithmeticUsing(premises.clone()),
@@ -801,14 +792,12 @@ impl ProofStep {
                 target: target.clone(),
                 premises: premises.clone(),
             },
-            ProofTactic::InstantiateUsing {
+            ProofTactic::Instantiate {
                 quantified,
                 argument,
-                premises,
-            } => Self::InstantiateUsing {
+            } => Self::Instantiate {
                 quantified: quantified.clone(),
                 argument: argument.clone(),
-                premises: premises.clone(),
             },
             _ => return None,
         })
@@ -850,15 +839,8 @@ impl ProofStep {
             Self::StepContract(name) => ProofTactic::StepContract(name.clone()),
             Self::StepCall(transport) => ProofTactic::StepCall(transport.clone()),
             Self::UserTactic(application) => ProofTactic::UserTactic(application.clone()),
-            Self::UnfoldPredicate(name) => ProofTactic::UnfoldPredicate(name.clone()),
+            Self::UnfoldProposition(target) => ProofTactic::UnfoldProposition(target.clone()),
             Self::UnfoldFunction(application) => ProofTactic::UnfoldFunction(application.clone()),
-            Self::PeelFunction {
-                application,
-                premises,
-            } => ProofTactic::PeelFunction {
-                application: application.clone(),
-                premises: premises.clone(),
-            },
             Self::UnfoldResource(resource) => ProofTactic::UnfoldResource(resource.clone()),
             Self::UnfoldWitnesses { resource, names } => ProofTactic::UnfoldWitnesses {
                 resource: resource.clone(),
@@ -943,8 +925,11 @@ impl ProofStep {
                 }
             }
             Self::CheckTerminationCallbacks => ProofTactic::CheckTerminationCallbacks,
+            Self::ApplyFactUsing { fact, premises } => ProofTactic::ApplyFactUsing {
+                fact: fact.clone(),
+                premises: premises.clone(),
+            },
             Self::Known => ProofTactic::Known,
-            Self::Extract(proposition) => ProofTactic::Extract(proposition.clone()),
             Self::Normalize => ProofTactic::Normalize,
             Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
             Self::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(premises.clone()),
@@ -965,14 +950,12 @@ impl ProofStep {
                 target: target.clone(),
                 premises: premises.clone(),
             },
-            Self::InstantiateUsing {
+            Self::Instantiate {
                 quantified,
                 argument,
-                premises,
-            } => ProofTactic::InstantiateUsing {
+            } => ProofTactic::Instantiate {
                 quantified: quantified.clone(),
                 argument: argument.clone(),
-                premises: premises.clone(),
             },
             Self::Have { proposition, proof } => ProofTactic::Have(ProofHave {
                 proposition: proposition.clone(),
@@ -1146,10 +1129,8 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         | ProofStep::StepContract(_)
         | ProofStep::StepCall(_) => TacticClass::Simple(SimpleTactic::StatementTransition),
         ProofStep::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
-        ProofStep::UnfoldPredicate(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
-        ProofStep::UnfoldFunction(_) | ProofStep::PeelFunction { .. } => {
-            TacticClass::Simple(SimpleTactic::UnfoldFunction)
-        }
+        ProofStep::UnfoldProposition(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
+        ProofStep::UnfoldFunction(_) => TacticClass::Simple(SimpleTactic::UnfoldFunction),
         ProofStep::UnfoldResource(_) | ProofStep::UnfoldWitnesses { .. } => {
             TacticClass::Simple(SimpleTactic::UnfoldResource)
         }
@@ -1161,7 +1142,9 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
         ProofStep::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
         ProofStep::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
-        ProofStep::ApplyTheoremUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),
+        ProofStep::ApplyFactUsing { .. } | ProofStep::ApplyTheoremUsing { .. } => {
+            TacticClass::Simple(SimpleTactic::ApplyTheorem)
+        }
         ProofStep::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
         ProofStep::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
         ProofStep::Choose(_) => TacticClass::Simple(SimpleTactic::Choose),
@@ -1169,7 +1152,6 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         | ProofStep::CheckTerminationComponent { .. }
         | ProofStep::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
         ProofStep::Known => TacticClass::Simple(SimpleTactic::Known),
-        ProofStep::Extract(_) => TacticClass::Simple(SimpleTactic::Extract),
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => {
             TacticClass::Simple(SimpleTactic::Normalize)
         }
@@ -1183,7 +1165,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
         ProofStep::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
         ProofStep::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
-        ProofStep::InstantiateUsing { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
+        ProofStep::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
         ProofStep::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),
         ProofStep::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),
         ProofStep::Both { .. } => TacticClass::Control(ControlTactic::Both),

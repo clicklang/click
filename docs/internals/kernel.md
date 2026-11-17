@@ -1750,33 +1750,36 @@ Resolving a load to a stored scalar requires
 the load's recorded width to match the stored value; a width-less term cannot
 choose a cell type implicitly.
 
-Call and loop behavior are explicit inputs to kernel execution. The common
-configurations are:
+Calls have one semantics. A call applies the callee's verified rule and never
+evaluates the callee's body; the body is checked once, against its contract,
+in its own proof. The one exception is a `static inline` helper (or a
+file-scope `static` function) with no Click contract, whose checked body runs
+at the call site on the caller's resources. A call to any other function
+without a verified rule fails rather than falling back to its body.
 
-- `ExecutionSemantics::EXECUTE_BODIES` evaluates callee bodies, verifies
-  annotated loops directly, and ignores available verified rules. Low-level C
-  evaluator tests use this mode.
-- `ExecutionSemantics::APPLY_VERIFIED_RULES` applies opaque function and loop
-  rules and never evaluates the corresponding bodies. Click execution proofs
-  use this mode.
+Loop behavior is an explicit input to kernel execution, `ExecutionSemantics`:
+
+- `ExecutionSemantics::APPLY_VERIFIED_RULES` applies verified loop rules and
+  never evaluates the corresponding bodies. Click execution proofs use this
+  mode.
+- `ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS` verifies the current
+  loop body directly. The loop-rule construction phase and low-level evaluator
+  tests use this mode.
 
 `ExecutionEnvironment` contains the function definitions and verified rules
 available to an execution; it does not select between these semantics. In
-particular, rule lookup is not a fallback mechanism. Applying verified rules
-without a matching rule fails, while direct body verification behaves the same
-whether or not a matching rule is present. `ExecutionSemantics` also exposes
-`APPLY_CALL_RULES_AND_VERIFY_LOOPS` for the loop-rule construction phase,
-where calls remain modular while the current loop body is verified directly.
+particular, rule lookup is not a fallback mechanism: applying verified rules
+without a matching rule fails.
 
-Concrete execution judgments and modular verification transitions are
-deliberately different propositions. `ProgramStatementExecutes` and
-`ProgramFunctionExecutes` describe outcomes produced by direct operational
-execution. `ProgramStatementVerifies` and `ProgramFunctionVerifies` describe abstract
+Every execution theorem the kernel produces is a verification transition:
+`ProgramStatementVerifies` and `ProgramFunctionVerifies` describe abstract
 branches admitted while checking partial correctness with loop or function
-summaries. A verification return branch means “if this computation returns,
-this is an allowed post-state”; it is not evidence that the return is
-reachable. Verified contract and loop rules cannot be converted into concrete
-execution or termination theorems.
+summaries, and a checked path proves only
+`ProgramFunctionPartiallySatisfiesSpecification`. A verification return branch
+means “if this computation returns, this is an allowed post-state”; it is not
+evidence that the return is reachable. Verified contract and loop rules cannot
+be converted into concrete execution or termination theorems; termination is
+the separate `VerifiedFunctionTerminationRule`.
 
 One driver steps statements and functions for both judgments
 (`execute_statement_paths` in `src/kernel/eval/statements.rs`, and
@@ -2060,6 +2063,13 @@ among the requirements and must rewrite the goal in the listed order.
 observation. Other families keep native value equality and ordering, including
 raw Boolean words, float bits, and native call-argument carrier distinctions.
 Its hash need only agree across equal stored keys; it is not a serialized ID.
+Boolean, float and algebraic local/outcome keys project common children rather
+than materializing an enclosing native value tree. Algebraic projections retain
+constructor field positions, match binding/body order and original call-argument
+carriers. Scalar algebraic fields and read addresses keep selected compatibility
+descriptors; memory keys and exact refresh remain separate consumers.
+Projection memos belong to one verification, with iterative construction,
+comparison and disposal for shared or deep algebraic structure.
 
 `StoredMemoryValue` preserves native `ProgramValue` structural equality, order,
 and hash stream. Replacing it with a local observation key would change the

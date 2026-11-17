@@ -4775,7 +4775,7 @@ pub fn prove_symbolic_program_execution_with_budget(
         statement,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         budget,
     )
 }
@@ -4845,7 +4845,7 @@ pub fn prove_symbolic_program_execution_paths_with_budget(
         statement,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         budget,
     )
 }
@@ -4904,18 +4904,13 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
             }
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
-            let proposition = if execution_semantics == ExecutionSemantics::EXECUTE_BODIES {
-                Proposition::ProgramStatementExecutes {
-                    state: Box::new(state.clone()),
-                    statement: Box::new(statement.clone()),
-                    outcome: path.outcome,
-                }
-            } else {
-                Proposition::ProgramStatementVerifies {
-                    state: Box::new(state.clone()),
-                    statement: Box::new(statement.clone()),
-                    outcome: path.outcome,
-                }
+            // Calls apply their callees' verified rules, which describe a
+            // returning callee only, so the outcome is a verification
+            // transition rather than a concretely reachable execution.
+            let proposition = Proposition::ProgramStatementVerifies {
+                state: Box::new(state.clone()),
+                statement: Box::new(statement.clone()),
+                outcome: path.outcome,
             };
             let theorem = Theorem::new(wrap_proof_facts(
                 proposition,
@@ -5277,7 +5272,7 @@ pub fn prove_symbolic_program_function_execution_with_budget(
         arguments,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         budget,
     )
 }
@@ -5362,7 +5357,7 @@ pub fn prove_symbolic_program_function_execution_paths_with_budget(
         arguments,
         assumptions,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         budget,
     )
 }
@@ -5451,20 +5446,13 @@ fn prove_symbolic_program_function_execution_paths_with_contract_resources(
         .map(|path| {
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
-            let proposition = if execution_semantics == ExecutionSemantics::EXECUTE_BODIES {
-                Proposition::ProgramFunctionExecutes {
-                    state: Box::new(state.clone()),
-                    function: Box::new(function.clone()),
-                    arguments: arguments.clone(),
-                    outcome: path.outcome,
-                }
-            } else {
-                Proposition::ProgramFunctionVerifies {
-                    state: Box::new(state.clone()),
-                    function: Box::new(function.clone()),
-                    arguments: arguments.clone(),
-                    outcome: path.outcome,
-                }
+            // As for statements: applied callee rules make this a
+            // verification transition.
+            let proposition = Proposition::ProgramFunctionVerifies {
+                state: Box::new(state.clone()),
+                function: Box::new(function.clone()),
+                arguments: arguments.clone(),
+                outcome: path.outcome,
             };
             let theorem = Theorem::new(wrap_proof_facts(
                 proposition,
@@ -6598,22 +6586,6 @@ fn checked_execution_at_definitionally_equal_entry_state(
             conclusion = body;
         }
         let proposition = match conclusion {
-            Proposition::ProgramFunctionExecutes {
-                state: proved_state,
-                function: proved_function,
-                arguments,
-                outcome,
-            } if **proved_state == checked.state
-                && **proved_function == *function
-                && arguments == &checked.arguments =>
-            {
-                Proposition::ProgramFunctionExecutes {
-                    state: Box::new(state.clone()),
-                    function: Box::new(function.clone()),
-                    arguments: arguments.clone(),
-                    outcome: outcome.clone(),
-                }
-            }
             Proposition::ProgramFunctionVerifies {
                 state: proved_state,
                 function: proved_function,
@@ -6839,8 +6811,7 @@ pub(super) fn path_function_outcome(path: &SymbolicExecutionPath) -> Option<&Fun
         proposition = body;
     }
     match proposition {
-        Proposition::ProgramFunctionExecutes { outcome, .. }
-        | Proposition::ProgramFunctionVerifies { outcome, .. } => Some(outcome),
+        Proposition::ProgramFunctionVerifies { outcome, .. } => Some(outcome),
         _ => None,
     }
 }
@@ -7348,64 +7319,6 @@ pub(crate) fn prove_prepared_function_contract_execution_paths(
     }
 }
 
-pub fn prove_program_function_satisfies_specification(
-    function: ProgramFunction,
-    specification: FunctionSpecification,
-    assumptions: PureFactContext,
-) -> Option<Theorem> {
-    prove_program_function_satisfies_specification_with_environment(
-        function,
-        specification,
-        assumptions,
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
-    )
-}
-
-pub fn prove_program_function_satisfies_specification_with_environment(
-    function: ProgramFunction,
-    specification: FunctionSpecification,
-    assumptions: PureFactContext,
-    environment: ExecutionEnvironment,
-    execution_semantics: ExecutionSemantics,
-) -> Option<Theorem> {
-    let specification_assumptions =
-        assumptions_with_propositions(&assumptions, specification.requires());
-    let paths = execute_program_function_paths(
-        specification.state(),
-        &function,
-        specification.arguments(),
-        &specification_assumptions,
-        ExecutionContext::new(&environment, execution_semantics),
-        &mut ExecutionBudget::for_new_execution(),
-    )
-    .ok()?;
-    let mut paths = paths.into_iter();
-    let path = paths.next()?;
-    if paths.next().is_some()
-        || path.facts.iter().any(ExecutionPureFact::is_public)
-        || !path.obligations.is_empty()
-        || &path.outcome != specification.outcome()
-    {
-        return None;
-    }
-
-    let requires = specification.requires().to_vec();
-    let proposition = requires.iter().rev().fold(
-        Proposition::ProgramFunctionSatisfiesSpecification {
-            function: Box::new(function),
-            specification: Box::new(specification),
-        },
-        |body, requirement| Proposition::Implies(Box::new(requirement.clone()), Box::new(body)),
-    );
-    Some(Theorem::new(wrap_proof_facts(
-        proposition,
-        &assumptions,
-        &[],
-        &[],
-    )))
-}
-
 #[cfg(test)]
 pub fn prove_program_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem> {
     let a_bits = MachineTerm::Variable(a);
@@ -7432,7 +7345,7 @@ pub fn prove_program_max_lt_returns_right(a: Variable, b: Variable) -> Option<Th
             b,
             Proposition::Implies(
                 Box::new(Proposition::ConditionIs(condition, true)),
-                Box::new(Proposition::ProgramStatementExecutes {
+                Box::new(Proposition::ProgramStatementVerifies {
                     state: Box::new(state),
                     statement: Box::new(program_max_body()),
                     outcome,
@@ -7468,7 +7381,7 @@ pub fn prove_program_max_not_lt_returns_left(a: Variable, b: Variable) -> Option
             b,
             Proposition::Implies(
                 Box::new(Proposition::ConditionIs(condition, false)),
-                Box::new(Proposition::ProgramStatementExecutes {
+                Box::new(Proposition::ProgramStatementVerifies {
                     state: Box::new(state),
                     statement: Box::new(program_max_body()),
                     outcome,
@@ -7983,6 +7896,32 @@ pub fn substitute_integer_term_in_proposition(
         &mut std::collections::HashMap::new(),
     );
     changed.then_some(rewritten)
+}
+
+/// The append law's predecessor-range guard, constructed without touching
+/// its body. Ordinary unfold can select a written guard before instantiating
+/// that law; all of its guards still become ordinary checked obligations.
+pub(crate) fn integer_range_fold_predecessor_guard(
+    index: &IntegerRangeFoldIndex,
+) -> Option<ConditionTerm> {
+    let (prior, _) = integer_range_fold_predecessor_index(index)?;
+    Some(match prior {
+        IntegerRangeFoldIndex::Int32 { start, end } => fold_endpoint_order(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            &start,
+            &end,
+        ),
+        IntegerRangeFoldIndex::UInt64 { start, end } => fold_endpoint_order(
+            MachineIntegerType::UInt64,
+            CompareRelation::LessEqual,
+            &start,
+            &end,
+        ),
+        IntegerRangeFoldIndex::Integer { start, end } => {
+            ConditionTerm::integer_less_equal(start.as_ref().clone(), end.as_ref().clone())
+        }
+    })
 }
 
 /// The opaque application `f(args)` with the int32 or uint64 argument at `position`

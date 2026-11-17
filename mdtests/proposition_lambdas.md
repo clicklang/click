@@ -71,7 +71,7 @@ predicate positive(value: int32) { value > 0 }
 theorem proposition_literal_with_predicate(value: int32) {
     requires value > 0;
     ensures prop { positive(value) } by {
-        unfold(positive);
+        unfold(positive(value));
         solve();
     }
 }

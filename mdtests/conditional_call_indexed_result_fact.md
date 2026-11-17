@@ -59,7 +59,7 @@ int32 caller(int32 *next, int32 *visited, int32 n, int32 cur) {
         have separate(statement(0).footprint, memory(next[cur])) by {
             normalize() using { separate(memory(visited[cur]), memory(next[cur])); };
         }
-        preserve(separate(statement(0).footprint, memory(next[cur])));
+        preserve(memory(next[cur]), statement(0));
     }
     let { result: r } = step(visit, {});
     have r == 0 implies visited[at(entry, next[cur])] != 0 by { known(); }

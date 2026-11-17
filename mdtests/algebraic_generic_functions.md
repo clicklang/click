@@ -70,7 +70,7 @@ theorem generic_list_instances(
         solve();
     }
     ensures is_empty(TestList<int32>::Nil) by {
-        unfold(is_empty);
+        unfold(is_empty(TestList<int32>::Nil));
         solve();
     }
     ensures identity(7) == 7 by {
@@ -82,7 +82,7 @@ theorem generic_list_instances(
         solve();
     }
     ensures same(value, value) by {
-        unfold(same);
+        unfold(same(value, value));
         solve();
     }
 }

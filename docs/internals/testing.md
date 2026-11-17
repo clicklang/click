@@ -793,12 +793,15 @@ extraction uses the compiler/runtime identity in
 its runtime paths from that profile. Preparation bundles `rustc` and its runtime
 libraries using `scripts/charon-runtime.sh` and both Charon executables in
 `charon.tar.gz`, as a second artifact, `rust-toolchain`, apart from the test
-binaries: together they are nearly half of the build output, and only the Rust
-import tests start the compiler. The `rust` shards download that artifact,
+binaries: together they are nearly half of the build output. The `rust` shards download that artifact,
 validate the compiler, target, and toolchain identity, and restore those
 libraries before setup, so missing caches do not prevent test execution; every
-other shard downloads the test binaries alone. No shard installs another
-compiler or mdBook. Preparation installs the pinned compiler with `rustc-dev`
+other shard downloads the test binaries alone. Unit shards use
+`scripts/setup-environment.sh --unit-test-runner` to install Click's pinned
+Rust toolchain before the search-boundary tests compile visibility probes.
+This keeps rustup's first-use download outside each test's 30-second timeout;
+an installation failure fails setup. Other archive runners install no compiler,
+and no shard installs mdBook. Preparation installs Charon's pinned compiler with `rustc-dev`
 and `rust-src`, builds Charon once, and archives it. The compiled-in profile owns extractor
 pins, flags, and versioned adapter interpretations; the build script reads the
 same profile. Cargo's extractor dependency pin is checked against it.
@@ -1527,7 +1530,7 @@ selected-unit verification beside 1, 2, 4, and 8 unrelated earlier functions,
 including reversed declaration order. It uses the original eight-tactic
 reproduction, including the single-earlier-function case.
 Before return, signed-order automation selects indexed bounds before broad
-atomic premise spelling. Existing named rules get first choice over that
+atomic premise raising. Existing named rules get first choice over that
 compact context, followed by the checked ordinary arithmetic proof. Terminal
 outcomes retain their result-aware equality rewrites and source-anchoring
 routes before that arithmetic fallback.

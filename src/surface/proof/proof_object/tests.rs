@@ -188,7 +188,6 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
             ProofStep::Known
             | ProofStep::Normalize
             | ProofStep::Rewrite(_)
-            | ProofStep::Extract(_)
             | ProofStep::Intro
             | ProofStep::Contradiction(_) => {}
             _ => {
@@ -330,7 +329,6 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
         SpecDefinitions::new(&predicates, &functions),
         &theorems,
         &[],
-        &[],
     );
     let error = root
         .driver()
@@ -392,7 +390,6 @@ fn missing_known_side_uses_recorded_names_in_fixed_state_errors() {
         &surfaces,
         SpecDefinitions::new(&predicates, &functions),
         &theorems,
-        &[],
         &[],
     );
     for traced in [false, true] {
@@ -624,7 +621,7 @@ fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
     assert_eq!(closed.completed_proposition().unwrap().proposition(), &goal);
     assert!(matches!(
         closed.certificate().steps(),
-        [ProofStep::Extract(_)]
+        [ProofStep::Have { proposition, .. }, ProofStep::Known] if proposition == &pairs[0].1
     ));
     assert!(root.certificate().steps().is_empty());
     let rechecked = root
@@ -709,7 +706,6 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 SpecDefinitions::new(&predicates, &functions),
                 &theorems,
                 &[],
-                &[],
             );
             let (_, stale_derivation, _) =
                 crate::kernel::search::ProofSearch::selected_solve_derivation(&(stale), false)
@@ -750,11 +746,9 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 crate::kernel::search::ProofSearch::try_typed_atomic_solve_closure(&(stale))
                     .expect("the entry-anchored spelling of the old leaf should extract it");
             assert!(anchored.is_complete());
-            assert_eq!(
-                anchored.certificate().steps(),
-                &[ProofStep::Extract(anchored_surface)],
-                "the stale spelling must not be extracted, only its entry-anchored form"
-            );
+            assert!(matches!(anchored.certificate().steps(),
+                [ProofStep::Have { proposition, .. }, ProofStep::Known] if proposition == &anchored_surface
+            ), "only the entry-anchored premise may be retained");
             let rechecked = stale
                 .driver()
                 .try_authoritative_linear_script(&anchored.certificate().to_proof_tactics())
@@ -780,14 +774,15 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 SpecDefinitions::new(&predicates, &functions),
                 &theorems,
                 &[],
-                &[],
             );
             let sibling = exact.clone();
             let closed =
                 crate::kernel::search::ProofSearch::try_typed_atomic_solve_closure(&(exact))
                     .expect("the exact selected leaf should extract and close the goal");
             assert!(closed.is_complete());
-            assert_eq!(closed.certificate().steps(), &[ProofStep::Extract(surface)]);
+            assert!(matches!(closed.certificate().steps(),
+                [ProofStep::Have { proposition, .. }, ProofStep::Known] if proposition == &surface
+            ));
             assert!(sibling.certificate().steps().is_empty());
         })
         .expect("the atomic extraction small-stack test should start")
@@ -1190,7 +1185,6 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
         &surfaces,
         SpecDefinitions::new(&predicates, &functions),
         &theorems,
-        &[],
         &[],
     );
     let (split, split_id, ids) = root
@@ -2742,14 +2736,26 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         );
         assert!(
             root.driver()
-                .apply_step(ProofStep::UnfoldPredicate("missing".to_string()))
+                .apply_step(ProofStep::UnfoldProposition(
+                    ClickProposition::PredicateCall {
+                        name: "missing".into(),
+                        arguments: vec![ContractExpression::ProgramExpression(
+                            ProgramExpression::Value(int32(7))
+                        )]
+                    }
+                ))
                 .is_err(),
             "an unknown predicate must reject transactionally"
         );
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
 
-        let unfold = ProofStep::UnfoldPredicate("selected".to_string());
+        let unfold = ProofStep::UnfoldProposition(ClickProposition::PredicateCall {
+            name: "selected".into(),
+            arguments: vec![ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(7)),
+            )],
+        });
         let before = fact_node_allocations();
         let unfolded = root
             .driver()
@@ -2765,11 +2771,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         assert!(unfolded.facts().contains(&goal));
         assert_eq!(unfolded.goal(), Some(&goal));
         assert_eq!(unfolded.surface_goal(), Some(&goal_surface));
-        assert!(
-            unfolded
-                .focused_branch_unfolds()
-                .contains(&"selected".to_string())
-        );
+
         let complete = unfolded
             .driver()
             .apply_step(ProofStep::Known)
@@ -2852,10 +2854,14 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
         &theorem_environment,
         &[],
-        &[],
     );
     let certificate = ProofCertificate::from_steps(vec![
-        ProofStep::UnfoldPredicate("selected".to_string()),
+        ProofStep::UnfoldProposition(ClickProposition::PredicateCall {
+            name: "selected".into(),
+            arguments: vec![ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(7)),
+            )],
+        }),
         ProofStep::Known,
     ])
     .unwrap();
@@ -2882,17 +2888,28 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
             &[],
-            &[],
         );
         let retained_root = root.clone();
         assert!(
             root.driver()
-                .apply_step(ProofStep::UnfoldPredicate("missing".to_string()))
+                .apply_step(ProofStep::UnfoldProposition(
+                    ClickProposition::PredicateCall {
+                        name: "missing".into(),
+                        arguments: vec![ContractExpression::ProgramExpression(
+                            ProgramExpression::Value(int32(7))
+                        )]
+                    }
+                ))
                 .is_err()
         );
         assert!(root.state.shares_state_with(&retained_root.state));
 
-        let step = ProofStep::UnfoldPredicate("selected".to_string());
+        let step = ProofStep::UnfoldProposition(ClickProposition::PredicateCall {
+            name: "selected".into(),
+            arguments: vec![ContractExpression::ProgramExpression(
+                ProgramExpression::Value(int32(7)),
+            )],
+        });
         let before = fact_node_allocations();
         let unfolded = root
             .driver()
@@ -2906,49 +2923,10 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
             "size {size} result-aware frontier unfold allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert_eq!(unfolded.certificate().steps(), &[step]);
-        assert_eq!(unfolded.added_facts(), std::slice::from_ref(&goal));
+        assert_eq!(unfolded.added_facts().len(), 2);
+        assert!(unfolded.added_facts().contains(&goal));
         assert!(root.certificate().steps().is_empty());
     }
-}
-
-#[test]
-fn fixed_state_proof_root_borrows_inherited_unfold_history_without_reindexing_it() {
-    let inherited = (0..4096)
-        .map(|index| format!("predicate_{index}"))
-        .collect::<Vec<_>>();
-    let state = ExecutionState::new();
-    let recorded_states = RecordedStates::new();
-    let surface_propositions = SurfacePropositionMap::default();
-    let predicate_environment = PredicateEnvironment::new(&[]);
-    let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_environment = TheoremEnvironment::new(&[]);
-    let goal = indexed_fact(7);
-    let before = fact_node_allocations();
-    let root = Proof::for_fixed_state_goal(
-        "borrowed unfold history",
-        0,
-        &[],
-        goal,
-        ParameterBinding::default(),
-        &state,
-        &state,
-        &recorded_states,
-        &surface_propositions,
-        SpecDefinitions::new(&predicate_environment, &click_function_environment),
-        &theorem_environment,
-        &inherited,
-        &[],
-    );
-    let allocations = fact_node_allocations() - before;
-    // The one permitted node stores the root goal in the persistent goal
-    // collection; the bound must stay independent of the inherited size.
-    assert!(
-        allocations <= 1,
-        "creating a fixed-state Proof must not rebuild inherited unfold history \
-         ({allocations} persistent nodes allocated)"
-    );
-    assert_eq!(root.focused_branch_unfolds().len(), 0);
-    assert_eq!(root.active_unfolded_predicates(), inherited);
 }
 
 #[test]
@@ -2977,7 +2955,6 @@ fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_known() {
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
-            &[],
             &[],
         );
         let before = fact_node_allocations();
@@ -3047,7 +3024,6 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
-            &[],
             &[],
         );
         // An entry scope selects the producer's goal without rebuilding the
@@ -3202,7 +3178,6 @@ fn fixed_state_context_have_goal_does_not_reuse_an_older_surface_lowering() {
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
         &theorem_environment,
         &[],
-        &[],
     );
     let scope = root
         .driver()
@@ -3313,7 +3288,6 @@ fn execution_frontier_rejects_proposition_closers_transactionally() {
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
         &theorem_environment,
         &[],
-        &[],
     );
     let fork = root.clone();
     assert!(root.goal().is_none());
@@ -3395,7 +3369,6 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
-            &[],
             &[],
         );
         let retained_root = root.clone();
@@ -3510,7 +3483,6 @@ fn universal_intro_binding_is_local_to_its_focused_sibling_branch() {
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
         &theorem_environment,
         &[],
-        &[],
     );
     let (split, _, ids) = root
         .split_focused_cases(disjunction)
@@ -3599,7 +3571,6 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
-            &[],
             &[],
             function_block.requires(),
         );
@@ -4053,99 +4024,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
 }
 
 #[test]
-#[ignore = "nightly: 1.5s in the parallel gate"]
-fn fixed_state_extract_uses_persistent_proper_conjunct_membership() {
-    let state = ExecutionState::new();
-    let recorded_states = RecordedStates::new();
-    let surface_propositions = SurfacePropositionMap::default();
-    let predicate_environment = PredicateEnvironment::new(&[]);
-    let click_function_environment = ClickFunctionEnvironment::new(&[]);
-    let theorem_environment = TheoremEnvironment::new(&[]);
-    let surface = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
-        operator: ComparisonOperator::Equal,
-        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(7))),
-    };
-    let kernel = lower_fixed_state_proposition_with_assumptions(
-        &surface,
-        &PureFactContext::new(),
-        ParameterBinding::default(),
-        FixedStateFrame::new(&state, &state, None, &recorded_states),
-        SpecDefinitions::new(&predicate_environment, &click_function_environment),
-    )
-    .expect("constant equality should lower");
-
-    let merely_top_level = Proof::for_fixed_state_goal(
-        "top-level is not a proper conjunct",
-        0,
-        std::slice::from_ref(&kernel),
-        kernel.clone(),
-        ParameterBinding::default(),
-        &state,
-        &state,
-        &recorded_states,
-        &surface_propositions,
-        SpecDefinitions::new(&predicate_environment, &click_function_environment),
-        &theorem_environment,
-        &[],
-        &[],
-    );
-    assert!(
-        merely_top_level
-            .driver()
-            .apply_step(ProofStep::Extract(surface.clone()))
-            .is_err(),
-        "an independently available fact is not extractable unless it is also a proper conjunct"
-    );
-
-    for size in LOCAL_PROOF_FACT_SIZES {
-        let mut available = (0..size).map(indexed_fact).collect::<Vec<_>>();
-        available.push(Proposition::And(
-            Box::new(indexed_fact(size + 1)),
-            Box::new(Proposition::And(
-                Box::new(kernel.clone()),
-                Box::new(indexed_fact(size + 2)),
-            )),
-        ));
-        let root = Proof::for_fixed_state_goal(
-            "persistent extract",
-            0,
-            &available,
-            kernel.clone(),
-            ParameterBinding::default(),
-            &state,
-            &state,
-            &recorded_states,
-            &surface_propositions,
-            SpecDefinitions::new(&predicate_environment, &click_function_environment),
-            &theorem_environment,
-            &[],
-            &[],
-        );
-        let retained_root = root.clone();
-        let step = ProofStep::Extract(surface.clone());
-        let before = fact_node_allocations();
-        let extracted = root
-            .driver()
-            .apply_step(step.clone())
-            .expect("the nested proper conjunct should extract");
-        let allocations = fact_node_allocations() - before;
-        let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 32 * logarithmic_height + 128;
-        assert!(
-            allocations <= allocation_bound,
-            "size {size} extract allocated {allocations} persistent nodes (bound {allocation_bound})"
-        );
-        assert!(root.state.shares_state_with(&retained_root.state));
-        assert!(root.certificate().steps().is_empty());
-        assert_eq!(extracted.certificate().steps(), &[step]);
-        assert_eq!(extracted.added_facts(), std::slice::from_ref(&kernel));
-        assert!(extracted.is_complete());
-    }
-}
-
-#[test]
-fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent() {
+fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
@@ -4170,34 +4049,56 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         surface_requirements: SurfacePropositionMap::default(),
     };
     let target = lower_pure_theorem_proposition(
-        "indexed implication extract",
+        "indexed implication application",
         &target_surface,
         ContractEnvironment::new(&theorem_context.values, &theorem_context.array_refs),
         &theorem_context.memory,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("target should lower");
-    let universal = |variable| Proposition::ForAll {
+    let antecedent_surface = ClickProposition::ForAll {
+        name: "k".into(),
+        written_name: None,
+        click_type: ClickType::Program(InterfaceType::Int32),
+        body: Box::new(ClickProposition::Comparison {
+            left: ContractExpression::ProgramExpression(ProgramExpression::Variable("k".into())),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::ProgramExpression(ProgramExpression::Variable("k".into())),
+        }),
+    };
+    let implication_surface = ClickProposition::Implies(
+        Box::new(antecedent_surface.clone()),
+        Box::new(target_surface.clone()),
+    );
+    let required_antecedent = lower_pure_theorem_proposition(
+        "selected implication antecedent",
+        &antecedent_surface,
+        ContractEnvironment::new(&theorem_context.values, &theorem_context.array_refs),
+        &theorem_context.memory,
+        SpecDefinitions::new(&predicate_environment, &click_function_environment),
+    )
+    .expect("antecedent should lower in the current comparison representation");
+    let Proposition::ForAll {
+        var, sort, body, ..
+    } = &required_antecedent
+    else {
+        panic!("a universal antecedent must remain quantified");
+    };
+    let available_variable = Variable(8_200_000);
+    let available_antecedent = Proposition::ForAll {
         name: Default::default(),
-        var: variable,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::Variable(variable)),
-            },
-            true,
+        var: available_variable,
+        sort: sort.clone(),
+        body: Box::new(substitute_int32_variable_in_proposition(
+            body,
+            *var,
+            MachineTerm::Variable(available_variable),
         )),
     };
-    let required_antecedent = universal(Variable(8_100_000));
-    let available_antecedent = universal(Variable(8_200_000));
     let selected_implication = Proposition::Implies(
         Box::new(required_antecedent.clone()),
         Box::new(target.clone()),
     );
-
     for size in [16_u32, 64, 256, 1024, 4096] {
         let mut facts = (0..size)
             .map(|index| {
@@ -4210,7 +4111,7 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         facts.push(available_antecedent.clone());
         facts.push(selected_implication.clone());
         let root = Proof::for_pure_goal(
-            "indexed implication extract",
+            "indexed implication application",
             &facts,
             target.clone(),
             &theorem_context,
@@ -4235,7 +4136,10 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
             1
         );
 
-        let step = ProofStep::Extract(target_surface.clone());
+        let step = ProofStep::ApplyFactUsing {
+            fact: implication_surface.clone(),
+            premises: vec![antecedent_surface.clone()],
+        };
         let before = fact_node_allocations();
         let extracted = root
             .driver()
@@ -4246,7 +4150,7 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         let allocation_bound = 48 * logarithmic_height + 192;
         assert!(
             allocations <= allocation_bound,
-            "size {size} implication extract allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} implication application allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
@@ -4265,7 +4169,10 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         assert!(
             missing_antecedent
                 .driver()
-                .apply_step(ProofStep::Extract(target_surface.clone()))
+                .apply_step(ProofStep::ApplyFactUsing {
+                    fact: implication_surface.clone(),
+                    premises: vec![antecedent_surface.clone()]
+                })
                 .is_err(),
             "an indexed consequent does not bypass its antecedent"
         );
@@ -4363,7 +4270,6 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
             &[],
-            &[],
         );
         if size == 16 {
             let premise_pairs = vec![
@@ -4378,11 +4284,49 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             let selected =
                 selected.expect("the selected universal candidate should close through Proof");
             assert!(selected.is_complete());
-            // The instantiation adds the goal, so it closes it with no
-            // separate `known`.
+            // Propagation exposes the guarded consequence; known closes it.
             assert!(matches!(
                 selected.certificate().steps(),
-                [ProofStep::InstantiateUsing { .. }]
+                [ProofStep::Instantiate { .. }, ProofStep::Known]
+            ));
+            let stronger = ClickProposition::Comparison {
+                left: variable("x"),
+                operator: ComparisonOperator::LessThan,
+                right: value(7),
+            };
+            let stronger_kernel = lower(&stronger);
+            let stronger_available = [kernel_quantified.clone(), stronger_kernel.clone()];
+            let stronger_root = Proof::for_fixed_state_goal(
+                "derived instantiate guard",
+                0,
+                &stronger_available,
+                kernel_goal.clone(),
+                ParameterBinding::new(parsed_function.parameters(), &arguments),
+                &state,
+                &state,
+                &recorded_states,
+                &surface_propositions,
+                SpecDefinitions::new(&predicate_environment, &click_function_environment),
+                &theorem_environment,
+                &[],
+            );
+            let pairs = vec![
+                (kernel_quantified.clone(), quantified_surface.clone()),
+                (stronger_kernel, stronger),
+            ];
+            let planned = crate::kernel::search::ProofSearch::try_selected_forall_instantiation(
+                &stronger_root,
+                &kernel_goal,
+                &pairs,
+            )
+            .expect("a derived guard must become an ordinary have proof");
+            assert!(matches!(
+                planned.certificate().steps(),
+                [
+                    ProofStep::Have { .. },
+                    ProofStep::Instantiate { .. },
+                    ProofStep::Known
+                ]
             ));
         }
         let retained_root = root.clone();
@@ -4410,22 +4354,24 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
         assert!(selected.is_complete());
         assert!(matches!(
             selected.certificate().steps(),
-            [ProofStep::InstantiateUsing { .. }]
+            [ProofStep::Instantiate { .. }, ProofStep::Known]
         ));
 
-        let step = ProofStep::InstantiateUsing {
+        let step = ProofStep::Instantiate {
             quantified: quantified_surface.clone(),
             argument: value(7),
-            premises: Some(vec![premise.clone()]),
         };
-        let omitted = ProofStep::InstantiateUsing {
-            quantified: quantified_surface.clone(),
+        let unavailable = ProofStep::Instantiate {
+            quantified: ClickProposition::Comparison {
+                left: value(0),
+                operator: ComparisonOperator::Equal,
+                right: value(1),
+            },
             argument: value(7),
-            premises: Some(Vec::new()),
         };
         assert!(
-            root.driver().apply_step(omitted).is_err(),
-            "ambient availability must not discharge an omitted guard"
+            root.driver().apply_step(unavailable).is_err(),
+            "the selected universal must be available"
         );
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
@@ -4442,8 +4388,14 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             allocations <= allocation_bound,
             "size {size} instantiate allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
-        // The specialization is the goal, so the step that added it closed it.
-        assert!(instantiated.is_complete());
+        assert!(!instantiated.is_complete());
+        assert!(
+            instantiated
+                .driver()
+                .apply_step(ProofStep::Known)
+                .unwrap()
+                .is_complete()
+        );
         assert_eq!(
             instantiated.certificate().steps(),
             std::slice::from_ref(&step)
@@ -5885,12 +5837,11 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
             &[],
-            &[],
         );
         let retained_root = root.clone();
         let extracted = root
             .driver()
-            .apply_step(ProofStep::Extract(premise.clone()))
+            .apply_step(known_have_step(premise.clone()))
             .expect("a checked predecessor should promote the indexed conjunct");
         assert!(
             crate::kernel::search::ProofSearch::try_theorem_application(
@@ -5921,7 +5872,10 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
             }
         );
         let tactics = [
-            ProofTactic::Extract(premise.clone()),
+            ProofTactic::Have(ProofHave {
+                proposition: premise.clone(),
+                proof: SourceProof::Script(vec![ProofTactic::Known]),
+            }),
             ProofTactic::ApplyTheorem(application.clone()),
             ProofTactic::Solve,
         ];
@@ -5941,7 +5895,7 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
         assert!(complete.is_complete());
         assert_eq!(
             complete.certificate().steps().first(),
-            Some(&ProofStep::Extract(premise.clone()))
+            Some(&known_have_step(premise.clone()))
         );
         assert_eq!(
             complete.certificate().steps().get(1),
@@ -6029,7 +5983,6 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
-            &[],
             &[],
             function_block.requires(),
         );
@@ -6130,7 +6083,6 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
-            &[],
             &[],
         );
         let retained_root = root.clone();
@@ -6255,11 +6207,10 @@ fn fixed_state_transport_can_follow_another_checked_step() {
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
             &[],
-            &[],
         );
         let refined = root
             .driver()
-            .apply_step(ProofStep::Extract(extracted.clone()))
+            .apply_step(known_have_step(extracted.clone()))
             .expect("the predecessor should advance the proof");
         let retained_refined = refined.clone();
         let rejected = refined.driver().apply_step(ProofStep::TransportUsing {
@@ -6324,7 +6275,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
         assert_eq!(
             transported.certificate().steps(),
             &[
-                ProofStep::Extract(extracted.clone()),
+                known_have_step(extracted.clone()),
                 ProofStep::Have {
                     proposition: source.clone(),
                     proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
@@ -6905,7 +6856,6 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
             &[],
-            &[],
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
@@ -7008,7 +6958,6 @@ fn fixed_state_equality_solve_builds_its_recorded_path_with_logarithmic_local_up
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
             &[],
-            &[],
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
@@ -7105,7 +7054,6 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
             &[],
-            &[],
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
@@ -7199,7 +7147,6 @@ fn fixed_state_order_solve_builds_its_theorem_path_with_logarithmic_local_update
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
-            &[],
             &[],
         );
         let retained_root = root.clone();
@@ -7523,7 +7470,6 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
                 SpecDefinitions::new(&predicate_environment, &click_function_environment),
                 &theorem_environment,
                 &[],
-                &[],
             );
             let retained_root = root.clone();
             let before = fact_node_allocations();
@@ -7688,7 +7634,6 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
             &[],
-            &[],
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
@@ -7837,7 +7782,6 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 SpecDefinitions::new(&predicate_environment, &click_function_environment),
                 &theorem_environment,
                 &[],
-                &[],
             );
             let retained_root = root.clone();
             let before = fact_node_allocations();
@@ -7967,7 +7911,6 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             &strict_surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
-            &[],
             &[],
         );
         let retained_root = root.clone();
@@ -8123,7 +8066,6 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
-            &[],
             &[],
         );
         let retained_root = root.clone();
@@ -8315,7 +8257,6 @@ fn ge_and_not_gt_equality_solve_retains_one_indexed_theorem_application() {
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
             &[],
-            &[],
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
@@ -8423,7 +8364,6 @@ fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_certificate() {
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
-            &[],
             &[],
         );
         let retained_root = root.clone();
@@ -8563,7 +8503,6 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
                 &surface_propositions,
                 SpecDefinitions::new(&predicate_environment, &click_function_environment),
                 &theorem_environment,
-                &[],
                 &[],
             );
             let retained_root = root.clone();
@@ -8710,7 +8649,6 @@ fn selected_disjunction_solve_retains_checked_cases_and_scales() {
             &surface_propositions,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
-            &[],
             &[],
         );
         assert_eq!(
@@ -8869,7 +8807,6 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
                 &surface_propositions,
                 SpecDefinitions::new(&predicate_environment, &click_function_environment),
                 &theorem_environment,
-                &[],
                 &[],
             );
             let retained_root = root.clone();
@@ -9097,7 +9034,6 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
                 &surface_propositions,
                 SpecDefinitions::new(&predicate_environment, &click_function_environment),
                 &theorem_environment,
-                &[],
                 &[],
             );
             let retained_root = root.clone();
@@ -9536,7 +9472,14 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
         let before = fact_node_allocations();
         let successor = root
             .driver()
-            .apply_step(ProofStep::UnfoldPredicate("selected".to_string()))
+            .apply_step(ProofStep::UnfoldProposition(
+                ClickProposition::PredicateCall {
+                    name: "selected".into(),
+                    arguments: vec![ContractExpression::ProgramExpression(
+                        ProgramExpression::Value(int32(7)),
+                    )],
+                },
+            ))
             .expect("the exact selected predicate should unfold");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
@@ -9551,7 +9494,14 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
         assert_eq!(root.certificate().steps(), &[]);
         assert_eq!(
             successor.certificate().steps(),
-            &[ProofStep::UnfoldPredicate("selected".to_string())]
+            &[ProofStep::UnfoldProposition(
+                ClickProposition::PredicateCall {
+                    name: "selected".into(),
+                    arguments: vec![ContractExpression::ProgramExpression(
+                        ProgramExpression::Value(int32(7))
+                    )]
+                }
+            )]
         );
         assert!(successor.facts().to_vec().len() > root.facts().to_vec().len());
         let root_execution = root.execution().expect("root execution state");
@@ -9571,30 +9521,21 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
             "unfold does not copy unrelated effect history"
         );
 
-        assert!(
-            successor_execution
-                .core
-                .unfolded_predicates
-                .contains(&"selected".to_string())
-        );
         assert!(successor.facts().to_vec().len() > size as usize + 1);
     }
 }
 
 #[test]
-fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() {
+fn choose_body_leaves_support_have_and_reject_other_binders_and_epochs() {
     let click_file = crate::surface::parse(
         r#"
-            predicate selected(x: int32) {
-                exists (k: int32) { k == x and k >= 0 }
-            }
             int32 identity(int32 x) {
-                requires selected(x);
+                requires exists (k: int32) { k == x and k >= 0 };
                 ensures result == x;
             }
         "#,
     )
-    .expect("the predicate-backed existential requirement should parse");
+    .expect("the existential requirement should parse");
     let function_block = &click_file.function_blocks()[0];
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test function should parse");
@@ -9607,13 +9548,17 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
     let state = ExecutionState::new();
     let argument = ProgramExpression::Value(int32(7));
     let arguments = vec![argument.clone()];
-    let source = Proposition::Predicate {
-        name: "selected".to_string(),
-        arguments: vec![
-            Term::ExecutionState(Box::new(state.clone())),
-            Term::ProgramValue(ProgramValue::Int32(MachineTerm::constant(7))),
-        ],
+    let Requirement::Proposition(source_surface) = &function_block.requires()[0] else {
+        unreachable!()
     };
+    let source = lower_fixed_state_proposition_with_assumptions(
+        source_surface,
+        &PureFactContext::new(),
+        ParameterBinding::new(parsed_function.parameters(), &arguments),
+        FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+        SpecDefinitions::new(&predicates, &click_functions),
+    )
+    .unwrap();
     let owner = CallerSourceOwnerId::ordinary("test.c", "identity");
     let source_id = RequirementSourceId {
         owner: owner.clone(),
@@ -9661,16 +9606,12 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         SpecDefinitions::new(&predicates, &click_functions),
         &theorems,
     );
-    let unfolded = root
-        .driver()
-        .apply_step(ProofStep::UnfoldPredicate("selected".to_string()))
-        .expect("the selected requirement should unfold");
     let scope_goal = ClickProposition::Comparison {
         left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
-    let scope = unfolded
+    let scope = root
         .driver()
         .open_have(scope_goal)
         .expect("a proposition scope should open at the entry frontier");
@@ -9681,33 +9622,30 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
             name: "candidate".to_string(),
             source: ProofFactSource::Requirement(0),
         }))
-        .expect("choose should use the checked unfolded existential");
-    let projection = chosen
-        .execution()
-        .and_then(|execution| execution.presentation.chosen_projection.as_ref())
-        .expect("choose should retain a checked source projection")
-        .clone();
-    assert_eq!(projection.source_id, source_id);
-    assert_eq!(projection.principal_fact_index, 0);
-    assert_eq!(projection.source_token.source_id, projection.source_id);
-    assert!(matches!(
-        projection.source_requirement,
-        Proposition::Predicate { ref name, .. } if name == "selected"
-    ));
-    assert!(matches!(
-        projection.checked_source,
-        Proposition::Exists { .. }
-    ));
-    assert!(!projection.leaves.is_empty());
-    assert_eq!(projection.leaves[0].source_token.source_id, source_id);
-    assert_eq!(projection.leaves[0].source_token.connective_path, vec![0]);
-    assert_eq!(
-        projection.leaves[1].source_token.source_id,
-        projection.source_id
-    );
-    assert_eq!(projection.leaves[1].source_token.connective_path, vec![1]);
+        .expect("choose should use the selected existential");
+    let leaf_surface = ClickProposition::Comparison {
+        left: ContractExpression::At {
+            selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Entry,
+            }),
+            expression: Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable("candidate".into()),
+            )),
+        },
+        operator: ComparisonOperator::Equal,
+        right: ContractExpression::At {
+            selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Entry,
+            }),
+            expression: Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable("x".into()),
+            )),
+        },
+    };
     let wrong_binder = substitute_click_proposition(
-        &projection.leaves[0].surface,
+        &leaf_surface,
         &BTreeMap::from([(
             "candidate".to_string(),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
@@ -9719,7 +9657,7 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
     assert!(
         chosen
             .driver()
-            .apply_step(ProofStep::Extract(wrong_binder))
+            .apply_step(known_have_step(wrong_binder))
             .is_err()
     );
     let wrong_epoch_selector = ProgramPointSelector::ProgramPoint(ProgramPointRef {
@@ -9733,7 +9671,7 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         },
         other => panic!("chosen projection must retain its source state: {other:?}"),
     };
-    let wrong_epoch = match &projection.leaves[0].surface {
+    let wrong_epoch = match &leaf_surface {
         ClickProposition::Comparison {
             left,
             operator,
@@ -9748,34 +9686,17 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
     assert!(
         chosen
             .driver()
-            .apply_step(ProofStep::Extract(wrong_epoch))
+            .apply_step(known_have_step(wrong_epoch))
             .is_err()
     );
     let extracted = chosen
         .driver()
-        .apply_step(ProofStep::Extract(projection.leaves[0].surface.clone()))
+        .apply_step(known_have_step(leaf_surface.clone()))
         .expect("extract should consume the checked chosen-body leaf");
     assert!(matches!(
         extracted.certificate().steps(),
-        [ProofStep::Choose(_), ProofStep::Extract(_)]
+        [ProofStep::Choose(_), ProofStep::Have { .. }]
     ));
-    let nested = chosen
-        .driver()
-        .open_have(ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
-            operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
-        })
-        .expect("a nested proposition scope should open");
-    assert!(
-        nested
-            .body()
-            .execution()
-            .expect("nested scope should retain execution context")
-            .presentation
-            .chosen_projection
-            .is_none()
-    );
 }
 
 #[test]
@@ -13159,7 +13080,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         helper_arguments.clone(),
         PureFactContext::new(),
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
     );
     let certified = prove_program_function_contract_execution_paths_with_checked_artifacts(
@@ -13167,7 +13088,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         helper.clone(),
         helper_arguments,
         ExecutionEnvironment::new(),
-        ExecutionSemantics::EXECUTE_BODIES,
+        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
         FunctionContractExecutionMode::VerifyLoops,
         &[artifacts],
     );
@@ -14005,7 +13926,6 @@ fn completed_application_retention_does_not_rerun_and_scales() {
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
             &[],
-            &[],
         );
         for root in [root, fixed] {
             let completed = root.driver().apply_step(ProofStep::Normalize).unwrap();
@@ -14083,7 +14003,6 @@ fn fixed_state_source_failure_is_only_a_miss_at_an_explicit_search_boundary() {
         &surfaces,
         SpecDefinitions::new(&predicates, &functions),
         &theorems,
-        &[],
         &[],
     );
     let retained = root.clone();
@@ -14547,7 +14466,6 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
             &[],
-            &[],
         );
         let transported = root
             .driver()
@@ -14600,7 +14518,6 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
             &names,
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
-            &[],
             &[],
         );
         let mut absent_locals = absent.state().locals().clone();
@@ -14687,7 +14604,6 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
             &[],
-            &[],
         );
         let mut locals = root.state().locals().clone();
         locals.set_values(locals.values.with_inserted(
@@ -14697,16 +14613,21 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
             ))),
         ));
         let root = root.with_kernel_state(root.state.with_locals(locals));
-        let step = |argument| ProofStep::InstantiateUsing {
+        let step = |argument| ProofStep::Instantiate {
             quantified: quantified.clone(),
             argument,
-            premises: None,
         };
+        let guarded = root
+            .driver()
+            .apply_step(step(ContractExpression::Binding("right".into())))
+            .unwrap();
+        assert!(!guarded.is_complete());
         assert!(
-            root.driver()
-                .apply_step(step(ContractExpression::Binding("right".into())))
+            guarded
+                .driver()
+                .apply_step(ProofStep::Rewrite(surface.clone()))
                 .is_err(),
-            "an unstated guard is not supplied by the index"
+            "a conditional equality cannot authorize the rewrite without its guard"
         );
         let instantiated = root
             .driver()
@@ -14811,7 +14732,6 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
         &names,
         SpecDefinitions::new(&predicates, &functions),
         &theorems,
-        &[],
         &[],
     );
     let mut locals = root.state().locals().clone();
@@ -15048,7 +14968,6 @@ fn partition_known_uses_the_fixed_state_not_its_entry_partition() {
             SpecDefinitions::new(&predicates, &functions),
             &theorems,
             &[],
-            &[],
         );
         let focused = root.focus_fixed_state_goal(goal.clone()).unwrap();
         // Exercise the partition rule itself, with no materialized separation.
@@ -15243,4 +15162,11 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
         );
     }
     assert!(synthesize().is_none(), "the arm's names must not leak");
+}
+
+fn known_have_step(proposition: ClickProposition) -> ProofStep {
+    ProofStep::Have {
+        proposition,
+        proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
+    }
 }

@@ -1993,14 +1993,8 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
             cost.statement_steps = cost.statement_steps.saturating_add(1);
         }
         match statement {
-            ProgramStatement::ScalarReferenceScope(scope) => {
-                cost.statement_steps = cost
-                    .statement_steps
-                    .saturating_add(scope.cleared_locals().len());
-            }
             ProgramStatement::ThrowOpaque(_)
             | ProgramStatement::Skip
-            | ProgramStatement::EndScalarReference(_)
             | ProgramStatement::EndAutomaticLifetimes { .. }
             | ProgramStatement::Break
             | ProgramStatement::Continue

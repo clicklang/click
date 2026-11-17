@@ -250,7 +250,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "execute_until",
     "exists",
     "exit",
-    "extract",
     "fact",
     "false",
     "field",
@@ -264,7 +263,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "if",
     "import",
     "implies",
-    "peel",
     "rust",
     "in",
     "induct",
@@ -2259,6 +2257,11 @@ pub struct ResourceFieldAccess {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ResourceSubject {
+    /// A resource descriptor evaluated in a recorded state.
+    At {
+        selector: ProgramPointSelector,
+        resource: Box<ResourceSubject>,
+    },
     Star(Box<ResourceSubject>, Box<ResourceSubject>),
     Emp,
     Instance {
@@ -2958,6 +2961,7 @@ fn collect_current_resource_subject_variables(
     names: &mut BTreeSet<String>,
 ) {
     match subject {
+        ResourceSubject::At { .. } => {}
         ResourceSubject::Emp => (),
         ResourceSubject::Star(left, right) => {
             collect_current_resource_subject_variables(left, names);
@@ -3468,7 +3472,7 @@ impl<'a> ContractEnvironment<'a> {
         Some(value)
     }
 }
-/// How many recorded memories on each side of a load's own the speller
+/// How many recorded memories on each side of a load's own the raiser
 /// checks for it.
 const MEMORY_POINTS_NEAR: usize = 4;
 
@@ -3504,10 +3508,10 @@ fn instance_holds_field_value(
 }
 
 /// How many recorded points whose memory held a value's fingerprint the
-/// speller tries.
+/// raiser tries.
 const CELL_POINTS_OFFERED: usize = 4;
 
-/// How many recorded points holding a pointer's block the speller tries.
+/// How many recorded points holding a pointer's block the raiser tries.
 const POINTER_POINTS_OFFERED: usize = 4;
 
 type ReadEventNames<T> =
@@ -5767,14 +5771,8 @@ pub enum ProofTactic {
     Synthetic(Box<ProofTactic>),
     SmartExecute,
     ExecuteUntil(CodeRegionRef),
-    UnfoldPredicate(String),
+    UnfoldProposition(ClickProposition),
     UnfoldFunction(ClickFunctionApplication),
-    /// `peel(f(args)) using { ... }`: the same defining equation, plus
-    /// the range-fold law the listed guards select, stated over `f(args)`.
-    PeelFunction {
-        application: ClickFunctionApplication,
-        premises: Vec<ClickProposition>,
-    },
     UnfoldResource(ResourceClause),
     /// `let { witness: name, ... } = unfold(resource)` on a declared
     /// resource: the unfold, with each named `let ... where` witness of the
@@ -5800,6 +5798,12 @@ pub enum ProofTactic {
     ApplyInductionUsing {
         hypothesis: String,
         arguments: Vec<ContractExpression>,
+        premises: Vec<ClickProposition>,
+    },
+    /// Apply an established implication, proving its antecedents.
+    ApplyFact(ClickProposition),
+    ApplyFactUsing {
+        fact: ClickProposition,
         premises: Vec<ClickProposition>,
     },
     ApplyTheorem(TheoremApplication),
@@ -5835,7 +5839,6 @@ pub enum ProofTactic {
     },
     CheckTerminationCallbacks,
     Known,
-    Extract(ClickProposition),
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
@@ -5858,12 +5861,10 @@ pub enum ProofTactic {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
-    /// `instantiate(F, value)`, with `premises` the written `using` list.
-    /// Without a list, each instantiated guard must itself be an exact fact.
-    InstantiateUsing {
+    /// Substitute one universal binder, preserving its whole body and guards.
+    Instantiate {
         quantified: ClickProposition,
         argument: ContractExpression,
-        premises: Option<Vec<ClickProposition>>,
     },
     Solve,
     /// The driver schedules ordinary `solve` for every remaining claim.
@@ -5946,7 +5947,6 @@ pub enum SimpleTactic {
     Choose,
     Termination,
     Known,
-    Extract,
     Normalize,
     Intro,
     Enumerate,
@@ -6112,17 +6112,12 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "unfold-predicate",
-        syntax: "unfold(name)",
+        syntax: "unfold(predicate(args))",
         class: "simple",
     },
     PublicTacticForm {
         id: "unfold-function",
         syntax: "unfold(function(args))",
-        class: "simple",
-    },
-    PublicTacticForm {
-        id: "peel-function",
-        syntax: "peel(function(args)) using { P; ... }",
         class: "simple",
     },
     PublicTacticForm {
@@ -6183,6 +6178,16 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "apply-induction-using",
         syntax: "apply(ih(m)) using",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "apply-fact",
+        syntax: "apply(fact)",
+        class: "smart",
+    },
+    PublicTacticForm {
+        id: "apply-fact-using",
+        syntax: "apply(fact) using",
         class: "simple",
     },
     PublicTacticForm {
@@ -6256,11 +6261,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "extract",
-        syntax: "extract(P)",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "normalize",
         syntax: "normalize()",
         class: "simple",
@@ -6272,7 +6272,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "preserve",
-        syntax: "preserve(separate(region.footprint, resource))",
+        syntax: "preserve(resource, region)",
         class: "simple",
     },
     PublicTacticForm {
@@ -6313,11 +6313,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "instantiate",
         syntax: "instantiate(F, value)",
-        class: "simple",
-    },
-    PublicTacticForm {
-        id: "instantiate-using",
-        syntax: "instantiate(F, value) using",
         class: "simple",
     },
     PublicTacticForm {
@@ -6460,10 +6455,8 @@ impl ProofTactic {
                 TacticClass::Simple(SimpleTactic::StatementTransition)
             }
             Self::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
-            Self::UnfoldPredicate(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
-            Self::UnfoldFunction(_) | Self::PeelFunction { .. } => {
-                TacticClass::Simple(SimpleTactic::UnfoldFunction)
-            }
+            Self::UnfoldProposition(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
+            Self::UnfoldFunction(_) => TacticClass::Simple(SimpleTactic::UnfoldFunction),
             Self::UnfoldResource(_) | Self::UnfoldWitnesses { .. } => {
                 TacticClass::Simple(SimpleTactic::UnfoldResource)
             }
@@ -6477,10 +6470,12 @@ impl ProofTactic {
                 TacticClass::Smart(SmartSite::Elided(ElidedArgument::InductionPremises))
             }
             Self::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
-            Self::ApplyTheorem(_) => {
+            Self::ApplyFact(_) | Self::ApplyTheorem(_) => {
                 TacticClass::Smart(SmartSite::Elided(ElidedArgument::TheoremPremises))
             }
-            Self::ApplyTheoremUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),
+            Self::ApplyFactUsing { .. } | Self::ApplyTheoremUsing { .. } => {
+                TacticClass::Simple(SimpleTactic::ApplyTheorem)
+            }
             Self::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
             Self::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
             Self::Choose(_) => TacticClass::Simple(SimpleTactic::Choose),
@@ -6488,7 +6483,6 @@ impl ProofTactic {
             | Self::CheckTerminationComponent { .. }
             | Self::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
             Self::Known => TacticClass::Simple(SimpleTactic::Known),
-            Self::Extract(_) => TacticClass::Simple(SimpleTactic::Extract),
             Self::Normalize | Self::NormalizeUsing(_) => {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }
@@ -6508,7 +6502,7 @@ impl ProofTactic {
                 TacticClass::Smart(SmartSite::Elided(ElidedArgument::FrameEvidence))
             }
             Self::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
-            Self::InstantiateUsing { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
+            Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
             Self::SmartExecute | Self::ExecuteUntil(_) => {
@@ -10094,17 +10088,6 @@ impl SourceProof {
         )
     }
 
-    fn unfold_tactic_names(&self) -> Vec<String> {
-        match self {
-            Self::Default | Self::Tactic(_) => Vec::new(),
-            Self::Script(tactics) => {
-                let mut names = Vec::new();
-                collect_unfold_tactic_names(tactics, &mut names);
-                names
-            }
-        }
-    }
-
     pub fn tactic(&self) -> Option<&SmartTactic> {
         match self {
             Self::Default => None,
@@ -10147,45 +10130,6 @@ impl ProofTactic {
             for tactic in proof.tactics().unwrap_or_default() {
                 tactic.collect_termination_loop_clauses(clauses);
             }
-        }
-    }
-}
-
-fn collect_unfold_tactic_names(tactics: &[ProofTactic], names: &mut Vec<String>) {
-    for tactic in tactics {
-        match tactic {
-            ProofTactic::UnfoldPredicate(name) => names.push(name.clone()),
-            ProofTactic::Have(have) => {
-                if let SourceProof::Script(tactics) = &have.proof {
-                    collect_unfold_tactic_names(tactics, names);
-                }
-            }
-            ProofTactic::Open(open) => {
-                collect_unfold_tactic_names(&open.tactics, names);
-                if let Some(close_proof) = &open.close_proof {
-                    collect_unfold_tactic_names(close_proof, names);
-                }
-            }
-            ProofTactic::If(proof_if) => {
-                collect_unfold_tactic_names(&proof_if.then_tactics, names);
-                collect_unfold_tactic_names(&proof_if.else_tactics, names);
-            }
-            ProofTactic::StructuralInduct { arms, .. } => {
-                for arm in arms {
-                    collect_unfold_tactic_names(&arm.tactics, names);
-                }
-            }
-            ProofTactic::Match(proof_match) => {
-                let arms = &proof_match.arms;
-                for arm in arms {
-                    collect_unfold_tactic_names(&arm.tactics, names);
-                }
-            }
-            ProofTactic::Branch(branch) => {
-                collect_unfold_tactic_names(&branch.then_tactics, names);
-                collect_unfold_tactic_names(&branch.else_tactics, names);
-            }
-            _ => {}
         }
     }
 }

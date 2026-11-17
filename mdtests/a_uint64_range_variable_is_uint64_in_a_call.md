@@ -18,6 +18,7 @@ theorem required(n: uint64, u: uint64) {
     requires u < n;
     ensures g(u) == u by {
         instantiate((0u64..n).all(|k| { g(k) == k }), u);
+        known();
     }
 }
 

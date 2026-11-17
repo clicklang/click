@@ -47,7 +47,7 @@ int32 run() {
                 have separate(region(12).footprint, memory(h->target)) by {
                     normalize() using {};
                 }
-                preserve(separate(region(12).footprint, memory(h->target)));
+                preserve(memory(h->target), region(12));
             }
             mark declared;
             step();
@@ -55,7 +55,7 @@ int32 run() {
                 have separate(region(13).footprint, memory(h->target)) by {
                     normalize() using {};
                 }
-                preserve(separate(region(13).footprint, memory(h->target)));
+                preserve(memory(h->target), region(13));
             }
             step_until(function.exit);
         }

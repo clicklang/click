@@ -570,7 +570,6 @@ fn dynamic_body_fact_dependency(
             Proposition::MemoryCanStore { .. }
             | Proposition::MemoryMutatesOnly { .. }
             | Proposition::MemoryEffectSummary { .. }
-            | Proposition::ProgramFunctionSatisfiesSpecification { .. }
             | Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. } => Ok(()),
             _ => Err("unsupported opaque proposition in current-load dependency".into()),
         }
@@ -3745,18 +3744,6 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 )
             ))
         })?;
-        let lowered_fact = unfold_predicates_in_proposition(
-            spec_definitions,
-            &[],
-            &lowered_fact,
-            available_pure_facts.assumptions(),
-        )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: could not unfold `unfold({})` pure fact: {message}",
-                describe_resource_clause(resource)
-            ))
-        })?;
         let temporary_views = borrowed_parent_binding
             .as_ref()
             .map(|binding| {
@@ -4089,7 +4076,6 @@ fn fold_composite_resources_on_outcome_with_facts(
     pre_state: &ExecutionState,
     mut outcome: FunctionOutcome,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
 ) -> Result<FoldedOutcome, ClickError> {
@@ -4457,18 +4443,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 if collecting {
                     lowered
                 } else {
-                    unfold_predicates_in_proposition(
-                    spec_definitions,
-                    unfolded_predicates,
-                    &lowered,
-                    pure_facts.assumptions(),
-                )
-                .map_err(|message| {
-                    ClickError::new(format!(
-                        "`{claim_label}` path {path_index}: could not unfold exact `fold({})` fact: {message}",
-                        describe_resource_clause(resource)
-                    ))
-                })?
+                    Proposition::clone(&lowered)
                 }
             };
             if let Some(binding) = dynamic_body_fact_dependency(
@@ -5085,7 +5060,6 @@ pub(super) fn fold_composite_resource_for_proof(
     pre_state: &ExecutionState,
     state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     family_reaches_population: bool,
 ) -> Result<CheckedResourceFold, ClickError> {
     fold_composite_resource_for_proof_with_closure(
@@ -5099,7 +5073,6 @@ pub(super) fn fold_composite_resource_for_proof(
         pre_state,
         state,
         spec_definitions,
-        unfolded_predicates,
         ResourceBodyClosure::Initialize,
         family_reaches_population,
     )
@@ -5121,7 +5094,6 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     pre_state: &ExecutionState,
     outcome: FunctionOutcome,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
 ) -> Result<CheckedOutcomeResourceFold, ClickError> {
@@ -5140,7 +5112,6 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
         pre_state,
         outcome,
         spec_definitions,
-        unfolded_predicates,
         closure,
         family_reaches_population,
     )?;
@@ -5200,7 +5171,6 @@ pub(super) fn close_open_resource_for_proof(
     pre_state: &ExecutionState,
     state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     preserve_exposed_body: bool,
 ) -> Result<CheckedResourceFold, ClickError> {
     fold_composite_resource_for_proof_with_closure(
@@ -5214,7 +5184,6 @@ pub(super) fn close_open_resource_for_proof(
         pre_state,
         state,
         spec_definitions,
-        unfolded_predicates,
         ResourceBodyClosure::CloseOpen {
             preserve_exposed_body,
         },
@@ -5234,7 +5203,6 @@ fn fold_composite_resource_for_proof_with_closure(
     pre_state: &ExecutionState,
     state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
     family_reaches_population: bool,
 ) -> Result<CheckedResourceFold, ClickError> {
@@ -5255,7 +5223,6 @@ fn fold_composite_resource_for_proof_with_closure(
         pre_state,
         outcome,
         spec_definitions,
-        unfolded_predicates,
         closure,
         family_reaches_population,
     )?;

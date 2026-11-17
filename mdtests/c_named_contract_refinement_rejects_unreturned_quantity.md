@@ -22,8 +22,8 @@ theorem spending_used_preserves_available(
 ) {
     requires SpendUsed(callback);
     ensures PreserveAvailable(callback) by {
-        unfold(SpendUsed);
-        unfold(PreserveAvailable);
+        unfold(SpendUsed(callback));
+        unfold(PreserveAvailable(callback));
         solve();
     }
 }

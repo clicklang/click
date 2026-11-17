@@ -66,7 +66,6 @@ impl<'a> Proof<'a> {
                 ProofLocals::default(),
                 OpenBranch::frontier(BranchState {
                     facts,
-                    unfolded_predicates: PersistentOrderedSet::default(),
                     execution: Some(Arc::new(execution)),
                 }),
             ),
@@ -197,7 +196,6 @@ impl<'a> Proof<'a> {
             frontier: &execution.core.frontier,
             execution,
             context,
-            unfolded_predicates: &execution.core.unfolded_predicates,
             branch_path: &execution.presentation.branch_path,
             outcome_provenance: &execution.presentation.outcome_provenance,
         })
@@ -238,7 +236,6 @@ impl<'a> Proof<'a> {
             frontier: &execution.core.frontier,
             execution,
             context,
-            unfolded_predicates: &execution.core.unfolded_predicates,
             branch_path: &execution.presentation.branch_path,
             outcome_provenance: &execution.presentation.outcome_provenance,
         })

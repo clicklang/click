@@ -46,9 +46,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                 intro();
                 intro();
                 if k < at(before, i) {
-                    instantiate(forall (k: uint64) { k < at(before, i) implies at(before, bytes[k]) == at(before, value) }, k) using {
-                        k < at(before, i);
-                    };
+                    instantiate(forall (k: uint64) { k < at(before, i) implies at(before, bytes[k]) == at(before, value) }, k);
                     have at(before, i) != k by {
                         solve() using { k < at(before, i); };
                     }
@@ -63,7 +61,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                         };
                     }
                     have at(loop(0).statement(0).exit, bytes[k]) == at(before, bytes[k]) by {
-                        preserve(separate(loop(0).statement(0).footprint, memory(bytes[k])));
+                        preserve(memory(bytes[k]), loop(0).statement(0));
                     }
                     have bytes[k] == at(loop(0).statement(0).exit, bytes[k]) by { normalize(); }
                     have bytes[k] == at(before, bytes[k]) by {
@@ -95,9 +93,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
             rewrite(at(loop(0).exit, i), length);
             known();
         }
-        instantiate(forall (k: uint64) { k < at(loop(0).exit, i) implies at(loop(0).exit, bytes[k]) == at(loop(0).exit, value) }, k) using {
-            k < at(loop(0).exit, i);
-        };
+        instantiate(forall (k: uint64) { k < at(loop(0).exit, i) implies at(loop(0).exit, bytes[k]) == at(loop(0).exit, value) }, k);
         known();
     }
     known();

@@ -58,8 +58,6 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             }
             ProgramStatement::ThrowOpaque(_)
             | ProgramStatement::Skip
-            | ProgramStatement::EndScalarReference(_)
-            | ProgramStatement::ScalarReferenceScope(_)
             | ProgramStatement::Break
             | ProgramStatement::Continue
             | ProgramStatement::Goto { .. }

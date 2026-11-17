@@ -37,12 +37,12 @@ void dummy_rotate(struct rb_node* old, struct rb_node* new) {
 } by { step_until(function.exit); normalize(); }
 
 theorem dummy_propagate_contract() {
-    ensures ErasePropagate(&dummy_propagate) by { unfold(ErasePropagate); solve(); }
+    ensures ErasePropagate(&dummy_propagate) by { unfold(ErasePropagate(&dummy_propagate)); solve(); }
 }
 theorem dummy_copy_contract() {
-    ensures EraseCopy(&dummy_copy) by { unfold(EraseCopy); solve(); }
+    ensures EraseCopy(&dummy_copy) by { unfold(EraseCopy(&dummy_copy)); solve(); }
 }
 theorem dummy_rotate_contract() {
-    ensures AugmentRotate(&dummy_rotate) by { unfold(AugmentRotate); solve(); }
+    ensures AugmentRotate(&dummy_rotate) by { unfold(AugmentRotate(&dummy_rotate)); solve(); }
 }
 
