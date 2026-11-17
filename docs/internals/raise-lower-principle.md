@@ -364,21 +364,21 @@ Baseline (2026-11-16, ordinary mdtest corpus, both runs passing):
   fixtures; 338 of them come from
   `mutex_resource_quantity_requires_conservation` (`uint32` comparisons).
 - Round trip (2026-11-17, after the audit raised with recorded points and
-  the entry state, and pointer call results were indexed): 55,023 records.
-  Of the 15,732 Surface forms the raiser produced, 13,469 were `same`, 696
-  `polarity`, 1,212 `differs` and 355 `unlowered`; 4,321 terms were
-  `unraised` and 34,970 had `no-state` (mostly termination predicates).
-  Integer and other comparisons round-trip about 77% of the time, pointer
-  comparisons about 31%: pointer reads named by the memory they were read in
-  rather than their version point, and pointer values with no recorded
-  origin, account for most of the rest. Before the audit used recorded
+  the entry state, pointer call results were indexed, and closed literal
+  comparisons stopped folding): 55,575 records. Of the 16,046 Surface forms
+  the raiser produced, 13,780 were `same`, 698 `polarity`, 1,201 `differs`
+  and 367 `unlowered`; 4,318 terms were `unraised` and 35,211 had
+  `no-state` (mostly termination predicates). Pointer comparisons account
+  for 367 of the `differs`: pointer reads named by the memory they were read
+  in rather than their version point, addresses raised to a placeholder, and
+  pointer values with no recorded origin. Before the audit used recorded
   points (2026-11-16) it reported 9,343 `same` of 54,642 records, because no
-  `at(point, ..)` or `old(..)` form was available to it. Recurring
-  `differs` shapes: an entry read raised through a current name (`old(*result) ==
-  7` raised as `result->value == 7`, lowering to `old(*next) == 7`); a
-  reflexive comparison lowering folds (`p == p` to `true`); casts raised
-  differently on the two sides of an equality; and `to_integer(...)` terms
-  raised as `let` bindings or bare machine arithmetic.
+  `at(point, ..)` or `old(..)` form was available to it. Other recurring
+  `differs` shapes: a C parameter named `result` raised as Click's `result`
+  (`old(*result) == 7` raised as `result->value == 7`, which at function
+  exit lowers to the returned `next`); a reflexive comparison lowering folds
+  (`p == p` to `true`, 75 records); casts raised differently on the two
+  sides of an equality; and reads raised at a neighbouring program point.
 
 ## Lowering is structural
 
