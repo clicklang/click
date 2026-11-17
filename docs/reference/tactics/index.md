@@ -2380,7 +2380,8 @@ named binder and continue with the body goal. A universal's variable keeps the
 name its quantifier wrote; if that name is already in scope it shadows the older
 one, which stays readable as `outer.name`. That includes a range quantifier's
 variable in a `have` stated between C statements
-([`intro_names_a_range_variable_in_a_have_between_statements.md`](https://github.com/clicklang/click/blob/master/mdtests/intro_names_a_range_variable_in_a_have_between_statements.md)).
+([`intro_names_a_range_variable_in_a_have_between_statements.md`](https://github.com/clicklang/click/blob/master/mdtests/intro_names_a_range_variable_in_a_have_between_statements.md)). A known C/C++ record binding named `outer` keeps ordinary `outer.field`
+access in a proof; it is not parsed as the shadowed-binder qualifier.
 
 **Accepts** a goal whose lowered head is one of these, and makes one
 introduction:
