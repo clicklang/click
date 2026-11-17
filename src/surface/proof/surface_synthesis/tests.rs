@@ -7593,3 +7593,35 @@ fn closed_word32_equality_guards_with_selected_literal_arms_round_trip() {
         }
     }
 }
+
+#[test]
+fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
+    use crate::kernel::PointerValue;
+    let _session = crate::kernel::VerificationSession::enter();
+    let node = PointerValue::new(
+        Pointer::symbolic(Variable(999977)),
+        ProgramType::Int32Pointer,
+    );
+    let parameters = [crate::languages::interface::ImportedParameter::new(
+        InterfaceType::Int32Pointer,
+        "node".into(),
+        None,
+    )];
+    let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
+        node.clone(),
+    ))];
+    let binding = ParameterBinding::new(&parameters, &arguments);
+    let state = ExecutionState::new();
+    let equality = Proposition::ConditionIs(
+        ConditionTerm::PointerEqual(
+            Box::new(node.pointer().clone()),
+            Box::new(node.pointer().clone()),
+        ),
+        true,
+    );
+    let surface = synthesize_surface_proposition(&equality, binding, &state).unwrap();
+    assert_eq!(
+        crate::surface::printing::source_click_proposition(&surface),
+        "address(node) == address(node)"
+    );
+}
