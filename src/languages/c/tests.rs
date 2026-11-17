@@ -15319,3 +15319,40 @@ fn static_declarations_keep_linkage_and_redeclaration_identity() {
     assert!(!format!("{:?}", functions[0].body()).contains("#static"));
     assert!(!format!("{:?}", functions[0].body()).contains("#file-static"));
 }
+
+#[test]
+fn c_inferred_local_arrays_refuse_incomplete_and_oversized_shapes() {
+    for (source, expected) in [
+        (
+            "int f() { int a[]; return 0; }",
+            "require a brace initializer",
+        ),
+        (
+            "int f() { int a[] = {}; return 0; }",
+            "require a non-empty initializer",
+        ),
+        (
+            "int f() { int a[2][] = {{1}, {2}}; return 0; }",
+            "only the outer local array bound",
+        ),
+        (
+            "int f() { int a[][2] = {{1, 2, 3}}; return 0; }",
+            "too many initializers",
+        ),
+        (
+            "int f() { int a[] = {sizeof(a)}; return 0; }",
+            "`sizeof` requires a complete array type",
+        ),
+        (
+            "int f() { int a[] = {sizeof(__typeof__(a))}; return 0; }",
+            "GNU `typeof` of an incomplete array",
+        ),
+        (
+            "int f() { int a[][1073741823] = {{1}, {2}}; return 0; }",
+            "dimensions are too large",
+        ),
+    ] {
+        let error = syntax::parse_function(source).expect_err("invalid inferred local shape");
+        assert!(error.message().contains(expected), "{source}: {error:?}");
+    }
+}
