@@ -1,3 +1,4 @@
+use crate::kernel::assumptions::PointerDomain;
 // These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
 use crate::kernel::MachineCastSpelling;
@@ -5,7 +6,7 @@ use crate::kernel::binary_node;
 use crate::kernel::{constant_u32, int32_constant};
 
 #[test]
-fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
+fn pointer_values_do_not_adopt_fact_supplied_bounds() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address::symbolic(Variable(989_900));
     let value = PointerValue::new(pointer.clone(), ProgramType::Int32Pointer);
@@ -18,27 +19,33 @@ fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
         ConditionTerm::PointerValueEqual(Box::new(value.clone()), Box::new(bounded)),
         true,
     );
-    assert_ne!(facts.pointer_value_at_entry(&value), value);
+    assert!(matches!(
+        facts.pointer_domain(&value),
+        PointerDomain::Selected(_)
+    ));
     let state = ExecutionState::new().with_local("p", ProgramValue::Pointer(value.clone()));
-    let _specification = crate::kernel::eval::SpecificationReadScope::enter();
-    for expression in [
-        ProgramExpression::Value(ProgramValue::Pointer(value.clone())),
-        ProgramExpression::Variable(("p".to_owned()).into()),
-    ] {
-        for context in [&PureFactContext::new(), &facts] {
-            let paths = evaluate_program_expression_paths(
-                &state,
-                &expression,
-                context,
-                &mut ExecutionBudget::default(),
-            )
-            .unwrap();
-            assert_eq!(paths.len(), 1);
-            assert_eq!(
-                paths[0].outcome,
-                ExpressionOutcome::Value(ProgramValue::Pointer(value.clone())),
-                "{expression:?}",
-            );
+
+    for specification in [false, true] {
+        let _scope = specification.then(crate::kernel::eval::SpecificationReadScope::enter);
+        for expression in [
+            ProgramExpression::Value(ProgramValue::Pointer(value.clone())),
+            ProgramExpression::Variable(("p".to_owned()).into()),
+        ] {
+            for context in [&PureFactContext::new(), &facts] {
+                let paths = evaluate_program_expression_paths(
+                    &state,
+                    &expression,
+                    context,
+                    &mut ExecutionBudget::default(),
+                )
+                .unwrap();
+                assert_eq!(paths.len(), 1);
+                assert_eq!(
+                    paths[0].outcome,
+                    ExpressionOutcome::Value(ProgramValue::Pointer(value.clone())),
+                    "{expression:?}",
+                );
+            }
         }
     }
 }

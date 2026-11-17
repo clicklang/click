@@ -219,7 +219,7 @@ theorem adler_spec_a_canonical(bytes: uint8[], n: int32, a0: Integer) {
   apply(integer::positive_divisor_remainder_upper(a0 + adler_byte_sum(bytes, n), 65521)) using { 65521 != 0; 0 < 65521; };
   have truncating_remainder(a0 + adler_byte_sum(bytes, n), 65521) <= 65520 by { solve() using { truncating_remainder(a0 + adler_byte_sum(bytes, n), 65521) <= 65521 - 1; }; }
   unfold(adler_spec_a(bytes, n, a0));
-  both { known(); } and { known(); }
+  both { left => { known(); } right => { known(); } }
  }
 }
 
@@ -240,7 +240,7 @@ theorem adler_spec_b_canonical(bytes: uint8[], n: int32, a0: Integer, b0: Intege
   apply(integer::positive_divisor_remainder_upper(b0 + to_integer(n) * a0 + adler_weighted_sum(bytes, n, n), 65521)) using { 65521 != 0; 0 < 65521; };
   have truncating_remainder(b0 + to_integer(n) * a0 + adler_weighted_sum(bytes, n, n), 65521) <= 65520 by { solve() using { truncating_remainder(b0 + to_integer(n) * a0 + adler_weighted_sum(bytes, n, n), 65521) <= 65521 - 1; }; }
   unfold(adler_spec_b(bytes, n, a0, b0));
-  both { known(); } and { known(); }
+  both { left => { known(); } right => { known(); } }
  }
 }
 
@@ -254,9 +254,12 @@ theorem adler_spec_packing_bounds(bytes: uint8[], n: int32, a0: Integer, b0: Int
   apply(adler_spec_b_canonical(bytes, n, a0, b0)) using { 0 <= n; 0 <= a0; a0 <= 65520; 0 <= b0; };
   unfold(adler_spec_checksum(bytes, n, a0, b0));
   both {
-   solve() using { 0 <= adler_spec_b(bytes, n, a0, b0); 0 <= adler_spec_a(bytes, n, a0); };
-  } and {
-   solve() using { adler_spec_b(bytes, n, a0, b0) <= 65520; adler_spec_a(bytes, n, a0) <= 65520; };
+   left => {
+    solve() using { 0 <= adler_spec_b(bytes, n, a0, b0); 0 <= adler_spec_a(bytes, n, a0); };
+   }
+   right => {
+    solve() using { adler_spec_b(bytes, n, a0, b0) <= 65520; adler_spec_a(bytes, n, a0) <= 65520; };
+   }
   }
  }
 }
@@ -916,7 +919,7 @@ theorem adler_sums_extensional(left: uint8[], right: uint8[], bound: int32, n: i
    rewrite(adler_byte_sum(right, 0), 0);
    rewrite(adler_weighted_sum(left, 0, weight), 0);
    rewrite(adler_weighted_sum(right, 0, weight), 0);
-   both { normalize(); } and { normalize(); }
+   both { left => { normalize(); } right => { normalize(); } }
   } else {
    have 0 < n;
    have 0 <= to_integer(n - 1) by solve() using { 0 < n; };
@@ -934,17 +937,20 @@ theorem adler_sums_extensional(left: uint8[], right: uint8[], bound: int32, n: i
    apply(adler_weighted_append(left, n, weight)) using { 0 < n; };
    apply(adler_weighted_append(right, n, weight)) using { 0 < n; };
    both {
-    rewrite(adler_byte_sum(left, n), adler_byte_sum(left, n - 1) + to_integer(left[n - 1] as int32));
-    rewrite(adler_byte_sum(right, n), adler_byte_sum(right, n - 1) + to_integer(right[n - 1] as int32));
-    rewrite(adler_byte_sum(left, n - 1), adler_byte_sum(right, n - 1));
-    rewrite(left[n - 1], right[n - 1]);
-    normalize();
-   } and {
-    rewrite(adler_weighted_sum(left, n, weight), adler_weighted_sum(left, n - 1, weight) + (to_integer(weight) - to_integer(n - 1)) * to_integer(left[n - 1] as int32));
-    rewrite(adler_weighted_sum(right, n, weight), adler_weighted_sum(right, n - 1, weight) + (to_integer(weight) - to_integer(n - 1)) * to_integer(right[n - 1] as int32));
-    rewrite(adler_weighted_sum(left, n - 1, weight), adler_weighted_sum(right, n - 1, weight));
-    rewrite(left[n - 1], right[n - 1]);
-    normalize();
+    left => {
+     rewrite(adler_byte_sum(left, n), adler_byte_sum(left, n - 1) + to_integer(left[n - 1] as int32));
+     rewrite(adler_byte_sum(right, n), adler_byte_sum(right, n - 1) + to_integer(right[n - 1] as int32));
+     rewrite(adler_byte_sum(left, n - 1), adler_byte_sum(right, n - 1));
+     rewrite(left[n - 1], right[n - 1]);
+     normalize();
+    }
+    right => {
+     rewrite(adler_weighted_sum(left, n, weight), adler_weighted_sum(left, n - 1, weight) + (to_integer(weight) - to_integer(n - 1)) * to_integer(left[n - 1] as int32));
+     rewrite(adler_weighted_sum(right, n, weight), adler_weighted_sum(right, n - 1, weight) + (to_integer(weight) - to_integer(n - 1)) * to_integer(right[n - 1] as int32));
+     rewrite(adler_weighted_sum(left, n - 1, weight), adler_weighted_sum(right, n - 1, weight));
+     rewrite(left[n - 1], right[n - 1]);
+     normalize();
+    }
    }
   }
  }
@@ -959,15 +965,18 @@ theorem adler_spec_extensional(left: uint8[], right: uint8[], length: int32, a0:
    forall (k: int32) { 0 <= k and k < length implies left[k] == right[k] };
   };
   both {
-   unfold(adler_spec_a(left, length, a0));
-   unfold(adler_spec_a(right, length, a0));
-   rewrite(adler_byte_sum(left, length), adler_byte_sum(right, length));
-   normalize();
-  } and {
-   unfold(adler_spec_b(left, length, a0, b0));
-   unfold(adler_spec_b(right, length, a0, b0));
-   rewrite(adler_weighted_sum(left, length, length), adler_weighted_sum(right, length, length));
-   normalize();
+   left => {
+    unfold(adler_spec_a(left, length, a0));
+    unfold(adler_spec_a(right, length, a0));
+    rewrite(adler_byte_sum(left, length), adler_byte_sum(right, length));
+    normalize();
+   }
+   right => {
+    unfold(adler_spec_b(left, length, a0, b0));
+    unfold(adler_spec_b(right, length, a0, b0));
+    rewrite(adler_weighted_sum(left, length, length), adler_weighted_sum(right, length, length));
+    normalize();
+   }
   }
  }
 }

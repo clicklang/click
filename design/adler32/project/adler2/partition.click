@@ -28,9 +28,12 @@ theorem adler_small_partition(n: Integer) {
   apply(adler_small_quotient_bounds(n, 4)) using { 0 <= n; n <= 22207; 4 <= 4; 4 != 0; };
   unfold(adler_vector_prefix(n));
   both {
-   solve() using { n == truncating_quotient(n, 4) * 4 + truncating_remainder(n, 4); 0 <= truncating_quotient(n, 4); };
-  } and {
-   solve() using { n == truncating_quotient(n, 4) * 4 + truncating_remainder(n, 4); truncating_quotient(n, 4) <= 5551; };
+   left => {
+    solve() using { n == truncating_quotient(n, 4) * 4 + truncating_remainder(n, 4); 0 <= truncating_quotient(n, 4); };
+   }
+   right => {
+    solve() using { n == truncating_quotient(n, 4) * 4 + truncating_remainder(n, 4); truncating_quotient(n, 4) <= 5551; };
+   }
   }
  }
  ensures 0 <= truncating_remainder(n, 4) by apply(integer::nonnegative_dividend_remainder(n, 4)) using { 4 != 0; 0 <= n; };
@@ -61,9 +64,12 @@ theorem adler_unsigned_small_partition(n: uint64) {
   rewrite(to_integer(n % 4u64), truncating_remainder(to_integer(n), to_integer(4u64)));
   unfold(adler_vector_prefix(to_integer(n)));
   both {
-   solve() using { 0 <= adler_vector_prefix(to_integer(n)); adler_vector_prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
-  } and {
-   solve() using { adler_vector_prefix(to_integer(n)) <= 22204; adler_vector_prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
+   left => {
+    solve() using { 0 <= adler_vector_prefix(to_integer(n)); adler_vector_prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
+   }
+   right => {
+    solve() using { adler_vector_prefix(to_integer(n)) <= 22204; adler_vector_prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
+   }
   }
  }
 }
@@ -81,9 +87,12 @@ theorem adler_signed_small_prefix(n: uint64) {
   have 0 <= to_integer((n - n % 4u64) as uint32 as int32) by { rewrite(to_integer((n - n % 4u64) as uint32 as int32), to_integer(n - n % 4u64)); known(); }
   have to_integer((n - n % 4u64) as uint32 as int32) <= 22204 by { rewrite(to_integer((n - n % 4u64) as uint32 as int32), to_integer(n - n % 4u64)); known(); }
   both {
-   known();
-  } and {
-   known();
+   left => {
+    known();
+   }
+   right => {
+    known();
+   }
   }
  }
 }
@@ -223,9 +232,12 @@ theorem adler_small_signed_tail(n: uint64) {
   have 0 <= to_integer((n % 4u64) as uint32 as int32) by { rewrite(to_integer((n % 4u64) as uint32 as int32), to_integer(n % 4u64)); normalize(); }
   have to_integer((n % 4u64) as uint32 as int32) <= 3 by { rewrite(to_integer((n % 4u64) as uint32 as int32), to_integer(n % 4u64)); known(); }
   both {
-   known();
-  } and {
-   known();
+   left => {
+    known();
+   }
+   right => {
+    known();
+   }
   }
  }
 }
@@ -327,9 +339,12 @@ theorem adler_small_prefix_within_full(n: uint64) {
   have 0 <= to_integer(n as uint32 as int32) by { rewrite(to_integer(n as uint32 as int32), to_integer(n)); known(); }
   have to_integer(n as uint32 as int32) <= 22207 by { rewrite(to_integer(n as uint32 as int32), to_integer(n)); solve() using { to_integer(n) <= to_integer(22207u64); }; }
   both {
-   known();
-  } and {
-   known();
+   left => {
+    known();
+   }
+   right => {
+    known();
+   }
   }
  }
  ensures (n - n % 4u64) as uint32 as int32 <= n as uint32 as int32 by {

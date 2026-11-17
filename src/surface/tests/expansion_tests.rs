@@ -1,6 +1,87 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: helper fold preservation and cold replay"]
+fn fold_through_a_helper_survives_the_endpoint_store_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/fold_read_transport_rejects_an_opaque_helper.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    with_proof_trace("set_end", || {
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "same_through.ensures_0")
+        .unwrap_or_else(|error| {
+            panic!(
+                "{}
+{source}",
+                error.report()
+            )
+        });
+    let expanded = expand_c_claim_source_by_label(&expanded, &sources, "set_end.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    for label in ["same_through.ensures_0", "set_end.contract"] {
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+
+    let overlapping = sources[0].1.replace("v[i] = 1;", "v[0] = 1;");
+    assert_ne!(overlapping, sources[0].1);
+    let report = verify_c_sources(&source, &[(sources[0].0, overlapping.as_str())])
+        .unwrap_err()
+        .report();
+    assert!(report.contains("footprint"), "{report}");
+}
+
+#[test]
+#[ignore = "nightly: viewability diagnostic and saved-premise replay"]
+fn earlier_viewable_premise_keeps_its_point_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_viewable_premise_from_an_earlier_point_prints_that_point.md");
+    let (name, c) = &sources[0];
+    assert!(!source.contains("transport("));
+    let error = verify_c_sources(&source, &[(name.as_str(), c.as_str())]).unwrap_err();
+    let report = error.report();
+    assert!(report.contains("goal: viewable(q[0..4])"), "{report}");
+    assert!(
+        report.contains("at(function.entry, viewable(q[0..k + 4u64 - k]))"),
+        "{report}"
+    );
+
+    let control = source.replace(
+        "    have viewable(q[0..4]) by {\n        rewrite(q, p + k);\n        known();\n    }",
+        "    have at(function.entry, viewable(p[k..k + 4u64])) by { known(); }",
+    );
+    assert_ne!(control, source);
+    // Read via the original pointer so the control isolates the saved view
+    // without requiring another proof of the aliases' return-value equality.
+    let control_c = c.replace("return q[3];", "return p[k + 3];");
+    assert_ne!(&control_c, c);
+    let sources = [(name.as_str(), control_c.as_str())];
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let label = "last.contract";
+    let expanded = expand_c_claim_source_by_label(&control, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: wide element bounds, initializedness, and cold replay"]
 fn wide_viewable_element_needs_containment_and_initializedness() {
     let (source, sources) =
@@ -3036,16 +3117,25 @@ theorem fixed_integer_witness(value: int32) {
     } by {
         witness(0);
         both {
-            both {
-                known();
-            } and {
-                known();
+            left => {
+                both {
+                    left => {
+                        known();
+                    }
+                    right => {
+                        known();
+                    }
+                }
             }
-        } and {
-            both {
-                normalize();
-            } and {
-                normalize();
+            right => {
+                both {
+                    left => {
+                        normalize();
+                    }
+                    right => {
+                        normalize();
+                    }
+                }
             }
         }
     }
@@ -20584,9 +20674,12 @@ fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
  requires 0 <= b;
  ensures 0 <= a and 0 <= b by {
   both {
-   solve() using { 0 <= a; };
-  } and {
-   solve() using { 0 <= b; };
+      left => {
+       solve() using { 0 <= a; };
+      }
+      right => {
+       solve() using { 0 <= b; };
+      }
   }
  }
 }
@@ -21645,15 +21738,18 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1) by {
                 both {
-                    have a == 0 by {
-                        rewrite(a, b); rewrite(b, 0); normalize();
+                    left => {
+                        have a == 0 by {
+                            rewrite(a, b); rewrite(b, 0); normalize();
+                        }
+                        known();
                     }
-                    known();
-                } and {
-                    intro();
-                    have a == 0 by { known(); }
-                    have a + 1 == 1 by { rewrite(a, 0); normalize(); }
-                    known();
+                    right => {
+                        intro();
+                        have a == 0 by { known(); }
+                        have a + 1 == 1 by { rewrite(a, 0); normalize(); }
+                        known();
+                    }
                 }
             }
         }
@@ -21681,7 +21777,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1)
-            {} both {{ known(); }} and {{ intro(); known(); }}
+            {} both {{ left => {{ known(); }} right => {{ intro(); known(); }} }}
             }}
         }}
     "#,
