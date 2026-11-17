@@ -226,6 +226,22 @@ fn no_effect(statement: &ProgramStatement) -> bool {
     }
 }
 
+/// The slice local `slice` reads: the local itself, or a shared borrow of it,
+/// `&bytes`, which has the same pointer and length.
+pub(super) fn shared_slice_local(slice: &E) -> Option<&String> {
+    match slice {
+        E::Local { name } => Some(name),
+        E::Borrow {
+            place,
+            value_type: Type::ByteSlice { mutable: false },
+        } => match place.as_ref() {
+            E::Local { name } => Some(name),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn scalar_type(t: &Type) -> Result<InterfaceType, String> {
     match t {
         Type::Enum { name } => Ok(InterfaceType::Parameter(EnumTypes::get(name)?)),
@@ -1166,7 +1182,7 @@ impl Context<'_> {
         if left.name == right.name {
             return Err("split_at results require distinct slice slots".into());
         }
-        let E::Local { name } = slice else {
+        let Some(name) = shared_slice_local(slice) else {
             return Err("split_at requires a shared byte-slice local".into());
         };
         if !self.slices.get(name).is_some_and(|(_, constant)| *constant) {
