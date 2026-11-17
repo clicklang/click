@@ -111,7 +111,7 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
         ContractExpression::Old(_) => true,
         ContractExpression::QualifiedC { .. }
         | ContractExpression::ProgramExpression(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::ResourceWildcard => false,
         ContractExpression::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => {
@@ -199,7 +199,7 @@ pub(in crate::surface) fn contains_resource_count(expression: &ContractExpressio
         ContractExpression::ResourceCount(_) => true,
         ContractExpression::QualifiedC { .. }
         | ContractExpression::ProgramExpression(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::ResourceWildcard => false,
         ContractExpression::Field { base, .. }
         | ContractExpression::Old(base)
@@ -489,7 +489,7 @@ pub(in crate::surface) fn collect_resource_count_families(
             }
             ContractExpression::QualifiedC { .. }
             | ContractExpression::ProgramExpression(_)
-            | ContractExpression::CBinding(_)
+            | ContractExpression::ProgramBinding(_)
             | ContractExpression::ResourceWildcard => {}
         }
     }
@@ -712,7 +712,7 @@ pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression
         ContractExpression::At { .. } => true,
         ContractExpression::QualifiedC { .. }
         | ContractExpression::ProgramExpression(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::ResourceWildcard => false,
         ContractExpression::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => {
@@ -926,7 +926,7 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
         }
         ContractExpression::QualifiedC { .. }
         | ContractExpression::ProgramExpression(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::ResourceWildcard => {}
         ContractExpression::ResourceCount(resource) => {
             if let ResourceClause::Declared { arguments, .. } = resource.as_ref() {
@@ -1268,7 +1268,7 @@ fn contract_expression_variable(expression: &ContractExpression) -> Option<Surfa
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | ContractExpression::CBinding(name) => Some(name.into()),
+        | ContractExpression::ProgramBinding(name) => Some(name.into()),
         ContractExpression::AlgebraicVariable { name, .. } => Some(name.clone()),
         ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Generated(id),
@@ -1515,7 +1515,7 @@ fn validate_recursive_calls_in_expression(
         }
         ContractExpression::QualifiedC { .. }
         | ContractExpression::ProgramExpression(_)
-        | ContractExpression::CBinding(_)
+        | ContractExpression::ProgramBinding(_)
         | ContractExpression::ResourceWildcard => Ok(()),
         ContractExpression::ResourceCount(resource) => {
             if let ResourceClause::Declared { arguments, .. } = resource.as_ref() {

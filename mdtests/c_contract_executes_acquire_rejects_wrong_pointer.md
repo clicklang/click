@@ -22,13 +22,13 @@ int32* read_wrong(int32* (*acquire)(), int32* value, int32* other) {
     produces MaybeCell(result);
 } by {
     step(); step(Boxed); step();
-    if c(cell) != 0 {
-        unfold(MaybeCell(c(cell)));
-        unfold(Cell(c(cell)));
+    if program::cell != 0 {
+        unfold(MaybeCell(program::cell));
+        unfold(Cell(program::cell));
         step_until(function.exit);
         fold(Cell(result)); fold(MaybeCell(result)); solve();
     } else {
-        unfold(MaybeCell(c(cell)));
+        unfold(MaybeCell(program::cell));
         step_until(function.exit);
         fold(MaybeCell(result)); solve();
     }

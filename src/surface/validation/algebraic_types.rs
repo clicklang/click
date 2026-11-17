@@ -145,7 +145,7 @@ impl AlgebraicVariables {
                 }
             }
             ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
+            | ContractExpression::ProgramBinding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => {
@@ -638,7 +638,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
                     crate::kernel::ResourceChildField::Parent(access.field_index)
                 }
                 ContractExpression::Binding(variable)
-                | ContractExpression::CBinding(variable)
+                | ContractExpression::ProgramBinding(variable)
                 | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Named(variable),
                 )) => {
@@ -3096,7 +3096,7 @@ fn validate_algebraic_expression_node(
         }
         // A C name of a Rust enum's type holds that enum's value.
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Ok(variables.get(name).and_then(|interface_type| {
@@ -3261,7 +3261,7 @@ fn validate_scalar_return_condition(
                     if !matches!(
                         operand,
                         ContractExpression::Binding(_)
-                            | ContractExpression::CBinding(_)
+                            | ContractExpression::ProgramBinding(_)
                             | ContractExpression::AlgebraicVariable { .. }
                             | ContractExpression::AlgebraicConstructor { .. }
                             | ContractExpression::Call { .. }
@@ -3839,7 +3839,7 @@ fn infer_generic_expression_type(
             Ok(Some(ClickType::Algebraic(algebraic_type.clone())))
         }
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Ok(variables.get(name).cloned()),

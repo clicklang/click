@@ -5133,7 +5133,7 @@ pub(super) fn contract_expression_mentions_program_local(
             contract_expression_mentions_program_local(left, parameter_names)
                 || contract_expression_mentions_program_local(right, parameter_names)
         }
-        ContractExpression::CBinding(_) | ContractExpression::ResourceWildcard => false,
+        ContractExpression::ProgramBinding(_) | ContractExpression::ResourceWildcard => false,
         ContractExpression::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => arguments.iter().any(|argument| {
                 contract_expression_mentions_program_local(argument, parameter_names)

@@ -1768,17 +1768,17 @@ int32 caller() {
     ensures result == 0;
 } by {
     step_until(function.exit);
-    have at(statement(2).entry, c(result)) == 0 by {
+    have at(statement(2).entry, program::result) == 0 by {
         known();
     }
-    have result == at(statement(2).entry, c(result)) by {
+    have result == at(statement(2).entry, program::result) by {
         normalize();
     }
     known();
 }
 "#;
     verify_c_sources(explicit_source, &sources)
-        .expect("`c(result)` should denote the C local rather than contract result");
+        .expect("`program::result` should denote the C local rather than contract result");
 }
 
 #[test]

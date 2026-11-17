@@ -40,11 +40,11 @@ int32 use_five(int32* cell) {
     step();
     step();
     step();
-    if c(flag) == 1 {
+    if program::flag == 1 {
         have cell[0] == 5 by {
             solve() using {
-                c(flag) == 1;
-                c(flag) == 1 implies cell[0] == 5;
+                program::flag == 1;
+                program::flag == 1 implies cell[0] == 5;
             };
         }
         step_until(function.exit);

@@ -4350,9 +4350,11 @@ mod cursor_sequence_tests {
 
     fn state_test_leaf(name: String) -> ClickProposition {
         ClickProposition::Comparison {
-            left: ContractExpression::CBinding(name),
+            left: ContractExpression::ProgramBinding(name),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::Old(Box::new(ContractExpression::CBinding("entry".into()))),
+            right: ContractExpression::Old(Box::new(ContractExpression::ProgramBinding(
+                "entry".into(),
+            ))),
         }
     }
 
@@ -4380,7 +4382,7 @@ mod cursor_sequence_tests {
     fn state_annotation_leaves_the_int64_minimum_unanchored() {
         let observed = ContractExpression::Call {
             name: "to_integer".into(),
-            arguments: vec![ContractExpression::CBinding("q".into())],
+            arguments: vec![ContractExpression::ProgramBinding("q".into())],
         };
         let minimum = ContractExpression::Negate(Box::new(ContractExpression::IntegerLiteral(
             "9223372036854775808".into(),
@@ -4501,7 +4503,7 @@ mod cursor_sequence_tests {
                         };
                         assert_eq!(
                             expression.as_ref(),
-                            &ContractExpression::CBinding(index.to_string())
+                            &ContractExpression::ProgramBinding(index.to_string())
                         );
                         index += 1;
                     }
