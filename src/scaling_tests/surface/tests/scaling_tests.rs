@@ -9909,6 +9909,50 @@ fn post_return_function_equations_scale_with_explicit_unfolds() {
     );
 }
 
+/// A pointer a call returned is spelled `<region>.result` from one index
+/// lookup, however many calls the path recorded; replacing or removing the
+/// call's exit removes the spelling.
+#[test]
+fn recorded_pointer_call_results_scale_and_follow_replacement() {
+    use crate::kernel::{Pointer, ProgramType, Variable};
+    for size in [16usize, 64, 256, 1024] {
+        let mut retained_states = RecordedStates::new();
+        let value = |index: u64| {
+            ProgramValue::typed_pointer(
+                Pointer::symbolic(Variable(710_000 + index)),
+                ProgramType::Int32Pointer,
+            )
+        };
+        for index in 0..size {
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                retained_states.record_call_result(index, Some(value(index as u64)));
+            });
+            assert!(work <= 2, "{size}: insertion {work}");
+        }
+        let first = Pointer::symbolic(Variable(710_000));
+        let (region, work) = crate::instrumentation::measure_deterministic_work(|| {
+            retained_states.call_result_naming_pointer(&first)
+        });
+        assert_eq!(region, Some(CodeRegionRef::Region(0)));
+        assert!(work <= 2, "{size}: lookup {work}");
+        // A later call returning the same pointer does not take the name.
+        retained_states.record_call_result(size, Some(value(0)));
+        assert_eq!(
+            retained_states.call_result_naming_pointer(&first),
+            Some(CodeRegionRef::Region(0))
+        );
+        let branch = retained_states.clone();
+        retained_states.record_call_result(0, Some(value(20_000)));
+        assert!(retained_states.call_result_naming_pointer(&first).is_none());
+        assert_eq!(
+            branch.call_result_naming_pointer(&first),
+            Some(CodeRegionRef::Region(0))
+        );
+        retained_states.record_call_result(0, None);
+        assert!(retained_states.call_result_naming_pointer(&first).is_none());
+    }
+}
+
 #[test]
 fn recorded_call_results_scale_and_replace_execution_occurrences() {
     use crate::kernel::{ConditionTerm, MachineIntegerType, MachineTerm, Variable};
