@@ -4,10 +4,10 @@ use super::direct_loop_guard::{
 use super::*;
 use crate::kernel::*;
 
-fn address(index: usize) -> Pointer {
-    Pointer {
-        block: format!("direct-loop-{index}").into(),
-        offset: PointerOffsetTerm::Constant(0),
+fn address(index: usize) -> Address {
+    Address {
+        base: format!("direct-loop-{index}").into(),
+        offset: AddressOffset::Constant(0),
     }
 }
 fn spec() -> ResourceSpec {

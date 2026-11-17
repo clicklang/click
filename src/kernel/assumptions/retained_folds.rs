@@ -7,7 +7,7 @@ use crate::kernel::{KernelFold, KernelTermNode, KernelType};
 pub(super) fn collect_fold_memory_loads(
     fold: &KernelFold,
     current_memory: &Memory,
-    loads: &mut Vec<(Pointer, u32)>,
+    loads: &mut Vec<(Address, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -31,7 +31,7 @@ pub(super) fn collect_fold_memory_loads(
 pub(super) fn collect_common_memory_loads(
     mut pending: Vec<(&KernelTerm, Option<u32>)>,
     current_memory: &Memory,
-    loads: &mut Vec<(Pointer, u32)>,
+    loads: &mut Vec<(Address, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     let mut seen = BTreeSet::new();
@@ -229,7 +229,7 @@ pub(super) fn collect_common_memory_loads(
 }
 
 fn push_offset_memory_loads<'a>(
-    roots: impl IntoIterator<Item = &'a crate::kernel::SharedPointerOffset>,
+    roots: impl IntoIterator<Item = &'a crate::kernel::SharedAddressOffset>,
     pending: &mut Vec<(&'a KernelTerm, Option<u32>)>,
 ) -> Result<(), String> {
     let mut offsets: Vec<_> = roots.into_iter().collect();
@@ -244,13 +244,13 @@ fn push_offset_memory_loads<'a>(
             return Err("memory-load collection exceeded its checking budget".into());
         }
         match offset.node() {
-            crate::kernel::KernelPointerOffset::Add(children) => {
+            crate::kernel::KernelAddressOffset::Add(children) => {
                 offsets.extend(children.iter().rev())
             }
-            crate::kernel::KernelPointerOffset::Int32Scaled { value, .. } => {
+            crate::kernel::KernelAddressOffset::Int32Scaled { value, .. } => {
                 indices.push((value, Some(4)))
             }
-            crate::kernel::KernelPointerOffset::Int64Scaled { value, .. } => {
+            crate::kernel::KernelAddressOffset::Int64Scaled { value, .. } => {
                 indices.push((value, Some(8)))
             }
             _ => {}
@@ -320,7 +320,7 @@ mod tests {
         ] {
             let _session = crate::kernel::VerificationSession::enter();
             let current = Memory::new();
-            let pointer = Pointer::symbolic(Variable(991510));
+            let pointer = Address::symbolic(Variable(991510));
             let source = IntegerTerm::RangeFold {
                 index: IntegerRangeFoldIndex::Integer {
                     start: IntegerTerm::constant_i64(0).into(),
@@ -369,7 +369,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let current = Memory::new();
         let memory = crate::kernel::intern_memory_ref(&current);
-        let pointer = Pointer::symbolic(Variable(991501));
+        let pointer = Address::symbolic(Variable(991501));
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(pointer),
@@ -448,16 +448,16 @@ mod offset_condition_tests {
         let read = |id, kind| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(&current))),
-                Box::new(Pointer::symbolic(Variable(id))),
+                Box::new(Address::symbolic(Variable(id))),
                 kind,
             )
         };
         let source = ConditionTerm::PointerOffsetEqual(
-            Box::new(PointerOffsetTerm::scaled_int32_node(
+            Box::new(AddressOffset::scaled_int32_node(
                 read(998500, LoadKind::Int32),
                 4,
             )),
-            Box::new(PointerOffsetTerm::scaled_int64_node(
+            Box::new(AddressOffset::scaled_int64_node(
                 read(998501, LoadKind::Bits64),
                 8,
                 false,
@@ -493,9 +493,9 @@ mod boolean_read_tests {
         let memory = crate::kernel::intern_memory(current.clone());
         let source = ConditionTerm::BoolLoad(
             memory.clone(),
-            Box::new(Pointer {
-                block: PointerBlock::Symbolic(Variable(999360)),
-                offset: PointerOffsetTerm::scaled_int32_node(
+            Box::new(Address {
+                base: AddressBase::Symbolic(Variable(999360)),
+                offset: AddressOffset::scaled_int32_node(
                     MachineTerm::MemoryLoad(
                         ProgramPoint::at(&memory),
                         Box::new(Memory::global_pointer("bool-index")),

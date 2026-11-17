@@ -558,7 +558,7 @@ mod tests {
         let read = |variable| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
-                Box::new(Pointer::symbolic(variable)),
+                Box::new(Address::symbolic(variable)),
                 LoadKind::Int32,
             )
         };
@@ -570,7 +570,7 @@ mod tests {
                 variant: "Arm".into(),
                 binding_names: Default::default(),
                 bindings: vec![AlgebraicValue::Program(ProgramValue::typed_pointer(
-                    Pointer::symbolic(bound),
+                    Address::symbolic(bound),
                     ProgramType::Int32Pointer,
                 ))],
                 body: MachineTerm::Binary {
@@ -587,7 +587,7 @@ mod tests {
             &native,
         )
         .unwrap();
-        let replacement = Pointer::symbolic(bound);
+        let replacement = Address::symbolic(bound);
         let mut old = TermRewrite::for_pointer_variable(source, &replacement);
         let expected = old.bits(&native);
         assert_eq!(old.refusal(), None);
@@ -607,7 +607,7 @@ mod tests {
         use crate::kernel::effective_type::{CAccessClass, CStructClass};
         let class = CAccessClass::Struct(CStructClass::opaque("RetainedPointer"));
         let original = ProgramValue::typed_pointer(
-            Pointer::symbolic(Variable(991940)),
+            Address::symbolic(Variable(991940)),
             ProgramType::Int32Pointer,
         );
         let replacement = original

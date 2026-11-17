@@ -160,12 +160,12 @@ fn pointer_index_collectors_keep_cold_dags_shared() {
             }
             let machine = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
             let offset = if ty == MachineIntegerType::Int32 {
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: machine,
                     byte_width: 4,
                 }
             } else {
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value: machine,
                     byte_width: 8,
                     unsigned: ty == MachineIntegerType::UInt64,

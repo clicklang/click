@@ -448,7 +448,7 @@ mod tests {
             &ObjectTypeRequirements::unit(1, class())
         );
         let mut normal = vec![ProgramValue::typed_pointer(
-            Pointer::symbolic(Variable(700)),
+            Address::symbolic(Variable(700)),
             ProgramType::Int32Pointer,
         )];
         assert!(
@@ -463,7 +463,7 @@ mod tests {
             .is_none()
         );
         let mut captured = vec![ProgramValue::typed_pointer(
-            Pointer::symbolic(Variable(701)),
+            Address::symbolic(Variable(701)),
             ProgramType::Int32Pointer,
         )];
         assert!(

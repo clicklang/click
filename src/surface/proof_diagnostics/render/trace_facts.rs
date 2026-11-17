@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn inventory_fact_kinds_show_operands_instead_of_opaque_counts() {
-        let p = Pointer::symbolic(Variable(986_700));
+        let p = Address::symbolic(Variable(986_700));
         let memory = Memory::new();
         let word = MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
@@ -205,7 +205,7 @@ mod tests {
             ),
             (
                 Proposition::ConditionIs(
-                    ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(Pointer::null())),
+                    ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(Address::null())),
                     false,
                 ),
                 "is false",
@@ -218,7 +218,7 @@ mod tests {
                 Proposition::ConditionIs(
                     ConditionTerm::PointerOffsetEqual(
                         Box::new(p.offset.clone()),
-                        Box::new(PointerOffsetTerm::Constant(16)),
+                        Box::new(AddressOffset::Constant(16)),
                     ),
                     true,
                 ),
@@ -245,7 +245,7 @@ mod tests {
                 Proposition::VolatileAccess(std::sync::Arc::new(crate::kernel::VolatileAccess {
                     id: crate::kernel::VolatileEventId(123),
                     kind: crate::kernel::VolatileAccessKind::Write,
-                    pointer: Pointer::symbolic(Variable(986_703)),
+                    pointer: Address::symbolic(Variable(986_703)),
                     value_type: crate::kernel::ProgramType::UInt64,
                     value: ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
                 })),
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn trace_reads_preserve_state_and_load_kind_without_current_pointer_names() {
-        let address = Pointer::symbolic(Variable(986_702));
+        let address = Address::symbolic(Variable(986_702));
         let first = crate::kernel::intern_memory(Memory::new());
         let second = crate::kernel::intern_memory(Memory::new().with_block("trace_changed", 4));
         let load = |memory, kind| {

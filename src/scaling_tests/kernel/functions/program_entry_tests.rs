@@ -6,7 +6,7 @@ use super::*;
 
 /// A C read of `pointer` at `memory`, as one path: static storage holds no
 /// cell at function entry, so the read is its load there.
-fn program_read(memory: &Memory, pointer: Pointer, value_type: ProgramType) -> ExpressionOutcome {
+fn program_read(memory: &Memory, pointer: Address, value_type: ProgramType) -> ExpressionOutcome {
     let mut paths = crate::kernel::eval::evaluate_memory_load_paths(
         memory,
         pointer,
@@ -96,9 +96,9 @@ fn a_symbolic_global_array_names_only_the_elements_a_function_reads() {
             });
             let entry_named = registered() - before_entry;
             let base = Memory::global_pointer("buf");
-            let element = |index: i64| Pointer {
-                block: base.block.clone(),
-                offset: PointerOffsetTerm::Constant(index * width),
+            let element = |index: i64| Address {
+                base: base.base.clone(),
+                offset: AddressOffset::Constant(index * width),
             };
             let before_statement = registered();
             let (read, statement_work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -277,7 +277,7 @@ fn an_aggregate_array_at_startup_costs_the_same_whatever_its_length() {
                 value(int32(7)),
                 value(int32(0)),
                 value(ProgramValue::typed_pointer(
-                    Pointer::null(),
+                    Address::null(),
                     ProgramType::Int32Pointer
                 )),
                 value(int32(3)),

@@ -15,7 +15,7 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
     let copied = MachineTerm::Variable(Variable(710_001));
     let changed = MachineTerm::Variable(Variable(710_002));
     let address = MachineTerm::PointerAddress(
-        Box::new(Pointer::symbolic(Variable(710_003))),
+        Box::new(Address::symbolic(Variable(710_003))),
         crate::kernel::AddressObjectClass::NONE,
     );
     let packed = |word: &MachineTerm| {
@@ -108,7 +108,7 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
     let word = MachineTerm::Variable(Variable(730_000));
     let copied = MachineTerm::Variable(Variable(730_001));
     let address = MachineTerm::PointerAddress(
-        Box::new(Pointer::symbolic(Variable(730_003))),
+        Box::new(Address::symbolic(Variable(730_003))),
         crate::kernel::AddressObjectClass::NONE,
     );
     let packed = |word: &MachineTerm| {
@@ -152,12 +152,12 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
 
 #[test]
 fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
-    let model = Pointer::symbolic(Variable(700));
-    let program = Pointer {
-        block: PointerBlock::Symbolic(Variable(701)),
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(702)), 4),
+    let model = Address::symbolic(Variable(700));
+    let program = Address {
+        base: AddressBase::Symbolic(Variable(701)),
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(702)), 4),
     };
-    let null = Pointer::null();
+    let null = Address::null();
     let alias = pointer_fact(&model, &program, true);
     let nonnull = pointer_fact(&model, &null, false);
     let needed = pointer_fact(&program, &null, false);
@@ -177,7 +177,7 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
         &PureFactContext::new().assume_proposition(nonnull.clone()),
         &needed,
     ));
-    let parent_fact = |pointer: &Pointer, value: u32| {
+    let parent_fact = |pointer: &Address, value: u32| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -221,12 +221,12 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
         let mut padded = context.clone();
         for index in 0..count {
             padded = padded.assume_proposition(pointer_fact(
-                &Pointer::symbolic(Variable(10_000 + index)),
-                &Pointer::symbolic(Variable(20_000 + index)),
+                &Address::symbolic(Variable(10_000 + index)),
+                &Address::symbolic(Variable(20_000 + index)),
                 true,
             ));
             padded = padded.assume_proposition(pointer_fact(
-                &Pointer::symbolic(Variable(30_000 + index)),
+                &Address::symbolic(Variable(30_000 + index)),
                 &null,
                 true,
             ));
@@ -262,7 +262,7 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
 fn binding_free_scalar_facts_do_not_prepare_unused_arm_memory() {
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(718_000));
+        let pointer = Address::symbolic(Variable(718_000));
         let state = ExecutionState::new().with_local(
             "p",
             ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
@@ -277,7 +277,7 @@ fn binding_free_scalar_facts_do_not_prepare_unused_arm_memory() {
                 .map(|index| {
                     ResourceSpec::owned_memory(MemorySegment::new(
                         ProgramExpression::Value(ProgramValue::typed_pointer(
-                            Pointer::symbolic(Variable(719_000 + index)),
+                            Address::symbolic(Variable(719_000 + index)),
                             ProgramType::Int32Pointer,
                         )),
                         crate::kernel::program_expression::int32_literal(0),
@@ -310,7 +310,7 @@ fn arm_refutation_stops_before_unneeded_memory_facts() {
         let _session = crate::kernel::VerificationSession::enter();
         let state = ExecutionState::new().with_local(
             "p",
-            ProgramValue::typed_pointer(Pointer::null(), ProgramType::Int32Pointer),
+            ProgramValue::typed_pointer(Address::null(), ProgramType::Int32Pointer),
         );
         let arm = ResourceMatchArm {
             variant: "Held".into(),
@@ -322,7 +322,7 @@ fn arm_refutation_stops_before_unneeded_memory_facts() {
                 .map(|index| {
                     ResourceSpec::owned_memory(MemorySegment::new(
                         ProgramExpression::Value(ProgramValue::typed_pointer(
-                            Pointer::symbolic(Variable(719_000 + index)),
+                            Address::symbolic(Variable(719_000 + index)),
                             ProgramType::Int32Pointer,
                         )),
                         crate::kernel::program_expression::int32_literal(0),
@@ -369,9 +369,9 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
     let mut costs = Vec::new();
     for size in [2u64, 4, 8, 16] {
         let _session = crate::kernel::VerificationSession::enter();
-        let input = |name| Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(name)), 4),
+        let input = |name| Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(name)), 4),
         };
         let word = input(719_100);
         let context = PureFactContext::new()

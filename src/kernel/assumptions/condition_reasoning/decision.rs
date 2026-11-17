@@ -813,13 +813,13 @@ impl PureFactContext {
     /// composition scan: unrelated ownership is not a candidate for this index.
     fn pointers_distinct_by_stated_separation(
         &self,
-        left: &Pointer,
-        right: &Pointer,
+        left: &Address,
+        right: &Address,
     ) -> Option<bool> {
         if left == right {
             return None;
         }
-        if left.block == right.block {
+        if left.base == right.base {
             return self.offsets_distinct_by_stated_separation(&left.offset, &right.offset);
         }
         let key = Self::separated_pointer_key(left.clone(), right.clone());
@@ -830,8 +830,8 @@ impl PureFactContext {
 
     fn offsets_distinct_by_stated_separation(
         &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> Option<bool> {
         if left == right {
             return None;
@@ -842,7 +842,7 @@ impl PureFactContext {
         Some(false)
     }
 
-    fn pointers_distinct_by_nullness(&self, left: &Pointer, right: &Pointer) -> Option<bool> {
+    fn pointers_distinct_by_nullness(&self, left: &Address, right: &Address) -> Option<bool> {
         let left = self.pointer_nullness(left)?;
         let right = self.pointer_nullness(right)?;
         (left != right).then_some(false)
@@ -858,8 +858,8 @@ impl PureFactContext {
     /// and the walk visits only the component reachable from `start`.
     pub(in crate::kernel) fn pointer_equality_component(
         &self,
-        start: &Pointer,
-    ) -> Vec<(Pointer, Option<Pointer>)> {
+        start: &Address,
+    ) -> Vec<(Address, Option<Address>)> {
         let mut seen = std::collections::BTreeSet::from([start.clone()]);
         let mut reached = vec![(start.clone(), None)];
         let mut frontier = vec![start.clone()];
@@ -885,8 +885,8 @@ impl PureFactContext {
     /// The null pointer is null intrinsically, and a pointer whose block is
     /// proven distinct from the null block is not null by the same rule that
     /// decides any other block disequality.
-    fn pointer_nullness(&self, pointer: &Pointer) -> Option<bool> {
-        let null = Pointer::null();
+    fn pointer_nullness(&self, pointer: &Address) -> Option<bool> {
+        let null = Address::null();
         if *pointer == null {
             return Some(true);
         }
@@ -904,8 +904,8 @@ impl PureFactContext {
     /// were equal the two pointers would be one pointer.
     fn offsets_distinct_by_nullness(
         &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> Option<bool> {
         let left_blocks = self.null_pointer_offsets.get(left)?;
         let right_blocks = self.null_pointer_offsets.get(right)?;
@@ -918,8 +918,8 @@ impl PureFactContext {
             // The index only nominates the block. Both premises are then
             // taken through the exact check, so they are recorded exactly
             // and a stale entry can never decide anything on its own.
-            let pointer_at = |offset: &PointerOffsetTerm| Pointer {
-                block: block.clone(),
+            let pointer_at = |offset: &AddressOffset| Address {
+                base: block.clone(),
                 offset: offset.clone(),
             };
             if self.pointer_nullness(&pointer_at(left)) == Some(*value)
@@ -1829,8 +1829,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn pointer_offset_congruence_evidence(
         &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> Option<PointerOffsetCongruenceEvidence> {
         if left == right {
             return Some(PointerOffsetCongruenceEvidence::Exact);
@@ -1872,7 +1872,7 @@ impl PureFactContext {
             return Some(evidence);
         }
         match (left, right) {
-            (PointerOffsetTerm::Add(left_a, left_b), PointerOffsetTerm::Add(right_a, right_b)) => {
+            (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) => {
                 if let Some((first, second)) = self
                     .pointer_offset_congruence_evidence(left_a, right_a)
                     .zip(self.pointer_offset_congruence_evidence(left_b, right_b))
@@ -1893,11 +1893,11 @@ impl PureFactContext {
                     })
             }
             (
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: left,
                     byte_width: left_width,
                 },
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: right,
                     byte_width: right_width,
                 },
@@ -1923,12 +1923,12 @@ impl PureFactContext {
                     })
                 }),
             (
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value: left,
                     byte_width: left_width,
                     unsigned: left_unsigned,
                 },
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value: right,
                     byte_width: right_width,
                     unsigned: right_unsigned,
@@ -1949,8 +1949,8 @@ impl PureFactContext {
 
     fn pointer_offset_element_index_evidence(
         &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> Option<PointerOffsetCongruenceEvidence> {
         let byte_width = common_pointer_offset_element_width(left, right)?;
         let (left_index, right_index) = (
@@ -1989,7 +1989,7 @@ impl PureFactContext {
         // Congruence retains the exact state and read kind.
         if left_memory != right_memory
             || left_kind != right_kind
-            || left_pointer.block != right_pointer.block
+            || left_pointer.base != right_pointer.base
         {
             return None;
         }
@@ -2612,11 +2612,11 @@ fn read_over_write_condition(condition: &ConditionTerm) -> Option<ConditionTerm>
 mod owned_anchor_tests {
     use super::*;
 
-    fn pointer(id: u64) -> Pointer {
-        Pointer::symbolic(Variable(991_000 + id))
+    fn pointer(id: u64) -> Address {
+        Address::symbolic(Variable(991_000 + id))
     }
 
-    fn owner_of(pointers: &[Pointer]) -> Proposition {
+    fn owner_of(pointers: &[Address]) -> Proposition {
         Proposition::ResourceComposition(ResourceContext::new().unchecked_with_facts(
             pointers.iter().map(|pointer| {
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -3268,8 +3268,8 @@ mod shared_equality_dispatch_tests {
                         let width = if case == 12 { 8 } else { 4 };
                         sources.push(Proposition::ConditionIs(
                             ConditionTerm::pointer_offset_equal(
-                                PointerOffsetTerm::scale_int32(value, width),
-                                PointerOffsetTerm::scale_int32(
+                                AddressOffset::scale_int32(value, width),
+                                AddressOffset::scale_int32(
                                     MachineTerm::Variable(Variable(981003)),
                                     width,
                                 ),
@@ -3368,7 +3368,7 @@ mod shared_equality_dispatch_tests {
                     MachineTerm::Variable(Variable(983001)),
                     MachineTerm::Variable(Variable(983002)),
                 );
-                let offset = |value| PointerOffsetTerm::scaled_int32_node(value, width);
+                let offset = |value| AddressOffset::scaled_int32_node(value, width);
                 let source = Proposition::ConditionIs(
                     ConditionTerm::pointer_offset_equal(
                         offset(native_product),
@@ -3435,12 +3435,12 @@ mod intrinsic_context_tests {
 
     #[test]
     fn intrinsic_read_definitions_follow_growth_restore_and_new_sessions() {
-        use crate::kernel::{Memory, Pointer, VerificationSession, intern_memory};
+        use crate::kernel::{Address, Memory, VerificationSession, intern_memory};
         let check = || {
             let memory = intern_memory(Memory::new().with_block("intrinsic", 16));
-            let address = Pointer::symbolic(Variable(986010));
-            let value = Pointer::symbolic(Variable(986011));
-            let application = Pointer::loaded_value(&memory, &address);
+            let address = Address::symbolic(Variable(986010));
+            let value = Address::symbolic(Variable(986011));
+            let application = Address::loaded_value(&memory, &address);
             let goal = ConditionTerm::PointerEqual(Box::new(value.clone()), Box::new(application));
             assert_eq!(PureFactContext::decide_intrinsically(&goal), None);
             let before = VerificationSession::capture_state();
@@ -3565,7 +3565,7 @@ mod wide_observation_tag_regression {
         let one = MachineTerm::uint64_constant(1);
         let next = MachineTerm::uint64_add(x.clone(), one.clone());
         let tagged = MachineTerm::uint64_add(
-            MachineTerm::pointer_address(Pointer::symbolic(Variable(993803))),
+            MachineTerm::pointer_address(Address::symbolic(Variable(993803))),
             one,
         );
         let observed = |value: &MachineTerm| {
@@ -3607,12 +3607,12 @@ mod shared_offset_evidence_tests {
         KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, SharedMachineIntegerTerm,
     };
 
-    fn offset(term: &MachineTerm, width: i64) -> PointerOffsetTerm {
+    fn offset(term: &MachineTerm, width: i64) -> AddressOffset {
         let root = KernelTerm::retained_machine_operand(
             MachineIntegerType::Int32,
             MachineOperandView::Legacy(term),
         );
-        PointerOffsetTerm::Int32Scaled {
+        AddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
             byte_width: width,
         }
@@ -3752,8 +3752,8 @@ mod shared_offset_evidence_tests {
         let cases = [
             offset(&x, 4),
             offset(&x, -4),
-            PointerOffsetTerm::Add(offset(&x, 4).into(), PointerOffsetTerm::Constant(8).into()),
-            PointerOffsetTerm::Constant(-12),
+            AddressOffset::Add(offset(&x, 4).into(), AddressOffset::Constant(8).into()),
+            AddressOffset::Constant(-12),
         ];
         for v in cases {
             for width in [0, 1, 4, 8] {
@@ -3763,7 +3763,7 @@ mod shared_offset_evidence_tests {
             }
         }
         for unsigned in [false, true] {
-            let wide = PointerOffsetTerm::scaled_int64_node(x.clone(), 4, unsigned);
+            let wide = AddressOffset::scaled_int64_node(x.clone(), 4, unsigned);
             assert!(shared_element_index_from_offset(&wide, 4).is_none());
         }
     }

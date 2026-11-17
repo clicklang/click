@@ -7,9 +7,9 @@ use super::*;
 #[test]
 fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
     use crate::kernel::{AggregateField, AggregateLayout};
-    let slot = Pointer {
-        block: "local:frame:0:input".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let slot = Address {
+        base: "local:frame:0:input".into(),
+        offset: AddressOffset::Constant(0),
     };
     let layout = AggregateLayout::new(
         4,
@@ -27,7 +27,7 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
     for size in [8, 32, 128] {
         let mut entry = ExecutionState::new().with_memory(
             Memory::new()
-                .with_block(slot.block.clone(), 4)
+                .with_block(slot.base.clone(), 4)
                 .store(slot.clone(), int32(7)),
         );
         entry
@@ -38,7 +38,7 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
         }
         let state = entry
             .clone()
-            .with_memory(entry.memory.clone().without_local_block(&slot.block));
+            .with_memory(entry.memory.clone().without_local_block(&slot.base));
         let evaluate = |expression: &SpecExpression| {
             evaluate_spec_expression_paths_with_loop_entry_in(
                 &state,

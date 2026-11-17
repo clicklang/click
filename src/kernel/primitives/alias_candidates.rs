@@ -2,8 +2,8 @@
 //! one block can alias.
 //!
 //! Every memory map and heap collection in a `Memory` is keyed by a
-//! `Pointer` (or by a key whose ordering starts with one), and `Pointer`
-//! orders by `block` first. `PointerBlock` in turn orders by variant:
+//! `Address` (or by a key whose ordering starts with one), and `Address`
+//! orders by `block` first. `AddressBase` in turn orders by variant:
 //!
 //! ```text
 //! Concrete < StringLiteral < Function < FunctionSymbolic < ExternalArgument
@@ -15,7 +15,7 @@
 //! `Symbolic` block sits in one contiguous range, and every `Heap` and
 //! `Temporary` block precedes the typed `AutomaticLocal` interval.
 //!
-//! [`PointerBlock::proven_distinct`] is the kernel's only structural block
+//! [`AddressBase::proven_distinct`] is the kernel's only structural block
 //! separation rule, and it has a shape these ranges follow:
 //!
 //! * a `Symbolic` block is never distinct from anything, so an access into
@@ -54,51 +54,51 @@
 //! entry a search over the whole collection would.
 
 use super::{
-    HashedOrdMap, HashedOrdSet, Pointer, PointerBlock, PointerOffsetTerm, ProgramType, Variable,
+    Address, AddressBase, AddressOffset, HashedOrdMap, HashedOrdSet, ProgramType, Variable,
 };
 use std::hash::Hash;
 use std::ops::Bound;
 
-/// A state-collection key whose ordering is by pointer block first.
+/// A state-collection key whose ordering is by address base first.
 pub(crate) trait BlockKeyed: Ord + Clone {
-    fn key_block(&self) -> &PointerBlock;
+    fn key_block(&self) -> &AddressBase;
     /// The smallest key of this type whose block is `block`.
-    fn first_key_of(block: &PointerBlock) -> Self;
+    fn first_key_of(block: &AddressBase) -> Self;
 }
 
-impl BlockKeyed for PointerBlock {
-    fn key_block(&self) -> &PointerBlock {
+impl BlockKeyed for AddressBase {
+    fn key_block(&self) -> &AddressBase {
         self
     }
 
-    fn first_key_of(block: &PointerBlock) -> Self {
+    fn first_key_of(block: &AddressBase) -> Self {
         block.clone()
     }
 }
 
-impl BlockKeyed for Pointer {
-    fn key_block(&self) -> &PointerBlock {
-        &self.block
+impl BlockKeyed for Address {
+    fn key_block(&self) -> &AddressBase {
+        &self.base
     }
 
-    fn first_key_of(block: &PointerBlock) -> Self {
-        // `Constant` is `PointerOffsetTerm`'s first variant, so this offset
+    fn first_key_of(block: &AddressBase) -> Self {
+        // `Constant` is `AddressOffset`'s first variant, so this offset
         // orders below every offset term.
-        Pointer {
-            block: block.clone(),
-            offset: PointerOffsetTerm::Constant(i64::MIN),
+        Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(i64::MIN),
         }
     }
 }
 
-impl BlockKeyed for (Pointer, ProgramType) {
-    fn key_block(&self) -> &PointerBlock {
-        &self.0.block
+impl BlockKeyed for (Address, ProgramType) {
+    fn key_block(&self) -> &AddressBase {
+        &self.0.base
     }
 
-    fn first_key_of(block: &PointerBlock) -> Self {
+    fn first_key_of(block: &AddressBase) -> Self {
         // `Void` is `ProgramType`'s first variant.
-        (Pointer::first_key_of(block), ProgramType::Void)
+        (Address::first_key_of(block), ProgramType::Void)
     }
 }
 
@@ -106,14 +106,14 @@ impl BlockKeyed for (Pointer, ProgramType) {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Upper {
     /// Up to and including this block.
-    Through(PointerBlock),
+    Through(AddressBase),
     /// Every block strictly below this one.
-    Before(PointerBlock),
+    Before(AddressBase),
     Unbounded,
 }
 
 impl Upper {
-    fn admits(&self, block: &PointerBlock) -> bool {
+    fn admits(&self, block: &AddressBase) -> bool {
         match self {
             Self::Through(last) => block <= last,
             Self::Before(end) => block < end,
@@ -123,7 +123,7 @@ impl Upper {
 
     /// Whether an interval starting at `start` touches or overlaps one that
     /// ends here, so that the two can be walked as one key range.
-    fn reaches(&self, start: Option<&PointerBlock>) -> bool {
+    fn reaches(&self, start: Option<&AddressBase>) -> bool {
         match (self, start) {
             (Self::Unbounded, _) => true,
             (_, None) => true,
@@ -152,13 +152,13 @@ impl Upper {
 /// block) up to `end`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct BlockInterval {
-    start: Option<PointerBlock>,
+    start: Option<AddressBase>,
     end: Upper,
 }
 
 impl BlockInterval {
     #[cfg(test)]
-    fn contains(&self, block: &PointerBlock) -> bool {
+    fn contains(&self, block: &AddressBase) -> bool {
         self.start.as_ref().is_none_or(|start| block >= start) && self.end.admits(block)
     }
 
@@ -193,23 +193,23 @@ impl BlockInterval {
     }
 }
 
-fn first_string_literal() -> PointerBlock {
-    PointerBlock::StringLiteral {
+fn first_string_literal() -> AddressBase {
+    AddressBase::StringLiteral {
         identity: crate::kernel::StringLiteralId::new("", 0),
         bytes: Vec::new(),
     }
 }
 
-fn first_function() -> PointerBlock {
-    PointerBlock::Function(String::new())
+fn first_function() -> AddressBase {
+    AddressBase::Function(String::new())
 }
 
-fn first_symbolic() -> PointerBlock {
-    PointerBlock::Symbolic(Variable(0))
+fn first_symbolic() -> AddressBase {
+    AddressBase::Symbolic(Variable(0))
 }
 
-fn first_static() -> PointerBlock {
-    PointerBlock::StaticObject {
+fn first_static() -> AddressBase {
+    AddressBase::StaticObject {
         binding: crate::kernel::StaticBindingId::new(
             crate::kernel::StaticBindingOwner::File(None),
             0,
@@ -218,8 +218,8 @@ fn first_static() -> PointerBlock {
     }
 }
 
-fn first_heap() -> PointerBlock {
-    PointerBlock::Heap(0)
+fn first_heap() -> AddressBase {
+    AddressBase::Heap(0)
 }
 
 /// The blocks whose entries an access may alias; see the module comment.
@@ -230,9 +230,9 @@ pub(crate) struct AliasCandidates {
 }
 
 impl AliasCandidates {
-    /// Every block that is not [`PointerBlock::proven_distinct`] from
+    /// Every block that is not [`AddressBase::proven_distinct`] from
     /// `block`, as a few key ranges (a superset; see the module comment).
-    pub(crate) fn of_block(block: &PointerBlock) -> Self {
+    pub(crate) fn of_block(block: &AddressBase) -> Self {
         let own = || BlockInterval {
             start: Some(block.clone()),
             end: Upper::Through(block.clone()),
@@ -244,7 +244,7 @@ impl AliasCandidates {
         let intervals = match block {
             // A loaded pointer may hold any address but that of a heap
             // allocation made after its read.
-            PointerBlock::LoadedPointer(identity) => {
+            AddressBase::LoadedPointer(identity) => {
                 if let Some(heap) =
                     crate::kernel::eval::loaded_pointer_read_heap_identities(*identity)
                 {
@@ -253,11 +253,11 @@ impl AliasCandidates {
                         end: Upper::Before(first_heap()),
                     }];
                     intervals.extend(heap.into_iter().map(|identity| BlockInterval {
-                        start: Some(PointerBlock::Heap(identity)),
-                        end: Upper::Through(PointerBlock::Heap(identity)),
+                        start: Some(AddressBase::Heap(identity)),
+                        end: Upper::Through(AddressBase::Heap(identity)),
                     }));
                     intervals.push(BlockInterval {
-                        start: Some(PointerBlock::Temporary(0)),
+                        start: Some(AddressBase::Temporary(0)),
                         end: Upper::Unbounded,
                     });
                     return Self::merged(intervals);
@@ -268,7 +268,7 @@ impl AliasCandidates {
                 }]
             }
             // A symbolic block may be constrained to any address.
-            PointerBlock::Symbolic(_) | PointerBlock::PureFunctionApplication(_) => {
+            AddressBase::Symbolic(_) | AddressBase::PureFunctionApplication(_) => {
                 vec![BlockInterval {
                     start: None,
                     end: Upper::Unbounded,
@@ -276,32 +276,32 @@ impl AliasCandidates {
             }
             // A fresh identity is distinct from every other identity except
             // a symbolic one.
-            PointerBlock::Heap(_) | PointerBlock::Temporary(_) => vec![symbolic(), own()],
+            AddressBase::Heap(_) | AddressBase::Temporary(_) => vec![symbolic(), own()],
             // Distinct concrete names are distinct; a `local:` block is also
             // distinct from the external variants.
-            PointerBlock::ContractResult
-            | PointerBlock::ContractException
-            | PointerBlock::AggregateReturn { .. }
-            | PointerBlock::AutomaticLocal { .. }
-            | PointerBlock::ReferenceCarrier { .. } => vec![
+            AddressBase::ContractResult
+            | AddressBase::ContractException
+            | AddressBase::AggregateReturn { .. }
+            | AddressBase::AutomaticLocal { .. }
+            | AddressBase::ReferenceCarrier { .. } => vec![
                 own(),
                 BlockInterval {
                     start: Some(first_function()),
-                    end: Upper::Before(PointerBlock::ExternalArgument),
+                    end: Upper::Before(AddressBase::ExternalArgument),
                 },
                 symbolic(),
             ],
-            PointerBlock::Concrete(_) if block.is_local_block() => {
+            AddressBase::Concrete(_) if block.is_local_block() => {
                 vec![
                     own(),
                     BlockInterval {
                         start: Some(first_function()),
-                        end: Upper::Before(PointerBlock::ExternalArgument),
+                        end: Upper::Before(AddressBase::ExternalArgument),
                     },
                     symbolic(),
                 ]
             }
-            PointerBlock::StaticObject { .. } | PointerBlock::Concrete(_) => vec![
+            AddressBase::StaticObject { .. } | AddressBase::Concrete(_) => vec![
                 own(),
                 BlockInterval {
                     start: Some(first_function()),
@@ -309,21 +309,21 @@ impl AliasCandidates {
                 },
             ],
             // A literal is never a declared object.
-            PointerBlock::StringLiteral { .. } => vec![BlockInterval {
+            AddressBase::StringLiteral { .. } => vec![BlockInterval {
                 start: Some(first_string_literal()),
                 end: Upper::Before(first_heap()),
             }],
-            PointerBlock::Function(_) | PointerBlock::FunctionSymbolic(_) => vec![
+            AddressBase::Function(_) | AddressBase::FunctionSymbolic(_) => vec![
                 BlockInterval {
                     start: None,
                     end: Upper::Before(first_heap()),
                 },
                 BlockInterval {
-                    start: Some(PointerBlock::Temporary(u64::MAX)),
+                    start: Some(AddressBase::Temporary(u64::MAX)),
                     end: Upper::Unbounded,
                 },
             ],
-            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_) => vec![
+            AddressBase::ExternalArgument | AddressBase::ExternalObject(_) => vec![
                 BlockInterval {
                     start: None,
                     end: Upper::Before(first_heap()),
@@ -340,7 +340,7 @@ impl AliasCandidates {
     /// Exactly the entries of `block`: for a rule that only ever touches
     /// the block it names (retiring one automatic object, forgetting one
     /// field), rather than everything that may alias it.
-    pub(crate) fn only_block(block: &PointerBlock) -> Self {
+    pub(crate) fn only_block(block: &AddressBase) -> Self {
         Self {
             intervals: vec![BlockInterval {
                 start: Some(block.clone()),
@@ -350,7 +350,7 @@ impl AliasCandidates {
     }
 
     /// The union of [`Self::of_block`] over several blocks.
-    pub(crate) fn of_blocks<'a>(blocks: impl IntoIterator<Item = &'a PointerBlock>) -> Self {
+    pub(crate) fn of_blocks<'a>(blocks: impl IntoIterator<Item = &'a AddressBase>) -> Self {
         Self::merged(
             blocks
                 .into_iter()
@@ -378,9 +378,9 @@ impl AliasCandidates {
     /// Restrict a call's ordinary candidates to blocks outside the atomic
     /// parameter partition, without walking that shared block's cells.
     pub(crate) fn excluding_external_arguments(&self) -> Self {
-        let excluded = PointerBlock::ExternalArgument;
+        let excluded = AddressBase::ExternalArgument;
         // ExternalObject is the next variant, and Variable(0) its first key.
-        let after = PointerBlock::ExternalObject(Variable(0));
+        let after = AddressBase::ExternalObject(Variable(0));
         let mut intervals = Vec::new();
         for interval in &self.intervals {
             if !interval.end.admits(&excluded)
@@ -413,7 +413,7 @@ impl AliasCandidates {
     }
 
     /// Whether an entry in `block` is among the candidates.
-    pub(crate) fn admits_block(&self, block: &PointerBlock) -> bool {
+    pub(crate) fn admits_block(&self, block: &AddressBase) -> bool {
         self.intervals.iter().any(|interval| {
             interval.start.as_ref().is_none_or(|start| block >= start) && interval.end.admits(block)
         })
@@ -421,7 +421,7 @@ impl AliasCandidates {
 
     /// Whether an entry in `block` is among the candidates.
     #[cfg(test)]
-    pub(crate) fn contains_block(&self, block: &PointerBlock) -> bool {
+    pub(crate) fn contains_block(&self, block: &AddressBase) -> bool {
         self.intervals
             .iter()
             .any(|interval| interval.contains(block))
@@ -602,46 +602,46 @@ impl AliasCandidates {
 mod tests {
     use super::*;
 
-    fn sample_blocks() -> Vec<PointerBlock> {
+    fn sample_blocks() -> Vec<AddressBase> {
         vec![
-            PointerBlock::Concrete("global:g".to_string()),
-            PointerBlock::Concrete("global:h".to_string()),
-            PointerBlock::Concrete("local:x".to_string()),
-            PointerBlock::Concrete("local:y".to_string()),
-            PointerBlock::Concrete("static:f:s".to_string()),
-            PointerBlock::StringLiteral {
+            AddressBase::Concrete("global:g".to_string()),
+            AddressBase::Concrete("global:h".to_string()),
+            AddressBase::Concrete("local:x".to_string()),
+            AddressBase::Concrete("local:y".to_string()),
+            AddressBase::Concrete("static:f:s".to_string()),
+            AddressBase::StringLiteral {
                 identity: crate::kernel::StringLiteralId::new("a", 0),
                 bytes: b"one".to_vec(),
             },
-            PointerBlock::StringLiteral {
+            AddressBase::StringLiteral {
                 identity: crate::kernel::StringLiteralId::new("b", 0),
                 bytes: b"two".to_vec(),
             },
-            PointerBlock::Function("f".to_string()),
-            PointerBlock::FunctionSymbolic(Variable(3)),
-            PointerBlock::ExternalArgument,
-            PointerBlock::ExternalObject(Variable(4)),
-            PointerBlock::ExternalObject(Variable(5)),
-            PointerBlock::Symbolic(Variable(0)),
-            PointerBlock::Symbolic(Variable(7)),
-            PointerBlock::PureFunctionApplication(crate::kernel::SharedPureApplication::intern(
+            AddressBase::Function("f".to_string()),
+            AddressBase::FunctionSymbolic(Variable(3)),
+            AddressBase::ExternalArgument,
+            AddressBase::ExternalObject(Variable(4)),
+            AddressBase::ExternalObject(Variable(5)),
+            AddressBase::Symbolic(Variable(0)),
+            AddressBase::Symbolic(Variable(7)),
+            AddressBase::PureFunctionApplication(crate::kernel::SharedPureApplication::intern(
                 "pick".into(),
                 vec![],
             )),
-            PointerBlock::PureFunctionApplication(crate::kernel::SharedPureApplication::intern(
+            AddressBase::PureFunctionApplication(crate::kernel::SharedPureApplication::intern(
                 "other".into(),
                 vec![],
             )),
-            PointerBlock::Heap(0),
-            PointerBlock::Heap(1),
-            PointerBlock::Heap(9),
-            PointerBlock::Temporary(0),
-            PointerBlock::Temporary(2),
-            PointerBlock::ContractResult,
-            PointerBlock::ContractException,
-            PointerBlock::AggregateReturn { frame: 0 },
-            PointerBlock::AggregateReturn { frame: 1 },
-            PointerBlock::AutomaticLocal {
+            AddressBase::Heap(0),
+            AddressBase::Heap(1),
+            AddressBase::Heap(9),
+            AddressBase::Temporary(0),
+            AddressBase::Temporary(2),
+            AddressBase::ContractResult,
+            AddressBase::ContractException,
+            AddressBase::AggregateReturn { frame: 0 },
+            AddressBase::AggregateReturn { frame: 1 },
+            AddressBase::AutomaticLocal {
                 binding: crate::kernel::LocalBindingId::new(
                     crate::kernel::LocalFunctionId::new(Some("a.c".into()), "f".into()),
                     false,
@@ -650,21 +650,21 @@ mod tests {
                 ),
                 instance: crate::kernel::LocalStorageInstance::Implicit,
             },
-            PointerBlock::StaticObject {
+            AddressBase::StaticObject {
                 binding: crate::kernel::StaticBindingId::new(
                     crate::kernel::StaticBindingOwner::File(Some("a.c".into())),
                     0,
                     "value".into(),
                 ),
             },
-            PointerBlock::StaticObject {
+            AddressBase::StaticObject {
                 binding: crate::kernel::StaticBindingId::new(
                     crate::kernel::StaticBindingOwner::File(Some("b.c".into())),
                     0,
                     "value".into(),
                 ),
             },
-            PointerBlock::StaticObject {
+            AddressBase::StaticObject {
                 binding: crate::kernel::StaticBindingId::new(
                     crate::kernel::StaticBindingOwner::Function(
                         crate::kernel::LocalFunctionId::new(Some("a.c".into()), "f".into()),
@@ -676,22 +676,22 @@ mod tests {
         ]
     }
 
-    fn cells_of(blocks: &[PointerBlock]) -> HashedOrdMap<Pointer, u32> {
+    fn cells_of(blocks: &[AddressBase]) -> HashedOrdMap<Address, u32> {
         let mut map = HashedOrdMap::new();
         for (index, block) in blocks.iter().enumerate() {
             for offset in [0, 4, 8] {
                 map.insert(
-                    Pointer {
-                        block: block.clone(),
-                        offset: PointerOffsetTerm::Constant(offset),
+                    Address {
+                        base: block.clone(),
+                        offset: AddressOffset::Constant(offset),
                     },
                     index as u32,
                 );
             }
             map.insert(
-                Pointer {
-                    block: block.clone(),
-                    offset: PointerOffsetTerm::Variable(Variable(1)),
+                Address {
+                    base: block.clone(),
+                    offset: AddressOffset::Variable(Variable(1)),
                 },
                 index as u32,
             );
@@ -718,14 +718,14 @@ mod tests {
 
     #[test]
     fn candidates_exclude_unrelated_heap_blocks() {
-        let heap = AliasCandidates::of_block(&PointerBlock::Heap(1));
-        assert!(!heap.contains_block(&PointerBlock::Heap(0)));
-        assert!(!heap.contains_block(&PointerBlock::Temporary(0)));
-        assert!(!heap.contains_block(&PointerBlock::Concrete("global:g".to_string())));
-        assert!(heap.contains_block(&PointerBlock::Symbolic(Variable(7))));
-        let global = AliasCandidates::of_block(&PointerBlock::Concrete("global:g".to_string()));
-        assert!(!global.contains_block(&PointerBlock::Heap(0)));
-        assert!(!global.contains_block(&PointerBlock::Concrete("global:h".to_string())));
+        let heap = AliasCandidates::of_block(&AddressBase::Heap(1));
+        assert!(!heap.contains_block(&AddressBase::Heap(0)));
+        assert!(!heap.contains_block(&AddressBase::Temporary(0)));
+        assert!(!heap.contains_block(&AddressBase::Concrete("global:g".to_string())));
+        assert!(heap.contains_block(&AddressBase::Symbolic(Variable(7))));
+        let global = AliasCandidates::of_block(&AddressBase::Concrete("global:g".to_string()));
+        assert!(!global.contains_block(&AddressBase::Heap(0)));
+        assert!(!global.contains_block(&AddressBase::Concrete("global:h".to_string())));
     }
 
     #[test]
@@ -736,26 +736,26 @@ mod tests {
             .iter()
             .map(|block| vec![block.clone()])
             .collect::<Vec<_>>();
-        accesses.push(vec![PointerBlock::Heap(1), PointerBlock::Heap(9)]);
+        accesses.push(vec![AddressBase::Heap(1), AddressBase::Heap(9)]);
         accesses.push(vec![
-            PointerBlock::Heap(1),
-            PointerBlock::Concrete("local:x".to_string()),
+            AddressBase::Heap(1),
+            AddressBase::Concrete("local:x".to_string()),
         ]);
         accesses.push(vec![
-            PointerBlock::Concrete("global:g".to_string()),
-            PointerBlock::Concrete("local:y".to_string()),
-            PointerBlock::Temporary(2),
+            AddressBase::Concrete("global:g".to_string()),
+            AddressBase::Concrete("local:y".to_string()),
+            AddressBase::Temporary(2),
         ]);
         accesses.push(vec![
-            PointerBlock::Heap(0),
-            PointerBlock::Symbolic(Variable(7)),
+            AddressBase::Heap(0),
+            AddressBase::Symbolic(Variable(7)),
         ]);
         for access in &accesses {
             let candidates = AliasCandidates::of_blocks(access);
             let visited = candidates.entries(&map).collect::<Vec<_>>();
             let expected = map
                 .iter()
-                .filter(|(pointer, _)| candidates.contains_block(&pointer.block))
+                .filter(|(pointer, _)| candidates.contains_block(&pointer.base))
                 .collect::<Vec<_>>();
             assert_eq!(visited, expected, "candidates of {access:?}");
             for block in &blocks {

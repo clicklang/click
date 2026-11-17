@@ -38,9 +38,9 @@ fn typed_held_observation_does_not_search_a_growing_alias_class() {
             .unwrap();
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
-            let alias = Pointer {
-                block: PointerBlock::Symbolic(Variable(810000 + index as u64)),
-                offset: PointerOffsetTerm::Constant(0),
+            let alias = Address {
+                base: AddressBase::Symbolic(Variable(810000 + index as u64)),
+                offset: AddressOffset::Constant(0),
             };
             assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::PointerEqual(Box::new(address(0)), Box::new(alias)),

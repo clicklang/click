@@ -672,8 +672,8 @@ mod tests {
         program_function, program_skip,
     };
 
-    fn mutex() -> Pointer {
-        Pointer::symbolic(Variable(851))
+    fn mutex() -> Address {
+        Address::symbolic(Variable(851))
     }
 
     fn spec(guard: bool, role: ResourceTransferRole) -> ResourceSpec {

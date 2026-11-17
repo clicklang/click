@@ -53,8 +53,8 @@ fn exit_local_argument_context_indexing_is_linear_and_shared() {
             .map(|index| {
                 ExecutionPureFact::new(Proposition::ConditionIs(
                     ConditionTerm::pointer_equal(
-                        Pointer::symbolic(Variable(10000 + index)),
-                        Pointer::symbolic(Variable(20000 + index)),
+                        Address::symbolic(Variable(10000 + index)),
+                        Address::symbolic(Variable(20000 + index)),
                     ),
                     true,
                 ))

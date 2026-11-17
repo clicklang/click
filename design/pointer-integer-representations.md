@@ -110,7 +110,7 @@ upstream implementation accepts this undefined dereference. The ordinary
 mdtest expects rejection and now passes. Keep the original C and both
 field permissions in the regression.
 
-The existing `PointerAddress(Box<Pointer>)` records only a physical address.
+The existing `PointerAddress(Box<Address>)` records only a physical address.
 `cast_tagged_address_to_pointer` can also recover that address from a numeric
 word equality. Reconstructing `CPointerValue::new` then loses the selected
 bounds. Merely putting the full pointer in that term is insufficient: numeric

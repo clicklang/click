@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::proof::PureFactStore;
-use crate::kernel::{LoadKind, Memory, Pointer, PointerOffsetTerm, ProgramValue, intern_memory};
+use crate::kernel::{Address, AddressOffset, LoadKind, Memory, ProgramValue, intern_memory};
 
 fn loaded_fact(memory: &SharedMemory, binder: Variable, shared: bool) -> Proposition {
     loaded_fact_of_format(memory, binder, shared, MachineIntegerType::Int32)
@@ -35,20 +35,20 @@ fn loaded_fact_of_format(
     };
     let read = MachineTerm::MemoryLoad(
         ProgramPoint::at(memory),
-        Box::new(Pointer {
-            block: "loaded-quantifier".into(),
+        Box::new(Address {
+            base: "loaded-quantifier".into(),
             offset: match format {
                 MachineIntegerType::Int32 => {
-                    PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(binder), 4)
+                    AddressOffset::scaled_int32_node(MachineTerm::Variable(binder), 4)
                 }
                 MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
-                    PointerOffsetTerm::scaled_int64_node(
+                    AddressOffset::scaled_int64_node(
                         MachineTerm::Variable(binder),
                         4,
                         format == MachineIntegerType::UInt64,
                     )
                 }
-                MachineIntegerType::UInt32 => PointerOffsetTerm::Constant(0),
+                MachineIntegerType::UInt32 => AddressOffset::Constant(0),
                 _ => unreachable!(),
             },
         }),
@@ -83,9 +83,9 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
         assert!(quantified_binder_equivalent(source, requested));
     }
     let changed_memory = intern_memory(memory.as_ref().clone().store(
-        Pointer {
-            block: "loaded-quantifier".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "loaded-quantifier".into(),
+            offset: AddressOffset::Constant(0),
         },
         ProgramValue::Int32(MachineTerm::constant(7)),
     ));
@@ -122,13 +122,11 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
             unreachable!()
         };
         match change {
-            3 => pointer.block = "other-block".into(),
+            3 => pointer.base = "other-block".into(),
             4 => *kind = LoadKind::UInt32,
             5 => {
-                pointer.offset = PointerOffsetTerm::scaled_int32_node(
-                    MachineTerm::Variable(Variable(920_003)),
-                    4,
-                )
+                pointer.offset =
+                    AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(920_003)), 4)
             }
             _ => {}
         }
@@ -148,9 +146,9 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
 fn loaded_quantifier_shared_guard_does_not_rename_a_variable_inside_state() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64).store(
-        Pointer {
-            block: "loaded-quantifier".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "loaded-quantifier".into(),
+            offset: AddressOffset::Constant(0),
         },
         ProgramValue::Int32(MachineTerm::Variable(Variable(920_001))),
     ));
@@ -171,9 +169,9 @@ fn loaded_quantifier_native_guard_does_not_capture_a_variable_inside_state() {
             let a = Variable(920_001);
             let b = Variable(920_002);
             let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64).store(
-                Pointer {
-                    block: "loaded-quantifier".into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: "loaded-quantifier".into(),
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(MachineTerm::Variable(a)),
             ));
@@ -214,9 +212,9 @@ fn loaded_quantifier_matching_renames_both_state_binders_without_swapping_free_v
     let b = Variable(970_002);
     let fact = |binder, stored| {
         let memory = intern_memory(Memory::new().with_block("loaded-quantifier", 64).store(
-            Pointer {
-                block: "loaded-quantifier".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "loaded-quantifier".into(),
+                offset: AddressOffset::Constant(0),
             },
             ProgramValue::Int32(MachineTerm::Variable(stored)),
         ));

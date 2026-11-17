@@ -7,9 +7,9 @@ fn scalar_declaration_and_retirement_do_not_reindex_heap_blocks() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut memory = Memory::new();
         for index in 0..count {
-            memory = memory.with_block(Pointer::symbolic(Variable(9_393_000 + index)).block, 16);
+            memory = memory.with_block(Address::symbolic(Variable(9_393_000 + index)).base, 16);
         }
-        let scalar = Pointer::symbolic(Variable(9_394_000)).block;
+        let scalar = Address::symbolic(Variable(9_394_000)).base;
         let mut samples = Vec::new();
         for _ in 0..3 {
             let (((declared, retired), work), maps) =

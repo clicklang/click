@@ -519,7 +519,7 @@ impl MachineTerm {
     /// when they read the same byte (R-mem).
     pub(crate) fn memory_read(
         memory: crate::kernel::SharedMemory,
-        pointer: crate::kernel::Pointer,
+        pointer: crate::kernel::Address,
         kind: crate::kernel::LoadKind,
     ) -> Self {
         Self::MemoryLoad(

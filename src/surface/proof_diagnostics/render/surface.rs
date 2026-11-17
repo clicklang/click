@@ -792,11 +792,11 @@ impl Printer<'_> {
                     // Without retained pointee types, do not claim two
                     // different named pointers form a well-typed source
                     // comparison.
-                    if left != right && **left != Pointer::null() && **right != Pointer::null() {
+                    if left != right && **left != Address::null() && **right != Address::null() {
                         return None;
                     }
-                    let pointer = |p: &Pointer, labels: &MemoryStateLabels| {
-                        if p == &Pointer::null() {
+                    let pointer = |p: &Address, labels: &MemoryStateLabels| {
+                        if p == &Address::null() {
                             Some("0".to_owned())
                         } else {
                             labels.pointer_sources.get(p).cloned()
@@ -809,7 +809,7 @@ impl Printer<'_> {
                         pointer(right, self.labels)?
                     )));
                 }
-                let address_only = **left != Pointer::null() && **right != Pointer::null();
+                let address_only = **left != Address::null() && **right != Address::null();
                 let left = self.pointer(left, depth)?;
                 let right = self.pointer(right, depth)?;
                 return Some(atom(format!(
@@ -1350,19 +1350,19 @@ impl Printer<'_> {
         }
     }
 
-    fn offset(&mut self, offset: &PointerOffsetTerm, depth: usize) -> String {
+    fn offset(&mut self, offset: &AddressOffset, depth: usize) -> String {
         match offset {
-            PointerOffsetTerm::Constant(bytes) => bytes.to_string(),
-            PointerOffsetTerm::Variable(variable) => self
+            AddressOffset::Constant(bytes) => bytes.to_string(),
+            AddressOffset::Variable(variable) => self
                 .variable_name(*variable)
                 .unwrap_or_else(|| self.unnamed_variable(*variable)),
-            PointerOffsetTerm::Add(left, right) => format!(
+            AddressOffset::Add(left, right) => format!(
                 "{} + {}",
                 self.offset(left, depth + 1),
                 self.offset(right, depth + 1)
             ),
-            PointerOffsetTerm::Int32Scaled { value, byte_width }
-            | PointerOffsetTerm::Int64Scaled {
+            AddressOffset::Int32Scaled { value, byte_width }
+            | AddressOffset::Int64Scaled {
                 value, byte_width, ..
             } => {
                 let value = self
@@ -1715,7 +1715,7 @@ impl Printer<'_> {
 
     /// The place `pointer` addresses, without a state qualifier: a source
     /// cell where the naming tables have one, else a dereference.
-    fn place_at(&mut self, pointer: &Pointer, depth: usize) -> String {
+    fn place_at(&mut self, pointer: &Address, depth: usize) -> String {
         if let Some(referent) = self.reference_referent(pointer) {
             return referent;
         }
@@ -1737,7 +1737,7 @@ impl Printer<'_> {
     fn load(
         &mut self,
         memory: &Memory,
-        pointer: &Pointer,
+        pointer: &Address,
         kind: crate::kernel::LoadKind,
         depth: usize,
     ) -> Option<Spelled> {
@@ -1770,7 +1770,7 @@ impl Printer<'_> {
     fn load_place(
         &mut self,
         naming: &Option<std::sync::Arc<NamingTables>>,
-        pointer: &Pointer,
+        pointer: &Address,
         kind: crate::kernel::LoadKind,
         depth: usize,
     ) -> Option<Spelled> {
@@ -1887,8 +1887,8 @@ impl Printer<'_> {
     }
 
     /// An address in source terms.
-    fn pointer(&mut self, pointer: &Pointer, depth: usize) -> Option<Spelled> {
-        if pointer == &Pointer::null() {
+    fn pointer(&mut self, pointer: &Address, depth: usize) -> Option<Spelled> {
+        if pointer == &Address::null() {
             return Some(atom("0"));
         }
         if let Some(name) = self.labels.pointer_sources.get(pointer) {
@@ -1900,7 +1900,7 @@ impl Printer<'_> {
         if let Some(read) = pointer.as_loaded_value() {
             let place =
                 self.pointer_cell(read.defining_memory.memory(), &read.defining_address, depth);
-            return Some(if read.displacement == PointerOffsetTerm::Constant(0) {
+            return Some(if read.displacement == AddressOffset::Constant(0) {
                 place
             } else {
                 let offset = self.offset(&read.displacement, depth);
@@ -1910,19 +1910,19 @@ impl Printer<'_> {
         // The result of a pointer-valued pure call is that call, and an
         // address past it is that call plus an element offset, or a byte
         // offset from it.
-        if let crate::kernel::PointerBlock::PureFunctionApplication(application) = &pointer.block {
+        if let crate::kernel::AddressBase::PureFunctionApplication(application) = &pointer.base {
             let call = self.call(application.name(), application.arguments(), depth + 1)?;
             return Some(match &pointer.offset {
-                PointerOffsetTerm::Constant(0) => call,
-                PointerOffsetTerm::Int32Scaled { value, .. }
-                | PointerOffsetTerm::Int64Scaled { value, .. } => {
+                AddressOffset::Constant(0) => call,
+                AddressOffset::Int32Scaled { value, .. }
+                | AddressOffset::Int64Scaled { value, .. } => {
                     let index = self.bitvector(value.structural_value(), None, depth + 1)?;
                     spelled(
                         format!("{} + {}", operand(call, ADD), operand(index, MULTIPLY)),
                         ADD,
                     )
                 }
-                PointerOffsetTerm::Constant(bytes)
+                AddressOffset::Constant(bytes)
                     if let Some(width) = instance_element_width(application.name())
                         && bytes % width == 0 =>
                 {
@@ -1987,7 +1987,7 @@ impl Printer<'_> {
         // An address inside an allocation a local held is spelled from that
         // local: `(char *)at(region(2).exit, p) + k * 4`.
         if self.labels.state_pointer_name(pointer).is_none()
-            && pointer.offset != PointerOffsetTerm::Constant(0)
+            && pointer.offset != AddressOffset::Constant(0)
             && let Some(base) = self.labels.block_base_name(pointer).map(str::to_owned)
             && base.len() <= 256
         {
@@ -1999,7 +1999,7 @@ impl Printer<'_> {
 
     /// The pointer stored at `address` in `memory`, as the place it is read
     /// from.
-    fn pointer_cell(&mut self, memory: &Memory, address: &Pointer, depth: usize) -> Spelled {
+    fn pointer_cell(&mut self, memory: &Memory, address: &Address, depth: usize) -> Spelled {
         let tables = self.labels.naming.clone();
         let cell = tables.as_deref().and_then(|(parameters, arguments)| {
             let binding = ParameterBinding::new(parameters, arguments);
@@ -2027,7 +2027,7 @@ impl Printer<'_> {
     /// bytes otherwise.
     fn byte_range(
         &mut self,
-        base: &Pointer,
+        base: &Address,
         bytes: &MachineTerm,
         wide: bool,
         depth: usize,
@@ -2115,7 +2115,7 @@ impl Printer<'_> {
     /// address it carries: `value` for `int32& value`, and the field at its
     /// start for a struct referent. The sidecar writes the referent, never
     /// the carrier.
-    fn reference_referent(&self, pointer: &Pointer) -> Option<String> {
+    fn reference_referent(&self, pointer: &Address) -> Option<String> {
         let tables = self.labels.naming.as_deref()?;
         tables
             .0
@@ -2165,8 +2165,8 @@ impl Printer<'_> {
 
     /// `pointer` as an element of, or a byte offset from, a pointer
     /// parameter whose value is `pointer` less one added offset term.
-    fn parameter_relative_pointer(&mut self, pointer: &Pointer, depth: usize) -> Option<Spelled> {
-        let PointerOffsetTerm::Add(base_offset, extra) = &pointer.offset else {
+    fn parameter_relative_pointer(&mut self, pointer: &Address, depth: usize) -> Option<Spelled> {
+        let AddressOffset::Add(base_offset, extra) = &pointer.offset else {
             return None;
         };
         let tables = self.labels.naming.clone()?;
@@ -2177,7 +2177,7 @@ impl Printer<'_> {
             .find_map(|(parameter, value)| match value {
                 crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(
                     base,
-                )) if base.pointer().block == pointer.block
+                )) if base.pointer().base == pointer.base
                     && base.pointer().offset == **base_offset
                     && parameter.name().len() <= 256 =>
                 {
@@ -2187,8 +2187,8 @@ impl Printer<'_> {
             })?;
         let width = self.named_element_width(&name);
         let index = match extra.as_ref() {
-            PointerOffsetTerm::Int32Scaled { value, byte_width }
-            | PointerOffsetTerm::Int64Scaled {
+            AddressOffset::Int32Scaled { value, byte_width }
+            | AddressOffset::Int64Scaled {
                 value, byte_width, ..
             } if Some(*byte_width) == width => {
                 self.bitvector(value.structural_value(), None, depth + 1)
@@ -2205,7 +2205,7 @@ impl Printer<'_> {
     }
 
     /// The element width of the pointer a naming table binds to `base`.
-    fn element_width(&self, base: &Pointer) -> Option<i64> {
+    fn element_width(&self, base: &Address) -> Option<i64> {
         let tables = self.labels.naming.as_deref()?;
         tables
             .0
@@ -2930,7 +2930,7 @@ fn typed_literal(text: String, suffix: &str) -> String {
 mod tests {
     use super::*;
     use crate::kernel::{
-        LoadKind, PointerBlock, PointerValue, ProgramType, ProgramValue, SharedMemory,
+        AddressBase, LoadKind, PointerValue, ProgramType, ProgramValue, SharedMemory,
     };
 
     fn equality(value: MachineTerm) -> Proposition {
@@ -3229,9 +3229,9 @@ mod tests {
     #[test]
     fn predicate_array_arguments_keep_their_individual_states() {
         let pointer = ProgramValue::Pointer(PointerValue::new(
-            Pointer {
-                block: PointerBlock::Concrete("global:cells".into()),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::Concrete("global:cells".into()),
+                offset: AddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         ));
@@ -3274,9 +3274,9 @@ mod tests {
     fn reserved_predicates_print_the_click_spelling_that_lowers_to_them() {
         let cell = |name: &str| {
             ProgramValue::Pointer(PointerValue::new(
-                Pointer {
-                    block: PointerBlock::Concrete(format!("global:{name}")),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Concrete(format!("global:{name}")),
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramType::Int32Pointer,
             ))
@@ -3334,9 +3334,9 @@ mod tests {
 
     #[test]
     fn historical_loads_use_their_own_state_names_and_keep_their_read_type() {
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("global:cells".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Concrete("global:cells".into()),
+            offset: AddressOffset::Constant(0),
         };
         let base = ProgramValue::Pointer(PointerValue::new(
             pointer.clone(),
@@ -3387,9 +3387,9 @@ mod tests {
     #[test]
     fn result_names_the_returned_value_only_where_result_exists() {
         let index = Variable(9);
-        let heap = Pointer {
-            block: PointerBlock::Heap(1),
-            offset: PointerOffsetTerm::Constant(0),
+        let heap = Address {
+            base: AddressBase::Heap(1),
+            offset: AddressOffset::Constant(0),
         };
         let before = ExecutionState::new().with_memory(Memory::new().with_block("global:a", 4));
         let after = ExecutionState::new().with_memory(Memory::new().with_block("global:a", 8));
@@ -3446,15 +3446,15 @@ mod tests {
 mod resource_tests {
     use super::*;
     use crate::kernel::{
-        AlgebraicType, ExecutionState, LoadKind, PointerBlock, PointerValue, ProgramType,
+        AddressBase, AlgebraicType, ExecutionState, LoadKind, PointerValue, ProgramType,
         ProgramValue, SharedMemory,
     };
 
     #[test]
     fn resource_arguments_keep_the_same_read_states_as_proposition_operands() {
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("global:cells".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Concrete("global:cells".into()),
+            offset: AddressOffset::Constant(0),
         };
         let before = ExecutionState::new()
             .with_local(

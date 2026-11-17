@@ -424,9 +424,9 @@ fn borrowed_contract_input_roots_are_shared_across_proof_units_of_one_function()
 /// it instead of proving a vacuous body under it.
 #[test]
 fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
-    let pointer = crate::kernel::Pointer {
-        block: "buffer".into(),
-        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+    let pointer = crate::kernel::Address {
+        base: "buffer".into(),
+        offset: crate::kernel::AddressOffset::Constant(0),
     };
     let viewed = ResourceFact::view_memory(MemoryRange::new(
         pointer.clone(),
@@ -439,7 +439,7 @@ fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
         MachineTerm::constant(2),
     ));
     let state = ExecutionState::new()
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 8))
+        .with_memory(Memory::new().with_block(pointer.base.clone(), 8))
         .with_resource_context(
             ResourceContext::new().unchecked_with_facts([viewed.clone(), owned.clone()]),
         );
@@ -515,13 +515,13 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
 /// docs/internals/stable-views.md).
 #[test]
 fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
-    let target = Pointer {
-        block: "target".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let target = Address {
+        base: "target".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let source = Pointer {
-        block: "source".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let source = Address {
+        base: "source".into(),
+        offset: AddressOffset::Constant(0),
     };
     let owned_target = own_memory_fact(target.clone(), 0, 2);
     let owned_source = own_memory_fact(source.clone(), 0, 2);
@@ -610,9 +610,9 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
 /// check now runs first.
 #[test]
 fn owner_authorized_write_into_a_lent_range_is_refused() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let owned = own_memory_fact(pointer.clone(), 0, 2);
     let viewed = view_memory_fact(pointer.clone(), 0, 1);
@@ -690,9 +690,9 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
 /// would change nothing (R01's same-value negative; docs/internals/stable-views.md).
 #[test]
 fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let owned = own_memory_fact(pointer.clone(), 0, 2);
     let viewed = view_memory_fact(pointer.clone(), 0, 1);
@@ -719,7 +719,7 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
     );
     // The cell already holds 9; the body stores 9 into it.
     let populated = Memory::new()
-        .with_block(pointer.block.clone(), 8)
+        .with_block(pointer.base.clone(), 8)
         .store(pointer.clone(), int32(9));
     let state = ExecutionState::new()
         .with_memory(populated.clone())
@@ -769,9 +769,9 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
 
 #[test]
 fn local_declaration_allocates_stack_object_for_address_of() {
-    let local_pointer = Pointer {
-        block: "local:x".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local_pointer = Address {
+        base: "local:x".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new();
     let statement = program_seq(
@@ -848,7 +848,7 @@ fn addressable_parameter_gets_a_fresh_callee_stack_slot() {
         .slot("n")
         .expect("parameter slot")
         .clone();
-    assert!(caller_slot.block.starts_with("local:frame:0:"));
+    assert!(caller_slot.base.starts_with("local:frame:0:"));
     assert_eq!(
         caller_state.memory().cells.get(&caller_slot),
         Some(int32(3))
@@ -1266,9 +1266,9 @@ fn signed_addition_ranges_nested_additions_only_when_each_level_is_safe() {
 
 #[test]
 fn signed_addition_matches_interval_facts_across_unchanged_states() {
-    let cell = Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(660)), 4),
+    let cell = Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(660)), 4),
     };
     let before = Memory::new();
     let after = before.clone().with_block("local:temporary", 4);
@@ -1303,9 +1303,9 @@ fn signed_addition_matches_interval_facts_across_unchanged_states() {
 
 #[test]
 fn pointer_store_through_local_address_updates_named_lvalue() {
-    let local_pointer = Pointer {
-        block: "local:x".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local_pointer = Address {
+        base: "local:x".into(),
+        offset: AddressOffset::Constant(0),
     };
     let statement = program_seq(
         program_declare("x", ProgramType::Int32),
@@ -1362,9 +1362,9 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
 
 #[test]
 fn memory_load_store_are_native_theorems() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let value = int32(7);
     let theorem = prove_memory_load_after_store_same(Memory::new(), pointer.clone(), value.clone());
@@ -1381,13 +1381,13 @@ fn memory_load_store_are_native_theorems() {
 
 #[test]
 fn store_preserves_distinct_memory_cell_frame() {
-    let stored_pointer = Pointer {
-        block: "left".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let stored_pointer = Address {
+        base: "left".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let loaded_pointer = Pointer {
-        block: "right".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let loaded_pointer = Address {
+        base: "right".into(),
+        offset: AddressOffset::Constant(0),
     };
     let memory = Memory::new().store(loaded_pointer.clone(), int32(42));
     let theorem = prove_memory_load_after_store_other(
@@ -1410,9 +1410,9 @@ fn store_preserves_distinct_memory_cell_frame() {
 
 #[test]
 fn missing_memory_load_is_native_undefined_behavior() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(4),
     };
     let theorem = prove_memory_load(Memory::new(), pointer.clone());
 
@@ -1672,13 +1672,13 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
 
 #[test]
 fn verified_function_rule_does_not_publish_one_spec_alias_path() {
-    let stored = Pointer {
-        block: "heap".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let stored = Address {
+        base: "heap".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let queried = Pointer {
-        block: stored.block.clone(),
-        offset: PointerOffsetTerm::Variable(Variable(900_002)),
+    let queried = Address {
+        base: stored.base.clone(),
+        offset: AddressOffset::Variable(Variable(900_002)),
     };
     let q = SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("q"));
     let reflexive_load = SpecProposition::Comparison {
@@ -1752,9 +1752,9 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
 
 #[test]
 fn opaque_pointer_result_can_alias_its_argument() {
-    let argument = Pointer {
-        block: "heap".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let argument = Address {
+        base: "heap".into(),
+        offset: AddressOffset::Constant(0),
     };
     let helper = program_function(
         ProgramType::Int32Pointer,
@@ -1791,7 +1791,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
     let execution = prove_symbolic_program_execution_paths_with_environment(
         ExecutionState::new()
             .with_population_creation_tracking()
-            .with_local("result", ProgramValue::pointer(Pointer::null())),
+            .with_local("result", ProgramValue::pointer(Address::null())),
         program_call_then_assign(
             3,
             "result",
@@ -2425,9 +2425,9 @@ fn exceptional_direct_rule_boundary_excludes_resource_transitions() {
 
 #[test]
 fn effect_endpoint_comparison_ignores_function_local_cells() {
-    let local = Pointer {
-        block: "local:temporary".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local = Address {
+        base: "local:temporary".into(),
+        offset: AddressOffset::Constant(0),
     };
     let before = Memory::new().with_block("local:temporary", 4);
     let after = before.clone().store(local, int32(7));
@@ -2440,9 +2440,9 @@ fn effect_endpoint_comparison_ignores_function_local_cells() {
         )
     );
 
-    let external = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let external = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let changed_external = after.store(external, int32(9));
     assert!(
@@ -2456,9 +2456,9 @@ fn effect_endpoint_comparison_ignores_function_local_cells() {
 
 #[test]
 fn effect_endpoint_allows_resource_allocation_bookkeeping() {
-    let allocation = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(64),
+    let allocation = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(64),
     };
     let before = Memory::new();
     let after = before
@@ -4031,9 +4031,9 @@ fn a_recursion_anchor_is_part_of_the_environment_identity() {
 /// and the caller's would be one block, one allocation size and one cell map.
 #[test]
 fn a_called_frames_declaration_does_not_take_the_callers_block() {
-    let callers = Pointer {
-        block: "local:x".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let callers = Address {
+        base: "local:x".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_memory(
@@ -4069,7 +4069,7 @@ fn a_called_frames_declaration_does_not_take_the_callers_block() {
 /// block to a new object would revive every stale pointer to the old one.
 #[test]
 fn a_declaration_does_not_take_a_block_whose_lifetime_ended() {
-    let retired = PointerBlock::from("local:x");
+    let retired = AddressBase::from("local:x");
     let state = ExecutionState::new().with_memory(
         Memory::new()
             .with_block("local:x", 4)
@@ -4097,7 +4097,7 @@ fn a_declaration_does_not_take_a_block_whose_lifetime_ended() {
             .locals()
             .slot("x")
             .expect("the new object's slot")
-            .block,
+            .base,
         &retired
     );
 }
@@ -4403,9 +4403,9 @@ fn path_exists_at_program_point(
                     arguments: vec![
                         PureFunctionArgument::ArrayRef {
                             memory,
-                            pointer: ProgramValue::pointer(Pointer {
-                                block: "graph".into(),
-                                offset: PointerOffsetTerm::Constant(0),
+                            pointer: ProgramValue::pointer(Address {
+                                base: "graph".into(),
+                                offset: AddressOffset::Constant(0),
                             }),
                             element_type: ProgramType::Int32,
                         },
@@ -4428,9 +4428,9 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
     let ty = AlgebraicType::parameter("Path".into());
     let before = Memory::new().with_block("graph", 4);
     let after = before.clone().store(
-        Pointer {
-            block: "graph".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "graph".into(),
+            offset: AddressOffset::Constant(0),
         },
         int32(1),
     );
@@ -4603,9 +4603,9 @@ fn certification_keeps_conditional_universal_guards_states_and_sorts() {
         0,
     )));
     let after = memory.store(
-        Pointer {
-            block: "graph".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "graph".into(),
+            offset: AddressOffset::Constant(0),
         },
         int32(1),
     );
@@ -4614,13 +4614,13 @@ fn certification_keeps_conditional_universal_guards_states_and_sorts() {
 
 #[test]
 fn aggregate_copy_requires_write_authority_for_each_destination_field() {
-    let target = Pointer {
-        block: "target".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let target = Address {
+        base: "target".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let source = Pointer {
-        block: "source".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let source = Address {
+        base: "source".into(),
+        offset: AddressOffset::Constant(0),
     };
     let layout = AggregateLayout::new(
         8,

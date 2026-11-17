@@ -98,9 +98,9 @@ fn quantified_loadable_alpha_query_ignores_unrelated_state_size() {
                 source_memory.with_block(format!("quantified-viewable-work-{index}"), 8);
         }
         source_memory = source_memory.store(
-            Pointer {
-                block: "quantified-viewable-work-0".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "quantified-viewable-work-0".into(),
+                offset: AddressOffset::Constant(0),
             },
             ProgramValue::Int32(MachineTerm::Variable(Variable(209_000))),
         );
@@ -242,9 +242,9 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
         let base = Memory::new().with_block("same-bucket-facts", 8);
         for value in 0..=size {
             let memory = base.clone().store(
-                Pointer {
-                    block: "same-bucket-facts".into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: "same-bucket-facts".into(),
+                    offset: AddressOffset::Constant(0),
                 },
                 // Distinct states without contradictory literal
                 // premises: each read may consistently equal zero.
@@ -255,9 +255,9 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
         let load = |memory: &crate::kernel::SharedMemory| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(memory),
-                Box::new(Pointer {
-                    block: "same-bucket-facts".into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                Box::new(Address {
+                    base: "same-bucket-facts".into(),
+                    offset: AddressOffset::Constant(0),
                 }),
                 crate::kernel::LoadKind::Int32,
             )

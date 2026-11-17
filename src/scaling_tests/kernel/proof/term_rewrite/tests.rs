@@ -11,11 +11,11 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
         crate::kernel::effective_type::CStructClass::opaque("node"),
     );
     let from = PointerValue::new(
-        Pointer::symbolic(Variable(970_001)),
+        Address::symbolic(Variable(970_001)),
         ProgramType::Int32Pointer,
     );
     let to = PointerValue::new(
-        Pointer::symbolic(Variable(970_002)),
+        Address::symbolic(Variable(970_002)),
         ProgramType::Int32Pointer,
     );
     let typed = from.clone().with_object_class(Some(class.clone()));
@@ -180,9 +180,9 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
         let block = format!("branch-{depth}");
         let mut load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
-            &Pointer {
-                block: PointerBlock::Concrete(block.clone()),
-                offset: PointerOffsetTerm::scaled_int32_node(source_term.clone(), 4),
+            &Address {
+                base: AddressBase::Concrete(block.clone()),
+                offset: AddressOffset::scaled_int32_node(source_term.clone(), 4),
             },
             crate::kernel::LoadKind::Int32,
             4,
@@ -190,14 +190,14 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
         for _ in 0..depth {
             load = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
-                &Pointer {
-                    block: PointerBlock::Concrete(block.clone()),
-                    offset: PointerOffsetTerm::Add(
-                        Box::new(PointerOffsetTerm::scaled_int32_node(
+                &Address {
+                    base: AddressBase::Concrete(block.clone()),
+                    offset: AddressOffset::Add(
+                        Box::new(AddressOffset::scaled_int32_node(
                             MachineTerm::Variable(load),
                             4,
                         )),
-                        Box::new(PointerOffsetTerm::scaled_int32_node(
+                        Box::new(AddressOffset::scaled_int32_node(
                             MachineTerm::Variable(load),
                             4,
                         )),
@@ -615,13 +615,13 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
     }
 
     fn memory_state_identity(depth: usize) -> crate::kernel::SharedMemory {
-        let block = PointerBlock::Concrete("checked-fold-opaque".into());
+        let block = AddressBase::Concrete("checked-fold-opaque".into());
         let mut memory = Memory::new().with_block(block.clone(), depth as u32 + 1);
         for offset in 0..depth {
             memory = memory.store(
-                Pointer {
-                    block: block.clone(),
-                    offset: PointerOffsetTerm::Constant(offset as i64),
+                Address {
+                    base: block.clone(),
+                    offset: AddressOffset::Constant(offset as i64),
                 },
                 ProgramValue::Int32(MachineTerm::constant(offset as u32)),
             );
@@ -646,9 +646,9 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
     let mut state_work = Vec::new();
     for state_size in [0usize, 256] {
         let memory = memory_state_identity(state_size);
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("checked-fold-opaque".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Concrete("checked-fold-opaque".into()),
+            offset: AddressOffset::Constant(0),
         };
         let replacement_payload = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
@@ -686,9 +686,9 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
     let mut c_to_integer_work = Vec::new();
     for depth in [8usize, 16, 32, 64] {
         let memory = memory_state_identity(depth);
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("checked-fold-opaque".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Concrete("checked-fold-opaque".into()),
+            offset: AddressOffset::Constant(0),
         };
         let integer_source = Variable(3_000_000 + depth as u64);
         let mut int32_body = IntegerTerm::var(integer_source);
@@ -870,9 +870,9 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
     let mut work = Vec::new();
     for depth in [8usize, 16, 32, 64] {
         let memory = crate::kernel::intern_memory(Memory::new().with_block("array", 16));
-        let leaf_pointer = Pointer {
-            block: PointerBlock::Concrete("array".into()),
-            offset: PointerOffsetTerm::scaled_int32_node(
+        let leaf_pointer = Address {
+            base: AddressBase::Concrete("array".into()),
+            offset: AddressOffset::scaled_int32_node(
                 MachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(source).into(),
                     destination: MachineIntegerType::Int32,
@@ -889,9 +889,9 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
         for _ in 0..depth {
             load = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
-                &Pointer {
-                    block: PointerBlock::Concrete("array".into()),
-                    offset: PointerOffsetTerm::Variable(load),
+                &Address {
+                    base: AddressBase::Concrete("array".into()),
+                    offset: AddressOffset::Variable(load),
                 },
                 crate::kernel::LoadKind::Int32,
                 4,
@@ -899,9 +899,9 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
         }
         let atom = Proposition::MemoryLoadable {
             memory: memory.as_ref().clone(),
-            base: Pointer {
-                block: PointerBlock::Concrete("array".into()),
-                offset: PointerOffsetTerm::Variable(load),
+            base: Address {
+                base: AddressBase::Concrete("array".into()),
+                offset: AddressOffset::Variable(load),
             },
             bytes: MachineTerm::constant(4),
             wide: false,
@@ -939,9 +939,8 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
 #[test]
 fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     let index = MachineTerm::Variable(Variable(989_100));
-    let native = PointerOffsetTerm::scaled_int64_node(index.clone(), 4, true);
-    let narrow =
-        PointerOffsetTerm::scaled_int32_node(MachineTerm::uint32_from_64(index.clone()), 4);
+    let native = AddressOffset::scaled_int64_node(index.clone(), 4, true);
+    let narrow = AddressOffset::scaled_int32_node(MachineTerm::uint32_from_64(index.clone()), 4);
     let bound = ConditionTerm::uint64_less_equal(
         index.clone(),
         MachineTerm::uint64_constant(1_073_741_823),
@@ -1021,7 +1020,7 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         assert_eq!(projection(condition, truth), native);
     }
     let conditions = HashMap::from([(bound.clone(), true)]);
-    let signed = PointerOffsetTerm::scaled_int64_node(index.clone(), 4, false);
+    let signed = AddressOffset::scaled_int64_node(index.clone(), 4, false);
     let mut rewrite = TermRewrite::for_conditions(&conditions);
     assert_eq!(rewrite.offset(&signed), signed);
     let binder = Proposition::ForAll {
@@ -1106,18 +1105,18 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
     let mut memory = Memory::new();
     for index in 0..=unrelated {
         memory = memory.store(
-            Pointer {
-                block: PointerBlock::Heap(996_100 + index),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::Heap(996_100 + index),
+                offset: AddressOffset::Constant(0),
             },
             stored.clone(),
         );
     }
     let memory = crate::kernel::intern_memory(memory);
     let from = PointerValue::new(
-        Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -1128,14 +1127,14 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
     if warm {
         let _ = AlgebraicTermNode::parameter_load(
             memory.clone(),
-            Pointer::symbolic(Variable(998_000)),
+            Address::symbolic(Variable(998_000)),
             parameter,
         );
     }
     let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
         for index in 0..count {
             let to = PointerValue::new(
-                Pointer::symbolic(Variable(997_000 + index)),
+                Address::symbolic(Variable(997_000 + index)),
                 ProgramType::Int32Pointer,
             );
             let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
@@ -1182,14 +1181,14 @@ fn generic_read_alias_rewrites_keep_cold_total_work_linear() {
 fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
     let to = PointerValue::new(
-        Pointer::symbolic(Variable(997_500)),
+        Address::symbolic(Variable(997_500)),
         ProgramType::Int32PointerPointer,
     );
-    let stored = ProgramValue::pointer(Pointer::symbolic(Variable(997_501)));
+    let stored = ProgramValue::pointer(Address::symbolic(Variable(997_501)));
     let mut memory = Memory::new();
     for index in 0..unrelated {
         memory = memory.store(
-            Pointer::symbolic(Variable(998_500 + index)),
+            Address::symbolic(Variable(998_500 + index)),
             ProgramValue::Int32(7u32.into()),
         );
     }
@@ -1197,7 +1196,7 @@ fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
     let inputs = (0..count)
         .map(|index| {
             let from = PointerValue::new(
-                Pointer::symbolic(Variable(999_500 + index)),
+                Address::symbolic(Variable(999_500 + index)),
                 ProgramType::Int32PointerPointer,
             );
             let read =
@@ -1247,29 +1246,29 @@ fn numeric_pointer_read_rewrite_work(
     let _session = crate::kernel::VerificationSession::enter();
     let from = MachineTerm::Variable(Variable(997_020));
     let to = MachineTerm::Variable(Variable(997_021));
-    let address = |index| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(index, 8),
+    let address = |index| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(index, 8),
     };
     let mut memory = Memory::new();
     for index in 0..unrelated {
         memory = memory.store(
-            Pointer {
-                block: if separate {
-                    PointerBlock::Temporary(998_020 + index)
+            Address {
+                base: if separate {
+                    AddressBase::Temporary(998_020 + index)
                 } else {
-                    PointerBlock::Symbolic(Variable(998_020 + index))
+                    AddressBase::Symbolic(Variable(998_020 + index))
                 },
-                offset: PointerOffsetTerm::Constant(0),
+                offset: AddressOffset::Constant(0),
             },
             ProgramValue::Int32(7u32.into()),
         );
     }
-    let memory = memory.store(address(to.clone()), ProgramValue::pointer(Pointer::null()));
+    let memory = memory.store(address(to.clone()), ProgramValue::pointer(Address::null()));
     let memory = crate::kernel::intern_memory(memory);
     let mut input = address(from.clone());
     for _ in 0..depth {
-        input = Pointer::version_read(&memory, &input);
+        input = Address::version_read(&memory, &input);
     }
     let input = ProgramValue::pointer(input);
     let (outputs, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1280,7 +1279,7 @@ fn numeric_pointer_read_rewrite_work(
     });
     let mut expected = address(to);
     for _ in 0..depth {
-        expected = Pointer::version_read(&memory, &expected);
+        expected = Address::version_read(&memory, &expected);
     }
     let expected = ProgramValue::pointer(expected);
     assert_ne!(expected, input);
@@ -1582,7 +1581,7 @@ fn resource_read_collection_scales_with_selected_arguments() {
             .map(|index| {
                 AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::MemoryLoad(
                     ProgramPoint::at(&memory),
-                    Box::new(Pointer::symbolic(Variable(3_219_100 + index as u64))),
+                    Box::new(Address::symbolic(Variable(3_219_100 + index as u64))),
                     LoadKind::Int32,
                 )))
             })
@@ -1624,7 +1623,7 @@ fn one_proposition_read_comparison_batch_scales_with_selected_reads() {
             .map(|index| {
                 MachineTerm::MemoryLoad(
                     ProgramPoint::at(&memory),
-                    Box::new(Pointer::symbolic(Variable(4_021_000 + index as u64))),
+                    Box::new(Address::symbolic(Variable(4_021_000 + index as u64))),
                     LoadKind::Int32,
                 )
             })
@@ -1693,7 +1692,7 @@ fn pointer_index_reconstruction_keeps_cold_dags_shared() {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
         }
-        let offset = PointerOffsetTerm::Int32Scaled {
+        let offset = AddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
             byte_width: 4,
         };

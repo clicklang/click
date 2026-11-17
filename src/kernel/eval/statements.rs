@@ -344,7 +344,7 @@ fn program_update_expression(
 
 pub(in crate::kernel) fn memory_write_permission_outcome(
     state: &ExecutionState,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<StatementOutcome> {
@@ -368,7 +368,7 @@ pub(in crate::kernel) fn memory_write_permission_outcome(
 fn memory_write_obligation_outcome(
     state: &ExecutionState,
     range: MemoryRange,
-    storage_pointer: &Pointer,
+    storage_pointer: &Address,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
 ) -> Option<StatementOutcome> {
@@ -492,7 +492,7 @@ fn write_program_lvalue_paths_for_initialization(
     let direct_local_copy = value.program_type() == lvalue.value_type
         && matches!(&lvalue.storage, LValueStorage::Local { name }
             if state.locals.slot(name).is_none_or(|pointer|
-                crate::kernel::block_is_never_address_taken_local(&pointer.block)));
+                crate::kernel::block_is_never_address_taken_local(&pointer.base)));
     let effective_assumptions = if direct_local_copy {
         effective_assumptions
     } else {
@@ -753,7 +753,7 @@ fn write_program_lvalue_paths_for_initialization(
                 .heap
                 .pending_reallocations
                 .values()
-                .any(|pending| pending.old_pointer.block == pointer.block)
+                .any(|pending| pending.old_pointer.base == pointer.base)
             {
                 return Ok(vec![StatementExecutionPath::new(
                     StatementOutcome::RuntimeError(RuntimeError::UnresolvedAllocationOutcome),
@@ -778,7 +778,7 @@ fn write_program_lvalue_paths_for_initialization(
                     obligations,
                 )]);
             }
-            if state.memory.is_read_only_block(&pointer.block) {
+            if state.memory.is_read_only_block(&pointer.base) {
                 return Ok(vec![StatementExecutionPath::new(
                     StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
                     facts,
@@ -814,8 +814,8 @@ fn write_program_lvalue_paths_for_initialization(
             let pointer = authorized_range
                 .as_ref()
                 .filter(|_| {
-                    !matches!(pointer.offset, PointerOffsetTerm::Add(_, _))
-                        && !matches!(pointer.block, PointerBlock::LoadedPointer(_))
+                    !matches!(pointer.offset, AddressOffset::Add(_, _))
+                        && !matches!(pointer.base, AddressBase::LoadedPointer(_))
                 })
                 .and_then(|range| {
                     effective_assumptions
@@ -1031,7 +1031,7 @@ fn write_program_lvalue_paths_for_initialization(
             if let ProgramValue::Pointer(stored) = &written_value {
                 facts.push(ExecutionPureFact::logical_read_equation(
                     stored.clone(),
-                    Pointer::loaded_value(
+                    Address::loaded_value(
                         &crate::kernel::intern_memory_ref(state.memory()),
                         &written_pointer,
                     ),
@@ -1073,17 +1073,17 @@ fn end_aggregate_step_lifetimes(
             continue;
         };
         next.aggregate_step_objects.remove(step);
-        if let Some(error) = next.population_storage_retirement_refusal(&pointer.block) {
+        if let Some(error) = next.population_storage_retirement_refusal(&pointer.base) {
             return Err(error);
         }
         if let Some(error) = crate::kernel::mutexes::automatic_storage_refusal(
             &next,
             "aggregate expression result",
-            &pointer.block,
+            &pointer.base,
         ) {
             return Err(error);
         }
-        let Some(bytes) = next.memory.block_size(&pointer.block).cloned() else {
+        let Some(bytes) = next.memory.block_size(&pointer.base).cloned() else {
             continue;
         };
         let range = MemoryRange::new_with_element_width(pointer.clone(), 0.into(), bytes, 1);
@@ -1095,8 +1095,8 @@ fn end_aggregate_step_lifetimes(
             return Err(RuntimeError::LoanRefusal(Box::new(refusal)));
         }
         retire_automatic_storage_owner(&mut next, &range);
-        next.set_memory(next.memory.without_local_block(&pointer.block));
-        next.retire_population_storage(&pointer.block)?;
+        next.set_memory(next.memory.without_local_block(&pointer.base));
+        next.retire_population_storage(&pointer.base)?;
     }
     next.end_step_results(steps);
     Ok(next)
@@ -1112,14 +1112,14 @@ fn execute_program_aggregate_step_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let layout = &result_layout.layout;
-    let pointer = Pointer {
-        block: PointerBlock::Temporary(budget.allocate_kernel_variable()?.0),
-        offset: PointerOffsetTerm::constant(0),
+    let pointer = Address {
+        base: AddressBase::Temporary(budget.allocate_kernel_variable()?.0),
+        offset: AddressOffset::constant(0),
     };
-    register_block_alignment(&pointer.block, layout.alignment_bytes());
+    register_block_alignment(&pointer.base, layout.alignment_bytes());
     let mut allocated = state.clone();
     allocated.set_memory(allocated.memory.clone().with_classed_block(
-        pointer.block.clone(),
+        pointer.base.clone(),
         result_layout.declared_class.clone(),
         layout.size_bytes(),
     ));
@@ -1149,7 +1149,7 @@ fn execute_program_aggregate_step_paths(
             next.set_memory(
                 next.memory
                     .clone()
-                    .freeze_aggregate_result(&pointer.block, None),
+                    .freeze_aggregate_result(&pointer.base, None),
             );
             for step in steps {
                 next.set_retained_step_result(
@@ -1360,7 +1360,7 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     // body return materializes a local return object. Copying that value
     // does not borrow an external resource. Use the temporary's recorded
     // bounds, not merely its identity, to authorize this selected copy.
-    if matches!(source.block, PointerBlock::Temporary(_))
+    if matches!(source.base, AddressBase::Temporary(_))
         && source.bounds_are_known()
         && assumptions.provenance_equal(source.provenance(), &source.pointer().object_identity())
         && state.memory.access_in_bounds(source, layout.size_bytes())
@@ -1625,7 +1625,7 @@ fn execute_program_heap_allocate_to_paths(
         let pointer = loop {
             let identity = budget.allocate_kernel_variable()?;
             if !state.memory.heap_identity_in_use(identity.0) {
-                break Pointer::symbolic(identity);
+                break Address::symbolic(identity);
             }
         };
         // A failure that ends the program leaves no execution to continue:
@@ -1656,7 +1656,7 @@ fn execute_program_heap_allocate_to_paths(
                     zeroed,
                     object_class.clone(),
                 ));
-        success_state.record_pending_population_storage_creation(pointer.block.clone());
+        success_state.record_pending_population_storage_creation(pointer.base.clone());
         let assigned = target.finish(
             &success_state,
             ProgramValue::typed_pointer(pointer, target_type)
@@ -1700,7 +1700,7 @@ fn execute_program_heap_allocate_to_paths(
     Ok(paths)
 }
 
-fn heap_allocation_element_width(state: &ExecutionState, base: &Pointer) -> u32 {
+fn heap_allocation_element_width(state: &ExecutionState, base: &Address) -> u32 {
     state
         .locals
         .bindings
@@ -1735,7 +1735,7 @@ fn heap_range_element_width(size: &AllocationSize, requested_width: u32) -> u32 
 /// The owned range of a whole heap block, `base[0..count]` in the size's
 /// index kind, and its element width ([`heap_range_element_count`]).
 fn heap_block_range(
-    base: Pointer,
+    base: Address,
     size: &AllocationSize,
     requested_width: u32,
 ) -> (MemoryRange, u32) {
@@ -2312,7 +2312,7 @@ fn execute_program_realloc_result_paths(
             assumptions_with_path_context(assumptions, &facts, &obligations);
         let old_pointer = match old_value {
             ProgramValue::Pointer(pointer) => pointer.into_pointer(),
-            ProgramValue::Int32(bits) if bits.as_const() == Some(0) => Pointer::null(),
+            ProgramValue::Int32(bits) if bits.as_const() == Some(0) => Address::null(),
             _ => {
                 paths.push(StatementExecutionPath::new(
                     StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
@@ -2326,7 +2326,7 @@ fn execute_program_realloc_result_paths(
         // C specifies realloc(NULL, size) as an allocation. Reuse the
         // existing pending-allocation machinery so a later null check can
         // resolve this branch just like malloc/calloc.
-        if old_pointer == Pointer::null() {
+        if old_pointer == Address::null() {
             for allocation_path in execute_program_heap_allocate_to_paths(
                 state,
                 AllocationDestination::Value(target_type),
@@ -2553,7 +2553,7 @@ fn execute_program_realloc_result_paths(
             // projecting resource facts; unrelated holdings cannot become stale.
             {
                 let mut candidates =
-                    resources.facts_that_may_refer_to_memory_block(&old_pointer.block);
+                    resources.facts_that_may_refer_to_memory_block(&old_pointer.base);
                 if let Some(first) = candidates.next() {
                     let resource_assumptions = state
                         .resources()
@@ -2587,7 +2587,7 @@ fn execute_program_realloc_result_paths(
                 .clone()
                 .cells
                 .iter()
-                .filter(|(pointer, _)| pointer.block == old_pointer.block)
+                .filter(|(pointer, _)| pointer.base == old_pointer.base)
                 .map(|(pointer, value)| (pointer.offset.clone(), value.clone()))
                 .collect::<Vec<_>>();
             let mut copied_cells = Vec::new();
@@ -2624,7 +2624,7 @@ fn execute_program_realloc_result_paths(
             // the facts place its end inside the new size. A run the facts
             // cannot place is left out, which can only refuse a later read.
             let mut initialized_prefix = Vec::new();
-            for (start, length) in state.memory.initialized_runs_in_block(&old_pointer.block) {
+            for (start, length) in state.memory.initialized_runs_in_block(&old_pointer.base) {
                 let end = start + i64::from(length);
                 let Ok(end_constant) = u32::try_from(end) else {
                     continue;
@@ -2654,7 +2654,7 @@ fn execute_program_realloc_result_paths(
             let pending_pointer = loop {
                 let identity = budget.allocate_kernel_variable()?;
                 if !state.memory.heap_identity_in_use(identity.0) {
-                    break Pointer::symbolic(identity);
+                    break Address::symbolic(identity);
                 }
             };
             let pending_memory = state
@@ -2672,9 +2672,7 @@ fn execute_program_realloc_result_paths(
                     zeroed_prefix,
                     copied_cells
                         .into_iter()
-                        .map(|(offset, value)| {
-                            (PointerOffsetTerm::Constant(i64::from(offset)), value)
-                        })
+                        .map(|(offset, value)| (AddressOffset::Constant(i64::from(offset)), value))
                         .collect(),
                     initialized_prefix,
                 );
@@ -2728,7 +2726,7 @@ fn execute_program_heap_free_paths(
         let outcome = match outcome {
             ExpressionOutcome::Value(ProgramValue::Int32(bits)) if bits.as_const() == Some(0) => {
                 ExpressionOutcome::Value(ProgramValue::typed_pointer(
-                    Pointer::null(),
+                    Address::null(),
                     ProgramType::Int32Pointer,
                 ))
             }
@@ -2800,7 +2798,7 @@ fn execute_program_heap_free_paths(
             .heap
             .pending_reallocations
             .values()
-            .any(|pending| pending.old_pointer.block == pointer.block)
+            .any(|pending| pending.old_pointer.base == pointer.base)
         {
             paths.push(StatementExecutionPath::new(
                 StatementOutcome::RuntimeError(RuntimeError::UnresolvedAllocationOutcome),
@@ -2862,7 +2860,7 @@ fn execute_program_heap_free_paths(
             ));
             continue;
         };
-        if let Some(error) = state.population_storage_retirement_refusal(&pointer.block) {
+        if let Some(error) = state.population_storage_retirement_refusal(&pointer.base) {
             paths.push(StatementExecutionPath::new(
                 StatementOutcome::RuntimeError(error),
                 facts,
@@ -2936,7 +2934,7 @@ fn execute_program_heap_free_paths(
         // in that common case; the indexed candidates preserve the same
         // conservative separation checks when a dependent resource remains.
         {
-            let mut candidates = resources.facts_that_may_refer_to_memory_block(&pointer.block);
+            let mut candidates = resources.facts_that_may_refer_to_memory_block(&pointer.base);
             if let Some(first) = candidates.next() {
                 let resource_assumptions = state
                     .resources()
@@ -3001,7 +2999,7 @@ fn execute_program_heap_free_paths(
             .clone()
             .with_memory(memory)
             .with_resource_context(resources);
-        if let Err(error) = next.retire_population_storage(&pointer.block) {
+        if let Err(error) = next.retire_population_storage(&pointer.base) {
             paths.push(StatementExecutionPath::new(
                 StatementOutcome::RuntimeError(error),
                 facts,
@@ -3114,8 +3112,8 @@ pub(crate) fn resolve_pending_heap_allocations(
             .expect("collected pending allocation should still exist");
         state = state.with_memory(memory);
         state.resolve_pending_population_storage_creation(
-            &base.block,
-            (!is_null).then(|| resolved_base.block.clone()),
+            &base.base,
+            (!is_null).then(|| resolved_base.base.clone()),
         );
         let rebound = state
             .locals
@@ -3240,15 +3238,15 @@ fn execute_program_return_expression_paths(
                     );
                     let resolved_state = resolve_pending_heap_allocations(state, &path_assumptions);
                     let resolved_pointer = if truthiness_path.is_true {
-                        let PointerBlock::Symbolic(variable) = pointer.block else {
+                        let AddressBase::Symbolic(variable) = pointer.base else {
                             unreachable!("pending malloc results have symbolic heap identities");
                         };
-                        Pointer {
-                            block: PointerBlock::Heap(variable.0),
-                            offset: PointerOffsetTerm::Constant(0),
+                        Address {
+                            base: AddressBase::Heap(variable.0),
+                            offset: AddressOffset::Constant(0),
                         }
                     } else {
-                        Pointer::null()
+                        Address::null()
                     };
                     let outcome = if let Some(refusal) = return_authority_refusal(&resolved_state) {
                         refusal
@@ -3305,7 +3303,7 @@ fn execute_program_return_expression_paths(
 }
 
 fn pending_allocation_outcome_paths(
-    pointer: Pointer,
+    pointer: Address,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -3443,12 +3441,12 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
         let Some(slot) = state.locals.slot(name).cloned() else {
             continue;
         };
-        if slot.block.is_local_block() && memory.has_block(&slot.block) {
-            if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
+        if slot.base.is_local_block() && memory.has_block(&slot.base) {
+            if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
                 return Err(error);
             }
             if let Some(error) =
-                super::super::mutexes::automatic_storage_refusal(&state, name, &slot.block)
+                super::super::mutexes::automatic_storage_refusal(&state, name, &slot.base)
             {
                 return Err(error);
             }
@@ -3456,7 +3454,7 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
                 slot.clone(),
                 0.into(),
                 memory
-                    .block_size(&slot.block)
+                    .block_size(&slot.base)
                     .expect("live local block")
                     .clone(),
                 1,
@@ -3469,8 +3467,8 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
                 return Err(RuntimeError::LoanRefusal(Box::new(refusal)));
             }
             retire_automatic_storage_owner(&mut state, &range);
-            memory = memory.without_local_block(&slot.block);
-            state.retire_population_storage(&slot.block)?;
+            memory = memory.without_local_block(&slot.base);
+            state.retire_population_storage(&slot.base)?;
             retired = true;
         }
         state.locals.remove(name);
@@ -3892,12 +3890,12 @@ fn execute_execution_statement_leaf_paths(
                         if let Some(slot) = next.locals.slot(name)
                             && let Some(bytes) = next
                                 .memory
-                                .block_size(&slot.block)
+                                .block_size(&slot.base)
                                 .and_then(MachineTerm::as_const)
                         {
                             next.pending_thread_create = Some(pending.with_delta(
                                 super::super::threads::PendingThreadMemoryDelta::Declare {
-                                    block: slot.block.clone(),
+                                    block: slot.base.clone(),
                                     bytes,
                                 },
                             ));
@@ -4123,7 +4121,7 @@ fn execute_execution_statement_leaf_paths(
                                 .locals
                                 .slot(name)
                                 .expect("initialized scalar slot")
-                                .block
+                                .base
                                 .clone();
                             state.set_memory(state.memory.clone().freeze_declared_scalar(&block));
                         }
@@ -4142,7 +4140,7 @@ fn execute_execution_statement_leaf_paths(
                             .locals
                             .slot(name)
                             .expect("declared scalar slot")
-                            .block
+                            .base
                             .clone();
                         state.set_memory(state.memory.clone().freeze_declared_scalar(&block));
                         StatementOutcome::Normal(state)
@@ -4400,7 +4398,7 @@ fn execute_execution_statement_leaf_paths(
                         // The call already materialized its by-value result in caller storage.
                         // Keep that object as the step's result, with its C lifetime and type.
                         state.set_memory(state.memory.clone().freeze_aggregate_result(
-                            &pointer.block,
+                            &pointer.base,
                             result_layout.declared_class.clone(),
                         ));
                         let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -5532,19 +5530,19 @@ pub(in crate::kernel) fn execute_program_loop_paths(
 fn local_declaration_pointer(
     state: &mut ExecutionState,
     name: &BindingName,
-) -> Result<Pointer, RuntimeError> {
+) -> Result<Address, RuntimeError> {
     let previous = state.locals.slot(name).cloned();
     if let Some(previous) = previous
-        && previous.block.is_local_block()
+        && previous.base.is_local_block()
     {
         if let Some(error) =
-            crate::kernel::mutexes::automatic_storage_refusal(state, name, &previous.block)
+            crate::kernel::mutexes::automatic_storage_refusal(state, name, &previous.base)
         {
             return Err(error);
         }
         let end = state
             .memory
-            .block_size(&previous.block)
+            .block_size(&previous.base)
             .cloned()
             .unwrap_or(MachineTerm::Variable(Variable(u64::MAX)));
         let old_range =
@@ -5557,12 +5555,12 @@ fn local_declaration_pointer(
             return Err(RuntimeError::LoanRefusal(Box::new(refusal)));
         }
         retire_automatic_storage_owner(state, &old_range);
-        state.set_memory(state.memory.without_local_block(&previous.block));
+        state.set_memory(state.memory.without_local_block(&previous.base));
         return Ok(fresh_local_object_identity(state, name));
     }
     let unnumbered = Memory::local_pointer(name);
     if state.enclosing_frame_holds_locals()
-        || state.memory.local_block_is_occupied(&unnumbered.block)
+        || state.memory.local_block_is_occupied(&unnumbered.base)
     {
         return Ok(fresh_local_object_identity(state, name));
     }
@@ -5601,7 +5599,7 @@ pub(in crate::kernel) fn retire_automatic_storage_owner(
 /// counter is monotone and every generation it hands out is declared, so the
 /// first candidate is free; checking it is what makes the uniqueness
 /// invariant enforced at the one place it is created.
-fn fresh_local_object_identity(state: &mut ExecutionState, name: &BindingName) -> Pointer {
+fn fresh_local_object_identity(state: &mut ExecutionState, name: &BindingName) -> Address {
     loop {
         let lifetime = state.next_local_lifetime();
         assert!(
@@ -5612,7 +5610,7 @@ fn fresh_local_object_identity(state: &mut ExecutionState, name: &BindingName) -
             .clone()
             .with_next_local_lifetime(lifetime.saturating_add(1));
         let pointer = Memory::local_lifetime_pointer(lifetime, name);
-        if !state.memory.local_block_is_occupied(&pointer.block) {
+        if !state.memory.local_block_is_occupied(&pointer.base) {
             return pointer;
         }
         debug_assert!(
@@ -5630,10 +5628,10 @@ fn note_declared_population_storage(
     name: &BindingName,
 ) -> ExecutionState {
     if let Some(slot) = state.locals.slot(name).cloned()
-        && slot.block.is_local_block()
-        && state.memory.has_block(&slot.block)
+        && slot.base.is_local_block()
+        && state.memory.has_block(&slot.base)
     {
-        state.record_population_storage_creation(slot.block);
+        state.record_population_storage_creation(slot.base);
     }
     state
 }
@@ -5656,7 +5654,7 @@ fn zero_fill_declared_array(
         .locals
         .slot(name)
         .cloned()
-        .filter(|slot| slot.block.is_local_block() && state.memory.has_block(&slot.block))
+        .filter(|slot| slot.base.is_local_block() && state.memory.has_block(&slot.base))
         .ok_or(RuntimeError::TypeMismatch)?;
     let object_bytes = zero_fill
         .stride
@@ -5664,7 +5662,7 @@ fn zero_fill_declared_array(
         .ok_or(RuntimeError::TypeMismatch)?;
     if state
         .memory
-        .block_size(&slot.block)
+        .block_size(&slot.base)
         .and_then(MachineTerm::as_const)
         != Some(object_bytes)
     {
@@ -5725,7 +5723,7 @@ fn zero_fill_declared_array(
 /// A local array's frame owns its bytes, as a declared scalar's does, so the
 /// function can lend them to a callee that owns its buffer, such as
 /// `snprintf(tmp, sizeof(tmp), ...)`.
-fn own_local_array(state: &mut ExecutionState, pointer: &Pointer, bytes: u32) {
+fn own_local_array(state: &mut ExecutionState, pointer: &Address, bytes: u32) {
     state.resources = state
         .resources
         .clone()
@@ -5754,7 +5752,7 @@ pub(in crate::kernel) fn declare_local(
     // A declared local's block is placed at its type's alignment; record it
     // with the block so the alignment decision is intrinsic, as for heap
     // and file-scope blocks, rather than a path fact at each address-of.
-    register_block_alignment(&pointer.block, program_type.abi_alignment());
+    register_block_alignment(&pointer.base, program_type.abi_alignment());
     let byte_width = match program_type {
         ProgramType::Int128 | ProgramType::UInt128 => 16,
         // An abstract value's object holds its value in its binding; its
@@ -5796,7 +5794,7 @@ pub(in crate::kernel) fn declare_local(
         | ProgramType::FunctionPointer(_) => C_POINTER_BYTE_WIDTH,
         ProgramType::Int32Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(4),
             ));
@@ -5812,7 +5810,7 @@ pub(in crate::kernel) fn declare_local(
         }
         ProgramType::UInt8Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length,
             ));
@@ -5828,7 +5826,7 @@ pub(in crate::kernel) fn declare_local(
         }
         ProgramType::Int8Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length,
             ));
@@ -5844,7 +5842,7 @@ pub(in crate::kernel) fn declare_local(
         }
         ProgramType::Int16Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(2),
             ));
@@ -5860,7 +5858,7 @@ pub(in crate::kernel) fn declare_local(
         }
         ProgramType::UInt16Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(2),
             ));
@@ -5876,7 +5874,7 @@ pub(in crate::kernel) fn declare_local(
         }
         ProgramType::UInt32Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(4),
             ));
@@ -5892,7 +5890,7 @@ pub(in crate::kernel) fn declare_local(
         }
         ProgramType::Int64Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(8),
             ));
@@ -5908,7 +5906,7 @@ pub(in crate::kernel) fn declare_local(
         }
         ProgramType::Int128Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(16),
             ));
@@ -5924,7 +5922,7 @@ pub(in crate::kernel) fn declare_local(
         }
         ProgramType::UInt64Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(8),
             ));
@@ -5940,7 +5938,7 @@ pub(in crate::kernel) fn declare_local(
         }
         ProgramType::UInt128Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(16),
             ));
@@ -5956,7 +5954,7 @@ pub(in crate::kernel) fn declare_local(
         }
         ProgramType::Float32Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(4),
             ));
@@ -5972,7 +5970,7 @@ pub(in crate::kernel) fn declare_local(
         }
         ProgramType::Float64Array(length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(8),
             ));
@@ -5988,7 +5986,7 @@ pub(in crate::kernel) fn declare_local(
         }
         ProgramType::PointerArray(element, length) => {
             state.set_memory(state.memory.clone().with_classed_block(
-                pointer.block.clone(),
+                pointer.base.clone(),
                 declared_class,
                 length.saturating_mul(C_POINTER_BYTE_WIDTH),
             ));
@@ -6008,7 +6006,7 @@ pub(in crate::kernel) fn declare_local(
         }
     };
     state.set_memory(state.memory.clone().with_classed_scalar_block(
-        pointer.block.clone(),
+        pointer.base.clone(),
         byte_width,
         program_type,
         declared_class,
@@ -6056,19 +6054,19 @@ pub(in crate::kernel) fn declare_aggregate_local(
 ) -> Result<ExecutionState, RuntimeError> {
     let mut state = state.clone();
     let pointer = local_declaration_pointer(&mut state, name)?;
-    register_block_alignment(&pointer.block, layout.alignment_bytes());
+    register_block_alignment(&pointer.base, layout.alignment_bytes());
     // An object that holds one value of a library or enum type, a borrowed
     // Rust `Vec` or iterator, is a scalar of that type: a loop frame keeps
     // its owner as it keeps any automatic scalar's.
     let memory = match layout.value_type() {
         Some(value_type) => state.memory.clone().with_classed_scalar_block(
-            pointer.block.clone(),
+            pointer.base.clone(),
             layout.size_bytes(),
             value_type,
             declared_class,
         ),
         None => state.memory.clone().with_classed_block(
-            pointer.block.clone(),
+            pointer.base.clone(),
             declared_class,
             layout.size_bytes(),
         ),
@@ -6154,13 +6152,13 @@ fn begin_aggregate_construction(
 /// comparison against that one object. No scan of the frame.
 pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
     state: &mut ExecutionState,
-    pointer: &Pointer,
+    pointer: &Address,
     value: &ProgramValue,
     assumptions: &PureFactContext,
 ) {
-    let slot = Pointer {
-        block: pointer.block.clone(),
-        offset: PointerOffsetTerm::Constant(0),
+    let slot = Address {
+        base: pointer.base.clone(),
+        offset: AddressOffset::Constant(0),
     };
     let Some(name) = state.locals.name_for_slot(&slot).cloned() else {
         return;
@@ -6185,7 +6183,7 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
 /// decides its current value and initialization; a postcondition is not a store.
 pub(in crate::kernel) fn refresh_scalar_local_from_memory(
     state: &mut ExecutionState,
-    slot: &Pointer,
+    slot: &Address,
     assumptions: &PureFactContext,
 ) {
     let Some(name) = state.locals.name_for_slot(slot).cloned() else {
@@ -6200,7 +6198,7 @@ pub(in crate::kernel) fn refresh_scalar_local_from_memory(
 fn refresh_scalar_local_binding(
     state: &mut ExecutionState,
     name: BindingName,
-    slot: Pointer,
+    slot: Address,
     program_type: ProgramType,
     assumptions: &PureFactContext,
 ) {
@@ -6271,7 +6269,7 @@ pub(in crate::kernel) fn sync_stack_local(
     let Some(pointer) = state.locals.slot(name).cloned() else {
         return;
     };
-    if state.memory.has_block(&pointer.block) {
+    if state.memory.has_block(&pointer.base) {
         state.set_memory(state.memory.clone().store(pointer, value.clone()));
     }
 }
@@ -6285,7 +6283,7 @@ pub(in crate::kernel) fn sync_retained_stack_local(
     let Some(pointer) = state.locals.slot(name).cloned() else {
         return;
     };
-    if state.memory.has_block(&pointer.block) {
+    if state.memory.has_block(&pointer.base) {
         state.set_memory(state.memory.clone().store_retained(pointer, value.clone()));
     }
 }
@@ -6294,17 +6292,17 @@ pub(in crate::kernel) fn sync_retained_stack_local(
 /// block. Its subobject bounds, which names the same block, moves with it.
 pub(in crate::kernel) fn rebase_resolved_allocation(
     value: &PointerValue,
-    base: &Pointer,
-    resolved: &Pointer,
+    base: &Address,
+    resolved: &Address,
 ) -> PointerValue {
     let resolved_value = value
         .map_pointers(|address| {
             if address == base {
                 resolved.clone()
-            } else if address.block == base.block && base.offset == PointerOffsetTerm::Constant(0) {
-                Pointer {
-                    block: resolved.block.clone(),
-                    offset: PointerOffsetTerm::add(resolved.offset.clone(), address.offset.clone()),
+            } else if address.base == base.base && base.offset == AddressOffset::Constant(0) {
+                Address {
+                    base: resolved.base.clone(),
+                    offset: AddressOffset::add(resolved.offset.clone(), address.offset.clone()),
                 }
             } else {
                 address.clone()
