@@ -3452,3 +3452,38 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     );
     assert!(loop_state_components_match_at_back_edge(&head, &back, &nonnull, &[]).is_err());
 }
+
+#[test]
+fn numeric_descent_is_owed_only_on_a_continuing_loop_edge() {
+    use crate::kernel::program_expression::{less_than, subtract, uint32_literal, variable};
+    for (next, expect_descent) in [(4, false), (3, true)] {
+        let statement = program_while(
+            less_than(variable("x"), uint32_literal(4)),
+            vec![],
+            program_assign("x", uint32_literal(next)),
+        )
+        .with_loop_ranking_measures(vec![RankingComponent::ProgramExpression(subtract(
+            uint32_literal(3),
+            variable("x"),
+        ))]);
+        let execution = prove_symbolic_execution_statement_verification_paths_with_environment(
+            ExecutionState::new().with_local("x", uint32(3)),
+            statement,
+            PureFactContext::new(),
+            ExecutionEnvironment::new(),
+            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
+        );
+        assert!(execution.limit.is_none());
+        assert!(!execution.paths.is_empty());
+        let owes_descent = execution
+            .paths
+            .iter()
+            .flat_map(|path| &path.obligations)
+            .any(|obligation| {
+                obligation
+                    .context()
+                    .is_some_and(|context| context.contains("decreases at the back edge"))
+            });
+        assert_eq!(owes_descent, expect_descent, "next x = {next}");
+    }
+}

@@ -516,26 +516,11 @@ pub(crate) fn rust_iterator_method(
         (K::RangeInclusive, "start()") => variable("start"),
         (K::RangeInclusive, "end()") => variable("end"),
         (K::RangeInclusive, "is_empty()") => {
-            let local = |suffix| ContractExpression::ProgramExpression(variable(suffix));
-            let compare = |left, operator, right| ClickProposition::Comparison {
-                left,
-                operator,
-                right,
-            };
-            return proposition_bool_value(ClickProposition::Or(
-                Box::new(compare(
-                    local("done"),
-                    ComparisonOperator::NotEqual,
-                    ContractExpression::ProgramExpression(
-                        crate::kernel::program_expression::int32_literal(0),
-                    ),
-                )),
-                Box::new(compare(
-                    local("start"),
-                    ComparisonOperator::GreaterThan,
-                    local("end"),
-                )),
-            ));
+            return proposition_bool_value(ClickProposition::Comparison {
+                left: ContractExpression::ProgramExpression(variable("start")),
+                operator: ComparisonOperator::GreaterThan,
+                right: ContractExpression::ProgramExpression(variable("end")),
+            });
         }
         (K::Range, "len()") => {
             ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))

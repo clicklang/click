@@ -400,6 +400,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     pub(in crate::surface::proof) fn apply_close_invariants_body(
         &self,
         body: &[ProofTactic],
+        boundary: Option<&LoopBoundary>,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
         driver_proof.require_execution_frontier("`close_invariants() by`")?;
@@ -439,6 +440,53 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             return Err(driver_proof
                 .step_error("the invariant bundle was closed more than once on one path"));
         }
+        // Internal closure certificates can be replayed on their own. The
+        // normal preservation driver already supplies its checked boundary.
+        let replay_boundary = if boundary.is_none()
+            && !bundle.ranking_measures.is_empty()
+            && let Some(condition) = bundle.entry_guard.as_deref()
+        {
+            Some(driver_proof.check_loop_boundary(
+                &bundle.loop_entry_state,
+                &bundle.iteration_entry_state,
+                bundle.iterations.as_ref().ok_or_else(|| {
+                    driver_proof.step_error("loop invariant bundle lost its pass count")
+                })?,
+                Some(condition),
+                &bundle.checks,
+                &bundle.binders,
+                bundle.structural_measure.as_deref(),
+                context.function.composite_resource_definitions(),
+            )?)
+        } else {
+            None
+        };
+        let ranking_measures = boundary
+            .or(replay_boundary.as_ref())
+            .map_or(bundle.ranking_measures.as_slice(), |boundary| {
+                boundary.required_ranking_measures(&bundle.ranking_measures)
+            });
+        let closure_context = if ranking_measures.len() == bundle.ranking_measures.len() {
+            driver_proof.context.clone()
+        } else {
+            let mut context = context.with_tactic_index(context.tactic_index);
+            let bundle = Arc::make_mut(&mut context.constants)
+                .invariant_body_context
+                .as_mut()
+                .expect("closure owns its bundle");
+            let bundle = Arc::make_mut(bundle);
+            bundle.ranking_measures.clear();
+            bundle.ranking_surfaces.clear();
+            Arc::new(ProofContext::Execution(context))
+        };
+        let ProofContext::Execution(closure) = closure_context.as_ref() else {
+            unreachable!("closure has an execution context");
+        };
+        let bundle = closure
+            .constants
+            .invariant_body_context
+            .as_deref()
+            .expect("closure owns its bundle");
         // The C branches this path took, recorded when it took them. They are
         // read here, before the bundle scope opens, so the closer names this
         // path's decisions and no sibling arm's.
@@ -536,7 +584,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         drop(prepare_timing);
         let root = Proof {
             site: driver_proof.site.clone(),
-            context: driver_proof.context.clone(),
+            context: closure_context.clone(),
             state,
             node: Arc::new(ProofNode {
                 path_memo: Default::default(),
@@ -973,9 +1021,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         } else {
             driver_proof
                 .driver()
-                .apply_close_invariants_body(&[ProofTactic::Solve])?
+                .apply_close_invariants_body(&[ProofTactic::Solve], Some(&boundary))?
         };
-        proof.validate_loop_invariant_bundle(invariant_checks, ranking_measures)?;
+        proof.validate_loop_invariant_bundle(
+            invariant_checks,
+            boundary.required_ranking_measures(ranking_measures),
+        )?;
         Ok((proof, boundary))
     }
 }

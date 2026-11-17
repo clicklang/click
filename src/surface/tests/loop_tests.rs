@@ -117,56 +117,68 @@ fn expanded_loop_phase_proofs_are_certificates() {
         // Readability certificates name a pointer field through void*.
         ("fork_join_worker_direct_contract", "fill_range"),
     ] {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("mdtests")
-            .join(format!("{filename}.md"));
-        let source = std::fs::read_to_string(&path).unwrap();
-        let fixture = crate::cli::parse_mdtest(&path, &source).unwrap();
-        let sources = fixture
-            .c_sources
-            .iter()
-            .map(|(name, source)| (name.as_str(), source.as_str()))
-            .collect::<Vec<_>>();
-        let click = fixture.click_source.as_deref().unwrap();
-        let verified = verify_c_sources(click, &sources)
-            .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        let expanded = expand_checked_grouped_claim(click, &verified, function)
-            .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        assert!(
-            !expanded.contains("close_invariants"),
-            "{filename}: {expanded}"
-        );
-        let parsed =
-            crate::surface::verification::parse_click_file_with_c_sources(&expanded, &sources)
-                .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        let block = parsed
-            .function_blocks()
-            .iter()
-            .find(|block| block.signature().name() == function)
-            .unwrap_or_else(|| panic!("{filename}: expansion lost `{function}`"));
-        let mut clauses = block.structural_clauses().to_vec();
-        if let Some(tactics) = block.grouped_proof().and_then(SourceProof::tactics) {
-            loop_clauses_in(tactics, &mut clauses);
-        }
-        assert!(!clauses.is_empty(), "{filename}: expansion lost its loop");
-        for clause in &clauses {
-            for (phase, proof) in [
-                ("initialize", clause.initialize_proof()),
-                ("preserve", clause.preserve_proof()),
-            ] {
-                let proof =
-                    proof.unwrap_or_else(|| panic!("{filename}: `{phase}` was not expanded"));
-                let tactics = proof.tactics().unwrap_or_else(|| {
-                    panic!("{filename}: `{phase}` stayed a smart proof: {expanded}")
-                });
-                ProofCertificate::from_proof_tactics(tactics).unwrap_or_else(|error| {
-                    panic!("{filename}: `{phase}` is not a certificate: {error:?}\n{expanded}")
-                });
-            }
-        }
-        verify_c_sources(&expanded, &sources)
-            .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+        assert_loop_phase_expansion_replays(filename, function);
     }
+}
+
+#[test]
+#[ignore = "nightly: verifies and replays two complete loop fixtures"]
+fn numeric_descent_exit_expansion_replays() {
+    for fixture in [
+        "loop_numeric_descent_on_exit",
+        "loop_numeric_descent_on_generated_exit",
+    ] {
+        assert_loop_phase_expansion_replays(fixture, "fill");
+    }
+}
+
+fn assert_loop_phase_expansion_replays(filename: &str, function: &str) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests")
+        .join(format!("{filename}.md"));
+    let source = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &source).unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let click = fixture.click_source.as_deref().unwrap();
+    let verified =
+        verify_c_sources(click, &sources).unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    let expanded = expand_checked_grouped_claim(click, &verified, function)
+        .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    assert!(
+        !expanded.contains("close_invariants"),
+        "{filename}: {expanded}"
+    );
+    let parsed = crate::surface::verification::parse_click_file_with_c_sources(&expanded, &sources)
+        .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    let block = parsed
+        .function_blocks()
+        .iter()
+        .find(|block| block.signature().name() == function)
+        .unwrap_or_else(|| panic!("{filename}: expansion lost `{function}`"));
+    let mut clauses = block.structural_clauses().to_vec();
+    if let Some(tactics) = block.grouped_proof().and_then(SourceProof::tactics) {
+        loop_clauses_in(tactics, &mut clauses);
+    }
+    assert!(!clauses.is_empty(), "{filename}: expansion lost its loop");
+    for clause in &clauses {
+        for (phase, proof) in [
+            ("initialize", clause.initialize_proof()),
+            ("preserve", clause.preserve_proof()),
+        ] {
+            let proof = proof.unwrap_or_else(|| panic!("{filename}: `{phase}` was not expanded"));
+            let tactics = proof.tactics().unwrap_or_else(|| {
+                panic!("{filename}: `{phase}` stayed a smart proof: {expanded}")
+            });
+            ProofCertificate::from_proof_tactics(tactics).unwrap_or_else(|error| {
+                panic!("{filename}: `{phase}` is not a certificate: {error:?}\n{expanded}")
+            });
+        }
+    }
+    verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
 }
 
 #[test]
