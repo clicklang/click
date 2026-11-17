@@ -8,7 +8,7 @@ command, and it does not change which C programs Click accepts.
 It exists because that question was already being asked in several places,
 each with its own walk and its own answer, and because the answer a walk threw
 away — *where* it stopped and *why* — is exactly what a user needs when a
-proof fails with two terms that spell alike.
+proof fails with two terms that print alike.
 
 ## The vocabulary
 
@@ -93,7 +93,7 @@ Three decisions are worth writing down.
 - **It fails closed.** `Same` needs both lookups to succeed and the two values
   to be syntactically equal. A missing instance, a
   parent-qualified path this lookup does not resolve, and two different
-  spellings of one value all answer `Unknown`. A tracker that answered `Same`
+  forms of one value all answer `Unknown`. A tracker that answered `Same`
   for a field a contract did not promise would verify a false theorem.
 
 `last_same` and `last_same_version_point` return `None` for both kinds, exactly as they
@@ -114,12 +114,12 @@ the contract's entry minted is the *old* version, so the other side's mint is
 the replacement. Where neither side was minted as an arbitrary model, nothing is
 claimed and the text says only what it can see.
 
-The same registry is what lets a refusal spell `v1000002` as `c.rank`, and the
-entry model as `old(c.rank)`, in the one place terms are spelled
+The same registry is what lets a refusal print `v1000002` as `c.rank`, and the
+entry model as `old(c.rank)`, in the one place terms are printed
 (`describe_bitvector_with_context` and `proof_diagnostics::render`). The
 instance's own name comes from the surface, which registers it where it resolves
 a field access and where a verified function declares its binders; a name only
-half known prints nothing, because a half-spelled field would look like source
+half known prints nothing, because a half-printed field would look like source
 the reader could search for.
 
 The registry is diagnostics only — no rule, no premise and no name a term
@@ -253,7 +253,7 @@ what they concern is what would settle either.
 
 A contract with undecided allocation continuity records
 `ContractAllocationRetired` for the consumed input. It removes cached cells,
-initialization, and zeroed status under equal pointer spellings, while leaving
+initialization, and zeroed status under equal pointer forms, while leaving
 definite deallocation unasserted. The edge names the allocation and its extent,
 so a later memory proof may cross it only for storage shown separate from that
 possible release.
@@ -364,7 +364,7 @@ cause is "two same-looking terms read different versions" uses it, so the
 wording is identical everywhere:
 `crate::surface::diagnostics::describe_resource_version_mismatch`.
 
-It spells the resource with the user's own names (`a[m]`, `g[0]`), names the
+It prints the resource with the user's own names (`a[m]`, `g[0]`), names the
 one step that broke the chain, and prints, in short sentences, the repair for
 the case that actually applies:
 
@@ -376,7 +376,7 @@ the case that actually applies:
 | two objects nothing separates | ``the store to `g[0]` may have written it, because `a` may point into `g`. If they are separate, require `separate(memory(a[0..1]), memory(g[0..1]))`; where the contract already transfers `g[0..1]` with `owns` or `consumes`, declaring `views a[0..1]` says the same.`` |
 | a call or a loop with a write set | ``the call in between may write `g[0..1]` …`` then the same two clauses |
 | the resource was written | ``the store to `a[i]` wrote it.`` |
-| the read has no source spelling | ``the memory-history check could not establish that the store to `g[0]` is separate from this read.`` |
+| the read's address does not raise | ``the memory-history check could not establish that the store to `g[0]` is separate from this read.`` |
 | a fact about a block | ``a fact about `a` as a whole does not carry across the store to `b[j]`.`` plus the note below |
 | a model field across a call | ``` `c.rank` may have changed since function entry: the call to `bump` returned ownership of `c` with a new model, and `bump` promises nothing about this field. If it keeps the field, state `ensures c.rank == old(c.rank)` on `bump`.``` |
 | a model field across a loop | ``` … the loop owns `c`, and a loop head is an arbitrary visit, so it gives `c` a fresh model. If the body keeps the field, carry it through as `invariant c.rank == old(c.rank);`.``` |
@@ -411,23 +411,23 @@ verified repairs beside them:
 and `fold_field_names_a_consumed_model.md` /
 `fold_field_names_the_entry_model.md`.
 
-The two cases that can spell both ranges offer two clauses, because two say the
+The two cases that can print both ranges offer two clauses, because two say the
 same thing: a stated `separate(..)`, and — since a contract's transferred and
 borrowed clauses denote disjoint memory, below — a `views` clause over the read.
 The second names its condition ("where the contract already transfers
 `g[0..1]`") rather than asserting it: this renderer is handed two addresses, not
 the contract's clause list, and a range transferred only inside a folded
 composite is not one the entry partition reaches.  Both clauses are ones the
-reader can write, because `SourceCell::element_range` spells only a parameter or
-a file-scope declaration and yields nothing for a local.
+reader can write, because `SourceCell::element_range` expresses only a
+parameter or a file-scope declaration and yields nothing for a local.
 
 An index only the lowering has a name for is printed `a[…]`, never as the
 kernel variable, and no inequality is proposed over a name nobody wrote. It
 does not dump memory contents. It reports the blocking step and whether later
 recorded memory transitions preserve the resource.
 
-A read or store whose address has no source spelling still appears in the
-structured proof report as a report-local address label. Its definition and the
+A read or store whose address does not raise still appears
+in the structured proof report as a report-local address label. Its definition and the
 blocking state's construction are expanded in the shared legend.
 
 ## Every site that decides whether a change matters
@@ -458,7 +458,7 @@ The four classes:
 | `ResourceContext::invalidate_memory_support` → `memory_derivation_affects_footprint` `src/kernel/primitives/resource_algebra.rs` | **routed** | Walks the edges between two states and drops every resource projection a step could have written. It now asks `affects` about `Resource::Ranges` for a stated footprint and `Resource::AnyMemory` for one the kernel could not name, and keeps the projection only where the answer is `Separate(Footprint(..))` — so this site is where `footprint_effect` is spent, and the only place it is. |
 | `ResourceContext::entries_affected_by_memory_derivation` | another question | Chooses *candidates* from the interval index; the rule then decides. Its one obligation is to stay a superset of the steps `affects` does not answer `Separate` for — narrowing it would silently keep a stale projection. |
 | `statement_call_havoc_views` `src/kernel/proof/execution.rs` | another question | Collects the call nodes between two states; asks nothing about a resource. |
-| `matching_recomputed_call_havoc_views`, `memories_definitionally_equal` `src/kernel/api/contract_certification/contract_claims.rs` | another question | Matches two derivation chains edge for edge, to certify a recomputation. A whole-state equality, not a footprint. The second skips the `local:` blocks its kernel twin skips, and by the same one filter — below. The chain walk is where the two part: `transparent_base` descends past an edge that recomputation would not have minted — a store or a declaration whose block is spelled `local:`, a store whose value is the base's own load at that very pointer (a tactic materializing a symbolic load, which independent certification never does), and the two edges that name nothing, `ContractAllocationClaimsChanged` and `CellsForgotten`. That is a structural skip over *edges*, decided by spelling and by interned identity, and it is not the pointerless filter the twin spends; a `local:` name is what it reads, so an addressed local's store is stepped past here as well. Nothing is claimed about a version by descending, because the pair the descent reaches is still compared in full. |
+| `matching_recomputed_call_havoc_views`, `memories_definitionally_equal` `src/kernel/api/contract_certification/contract_claims.rs` | another question | Matches two derivation chains edge for edge, to certify a recomputation. A whole-state equality, not a footprint. The second skips the `local:` blocks its kernel twin skips, and by the same one filter — below. The chain walk is where the two part: `transparent_base` descends past an edge that recomputation would not have minted — a store or a declaration whose block is named `local:`, a store whose value is the base's own load at that very pointer (a tactic materializing a symbolic load, which independent certification never does), and the two edges that name nothing, `ContractAllocationClaimsChanged` and `CellsForgotten`. That is a structural skip over *edges*, decided by name and by interned identity, and it is not the pointerless filter the twin spends; a `local:` name is what it reads, so an addressed local's store is stepped past here as well. Nothing is claimed about a version by descending, because the pair the descent reaches is still compared in full. |
 
 ### The eager half: a step applying its own write set
 
@@ -468,14 +468,14 @@ edge exists. Each decides the same abstract question as the matching arm of
 
 | Site | Class | Why it differs |
 | --- | --- | --- |
-| `call_havoc_keeps_cell` `src/kernel/primitives/memory_state.rs` | disagrees | For ordinary cells, keeps a cell when plain `ranges_proven_disjoint_from_pointer` proves the declared write set cannot reach it. A cell an owned member of what the caller keeps owning holds (`CallKeptOwnership`) is dropped from the cache too, and that member is recorded on the edge with the premises that place the cell in it, where the rule's `CallHavoc` arm reads it. A local cell whose block has a differently spelled write-range base is retained only when the pointer-equality graph does not resolve that base to the cell; this catches assumed aliases while preserving direct same-block construction transitions. The rule's `CallHavoc` arm uses typed range evidence and the `_for_frame` expansion, which looks through composite definitions, so the two remain weaker in different cases. |
+| `call_havoc_keeps_cell` `src/kernel/primitives/memory_state.rs` | disagrees | For ordinary cells, keeps a cell when plain `ranges_proven_disjoint_from_pointer` proves the declared write set cannot reach it. A cell an owned member of what the caller keeps owning holds (`CallKeptOwnership`) is dropped from the cache too, and that member is recorded on the edge with the premises that place the cell in it, where the rule's `CallHavoc` arm reads it. A local cell whose block has a write-range base in a different form is retained only when the pointer-equality graph does not resolve that base to the cell; this catches assumed aliases while preserving direct same-block construction transitions. The rule's `CallHavoc` arm uses typed range evidence and the `_for_frame` expansion, which looks through composite definitions, so the two remain weaker in different cases. |
 | `Memory::with_call_memory_havoc`, `Memory::matches_call_memory_havoc_result` | disagrees | The producer that applies a call's write set and the checker that re-derives what it would have written. Both now ask `call_havoc_keeps_cell`, so the retain rule is one function: the checker has to stay identical to the producer, not to the rule, and sharing the function is what makes that structural instead of remembered. Both apply it to the typed union views (`union_cells`) as well as the cells: a view is the authoritative answer to an exact typed load, and the producer used to keep every view while the checker dropped them, so a load after a call that wrote through a union member read the pre-call member (`mdtests/call_havoc_drops_a_union_member_view.md`). `click audit` accepted that proof too: a kept view is not a difference between the two states, so no coverage check asked about it. |
 | `loan_preserving_havoc_keeps_cell` | disagrees | Preserved-block membership **or** bytes `LoanLedger::permits_memory_access` refuses a write through. An ownership question, with fail-open polarity, and no pointer-alias reasoning at all — a loop body or a joined branch arm may write through any pointer it can reach, so separation has nothing to decide. The width it asks the ledger about is the wider of the cell's value and the widest typed overlay recorded there (`union_overlay_widths`), and an unknown width fails closed. |
 | `Memory::with_loop_memory_havoc_preserving_loans`, `Memory::with_interface_memory_havoc_preserving_loans` | disagrees | The loop head and the interface join, which both ask `loan_preserving_havoc_keeps_cell`. The interface join also records a `BranchJoin` edge: the tracker can recover uncached reads by checking every incoming arm, independently of this eager retain rule. The loop head does not record that edge. |
 | `Memory::forget_zeroed_allocations_written_by` | disagrees | The other half of a call's write set: it drops the zeroed reading of every allocation the declared ranges may reach, because "reads as zero where unwritten" is a claim about contents that an unseen write invalidates exactly as it invalidates a stored cell. It drops the status for the whole allocation rather than narrowing it to a prefix, since a write set bounds where a callee may store and not where it did. The rule has no arm for it: a zeroed reading is not a resource the tracker names. |
 | `Memory::without_possible_aliasing_cells` | disagrees | A store's own eager drop, and the one site on this list that shares the rule's byte question: the address ladder is conjoined with `access_byte_overlap`, exactly as the rule's `Store` arm conjoins it, so a ladder that proves two addresses differ may stand in for byte separation only where the gap it establishes clears both accesses. Ahead of the ladder, and before `access_byte_overlap`, it asks ownership through the composition base index (`PureFactContext::access_owned_apart_from_store`, below), including the composition the store statement opens from the held folded instances whose arguments name a cached cell's base (`functions::store_opened_instance_composition`, below); a cell ownership does not place goes down the ladder unchanged. The ladder itself is `pointers_proven_distinct_for_memory_resolution`, **or** `pointers_proven_disjoint_by_explicit_range_for_memory_resolution`, **or** `pointers_directly_disjoint_by_range`, **or** `owned_composition_store_separated_evidence`. The two range rungs are the cross-base pairs offset reasoning cannot decide and the byte question answers `Unknown` for; they are a range-index scan the rule's hot `Store` arm must not pay for. The last is shared with the rule's `Store` arm and the two transport sites, and it has to be here too: a cell this function drops is lost to every later route, because the two states then differ at the read's own address. |
 | `Memory::without_field_cells` | disagrees | Same-block equality and a constant byte interval. Across blocks it removes too little, which for a copy is the safe direction; a completeness difference only. |
-| `heap_allocation_may_contain_pointer`, `Memory::freed_heap_allocation_may_contain` | disagrees | `base.block != pointer.block` answers "not contained", which is fail-open on a spelling. The rule's `HeapFreed` arm is two separation ladders instead. Reaching it needs a freed allocation whose base block is not proven distinct from a live cell's block. The second is the same test over every deallocated allocation, and it is what the zeroed drop, the availability check below and contract certification all read, so the spelling is at least in one place. |
+| `heap_allocation_may_contain_pointer`, `Memory::freed_heap_allocation_may_contain` | disagrees | `base.block != pointer.block` answers "not contained", which is fail-open on a representation. The rule's `HeapFreed` arm is two separation ladders instead. Reaching it needs a freed allocation whose base block is not proven distinct from a live cell's block. The second is the same test over every deallocated allocation, and it is what the zeroed drop, the availability check below and contract certification all read, so the comparison by representation is at least in one place. |
 | loop frame assembly `src/kernel/loops.rs`, `collect_loop_effect_check_obligations`, the multi-exit join | disagrees | Each reinstates or drops cells against the loop's *stated* effect summaries rather than a recorded edge, with a hardcoded `local:` skip. |
 | `memory_diff_is_covered_by_writes`, `memory_diff_is_covered_by_ranges` `src/kernel/proof/execution.rs` | another question | The containment direction: is every observed change *inside* the declared write set. The tracker has no containment question. |
 
@@ -491,7 +491,7 @@ them without losing every pair the DAG does not connect.
 | `memory_load_is_directly_unchanged`, `memories_directly_match_for_pointer_load` `src/kernel/memory_provenance.rs` | disagrees | The transport rule. It already asks the tracker as one disjunct — two states that name the cell by one point hold the same cell — and the rest reads `MemoryMutatesOnly`, `MemoryEffectSummary` and `HeapAllocationFreed` over *stated* endpoints. Its per-write ladder is the same four predicates the rule's `Store` arm uses, applied to a stated write list. |
 | `memories_match_for_pointer_load` `src/kernel/reasoning/memory_resolution.rs` | disagrees | Assumption-free structural agreement about one load: the same forgotten-source identity; equal extents for every object the load may designate plus equal havoc markers; agreement about retirement tombstones and all load-observable heap lifetime, initialization and implicit-zero metadata; and equal cells and union cells under `observable_by_load`. Decides pairs with no common ancestor. |
 | `memory_states_match_for_resolution`, `memory_states_proven_equal_at_pointer`, `memories_match_for_pointer_load_bounded_alias`, `memories_match_for_pointer_load_under_assumptions` `src/kernel/reasoning/memory_resolution.rs` | disagrees | The same question with assumptions: every cell the two states differ on must both miss the load's bytes and be proven distinct from the load. All refuse a load whose own block is `local:`, and all select the cells to check with `cell_is_observable_by_load`, the one filter — *not*, as they used to, by dropping every differing `local:` cell unasked. See below. The second is a thin name for the first, so that a caller asking "are these two states one state as far as this pointer is concerned" reads as that question rather than as a resolution internal. |
-| `state_objects_agree`, `retirements_agree_for_load` | separation | The object half, as against the values in the cells: an extent is what says an object is there and how big it is, and a tombstone is the only record that an automatic object's lifetime ended once its cells are gone. The first is the assumption-carrying comparisons' extent check, and the only extents it leaves out are the ones `local_block_no_pointer_can_reach` allows. The second is the tombstone check, which all four comparisons ask, and it allows a difference only where the load's block is proven distinct from the retired object or no pointer value in the program designates it — two exclusions, each catching what the other does not. A load through a stale alias is exactly the load these comparisons are asked about, which is why neither half may be skipped on a spelling. |
+| `state_objects_agree`, `retirements_agree_for_load` | separation | The object half, as against the values in the cells: an extent is what says an object is there and how big it is, and a tombstone is the only record that an automatic object's lifetime ended once its cells are gone. The first is the assumption-carrying comparisons' extent check, and the only extents it leaves out are the ones `local_block_no_pointer_can_reach` allows. The second is the tombstone check, which all four comparisons ask, and it allows a difference only where the load's block is proven distinct from the retired object or no pointer value in the program designates it — two exclusions, each catching what the other does not. A load through a stale alias is exactly the load these comparisons are asked about, which is why neither half may be skipped on a representation. |
 | `differing_cell_bytes_miss_the_load`, `differing_cell_byte_width` | separation | The byte half, asked of each differing cell before the address ladder may speak. A cell at `p + 1` holding one byte is a different address from `p` and is still the second byte a four-byte read there returns, so an address ladder alone is not an answer. The width is read from whichever side holds a value, the wider where both do and disagree, and the widest scalar where neither does, since over-stating a width can only shrink the separated set. |
 | `memory_matches_effect_summary_endpoint` | disagrees | Whether a recorded effect summary's endpoint is the state in hand: interned identity, else the assumption-free structural agreement above. An endpoint pair has no ancestry to walk, which is the whole reason this section exists. |
 | `memory_load_terms_equal_for_fact_transport` | another question | Whether a fact about one load *term* is a fact about another: the two pointers proven equal, or one recorded offset equality between them, and then the state comparison. A term question that ends in a listed state comparison, not a staleness decision of its own. |
@@ -738,7 +738,7 @@ load. Two things were `Symbolic` before, and only one of them still is:
 
 Framing a load of the second kind therefore needs evidence, and one route
 spends it: `pointers_proven_distinct_for_memory_resolution` takes **one hop**
-through the index of assumed `PointerEqual` facts to a non-symbolic spelling and
+through the index of assumed `PointerEqual` facts to a non-symbolic form and
 asks the same question there
 (`pointers_distinct_through_one_exact_alias`). `ensures result == &g[0]` and
 `ensures result == p` are what that reads, and
@@ -752,7 +752,7 @@ so it is also what keeps the attack refused: resolving a returned `&x` moves the
 read to `x`, which is not distinct from a store to `x`
 (`mdtests/returned_pointer_to_a_caller_local_may_alias_it.md`).
 
-##### The same shortcut, spelled on the other side
+##### The same shortcut, written on the other side
 
 Withdrawing the exception from `observable_by_load` did not withdraw it
 everywhere, because one filter of the same shape was written out by hand.
@@ -769,7 +769,7 @@ unresolved load reads only its own block, it claims no local is a block such a
 load reads. `&x` passed to a callee and returned is the counterexample in both
 directions, and
 `mdtests/an_unresolved_pointer_sees_the_store_to_a_local.md` is the false
-theorem the second spelling admitted — the same C as the mdtest above with the
+theorem the second form admitted — the same C as the mdtest above with the
 `ensures result == p` clause removed, so that no equality is involved at all
 and only the framing decides. A store to a *global* was never skipped, which is
 why the global attack was refused while this one was not.
@@ -785,9 +785,9 @@ answered on the first rung of the ladder rather than skipped.
 
 The cells were only half of what these comparisons hold. Beside them sits the
 object map — each block's extent, and the tombstones that say an automatic
-object's lifetime has ended — and it carried the shortcut in its own spelling:
+object's lifetime has ended — and it carried the shortcut in its own form:
 the three assumption-carrying comparisons compared the extent of every block
-*not* spelled `local:`, and none of the four compared the tombstones at all. An
+*not* named `local:`, and none of the four compared the tombstones at all. An
 extent is what says an object is there and how big it is, and a tombstone is
 the only record left once the object's cells are gone, so two states
 disagreeing about either disagree about what a load through a pointer that may
@@ -901,7 +901,7 @@ attached to an arbitrary symbolic destination.
 Two things follow from where the answer is kept.
 
 - It is a set of **names**, program-wide. A `local:` block says nothing about
-  which function declared it — `local:x` in `f` and in `g` are one spelling —
+  which function declared it — `local:x` in `f` and in `g` are one name —
   while the resolution memo and the canonical-projection cache are scoped per
   verification, not per function. A per-function answer would be cached under
   whichever function asked first and served to the next.
@@ -946,7 +946,7 @@ things make it the narrow claim it is.
   "two owned members are pairwise separate".
 - **A claim about addresses, not about state.** What two members yield is that
   two address ranges do not overlap, and an address is a value: each range is
-  spelled with pointer terms whose loads carry their own state. A store
+  expressed with pointer terms whose loads carry their own state. A store
   cannot move the bytes a range named, and consuming, transferring or freeing
   a resource cannot make two ranges that were disjoint coincide. So a
   composition recorded at an earlier program point is as true later as it was
@@ -1041,12 +1041,12 @@ access. So the store computes once which owned members hold its
 written bytes (`PureFactContext::owned_store_footprint`), and each cached cell
 then asks whether a *different* member of one of those compositions holds all
 of its bytes (`access_owned_apart_from_store`). Both lookups go through each
-composition's `memory_by_base` index under the additive base spellings of the
+composition's `memory_by_base` index under the additive base forms of the
 address (`p`, `p + f`, `p + i·w` and their left spines), never a block
 bucket, and membership is the structural route only — base, or base plus
 one displacement — with the two endpoint bounds proved; the whole access must
 fit, not just its first element. The guards are the ones above: the two
-addresses must not be proven equal, and ranges whose base spellings were
+addresses must not be proven equal, and ranges whose base forms were
 later proven equal must not overlap. A cell the rung does not place goes
 down the ladder unchanged, so a miss costs time and never a decision.
 `a_store_beside_owned_parameter_fields_is_linear_in_the_cached_cells`
@@ -1063,7 +1063,7 @@ A cell a held *folded* instance owns is framed the same way, one body layer
 down. Compositions do not open folded instances, so before the store frames
 its cached cells, `functions::store_opened_instance_composition` asks which
 owned instances of the state's *current* context have a pointer argument
-naming an additive base spelling of a cached cell the store could drop
+naming an additive base form of a cached cell the store could drop
 (`owned_instances_by_pointer_argument`, an index maintained as instances
 enter and leave the context), opens each such instance whose body is
 unconditional, unmatched and witness-free one layer at the current state
@@ -1087,7 +1087,7 @@ instance, an iterated clause and a view contribute nothing. The unmatched
 body's cells are named at contract entry, as a selected arm's are, so there
 is a cached cell to keep (`docs/internals/canonicalization.md`). Cost: a
 constant-time gate on the argument index, then one argument-index lookup per
-spelling of each cached candidate cell and one body evaluation per instance
+form of each cached candidate cell and one body evaluation per instance
 named; `a_store_opens_no_folded_instance_whose_arguments_name_no_cached_cell`
 (`src/scaling_tests/kernel/tests/resource_scaling_tests.rs`) charges 55 units at 16, 64, 256
 and 1024 unrelated instances (heap-block instances and parameter instances
@@ -1107,7 +1107,7 @@ composition.
 
 The composition rule above must *not* be widened to cover
 `mdtests/const_callback_field.md`. `read_view(struct reader *r, const int *p)`
-holds `owns *r` and `views p[0..1]`, both spelled in one `external`
+holds `owns *r` and `views p[0..1]`, both written in one `external`
 block with symbolic offsets, and its claim is true: a caller cannot both
 transfer `*r` and lend a window inside it, because suspending the write
 authority for the loan leaves no usable copy to transfer
@@ -1168,7 +1168,7 @@ ladder therefore spends it at `typed_store_separated_ranges_evidence`, where it
 spends a stated one, and the havoc side reads it at
 `typed_range_disjoint_from_pointer_evidence`.
 
-Range membership can retain one address spelling at a constant byte displacement
+Range membership can retain one address form at a constant byte displacement
 from the selected base, supplied by the maintained pointer-equality graph.
 This handles a post-call pointer connected to a model
 identity through another alias. The checker requires full pointer equality in
@@ -1209,7 +1209,7 @@ Four pairs it does not build:
 - **two borrowed views.** Two `views` clauses may overlap freely; lending
   twice is what a shared borrow is;
 - **two owners.** That is `owned_composition_store_separated_evidence` above,
-  and a second spelling of one rule is a second place a fix has to find;
+  and a second statement of one rule is a second place a fix has to find;
 - **a clause that is not plain memory.** A composite's owned footprint is its
   expansion, and `separate(memory(..), memory(..))` cannot name it without
   expanding it, so the pair is skipped outright rather than approximated.
@@ -1256,7 +1256,7 @@ both of its halves (`protected_range_proven_overlapping`, and
 `directly_supporting_owned_entry` for a view the contract already owns) under
 assumptions with *every* explicit memory separation removed. Dropping them all
 rather than the derived ones by name means nothing rests on the two producing
-sides spelling one fact identically, and it can only make that check refuse
+sides representing one fact identically, and it can only make that check refuse
 more. `root_view_refuses_an_owned_alias_of_the_viewed_range`
 (`src/surface/verification.rs`) is the regression: `requires q == p; views
 p[0..1]; owns q[0..1];` stopped being refused when this was missed.
@@ -1312,9 +1312,9 @@ classification), the `local:` authority gates in `src/kernel/api.rs` and
 `src/kernel/functions.rs`, `is_preexisting_write_pointer`, and the block
 comparisons in `src/surface/diagnostics.rs` all compare block identities
 without deciding staleness. Two carry a residual risk worth naming:
-`may_refer_to_memory_block` compares a block by spelling before the proof-based
-allocation-separation check runs, so a caller resource spelled differently from
-a retired allocation is skipped rather than refused (the call rule draws the
+`may_refer_to_memory_block` compares a block by representation before the
+proof-based allocation-separation check runs, so a caller resource represented
+differently from a retired allocation is skipped rather than refused (the call rule draws the
 same selection from the resource indexes, through
 `ResourceContext::facts_that_may_refer_to_memory_block`, so its cost is the
 retired block's candidates and not the caller's whole frame); and the
@@ -1495,7 +1495,7 @@ permitted stores or a transition that drops the fact:
   without a nesting bound and costs one visit per family on a chain
   (`a_layered_footprint_is_linear_in_its_definitions`). A definition on a
   cycle of families, or an instance body that binds a witness, owns memory
-  at addresses no argument spells -- every block reachable from its pointer
+  at addresses no argument expresses -- every block reachable from its pointer
   arguments through the fields its body owns -- and those blocks are not
   known; nor is a clause that does not evaluate. Such a footprint is
   `MemoryRange::unnamed_footprint`, a range at a reserved symbolic block
@@ -1540,17 +1540,17 @@ permitted stores or a transition that drops the fact:
   A residual field-bearing instance is opened one layer, as `unfold` opens
   it: its unconditional, unmatched body's owned memory, with field-free
   composites expanded, and its own facts, which become the premises that
-  place a cell spelled through the instance's cells (`region->start`) in a
-  range spelled through its fields. A residual folded composite is
+  place a cell expressed through the instance's cells (`region->start`) in a
+  range expressed through its fields. A residual folded composite is
   expanded, except one whose definition is argument-direct
   (`CompositeResourceDefinition::has_argument_direct_body`: unconditional,
   unmatched, witness-free and non-recursive, every clause an unguarded owned
-  segment spelled from its parameters without a load). Such a body's ranges
+  segment expressed from its parameters without a load). Such a body's ranges
   are a function of the composite fact alone, so the call opens none of
   them: `CallKeptRanges` carries those families' definitions and names the
   residual's composites in its identity (the index's content-hashed
   `owned_composite_facts`), and a question about one address opens only the
-  composites with a pointer argument equal to an additive base spelling of
+  composites with a pointer argument equal to an additive base form of
   it or an exact alias of one, failing those the ones with an argument in its
   block (the composite argument indexes), as the listed ranges' own lookup
   reads them. The checker's exact-range test re-derives a range the same way,
@@ -1767,7 +1767,7 @@ quantified facts once per step, as other quantified matching does.
   fact by the element base.
 - An unguarded clause must own the one-cell element `base[k..k + 1]` and
   lowers to `owns base[lo..hi]`; any other unguarded element is refused with
-  that spelling.
+  that form.
 - Guards compare `int32` cells with `==` or `!=`; an iterated clause owns one
   element range per index; a body declares at most one iterated clause, and
   match arms, contracts, and loop headers declare none.
@@ -1809,16 +1809,16 @@ the final answer there is open.
   the mint.
 - **Chunk 3, also unrouted** — the proposition-level refusals (`solve_failure`,
   and an unclosed `have` whose goal matches an available fact up to a model-field
-  version) print the field's source spelling now but do not yet reach
+  version) print the field's source text now but do not yet reach
   `describe_resource_version_mismatch`: their callers hold two propositions and
   not the two saved states the answer needs.
 - **From the map above** — the two duplicated retain closures are one function
   each now, `call_havoc_keeps_cell` and `loan_preserving_havoc_keeps_cell`, so
   a producer and the checker that re-derives it can no longer drift apart by
   an edit to one of them. `call_havoc_keeps_cell` now requires range-disjointness
-  evidence when a local cell has a differently spelled range base; direct
+  evidence when a local cell has a range base in a different form; direct
   same-block construction transitions retain their existing behavior, while an
-  assumed-equal alternate spelling drops the cached cell.
+  assumed-equal alternate form drops the cached cell.
   The remaining *disagrees* entry is the difference between plain range
   disjointness and the rule's typed range evidence plus `_for_frame` composite
   expansion.
@@ -1842,15 +1842,16 @@ The automatic call-return checklist is:
 | --- | --- | --- |
 | `EvaluatedReturnResources::admit_clause` | Independently evaluated raw output clauses lack a checked partition between their new ownership occurrences. | Construct the output partition incrementally from producer evidence; unsupported geometry refuses promptly or requires explicit separation. |
 | `construct_composite_resource_body` | Constructed child IDs and witnesses survive, but child composition still uses incremental legacy admission; the unselected expansion route uses full composition. | Carry the internal partition with the selected body, using bounded checks only for genuinely new child relationships. |
-| `PreparedReturnComposition::finish` | Transfers restore supported borrows/consumed memory, but pending descriptions still need admission against the retained frame. | Every pending output has an explicit origin and a bounded boundary check, or a bounded refusal. |
+| `PreparedReturnComposition::finish` | Pending descriptions retain their established internal composition; the constructor now checks only their boundary against the restored frame and keeps that successor. Unsupported geometry still uses compatibility discovery. | Every pending output has an explicit origin and a bounded boundary check, or a bounded refusal. |
 | `produced_composite_frontier_conflict` | Maintained indexes do not cover every symbolic/alias geometry against retained owners. Unsupported checks call `returned_boundary_conflict_with_legacy_discovery`. | Define the supported geometry and evidence; accept via indexed coordinates/separation, otherwise refuse without searching. |
-| `recover_candidate_stable_view_resources` | Selected loan backing survives, but composing the recovered escrow still calls legacy admission. | Retain the partition/restoration relationship of the withheld occurrences through escrow recovery. |
+| `StableViewTransferPlan::recover_returned_views` | Recovery constructs directly into the actual return residual, admitting each escrow once and carrying recovered hold occurrence IDs to publication. Missing output/escrow geometry still uses legacy admission. | Establish unsupported boundaries from a retained transfer rule or explicit separation, or refuse promptly. |
+| Worker completion and loop-frame exchange | Checked output groups and exit occurrences now survive composition without temporary checked contexts or reinsertion. A boundary with today's parent or withheld loop frame can still require compatibility discovery. | Carry the actual destination relationship or perform a bounded boundary check, with no output-group revalidation. |
 | `project_return_resource_cores` and the legacy arm of `produced_composite_frontier_conflict` | Unconstructed families are expanded from descriptions again. The classifier records `legacy`, rather than a reusable checked body. | Each classifier outcome carries a reusable body/frontier, deliberately opaque ownership, or a bounded refusal. Unsupported language shapes do not all need implementation. |
 
 `try_compose_with_legacy_discovery_and_occurrences` first calls
 `admit_without_discovery`. Only `Unsupported` resumes discovery; indexed
 conflicts already refuse. `PendingOwnershipAdmission::resume_legacy_discovery`
-and `returned_boundary_conflict_with_legacy_discovery` converge on
+and the returned/certified-group boundary adapters converge on
 `legacy_memory_boundary_conflict`, which can enumerate ownership candidates
 and reason along aliases. These internal dispatch edges are frozen too.
 

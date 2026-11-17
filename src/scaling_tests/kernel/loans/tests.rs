@@ -710,28 +710,29 @@ fn deep_split_read_join_work_scales_with_explicit_tree_delta() {
 fn dependency_updates_scale_with_changed_scope_entries() {
     let mut samples = Vec::new();
     for size in [16_usize, 32, 64, 128] {
-        let (mut ledger, owner, _reader) = participants();
-        let parent_fact = owned("dependency-parent");
-        let parent = ledger
-            .lend(owner, owner, backing(&parent_fact), parent_fact)
-            .unwrap();
-        ledger = ledger.apply(&parent.transition).unwrap();
-        let mut children = Vec::with_capacity(size);
+        let (mut ledger, owner, reader) = participants();
+        let borrower = ledger.fresh_participant().unwrap();
+        let mut bindings = Vec::with_capacity(size);
         for index in 0..size {
-            let child_fact = owned(&format!("dependency-child-{index}"));
-            let child = ledger
-                .lend(owner, owner, backing(&child_fact), child_fact)
-                .unwrap();
-            ledger = ledger.apply(&child.transition).unwrap();
-            children.push(child);
+            let fact = owned(&format!("dependency-parent-{index}"));
+            let parent = ledger.lend(owner, reader, backing(&fact), fact).unwrap();
+            ledger = ledger.apply(&parent.transition).unwrap();
+            bindings.push(LoanViewBinding {
+                loan: parent.loan,
+                scope: parent.scope,
+                share: parent.root_share,
+                support: parent.description.support,
+                viewed: parent.description.viewed.clone(),
+                hold: None,
+            });
         }
+        // Each reborrow adds one dependency to its own parent scope among
+        // `size` unrelated open scopes.
         let (((), work), persistent_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                for child in &children {
-                    let transition = ledger
-                        .register_dependency(parent.scope, child.scope, owner)
-                        .unwrap();
-                    ledger = ledger.apply(&transition).unwrap();
+                for binding in &bindings {
+                    let child = ledger.reborrow(binding.clone(), reader, borrower).unwrap();
+                    ledger = ledger.apply(&child.transition).unwrap();
                 }
             })
         });
@@ -1507,5 +1508,65 @@ fn loan_access_requirement_is_retained_and_branch_local() {
     for sample in &samples {
         assert_eq!(sample.1, samples[0].1);
         assert!(sample.2 <= samples[0].2 + 32);
+    }
+}
+
+#[test]
+fn returned_view_recovery_retains_the_constructed_frame_as_aliases_and_owners_grow() {
+    for aliases in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut assumptions = PureFactContext::new();
+            let owner = memory(0, 8, true);
+            let base = owner.memory_own_range().unwrap().base().clone();
+            let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+            for index in 0..count {
+                if aliases {
+                    assumptions = assumptions.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            base.clone(),
+                            Pointer::symbolic(Variable(8_799_000 + u64::from(index))),
+                        ),
+                        true,
+                    );
+                } else {
+                    resources =
+                        resources.unchecked_with_fact(memory(32 + index * 8, 36 + index * 8, true));
+                }
+            }
+            resources.synchronize_memory_equalities(&assumptions);
+            let (ledger, caller, callee) = participants();
+            let plan = plan_stable_view_transfer(
+                &resources,
+                &[checked(memory(0, 8, false))],
+                &assumptions,
+                &ledger,
+                caller,
+                callee,
+            )
+            .unwrap();
+            let output = plan
+                .caller_resources_after_requirements
+                .clone()
+                .unchecked_with_fact(memory(8, 12, true));
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let recovery = plan
+                    .recover_returned_views(output, &assumptions, &BTreeMap::new(), &[])
+                    .unwrap();
+                assert!(recovery.resources.contains_exact_representation(&owner));
+                assert!(
+                    recovery
+                        .resources
+                        .contains_exact_representation(&memory(8, 12, true))
+                );
+            });
+            samples.push(work);
+        }
+        eprintln!("returned escrow aliases={aliases}: {samples:?}");
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "{aliases}: {samples:?}"
+        );
     }
 }

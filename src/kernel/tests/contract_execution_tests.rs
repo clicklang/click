@@ -7257,7 +7257,7 @@ fn allocator_certification_checks_the_body_allocation_against_produced_resources
                         vec![],
                     )])
             } else {
-                function.with_resource_summary(vec![], specs(CONTRACT_RESULT.into()))
+                function.with_resource_summary(vec![], specs(CONTRACT_RESULT))
             };
             let claims_list = if composite {
                 vec![

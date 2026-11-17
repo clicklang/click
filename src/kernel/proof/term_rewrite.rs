@@ -1671,6 +1671,14 @@ pub(crate) struct ProgramValueSubstitutionScope {
     scope_id: u64,
 }
 
+/// Algebraic binders have their own lexical map, independent of Integer
+/// and program-value binders with the same numeric variable ID.
+pub(crate) struct AlgebraicSubstitutionScope {
+    variable: Variable,
+    previous: Option<Variable>,
+    scope_id: u64,
+}
+
 #[derive(PartialEq, Eq, Hash)]
 enum BoundedIndexKey {
     Variable(Variable),
@@ -2091,36 +2099,7 @@ impl<'a> TermRewrite<'a> {
         let mut rewrite = TermRewrite::for_typed_variables(&named, &integers, &algebraic);
         rewrite.comparison_reads = Some(&reads);
         rewrite.comparison_algebraic_reads = Some(algebraic_reads);
-        rewrite.ensure_replacement_carriers();
-        let mut carriers = rewrite.new_carrier_variables();
-        collect_integer_substitution_variables_with_carriers(proposition, &mut carriers);
-        rewrite.reserve_source_variables(carriers);
-        if rewrite.refusal().is_some() {
-            return None;
-        }
-        // Reserve logical binders too, including unused binders: a fresh name
-        // introduced for an outer capture must not collide with an inner one.
-        let mut pending = vec![proposition];
-        while let Some(proposition) = pending.pop() {
-            rewrite.visit();
-            if rewrite.refusal().is_some() {
-                return None;
-            }
-            match proposition {
-                Proposition::ForAll { var, body, .. } | Proposition::Exists { var, body, .. } => {
-                    rewrite.reserved_variables.insert(*var);
-                    pending.push(body);
-                }
-                Proposition::And(left, right)
-                | Proposition::Or(left, right)
-                | Proposition::Implies(left, right) => {
-                    pending.extend([left.as_ref(), right.as_ref()])
-                }
-                Proposition::Not(body) => pending.push(body),
-                _ => {}
-            }
-        }
-        let result = rewrite.read_comparison_proposition(proposition);
+        let result = rewrite.substitute_proposition(proposition);
         if rewrite.refusal().is_some() {
             None
         } else {
@@ -2806,6 +2785,13 @@ impl<'a> TermRewrite<'a> {
             .is_some_and(|replacement| replacement.program_values.contains(&variable))
     }
 
+    pub(crate) fn replacement_contains_algebraic_variable(&mut self, variable: Variable) -> bool {
+        self.ensure_replacement_carriers();
+        self.replacement_carriers
+            .as_ref()
+            .is_some_and(|replacement| replacement.algebraic.contains(&variable))
+    }
+
     /// Install a C-carrier binder mapping without changing the Integer
     /// shadowing state.  The scope token restores only the previous C mapping
     /// and the cache scope ID.
@@ -2832,6 +2818,28 @@ impl<'a> TermRewrite<'a> {
             scope.variable,
             scope.previous,
         );
+        self.scope_id = scope.scope_id;
+    }
+
+    pub(crate) fn push_algebraic_substitution_scope(
+        &mut self,
+        variable: Variable,
+        mapped: Variable,
+    ) -> AlgebraicSubstitutionScope {
+        let previous = self.scope.algebraic.insert(variable, mapped);
+        let scope_id = self.scope_id;
+        if previous != Some(mapped) {
+            self.bump_scope_id();
+        }
+        AlgebraicSubstitutionScope {
+            variable,
+            previous,
+            scope_id,
+        }
+    }
+
+    pub(crate) fn pop_algebraic_substitution_scope(&mut self, scope: AlgebraicSubstitutionScope) {
+        restore_mapping(&mut self.scope.algebraic, scope.variable, scope.previous);
         self.scope_id = scope.scope_id;
     }
 
@@ -3310,43 +3318,73 @@ impl<'a> TermRewrite<'a> {
         }
     }
 
-    /// Read-over-write comparison may descend through logical connectives.
-    /// Ordinary atomic rewrites keep binders opaque. The simultaneous read
-    /// batch uses the carrier-aware scope maps for logical quantifiers.
-    pub(crate) fn read_comparison_proposition(&mut self, proposition: &Proposition) -> Proposition {
+    /// Capture-avoiding substitution through an explicitly supplied proposition.
+    /// One source reservation and replacement summary are shared by all leaves.
+    pub(crate) fn substitute_proposition(&mut self, proposition: &Proposition) -> Proposition {
+        self.ensure_replacement_carriers();
+        let mut carriers = self.new_carrier_variables();
+        collect_integer_substitution_variables_with_carriers(proposition, &mut carriers);
+        self.reserve_source_variables(carriers);
+        if self.refusal().is_some() {
+            return exhausted_proposition();
+        }
+        // Reserve logical binders too, including unused binders: a fresh name
+        // introduced for an outer capture must not collide with an inner one.
+        let mut pending = vec![proposition];
+        while let Some(proposition) = pending.pop() {
+            self.visit();
+            if self.refusal().is_some() {
+                return exhausted_proposition();
+            }
+            match proposition {
+                Proposition::ForAll { var, body, .. } | Proposition::Exists { var, body, .. } => {
+                    self.reserved_variables.insert(*var);
+                    pending.push(body);
+                }
+                Proposition::And(left, right)
+                | Proposition::Or(left, right)
+                | Proposition::Implies(left, right) => {
+                    pending.extend([left.as_ref(), right.as_ref()])
+                }
+                Proposition::Not(body) => pending.push(body),
+                _ => {}
+            }
+        }
+        self.scoped_proposition(proposition)
+    }
+
+    // Atomic rewriting stays separate: only callers selecting the complete
+    // proposition use this traversal through logical containers and binders.
+    fn scoped_proposition(&mut self, proposition: &Proposition) -> Proposition {
         self.visit();
         match proposition {
             Proposition::And(left, right) => Proposition::And(
-                Box::new(self.read_comparison_proposition(left)),
-                Box::new(self.read_comparison_proposition(right)),
+                Box::new(self.scoped_proposition(left)),
+                Box::new(self.scoped_proposition(right)),
             ),
             Proposition::Or(left, right) => Proposition::Or(
-                Box::new(self.read_comparison_proposition(left)),
-                Box::new(self.read_comparison_proposition(right)),
+                Box::new(self.scoped_proposition(left)),
+                Box::new(self.scoped_proposition(right)),
             ),
             Proposition::Implies(left, right) => Proposition::Implies(
-                Box::new(self.read_comparison_proposition(left)),
-                Box::new(self.read_comparison_proposition(right)),
+                Box::new(self.scoped_proposition(left)),
+                Box::new(self.scoped_proposition(right)),
             ),
-            Proposition::Not(body) => {
-                Proposition::Not(Box::new(self.read_comparison_proposition(body)))
-            }
-            Proposition::Predicate { name, arguments } if self.comparison_reads.is_some() => {
-                Proposition::Predicate {
-                    name: name.clone(),
-                    arguments: arguments
-                        .iter()
-                        .map(|argument| self.term(argument))
-                        .collect(),
-                }
-            }
+            Proposition::Not(body) => Proposition::Not(Box::new(self.scoped_proposition(body))),
+            Proposition::Predicate { name, arguments } => Proposition::Predicate {
+                name: name.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.term(argument))
+                    .collect(),
+            },
             Proposition::ForAll {
                 name,
                 var,
                 sort,
                 body,
-            } if self.comparison_reads.is_some() => {
-                let (var, body) = self.read_comparison_quantifier(*var, sort, body);
+            } => {
+                let (var, body) = self.scoped_quantifier(*var, sort, body);
                 Proposition::ForAll {
                     name: name.clone(),
                     var,
@@ -3359,8 +3397,8 @@ impl<'a> TermRewrite<'a> {
                 var,
                 sort,
                 body,
-            } if self.comparison_reads.is_some() => {
-                let (var, body) = self.read_comparison_quantifier(*var, sort, body);
+            } => {
+                let (var, body) = self.scoped_quantifier(*var, sort, body);
                 Proposition::Exists {
                     name: name.clone(),
                     var,
@@ -3372,7 +3410,7 @@ impl<'a> TermRewrite<'a> {
         }
     }
 
-    fn read_comparison_quantifier(
+    fn scoped_quantifier(
         &mut self,
         variable: Variable,
         sort: &Sort,
@@ -3394,7 +3432,7 @@ impl<'a> TermRewrite<'a> {
             _ => None,
         };
         let Some(carrier) = carrier else {
-            return (variable, self.read_comparison_proposition(body));
+            return (variable, self.scoped_proposition(body));
         };
         let capture = self
             .replacement_carriers
@@ -3412,7 +3450,7 @@ impl<'a> TermRewrite<'a> {
         let shadowed = self.integer_shadowed;
         let mut changes = Vec::new();
         self.push_binding_mapping(carrier, variable, mapped, &mut changes);
-        let body = self.read_comparison_proposition(body);
+        let body = self.scoped_proposition(body);
         self.restore_scope(&changes, scope_id, shadowed);
         (mapped, body)
     }

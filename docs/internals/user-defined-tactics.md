@@ -85,8 +85,8 @@ let { tree: tr } = refold_to_root(node, root, { c: c, t: t });
   itself and earlier tactics only, so tactics are never mutually recursive.
 - **Language neutrality.** Nothing in a declaration names a C construct
   beyond the pointer and scalar types the shared contract language already
-  spells. A tactic may live in a theorem-only `.click` file and be imported by
-  C, C++, and Rust sidecars alike: all three frontends lower to one execution
+  expresses. A tactic may live in a theorem-only `.click` file and be imported
+  by C, C++, and Rust sidecars alike: all three frontends lower to one execution
   IR and share the kernel, and a tactic is defined over that shared proof
   state.
 
@@ -206,7 +206,7 @@ One design, delivered in pull requests on it:
 
 ## Decisions
 
-- Application is spelled like every other tactic, `name(args)`, with an
+- Application is written like every other tactic, `name(args)`, with an
   optional binder map and output pattern:
   `let { tree: tr } = refold_to_root(node, root, { c: c, t: t });`. `apply` stays
   for applying theorems, which are not tactics. A tactic name may not shadow a

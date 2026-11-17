@@ -63,7 +63,7 @@ The accepted shape is an `Integer`-valued, `int32`-indexed top-level range
 fold:
 
 - One `int32[]` or `uint8[]` parameter is read, and every read is exactly that parameter
-  at the fold's own item binder (binder identity, not spelling); repeated
+  at the fold's own item binder (binder identity, not name); repeated
   reads, including in both arms of a conditional, are allowed.
 - The endpoints are `int32` scalar parameters or literals, and the initial
   accumulator is memory-independent.
@@ -82,7 +82,7 @@ The summary handle is kernel-owned, immutable, and scoped to the
 verification: its fields are private, so the Surface registers a body
 (`register_kernel_fold_read_definitions` in
 `src/surface/lowering/annotations.rs`) but never states a summary. The same
-definition governs unfolding and framing. Expanded source spells the original
+definition governs unfolding and framing. Expanded source writes the original
 application and ordinary proof steps, and a fresh verifier reconstructs the
 summary from the definition.
 

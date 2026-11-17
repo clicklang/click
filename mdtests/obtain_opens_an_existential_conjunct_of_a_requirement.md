@@ -15,7 +15,7 @@ theorem below(n: int32) {
     requires n > 0 and exists (k: int32) { k < n };
     ensures exists (m: int32) { m < n } by {
         obtain (k: int32) { k < n };
-        witness { m: k };
+        witness(k);
         known();
     }
 }

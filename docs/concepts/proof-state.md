@@ -59,12 +59,12 @@ about the current state. The rule is fixed and cheap:
   `transport` carried the fact across.
 
 A logical read through an opaque pointer proved equal to an admitted
-footprint's address uses that footprint's spelling, including constant field
-offsets.
+footprint's address uses that footprint's representation, including constant
+field offsets.
 For example, `p == id` makes `id->right` read the same current cell as
-`p->right`. An unrelated store preserves both spellings together; a store
+`p->right`. An unrelated store preserves both forms together; a store
 that may write that cell prevents both from using its old value. Selecting
-an address spelling grants no ownership or read permission.
+an address form grants no ownership or read permission.
 
 The point of the rule is cost and honesty together: a step's work is
 proportional to the facts it is told to carry, and every frame proof on which

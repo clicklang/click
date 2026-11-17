@@ -6,7 +6,7 @@ theorem unrelated_name(x: int32) {
     ensures exists (z: int32) { z == x } by {
         obtain (k: int32) { k == x }
         have missing == x by known();
-        witness { z: k };
+        witness(k);
         known();
     }
 }

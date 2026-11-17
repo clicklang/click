@@ -144,7 +144,7 @@ A proof binder may reuse a name. The newest binding of a name wins wherever
 the name is read, until the block that binds it ends: a value bound by
 `let { ... } = unfold(...)`, `obtain`, `intro() as`, a call or step result, or
 a `match` arm hides a fact named by `have` and a resource instance of the same
-spelling, so a citation, a value and a resource argument all read the same
+name, so a citation, a value and a resource argument all read the same
 binding (`mdtests/intro_as_hides_a_fact_name.md`). One name cannot be hidden:
 in an execution proof, a proof binder may not take the name of a C parameter
 or C object, since `step()` and `at(...)` keep reading the program's variable.
@@ -203,7 +203,7 @@ An execution proof may name the C body's own locals, not only the function's
 parameters. A local of struct-pointer type is a memory base there, so
 `have p->value == root->value` addresses `struct cell`'s layout exactly as a
 parameter would (`mdtests/struct_pointer_local_has_a_layout.md`); a parameter
-of the same spelling wins, because a contract is written against the
+of the same name wins, because a contract is written against the
 signature. A local the execution has not assigned yet has no value at the
 frontier, and naming it is refused by naming the local
 (`mdtests/have_names_a_local_before_its_assignment.md`).
@@ -229,7 +229,7 @@ and model cases.
 
 A binding declared `struct ...*` is also a memory base in the arm, as it is in
 a resource arm: `id->word` names the cell the arm's own `fact p == id`
-identifies with `p->word`, and either spelling may be read in a goal
+identifies with `p->word`, and either form may be read in a goal
 (`mdtests/egraph_resource_pointer_load_alias.md`). A binding of any other
 declared type is refused as a field base, naming the type it was given.
 
@@ -279,7 +279,7 @@ unfolded child this way.
 The `contradiction` need not be the arm's only tactic. It closes the path it
 stands on wherever it is reached, so an arm may run a `have`, a resource
 unfold, or any other checked operation first to bring the refuting fact into its own
-spelling, and then close. Nothing written after it on that path is executed or
+terms, and then close. Nothing written after it on that path is executed or
 proved (`mdtests/do_while_returns_rebound_resources.md`, whose loop body's
 `Empty` arm unfolds the binder and then closes by `contradiction`). In a
 `match` at the function's own level, whose arms otherwise each have to reach
@@ -304,7 +304,7 @@ let { result: r } = step(classify, { });
 ```
 
 `r` is then an ordinary value name in `have`, `rewrite`, `normalize() using`,
-and `solve` premises, on both sides of the `branch` that spells the C `if`. It
+and `solve` premises, on both sides of the `branch` written at the C `if`. It
 denotes the value the call returned, so it keeps its meaning after later
 statements. Naming the result of a call whose result the C discards is an
 error, as is reusing a name that is already a C local or a proof-local

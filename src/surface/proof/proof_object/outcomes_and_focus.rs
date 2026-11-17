@@ -75,12 +75,12 @@ impl<'a> Proof<'a> {
         let state = (*goal.data.core.state).clone();
         Ok(if goal.data.core.is_exceptional {
             FunctionOutcome::Throw {
-                value: value.into(),
+                value,
                 state: Box::new(state),
             }
         } else {
             FunctionOutcome::Return {
-                value: value.into(),
+                value,
                 state: Box::new(state),
             }
         })
@@ -1216,7 +1216,9 @@ impl<'a> Proof<'a> {
                         !callee.exceptional_signature().is_empty()
                     }));
             }
-            let ProgramStatement::TryCatchInt32 { try_body, .. } = statement else {
+            let (ProgramStatement::TryCatchInt32 { try_body, .. }
+            | ProgramStatement::UnwindCleanup { body: try_body, .. }) = statement
+            else {
                 return Ok(false);
             };
             let SourceStatementKind::Try {
