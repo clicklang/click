@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: symbolic loop frame verification, expansion and cold replay"]
+fn symbolic_loop_frame_expands_and_cold_replays() {
+    let (source, sources) = mdtest_sources("mdtests/loop_symbolic_disjoint_array_store_frame.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("), "{source}");
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "traverse.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve("), "{expanded}");
+    without_implicit_solve_for_claim("traverse.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: unrelated equality refusal and related-premise replay"]
 fn unrelated_equality_is_refused_without_transport() {
     let (source, sources) =
