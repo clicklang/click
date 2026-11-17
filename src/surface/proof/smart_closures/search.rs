@@ -346,7 +346,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
     }
 
-    fn try_signed_interval_using(
+    pub(in crate::surface::proof) fn try_signed_interval_using(
         search_input: &Proof<'a>,
         premises: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
@@ -4511,6 +4511,56 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_goal_conditional_normalization");
+        // Select guards by exact indexed lookup from the written expression.
+        // After ordinary arm rewrites, ambient solve can select the arithmetic
+        // bounds of the newly exposed operands. Restricted solve instead keeps
+        // its original explicit source list throughout the same rewrite prefix.
+        if let Some(ClickProposition::Comparison { left, right, .. }) = search_input
+            .surface_goal()
+            .and_then(integer_composition::canonical_surface)
+        {
+            let mathematical = search_input
+                .goal()
+                .is_some_and(|goal| integer_affine_claim(goal).is_some());
+            let mut remaining = 4096;
+            let candidates = machine_bridges::conditional_candidates(
+                &left,
+                &right,
+                mathematical,
+                &mut remaining,
+            )
+            .ok()?;
+            let mut selected = Vec::new();
+            for (expression, _) in candidates {
+                let ContractExpression::If { condition, .. } = expression else {
+                    unreachable!("conditional candidate");
+                };
+                for guard in [
+                    condition.as_ref().clone(),
+                    ClickProposition::Not(condition.clone()),
+                ] {
+                    let kernel = search_input
+                        .lower_cited_surface_proposition(&guard, "conditional goal guard")
+                        .ok()?;
+                    if search_input.facts().pure_known_available(&kernel)
+                        || crate::surface::planning::solve::computes_with_known(&kernel)
+                    {
+                        selected.push(guard);
+                    }
+                }
+            }
+            if !selected.is_empty()
+                && let Ok(Some((rewritten, _))) =
+                    Self::rewrite_conditional_arms_using(search_input, &selected)
+            {
+                if rewritten.focused_discharged() {
+                    return Some(rewritten);
+                }
+                if let Some(closed) = Self::try_solve_closure(&rewritten).ok().flatten() {
+                    return Some(closed);
+                }
+            }
+        }
         // The trusted ambient graph may close an equality without any
         // explicit condition premise. Emit the existing simple checker with
         // an empty input list; no fact search or extra theorem premise is

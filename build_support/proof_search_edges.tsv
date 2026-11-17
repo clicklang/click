@@ -718,7 +718,7 @@ src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::appl
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	driver	17
 src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	driver	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	driver	3
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	try_solve_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	try_solve_closure	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_product_bound_using	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_product_bound_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_product_bound_from_ranges	try_product_bound_using	1
@@ -736,7 +736,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalizati
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_machine_bridge_using	driver	19
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_machine_bridge_using	try_integer_composition_using	4
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_conditional_bridge_using	1
-src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	driver	3
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	driver	1
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	known_bridge_using	1
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	try_integer_composition_using	1
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_machine_bridge_using	try_product_bound_using	2
@@ -786,3 +786,8 @@ src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_wide
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_widened_unsigned_sum_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_widened_unsigned_sum_using	1
 src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_widened_unsigned_sum_using	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	try_widened_unsigned_sum_using	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	try_signed_interval_using	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::rewrite_conditional_arms_using	driver	2
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	rewrite_conditional_arms_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	rewrite_conditional_arms_using	1

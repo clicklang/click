@@ -2232,8 +2232,16 @@ ranges and constant-divisor quotient, shift, and remainder bounds use
 `known()`. Rounding and endpoint exclusions use ordinary Integer laws.
 Machine operation and cast identities use `known()` after their exact Integer
 bounds have been proved. Literal shifts and nonnegative literal masks expand
-to these leaves, explicit product bounds, and rounding laws. A root conditional
-with an available guard expands to a `known()` arm equation and a rewrite.
+to these leaves, explicit product bounds, and rounding laws. Numeric conditionals
+at the root or nested inside arithmetic, casts, observations and call arguments
+expand to `known()` arm equations and rewrites when their guards are selected.
+Outer arms are selected before examining their contents; an inactive arm is
+not detached and evaluated. Multiple conditionals are reduced in source order,
+with at most 64 rewrites and 4096 visited source nodes under the solve deadline.
+Binders and historical point expressions keep their scope and are not traversed.
+Arithmetic after selection uses ordinary emitters. Omitted guards remain
+unavailable to restricted solve, even when present in the ambient context.
+See [`nested_conditional_explicit_arm_equations.md`](https://github.com/clicklang/click/blob/master/mdtests/nested_conditional_explicit_arm_equations.md).
 Scalar signed interval claims, operation bounds, and narrowed casts expand
 through selected Integer and machine-observation proofs, without `normalize()`.
 Their intermediate facts replay with implicit solving disabled. Widened unsigned
