@@ -908,9 +908,10 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
     let value = MachineTerm::uint64_constant(0x1234_5678_9abc_def0);
     let load = SpecExpression::MemoryLoad {
         point: SpecPoint::Current,
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            Pointer::new(alias.clone(), ProgramType::UInt64Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            alias.clone(),
+            ProgramType::UInt64Pointer,
+        )))),
         value_type: ProgramType::UInt64,
     };
     let spec = SpecProposition::Comparison {
