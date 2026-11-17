@@ -10,7 +10,7 @@ fn function_pointer_read_query_does_not_scan_aliases_or_cells() {
                 base: "callbacks".into(),
                 offset: AddressOffset::Constant(i * 8),
             };
-            let mut memory = Memory::new();
+            let mut memory = SymbolicMemory::new();
             let mut facts = PureFactContext::new();
             for i in 1..=size {
                 memory = memory.store(cell(i as i64), callback_value("other"));

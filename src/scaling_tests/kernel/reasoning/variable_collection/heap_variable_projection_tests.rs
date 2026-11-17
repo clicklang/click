@@ -18,9 +18,9 @@ fn heap_variable_counts_follow_local_edits_and_keep_siblings_isolated() {
         }
         let heap = std::sync::Arc::new(heap);
         let original = heap_variable_counts(&heap, WholeCount::Charged);
-        let selected = Memory {
+        let selected = SymbolicMemory {
             heap: heap.clone(),
-            ..Memory::new().with_block("selected:read", 4)
+            ..SymbolicMemory::new().with_block("selected:read", 4)
         };
         let (projected, work) = crate::instrumentation::measure_deterministic_work(|| {
             counts_whole(&selected, WholeCount::Charged)
@@ -95,7 +95,7 @@ fn shared_machine_variable_collection_keeps_state_deferral_and_load_addresses() 
     };
     let _session = crate::kernel::VerificationSession::enter();
     let address = Variable(crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE + 124);
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let load = crate::kernel::eval::load_variable_for_exact_cell(
         &memory,
         &Address::symbolic(address),

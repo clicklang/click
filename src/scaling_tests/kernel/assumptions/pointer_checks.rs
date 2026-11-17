@@ -8,8 +8,8 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
             .map(|i| SharedAddress::import(&Address::symbolic(Variable(1013000 + i))))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let cell = Memory::global_pointer("shared-check-scaling");
-            let before = Memory::new().with_block("shared-check-scaling", 16);
+            let cell = SymbolicMemory::global_pointer("shared-check-scaling");
+            let before = SymbolicMemory::new().with_block("shared-check-scaling", 16);
             let after = before
                 .clone()
                 .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(1)));

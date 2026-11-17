@@ -75,7 +75,7 @@ fn only_successful_real_malloc_records_creation() {
     let imported = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_heap_allocation_claim(created.pointer().clone(), AllocationSize::int32(16))
                 .expect("assumed allocation claim"),
         );

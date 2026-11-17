@@ -3,7 +3,7 @@
 //!
 //! The walk answers two different questions with one traversal. The tracker
 //! asks "is this cell the same at these two program points", and takes only
-//! the node the walk stopped at. Memory-load reasoning asks "are these two
+//! the node the walk stopped at. SymbolicMemory-load reasoning asks "are these two
 //! loads equal", and takes the whole path as retained evidence. Both live
 //! here because they read the same recorded edges under the same rules; see
 //! `docs/internals/resource-tracker.md` and `docs/internals/memory-dag.md`.
@@ -1520,7 +1520,7 @@ pub(in crate::kernel) fn retirement_inside_its_call_havoc(step: &MemoryDerivatio
 
 /// Whether a retirement of `allocation_base[0..bytes]` taken from `base` may
 /// keep `base`'s forget mark rather than marking itself forgotten from
-/// `base` ([`Memory::mark_forgotten_from`]).
+/// `base` ([`SymbolicMemory::mark_forgotten_from`]).
 ///
 /// The mark exists so a state that dropped knowledge cannot re-intern as
 /// the one it forgot from, or as anything older. A retirement inside its
@@ -2045,7 +2045,7 @@ mod separated_range_frame_tests {
             .iter()
             .cloned()
             .fold(PureFactContext::new(), PureFactContext::assume_proposition);
-        let initial = Memory::new();
+        let initial = SymbolicMemory::new();
         let before = crate::kernel::intern_memory_ref(&initial);
         let after = crate::kernel::intern_memory(initial.store(
             data.offset_by_elements(actual_index, 4),
@@ -2320,7 +2320,7 @@ mod cache_independence_tests {
                 offset: AddressOffset::Constant(0),
             };
             let before = crate::kernel::intern_memory(
-                Memory::new().store(address.clone(), crate::kernel::int32(7)),
+                SymbolicMemory::new().store(address.clone(), crate::kernel::int32(7)),
             );
             let mut memory = before.memory().clone();
             for index in 0..stores {

@@ -5355,9 +5355,11 @@ mod ranking_member_tests {
         let value = MachineTerm::Variable(Variable(11));
         let post = MachineTerm::subtract(value.clone(), MachineTerm::constant(1));
         let mut entry = ExecutionState::new();
-        entry.memory = Memory::new().store(cell.clone(), ProgramValue::Int32(value.clone()));
+        entry.memory =
+            SymbolicMemory::new().store(cell.clone(), ProgramValue::Int32(value.clone()));
         let mut back_edge = ExecutionState::new();
-        back_edge.memory = Memory::new().store(cell.clone(), ProgramValue::Int32(post.clone()));
+        back_edge.memory =
+            SymbolicMemory::new().store(cell.clone(), ProgramValue::Int32(post.clone()));
         let measures = vec![RankingComponent::Pure {
             source: "count(counter)".to_string(),
             expression: current_load(&cell),

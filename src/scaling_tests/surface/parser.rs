@@ -49,7 +49,7 @@ fn literal_reference_parsing_shares_the_source_index_as_other_literals_grow() {
         let mut layouts = ProgramLayouts::default();
         for ordinal in 0..count {
             let id = crate::kernel::StringLiteralId::new("f", ordinal);
-            let pointer = crate::kernel::Memory::string_literal_pointer(&id, b"x\0");
+            let pointer = crate::kernel::SymbolicMemory::string_literal_pointer(&id, b"x\0");
             std::sync::Arc::make_mut(&mut layouts.string_literal_values).insert(
                 id,
                 ProgramValue::typed_pointer(pointer, ProgramType::UInt8Pointer),

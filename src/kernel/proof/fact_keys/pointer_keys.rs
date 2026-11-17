@@ -465,8 +465,8 @@ mod tests {
     #[test]
     fn shared_state_selection_retains_checked_match_and_alpha_state_identity() {
         let _session = VerificationSession::enter();
-        let address = crate::kernel::Memory::global_pointer("shared-key-load");
-        let before = crate::kernel::Memory::new().with_block("shared-key-load", 16);
+        let address = crate::kernel::SymbolicMemory::global_pointer("shared-key-load");
+        let before = crate::kernel::SymbolicMemory::new().with_block("shared-key-load", 16);
         let after = before.clone().store(
             address.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
@@ -501,7 +501,7 @@ mod tests {
     #[test]
     fn shared_address_keys_preserve_load_depth_and_logical_call_identity() {
         let _session = VerificationSession::enter();
-        let memory = crate::kernel::intern_memory(crate::kernel::Memory::new());
+        let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
         let mut source = Address::symbolic(Variable(1010200));
         for _ in 0..6 {
             source = Address::loaded_value(&memory, &source);

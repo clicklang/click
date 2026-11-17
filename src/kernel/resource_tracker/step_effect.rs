@@ -544,7 +544,7 @@ fn cell_effect(
                     MemoryDagAssumptionKind::CallHavocRangeSeparation,
                 ))
             } else if range_holding().is_some() {
-                // Memory the caller kept owning outside the transfer: the
+                // SymbolicMemory the caller kept owning outside the transfer: the
                 // callee owns none of it, so it wrote none of it. The ranges
                 // are the edge's own, spelled in its write-set marker, and
                 // placing the access inside one is decided here, in the

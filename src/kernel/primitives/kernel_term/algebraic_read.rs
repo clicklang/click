@@ -1,5 +1,5 @@
 //! Algebraic read syntax retains the producer's state and common address.
-//! Memory selection and access evidence remain with the existing read producer.
+//! SymbolicMemory selection and access evidence remain with the existing read producer.
 use super::*;
 
 impl KernelTerm {
@@ -39,10 +39,10 @@ mod tests {
     fn algebraic_reads_preserve_exact_states_types_and_observation_keys() {
         let first = {
             let _session = crate::kernel::VerificationSession::enter();
-            intern_memory(Memory::new())
+            intern_memory(SymbolicMemory::new())
         };
         let _session = crate::kernel::VerificationSession::enter();
-        let second = intern_memory(Memory::new());
+        let second = intern_memory(SymbolicMemory::new());
         let ty = TypeParameterName::intern("RetainedReadT").algebraic_type();
         let pointer = Address {
             base: AddressBase::Symbolic(Variable(999744)),
@@ -62,19 +62,19 @@ mod tests {
         assert!(roots[0].algebraic_syntax_equal(&roots[1]));
         let other_type = KernelTerm::algebraic_read(
             TypeParameterName::intern("OtherReadT").algebraic_type(),
-            intern_memory(Memory::new()),
+            intern_memory(SymbolicMemory::new()),
             SharedAddress::import(&pointer),
         );
         assert!(!roots[0].algebraic_syntax_equal(&other_type));
         let changed_memory = KernelTerm::algebraic_read(
             ty.clone(),
-            intern_memory(Memory::new().with_block("changed-read-retained_state", 8)),
+            intern_memory(SymbolicMemory::new().with_block("changed-read-retained_state", 8)),
             SharedAddress::import(&pointer),
         );
         assert!(!roots[0].algebraic_syntax_equal(&changed_memory));
         let changed_address = KernelTerm::algebraic_read(
             ty.clone(),
-            intern_memory(Memory::new()),
+            intern_memory(SymbolicMemory::new()),
             SharedAddress::import(&Address::symbolic(Variable(999750))),
         );
         assert!(!roots[0].algebraic_syntax_equal(&changed_address));

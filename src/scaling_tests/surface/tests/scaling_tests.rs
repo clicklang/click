@@ -1980,10 +1980,10 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
 fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        Address, AddressOffset, MachineTerm, Memory, Proposition, PureFactContext, Variable,
+        Address, AddressOffset, MachineTerm, Proposition, PureFactContext, SymbolicMemory, Variable,
     };
 
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let at = |block: &str, element: u32| {
         Address {
             base: block.into(),
@@ -2099,11 +2099,11 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
 fn read_defined_and_separation_selection_try_indexed_sources_first() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, Memory, MemoryRange, ProgramType,
-        Proposition, PureFactContext, Resource, Variable,
+        Address, AddressOffset, ConditionTerm, MachineTerm, MemoryRange, ProgramType, Proposition,
+        PureFactContext, Resource, SymbolicMemory, Variable,
     };
 
-    let memory = Memory::new().with_block("goal", 64);
+    let memory = SymbolicMemory::new().with_block("goal", 64);
     let read_defined = |pointer: Address| Proposition::MemoryReadDefined {
         memory: memory.clone(),
         pointer,
@@ -3896,7 +3896,7 @@ fn expanded_roundtrip_samples(sizes: &[usize]) -> Vec<[(usize, ScalingSample); 2
 /// the largest family member the checked proof drivers' nesting bound admits
 /// (see [`EXPANDED_ROUNDTRIP_MAX_UNRELATED`]). Measured marginals on
 /// 2026-09-23 for 1 through 7 allocations: 912, 912, 912, 912, 916, 920, and
-/// 920 units. The only growth is two `Memory::eq_relative_to` comparisons
+/// 920 units. The only growth is two `SymbolicMemory::eq_relative_to` comparisons
 /// at each path's end (`proof completion`, re-deriving the memory without
 /// the function's local block), whose persistent-map walk deepens with the
 /// heap. Before finalization visited a grouped proof's shared execution once,
@@ -6826,11 +6826,11 @@ fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, Memory, Proposition, PureFactContext,
-        Variable,
+        Address, AddressOffset, ConditionTerm, MachineTerm, Proposition, PureFactContext,
+        SymbolicMemory, Variable,
     };
 
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     // The address of element `variable` of the goal's array.
     let at = |variable: u64| Address {
         base: "goal".into(),
@@ -6983,8 +6983,8 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
 #[test]
 fn atomic_load_dependencies_ignore_other_state_cells() {
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, Memory, ProgramValue, Proposition,
-        PureFactContext, Variable,
+        Address, AddressOffset, ConditionTerm, MachineTerm, ProgramValue, Proposition,
+        PureFactContext, SymbolicMemory, Variable,
     };
 
     let index_cell = Address {
@@ -7004,7 +7004,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
     let mut samples = Vec::new();
     for size in [8usize, 16, 32, 64] {
         let mut memory =
-            Memory::new().store(index_cell.clone(), ProgramValue::Int32(index.clone()));
+            SymbolicMemory::new().store(index_cell.clone(), ProgramValue::Int32(index.clone()));
         let mut context = PureFactContext::new();
         for i in 0..size {
             let value = MachineTerm::Variable(Variable(491_000 + i as u64));
@@ -7079,11 +7079,11 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
 #[test]
 fn atomic_evidence_without_one_source_cites_connected_facts() {
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, Memory, Proposition, PureFactContext,
-        Sort, Variable,
+        Address, AddressOffset, ConditionTerm, MachineTerm, Proposition, PureFactContext, Sort,
+        SymbolicMemory, Variable,
     };
 
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let load = |offset: AddressOffset| {
         MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
@@ -7938,7 +7938,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
     for size in [16usize, 64, 256, 1024] {
         let mut retained_states = RecordedStates::new();
         let mut state = ExecutionState::new()
-            .with_memory(crate::kernel::Memory::new().with_block("cells", 4 * size as u32));
+            .with_memory(crate::kernel::SymbolicMemory::new().with_block("cells", 4 * size as u32));
         let mut insert_work = Vec::new();
         for index in 0..size {
             // Each point binds one new local, and from the second on also

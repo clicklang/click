@@ -118,7 +118,7 @@ fn publication_in_one_branch_keeps_sibling_input_pairing() {
 #[test]
 fn cell_index_follows_completed_pointer_reads_and_preserves_states() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let retained_state = crate::kernel::intern_memory(memory.clone());
     let (a, b) = (
         Address::symbolic(Variable(852_010)),
@@ -492,31 +492,32 @@ fn cell_footprints_follow_merges_removals_and_normalization() {
 #[test]
 fn logical_pointer_reads_reach_resource_index_without_equality_warmup() {
     let _session = crate::kernel::VerificationSession::enter();
-    let logical_pointer_read = |memory: &Memory, address: &Address, context: &PureFactContext| {
-        let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
-            memory,
-            address.clone(),
-            ProgramType::Int64Pointer,
-            Vec::new().into(),
-            Vec::new(),
-            context,
-        );
-        let [path] = paths.as_slice() else {
-            panic!("one logical read")
+    let logical_pointer_read =
+        |memory: &SymbolicMemory, address: &Address, context: &PureFactContext| {
+            let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
+                memory,
+                address.clone(),
+                ProgramType::Int64Pointer,
+                Vec::new().into(),
+                Vec::new(),
+                context,
+            );
+            let [path] = paths.as_slice() else {
+                panic!("one logical read")
+            };
+            // A read may carry its own read equation; nothing else.
+            assert!(
+                path.facts
+                    .iter()
+                    .all(|fact| fact.is_logical_read_equation())
+            );
+            assert!(path.obligations.is_empty());
+            let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &path.outcome else {
+                panic!("pointer read")
+            };
+            value.pointer().clone()
         };
-        // A read may carry its own read equation; nothing else.
-        assert!(
-            path.facts
-                .iter()
-                .all(|fact| fact.is_logical_read_equation())
-        );
-        assert!(path.obligations.is_empty());
-        let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &path.outcome else {
-            panic!("pointer read")
-        };
-        value.pointer().clone()
-    };
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let a = Address::symbolic(Variable(92_250));
     let b = Address::symbolic(Variable(92_251));
     let before = PureFactContext::new();
@@ -578,7 +579,7 @@ fn interval_candidates_ignore_unrelated_scalar_equalities() {
 fn interval_candidates_follow_loaded_pointer_origins_without_spelling_retry() {
     let a = Address::symbolic(Variable(895_010));
     let b = Address::symbolic(Variable(895_011));
-    let retained_state = crate::kernel::intern_memory(Memory::new());
+    let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
     let x = Address::loaded_value(&retained_state, &a);
     let y = Address::loaded_value(&retained_state, &b);
     let initial = PureFactContext::new();
@@ -634,7 +635,7 @@ fn interval_candidates_follow_loaded_pointer_origins_without_spelling_retry() {
             .is_none()
     );
     let slot = Address::symbolic(Variable(895_010));
-    let declared = crate::kernel::intern_memory(Memory::new().with_block("later", 8));
+    let declared = crate::kernel::intern_memory(SymbolicMemory::new().with_block("later", 8));
     let declared_read = Address::loaded_value(&declared, &slot);
     assert!(resources.permits_memory_read(&declared_read.offset_by_bytes(8), 4, &connected));
     let later = crate::kernel::intern_memory(
@@ -743,7 +744,7 @@ fn interval_alignment_retains_query_and_occurrence_checkpoint() {
 fn unpublished_loaded_intervals_do_not_claim_complete_supplier_coverage() {
     let a = Address::symbolic(Variable(895_060));
     let b = Address::symbolic(Variable(895_061));
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let x = Address::loaded_value(&memory, &a);
     let y = Address::loaded_value(&memory, &b);
     let facts = PureFactContext::new().assume_condition(ConditionTerm::pointer_equal(a, b), true);
@@ -1074,7 +1075,7 @@ fn object_evidence_uses_provenance_classes_and_live_nonempty_occurrences() {
 // incremental class index, not just return true from an equality query.
 #[test]
 fn typed_read_congruence_publishes_late_ownership_class_updates() {
-    let memory = crate::kernel::intern_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let p = Address {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::Variable(Variable(998_001)),
@@ -1246,7 +1247,7 @@ fn remove_suppliers_with_late_read_definition(register_query: bool) {
         offset: AddressOffset::Constant(0),
     };
     let first = crate::kernel::intern_memory(
-        Memory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
+        SymbolicMemory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
     );
     let named = name(&first, &cell);
     let later = crate::kernel::intern_memory(

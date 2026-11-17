@@ -164,7 +164,7 @@ pub(in crate::surface) fn prove(
     let context = pure_theorems::PureTheoremContext {
         diagnostic_names: Arc::from([]),
         declaration_bindings: BTreeMap::new(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         integer_values: Default::default(),
         array_refs: Default::default(),

@@ -11,7 +11,7 @@ fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
         offset: AddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new();
-    let memory = Memory::new().with_block("counter", 4);
+    let memory = SymbolicMemory::new().with_block("counter", 4);
     let ordinary = |name: String, next: Option<String>| {
         CompositeResourceDefinition::new(
             name,
@@ -120,7 +120,7 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
                 vec![ProgramValue::pointer(object(index))],
             ))
         });
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let assumptions = PureFactContext::new();
         let state = ExecutionState::new()
             .with_memory(memory.clone())
@@ -177,7 +177,7 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
         let original = residual
             .clone()
             .unchecked_with_fact(ResourceFact::own_memory(written.clone()));
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let assumptions = PureFactContext::new();
         let state = ExecutionState::new()
             .with_memory(memory.clone())
@@ -300,7 +300,7 @@ fn call_frame_preparation_must_not_open_unrelated_composites() {
             assert!(!wrapper.has_argument_direct_body());
             let definitions = [boxed_definition(), wrapper];
             let mut residual = ResourceContext::new();
-            let mut memory = Memory::new();
+            let mut memory = SymbolicMemory::new();
             for index in 0..size {
                 residual = residual.unchecked_with_fact(ResourceFact::own_composite(
                     "wrapper".into(),

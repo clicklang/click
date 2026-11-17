@@ -18,7 +18,7 @@ pub(super) fn record_context(context: &ResourceContext) {
 fn projection_context(
     head: &ResourceFact,
     definition: &CompositeResourceDefinition,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     facts: &PureFactContext,
 ) -> ResourceContext {
     capture_context(|| {
@@ -81,7 +81,7 @@ fn prior_child(context: ResourceContext, head: &ResourceFact) -> ResourceContext
 fn fixture() -> (
     ResourceFact,
     CompositeResourceDefinition,
-    Memory,
+    SymbolicMemory,
     PureFactContext,
     PureFactContext,
 ) {
@@ -121,7 +121,7 @@ fn fixture() -> (
         ],
         Vec::new(),
     );
-    let memory = Memory::new()
+    let memory = SymbolicMemory::new()
         .with_block(slot.base.clone(), 4)
         .with_block(target.base, 8)
         .store(slot.clone(), int32(2u32));

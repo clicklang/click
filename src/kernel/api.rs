@@ -57,7 +57,7 @@ pub(crate) struct MemoryAccessElementBound {
 }
 
 pub(crate) fn memory_access_element_bound(
-    memory: &Memory,
+    memory: &SymbolicMemory,
     pointer: &Address,
     byte_width: u32,
 ) -> Option<MemoryAccessElementBound> {
@@ -312,7 +312,7 @@ pub fn float64(bits: impl Into<MachineTerm>) -> ProgramValue {
 /// matching allocation keys through the path's pointer equalities or exact
 /// materialization of loads embedded in the key and pointer forms.
 pub(crate) fn memory_holds_live_heap_allocation_at(
-    memory: &super::Memory,
+    memory: &super::SymbolicMemory,
     pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2121,8 +2121,8 @@ fn join_variable(
 }
 
 fn validate_branch_memory_delta_against_loans(
-    base: &Memory,
-    sibling: &Memory,
+    base: &SymbolicMemory,
+    sibling: &SymbolicMemory,
     ledger: &crate::kernel::loans::LoanLedger,
 ) -> Result<(), String> {
     if !ledger.has_active_memory_loans() {
@@ -2215,7 +2215,7 @@ pub(crate) fn program_expression_has_bool_type(
 pub fn composite_resource_witness_values(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<Vec<ProgramValue>> {
@@ -3725,7 +3725,7 @@ pub(crate) fn bind_contract_value_parameters(
             parameter.binding_name().clone(),
             value.clone(),
             parameter.program_type(),
-            Memory::value_parameter_pointer(parameter.binding_name()),
+            SymbolicMemory::value_parameter_pointer(parameter.binding_name()),
             false,
             false,
             false,
@@ -5071,7 +5071,7 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
     )
 }
 
-fn statement_outcome_memory(outcome: &StatementOutcome) -> Option<&Memory> {
+fn statement_outcome_memory(outcome: &StatementOutcome) -> Option<&SymbolicMemory> {
     match outcome {
         StatementOutcome::Normal(state)
         | StatementOutcome::LoopTestFalse(state)
@@ -5880,7 +5880,7 @@ mod proof_case_evidence_tests {
         let owner = ledger.fresh_participant().unwrap();
         let opening = ledger.lend(owner, owner, support, escrow).unwrap();
         let ledger = ledger.apply(&opening.transition).unwrap();
-        let base = Memory::new()
+        let base = SymbolicMemory::new()
             .with_block("arg", 8)
             .store(pointer.clone(), int32(0));
         let later_byte = Address {
@@ -8501,7 +8501,7 @@ pub fn prove_uint32_ge_implies_reversed_le(greater: MachineTerm, lower: MachineT
 }
 
 #[cfg(test)]
-pub fn prove_memory_load(memory: Memory, pointer: Address) -> Theorem {
+pub fn prove_memory_load(memory: SymbolicMemory, pointer: Address) -> Theorem {
     let outcome = memory.load(&pointer);
     Theorem::new(Proposition::MemoryLoads {
         memory,
@@ -8512,7 +8512,7 @@ pub fn prove_memory_load(memory: Memory, pointer: Address) -> Theorem {
 
 #[cfg(test)]
 pub fn prove_memory_load_after_store_same(
-    memory: Memory,
+    memory: SymbolicMemory,
     pointer: Address,
     value: ProgramValue,
 ) -> Theorem {
@@ -8526,7 +8526,7 @@ pub fn prove_memory_load_after_store_same(
 
 #[cfg(test)]
 pub fn prove_memory_load_after_store_other(
-    memory: Memory,
+    memory: SymbolicMemory,
     stored_pointer: Address,
     stored_value: ProgramValue,
     loaded_pointer: Address,

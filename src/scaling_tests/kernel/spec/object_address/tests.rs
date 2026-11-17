@@ -5,7 +5,7 @@ fn typed_address_evaluation_does_not_walk_ambient_locals() {
     let mut samples = Vec::new();
     for count in [4, 32, 256] {
         let _session = VerificationSession::enter();
-        let root = Memory::global_pointer("addressed");
+        let root = SymbolicMemory::global_pointer("addressed");
         let pointer = ProgramValue::typed_pointer(root, ProgramType::UInt8Pointer);
         let mut state = ExecutionState::new();
         for index in 0..count {

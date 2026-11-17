@@ -3067,7 +3067,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
         }
         // These proposition forms can contain machine payloads in their C
         // state/outcome terms.  A conservative answer prevents dropping a
-        // needed accumulator scope, while Memory remains intentionally
+        // needed accumulator scope, while SymbolicMemory remains intentionally
         // opaque in the explicit forms above.
         _ => true,
     }
@@ -8050,7 +8050,7 @@ fn pure_pointer_result_class_from<'a>(
 pub(crate) fn refine_object_pointer_argument(
     value: &mut ProgramValue,
     object_class: &crate::kernel::effective_type::CAccessClass,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     refine_object_pointer_argument_with_null(
@@ -8072,7 +8072,7 @@ pub(crate) fn refine_object_pointer_argument(
 pub(crate) fn refine_object_pointer_argument_using_facts(
     value: &mut ProgramValue,
     object_class: &crate::kernel::effective_type::CAccessClass,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     refine_object_pointer_argument_with_null(
@@ -8092,7 +8092,7 @@ pub(crate) fn refine_object_pointer_argument_using_facts(
 fn refine_object_pointer_argument_with_null(
     value: &mut ProgramValue,
     object_class: &crate::kernel::effective_type::CAccessClass,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
     proves_null: impl FnOnce(&PureFactContext, &Address) -> bool,
 ) -> bool {
@@ -8322,7 +8322,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
 /// argument that is not a pointer at all keeps the live state, which is
 /// always sound and merely as fragile as before; so does a block the walk
 /// cannot separate from anything, because it then crosses no edge.
-fn array_ref_argument_memory(memory: &Memory, pointer: &ProgramValue) -> Memory {
+fn array_ref_argument_memory(memory: &SymbolicMemory, pointer: &ProgramValue) -> SymbolicMemory {
     let ProgramValue::Pointer(pointer) = pointer else {
         return memory.clone();
     };

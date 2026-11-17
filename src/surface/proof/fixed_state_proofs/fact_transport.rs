@@ -971,7 +971,9 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
     fn erase_term(term: &MachineTerm) -> MachineTerm {
         match term {
             MachineTerm::MemoryLoad(_, pointer, kind) => MachineTerm::MemoryLoad(
-                crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(Memory::default()))),
+                crate::kernel::ProgramPoint::at(
+                    &(crate::kernel::intern_memory(SymbolicMemory::default())),
+                ),
                 Box::new(Address {
                     base: pointer.base.clone(),
                     offset: erase_offset(&pointer.offset),
@@ -1151,7 +1153,7 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
 pub(in crate::surface::proof) fn certified_fact_transport_reaches_through(
     source: &Proposition,
     target: &Proposition,
-    after: &Memory,
+    after: &SymbolicMemory,
     assumptions: &PureFactContext,
     transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
@@ -1176,7 +1178,7 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches_through(
 fn certified_fact_transport_reaches_through_unmemoized(
     source: &Proposition,
     target: &Proposition,
-    after: &Memory,
+    after: &SymbolicMemory,
     assumptions: &PureFactContext,
     transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
@@ -1209,7 +1211,7 @@ fn certified_fact_transport_reaches_through_unmemoized(
 pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     source: &Proposition,
     target: &Proposition,
-    after: Option<&Memory>,
+    after: Option<&SymbolicMemory>,
     assumptions: &PureFactContext,
 ) -> bool {
     // A checked read at a computed address includes its address-definedness
@@ -1412,7 +1414,7 @@ mod path_condition_tests {
 
     #[test]
     fn compound_read_transport_requires_every_address_guard_and_range() {
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let base = Address {
             base: "bytes".into(),
             offset: AddressOffset::Constant(0),

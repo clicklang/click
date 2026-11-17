@@ -433,7 +433,7 @@ mod read_trace_tests {
     #[test]
     fn admitted_read_trace_includes_ordinary_read_value_equalities() {
         let mut graph = EqualityGraph::default();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let read = Address::loaded_value(&memory, &pointer(303_000));
         let checkpoint = graph.read_equality_checkpoint();
         graph.add_equality(&read, &pointer(303_001));
@@ -452,7 +452,7 @@ mod read_trace_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let mut graph = EqualityGraph::default();
         let mut replay = graph.input_root();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let read = V::Legacy(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(pointer(305_000)),
@@ -482,7 +482,7 @@ mod read_trace_tests {
     #[test]
     fn admitted_read_trace_includes_read_values_carried_as_offsets() {
         let mut graph = EqualityGraph::default();
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let load = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(pointer(304_000)),

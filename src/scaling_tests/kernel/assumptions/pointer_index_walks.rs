@@ -21,7 +21,7 @@ fn pointer_index_dependency_comparison_and_hashing_visit_each_dag_node_once() {
             let mut loads = Vec::new();
             collect_pointer_offset_memory_loads(
                 &index,
-                &Memory::new(),
+                &SymbolicMemory::new(),
                 &mut loads,
                 &mut BTreeSet::new(),
             )

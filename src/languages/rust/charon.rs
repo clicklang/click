@@ -3763,6 +3763,11 @@ pub(super) fn decode_crate(
         protocol::split_next_branches(&mut blocks)?;
         user_iterators::test_user_next_results(&mut blocks, &adapter.user_iterator_nexts);
         panics::assert_branches(&mut blocks);
+        let parameter_names = parameters
+            .iter()
+            .map(|parameter| parameter.name.clone())
+            .collect();
+        temporaries::substitute_literals(&mut locals, &mut blocks, &temporaries, &parameter_names);
         temporaries::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);

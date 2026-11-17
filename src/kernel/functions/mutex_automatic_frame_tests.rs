@@ -11,7 +11,7 @@ fn mutex_automatic_frame_retirement_requires_destruction() {
     for name in ["holder", "frame:holder", "lifetime:holder"] {
         let state = ExecutionState::new().with_local(name, int32(0));
         let address = state.locals.slot(name).unwrap().clone();
-        let memory = Memory::new().with_block(address.base.clone(), 40);
+        let memory = SymbolicMemory::new().with_block(address.base.clone(), 40);
         let initialized =
             crate::kernel::mutexes::MutexContext::new(state.with_memory(memory.clone()))
                 .initialize_empty(address.clone(), 40)
@@ -20,7 +20,7 @@ fn mutex_automatic_frame_retirement_requires_destruction() {
             end_function_body_automatic_lifetimes(
                 initialized.state(),
                 &function,
-                &Memory::new(),
+                &SymbolicMemory::new(),
                 None
             ),
             Err(RuntimeError::MutexStorageScopeEnd { .. })
@@ -43,7 +43,7 @@ fn mutex_automatic_frame_retirement_requires_destruction() {
             !end_function_body_automatic_lifetimes(
                 destroyed.state(),
                 &function,
-                &Memory::new(),
+                &SymbolicMemory::new(),
                 None
             )
             .unwrap()

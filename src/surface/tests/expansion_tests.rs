@@ -15601,9 +15601,9 @@ fn qualified_static_struct_startup_and_expansion() {
     let parsed = super::super::verification::parse_verified_sources(&file, &map).unwrap();
     let state = parsed["main"].1.program_entry_state.as_ref().unwrap();
     assert_eq!(
-        state
-            .memory()
-            .load(&Memory::global_pointer("state#file-static:counter.c")),
+        state.memory().load(&SymbolicMemory::global_pointer(
+            "state#file-static:counter.c"
+        )),
         ExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
     );
     let verified_for_expansion = verify_c_sources(source, &sources).unwrap();
@@ -19626,19 +19626,19 @@ void set(int32* p, int32* q, int32 x) {
     let expanded = expand_function_proof_source(click_source, &c_sources, "set")
         .expect("the bare open should expand");
     let start = expanded.find("open(cell(p)) {").expect("the expanded open");
-    let by = start + expanded[start..].find("} by {").unwrap_or_else(|| {
-        panic!(
-            "the implicit `solve`'s proof of the close should print as the open's `by`: {expanded}"
-        )
-    });
+    let have = start
+        + expanded[start..].find("        have ").unwrap_or_else(|| {
+            panic!("the closing fact should be proved inside the open block: {expanded}")
+        });
+    let end = have
+        + expanded[have..]
+            .find("\n    }")
+            .expect("the open block closes");
+    assert!(!expanded[end..].starts_with("\n    } by"), "{expanded}");
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &c_sources))
         .expect("the expansion should reverify cold");
-    let by_end = by
-        + expanded[by..]
-            .find("\n    }\n")
-            .expect("the open's `by` closes");
     let mut without_proof = expanded.clone();
-    without_proof.replace_range(by..by_end + "\n    }".len(), "}");
+    without_proof.replace_range(have..end, "");
     let error = crate::surface::proof::without_implicit_solve(|| {
         verify_c_sources(&without_proof, &c_sources)
     })
@@ -19648,6 +19648,38 @@ void set(int32* p, int32* q, int32 x) {
         "the refusal should name the closing fold: {}",
         error.message()
     );
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-replays two closing outcomes"]
+fn open_scope_closing_facts_replay_after_both_returns() {
+    let c_source = "int32 f(int32* p, int32 x, int32 y) {
+        if (x > 0) { p[0] = x; return x; }
+        else { p[0] = y; return y; }
+    }";
+    let click_source = r#"
+verifying "returns.c";
+resource cell(p: int32*) { owns p[0..1]; fact p[0] > 0 or p[0] < -1; }
+int32 f(int32* p, int32 x, int32 y) {
+    requires y > 0;
+    owns cell(p);
+    ensures result > 0;
+} by {
+    open(cell(p)) {
+        branch { step_until(function.exit); } else { step_until(function.exit); }
+    }
+    solve();
+}
+"#;
+    let sources = [("returns.c", c_source)];
+    let expanded = expand_function_proof_source(click_source, &sources, "f").unwrap();
+    assert!(!expanded.contains("\n    } by {"), "{expanded}");
+    assert!(
+        expanded.contains("have p[0] > 0 or p[0] < -1"),
+        "{expanded}"
+    );
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 /// `expanded` with its first step's obligation proofs removed:
@@ -21722,12 +21754,15 @@ void set(int32* p, int32* q, int32 x) {
 }
 "#;
     let expanded = expand_function_proof_source(source, &sources, "set").unwrap();
-    assert!(expanded.matches("} by {").count() >= 2, "{expanded}");
+    assert!(
+        expanded.contains("have q[0] > 0 or q[0] < -1"),
+        "{expanded}"
+    );
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .expect("nested closing obligations retain explicit proofs");
     let invalid = source.replace(
         "open(cell(q)) { step(); }",
-        "open(cell(q)) { step(); } by { known(); }",
+        "open(cell(q)) { step(); have q[0] < -1 by { known(); } }",
     );
     assert!(
         verify_c_sources(&invalid, &sources).is_err(),

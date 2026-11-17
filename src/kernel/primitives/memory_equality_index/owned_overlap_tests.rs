@@ -96,7 +96,7 @@ fn a_query_read_definition_is_registered_in_the_paired_namespace() {
     ));
     resources.synchronize_memory_equalities(&facts);
     let field = at(11);
-    let memory = Memory::new().store(
+    let memory = SymbolicMemory::new().store(
         field.clone(),
         ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
     );

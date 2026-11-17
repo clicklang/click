@@ -2777,7 +2777,7 @@ fn execute_program_heap_free_paths(
         let ExpressionPath {
             outcome,
             mut facts,
-            obligations,
+            mut obligations,
         } = path;
         let outcome = match outcome {
             ExpressionOutcome::Value(ProgramValue::Int32(bits)) if bits.as_const() == Some(0) => {
@@ -2815,6 +2815,9 @@ fn execute_program_heap_free_paths(
             ));
             continue;
         }
+
+        // Retain the argument's spelling for the proof at this program point.
+        let argument = pointer.clone();
 
         // Resolve the allocation's owned base through the same argument
         // equality used to consume its token. A proven alias names that
@@ -2976,13 +2979,30 @@ fn execute_program_heap_free_paths(
             ));
             continue;
         };
-        // The free is authorized by the allocation and its complete access, so
-        // a refusal here is about a live loan of these bytes, not ownership.
-        if let Some(outcome) =
-            allocation_retirement_outcome(state, &full_allocation_range, &effective_assumptions)
-        {
-            paths.push(StatementExecutionPath::new(outcome, facts, obligations));
+        if let Some(error) = super::super::mutexes::storage_retirement_refusal(
+            state,
+            &full_allocation_range,
+            &effective_assumptions,
+        ) {
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(error),
+                facts,
+                obligations,
+            ));
             continue;
+        }
+        if let Some(ledger) = state.loan_ledger() {
+            // Check the full allocation at the argument's address, which was
+            // resolved to its live base above. Keep the Surface byte carrier
+            // so the separation can be stated at the free's entry.
+            let byte_pointer =
+                super::expression::cast_pointer_value(argument, ProgramType::UInt8Pointer);
+            let range = bytes
+                .byte_range(byte_pointer.pointer().clone())
+                .with_pointer_carrier(&byte_pointer);
+            if let Some(requirement) = ledger.memory_access_requirement(&range) {
+                obligations.push(ProofObligation::verification_condition(requirement));
+            }
         }
         // A free can invalidate only resources that refer to this block.
         // Most frees leave no such facts after consuming the allocation and
@@ -5615,7 +5635,7 @@ fn local_declaration_pointer(
         state.set_memory(state.memory.without_local_block(&previous.base));
         return Ok(fresh_local_object_identity(state, name));
     }
-    let unnumbered = Memory::local_pointer(name);
+    let unnumbered = SymbolicMemory::local_pointer(name);
     if state.enclosing_frame_holds_locals()
         || state.memory.local_block_is_occupied(&unnumbered.base)
     {
@@ -5666,7 +5686,7 @@ fn fresh_local_object_identity(state: &mut ExecutionState, name: &BindingName) -
         *state = state
             .clone()
             .with_next_local_lifetime(lifetime.saturating_add(1));
-        let pointer = Memory::local_lifetime_pointer(lifetime, name);
+        let pointer = SymbolicMemory::local_lifetime_pointer(lifetime, name);
         if !state.memory.local_block_is_occupied(&pointer.base) {
             return pointer;
         }
@@ -6236,7 +6256,7 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
     refresh_scalar_local_binding(state, name, slot, program_type, assumptions);
 }
 
-/// Reconcile one address-backed scalar after a checked call effect. Memory
+/// Reconcile one address-backed scalar after a checked call effect. SymbolicMemory
 /// decides its current value and initialization; a postcondition is not a store.
 pub(in crate::kernel) fn refresh_scalar_local_from_memory(
     state: &mut ExecutionState,
