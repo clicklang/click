@@ -1912,8 +1912,8 @@ pub(in crate::surface) fn collect_program_expression_referenced_bindings<N: Refe
     names: &mut BTreeSet<N>,
 ) {
     match expression {
+        ProgramExpression::Value(value) => N::captured_value(value, names),
         ProgramExpression::StringLiteral(_)
-        | ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Variable(name) => {
